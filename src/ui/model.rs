@@ -868,14 +868,16 @@ impl TuiModel {
         self.status_expires_at = Some(Instant::now() + Duration::from_secs(3));
     }
 
-    pub(crate) fn expire_status(&mut self) {
-        if self
+    /// Whether a status went quiet.
+    pub(crate) fn expire_status(&mut self) -> bool {
+        let expired = self
             .status_expires_at
-            .is_some_and(|expires| Instant::now() >= expires)
-        {
+            .is_some_and(|expires| Instant::now() >= expires);
+        if expired {
             self.status = Status::Idle;
             self.status_expires_at = None;
         }
+        expired
     }
 
     /// Ages the "Updated" badges by one frame: any badge on screen right
@@ -886,10 +888,13 @@ impl TuiModel {
     /// auto-updates land during startup, while the operator is usually
     /// still on Overview, so a badge timed from the update would routinely
     /// expire before the screen carrying it was ever opened.
-    pub(crate) fn expire_update_badges(&mut self) {
+    ///
+    /// Answers whether a badge came down.
+    pub(crate) fn expire_update_badges(&mut self) -> bool {
         if self.remembered.update_badges.is_empty() {
-            return;
+            return false;
         }
+        let before = self.remembered.update_badges.len();
         let now = Instant::now();
         if self.route == Route::Plugins {
             for badge in &mut self.remembered.update_badges {
@@ -901,6 +906,7 @@ impl TuiModel {
                 .seen_at
                 .is_none_or(|seen| now - seen < UPDATE_BADGE_TTL)
         });
+        self.remembered.update_badges.len() != before
     }
 
     /// Whether this plugin carries a live "Updated" badge. Takes the
@@ -919,16 +925,16 @@ impl TuiModel {
     /// "local" group, so a direct install never disappears from the TUI
     /// when the catalog screen absorbs the old installed list.
     fn local_marketplace_rows(&self) -> Vec<MarketplacePluginSummary> {
+        let catalogued: std::collections::HashSet<String> = self
+            .remembered
+            .marketplace_plugins
+            .iter()
+            .map(|m| format!("{}@{}", m.name, m.marketplace))
+            .collect();
         self.remembered
             .plugins
             .iter()
-            .filter(|plugin| {
-                !self
-                    .remembered
-                    .marketplace_plugins
-                    .iter()
-                    .any(|m| format!("{}@{}", m.name, m.marketplace) == plugin.id)
-            })
+            .filter(|plugin| !catalogued.contains(&plugin.id))
             .map(|plugin| MarketplacePluginSummary {
                 marketplace: "local".to_owned(),
                 name: plugin.active_name.clone(),
@@ -974,9 +980,15 @@ impl TuiModel {
     /// truth both the list renderer and selection/navigation resolve
     /// through, so a hidden row is never selectable and vice versa.
     pub(crate) fn marketplace_visible_indices(&self) -> Vec<usize> {
+        self.visible_indices_in(&self.marketplace_rows())
+    }
+
+    /// [`Self::marketplace_visible_indices`] over rows the caller already
+    /// holds: the merged list is composed on demand, and a frame that
+    /// asks for it once per question composes it several times over.
+    pub(crate) fn visible_indices_in(&self, rows: &[MarketplacePluginSummary]) -> Vec<usize> {
         let needle = self.remembered.plugin_screen.filter.trim().to_lowercase();
-        self.marketplace_rows()
-            .iter()
+        rows.iter()
             .enumerate()
             .filter(|(_, plugin)| !self.collapsed_marketplaces.contains(&plugin.marketplace))
             .filter(|(_, plugin)| {
@@ -992,10 +1004,11 @@ impl TuiModel {
     /// back to the plugin it points at — an owned clone, since the merged
     /// row list is computed on demand (`marketplace_rows`).
     pub(crate) fn selected_marketplace_plugin(&self) -> Option<MarketplacePluginSummary> {
+        let rows = self.marketplace_rows();
         let raw_index = *self
-            .marketplace_visible_indices()
+            .visible_indices_in(&rows)
             .get(self.remembered.plugin_screen.selected)?;
-        self.marketplace_rows().get(raw_index).cloned()
+        rows.into_iter().nth(raw_index)
     }
 
     pub(crate) fn selected_extension(&self) -> Option<&BuiltinExtension> {

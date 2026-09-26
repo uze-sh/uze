@@ -3177,6 +3177,7 @@ dependencies = [
  "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "unicode-width",
  "uze",
  "uze-application",
  "uze-core",

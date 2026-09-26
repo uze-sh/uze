@@ -69,6 +69,7 @@ indicatif = "0.18"
 anstyle = "1"
 dialoguer = "0.12"
 comfy-table = "8"
+unicode-width = "0.2"
 # One call, in `main`: restoring the default SIGPIPE disposition Rust's
 # runtime ignores, so `uze … | head` ends quietly instead of panicking.
 # Already in the tree through `uze-core` and `uze-terminal`.

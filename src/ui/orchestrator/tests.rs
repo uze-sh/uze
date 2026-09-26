@@ -10361,6 +10361,62 @@ fn an_outcome_with_an_offer_has_no_clock_and_the_rest_do() {
     );
 }
 
+/// A write that failed after the code surface closed has nowhere else to
+/// be said, so it is said as an outcome; one that landed stays quiet.
+#[test]
+fn a_failed_write_whose_surface_moved_on_is_still_reported() {
+    let mut model = WorkspaceModel::default();
+    let answered = model.absorb_file_answer(FileResolution {
+        root: PathBuf::from("/gone"),
+        answer: code::FileAnswer::Saved {
+            path: PathBuf::from("/gone/a.txt"),
+            outcome: Err("permission denied".to_owned()),
+        },
+    });
+    assert!(answered);
+    assert_eq!(model.toast_stack().len(), 1);
+    assert_eq!(model.remembered.toasts[0].text, "save failed");
+
+    let answered = model.absorb_file_answer(FileResolution {
+        root: PathBuf::from("/gone"),
+        answer: code::FileAnswer::Deleted {
+            path: PathBuf::from("/gone/b.txt"),
+            outcome: Err("busy".to_owned()),
+        },
+    });
+    assert!(answered);
+    assert_eq!(model.toast_stack().len(), 2);
+
+    let answered = model.absorb_file_answer(FileResolution {
+        root: PathBuf::from("/gone"),
+        answer: code::FileAnswer::Saved {
+            path: PathBuf::from("/gone/a.txt"),
+            outcome: Ok(()),
+        },
+    });
+    assert!(!answered);
+    assert_eq!(model.toast_stack().len(), 2);
+}
+
+#[test]
+fn a_burst_of_input_waits_for_the_frame_only_where_geometry_matters() {
+    let paste = Event::Paste("a".to_owned());
+    let click = Event::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 3,
+        row: 4,
+        modifiers: KeyModifiers::NONE,
+    });
+    assert_eq!(super::burst_admits(1, &paste, true), super::Admit::Handle);
+    assert_eq!(super::burst_admits(0, &click, true), super::Admit::Handle);
+    assert_eq!(super::burst_admits(1, &click, false), super::Admit::Handle);
+    assert_eq!(super::burst_admits(1, &click, true), super::Admit::Hold);
+    assert_eq!(
+        super::burst_admits(1, &Event::Resize(80, 24), false),
+        super::Admit::HandleAndDraw
+    );
+}
+
 /// Putting one away takes that one, by where it sits on screen.
 #[test]
 fn dismissing_takes_the_one_that_was_clicked() {

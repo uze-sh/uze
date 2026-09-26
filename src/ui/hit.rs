@@ -155,10 +155,11 @@ impl TuiModel {
             }
             Hit::JumpToMarketplace(marketplace) => {
                 self.collapsed_marketplaces.remove(&marketplace);
+                let rows = self.marketplace_rows();
                 if let Some(position) = self
-                    .marketplace_visible_indices()
+                    .visible_indices_in(&rows)
                     .iter()
-                    .position(|&raw| self.marketplace_rows()[raw].marketplace == marketplace)
+                    .position(|&raw| rows[raw].marketplace == marketplace)
                 {
                     self.remembered.plugin_screen.selected = position;
                 }

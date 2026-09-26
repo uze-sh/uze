@@ -548,7 +548,7 @@ impl Attach<'_> {
             match modal.act(action) {
                 Outcome::None => {}
                 Outcome::Close => self.model.release_notes = None,
-                Outcome::OpenLink(url) => open_link(url),
+                Outcome::OpenLink(url) => crate::ui::worker::open_link(url, |_, _| {}),
             }
             self.model.dirty = true;
             return Flow::Continue;
@@ -1622,18 +1622,7 @@ impl Attach<'_> {
                 // which is what made the popup's own click feel
                 // intermittent — it depended on which row was
                 // right-clicked, not on timing).
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .rev()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(_, hit)| *hit);
+                let hit = hit_at(&self.model, mouse.column, mouse.row);
                 let action = match hit {
                     Some(WorkspaceHit::ContextMenuAction(index)) => self
                         .model
@@ -1658,17 +1647,7 @@ impl Attach<'_> {
                 self.architect_press(mouse.column, mouse.row);
             }
             _ if self.model.code.is_some() && in_pane => {
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(rect, hit)| (*rect, *hit));
+                let hit = self.model.hit_rect_at(mouse.column, mouse.row);
                 // Mirrors `WorkspaceHit::ResizeSidebar` below: arms
                 // dragging instead of reaching the extension, which only
                 // knows about `ExtensionHit`s that are its own — the
@@ -2027,17 +2006,7 @@ impl Attach<'_> {
                 // already are) so right-clicking a different row while
                 // a menu is open can't silently swap its target instead
                 // of requiring the open menu be dismissed first.
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(_, hit)| *hit);
+                let hit = self.model.hit_at(mouse.column, mouse.row);
                 // Anchored to the cursor itself, not the clicked row's
                 // rect — a row spans the sidebar's full width, so
                 // anchoring to `rect.x` always opened the menu at the
@@ -2132,18 +2101,7 @@ impl Attach<'_> {
                 // Keep this dropdown's pointer behavior aligned with the
                 // sidebar context menu: the highlighted option follows
                 // the cursor, while keyboard navigation remains intact.
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .rev()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(_, hit)| *hit);
+                let hit = hit_at(&self.model, mouse.column, mouse.row);
                 if let Some(WorkspaceHit::PickAgent(index)) = hit
                     && let Some(picker) = self.model.agent_picker.as_mut()
                     && picker.selected != index
@@ -2159,18 +2117,7 @@ impl Attach<'_> {
                 // marks the frame dirty when the hover actually moved
                 // onto a different row, so waving the mouse across the
                 // rest of the screen doesn't force a redraw every tick.
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .rev()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(_, hit)| *hit);
+                let hit = hit_at(&self.model, mouse.column, mouse.row);
                 if let Some(WorkspaceHit::ContextMenuAction(index)) = hit
                     && let Some(menu) = self.model.context_menu.as_mut()
                     && menu.selected != index
@@ -3129,11 +3076,11 @@ impl Attach<'_> {
         }
         // The modal has a clock of its own — a spinner, a status that
         // expires, answers to absorb — turned here, before the frame, for
-        // as long as it is open. Every tick redraws: the workspace behind
-        // it is still live, and the modal's own animation has no other
-        // way to advance.
-        if let Some(manage) = self.model.manage.as_mut() {
-            self.manage_memory.tick(manage, self.home);
+        // as long as it is open. It redraws when that clock moved
+        // something; the workspace behind it marks its own changes.
+        if let Some(manage) = self.model.manage.as_mut()
+            && self.manage_memory.tick(manage, self.home)
+        {
             self.model.dirty = true;
         }
         for request in adopt_task_names(&mut self.model) {
@@ -3173,6 +3120,49 @@ impl Attach<'_> {
             self.model.remembered.preserved_work = resolution.work;
             self.model.dirty = true;
         }
+        self.absorb_task_evaluations();
+        self.absorb_deliveries();
+        self.absorb_task_mutations();
+        self.schedule_task_evaluations();
+        // Outcomes leave on their own clock, and the clock is drawn, so
+        // this pass has to run while any of them is counting — not only
+        // when one expires.
+        if self.model.retire_toasts() || self.model.toasts_are_counting() {
+            self.model.dirty = true;
+        }
+        // Contextual resolution: whatever the selection currently is, that
+        // is what must be resolved. Keyed on `(harness, cwd)`, so this
+        // fires exactly when the answer could have changed — a different
+        // agent tab selected, or the server's live probe reporting the
+        // pane moved — and never repeats for an answer already held.
+        if let Some(key) = selected_agent_context(&self.model, &self.identities)
+            && self.model.remembered.agent_support_pending.as_ref() != Some(&key)
+            && self
+                .model
+                .remembered
+                .agent_support
+                .as_ref()
+                .is_none_or(|resolution| resolution.key != key)
+        {
+            self.model.remembered.agent_support_pending = Some(key.clone());
+            spawn_support_refresh(self.home, key, self.channels.support.sender.clone());
+        }
+        self.absorb_surface_answers();
+        self.schedule_surface_reads();
+        if self.model.expire_agent_activity(Instant::now()) {
+            self.model.dirty = true;
+        }
+        if self.model.expire_press(Instant::now()) {
+            self.model.dirty = true;
+        }
+        self.turn_activity_clock();
+        Flow::Continue
+    }
+
+    /// What the task evaluations answered: branches, targets, syncs and
+    /// the tasks themselves, and any evaluation asked for again while
+    /// one was out.
+    fn absorb_task_evaluations(&mut self) {
         let mut asked_again = Vec::new();
         while let Ok(resolution) = self.channels.tasks.receiver.try_recv() {
             self.model
@@ -3266,6 +3256,11 @@ impl Attach<'_> {
             self.model
                 .schedule_evaluation(self.home, cwd, &self.channels.tasks.sender);
         }
+    }
+
+    /// Deliveries that ended, each said as an outcome, and what the owning
+    /// agent has to act on handed to its pane.
+    fn absorb_deliveries(&mut self) {
         while let Ok(resolution) = self.channels.deliveries.receiver.try_recv() {
             // Released before anything is read out of the answer: an
             // empty one is exactly the case that used to leave the task
@@ -3335,6 +3330,10 @@ impl Attach<'_> {
                 .schedule_evaluation(self.home, resolution.cwd, &self.channels.tasks.sender);
             self.model.dirty = true;
         }
+    }
+
+    /// Finishes and discards that ended, each said either way.
+    fn absorb_task_mutations(&mut self) {
         while let Ok(resolution) = self.channels.mutations.receiver.try_recv() {
             self.model
                 .remembered
@@ -3364,6 +3363,11 @@ impl Attach<'_> {
             self.sweep_preserved_work();
             self.model.dirty = true;
         }
+    }
+
+    /// Asks the task questions that have gone stale: a pane that went
+    /// quiet, a directory named but never read, and the refresh clock.
+    fn schedule_task_evaluations(&mut self) {
         // Readiness is a Git fact, read when a pane goes quiet and, less
         // often, on a clock — never told by the agent.
         let quiet_panes = std::mem::take(&mut self.model.recently_quiet);
@@ -3419,29 +3423,11 @@ impl Attach<'_> {
             // a relaunch needs the answer.
             spawn_conversation_refresh(self.home, agent_contexts(&self.model, &self.identities));
         }
-        // Outcomes leave on their own clock, and the clock is drawn, so
-        // this pass has to run while any of them is counting — not only
-        // when one expires.
-        if self.model.retire_toasts() || self.model.toasts_are_counting() {
-            self.model.dirty = true;
-        }
-        // Contextual resolution: whatever the selection currently is, that
-        // is what must be resolved. Keyed on `(harness, cwd)`, so this
-        // fires exactly when the answer could have changed — a different
-        // agent tab selected, or the server's live probe reporting the
-        // pane moved — and never repeats for an answer already held.
-        if let Some(key) = selected_agent_context(&self.model, &self.identities)
-            && self.model.remembered.agent_support_pending.as_ref() != Some(&key)
-            && self
-                .model
-                .remembered
-                .agent_support
-                .as_ref()
-                .is_none_or(|resolution| resolution.key != key)
-        {
-            self.model.remembered.agent_support_pending = Some(key.clone());
-            spawn_support_refresh(self.home, key, self.channels.support.sender.clone());
-        }
+    }
+
+    /// What the Git badge, the release notes, the commit detail and the
+    /// code and architect surfaces' reads answered.
+    fn absorb_surface_answers(&mut self) {
         while let Ok(resolution) = self.channels.git.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_git_read(resolution);
         }
@@ -3468,6 +3454,10 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.artifacts.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_artifacts(resolution);
         }
+    }
+
+    /// Asks whatever those same surfaces now show and have not read.
+    fn schedule_surface_reads(&mut self) {
         self.model.schedule_git_read(&self.channels.git.sender);
         self.model
             .schedule_diff_read(&self.channels.code_diffs.sender);
@@ -3479,12 +3469,11 @@ impl Attach<'_> {
             .schedule_code_measure(&self.channels.code_measures.sender);
         self.model
             .schedule_artifacts_read(&self.channels.artifacts.sender);
-        if self.model.expire_agent_activity(Instant::now()) {
-            self.model.dirty = true;
-        }
-        if self.model.expire_press(Instant::now()) {
-            self.model.dirty = true;
-        }
+    }
+
+    /// Advances the activity spinner while anything it animates is on
+    /// screen.
+    fn turn_activity_clock(&mut self) {
         // The same clock drives the notice chip's spinner, the delivering
         // button's, and a caption sliding under the pointer, so it has to
         // turn for any of them even with every agent idle.
@@ -3501,16 +3490,5 @@ impl Attach<'_> {
                 self.model.dirty = true;
             }
         }
-        Flow::Continue
     }
-}
-
-/// Hands a URL to the reader's browser. That spawns a process, which is not
-/// something the thread drawing the frame should wait on.
-fn open_link(url: String) {
-    let parent = tracing::Span::current();
-    std::thread::spawn(move || {
-        let _parent = parent.enter();
-        crate::ui::worker::open_in_browser(&url);
-    });
 }

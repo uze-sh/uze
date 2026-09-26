@@ -2178,9 +2178,15 @@ impl uze_application::ProcessRunner for CapturingRunner {
     ) -> uze_application::Result<uze_application::ProcessResult> {
         use std::fs::OpenOptions;
         use std::process::{Command, Stdio};
-        use std::thread;
-        use std::time::{Duration, Instant};
 
+        let span = tracing::info_span!(
+            "process.run",
+            program = %spec.program,
+            args = %spec.arguments.join(" "),
+            success = tracing::field::Empty,
+            timed_out = tracing::field::Empty
+        );
+        let _entered = span.enter();
         let mut command = Command::new(&spec.program);
         command.args(&spec.arguments).stdin(Stdio::null());
         match spec.output {
@@ -2225,37 +2231,67 @@ impl uze_application::ProcessRunner for CapturingRunner {
                 }
             }
         }
-        let mut child = command
-            .spawn()
-            .map_err(|source| uze_application::UzeError::Process {
-                program: spec.program.clone(),
-                source,
-            })?;
+        // The same grouping `SystemProcessRunner` makes, for the same
+        // reason: a quiet child is killed as a tree on timeout, and one
+        // whose output an operator asked for stays in the terminal's
+        // foreground group so Ctrl-C still reaches it.
+        let mut command = match spec.output {
+            uze_application::ProcessOutput::Quiet => uze_application::with_process_group(command),
+            uze_application::ProcessOutput::Inherit => command,
+        };
+        let process_error = |source| uze_application::UzeError::Process {
+            program: spec.program.clone(),
+            source,
+        };
+        let mut child = command.spawn().map_err(process_error)?;
+        let (status, timed_out) =
+            uze_application::wait_with_timeout(&mut child, spec.timeout).map_err(process_error)?;
+        span.record("success", status.success() && !timed_out);
+        span.record("timed_out", timed_out);
+        Ok(uze_application::ProcessResult {
+            success: status.success() && !timed_out,
+            timed_out,
+        })
+    }
+}
+
+#[cfg(all(test, unix))]
+mod capturing_runner_tests {
+    use std::time::{Duration, Instant};
+
+    use uze_application::{ProcessRunner, ProcessSpec};
+
+    use super::CapturingRunner;
+
+    #[test]
+    fn a_child_past_its_deadline_is_reported_timed_out() {
+        let log = std::env::temp_dir().join(format!("uze-capturing-{}.log", std::process::id()));
+        let runner = CapturingRunner::new(log.clone(), false);
+        let mut spec = ProcessSpec::new("sh", ["-c", "sleep 30 & sleep 30"]);
+        spec.timeout = Duration::from_millis(200);
+
         let started = Instant::now();
-        loop {
-            if let Some(status) =
-                child
-                    .try_wait()
-                    .map_err(|source| uze_application::UzeError::Process {
-                        program: spec.program.clone(),
-                        source,
-                    })?
-            {
-                return Ok(uze_application::ProcessResult {
-                    success: status.success(),
-                    timed_out: false,
-                });
-            }
-            if started.elapsed() >= spec.timeout {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(uze_application::ProcessResult {
-                    success: false,
-                    timed_out: true,
-                });
-            }
-            thread::sleep(Duration::from_millis(25));
-        }
+        let result = runner.run(&spec).unwrap();
+
+        assert!(result.timed_out);
+        assert!(!result.success);
+        assert!(started.elapsed() < Duration::from_secs(10));
+        let _ = std::fs::remove_file(log);
+    }
+
+    #[test]
+    fn a_child_that_exits_reports_its_own_status() {
+        let log = std::env::temp_dir().join(format!("uze-capturing-ok-{}.log", std::process::id()));
+        let runner = CapturingRunner::new(log.clone(), false);
+        let result = runner
+            .run(&ProcessSpec::new("sh", ["-c", "exit 0"]))
+            .unwrap();
+        assert!(result.success && !result.timed_out);
+        let failed = runner
+            .run(&ProcessSpec::new("sh", ["-c", "exit 3"]))
+            .unwrap();
+        assert!(!failed.success && !failed.timed_out);
+        let _ = std::fs::remove_file(log);
     }
 }
 
@@ -2535,6 +2571,12 @@ fn trust_evidence(request: &uze_application::TrustRequest) -> String {
             capability.command,
             capability.arguments.join(" ")
         ));
+        if let Some(directory) = &capability.working_directory {
+            text.push_str(&format!("    cwd {directory}\n"));
+        }
+        for (key, value) in &capability.environment {
+            text.push_str(&format!("    env {key}={value}\n"));
+        }
     }
     text
 }

@@ -466,6 +466,7 @@ fn no_chrome_glyph_is_written_where_it_is_drawn() {
         '\u{21e3}', // ⇣ behind
         '\u{2197}', // ↗ external
         '\u{2192}', // → toward
+        '\u{00d7}', // × close
     ];
 
     /// Where a glyph legitimately becomes a string, and why.

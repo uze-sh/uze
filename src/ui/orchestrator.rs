@@ -53,6 +53,9 @@ use uze_terminal::{
 /// what made typing feel like it hung under any real system load) — this
 /// timeout only bounds keyboard/mouse latency.
 const POLL: Duration = Duration::from_millis(16);
+/// The most input events handled between two frames, so a flood of input
+/// cannot hold the frame back indefinitely.
+const EVENTS_PER_FRAME: usize = 64;
 
 /// Git inspection runs locally but still launches a process. Refresh often
 /// enough to follow commands typed in the active pane without attaching that
@@ -233,15 +236,14 @@ struct SupportResolution {
 /// it when the answer lands, so a thread that unwinds without answering
 /// leaves that feature dead for the rest of the session — the surface
 /// still believes a read is out, and asks for nothing more. The panic
-/// itself is reported: `ui::run` installs a hook that restores the
-/// terminal first, so the message survives instead of being drawn into
-/// the alternate screen and wiped. What this adds is that the *client*
-/// carries on, which matters because several of these run code over
-/// whatever a repository happens to contain.
+/// itself goes to the log: the hook `ui::run` installs leaves the terminal
+/// alone for any thread but the one that draws. What this adds is that
+/// the *client* carries on, which matters because several of these run
+/// code over whatever a repository happens to contain.
 ///
 /// `silence` is what the read would have said had it found nothing —
 /// every absorber already draws it.
-fn answered_or<T>(read: impl FnOnce() -> T, silence: T) -> T {
+pub(super) fn answered_or<T>(read: impl FnOnce() -> T, silence: T) -> T {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(read)).unwrap_or(silence)
 }
 
@@ -1262,7 +1264,7 @@ pub(crate) fn attach_workspace(
     // in the shape, so the copy is exact.
     let (layout_recorder, remembered_layouts) = mpsc::channel::<WorkspaceShape>();
     let parent = tracing::Span::current();
-    thread::spawn({
+    let layout_writer = thread::spawn({
         let home = home.clone();
         let mut layout = layout.clone();
         move || {
@@ -1345,6 +1347,9 @@ pub(crate) fn attach_workspace(
     // Every way out of the loop — a quit, a runtime gone, an error — must
     // hand the model's memory back, so the loop runs inside one call whose
     // result is read only after that handover.
+    // An event read while draining a burst and put back for after the
+    // frame (see the drain at the end of the loop).
+    let mut held: Option<Event> = None;
     let outcome: Result<WorkspaceExit> = (|| loop {
         if let Flow::Exit(exit) = attach.pump(&receiver) {
             return Ok(exit);
@@ -1403,10 +1408,33 @@ pub(crate) fn attach_workspace(
         if let Some(text) = attach.model.clipboard.take() {
             terminal.emit(&selection::osc52(&text));
         }
-        if event::poll(POLL).map_err(io_error)?
-            && let Flow::Exit(exit) = attach.handle(event::read().map_err(io_error)?, &viewport)
-        {
-            return Ok(exit);
+        // Everything already waiting is handled before the next frame: a
+        // burst of keys or wheel ticks is one frame, not one per event.
+        let mut timeout = POLL;
+        let mut handled = 0;
+        while handled < EVENTS_PER_FRAME {
+            let event = match held.take() {
+                Some(event) => event,
+                None => {
+                    if !event::poll(timeout).map_err(io_error)? {
+                        break;
+                    }
+                    event::read().map_err(io_error)?
+                }
+            };
+            timeout = Duration::ZERO;
+            let admitted = burst_admits(handled, &event, attach.model.dirty);
+            if admitted == Admit::Hold {
+                held = Some(event);
+                break;
+            }
+            handled += 1;
+            if let Flow::Exit(exit) = attach.handle(event, &viewport) {
+                return Ok(exit);
+            }
+            if admitted == Admit::HandleAndDraw {
+                break;
+            }
         }
     })();
     // The modal is closed on the way out so what it arranged is in the
@@ -1414,8 +1442,36 @@ pub(crate) fn attach_workspace(
     // next run — opens on it.
     attach.close_manage();
     attach.model.shape().apply_to(layout);
+    // The recorder may still be writing an older shape, and `super::run`
+    // writes the final one as soon as this returns: the older write must
+    // not land after it.
+    drop(attach.model.layout_recorder.take());
+    let _ = layout_writer.join();
     memory.remembered = attach.model.remembered;
     outcome
+}
+
+/// What a burst of input does with the next event it reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Admit {
+    Handle,
+    /// Handled, and then the frame is drawn before anything else is.
+    HandleAndDraw,
+    /// Put back for after the frame.
+    Hold,
+}
+
+/// A resize ends a burst, since what follows it is measured against a
+/// viewport only the next turn computes; a pointer event arriving after
+/// something already changed the screen waits for it, since it is aimed
+/// at what the next frame draws and would be resolved against the hits of
+/// the last one.
+fn burst_admits(handled: usize, event: &Event, dirty: bool) -> Admit {
+    match event {
+        Event::Mouse(_) if handled > 0 && dirty => Admit::Hold,
+        Event::Resize(..) => Admit::HandleAndDraw,
+        _ => Admit::Handle,
+    }
 }
 
 /// The client's layout as it stands: the sidebar column, the workspace's
@@ -4083,9 +4139,33 @@ impl WorkspaceModel {
             .as_mut()
             .filter(|view| view.root() == resolution.root)
         else {
-            return false;
+            // A surface that moved on no longer has anywhere to say a
+            // write failed, and a failed write must not pass unsaid: the
+            // reader believes it landed.
+            return self.report_unheard_write_failure(resolution.answer);
         };
         view.absorb(resolution.answer);
+        true
+    }
+
+    fn report_unheard_write_failure(&mut self, answer: code::FileAnswer) -> bool {
+        let (title, path, message) = match answer {
+            code::FileAnswer::Saved {
+                path,
+                outcome: Err(message),
+            } => ("save failed", path, message),
+            code::FileAnswer::Deleted {
+                path,
+                outcome: Err(message),
+            } => ("delete failed", path, message),
+            _ => return false,
+        };
+        self.raise_toast(
+            ToastKind::Failed,
+            title,
+            format!("{}: {message}", path.display()),
+            None,
+        );
         true
     }
 

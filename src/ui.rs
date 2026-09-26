@@ -36,7 +36,12 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect, text::Span};
+use ratatui::{
+    Terminal,
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Rect},
+    text::Span,
+};
 
 use uze_application::{
     ProcessOutput, ProcessResult, ProcessRunner, ProcessSpec, Result, SystemProcessRunner,
@@ -102,8 +107,9 @@ pub fn run(home: UzeHome) -> Result<()> {
     crate::self_update::watch(home.clone());
     let mut terminal = TerminalSession::start()?;
     // Immediately after the screen is entered and before anything draws
-    // into it: from here on, every panic — this thread's or any of the
-    // background reads' — leaves a terminal a message can be read on.
+    // into it: from here on, a panic on this thread leaves a terminal a
+    // message can be read on, and one on a background read leaves the
+    // screen alone.
     report_panics_on_a_restored_terminal(terminal.keyboard());
     chime::load(&home);
     // The client's shape as this user last left it — read once, here, and
@@ -149,8 +155,8 @@ pub fn run(home: UzeHome) -> Result<()> {
             Err(error) => break Err(error),
         }
     };
-    // The attach writes its shape as it changes, on a thread that may not
-    // have caught up with the last change by now; one synchronous write
+    // The attach writes its shape as it changes, on a thread it has
+    // joined by now, and hands back the last one; one synchronous write
     // on the way out is what makes the last drag or fold survive the
     // process ending a moment later.
     remember_layout(&home, &layout);
@@ -270,16 +276,26 @@ fn restore_terminal(keyboard: keys::KeyboardSupport) {
 /// panic on the draw path therefore presented as uze vanishing with
 /// nothing at all to report, which is a bug nobody can file.
 ///
-/// It covers the background threads too, and there the damage is worse:
-/// their message went straight into a live alternate screen, corrupting
-/// whatever was drawn — ratatui repaints only the cells that differ, so
-/// it stayed there — while the thread died holding a reservation that
-/// nothing releases.
+/// Only a panic on the thread that draws ends the session, so only that
+/// one hands the terminal back. A background read's panic is caught where
+/// it runs (`orchestrator::answered_or`) and the client carries on drawing:
+/// restoring the terminal for it would leave that client painting into a
+/// screen it no longer owns, and printing the message would write it into
+/// the live alternate screen, where ratatui — repainting only the cells
+/// that differ — would leave it. Those go to the log instead.
 fn report_panics_on_a_restored_terminal(keyboard: keys::KeyboardSupport) {
+    let render_thread = std::thread::current().id();
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
-        restore_terminal(keyboard);
-        previous(panic);
+        if std::thread::current().id() == render_thread {
+            restore_terminal(keyboard);
+            previous(panic);
+        } else {
+            tracing::error!(
+                thread = std::thread::current().name().unwrap_or("unnamed"),
+                "background thread panicked: {panic}"
+            );
+        }
     }));
 }
 
@@ -327,6 +343,31 @@ fn clamp_sidebar_width(width: u16, total_width: u16) -> u16 {
         .saturating_sub(MIN_CONTENT_WIDTH)
         .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
     width.clamp(MIN_SIDEBAR_WIDTH, max)
+}
+
+/// Both clients' first cut of the frame: the sidebar, at the dragged width
+/// or the responsive default, and the column right of it.
+///
+/// Flush against the top row, not inset by one — the sidebar header is
+/// the client's own top edge, and floating it a row down from the real
+/// terminal top just read as wasted vertical space. One blank row is still
+/// kept at the *bottom*: unlike the top, that gap keeps the last row from
+/// reading as clipped.
+fn sidebar_and_column(frame_area: Rect, sidebar_width_override: Option<u16>) -> (Rect, Rect) {
+    let area = Rect::new(
+        frame_area.x,
+        frame_area.y,
+        frame_area.width,
+        frame_area.height.saturating_sub(1),
+    );
+    let sidebar_width = sidebar_width_override
+        .map(|width| clamp_sidebar_width(width, area.width))
+        .unwrap_or_else(|| sidebar_width_for(area.width));
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(sidebar_width), Constraint::Min(10)])
+        .split(area);
+    (columns[0], columns[1])
 }
 
 /// Shared responsive default sidebar width (no user drag override yet) for

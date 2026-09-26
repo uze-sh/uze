@@ -65,8 +65,11 @@ enum Row {
     },
 }
 
-fn build_rows(model: &TuiModel) -> Vec<Row> {
-    let visible = model.marketplace_visible_indices();
+fn build_rows(
+    model: &TuiModel,
+    marketplace_rows: &[MarketplacePluginSummary],
+    visible: &[usize],
+) -> Vec<Row> {
     let position_of: std::collections::HashMap<usize, usize> = visible
         .iter()
         .enumerate()
@@ -79,7 +82,7 @@ fn build_rows(model: &TuiModel) -> Vec<Row> {
     // local group, so adjacent-match grouping preserves that order without
     // re-sorting.
     let mut groups: Vec<(String, Vec<(usize, MarketplacePluginSummary)>)> = Vec::new();
-    for (raw, plugin) in model.marketplace_rows().into_iter().enumerate() {
+    for (raw, plugin) in marketplace_rows.iter().cloned().enumerate() {
         match groups.last_mut() {
             Some((name, items)) if *name == plugin.marketplace => {
                 items.push((raw, plugin));
@@ -138,9 +141,16 @@ pub(crate) fn render_plugins(
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     let outer = content_area(area);
+    // Composed once for the frame: every question below is about the same
+    // rows, and composing them compares every install to the catalogue.
+    let marketplace_rows = model.marketplace_rows();
+    let visible = model.visible_indices_in(&marketplace_rows);
+    let selected = visible
+        .get(model.remembered.plugin_screen.selected)
+        .map(|&raw| &marketplace_rows[raw]);
     // Shown whenever there is a plugin to describe: the drawer is the
     // screen's detail column, not something opened and closed.
-    let drawer_shown = model.selected_marketplace_plugin().is_some();
+    let drawer_shown = selected.is_some();
     let drawer_width =
         drawer_shown.then(|| super::drawer_width(ResizablePanel::MarketplaceDrawer, model, outer));
     let list_area_width = outer
@@ -172,7 +182,6 @@ pub(crate) fn render_plugins(
         content.height.saturating_sub(3),
     );
 
-    let marketplace_rows = model.marketplace_rows();
     if marketplace_rows.is_empty() {
         frame.render_widget(
             Paragraph::new(Span::styled(
@@ -201,7 +210,7 @@ pub(crate) fn render_plugins(
             .unwrap_or(0);
         let plugin_label_width = 5 + name_width;
         let label_width = header_label_width.max(plugin_label_width);
-        let rows = build_rows(model);
+        let rows = build_rows(model, &marketplace_rows, &visible);
         if rows.is_empty() {
             frame.render_widget(
                 Paragraph::new(Span::styled(
@@ -264,8 +273,8 @@ pub(crate) fn render_plugins(
         }
     }
 
-    if let Some(plugin) = model.selected_marketplace_plugin() {
-        render_plugin_drawer(frame, outer, model, &plugin, hits);
+    if let Some(plugin) = selected {
+        render_plugin_drawer(frame, outer, model, plugin, hits);
     }
 }
 

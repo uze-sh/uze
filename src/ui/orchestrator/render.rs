@@ -55,29 +55,11 @@ pub(super) fn compute_layout(
     frame_area: Rect,
     sidebar_width_override: Option<u16>,
 ) -> WorkspaceLayout {
-    // Flush against the top row, not inset by one — the sidebar header is
-    // this client's own top edge, and floating it a row down from the real
-    // terminal top just read as wasted vertical space. One blank row is
-    // still kept at the *bottom* (`saturating_sub(1)`, not `2`), matching
-    // `management::compute_layout`'s identical rationale there: unlike the
-    // top, that gap keeps the last row from reading as clipped.
-    let area = Rect::new(
-        frame_area.x,
-        frame_area.y,
-        frame_area.width,
-        frame_area.height.saturating_sub(1),
-    );
-    let sidebar_width = sidebar_width_override
-        .map(|width| crate::ui::clamp_sidebar_width(width, area.width))
-        .unwrap_or_else(|| crate::ui::sidebar_width_for(area.width));
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(sidebar_width), Constraint::Min(10)])
-        .split(area);
+    let (sidebar, column) = crate::ui::sidebar_and_column(frame_area, sidebar_width_override);
     let content_rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(2), Constraint::Min(1)])
-        .split(columns[1]);
+        .split(column);
     // No left inset either, matching the sidebar's own flush
     // `Padding::new(1, 0, 0, 0)` on its side of the same divider — the two
     // panes' content used to sit at mismatched distances from it (sidebar
@@ -98,7 +80,7 @@ pub(super) fn compute_layout(
         content_rows[1].height,
     );
     WorkspaceLayout {
-        sidebar: columns[0],
+        sidebar,
         tab_strip: content_rows[0],
         pane,
     }
@@ -2293,20 +2275,6 @@ fn sync_counts(model: &WorkspaceModel, cwd: &Path) -> Vec<Span<'static>> {
     .collect()
 }
 
-/// `text` shortened from the left to `width`, keeping its tail — the end
-/// of a path is what says where you are; its beginning is what you can
-/// afford to lose.
-fn elide_head(text: &str, width: usize) -> String {
-    let length = text.chars().count();
-    if length <= width {
-        return text.to_owned();
-    }
-    let kept = width.saturating_sub(1);
-    std::iter::once('…')
-        .chain(text.chars().skip(length - kept))
-        .collect()
-}
-
 /// The "+ space" prompt and the directories it currently matches, drawn as
 /// rows of the sidebar itself rather than a floating popup: the prompt is
 /// choosing where the next space in this very list goes. It stands where
@@ -2443,7 +2411,7 @@ fn render_query_row(frame: &mut ratatui::Frame<'_>, picker: &RootPicker, rows: &
         let used: u16 = spans.iter().map(|span| span.width() as u16).sum();
         let room = rect.width.saturating_sub(used + TRAILING_PAD + 1);
         spans.push(Span::styled(
-            elide_head(
+            text::elide_head(
                 &crate::ui::display_project_path(picker.base()),
                 room as usize,
             ),
@@ -2756,7 +2724,7 @@ pub(super) fn agent_activity_frame(tick: usize) -> String {
 /// sidebar already uses for "this is where you are" (its active space's
 /// envelope, its agent tab rows) — this strip used to skip that fill and
 /// lean on text weight alone, which read as a lighter kind of "selected"
-/// than everywhere else in the TUI. A dim `×` close affordance per tab once
+/// than everywhere else in the TUI. A dim close mark per tab once
 /// more than one exists in the selected space, and a trailing "+" opening
 /// another shell in it.
 pub(super) fn render_tab_strip(
@@ -3088,9 +3056,10 @@ pub(super) fn render_tab_strip(
         // right-click and a confirmation in the sidebar (see `ContextMenu`),
         // the same rule that keeps the sidebar's own agent rows unclosable.
         let show_close = renaming_this.is_none() && can_close && !is_agent;
+        let close_width = theme::width(Symbol::MarkClose);
         let content_width = marker.width() as u16
             + tab_label.iter().map(Span::width).sum::<usize>() as u16
-            + if show_close { 2 } else { 0 }; // " ×"
+            + if show_close { 1 + close_width } else { 0 };
         // 1 column of padding on each side, reserved whether or not this
         // tab is selected — only the theme::color(Token::SurfaceRaised) fill toggles with
         // `selected`, never the width. Sizing the chip itself to
@@ -3105,9 +3074,17 @@ pub(super) fn render_tab_strip(
         chip.extend(tab_label);
         if show_close {
             chip.push(Span::raw(" "));
-            chip.push(Span::styled("×", theme::fg(Token::TextDim)));
+            chip.push(Span::styled(
+                theme::glyph(Symbol::MarkClose),
+                theme::fg(Token::TextDim),
+            ));
             hits.push((
-                Rect::new(chip_start + chip::PAD + content_width - 1, inner.y, 1, 1),
+                Rect::new(
+                    chip_start + chip::PAD + content_width - close_width,
+                    inner.y,
+                    close_width,
+                    1,
+                ),
                 WorkspaceHit::CloseTab(tab.id),
             ));
         }
@@ -3432,13 +3409,14 @@ pub(super) fn render_pane(frame: &mut ratatui::Frame<'_>, area: Rect, model: &Wo
     let selection = model
         .selection
         .filter(|selection| selection.pane == snapshot.pane && selection.is_visible());
+    let palette = theme::Palette::active();
     let buffer = frame.buffer_mut();
     let mut encoded = [0u8; 4];
     for row in 0..height {
         for column in 0..width {
             let index = usize::from(row) * usize::from(snapshot.columns) + usize::from(column);
             if let Some(cell) = snapshot.cells.get(index) {
-                let mut style = cell_style(cell);
+                let mut style = cell_style(cell, &palette);
                 // Reversed against the cell's own colours rather than
                 // tinted with one of ours: a pane's content can be any
                 // colour at all, and inversion is the one mark that
@@ -3469,10 +3447,10 @@ pub(super) fn render_pane(frame: &mut ratatui::Frame<'_>, area: Rect, model: &Wo
     }
 }
 
-pub(super) fn cell_style(cell: &uze_terminal::RenderCell) -> Style {
+pub(super) fn cell_style(cell: &uze_terminal::RenderCell, palette: &theme::Palette) -> Style {
     let mut style = Style::default()
-        .fg(color(cell.foreground))
-        .bg(color(cell.background));
+        .fg(color(cell.foreground, palette))
+        .bg(color(cell.background, palette));
     if cell.attributes.bold {
         style = style.add_modifier(Modifier::BOLD);
     }
@@ -3497,19 +3475,16 @@ pub(super) fn cell_style(cell: &uze_terminal::RenderCell) -> Style {
     style
 }
 
-pub(super) fn color(color: TerminalColor) -> Color {
+pub(super) fn color(color: TerminalColor, palette: &theme::Palette) -> Color {
     match color {
-        TerminalColor::DefaultForeground => theme::color(Token::TextPrimary),
-        TerminalColor::DefaultBackground => theme::color(Token::SurfaceBackground),
+        TerminalColor::DefaultForeground => palette.color(Token::TextPrimary),
+        TerminalColor::DefaultBackground => palette.color(Token::SurfaceBackground),
         TerminalColor::Rgb { red, green, blue } => theme::content(red, green, blue),
         // The 16 a program can name by index are the theme's, so a pane
         // cannot contradict the chrome drawn around it. Above 15 are the
         // 240 extended entries no theme defines — passed through as the
         // index they are.
-        TerminalColor::Indexed(index) => match uze_theme::active().ansi(index) {
-            Some(rgb) => theme::content(rgb.0, rgb.1, rgb.2),
-            None => Color::Indexed(index),
-        },
+        TerminalColor::Indexed(index) => palette.ansi(index).unwrap_or(Color::Indexed(index)),
     }
 }
 

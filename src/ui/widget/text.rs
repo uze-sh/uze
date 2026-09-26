@@ -12,8 +12,46 @@
 //! belongs to the screen that happened to need it first.
 
 use ratatui::text::Line;
+use unicode_width::UnicodeWidthChar;
 
 use crate::ui::theme::{self, Symbol};
+
+/// The cells `text` takes on a terminal, which is what every cut here is
+/// measured in: a CJK character or an emoji takes two, and counting it as
+/// one is how a column overflows into the next.
+pub(crate) fn columns(text: &str) -> usize {
+    text.chars().map(cell_width).sum()
+}
+
+/// A control character has no width of its own; it is counted as the one
+/// cell it was always counted as, so nothing already fitted moves.
+fn cell_width(character: char) -> usize {
+    character.width().unwrap_or(1)
+}
+
+/// The longest start of `text` that fits in `room` cells.
+fn head_within(text: &str, room: usize) -> &str {
+    let mut used = 0;
+    for (index, character) in text.char_indices() {
+        used += cell_width(character);
+        if used > room {
+            return &text[..index];
+        }
+    }
+    text
+}
+
+/// The longest end of `text` that fits in `room` cells.
+fn tail_within(text: &str, room: usize) -> &str {
+    let mut used = 0;
+    for (index, character) in text.char_indices().rev() {
+        used += cell_width(character);
+        if used > room {
+            return &text[index + character.len_utf8()..];
+        }
+    }
+    text
+}
 
 /// `text`, cut to `width` columns with the ellipsis mark when it does not
 /// fit.
@@ -23,14 +61,27 @@ use crate::ui::theme::{self, Symbol};
 /// and a cut measured against the wrong one overflows the column it was
 /// meant to fit.
 pub(crate) fn elide(text: &str, width: usize) -> String {
-    if text.chars().count() <= width {
+    if columns(text) <= width {
         return text.to_owned();
     }
-    let Some(kept) = width.checked_sub(theme::width(Symbol::Ellipsis) as usize) else {
+    let Some(room) = width.checked_sub(theme::width(Symbol::Ellipsis) as usize) else {
         return String::new();
     };
-    let mut kept: String = text.chars().take(kept).collect();
+    let mut kept = head_within(text, room).to_owned();
     kept.push_str(&theme::glyph(Symbol::Ellipsis));
+    kept
+}
+
+/// `text` shortened from the left to `width` columns, keeping its tail —
+/// the end of a path is what says where you are; its beginning is what
+/// you can afford to lose.
+pub(crate) fn elide_head(text: &str, width: usize) -> String {
+    if columns(text) <= width {
+        return text.to_owned();
+    }
+    let room = width.saturating_sub(theme::width(Symbol::Ellipsis) as usize);
+    let mut kept = theme::glyph(Symbol::Ellipsis);
+    kept.push_str(tail_within(text, room));
     kept
 }
 
@@ -81,19 +132,23 @@ pub(crate) fn fold(text: &str, width: usize) -> Vec<String> {
         // left to overflow — the paragraph's own wrapper does the same,
         // and a bare URL in a description is exactly that word.
         let mut word = word;
-        while word.chars().count() > width {
+        while columns(word) > width {
             if !row.is_empty() {
                 rows.push(std::mem::take(&mut row));
             }
-            let split = word
-                .char_indices()
-                .nth(width)
-                .map_or(word.len(), |(index, _)| index);
-            let (head, tail) = word.split_at(split);
+            // At least one character a row, or a character wider than the
+            // whole row would never leave the word.
+            let head = match head_within(word, width) {
+                "" => word
+                    .chars()
+                    .next()
+                    .map_or(word, |first| &word[..first.len_utf8()]),
+                head => head,
+            };
             rows.push(head.to_owned());
-            word = tail;
+            word = &word[head.len()..];
         }
-        let projected = row.chars().count() + usize::from(!row.is_empty()) + word.chars().count();
+        let projected = columns(&row) + usize::from(!row.is_empty()) + columns(word);
         if projected > width && !row.is_empty() {
             rows.push(std::mem::take(&mut row));
         }
@@ -189,4 +244,57 @@ pub(crate) fn small_caps(s: &str) -> String {
             other => other,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wide_character_is_measured_in_the_cells_it_takes() {
+        assert_eq!(columns("abc"), 3);
+        assert_eq!(columns("日本"), 4);
+        assert_eq!(columns("a🙂"), 3);
+    }
+
+    #[test]
+    fn an_elided_line_never_takes_more_cells_than_it_was_given() {
+        let ellipsis = theme::glyph(Symbol::Ellipsis);
+        let cut = elide("日本語のテキスト", 7);
+        assert!(columns(&cut) <= 7, "{cut}");
+        assert_eq!(cut, format!("日本語{ellipsis}"));
+        assert_eq!(elide("hello world", 8), format!("hello w{ellipsis}"));
+        assert_eq!(elide("hello", 5), "hello");
+    }
+
+    #[test]
+    fn a_head_elided_path_keeps_the_tail_that_fits() {
+        let ellipsis = theme::glyph(Symbol::Ellipsis);
+        let cut = elide_head("~/プロジェクト/src", 9);
+        assert!(columns(&cut) <= 9, "{cut}");
+        assert_eq!(cut, format!("{ellipsis}クト/src"));
+        assert_eq!(elide_head("~/code/uze", 6), format!("{ellipsis}e/uze"));
+        assert_eq!(elide_head("~/uze", 6), "~/uze");
+    }
+
+    #[test]
+    fn folded_rows_fit_their_width_in_cells() {
+        for row in fold("漢字漢字漢字 and more", 5) {
+            assert!(columns(&row) <= 5, "{row}");
+        }
+        assert_eq!(fold("one two three", 7), vec!["one two", "three"]);
+        assert_eq!(fold("abcdefgh", 3), vec!["abc", "def", "gh"]);
+    }
+
+    #[test]
+    fn a_character_wider_than_the_row_still_folds() {
+        assert_eq!(fold("日本", 1), vec!["日", "本"]);
+    }
+
+    #[test]
+    fn a_clipped_line_fits_its_width_in_cells() {
+        let mut line = Line::from(vec!["key ".into(), "日本語のテキスト".into()]);
+        clip(&mut line, 9);
+        assert!(line.width() <= 9, "{line:?}");
+    }
 }

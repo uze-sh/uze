@@ -201,15 +201,22 @@ impl ManagementMemory {
     /// arrived while the modal was closed is already in the channel when
     /// it opens, and draining first is what makes the very first frame
     /// show it.
-    pub(crate) fn tick(&mut self, model: &mut TuiModel, home: &UzeHome) {
+    ///
+    /// Answers whether the modal now looks different: the loop turns this
+    /// every few milliseconds, and redrawing a modal nothing changed in is
+    /// a whole frame for nothing. The spinner counts as a change for as
+    /// long as it is on screen.
+    pub(crate) fn tick(&mut self, model: &mut TuiModel, home: &UzeHome) -> bool {
         model.tick = model.tick.wrapping_add(1);
-        model.expire_status();
-        model.expire_update_badges();
+        let mut changed = matches!(model.status, model::Status::Working(_));
+        changed |= model.expire_status();
+        changed |= model.expire_update_badges();
         if let Some((revision, notice)) = crate::self_update::since(model.release_revision) {
             model.release = notice;
             model.release_revision = revision;
+            changed = true;
         }
-        drain_worker_results(model, &self.receiver);
+        changed |= drain_worker_results(model, &self.receiver);
         for missing in [
             model.drawer_inspect_intent(),
             model.profile_preview_intent(),
@@ -217,8 +224,10 @@ impl ManagementMemory {
         ] {
             if missing != Intent::None {
                 dispatch(missing, home, &self.sender, model);
+                changed = true;
             }
         }
+        changed
     }
 }
 
@@ -362,28 +371,13 @@ struct Geometry {
 /// drag-resize behaves identically in the modal and the workspace because
 /// both call the literal same width math, not just similarly-shaped code.
 fn compute_layout(frame_area: Rect, sidebar_width_override: Option<u16>) -> Geometry {
-    // Flush against the top row, not inset by one — see
-    // `orchestrator::compute_layout`'s identical change and rationale; kept
-    // mirrored here for the same reason the rest of this function is.
-    let area = Rect::new(
-        frame_area.x,
-        frame_area.y,
-        frame_area.width,
-        frame_area.height.saturating_sub(1),
-    );
-    let sidebar_width = sidebar_width_override
-        .map(|width| super::clamp_sidebar_width(width, area.width))
-        .unwrap_or_else(|| super::sidebar_width_for(area.width));
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(sidebar_width), Constraint::Min(10)])
-        .split(area);
+    let (sidebar, column) = super::sidebar_and_column(frame_area, sidebar_width_override);
     let content_rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(3), Constraint::Length(2)])
-        .split(columns[1]);
+        .split(column);
     Geometry {
-        sidebar: columns[0],
+        sidebar,
         content: content_rows[0],
         footer: content_rows[1],
     }
@@ -856,5 +850,38 @@ mod tests {
                 "either measure short of roomy takes the frame: {cramped:?}"
             );
         }
+    }
+
+    /// The workspace loop turns the modal's clock every few milliseconds;
+    /// a turn that moved nothing must not cost a frame, and a spinner on
+    /// screen must keep turning.
+    #[test]
+    fn the_modal_redraws_only_when_its_clock_moved_something() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("management-tick"));
+        let mut memory = ManagementMemory::unresolved();
+        let mut model = TuiModel::default();
+        memory.tick(&mut model, &home);
+
+        assert!(
+            !memory.tick(&mut model, &home),
+            "an idle modal is left alone"
+        );
+
+        model.status = Status::Working("Refreshing environment…".to_owned());
+        assert!(memory.tick(&mut model, &home), "a spinner advances");
+
+        model.say("done");
+        model.status_expires_at = Some(Instant::now());
+        assert!(
+            memory.tick(&mut model, &home),
+            "a status going quiet redraws"
+        );
+        assert!(!memory.tick(&mut model, &home));
+
+        memory
+            .sender
+            .send(WorkerResult::ReleaseNotesRead("1.0.0".to_owned(), None))
+            .unwrap();
+        assert!(memory.tick(&mut model, &home), "an answer arriving redraws");
     }
 }
