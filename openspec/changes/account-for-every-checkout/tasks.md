@@ -1,12 +1,12 @@
 ## 1. Revise the open worktree-policy change in place
 
-- [ ] 1.1 In `add-portable-worktree-policy/specs/worktree-policy/spec.md`, rewrite "Existing checkouts are adopted at startup": reconciliation records checkouts on sight as `checkout-accounting` states and no longer adopts an unrecorded one; the legacy scenario keeps `agent-<n>`.
-- [ ] 1.2 In the same spec, widen "A worktree the system did not create is not a slot" to "without UZE's record, wherever it is"; make "Isolated checkouts are reusable slots" and "Nothing that can hold work is removed automatically" say a checkout in use is never reused or removed, and that derived content is not work.
-- [ ] 1.3 In the same spec, except a subagent's checkout joined into its own agent from "Sibling tasks share work only through the target", and add that an agent with unjoined children is not delivered.
-- [ ] 1.4 In the same spec, change "The declaration is projected without triggering foreign isolation" so subagent isolation is stated through the `work` verbs, not a Git command.
-- [ ] 1.5 Add to that change's `tasks.md` a pointer task naming this change as the one that carries these edits out, as 9.5 does for `add-space-kinds`.
-- [ ] 1.6 In the same spec, replace the removal requirement's "idle beyond a declared age" wording with a pointer to `checkout-accounting`'s spare-slot rule.
-- [ ] 1.7 Add a row for repository-side files (`.git/info/exclude`, the per-worktree record) to AGENTS.md "What UZE persists".
+- [x] 1.1 In `add-portable-worktree-policy/specs/worktree-policy/spec.md`, rewrite "Existing checkouts are adopted at startup": reconciliation records checkouts on sight as `checkout-accounting` states and no longer adopts an unrecorded one; the legacy scenario keeps `agent-<n>`.
+- [x] 1.2 In the same spec, widen "A worktree the system did not create is not a slot" to "without UZE's record, wherever it is"; make "Isolated checkouts are reusable slots" and "Nothing that can hold work is removed automatically" say a checkout in use is never reused or removed, and that derived content is not work.
+- [x] 1.3 In the same spec, except a subagent's checkout joined into its own agent from "Sibling tasks share work only through the target", and add that an agent with unjoined children is not delivered.
+- [x] 1.4 In the same spec, change "The declaration is projected without triggering foreign isolation" so subagent isolation is stated through the `work` verbs, not a Git command.
+- [x] 1.5 Add to that change's `tasks.md` a pointer task naming this change as the one that carries these edits out, as 9.5 does for `add-space-kinds`.
+- [x] 1.6 In the same spec, replace the removal requirement's "idle beyond a declared age" wording with a pointer to `checkout-accounting`'s spare-slot rule.
+- [x] 1.7 Add a row for repository-side files (`.git/info/exclude`, the per-worktree record) to AGENTS.md "What UZE persists".
 
 ## 2. The record
 

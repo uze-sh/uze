@@ -93,6 +93,14 @@ decided by **what deleting it costs** — never by which module wrote it:
 | generated | `runtime/`, `shims/` | nothing — it is produced again |
 | remembered | `cache/` | nothing — it is observed again |
 
+Two things live outside `$UZE_HOME`, inside the repository's own Git
+administrative directory, because what they describe lives there: the
+`/.worktrees/` line UZE adds to `.git/info/exclude` (the operator's file,
+of which UZE owns that one line), and the record in
+`.git/worktrees/<admin>/` saying UZE made that checkout — a *record* by the
+test above, since nothing else knows it, and one Git deletes with the
+worktree it describes. Both are named in `uze-core`'s worktree module.
+
 A thing must not sit in a tier that claims a different cost than it has.
 Generated harness content lived at `state/attachments/` for exactly one
 letter's distance from `attachments.json`, the ledger that says who owns

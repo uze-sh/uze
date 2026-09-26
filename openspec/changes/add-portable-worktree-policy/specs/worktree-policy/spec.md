@@ -43,7 +43,9 @@ changes, and SHALL reuse a free checkout for a new agent before creating
 another. Reuse SHALL put the working tree at the task's base with no tracked
 or untracked file from the previous task, and SHALL preserve ignored files.
 A checkout holding uncommitted changes, or commits absent from its base,
-SHALL never be reused. The number of checkouts SHALL be bounded by peak
+SHALL never be reused; uncommitted changes confined to content the system
+derives are not work (`checkout-accounting`). A checkout in which any
+process is working SHALL never be reused. The number of checkouts SHALL be bounded by peak
 concurrency, and a project MAY declare a cap.
 
 #### Scenario: A free checkout is reused
@@ -69,7 +71,7 @@ concurrency, and a project MAY declare a cap.
 - **AND** each earlier task ends by what its own branch holds, and keeps that branch
 
 #### Scenario: A worktree the system did not create is not a slot
-- **WHEN** a harness or an operator creates a worktree outside the isolation directory — a harness's own isolation, started from inside an agent's checkout, included
+- **WHEN** a harness, an agent or an operator creates a worktree without the system's record, anywhere — inside the isolation directory, or a harness's own isolation started from inside an agent's checkout
 - **THEN** it is never adopted as a slot, offered to an agent, swept as idle or removed, and its branch is never pruned
 - **AND** nothing the system projects forbids it: work on another branch is the agent's to bring back to its own
 
@@ -88,8 +90,9 @@ Whether a branch's work is in the target SHALL be answered by what the
 target carries and not by commit identity alone: every commit reachable
 from it, or the same patch present under commits of its own, as a squash
 merge and a rebase merge each leave it. A branch whose work is in the
-target MAY be removed, as MAY the directory of a clean
-checkout idle beyond a declared age while keeping its branch. Discarding work SHALL happen only on an explicit operator
+target MAY be removed, as MAY the directory of a free checkout
+beyond the spare slots `checkout-accounting` keeps, while keeping its
+branch. A checkout in which any process is working SHALL NOT be removed. Discarding work SHALL happen only on an explicit operator
 action naming the task.
 
 #### Scenario: A dirty orphan is parked, not deleted
@@ -185,7 +188,8 @@ be placed from its local target with nothing to report.
 
 ### Requirement: Delivery follows the declared completion and only the system writes the target
 The system SHALL deliver a ready task only on an explicit operator action,
-one task at a time, according to the project's declared completion
+one task at a time, never while one of its subagents' checkouts holds work
+not yet joined (`checkout-accounting`), according to the project's declared completion
 behavior. `handoff` SHALL leave the branch for the operator. `merge` SHALL
 rebase the task's branch onto the target's tip inside the task's checkout,
 run the project's declared gate on the rebased commits, and advance the
@@ -233,7 +237,7 @@ the remote before an agent is placed.
 #### Scenario: Sibling tasks share work only through the target
 - **WHEN** one task has been delivered and another live task asks for the target
 - **THEN** the second task receives the first's work by rebasing onto the target
-- **AND** no task's branch ever carries another task's commits directly
+- **AND** no task's branch ever carries another task's commits directly, save a subagent's checkout joined into its own agent (`checkout-accounting`)
 
 #### Scenario: A live task follows the target automatically
 - **WHEN** the target has moved and a live task's pane goes quiet with a clean working tree
@@ -266,13 +270,21 @@ the remote before an agent is placed.
 ### Requirement: Existing checkouts are adopted at startup
 The system SHALL reconcile the isolation directory, the `agent/` branches
 and its persisted task state when a repository's space starts. A checkout
-without a task SHALL be adopted: parked when it holds work, free otherwise.
-A task without a checkout SHALL be marked from where its branch stands.
-Stale worktree registry entries SHALL be pruned only after reconciliation.
+is taken as the system's own only as `checkout-accounting` states: by the
+record it carries, or on sight when a launched agent's record names it or
+it bears a legacy `agent-<n>` name. A checkout without a record SHALL NOT
+be adopted by inference, whatever its name or place; it is listed to the
+operator. A task without a checkout SHALL be marked from where its branch
+stands. Stale worktree registry entries SHALL be pruned only after
+reconciliation.
 
 #### Scenario: A legacy checkout is adopted
-- **WHEN** the isolation directory holds checkouts created before task state existed
+- **WHEN** the isolation directory holds checkouts named `agent-<n>`, created before task state existed
 - **THEN** each is adopted as a task labelled from its branch, and no branch is renamed
+
+#### Scenario: A checkout nobody recorded is not adopted
+- **WHEN** the isolation directory holds a worktree without the system's record, not named `agent-<n>`, and no launched agent's record names it
+- **THEN** it is not adopted, and it is listed to the operator
 
 #### Scenario: Prune never runs before adoption
 - **WHEN** startup finds a registry entry whose directory is gone
@@ -285,7 +297,8 @@ reader inside an isolated checkout is already isolated and commits on its
 own branch and never on the target, that a reader anywhere else in the
 project is on the operator's branch and commits there without switching,
 resetting or stashing it, that delivery is performed by the system for
-isolated work, and how to isolate a subagent against the primary checkout.
+isolated work, and that a subagent's checkout is asked for, joined and
+listed through the agent's `work` verbs rather than made with Git.
 The rendering SHALL be deterministic, and SHALL NOT instruct any reader to
 create a top-level worktree.
 
