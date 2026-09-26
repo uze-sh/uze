@@ -958,7 +958,8 @@ fn commit_derived_halves(
         }
         _ => (None, subject.as_str()),
     };
-    let subject = shorten(&slug(rest));
+    let subject =
+        crate::worktree::cut_at_word_boundary(&slug(rest), crate::worktree::SUBJECT_MAX_CHARS);
     (!subject.is_empty()).then_some((kind, subject))
 }
 
@@ -992,20 +993,6 @@ fn slug(text: &str) -> String {
         }
     }
     slug.trim_matches('-').to_owned()
-}
-
-/// Cut at a word boundary, so a long subject reads as a name rather than
-/// as a truncation.
-fn shorten(slug: &str) -> String {
-    let limit = crate::worktree::SUBJECT_MAX_CHARS;
-    if slug.chars().count() <= limit {
-        return slug.to_owned();
-    }
-    let cut: String = slug.chars().take(limit).collect();
-    match cut.rfind('-') {
-        Some(boundary) if boundary > 0 => cut[..boundary].to_owned(),
-        _ => cut,
-    }
 }
 
 /// Publishes the branch and says whether the forge already has a request

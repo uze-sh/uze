@@ -256,6 +256,17 @@ pub fn scaffold_plugin(
         )));
     }
     let mut manifest = read_json(&manifest_path)?;
+    let shaped = manifest.as_object().is_some_and(|object| {
+        object
+            .get("plugins")
+            .is_none_or(serde_json::Value::is_array)
+    });
+    if !shaped {
+        return Err(UzeError::MarketplaceScaffold(format!(
+            "`{}` is not a marketplace manifest — it is an object whose `plugins` is a list",
+            manifest_path.display()
+        )));
+    }
     if manifest_names_plugin(&manifest, name) {
         return Err(UzeError::MarketplaceScaffold(format!(
             "the marketplace already names `{name}` — scaffolding never overwrites"
@@ -471,6 +482,16 @@ impl ValidationReport {
 /// install would run, before any install.
 pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
     let mut findings = Vec::new();
+    // First, as on install: nothing below may read through a link that
+    // leaves the plugin.
+    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    if let Err(error) = store::assert_self_contained(&canonical) {
+        findings.push(error.to_string());
+        return Ok(ValidationReport {
+            delivers: Vec::new(),
+            findings,
+        });
+    }
     let manifest = match store::read_plugin_manifest(root) {
         Ok(manifest) => manifest,
         Err(error) => {
@@ -495,9 +516,9 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
     match crate::engine::package_resources_at(&id, root) {
         Ok(resources) => {
             for resource in &resources {
-                // A skill present but carrying a broken `invoke:` block is
-                // delivered today as the default policy; a check says so
-                // out loud instead of letting the author find it in the TUI.
+                // A skill carrying a broken `invoke:` block is not delivered
+                // at all; a check says so out loud instead of letting the
+                // author find it in the TUI.
                 if resource.capability.kind == CapabilityKind::AgentSkill {
                     let path = resource.capability.path.display();
                     if let Some(policy) =
@@ -505,8 +526,8 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
                         && policy.is_invalid()
                     {
                         findings.push(format!(
-                            "{path}: `invoke:` block is malformed — the delivery treats it as \
-                             the default policy"
+                            "{path}: `invoke:` block is malformed — the delivery refuses to \
+                             project this skill"
                         ));
                     }
                     if let Some(reason) = skill_frontmatter_fault(&resource.capability.payload) {
@@ -532,10 +553,7 @@ fn skill_frontmatter_fault(payload: &[u8]) -> Option<String> {
         return Some("is not UTF-8".to_owned());
     };
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let head = text
-        .strip_prefix("---\n")
-        .and_then(|rest| rest.find("\n---\n").map(|end| &rest[..end]));
-    let Some(head) = head else {
+    let Some((head, _)) = crate::skill::split_frontmatter(text) else {
         return Some(
             "has no frontmatter — it opens with a `---` line, carries `description:`, and \
              closes with another `---` line"

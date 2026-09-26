@@ -22,17 +22,16 @@ use crate::{
 /// registered, which nothing else on the machine knows — so it goes
 /// through the one rule for reading a record another build wrote. Each
 /// ledger names its shape below; a document carrying no shape at all is
-/// shape 1, which is what every one of these is today.
+/// shape 1.
 fn read_json_or_default<T: uze_document::Shaped + Default>(path: &Path) -> Result<T> {
     Ok(uze_document::read::<T>(path)?.or_default())
 }
 
 /// The shapes this module's ledgers are in.
 ///
-/// All shape 1: none has changed since it was first written, and a
-/// document with no `schema_version` at all *is* shape 1 — so nothing on
-/// any machine has to be touched for these to start obeying the rule. The
-/// field appears in the bytes on the release that first needs a rung.
+/// A document with no `schema_version` at all *is* shape 1, so a ledger
+/// that has never changed carries no field. The field appears in the bytes
+/// on the release that first needs a rung, as the attachment ledger's did.
 mod shapes {
     use super::{AttachmentLedger, MarketplaceRegistry, ProvisioningRegistry};
 
@@ -102,9 +101,19 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
 /// (`package:git@ai:skills/commit/SKILL.md` makes five segments), and
 /// nothing read: every caller filtered on the fields instead. A key that
 /// is a concatenation of the value is the value said twice.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct AttachmentLedger {
+    schema_version: u32,
     receipts: Vec<AttachmentReceipt>,
+}
+
+impl Default for AttachmentLedger {
+    fn default() -> Self {
+        Self {
+            schema_version: <Self as uze_document::Shaped>::SHAPE,
+            receipts: Vec::new(),
+        }
+    }
 }
 
 fn attachments_path(home: &UzeHome) -> PathBuf {
@@ -492,6 +501,27 @@ mod tests {
                     == Some("package:git@ai:skills/commit/SKILL.md")),
             "including the one whose identity made the old key unsplittable"
         );
+    }
+
+    /// A ledger that does not say its shape reads as shape 1 — to this
+    /// build, which climbs it again on every read, and to an older one,
+    /// which would take a list for the map it knew.
+    #[test]
+    fn a_written_ledger_declares_its_shape() {
+        let home = temp_home("receipt-ledger-shape");
+        record_receipt(&home, receipt("plugin-a", "codex", "uze-a")).unwrap();
+
+        let written: serde_json::Value =
+            serde_json::from_slice(&fs::read(home.attachments_path()).unwrap()).unwrap();
+        assert_eq!(
+            written["schema_version"],
+            <AttachmentLedger as uze_document::Shaped>::SHAPE
+        );
+        assert!(matches!(
+            uze_document::read::<AttachmentLedger>(&home.attachments_path()).unwrap(),
+            uze_document::Carried::Current(_)
+        ));
+        fs::remove_dir_all(home.root()).unwrap();
     }
 
     #[test]

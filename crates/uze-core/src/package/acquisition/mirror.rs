@@ -391,16 +391,28 @@ pub fn materialize_subdirectory(
         source,
     })?;
     prefetch(directory, commit, subdirectory);
-    // `--work-tree` writes the tree out without the mirror ever gaining one
-    // of its own, and the pathspec confines it to the plugin's directory.
-    let work_tree = format!("--work-tree={}", destination.display());
-    let mut arguments = vec![work_tree.as_str(), "checkout", commit, "--"];
     let spec = subdirectory.unwrap_or(".");
-    arguments.push(spec);
+    // `--work-tree` writes the tree out without the mirror ever gaining one
+    // of its own, and the pathspec confines it to the plugin's directory —
+    // literally: the directory is named by a marketplace, and `*` or `:(top)`
+    // in it must not widen the checkout to the rest of the repository.
+    let work_tree = format!("--work-tree={}", destination.display());
+    let arguments = [
+        "--literal-pathspecs",
+        work_tree.as_str(),
+        "checkout",
+        commit,
+        "--",
+        spec,
+    ];
     // The destination goes with a failure. Left behind, it is a directory
     // holding nothing that a caller cannot tell from one holding the
     // answer.
-    if let Err(error) = run_as(reach_of(directory), &arguments, Some(directory)) {
+    let reach = reach_of(directory);
+    let written = super::git::assert_tree_within_size_budget(reach, directory, commit, Some(spec))
+        .and_then(|()| run_as(reach, &arguments, Some(directory)))
+        .and_then(|_| super::git::assert_within_size_budget(destination));
+    if let Err(error) = written {
         let _ = std::fs::remove_dir_all(destination);
         return Err(error);
     }
@@ -541,6 +553,41 @@ mod tests {
         assert!(
             !out.join("marketplace.json").exists(),
             "only the plugin's own directory travels"
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The directory is named by a marketplace; `plugins/*` there is one
+    /// oddly named directory, never every plugin in the repository.
+    #[test]
+    fn a_subdirectory_named_like_a_pattern_is_materialized_literally() {
+        let (root, _first, _second) = origin("mirror-literal");
+        let origin_dir = root.join("origin");
+        fs::create_dir_all(origin_dir.join("plugins/*")).unwrap();
+        fs::write(
+            origin_dir.join("plugins/*/plugin.json"),
+            r#"{"name":"star"}"#,
+        )
+        .unwrap();
+        let git = |args: &[&str]| run(args, Some(&origin_dir)).unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-m", "star"]);
+        let head = git(&["rev-parse", "HEAD"]).trim().to_owned();
+        let mirror = root.join("mirror");
+        ensure(
+            &origin_dir.to_string_lossy(),
+            &origin_dir.to_string_lossy(),
+            &mirror,
+        )
+        .unwrap();
+
+        let out = root.join("out");
+        materialize_subdirectory(&mirror, &head, Some("plugins/*"), &out).unwrap();
+
+        assert!(out.join("plugins/*/plugin.json").is_file());
+        assert!(
+            !out.join("plugins/flow").exists(),
+            "a pattern widened the checkout to another plugin"
         );
         fs::remove_dir_all(&root).unwrap();
     }

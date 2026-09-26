@@ -312,14 +312,11 @@ impl MaterializedPackage {
         &self.provenance
     }
 
-    /// Narrows the package root to a subdirectory of the checkout and records
-    /// the provenance that was only knowable after resolution.
+    /// Narrows `root` to a subdirectory of what's already materialized and
+    /// records the provenance that was only knowable after resolution.
     ///
-    /// Ownership stays with the *checkout*, not the narrowed root: cleanup
-    /// must still remove everything UZE created, not just the package.
-    /// Narrows `root` to a subdirectory of what's already materialized,
-    /// without touching cleanup: `owned_scratch` still points at the whole
-    /// checkout, so it (not just the narrowed root) is what gets removed on
+    /// Cleanup is untouched: `owned_scratch` still points at the whole
+    /// scratch, so it (not just the narrowed root) is what gets removed on
     /// drop. Used wherever a source resolves to a subtree of a larger
     /// acquired root — a Git checkout's `subdirectory`, or a marketplace
     /// root's resolved plugin entry.
@@ -337,7 +334,7 @@ impl Drop for MaterializedPackage {
     }
 }
 
-/// Brings a package's bytes to a local directory.
+/// Turns a [`PackageSource`] into local bytes the Store can ingest.
 ///
 /// Acquisition is the only step that knows source mechanisms. It performs no
 /// package validation beyond reaching the bytes — containment and manifest
@@ -345,7 +342,6 @@ impl Drop for MaterializedPackage {
 /// through, so a local package and a remote one are held to the same rule.
 ///
 /// It never executes package code.
-/// Turns a [`PackageSource`] into local bytes the Store can ingest.
 ///
 /// `Embedded` is deliberately not handled here: this crate has no vendor or
 /// product knowledge (see the module doc), and an embedded snapshot's bytes
@@ -373,18 +369,22 @@ pub fn acquire(source: &PackageSource) -> Result<MaterializedPackage> {
             reference,
             subdirectory,
         } => {
-            // The checkout is owned by the returned value from the moment it
-            // exists, so every failure path below still cleans it up.
-            let checkout = scratch_directory()?;
+            // The scratch is owned by the returned value from the moment it
+            // exists, so every failure path below still cleans it up. The
+            // clone goes one level below it: Git recreates its destination
+            // between attempts, and the private directory must not be what
+            // is recreated.
+            let scratch = scratch_directory()?;
             let mut materialized = MaterializedPackage::owned(
-                checkout.clone(),
+                scratch.clone(),
                 Provenance {
                     requested: source.clone(),
                     resolved: ResolvedSource::Local {
-                        path: checkout.clone(),
+                        path: scratch.clone(),
                     },
                 },
             );
+            let checkout = scratch.join("checkout");
             let commit = git::materialize(url, reference.as_deref(), &checkout)?;
             let root = match subdirectory {
                 Some(subdirectory) => git::resolve_subdirectory(&checkout, subdirectory)?,
@@ -406,10 +406,10 @@ pub fn acquire(source: &PackageSource) -> Result<MaterializedPackage> {
     }
 }
 
-/// A fresh directory UZE owns for one acquisition. Deliberately not
-/// `UzeHome::cache_dir()`: this is scratch that must not survive the
-/// operation, and a cache would be a second place packages live.
-/// A directory no other acquisition is using.
+/// A fresh directory UZE owns for one acquisition, which no other
+/// acquisition is using. Deliberately not `UzeHome::cache_dir()`: this is
+/// scratch that must not survive the operation, and a cache would be a
+/// second place packages live.
 ///
 /// The clock alone does not say that. `as_nanos` reports whatever
 /// resolution the platform's clock has, and macOS's is coarse enough that
@@ -418,11 +418,12 @@ pub fn acquire(source: &PackageSource) -> Result<MaterializedPackage> {
 /// mid-clone with `cannot copy … File exists`. A counter is what makes two
 /// calls differ; the clock only makes two *runs* differ.
 ///
-/// `create_dir`, not `create_dir_all`: an existing directory here means the
-/// name was not unique after all, and that has to be an error rather than a
-/// silent share. It also refuses a directory an attacker pre-created in a
-/// world-writable temp dir, and `0o700` keeps package bytes unreadable
-/// while they are being checked.
+/// Created exclusively, never `create_dir_all`: an existing directory here
+/// means the name was not unique after all, and that has to be an error
+/// rather than a silent share. It also refuses a directory an attacker
+/// pre-created in a world-writable temp dir, and `0o700` — set by the
+/// creation itself, so there is no moment it is open to anyone else — keeps
+/// package bytes unreadable while they are being checked.
 pub fn scratch_directory() -> Result<PathBuf> {
     static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -435,15 +436,16 @@ pub fn scratch_directory() -> Result<PathBuf> {
         "uze-acquire-{}-{nonce}-{sequence}",
         std::process::id()
     ));
-    fs::create_dir(&path).map_err(|source| UzeError::Write {
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(&path).map_err(|source| UzeError::Write {
         path: path.clone(),
         source,
     })?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o700));
-    }
     Ok(path)
 }
 
@@ -475,6 +477,7 @@ pub struct InspectedPackage {
 }
 
 pub fn inspect_capabilities(package: &MaterializedPackage) -> Result<InspectedPackage> {
+    crate::store::assert_self_contained(package.root())?;
     let manifest = crate::store::read_plugin_manifest(package.root())?;
     let id = crate::store::PackageId::from_plugin_name(&manifest.name, &manifest.path)?;
     Ok(InspectedPackage {

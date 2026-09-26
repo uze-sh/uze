@@ -329,6 +329,24 @@ fn the_materialized_checkout_is_removed_when_dropped() {
     );
 }
 
+/// Git recreates the directory it clones into between attempts; the private
+/// scratch holding the checkout is never the one it recreates.
+#[test]
+fn the_scratch_holding_a_checkout_stays_private_to_this_user() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture::new("private-scratch", false);
+    let materialized = acquire(&PackageSource::git(&fixture.url)).unwrap();
+    let scratch = materialized.root().parent().unwrap();
+    let mode = fs::metadata(scratch).unwrap().permissions().mode();
+    assert_eq!(
+        mode & 0o777,
+        0o700,
+        "scratch {} is {mode:o}",
+        scratch.display()
+    );
+}
+
 /// End to end: a cloned repository becomes an ordinary installed package, and
 /// the Store records both what was asked for and what it resolved to.
 #[test]

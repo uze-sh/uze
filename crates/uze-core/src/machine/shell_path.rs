@@ -19,7 +19,7 @@ use std::{
 
 use crate::{
     error::{Result, UzeError},
-    persistence::write_atomic,
+    persistence::write_atomic_preserving,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,13 +79,58 @@ const BEGIN: &str = "# >>> uze shims path >>>";
 const END: &str = "# <<< uze shims path <<<";
 
 fn desired_line(kind: ShellKind, shims_dir: &Path) -> String {
+    let shims_dir = shims_dir.display().to_string();
     match kind {
         ShellKind::Bash | ShellKind::Zsh => {
-            format!("export PATH=\"{}:$PATH\"", shims_dir.display())
+            format!("export PATH=\"{}:$PATH\"", escape_double_quoted(&shims_dir))
         }
         // fish has no `export`; `fish_add_path` is its idiomatic,
         // duplicate-safe equivalent.
-        ShellKind::Fish => format!("fish_add_path {}", shims_dir.display()),
+        ShellKind::Fish => format!("fish_add_path {}", fish_word(&shims_dir)),
+    }
+}
+
+/// Inside POSIX double quotes only these four stay special, and a path
+/// without any of them is written exactly as earlier builds wrote it.
+fn escape_double_quoted(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for character in text.chars() {
+        if matches!(character, '\\' | '"' | '$' | '`') {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
+/// A path of plain characters stays bare, as earlier builds wrote it; any
+/// other is single-quoted, where fish treats only `\\` and `'` specially.
+fn fish_word(text: &str) -> String {
+    let plain = !text.is_empty()
+        && text
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "/._-+,:@%=".contains(character));
+    if plain {
+        return text.to_owned();
+    }
+    let mut quoted = String::from("'");
+    for character in text.chars() {
+        if matches!(character, '\\' | '\'') {
+            quoted.push('\\');
+        }
+        quoted.push(character);
+    }
+    quoted.push('\'');
+    quoted
+}
+
+/// The line ending the file already uses, so rewriting UZE's block does not
+/// convert someone's CRLF file.
+fn line_ending(content: &str) -> &'static str {
+    if content.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
     }
 }
 
@@ -110,6 +155,7 @@ pub fn ensure_path_line(target: &ShellRcTarget, shims_dir: &Path) -> Result<bool
             });
         }
     };
+    let newline = line_ending(&existing);
     let lines: Vec<&str> = existing.lines().collect();
     let begin = lines.iter().position(|line| *line == BEGIN);
     let end = lines.iter().position(|line| *line == END);
@@ -124,24 +170,22 @@ pub fn ensure_path_line(target: &ShellRcTarget, shims_dir: &Path) -> Result<bool
             rebuilt.push(BEGIN);
             rebuilt.push(&wanted);
             rebuilt.push(END);
-            write_atomic(
+            write_atomic_preserving(
                 &target.rc_file,
-                format!("{}\n", rebuilt.join("\n")).as_bytes(),
+                format!("{}{newline}", rebuilt.join(newline)).as_bytes(),
             )?;
             Ok(true)
         }
         (None, None) => {
             let mut content = existing;
             if !content.is_empty() && !content.ends_with('\n') {
-                content.push('\n');
+                content.push_str(newline);
             }
-            content.push_str(BEGIN);
-            content.push('\n');
-            content.push_str(&wanted);
-            content.push('\n');
-            content.push_str(END);
-            content.push('\n');
-            write_atomic(&target.rc_file, content.as_bytes())?;
+            for line in [BEGIN, &wanted, END] {
+                content.push_str(line);
+                content.push_str(newline);
+            }
+            write_atomic_preserving(&target.rc_file, content.as_bytes())?;
             Ok(true)
         }
         _ => Err(UzeError::ManagedRegionDrift(target.rc_file.clone())),
@@ -181,6 +225,50 @@ mod tests {
         let content = fs::read_to_string(&rc_file).unwrap();
         assert!(content.starts_with("alias ll='ls -la'\n"));
         assert!(content.contains(BEGIN));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_shims_dir_with_shell_metacharacters_is_quoted_for_each_shell() {
+        let shims = Path::new("/home/a b/$x/`c`/\"q\"/it's");
+        assert_eq!(
+            desired_line(ShellKind::Bash, shims),
+            "export PATH=\"/home/a b/\\$x/\\`c\\`/\\\"q\\\"/it's:$PATH\""
+        );
+        assert_eq!(
+            desired_line(ShellKind::Fish, shims),
+            "fish_add_path '/home/a b/$x/`c`/\"q\"/it\\'s'"
+        );
+        assert_eq!(
+            desired_line(ShellKind::Fish, Path::new("/home/x/.uze/shims")),
+            "fish_add_path /home/x/.uze/shims"
+        );
+    }
+
+    #[test]
+    fn a_crlf_rc_file_keeps_its_line_endings_when_the_block_moves() {
+        let root = uze_testkit::temp::scratch("crlf");
+        let rc_file = root.join(".bashrc");
+        let shims = Path::new("/home/x/.uze/shims");
+        let target = ShellRcTarget {
+            kind: ShellKind::Bash,
+            rc_file: rc_file.clone(),
+        };
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&rc_file, "alias ll='ls -la'\r\n").unwrap();
+        ensure_path_line(&target, shims).unwrap();
+        let mut content = fs::read_to_string(&rc_file).unwrap();
+        content.push_str("export PATH=\"/opt/bin:$PATH\"\r\n");
+        fs::write(&rc_file, &content).unwrap();
+
+        assert!(ensure_path_line(&target, shims).unwrap());
+
+        let content = fs::read_to_string(&rc_file).unwrap();
+        assert_eq!(
+            content.matches('\n').count(),
+            content.matches("\r\n").count()
+        );
+        assert!(content.ends_with(&format!("{END}\r\n")));
         let _ = fs::remove_dir_all(&root);
     }
 

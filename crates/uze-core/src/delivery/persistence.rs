@@ -68,6 +68,57 @@ pub fn create_symlink(_target: &Path, link: &Path) -> Result<()> {
 }
 
 pub fn write_atomic(path: &Path, payload: &[u8]) -> Result<()> {
+    replace_atomically(path, payload, None)
+}
+
+/// Replaces a file a person owns — an rc file, `AGENTS.md`, `agents.yaml` —
+/// without undoing what they chose about it.
+///
+/// A rename publishes a new inode, so a plain [`write_atomic`] would turn a
+/// dotfile manager's symlink into a regular file beside the real one, and
+/// an rc file kept at `0600` because it holds a token into one the umask
+/// makes readable. The write goes through the link to the file it names,
+/// and the new file carries the old one's permissions.
+pub fn write_atomic_preserving(path: &Path, payload: &[u8]) -> Result<()> {
+    let destination = resolve_symlinks(path)?;
+    let permissions = fs::metadata(&destination)
+        .ok()
+        .map(|metadata| metadata.permissions());
+    replace_atomically(&destination, payload, permissions)
+}
+
+/// Where `path` ends up once every symbolic link on the way is followed,
+/// including one that dangles: a link to a file not yet created is still
+/// the operator saying where that file lives.
+fn resolve_symlinks(path: &Path) -> Result<PathBuf> {
+    const MAX_HOPS: usize = 40;
+    let mut current = path.to_path_buf();
+    for _ in 0..MAX_HOPS {
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                let target = fs::read_link(&current).map_err(|source| UzeError::Write {
+                    path: current.clone(),
+                    source,
+                })?;
+                current = match current.parent() {
+                    Some(parent) if target.is_relative() => parent.join(target),
+                    _ => target,
+                };
+            }
+            _ => return Ok(current),
+        }
+    }
+    Err(UzeError::Write {
+        path: path.to_path_buf(),
+        source: std::io::Error::other("too many levels of symbolic links"),
+    })
+}
+
+fn replace_atomically(
+    path: &Path,
+    payload: &[u8],
+    permissions: Option<fs::Permissions>,
+) -> Result<()> {
     let _span =
         tracing::debug_span!("persistence.write", path = %path.display(), bytes = payload.len())
             .entered();
@@ -89,6 +140,13 @@ pub fn write_atomic(path: &Path, payload: &[u8]) -> Result<()> {
             source,
         })?;
     let result = (|| {
+        if let Some(permissions) = permissions {
+            file.set_permissions(permissions)
+                .map_err(|source| UzeError::Write {
+                    path: temporary.clone(),
+                    source,
+                })?;
+        }
         file.write_all(payload).map_err(|source| UzeError::Write {
             path: temporary.clone(),
             source,
@@ -265,6 +323,59 @@ pub(crate) fn try_lock_exclusive(_file: &File) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_preserving_write_goes_through_a_symlink_and_keeps_the_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = uze_testkit::temp::scratch("preserving-write");
+        let dotfiles = root.join("dotfiles");
+        fs::create_dir_all(&dotfiles).unwrap();
+        let real = dotfiles.join("zshrc");
+        fs::write(&real, "export TOKEN=secret\n").unwrap();
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o600)).unwrap();
+        let link = root.join(".zshrc");
+        std::os::unix::fs::symlink("dotfiles/zshrc", &link).unwrap();
+
+        write_atomic_preserving(&link, b"export TOKEN=secret\nexport PATH=x\n").unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read_to_string(&real).unwrap(),
+            "export TOKEN=secret\nexport PATH=x\n"
+        );
+        assert_eq!(
+            fs::metadata(&real).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_preserving_write_through_a_dangling_symlink_creates_its_target() {
+        let root = uze_testkit::temp::scratch("preserving-dangling");
+        fs::create_dir_all(root.join("dotfiles")).unwrap();
+        let link = root.join("AGENTS.md");
+        std::os::unix::fs::symlink(root.join("dotfiles/AGENTS.md"), &link).unwrap();
+
+        write_atomic_preserving(&link, b"hello").unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(root.join("dotfiles/AGENTS.md")).unwrap(), b"hello");
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn lock_blocks_a_concurrent_mutation_attempt() {

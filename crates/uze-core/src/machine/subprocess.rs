@@ -41,10 +41,9 @@ pub fn with_process_group(mut command: Command) -> Command {
 ///
 /// Returning `(status, false)` means the process exited on its own.
 /// Returning `(status, true)` means the deadline was reached: the whole
-/// process group was killed (sweeping `/proc` for stragglers both before and
-/// after reaping, because a descendant forked between the two can otherwise
-/// survive the group signal) and the direct child was reaped so it cannot
-/// stay a zombie.
+/// process group was killed (sweeping `/proc` for stragglers twice, because
+/// a descendant forked between the two can otherwise survive the group
+/// signal) and the direct child was reaped so it cannot stay a zombie.
 pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<(ExitStatus, bool)> {
     let pid = child.id();
     let deadline = Instant::now() + timeout;
@@ -53,21 +52,45 @@ pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<(Ex
             Ok(Some(status)) => return Ok((status, false)),
             Ok(None) if Instant::now() >= deadline => {
                 kill_process_group(pid);
-                let status = child.wait()?;
-                // A descendant forked after the first sweep can still be
-                // alive here; the PGID survives the direct child's death, so
-                // sweep again after reaping.
+                // The second sweep happens while the child is dead but not
+                // yet reaped: until it is, neither its pid nor its group id
+                // can be handed to another process, so both signals can
+                // only reach what this child started.
+                wait_without_reaping(pid);
                 kill_process_group(pid);
+                let status = child.wait()?;
                 return Ok((status, true));
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
             Err(source) => {
                 kill_process_group(pid);
+                let _ = child.wait();
                 return Err(source);
             }
         }
     }
 }
+
+/// Blocks until `pid` has exited, leaving it for [`Child::wait`] to reap.
+#[cfg(unix)]
+fn wait_without_reaping(pid: u32) {
+    let id = libc::id_t::from(pid);
+    // SAFETY: `siginfo_t` is plain data the kernel fills in; zeroed is a
+    // valid value for it.
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    loop {
+        // SAFETY: `info` outlives the call, and `WNOWAIT` leaves the child
+        // for `Child::wait` to reap.
+        let outcome =
+            unsafe { libc::waitid(libc::P_PID, id, &mut info, libc::WEXITED | libc::WNOWAIT) };
+        if outcome == 0 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+            return;
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn wait_without_reaping(_pid: u32) {}
 
 /// Kills a whole process group — the process plus any descendant it started.
 ///
@@ -82,8 +105,24 @@ pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<(Ex
 /// the whole WSL session down whenever a timed-out child's pid started with
 /// `1`. The sweep is kept as a belt-and-braces pass for a descendant that
 /// left the group (`setsid`) between the two signals.
+///
+/// Only for a child not yet reaped: it also signals `pid` itself. Once the
+/// child has been waited on, use [`kill_reaped_process_group`].
 #[cfg(unix)]
 pub fn kill_process_group(pid: u32) {
+    signal_group(pid, true);
+}
+
+/// [`kill_process_group`] for a child already reaped — the group a
+/// descendant still holding a pipe belongs to. Its pid is no longer this
+/// process's to signal: the kernel may have handed it to anybody.
+#[cfg(unix)]
+pub fn kill_reaped_process_group(pid: u32) {
+    signal_group(pid, false);
+}
+
+#[cfg(unix)]
+fn signal_group(pid: u32, leader_unreaped: bool) {
     // `kill(0)` / `kill(-1)` would target our own group / every process we
     // own. No child ever has such a pid; refuse rather than risk it.
     let Ok(pgid) = libc::pid_t::try_from(pid) else {
@@ -97,7 +136,9 @@ pub fn kill_process_group(pid: u32) {
         libc::kill(-pgid, libc::SIGKILL);
         // Also signal the direct child by pid, in case it changed its own
         // process group before the group signal landed.
-        libc::kill(pgid, libc::SIGKILL);
+        if leader_unreaped {
+            libc::kill(pgid, libc::SIGKILL);
+        }
     }
     for member in process_group_members(pid) {
         if let Ok(member) = libc::pid_t::try_from(member)
@@ -116,6 +157,11 @@ pub fn kill_process_group(pid: u32) {
     let _ = Command::new("taskkill")
         .args(["/F", "/T", "/PID", &pid.to_string()])
         .status();
+}
+
+#[cfg(not(unix))]
+pub fn kill_reaped_process_group(pid: u32) {
+    kill_process_group(pid);
 }
 
 /// Reads `/proc` directly (rather than shelling out to `ps --pgid`) to list
@@ -313,7 +359,7 @@ impl Drain {
             return Stream::Read { bytes, dropped };
         }
         if !*swept {
-            kill_process_group(pid);
+            kill_reaped_process_group(pid);
             *swept = true;
         }
         match self.answer.recv_timeout(READER_GRACE) {

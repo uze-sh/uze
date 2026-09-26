@@ -290,6 +290,12 @@ pub enum UzeError {
     #[error("{markers} at {0}", markers = crate::text_region::MALFORMED_MARKERS)]
     ManagedRegionConflict(PathBuf),
     #[error(
+        "the instructions for `{region}` contain a line UZE uses as a region marker \
+         (`<!-- uze:begin …` / `<!-- uze:end …`); remove it from the plugin's content \
+         ({path} was left untouched)"
+    )]
+    ManagedRegionContentCarriesMarker { region: String, path: PathBuf },
+    #[error(
         "managed text region identity `{0}` contains characters outside the safe marker charset"
     )]
     InvalidRegionIdentity(String),

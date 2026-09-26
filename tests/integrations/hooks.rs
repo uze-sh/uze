@@ -303,12 +303,12 @@ fn claude_merges_into_settings_json_preserving_foreign_content() {
     fs::write(&settings, drifted).unwrap();
     assert_eq!(
         claude.inspect_receipt(&receipt).state,
-        AttachmentState::Missing,
-        "a changed UZE entry is not treated as ours for removal"
+        AttachmentState::Drifted,
+        "a changed UZE entry is drift: absent would forget a receipt whose entry still runs"
     );
     assert_eq!(
         claude.detach_receipt(&receipt).unwrap().state,
-        AttachmentState::Missing,
+        AttachmentState::Drifted,
         "removal refuses drift and preserves the file"
     );
 
@@ -900,6 +900,92 @@ fn opencode_bridge_is_package_scoped_and_regenerates_across_groups() {
     );
     assert!(!bridge.exists(), "the last group removes the owned file");
     let _ = fs::remove_dir_all(_root);
+}
+
+fn two_observing_groups(label: &str) -> (PathBuf, UzeHome, Vec<Resource>) {
+    let (root, _resources) = hook_package(
+        label,
+        &manifest_with(
+            r#""PreToolUse":[{"id":"observe-first","matcher":"shell","hooks":[{"type":"command","command":"first"}]},{"id":"observe-second","matcher":"shell","hooks":[{"type":"command","command":"second"}]}]"#,
+        ),
+    );
+    let home = UzeHome::at(root.join("uze"));
+    ingest_package(&home, &root.join("pkg"));
+    let resources = stored_resources(&home, "hook-demo");
+    (root, home, resources)
+}
+
+/// Inspection regenerates the bridge in manifest order, so attach has to
+/// write it in that order too, whichever group happens to attach last.
+#[test]
+fn opencode_bridge_does_not_depend_on_the_order_its_groups_attach_in() {
+    let (root, home, resources) = two_observing_groups("opencode-attach-order");
+    let integration = opencode(&root);
+    let mut receipts = Vec::new();
+    for id in ["observe-second", "observe-first"] {
+        let receipt = integration
+            .attach_receipt(hook_resource(&resources, id))
+            .unwrap()
+            .unwrap();
+        state::record_receipt(&home, receipt.clone()).unwrap();
+        receipts.push(receipt);
+    }
+    for receipt in &receipts {
+        assert_eq!(
+            integration.inspect_receipt(receipt).state,
+            AttachmentState::Matched,
+            "{:?}",
+            integration.inspect_receipt(receipt).reason
+        );
+    }
+    let source = fs::read_to_string(root.join("config/plugins/hooks-hook-demo@local.ts")).unwrap();
+    assert!(
+        source.find("observe-first").unwrap() < source.find("observe-second").unwrap(),
+        "manifest order"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The bridge is generated tier: a runtime an earlier build wrote around
+/// the same groups is still UZE's to remove. Groups that differ from the
+/// Store's are somebody's edit, and stay drift.
+#[test]
+fn an_opencode_bridge_an_earlier_build_wrote_still_removes() {
+    let (root, home, resources) = two_observing_groups("opencode-stale-bridge");
+    let integration = opencode(&root);
+    let first = integration
+        .attach_receipt(hook_resource(&resources, "observe-first"))
+        .unwrap()
+        .unwrap();
+    state::record_receipt(&home, first.clone()).unwrap();
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    let current = fs::read_to_string(&bridge).unwrap();
+    let groups = current
+        .lines()
+        .find(|line| line.starts_with("const GROUPS = "))
+        .unwrap();
+
+    fs::write(&bridge, current.replace(groups, "const GROUPS = [];")).unwrap();
+    assert_eq!(
+        integration.inspect_receipt(&first).state,
+        AttachmentState::Drifted,
+        "groups the Store does not declare are an edit"
+    );
+
+    let earlier = format!(
+        "// Generated from hooks.json — do not edit; regenerate instead.\n{groups}\nexport default {{}};\n"
+    );
+    fs::write(&bridge, earlier).unwrap();
+    assert_eq!(
+        integration.inspect_receipt(&first).state,
+        AttachmentState::Matched
+    );
+    assert_eq!(
+        integration.detach_receipt(&first).unwrap().state,
+        AttachmentState::Missing
+    );
+    assert!(!bridge.exists(), "the last group removes the owned file");
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

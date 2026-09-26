@@ -143,6 +143,10 @@ pub struct DetectionCache {
     /// Captured so every fingerprint can skip it — see `resolve_candidate`.
     shims_dir: PathBuf,
     memo: std::sync::Mutex<HashMap<&'static str, HarnessDetection>>,
+    /// The file as first read by this instance. A miss here is answered by
+    /// a live probe, never by reading again: every harness asked about in
+    /// one command would otherwise parse the whole file once each.
+    on_disk: std::sync::OnceLock<OnDiskCache>,
 }
 
 impl DetectionCache {
@@ -151,6 +155,7 @@ impl DetectionCache {
             path: home.harness_detection_cache_path(),
             shims_dir: home.shims_dir(),
             memo: std::sync::Mutex::new(HashMap::new()),
+            on_disk: std::sync::OnceLock::new(),
         }
     }
 
@@ -162,6 +167,7 @@ impl DetectionCache {
             // `PATH`, so no shim directory can be in the way.
             shims_dir: PathBuf::from("/nonexistent-shims"),
             memo: std::sync::Mutex::new(HashMap::new()),
+            on_disk: std::sync::OnceLock::new(),
         }
     }
 
@@ -183,7 +189,7 @@ impl DetectionCache {
         {
             return Some(detection.clone());
         }
-        let on_disk = OnDiskCache::load(&self.path);
+        let on_disk = self.on_disk.get_or_init(|| OnDiskCache::load(&self.path));
         let Some(entry) = on_disk.entries.get(integration_id) else {
             tracing::debug!(
                 integration = integration_id,

@@ -11,6 +11,7 @@
 
 use std::{
     fs,
+    ops::ControlFlow,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::mpsc,
@@ -21,7 +22,7 @@ use std::{
 use super::forge::{self, Access, Transport};
 use crate::{
     error::{Result, UzeError},
-    subprocess::{kill_process_group, read_bounded, wait_with_timeout, with_process_group},
+    subprocess::{kill_reaped_process_group, read_bounded, wait_with_timeout, with_process_group},
 };
 
 /// SSH that neither waits on a prompt nor offers a key to a host the
@@ -178,8 +179,11 @@ pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Re
     // pathspecs), so the guard is the only thing standing between a value
     // Git printed and a value Git parses as an option.
     reject_option_shaped(&commit, "resolved commit")?;
+    assert_tree_within_size_budget(Reach::LOCAL, destination, &commit, None)?;
     run(&["checkout", "--detach", &commit], Some(destination))?;
 
+    // What the tree declared is what a checkout writes, so this only
+    // answers for whatever the listing could not see.
     assert_within_size_budget(destination)?;
 
     // The repository's own metadata is not package content, and leaving it in
@@ -275,7 +279,74 @@ fn sole_remote_branch(checkout: &Path) -> Option<String> {
     }
 }
 
-fn assert_within_size_budget(root: &Path) -> Result<()> {
+/// Refuses a checkout of `commit` — or of `subdirectory` within it — whose
+/// files add up past [`MAX_MATERIALIZED_BYTES`], before a byte of it is
+/// written: the tree already says how large every blob is.
+///
+/// `reach` is how a partial repository fetches a blob the listing has to
+/// size, the same access its checkout would use.
+pub(super) fn assert_tree_within_size_budget(
+    reach: Reach,
+    repository: &Path,
+    commit: &str,
+    subdirectory: Option<&str>,
+) -> Result<()> {
+    if tree_bytes(reach, repository, commit, subdirectory)? > MAX_MATERIALIZED_BYTES {
+        return Err(UzeError::AcquisitionFailed(format!(
+            "materialized repository exceeds {MAX_MATERIALIZED_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+/// The bytes a checkout of `commit`, or of `subdirectory` within it, would
+/// write — counted only until they pass the budget, which is all the
+/// answer needs.
+///
+/// Streamed: a tree listing grows with the file count, not the byte count,
+/// so a repository well within budget can still list past any output cap.
+fn tree_bytes(
+    reach: Reach,
+    repository: &Path,
+    commit: &str,
+    subdirectory: Option<&str>,
+) -> Result<u64> {
+    reject_option_shaped(commit, "commit")?;
+    let mut arguments = vec!["--literal-pathspecs", "ls-tree", "-r", "-l", "-z", commit];
+    if let Some(subdirectory) = subdirectory {
+        arguments.extend(["--", subdirectory]);
+    }
+    run_records(
+        reach,
+        &arguments,
+        Some(repository),
+        0u64,
+        |total, record| {
+            *total = total.saturating_add(record_size(record));
+            if *total > MAX_MATERIALIZED_BYTES {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        },
+    )
+}
+
+/// The size an `ls-tree -l` record declares — `<mode> <type> <object>
+/// <size>\t<path>` — with `-` (what is no blob) counted as nothing.
+fn record_size(record: &[u8]) -> u64 {
+    let described = record
+        .split(|byte| *byte == b'\t')
+        .next()
+        .unwrap_or_default();
+    std::str::from_utf8(described)
+        .ok()
+        .and_then(|described| described.split_whitespace().nth(3))
+        .and_then(|size| size.parse().ok())
+        .unwrap_or(0)
+}
+
+pub(super) fn assert_within_size_budget(root: &Path) -> Result<()> {
     fn total(path: &Path, accumulated: &mut u64) -> Result<()> {
         for entry in fs::read_dir(path).map_err(|source| UzeError::Read {
             path: path.to_path_buf(),
@@ -373,6 +444,88 @@ pub(super) fn run_as(
         exit = tracing::field::Empty
     );
     let _entered = span.enter();
+    let command = git_command(reach, arguments, working_directory);
+    let mut child = with_process_group(command)
+        .spawn()
+        .map_err(|error| UzeError::AcquisitionFailed(format!("could not run `git`: {error}")))?;
+    let Some(mut stdout) = child.stdout.take() else {
+        return Err(UzeError::AcquisitionFailed(
+            "captured git stdout was not piped".to_owned(),
+        ));
+    };
+    let Some(mut stderr) = child.stderr.take() else {
+        return Err(UzeError::AcquisitionFailed(
+            "captured git stderr was not piped".to_owned(),
+        ));
+    };
+    let deadline = Instant::now() + COMMAND_TIMEOUT;
+    let timed_out_error = || {
+        UzeError::AcquisitionFailed(format!(
+            "`git {}` timed out",
+            arguments.first().copied().unwrap_or("command")
+        ))
+    };
+    // Readers report through a channel rather than a bare `wait_with_output`
+    // call: `git` itself can write more than the OS pipe buffer before
+    // exiting (a large `for-each-ref`/`log` listing, a verbose failure), and
+    // nothing was draining the pipes while `wait_with_timeout` below polls
+    // — `git`'s own write() would then block on the full buffer, so it never
+    // reaches exit, and the stall gets misreported as a timeout rather than
+    // what it actually is: backpressure from an unread pipe.
+    let (stdout_tx, stdout_rx) = mpsc::channel();
+    let (stderr_tx, stderr_rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = stdout_tx.send(read_bounded(&mut stdout, GIT_OUTPUT_CAP));
+    });
+    thread::spawn(move || {
+        let _ = stderr_tx.send(read_bounded(&mut stderr, GIT_OUTPUT_CAP));
+    });
+    let (status, timed_out) = wait_with_timeout(&mut child, COMMAND_TIMEOUT).map_err(|error| {
+        UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
+    })?;
+    span.record("exit", status.code().unwrap_or(-1));
+    if timed_out {
+        tracing::warn!("git timed out");
+        return Err(timed_out_error());
+    }
+    // `git` itself exited, but the same reasoning as above applies once more
+    // if it forked a helper (a credential helper, a submodule hook despite
+    // `core.hooksPath=/dev/null`) that inherited and still holds a pipe
+    // open: bound the wait for the readers by what remains of the deadline
+    // instead of joining unconditionally.
+    let remaining = || deadline.saturating_duration_since(Instant::now());
+    let (stdout_bytes, stdout_dropped) = match stdout_rx.recv_timeout(remaining()) {
+        Ok(result) => result,
+        Err(_) => {
+            kill_reaped_process_group(child.id());
+            return Err(timed_out_error());
+        }
+    };
+    let (stderr_bytes, _) = match stderr_rx.recv_timeout(remaining()) {
+        Ok(result) => result,
+        Err(_) => {
+            kill_reaped_process_group(child.id());
+            return Err(timed_out_error());
+        }
+    };
+    if !status.success() {
+        return Err(failure(arguments, &stderr_bytes));
+    }
+
+    // `read_bounded` keeps the tail, and the tail of a listing read as the
+    // whole of it is an answer that is wrong without looking wrong.
+    if stdout_dropped > 0 {
+        return Err(UzeError::AcquisitionFailed(format!(
+            "`git {}` wrote more than {GIT_OUTPUT_CAP} bytes",
+            arguments.first().copied().unwrap_or("command")
+        )));
+    }
+    Ok(String::from_utf8_lossy(&stdout_bytes).into_owned())
+}
+
+/// The one `git` invocation [`run_as`] and [`run_records`] both spawn: the
+/// stripped environment, the pushed configuration and piped output.
+fn git_command(reach: Reach, arguments: &[&str], working_directory: Option<&Path>) -> Command {
     let mut command = Command::new("git");
     match reach.access {
         Access::Local | Access::Anonymous => {
@@ -423,18 +576,60 @@ pub(super) fn run_as(
     if let Some(directory) = working_directory {
         command.current_dir(directory);
     }
+    command
+}
 
+/// What a failed invocation reports, from what it said on stderr.
+///
+/// Git echoes the URL it was given. A rejected credential-bearing URL never
+/// reaches this far, but a redirect or an embedded token in some other
+/// position still must not survive into an error a user pastes into an
+/// issue.
+fn failure(arguments: &[&str], stderr_bytes: &[u8]) -> UzeError {
+    let complaint = String::from_utf8_lossy(stderr_bytes);
+    let complaint = complaint.trim();
+    if cannot_resolve_host(complaint) {
+        return UzeError::RepositoryOffline {
+            detail: redact(complaint),
+        };
+    }
+    if refused_for_access(complaint) {
+        return UzeError::RepositoryAccessRefused {
+            detail: redact(complaint),
+        };
+    }
+    UzeError::AcquisitionFailed(redact(&format!(
+        "`git {}` failed: {}",
+        arguments.first().copied().unwrap_or("command"),
+        complaint
+    )))
+}
+
+/// [`run_as`] for a `-z` listing that may be longer than any cap: each
+/// NUL-terminated record is handed to `fold` as it arrives, and nothing but
+/// `state` is kept. `fold` answering [`ControlFlow::Break`] stops the
+/// reading — the pipe is dropped and `git` ends on its next write — and the
+/// state so far is the answer, whatever `git` exits with.
+fn run_records<T: Send + 'static>(
+    reach: Reach,
+    arguments: &[&str],
+    working_directory: Option<&Path>,
+    mut state: T,
+    mut fold: impl FnMut(&mut T, &[u8]) -> ControlFlow<()> + Send + 'static,
+) -> Result<T> {
+    let span = tracing::info_span!(
+        "acquisition.git",
+        args = %arguments.join(" "),
+        exit = tracing::field::Empty
+    );
+    let _entered = span.enter();
+    let command = git_command(reach, arguments, working_directory);
     let mut child = with_process_group(command)
         .spawn()
         .map_err(|error| UzeError::AcquisitionFailed(format!("could not run `git`: {error}")))?;
-    let Some(mut stdout) = child.stdout.take() else {
+    let (Some(mut stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
         return Err(UzeError::AcquisitionFailed(
-            "captured git stdout was not piped".to_owned(),
-        ));
-    };
-    let Some(mut stderr) = child.stderr.take() else {
-        return Err(UzeError::AcquisitionFailed(
-            "captured git stderr was not piped".to_owned(),
+            "captured git output was not piped".to_owned(),
         ));
     };
     let deadline = Instant::now() + COMMAND_TIMEOUT;
@@ -444,17 +639,32 @@ pub(super) fn run_as(
             arguments.first().copied().unwrap_or("command")
         ))
     };
-    // Readers report through a channel rather than a bare `wait_with_output`
-    // call: `git` itself can write more than the OS pipe buffer before
-    // exiting (a large `for-each-ref`/`log` listing, a verbose failure), and
-    // nothing was draining the pipes while `wait_with_timeout` below polls
-    // — `git`'s own write() would then block on the full buffer, so it never
-    // reaches exit, and the stall gets misreported as a timeout rather than
-    // what it actually is: backpressure from an unread pipe.
     let (stdout_tx, stdout_rx) = mpsc::channel();
     let (stderr_tx, stderr_rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = stdout_tx.send(read_bounded(&mut stdout, GIT_OUTPUT_CAP));
+        use std::io::Read;
+        let mut buffer = [0u8; 64 * 1024];
+        let mut pending: Vec<u8> = Vec::new();
+        let stopped = 'reading: loop {
+            let read = match stdout.read(&mut buffer) {
+                Ok(0) => break false,
+                Ok(read) => read,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break false,
+            };
+            pending.extend_from_slice(&buffer[..read]);
+            let mut consumed = 0;
+            while let Some(end) = pending[consumed..].iter().position(|byte| *byte == 0) {
+                let record = &pending[consumed..consumed + end];
+                consumed += end + 1;
+                if fold(&mut state, record).is_break() {
+                    break 'reading true;
+                }
+            }
+            pending.drain(..consumed);
+        };
+        let stopped = stopped || (!pending.is_empty() && fold(&mut state, &pending).is_break());
+        let _ = stdout_tx.send((state, stopped));
     });
     thread::spawn(move || {
         let _ = stderr_tx.send(read_bounded(&mut stderr, GIT_OUTPUT_CAP));
@@ -467,50 +677,22 @@ pub(super) fn run_as(
         tracing::warn!("git timed out");
         return Err(timed_out_error());
     }
-    // `git` itself exited, but the same reasoning as above applies once more
-    // if it forked a helper (a credential helper, a submodule hook despite
-    // `core.hooksPath=/dev/null`) that inherited and still holds a pipe
-    // open: bound the wait for the readers by what remains of the deadline
-    // instead of joining unconditionally.
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    let (stdout_bytes, _) = match stdout_rx.recv_timeout(remaining) {
-        Ok(result) => result,
-        Err(_) => {
-            kill_process_group(child.id());
-            return Err(timed_out_error());
-        }
+    let remaining = || deadline.saturating_duration_since(Instant::now());
+    let Ok((state, stopped)) = stdout_rx.recv_timeout(remaining()) else {
+        kill_reaped_process_group(child.id());
+        return Err(timed_out_error());
     };
-    let (stderr_bytes, _) = match stderr_rx.recv_timeout(remaining) {
-        Ok(result) => result,
-        Err(_) => {
-            kill_process_group(child.id());
-            return Err(timed_out_error());
-        }
+    if stopped {
+        return Ok(state);
+    }
+    let Ok((stderr_bytes, _)) = stderr_rx.recv_timeout(remaining()) else {
+        kill_reaped_process_group(child.id());
+        return Err(timed_out_error());
     };
     if !status.success() {
-        // Git echoes the URL it was given. A rejected credential-bearing URL
-        // never reaches this far, but a redirect or an embedded token in some
-        // other position still must not survive into an error a user pastes
-        // into an issue.
-        let complaint = String::from_utf8_lossy(&stderr_bytes);
-        let complaint = complaint.trim();
-        if cannot_resolve_host(complaint) {
-            return Err(UzeError::RepositoryOffline {
-                detail: redact(complaint),
-            });
-        }
-        if refused_for_access(complaint) {
-            return Err(UzeError::RepositoryAccessRefused {
-                detail: redact(complaint),
-            });
-        }
-        return Err(UzeError::AcquisitionFailed(redact(&format!(
-            "`git {}` failed: {}",
-            arguments.first().copied().unwrap_or("command"),
-            complaint
-        ))));
+        return Err(failure(arguments, &stderr_bytes));
     }
-    Ok(String::from_utf8_lossy(&stdout_bytes).into_owned())
+    Ok(state)
 }
 
 /// [`SSH_COMMAND`], sharing one connection per host for a minute when this
@@ -1141,6 +1323,125 @@ mod tests {
                 "accepted {subdirectory}"
             );
         }
+    }
+
+    /// What the size budget is judged on, read off the tree before a
+    /// checkout writes it — and a directory named `a*b` is that directory,
+    /// never a pattern that also takes `ab` with it.
+    #[test]
+    fn a_tree_is_measured_literally_before_it_is_checked_out() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-bytes");
+        fs::create_dir_all(root.join("plugins/a*b")).unwrap();
+        fs::create_dir_all(root.join("plugins/ab")).unwrap();
+        fs::write(root.join("plugins/a*b/x"), [0; 3]).unwrap();
+        fs::write(root.join("plugins/ab/y"), [0; 5000]).unwrap();
+        fs::write(root.join("top"), [0; 10]).unwrap();
+        let git = |arguments: &[&str]| run(arguments, Some(&root)).unwrap();
+        git(&["init", "--quiet"]);
+        git(&["config", "user.email", "t@example.invalid"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["add", "-A"]);
+        git(&["commit", "--quiet", "-m", "sizes"]);
+        let commit = git(&["rev-parse", "HEAD"]).trim().to_owned();
+
+        let measured = |subdirectory| tree_bytes(Reach::LOCAL, &root, &commit, subdirectory);
+        assert_eq!(measured(None).unwrap(), 5013);
+        assert_eq!(measured(Some("plugins/a*b")).unwrap(), 3);
+        assert!(assert_tree_within_size_budget(Reach::LOCAL, &root, &commit, None).is_ok());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A tree of `entries` names, each `name_length` long, every one of them
+    /// the same blob of `blob_size` bytes — so the listing and the declared
+    /// size can be as large as a test needs without writing either.
+    fn repeated_tree(root: &Path, blob_size: usize, entries: usize, name_length: usize) -> String {
+        use std::io::Write;
+        fs::write(root.join("blob"), vec![b'x'; blob_size]).unwrap();
+        let blob = run(&["hash-object", "-w", "blob"], Some(root)).unwrap();
+        let mut listing = String::new();
+        for index in 0..entries {
+            listing.push_str(&format!(
+                "100644 blob {}\t{index:0>name_length$}\n",
+                blob.trim()
+            ));
+        }
+        let mut mktree = Command::new("git")
+            .arg("mktree")
+            .current_dir(root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        mktree
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(listing.as_bytes())
+            .unwrap();
+        let output = mktree.wait_with_output().unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    /// A listing grows with the file count, so one past the output cap
+    /// says nothing about the bytes: it is measured all the same.
+    #[test]
+    fn a_listing_longer_than_the_output_cap_is_still_measured() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-bytes-long");
+        fs::create_dir_all(&root).unwrap();
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let entries = 40_000;
+        let tree = repeated_tree(&root, 1, entries, 200);
+
+        assert_eq!(
+            tree_bytes(Reach::LOCAL, &root, &tree, None).unwrap(),
+            entries as u64
+        );
+        let listed = run(&["ls-tree", "-r", "-l", "-z", &tree], Some(&root));
+        assert!(
+            listed.is_err(),
+            "the fixture must list past the output cap to prove anything"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_tree_declaring_more_than_the_budget_is_refused_before_checkout() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-bytes-over");
+        fs::create_dir_all(&root).unwrap();
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let mebibyte = 1024 * 1024;
+        let entries = (MAX_MATERIALIZED_BYTES / mebibyte) as usize + 1;
+        let tree = repeated_tree(&root, mebibyte as usize, entries, 8);
+
+        assert!(matches!(
+            assert_tree_within_size_budget(Reach::LOCAL, &root, &tree, None),
+            Err(UzeError::AcquisitionFailed(_))
+        ));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn output_past_the_cap_is_refused_rather_than_read_as_its_tail() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("output-cap");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("large"), vec![b'x'; GIT_OUTPUT_CAP + 1]).unwrap();
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let blob = run(&["hash-object", "-w", "large"], Some(&root)).unwrap();
+
+        assert!(matches!(
+            run(&["cat-file", "-p", blob.trim()], Some(&root)),
+            Err(UzeError::AcquisitionFailed(_))
+        ));
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
