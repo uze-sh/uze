@@ -73,5 +73,5 @@
 
 ## 10. Gate
 
-- [ ] 10.1 `make check` green; `openspec validate --all --strict` green.
+- [x] 10.1 `make check` green; `openspec validate --all --strict` green.
 - [ ] 10.2 The operator validates by hand; then a journey in `04-workspace` proving a hand-made checkout survives an agent launch and a split/join round trip, checked against Git and the process table rather than UZE's output.
