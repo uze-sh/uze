@@ -94,11 +94,7 @@ impl Plugins<'_> {
         let active_name = installed.active_name.clone();
         let bare_name = installed.id.plugin_name().to_owned();
 
-        let previous = {
-            let resources = uze_core::engine::package_resources(&installed)?;
-            let resources: Vec<&uze_core::Resource> = resources.iter().collect();
-            trust::executable_capabilities(&resources)
-        };
+        let previous = executable_capabilities_of(&installed)?;
         self.0
             .authorize(&materialized, authority, &previous, true)?;
 
@@ -115,14 +111,21 @@ impl Plugins<'_> {
         // in scratch nobody else can see.
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         // The package may have moved under us while the network was busy.
-        // Re-read it rather than acting on what was true before the fetch.
+        // Re-read it rather than acting on what was true before the fetch —
+        // including the trust answer, which was given against what it could
+        // already execute then.
         let installed = self.0.package_by_name(id)?;
+        let trusted_now = executable_capabilities_of(&installed)?;
+        if trusted_now != previous {
+            self.0
+                .authorize(&materialized, authority, &trusted_now, true)?;
+        }
 
         // What is left can still fail with the package already removed — the
         // ingest running out of disk, a revision whose environment will not
         // compose — so the installed bytes are kept aside until the install
         // below has answered for them.
-        let superseded = self.0.home.superseded_dir();
+        let superseded = self.0.home.superseded_dir(&installed.id);
         let _ = fs::remove_dir_all(&superseded);
         self.0.store.copy_package_to(&installed.id, &superseded)?;
 
@@ -203,12 +206,26 @@ impl Plugins<'_> {
     /// that fails, the restore fails too, and the caller keeps the
     /// superseded copy and says where it is rather than telling the
     /// operator to install a revision the machine no longer has.
+    ///
+    /// A failure after the ingest leaves the new revision registered under
+    /// the same id, and the Store is idempotent by origin: ingesting the old
+    /// bytes over it would hand the new revision back as if restored. So
+    /// the half-installed one is taken off first, under the same ownership
+    /// rules any removal obeys.
     fn reinstate(
         &self,
         installed: &uze_core::StoredPackage,
         superseded: &Path,
         requested_active_name: Option<&str>,
     ) -> Result<()> {
+        if let RemovePluginReport::Blocked { plan, .. } =
+            self.detach_and_remove(installed.id.as_str(), true)?
+        {
+            return Err(UzeError::LifecycleBlocked(format!(
+                "what the failed update left of `{}` could not be taken off safely ({plan:?})",
+                installed.id.as_str()
+            )));
+        }
         let recovered =
             MaterializedPackage::borrowed(superseded.to_path_buf(), installed.provenance.clone());
         self.install_authorized(
@@ -219,6 +236,14 @@ impl Plugins<'_> {
         )
         .map(|_| ())
     }
+}
+
+fn executable_capabilities_of(
+    package: &uze_core::StoredPackage,
+) -> Result<Vec<trust::ExecutableCapability>> {
+    let resources = uze_core::engine::package_resources(package)?;
+    let resources: Vec<&uze_core::Resource> = resources.iter().collect();
+    Ok(trust::executable_capabilities(&resources))
 }
 
 impl Plugins<'_> {

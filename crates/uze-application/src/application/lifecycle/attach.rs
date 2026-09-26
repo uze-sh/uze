@@ -405,3 +405,88 @@ fn artifact_owned_target(receipt: &AttachmentReceipt) -> PathBuf {
         _ => receipt.artifact.location(),
     }
 }
+
+impl UzeApplication {
+    /// Refreshes every integration's derived view of the installed package
+    /// set. Collects failures instead of propagating them: publication is not
+    /// part of package ownership, so one harness failing to rebuild its view
+    /// leaves the package installed and the other harnesses unaffected.
+    ///
+    /// An installed set that cannot be read rebuilds nothing, and says so
+    /// for every integration.
+    pub(crate) fn republish_all(&self) -> Vec<PublicationOutcome> {
+        let packages = match self.installed_packages_checked() {
+            Ok(packages) => packages,
+            Err(error) => {
+                return self
+                    .integrations
+                    .iter()
+                    .map(|integration| PublicationOutcome {
+                        integration: integration.id().to_owned(),
+                        error: Some(format!("the installed plugins could not be read: {error}")),
+                    })
+                    .collect();
+            }
+        };
+        self.integrations
+            .iter()
+            .map(|integration| PublicationOutcome {
+                integration: integration.id().to_owned(),
+                error: {
+                    let _span = tracing::info_span!(
+                        "integration.republish",
+                        integration = integration.id()
+                    )
+                    .entered();
+                    integration
+                        .republish_packages(&packages)
+                        .err()
+                        .map(|error| error.to_string())
+                },
+            })
+            .collect()
+    }
+
+    /// `republish_all` for a caller with no report to carry the outcome in:
+    /// a view that failed to rebuild is still said, in the log.
+    pub(crate) fn republish_all_reporting(&self) {
+        for outcome in self.republish_all() {
+            if let Some(error) = outcome.error {
+                tracing::warn!(
+                    integration = %outcome.integration,
+                    %error,
+                    "a derived view could not be rebuilt"
+                );
+            }
+        }
+    }
+
+    /// `republish_all`, for the integrations whose derived view no longer
+    /// matches `packages`: one outcome per view it rebuilt.
+    pub(crate) fn republish_unpublished(
+        &self,
+        packages: &[StoredPackage],
+    ) -> Vec<PublicationOutcome> {
+        self.integrations
+            .iter()
+            .filter(|integration| {
+                matches!(
+                    integration.publication(packages),
+                    PublicationStatus::Unpublished(_)
+                )
+            })
+            .map(|integration| {
+                let _span =
+                    tracing::info_span!("integration.republish", integration = integration.id())
+                        .entered();
+                PublicationOutcome {
+                    integration: integration.id().to_owned(),
+                    error: integration
+                        .republish_packages(packages)
+                        .err()
+                        .map(|error| error.to_string()),
+                }
+            })
+            .collect()
+    }
+}

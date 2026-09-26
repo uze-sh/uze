@@ -142,13 +142,24 @@ impl LockedPlugin {
     /// The entry for a plugin just resolved. `reproducible` says whether
     /// the bytes came from an immutable source and may therefore be
     /// pinned; `root` is where they landed.
-    pub fn resolved(marketplace: &str, root: &Path, reproducible: bool) -> Self {
-        Self {
+    ///
+    /// Fails when pinnable bytes cannot be read: a lock written without the
+    /// digest they were owed would reproduce anything a teammate fetched.
+    pub fn resolved(marketplace: &str, root: &Path, reproducible: bool) -> Result<Self> {
+        let integrity = if reproducible {
+            Some(
+                crate::digest::tree_sha256(root).map_err(|source| UzeError::Read {
+                    path: root.to_path_buf(),
+                    source,
+                })?,
+            )
+        } else {
+            None
+        };
+        Ok(Self {
             marketplace: marketplace.to_owned(),
-            integrity: reproducible
-                .then(|| crate::digest::tree_sha256(root).ok())
-                .flatten(),
-        }
+            integrity,
+        })
     }
 }
 

@@ -617,7 +617,7 @@ never collected or reused whatever its record says — is domain, and a
 caller getting the order wrong hands one agent's slot to another.
 
 > `tests/acceptance/engine.rs::one_reconciliation_pass_answers_a_repository_once_however_it_is_named`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::a_delivered_tasks_slot_stays_its_agents_while_a_pane_sits_in_it`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_delivered_tasks_slot_stays_its_agents_while_a_pane_sits_in_it`
 
 ### A task document this build cannot read never stops the project
 
@@ -642,8 +642,8 @@ what separates "unreadable" from "read while somebody was publishing it".
 
 > `crates/uze-core/src/project/task.rs::tests::an_older_schema_is_named_by_its_version_rather_than_by_a_missing_field`
 > `crates/uze-core/src/project/task.rs::tests::a_document_this_build_cannot_read_is_set_aside_rather_than_refused`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::an_unreadable_document_never_stops_an_agent_being_created`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::a_document_that_cannot_be_read_is_recovered_from_and_said`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_unreadable_document_never_stops_an_agent_being_created`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_document_that_cannot_be_read_is_recovered_from_and_said`
 
 ### One task document, one writer at a time
 
@@ -668,9 +668,9 @@ whose task could not be recorded gives the slot back and answers
 `Unisolated`.
 
 > `crates/uze-core/src/project/task.rs::tests::overlapping_mutations_do_not_erase_each_other`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::an_evaluation_that_overlaps_a_delivery_does_not_erase_it`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::a_delivery_that_could_not_be_recorded_says_so`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::a_placement_that_could_not_be_recorded_gives_the_slot_back`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_evaluation_that_overlaps_a_delivery_does_not_erase_it`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_delivery_that_could_not_be_recorded_says_so`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_placement_that_could_not_be_recorded_gives_the_slot_back`
 
 ### A delivery holds the document to claim its task and to record it, never while it works
 
@@ -695,9 +695,9 @@ reason, never with nothing: an empty answer is what the client renders as
 "nothing ready", which is the one thing a press on a visible, ready task
 does not mean.
 
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::a_gate_that_runs_long_does_not_hold_the_tasks_document`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::a_delivery_that_could_not_claim_its_task_says_why`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::a_task_a_delivery_claimed_and_never_answered_for_is_left_alone`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_gate_that_runs_long_does_not_hold_the_tasks_document`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_delivery_that_could_not_claim_its_task_says_why`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_task_a_delivery_claimed_and_never_answered_for_is_left_alone`
 
 ---
 
@@ -981,10 +981,10 @@ they left after any number of agents have run. Where a slot cannot be
 acquired the agent is not started and the reason is said: the primary is
 never a fallback.
 
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::the_first_agent_is_isolated`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::three_agents_get_three_distinct_checkouts_and_none_is_the_primary`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::the_operators_uncommitted_work_survives_agents_launching`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::a_repository_without_a_commit_refuses_a_slot_and_starts_nothing`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::the_first_agent_is_isolated`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::three_agents_get_three_distinct_checkouts_and_none_is_the_primary`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::the_operators_uncommitted_work_survives_agents_launching`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_repository_without_a_commit_refuses_a_slot_and_starts_nothing`
 > `src/ui/orchestrator/tests.rs::workspace_tests::an_agent_in_a_slot_is_left_unmarked_and_says_where_nowhere`
 
 ### An agent in the root never acquires a slot and never creates a branch (`add-space-kinds`)
@@ -997,10 +997,10 @@ commit, the cap reached — is refused and starts nothing: the operator's
 tree is never a fallback. Such an agent ends when no live tab was launched
 for it, whether or not its root is a repository.
 
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::an_agent_in_the_root_creates_no_checkout_and_no_branch_and_shares_the_tree`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::a_directory_outside_any_repository_refuses_isolation_and_never_falls_back`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::a_repository_without_a_commit_refuses_a_slot_and_starts_nothing`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::an_agent_in_the_root_ends_when_nothing_echoes_it_and_survives_while_something_does`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::an_agent_in_the_root_creates_no_checkout_and_no_branch_and_shares_the_tree`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_directory_outside_any_repository_refuses_isolation_and_never_falls_back`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_repository_without_a_commit_refuses_a_slot_and_starts_nothing`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::an_agent_in_the_root_ends_when_nothing_echoes_it_and_survives_while_something_does`
 
 ### Isolation is asked of one agent, after it is running (`add-space-kinds`)
 
@@ -1012,11 +1012,11 @@ acquired, refused for an agent that already has one, and it may carry a
 copy of the operator's uncommitted changes across — a copy, so the
 operator's tree is exactly what they left.
 
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::isolating_an_agent_keeps_its_identity_and_gives_it_a_checkout`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::isolating_copies_the_operators_changes_and_leaves_their_tree_alone`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::isolating_without_carrying_leaves_both_trees_as_they_were`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::an_agent_that_cannot_be_isolated_is_left_where_it_is`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::isolating_an_isolated_agent_is_refused`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_an_agent_keeps_its_identity_and_gives_it_a_checkout`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_copies_the_operators_changes_and_leaves_their_tree_alone`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_without_carrying_leaves_both_trees_as_they_were`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_agent_that_cannot_be_isolated_is_left_where_it_is`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_an_isolated_agent_is_refused`
 
 ### A checkout is a slot; a task is what comes and goes
 
@@ -1028,7 +1028,7 @@ ignored artifacts survive. A slot holding work is never reused.
 > `crates/uze-core/src/project/checkout.rs::a_free_slot_is_reused_and_ignored_artifacts_survive`
 > `crates/uze-core/src/project/checkout.rs::a_previous_tasks_edits_never_reach_the_next`
 > `crates/uze-core/src/project/checkout.rs::a_new_directory_appears_only_when_none_is_free_and_the_cap_holds`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::a_delivered_tasks_slot_is_reused_by_the_next_agent`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_delivered_tasks_slot_is_reused_by_the_next_agent`
 
 ### Work in the target is recognized by its patch, not by its commits
 
@@ -1052,7 +1052,7 @@ how far behind the agent starts.
 
 > `crates/uze-core/src/project/landing.rs::the_local_target_is_fast_forwarded_onto_the_remotes`
 > `crates/uze-core/src/project/landing.rs::a_target_carrying_its_own_commits_is_left_alone_and_reported`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::a_new_agent_starts_from_the_target_as_the_remote_has_it`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_new_agent_starts_from_the_target_as_the_remote_has_it`
 
 ### Publication is read from the remote, never from UZE's own records
 
@@ -1071,8 +1071,8 @@ remote, at most once a minute, and never again once answered.
 > `crates/uze-core/src/project/landing.rs::a_branch_its_own_agent_pushed_is_published_and_in_sync`
 > `crates/uze-core/src/project/landing.rs::a_request_the_agent_opened_is_discovered_on_the_evaluation_pass`
 > `crates/uze-core/src/project/landing.rs::the_remote_is_asked_about_a_missing_request_at_most_once_a_minute`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::an_agents_own_push_and_request_are_what_the_delivery_view_reports`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::a_merge_project_never_measures_its_work_against_the_remote`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_agents_own_push_and_request_are_what_the_delivery_view_reports`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_merge_project_never_measures_its_work_against_the_remote`
 
 ### Every surface reads one state, and a delivery in flight is the client's
 
@@ -1159,7 +1159,7 @@ that.
 
 > `crates/uze-core/src/project/landing.rs::readiness_is_read_from_the_checkout`
 > `crates/uze-core/src/project/landing.rs::a_task_without_commits_is_not_delivered`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::evaluation_reads_the_checkout_and_merge_delivers`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::evaluation_reads_the_checkout_and_merge_delivers`
 
 ### The target is written only in deliver, and only by UZE
 
@@ -1201,7 +1201,7 @@ task's commits directly.
 
 > `crates/uze-core/src/project/landing.rs::the_second_task_sees_the_first`
 > `crates/uze-core/src/project/landing.rs::a_live_task_follows_the_target_when_clean_and_is_left_alone_when_dirty`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::evaluation_lets_a_clean_task_follow_the_target`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::evaluation_lets_a_clean_task_follow_the_target`
 
 ### A linked file is ignored by the repository
 
@@ -1624,7 +1624,7 @@ withheld from them: the branch is the operator's, UZE did not cut it, and
 rebasing and pushing it is theirs to ask for.
 
 > `crates/uze-core/src/project/task.rs::tests::the_shape_that_kept_the_state_inside_the_isolation_is_carried_across`
-> `crates/uze-application/src/application/services/tasks.rs::placement_tests::an_agent_in_the_root_creates_no_checkout_and_no_branch_and_shares_the_tree`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::an_agent_in_the_root_creates_no_checkout_and_no_branch_and_shares_the_tree`
 
 ### Preserved work answers for the machine, and resumes into its own project
 
@@ -1633,8 +1633,8 @@ a base, a branch, a checkout and a target, and nothing about a space. So
 the space it was left in can be closed and another opened on the same
 directory under another name, and the work still lands in it.
 
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::work_is_found_in_a_project_this_session_never_opened`
-> `crates/uze-application/src/application/services/tasks.rs::task_service_tests::two_projects_sharing_a_branch_name_stay_distinguishable`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::work_is_found_in_a_project_this_session_never_opened`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::two_projects_sharing_a_branch_name_stay_distinguishable`
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_space_is_matched_by_its_root_whatever_it_is_called`
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_space_rooted_above_the_project_does_not_match_it`
 

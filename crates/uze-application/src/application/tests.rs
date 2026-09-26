@@ -695,8 +695,244 @@ pub(crate) fn an_update_that_fails_after_the_removal_puts_the_revision_back() {
     assert_eq!(restored.id.as_str(), "uze-agent-skill-conformance@alpha");
     assert!(restored.manifest.is_file(), "bytes and all");
     assert!(
-        !app.home.state_dir().join("superseded").exists(),
+        !app.home.superseded_dir(&restored.id).exists(),
         "and nothing is left aside"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A detected harness whose delivery fails once, when told to — after the
+/// ingest, which is the failure an update can only answer by restoring.
+struct DeliveryRefusedOnce {
+    refuse_next: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl IntegrationPort for DeliveryRefusedOnce {
+    fn id(&self) -> &'static str {
+        "refusing-delivery"
+    }
+
+    fn capabilities(&self) -> HarnessCapabilities {
+        HarnessCapabilities::default()
+    }
+
+    fn detect(&self) -> HarnessDetection {
+        HarnessDetection {
+            present: true,
+            version: None,
+        }
+    }
+
+    fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+        ExposurePlan {
+            route: CompatibilityRoute::Adaptable,
+            mechanism: ExposureMechanism::Unsupported {
+                rationale: "test does not attach".to_owned(),
+            },
+            evidence: "test".to_owned(),
+        }
+    }
+
+    fn attach_receipt(&self, _resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+        if self.refuse_next.swap(false, Ordering::SeqCst) {
+            return Err(UzeError::HarnessCommand(
+                "the vendor CLI exited non-zero".to_owned(),
+            ));
+        }
+        Ok(None)
+    }
+}
+
+/// The Store is idempotent by origin, and the new revision was already
+/// registered under the same id when its delivery failed: restoring by
+/// ingesting the old bytes handed the new revision back and called it put
+/// back, then deleted the only copy of the old one.
+#[test]
+pub(crate) fn an_update_whose_delivery_fails_puts_the_previous_bytes_back() {
+    let root = uze_testkit::temp::scratch("update-delivery-restored");
+    let source = root.join("source");
+    uze_testkit::fixtures::copy_tree(&fixture(), &source);
+    fs::write(source.join("REVISION"), "first").unwrap();
+    let refuse_next = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let app = UzeApplication::new(
+        UzeHome::at(root.join("home")),
+        vec![Box::new(DeliveryRefusedOnce {
+            refuse_next: refuse_next.clone(),
+        })],
+    );
+    let acquired =
+        uze_core::acquisition::acquire(&uze_core::PackageSource::local(source.clone())).unwrap();
+    app.plugins()
+        .install_materialized(
+            acquired,
+            "alpha",
+            None,
+            &uze_core::trust::AlwaysTrust,
+            &uze_core::naming::NoNameCollisionAuthority,
+        )
+        .unwrap();
+
+    fs::write(source.join("REVISION"), "second").unwrap();
+    refuse_next.store(true, Ordering::SeqCst);
+    let failure = app
+        .plugins()
+        .update("uze-agent-skill-conformance", &uze_core::trust::AlwaysTrust)
+        .expect_err("the new revision could not be delivered");
+    let UzeError::LifecycleBlocked(reason) = &failure else {
+        panic!("expected a blocked lifecycle, got {failure:?}");
+    };
+    assert!(reason.contains("was put back"), "{reason}");
+
+    let restored = app
+        .package_by_name("uze-agent-skill-conformance")
+        .expect("a revision is installed");
+    assert_eq!(
+        fs::read_to_string(restored.root.join("REVISION")).unwrap(),
+        "first",
+        "the revision put back is the one that was installed"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// What an update keeps aside is the only copy left when its restore
+/// fails, and the operator is told so. Another package's update must not
+/// be what sweeps it away.
+#[test]
+pub(crate) fn an_update_leaves_another_packages_superseded_copy_alone() {
+    let root = uze_testkit::temp::scratch("update-superseded-per-package");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    install_conformance_fixture(&app, "alpha");
+    let other =
+        uze_core::PackageId::from_qualified("other@elsewhere", std::path::Path::new("plugin.json"))
+            .unwrap();
+    let kept = app.home.superseded_dir(&other);
+    fs::create_dir_all(&kept).unwrap();
+    fs::write(kept.join("plugin.json"), "{}").unwrap();
+
+    app.plugins()
+        .update("uze-agent-skill-conformance", &uze_core::trust::AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        kept.join("plugin.json").is_file(),
+        "the other package's kept revision is still there"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A harness that records every view it is asked to publish.
+struct RecordingPublication {
+    published: Arc<std::sync::Mutex<Vec<usize>>>,
+}
+
+impl IntegrationPort for RecordingPublication {
+    fn id(&self) -> &'static str {
+        "recording"
+    }
+
+    fn capabilities(&self) -> HarnessCapabilities {
+        HarnessCapabilities::default()
+    }
+
+    fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+        ExposurePlan {
+            route: CompatibilityRoute::Adaptable,
+            mechanism: ExposureMechanism::Unsupported {
+                rationale: "test does not attach".to_owned(),
+            },
+            evidence: "test".to_owned(),
+        }
+    }
+
+    fn republish_packages(&self, packages: &[StoredPackage]) -> Result<()> {
+        self.published.lock().unwrap().push(packages.len());
+        Ok(())
+    }
+}
+
+/// An unreadable registry lists as nothing, and publishing "nothing" is
+/// an empty catalogue in every harness. `setup` republishes everything, so
+/// it emptied them all.
+#[test]
+pub(crate) fn an_unreadable_registry_publishes_nothing_over_the_views() {
+    let root = uze_testkit::temp::scratch("republish-unreadable-registry");
+    let home = UzeHome::at(&root);
+    home.ensure_layout().unwrap();
+    fs::write(home.registry_path(), "not json").unwrap();
+    let published = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = UzeApplication::new(
+        home,
+        vec![Box::new(RecordingPublication {
+            published: published.clone(),
+        })],
+    );
+
+    let outcomes = app.republish_all();
+
+    assert!(
+        published.lock().unwrap().is_empty(),
+        "no view was rewritten"
+    );
+    assert!(
+        outcomes.iter().all(|outcome| outcome.error.is_some()),
+        "and each one says why: {outcomes:?}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// One harness refusing to be prepared is that harness's failure, reported
+/// in its own entry — never the end of every other harness's setup.
+#[test]
+pub(crate) fn a_harness_that_fails_to_prepare_does_not_stop_the_others() {
+    let root = uze_testkit::temp::scratch("setup-per-harness");
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![
+            Box::new(PreparationRefusedOnce {
+                calls: Arc::new(AtomicUsize::new(0)),
+                refuse_at: Arc::new(AtomicUsize::new(0)),
+            }),
+            Box::new(FakeIntegration::new(
+                "healthy",
+                true,
+                Arc::new(AtomicUsize::new(0)),
+            )),
+        ],
+    );
+
+    let results = app.provision_and_prepare(None);
+
+    assert_eq!(results.len(), 2, "{results:?}");
+    let refused = &results[0];
+    assert!(!refused.configured);
+    assert!(
+        refused
+            .provisioning
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("read-only")),
+        "{refused:?}"
+    );
+    assert!(results[1].configured, "{:?}", results[1]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Bootstrap runs ahead of every command. Another UZE mid-mutation is not
+/// its to race: it skips, and the next command seeds.
+#[test]
+pub(crate) fn bootstrap_skips_while_another_mutation_holds_the_lock() {
+    let root = uze_testkit::temp::scratch("bootstrap-lock-held");
+    let home = UzeHome::at(&root);
+    let app = UzeApplication::new(home.clone(), Vec::new());
+    let held = uze_core::persistence::MutationLock::acquire(&home).unwrap();
+
+    assert!(!app.ensure_default_plugins().unwrap());
+    assert!(app.store.package_ids().unwrap().is_empty());
+
+    drop(held);
+    assert!(
+        app.ensure_default_plugins().unwrap(),
+        "and seeds once it can"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -1349,7 +1585,7 @@ fn provision_and_prepare_writes_through_the_cache_on_success() {
     let fake = FakeIntegration::new("fake-d", true, calls.clone());
     let app = UzeApplication::new(UzeHome::at(&root), vec![Box::new(fake)]);
 
-    let results = app.provision_and_prepare(None).unwrap();
+    let results = app.provision_and_prepare(None);
     assert!(results[0].configured);
     let calls_after_provision = calls.load(Ordering::SeqCst);
     assert!(calls_after_provision >= 1);

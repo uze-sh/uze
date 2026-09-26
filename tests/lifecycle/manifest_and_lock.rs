@@ -759,3 +759,70 @@ fn update_resolves_what_the_manifest_declares_not_what_the_package_requested() {
         "the lock records where the declared ref points now: {locked}"
     );
 }
+
+/// The revision a lock records belongs to the marketplace, so the second
+/// plugin updated from one finds it already moved by the first. Whether a
+/// plugin moved is its own entry's answer, or every plugin after the first
+/// was reported current while its bytes changed.
+#[test]
+fn update_reports_every_plugin_of_one_marketplace_that_moved() {
+    let (application, repository) = project("update-two-plugins");
+    let root = repository.root().to_path_buf();
+    let market = root.parent().unwrap().join("market");
+    marketplace_beside(&repository, &market, "first body");
+    fs::create_dir_all(market.join("plugins/tide/skills/two")).unwrap();
+    fs::write(
+        market.join("plugins/tide/plugin.json"),
+        r#"{"name":"tide","description":"d"}"#,
+    )
+    .unwrap();
+    let write_tide = |body: &str| {
+        fs::write(
+            market.join("plugins/tide/skills/two/SKILL.md"),
+            format!("---\nname: two\ndescription: d\n---\n\n{body}\n"),
+        )
+        .unwrap();
+    };
+    write_tide("first body");
+    fs::write(
+        market.join("marketplace.json"),
+        r#"{"name":"mkt","plugins":[{"name":"flow","source":"./plugins/flow"},{"name":"tide","source":"./plugins/tide"}]}"#,
+    )
+    .unwrap();
+    repository.git_in(&market, &["add", "-A"]);
+    repository.git_in(&market, &["commit", "-m", "tide"]);
+
+    application
+        .marketplace()
+        .add(&format!("file://{}", market.display()))
+        .unwrap();
+    for plugin in ["flow", "tide"] {
+        application
+            .project()
+            .add(
+                plugin,
+                "mkt",
+                &root,
+                &AlwaysTrust,
+                &uze_application::NoNameCollisionAuthority,
+            )
+            .unwrap();
+    }
+
+    write_tide("second body");
+    move_marketplace(&repository, &market, "second body");
+
+    let report = application
+        .project()
+        .update(&root, None, false, &AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        report.outcomes.iter().all(|outcome| matches!(
+            outcome,
+            uze_application::application::UpdateOutcome::Moved { .. }
+        )),
+        "{report:?}"
+    );
+    assert_eq!(report.outcomes.len(), 2, "{report:?}");
+}

@@ -242,6 +242,9 @@ impl Project<'_> {
         }
         let canonical = canonical.unwrap();
 
+        // Taken before the lock is read, so what gets written back is not a
+        // copy another command changed in the meantime.
+        let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         let mut lock = project_lock::load_lock(&canonical)?.unwrap_or_default();
         let global = uze_core::state::marketplace_get(&self.0.home, marketplace)?
             .ok_or_else(|| UzeError::UnknownMarketplace(marketplace.to_owned()))?;
@@ -274,7 +277,6 @@ impl Project<'_> {
         }
 
         // Acquire and ingest (reuses existing lifecycle).
-        let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         let report = self.resolve_into_lock(
             &mut lock,
             plugin,
@@ -291,16 +293,12 @@ impl Project<'_> {
         tracing::info!(target: uze_core::acquisition::git::STEP, step = "lock");
         // A linked marketplace pins nothing, so the lock has no entry —
         // the declaration names the checkout the registry link carries.
-        let checkout = uze_core::state::marketplace_get(&self.0.home, marketplace)?
-            .and_then(|record| record.link)
-            .or_else(|| {
-                uze_core::state::marketplace_get(&self.0.home, marketplace)
-                    .ok()
-                    .flatten()
-                    .and_then(|record| match record.source {
-                        uze_core::PackageSource::Local { path } => Some(path),
-                        _ => None,
-                    })
+        let checkout =
+            uze_core::state::marketplace_get(&self.0.home, marketplace)?.and_then(|record| {
+                record.link.or(match record.source {
+                    uze_core::PackageSource::Local { path } => Some(path),
+                    _ => None,
+                })
             });
         manifest::declare_plugin(
             &canonical,
@@ -447,6 +445,10 @@ impl Project<'_> {
                 .marketplaces
                 .get(&marketplace)
                 .map(|entry| entry.revision.clone());
+            // The revision belongs to the marketplace, so a plugin updated
+            // after another from the same one finds it already moved: its
+            // own entry is what says whether it moved too.
+            let entry_before = lock.plugins.get(&name).cloned();
 
             // Resolved from what *this project declares*, never from the
             // package's own request. A package reproduced from `agents.lock`
@@ -520,14 +522,17 @@ impl Project<'_> {
                 .get(&marketplace)
                 .map(|entry| entry.revision.clone())
                 .unwrap_or_default();
-            outcomes.push(if before.as_deref() == Some(after.as_str()) {
-                UpdateOutcome::AlreadyCurrent { plugin: name }
-            } else {
-                UpdateOutcome::Moved {
-                    plugin: name,
-                    revision: after,
-                }
-            });
+            let entry_moved = lock.plugins.get(&name) != entry_before.as_ref();
+            outcomes.push(
+                if before.as_deref() == Some(after.as_str()) && !entry_moved {
+                    UpdateOutcome::AlreadyCurrent { plugin: name }
+                } else {
+                    UpdateOutcome::Moved {
+                        plugin: name,
+                        revision: after,
+                    }
+                },
+            );
             // Saved per entry: the bytes are already in the Store, and a
             // later failure must not leave the lock denying what this
             // machine now holds.
@@ -942,10 +947,6 @@ impl Project<'_> {
         Ok(PackageSource::Local { path })
     }
 
-    /// Acquires one plugin from a marketplace already recorded in `lock`,
-    /// installs it, and records what resolution produced. `add` and
-    /// `install` differ in where the declaration came from — a command
-    /// argument or `agents.yaml` — and must not differ in how it resolves.
     /// Acquires one plugin from `marketplace` and installs it, returning
     /// what landed.
     ///
@@ -1008,7 +1009,7 @@ impl Project<'_> {
         };
         lock.plugins.insert(
             plugin.to_owned(),
-            LockedPlugin::resolved(marketplace, &stored.root, reproducible),
+            LockedPlugin::resolved(marketplace, &stored.root, reproducible)?,
         );
         lock.marketplaces.insert(
             marketplace.to_owned(),

@@ -177,21 +177,32 @@ impl Health<'_> {
         // more — first, so `installed_packages` below never treats a
         // ghost registration as real.
         report.outcomes.extend(self.reconcile_orphaned_receipts());
-        let packages = self.0.installed_packages();
+        let packages = match self.0.installed_packages_checked() {
+            Ok(packages) => Some(packages),
+            Err(error) => {
+                report.outcomes.push(MaintenanceOutcome::Unavailable {
+                    integration: "environment".to_owned(),
+                    reason: format!("the installed plugins could not be read: {error}"),
+                });
+                None
+            }
+        };
 
-        report.outcomes.extend(
-            self.0
-                .republish_unpublished(&packages)
-                .into_iter()
-                .filter_map(|outcome| {
-                    Some(MaintenanceOutcome::Unavailable {
-                        reason: outcome.error?,
-                        integration: outcome.integration,
-                    })
-                }),
-        );
+        if let Some(packages) = &packages {
+            report.outcomes.extend(
+                self.0
+                    .republish_unpublished(packages)
+                    .into_iter()
+                    .filter_map(|outcome| {
+                        Some(MaintenanceOutcome::Unavailable {
+                            reason: outcome.error?,
+                            integration: outcome.integration,
+                        })
+                    }),
+            );
+        }
 
-        for package in &packages {
+        for package in packages.iter().flatten() {
             if let uze_core::PackageSource::Embedded { id } = &package.provenance.requested
                 && crate::bootstrap::has_update(id, &package.root).unwrap_or(false)
             {
@@ -343,9 +354,12 @@ impl Health<'_> {
         {
             self.0.inspection_cache.invalidate();
         }
-        let known_ids: BTreeSet<String> = self
-            .0
-            .installed_packages()
+        // Read strictly: an unreadable registry would make every receipt look
+        // orphaned, and each would then be detached.
+        let Ok(installed) = self.0.installed_packages_checked() else {
+            return outcomes;
+        };
+        let known_ids: BTreeSet<String> = installed
             .into_iter()
             .map(|package| package.id.as_str().to_owned())
             .collect();

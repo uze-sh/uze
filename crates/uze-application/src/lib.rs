@@ -51,6 +51,10 @@ pub use uze_core::{
     router::CompatibilityRoute,
     router::HarnessCapabilities,
     store::parse_plugin_marketplace_spec,
+    // For a runner of the binary's own that sends a child's output
+    // somewhere `ProcessOutput` cannot name: its timeout must still reach
+    // the whole tree the way every other child's does.
+    subprocess::{wait_with_timeout, with_process_group},
     trust::{AlwaysTrust, NoTrustAuthority, TrustAuthority, TrustOutcome, TrustRequest},
     workspace::workspace_root_or_self,
     worktree::{CompletionBehavior, isolated_checkout},
