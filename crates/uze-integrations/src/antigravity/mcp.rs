@@ -19,7 +19,7 @@ use uze_core::{
 
 use super::AntigravityIntegration;
 use crate::shared::json_config;
-use crate::shared::mcp::managed_stdio_plan;
+use crate::shared::mcp::{McpEntry, claim_existing, managed_stdio_plan};
 use crate::shared::plan::{blocked, unsupported};
 use crate::shared::process::{capture, failed_message, is_cli_safe_token};
 
@@ -66,11 +66,16 @@ pub(super) fn attach_mcp_entry(
     // add-or-update (help text: "Add or update an MCP server
     // configuration"), so a colliding, differently-configured name would be
     // silently overwritten — UZE never relies on that (same discipline as
-    // ADR-007 for the other peers).
-    if mcp_entry_exists(command_home, entry_name) {
-        return Err(UzeError::ExposureUnavailable(format!(
-            "Antigravity already has an MCP server named `{entry_name}` that UZE does not own; refusing to overwrite it"
-        )));
+    // ADR-007 for the other peers). Exactly the planned entry is this
+    // attach already done.
+    let config_path = mcp_config_path(command_home);
+    if let Ok(config) = json_config::read_object(&config_path)
+        && let Some(existing) = json_config::get_path(&config, &["mcpServers", entry_name])
+    {
+        return claim_existing(
+            inspect_antigravity_mcp_value(existing, &McpEntry::planned(entry_name, command, args)),
+            &config_path,
+        );
     }
     let mut mcp_args: Vec<std::ffi::OsString> = vec![
         std::ffi::OsString::from("mcp"),
@@ -97,23 +102,8 @@ fn mcp_config_path(command_home: &Path) -> PathBuf {
     command_home.join(".gemini/config/mcp_config.json")
 }
 
-fn mcp_entry_exists(command_home: &Path, entry_name: &str) -> bool {
-    json_config::read_object(&mcp_config_path(command_home))
-        .is_ok_and(|config| json_config::get_path(&config, &["mcpServers", entry_name]).is_some())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn inspect_antigravity_mcp(
-    path: &Path,
-    entry_name: &str,
-    transport: &str,
-    command: &Path,
-    args: &[String],
-    cwd: Option<&Path>,
-    environment: &[uze_core::exposure::McpEnvironmentReference],
-    enabled: Option<bool>,
-) -> AttachmentInspection {
-    if transport != "stdio" || cwd.is_some() || !environment.is_empty() || enabled.is_some() {
+pub(super) fn inspect_antigravity_mcp(path: &Path, entry: &McpEntry) -> AttachmentInspection {
+    if !entry.is_plain_stdio() {
         return blocked(
             "Antigravity MCP receipt requests state this integration cannot verify safely",
         );
@@ -122,41 +112,23 @@ pub(super) fn inspect_antigravity_mcp(
         Ok(config) => config,
         Err(reason) => return blocked(reason),
     };
-    let Some(entry) = json_config::get_path(&config, &["mcpServers", entry_name]) else {
+    let Some(server) = json_config::get_path(&config, &["mcpServers", entry.name]) else {
         return AttachmentInspection {
             state: AttachmentState::Missing,
             reason: "Antigravity MCP entry is absent".to_owned(),
         };
     };
-    inspect_antigravity_mcp_value(entry, command, args)
+    inspect_antigravity_mcp_value(server, entry)
 }
 
 fn inspect_antigravity_mcp_value(
     entry: &serde_json::Value,
-    command: &Path,
-    args: &[String],
+    planned: &McpEntry,
 ) -> AttachmentInspection {
-    let actual_command = entry.get("command").and_then(serde_json::Value::as_str);
-    if actual_command != command.to_str() {
+    if !planned.runs_as(entry) {
         return AttachmentInspection {
             state: AttachmentState::Drifted,
-            reason: "Antigravity MCP command differs from receipt".to_owned(),
-        };
-    }
-    let actual_args: Vec<&str> = entry
-        .get("args")
-        .and_then(serde_json::Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .collect()
-        })
-        .unwrap_or_default();
-    if actual_args != args.iter().map(String::as_str).collect::<Vec<_>>() {
-        return AttachmentInspection {
-            state: AttachmentState::Drifted,
-            reason: "Antigravity MCP args differ from receipt".to_owned(),
+            reason: "Antigravity MCP command or args differ from receipt".to_owned(),
         };
     }
     // The receipt declares no env or cwd, so any of them present is state
@@ -191,11 +163,53 @@ fn inspect_antigravity_mcp_value(
 
 #[cfg(test)]
 mod mcp_tests {
-    use std::path::Path;
+    use std::{fs, path::Path};
 
-    use uze_core::integration::AttachmentState;
+    use uze_core::{UzeError, integration::AttachmentState};
 
-    use super::inspect_antigravity_mcp_value;
+    use super::{McpEntry, attach_mcp_entry, inspect_antigravity_mcp_value, mcp_config_path};
+
+    /// A second install finds its own entry from the first; a differing
+    /// one under the same name is somebody else's, and `agy mcp add` would
+    /// overwrite it. Neither case reaches the vendor binary, which does not
+    /// exist here.
+    #[test]
+    fn an_existing_entry_is_claimed_only_when_it_is_the_planned_one() {
+        let home = uze_testkit::temp::scratch("agy-mcp-existing");
+        let config = mcp_config_path(&home);
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        let args = ["--serve".to_owned()];
+        fs::write(
+            &config,
+            r#"{"mcpServers":{"uze-x":{"command":"/bin/server","args":["--serve"]}}}"#,
+        )
+        .unwrap();
+        attach_mcp_entry(
+            "/nonexistent/agy",
+            &home,
+            "uze-x",
+            Path::new("/bin/server"),
+            &args,
+        )
+        .expect("the planned entry is this attach done already");
+
+        fs::write(
+            &config,
+            r#"{"mcpServers":{"uze-x":{"command":"/bin/other","args":["--serve"]}}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            attach_mcp_entry(
+                "/nonexistent/agy",
+                &home,
+                "uze-x",
+                Path::new("/bin/server"),
+                &args
+            ),
+            Err(UzeError::ManagedEntryConflict(_))
+        ));
+        let _ = fs::remove_dir_all(home);
+    }
 
     fn entry(command: &str, args: &[&str]) -> serde_json::Value {
         serde_json::json!({ "command": command, "args": args })
@@ -206,8 +220,7 @@ mod mcp_tests {
         assert_eq!(
             inspect_antigravity_mcp_value(
                 &entry("/bin/server", &["--serve"]),
-                Path::new("/bin/server"),
-                &["--serve".to_owned()],
+                &McpEntry::planned("uze-x", Path::new("/bin/server"), &["--serve".to_owned()]),
             )
             .state,
             AttachmentState::Matched
@@ -219,8 +232,7 @@ mod mcp_tests {
         assert_eq!(
             inspect_antigravity_mcp_value(
                 &entry("/bin/other", &["--serve"]),
-                Path::new("/bin/server"),
-                &["--serve".to_owned()],
+                &McpEntry::planned("uze-x", Path::new("/bin/server"), &["--serve".to_owned()]),
             )
             .state,
             AttachmentState::Drifted
@@ -228,8 +240,7 @@ mod mcp_tests {
         assert_eq!(
             inspect_antigravity_mcp_value(
                 &entry("/bin/server", &["--different"]),
-                Path::new("/bin/server"),
-                &["--serve".to_owned()],
+                &McpEntry::planned("uze-x", Path::new("/bin/server"), &["--serve".to_owned()]),
             )
             .state,
             AttachmentState::Drifted
@@ -241,7 +252,11 @@ mod mcp_tests {
         let mut value = entry("/bin/server", &[]);
         value["env"] = serde_json::json!({ "TOKEN": "x" });
         assert_eq!(
-            inspect_antigravity_mcp_value(&value, Path::new("/bin/server"), &[]).state,
+            inspect_antigravity_mcp_value(
+                &value,
+                &McpEntry::planned("uze-x", Path::new("/bin/server"), &[])
+            )
+            .state,
             AttachmentState::Drifted
         );
     }
@@ -251,7 +266,11 @@ mod mcp_tests {
         let mut value = entry("/bin/server", &[]);
         value["disabled"] = serde_json::json!(true);
         assert_eq!(
-            inspect_antigravity_mcp_value(&value, Path::new("/bin/server"), &[]).state,
+            inspect_antigravity_mcp_value(
+                &value,
+                &McpEntry::planned("uze-x", Path::new("/bin/server"), &[])
+            )
+            .state,
             AttachmentState::Matched
         );
     }
@@ -261,7 +280,11 @@ mod mcp_tests {
         let mut value = entry("/bin/server", &[]);
         value["disabled"] = serde_json::json!("yes");
         assert_eq!(
-            inspect_antigravity_mcp_value(&value, Path::new("/bin/server"), &[]).state,
+            inspect_antigravity_mcp_value(
+                &value,
+                &McpEntry::planned("uze-x", Path::new("/bin/server"), &[])
+            )
+            .state,
             AttachmentState::Blocked
         );
     }

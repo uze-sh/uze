@@ -6,7 +6,7 @@
 use std::{fs, path::Path};
 
 use toml_edit::{DocumentMut, Item, Table};
-use uze_core::{Result, UzeError, persistence::write_atomic};
+use uze_core::{Result, UzeError, persistence::write_atomic_preserving};
 
 /// Parses `path` as a TOML document. A missing file is an empty document; a
 /// file that fails to parse is refused rather than silently discarded.
@@ -104,7 +104,7 @@ pub(crate) fn remove_path(document: &mut DocumentMut, path: &[&str]) {
 
 /// Writes `document` back atomically.
 pub(crate) fn write_document(path: &Path, document: &DocumentMut) -> Result<()> {
-    write_atomic(path, document.to_string().as_bytes())
+    write_atomic_preserving(path, document.to_string().as_bytes())
 }
 
 /// Convenience for a `PreferencePort::apply` implementation: read, apply one

@@ -50,8 +50,9 @@ pub use mcp::detach_mcp_entry;
 use crate::hooks::{HookEntry, HookTarget};
 use crate::shared::agent::{agent_name, markdown_agent_plan};
 use crate::shared::marketplace;
+use crate::shared::mcp::McpEntry;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
-use crate::shared::provision::provision_cli;
+use crate::shared::provision::{official_installer, provision_cli};
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
 use skills::materialize_shim;
@@ -257,11 +258,7 @@ impl IntegrationPort for ClaudeIntegration {
             &executable,
             "Claude Code",
             self.detect(),
-            ProcessSpec::new(
-                "sh",
-                ["-c", "curl -fsSL https://claude.ai/install.sh | bash"],
-            )
-            .with_inherited_output(),
+            official_installer("https://claude.ai/install.sh", "bash"),
             ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
             "official-native-installer",
             claude_version,
@@ -422,23 +419,9 @@ impl IntegrationPort for ClaudeIntegration {
 
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
         match &receipt.artifact {
-            ManagedArtifact::VendorConfigEntry {
-                entry_name,
-                command,
-                args,
-                transport,
-                cwd,
-                environment,
-                enabled,
-            } => mcp::inspect_claude_mcp(
+            artifact @ ManagedArtifact::VendorConfigEntry { .. } => mcp::inspect_claude_mcp(
                 &self.command_home.join(".claude.json"),
-                entry_name,
-                transport,
-                command,
-                args,
-                cwd.as_deref(),
-                environment,
-                *enabled,
+                &McpEntry::recorded(artifact).expect("a vendor config entry"),
             ),
             ManagedArtifact::HookConfigEntry {
                 config_file,
@@ -592,7 +575,7 @@ impl PreferencePort for ClaudeIntegration {
 mod lifecycle_tests {
     use std::path::Path;
 
-    use uze_core::exposure::McpEnvironmentReference;
+    use crate::shared::mcp::McpEntry;
     use uze_core::home::UzeHome;
     use uze_core::integration::{
         AttachmentReceipt, AttachmentState, IntegrationPort, ManagedArtifact,
@@ -606,16 +589,9 @@ mod lifecycle_tests {
         fs::create_dir_all(&root).unwrap();
         let path = root.join(".claude.json");
         fs::write(&path, value).unwrap();
-        let environment: Vec<McpEnvironmentReference> = Vec::new();
         let state = inspect_claude_mcp(
             &path,
-            "uze-x",
-            "stdio",
-            Path::new("tool"),
-            &["a".to_owned()],
-            None,
-            &environment,
-            None,
+            &McpEntry::planned("uze-x", Path::new("tool"), &["a".to_owned()]),
         )
         .state;
         let _ = fs::remove_dir_all(root);

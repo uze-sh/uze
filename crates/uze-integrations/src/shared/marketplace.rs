@@ -322,6 +322,15 @@ pub(crate) fn remove_generated_package<D: MarketplaceDialect>(
     uze_home: &UzeHome,
     package_id: &str,
 ) -> Result<()> {
+    remove_generated_dir(package_id, |id| generated_package_dir::<D>(uze_home, id))
+}
+
+/// Removes the generated directory `dir_for` places a package's envelope
+/// in, by the id its receipt carries.
+pub(crate) fn remove_generated_dir(
+    package_id: &str,
+    dir_for: impl FnOnce(&str) -> PathBuf,
+) -> Result<()> {
     // The id comes from the receipt ledger, not a constructor: refuse one
     // that could not have been a real package id instead of joining it into
     // a path and removing whatever the traversal lands on.
@@ -330,7 +339,7 @@ pub(crate) fn remove_generated_package<D: MarketplaceDialect>(
             "refusing to remove generated envelope for malformed package id `{package_id}`"
         )));
     }
-    let dir = generated_package_dir::<D>(uze_home, package_id);
+    let dir = dir_for(package_id);
     if dir.exists() {
         fs::remove_dir_all(&dir).map_err(|source| UzeError::Write { path: dir, source })?;
     }

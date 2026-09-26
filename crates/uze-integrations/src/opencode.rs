@@ -50,6 +50,7 @@ mod skills;
 use crate::hooks::{self as hook_projection, HookTarget};
 use crate::shared::agent::{agent_name, markdown_agent_plan};
 use crate::shared::json_config;
+use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
 use mcp::attach_mcp_config;
 use provision::{provision_opencode, resolve_opencode_binary};
@@ -310,29 +311,11 @@ impl IntegrationPort for OpenCodeIntegration {
         if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
             return self.inspect_hook_bridge(receipt, path);
         }
-        let ManagedArtifact::VendorConfigEntry {
-            entry_name,
-            command,
-            args,
-            transport,
-            cwd,
-            environment,
-            enabled,
-        } = &receipt.artifact
-        else {
+        let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             return receipt.artifact.inspect_standard();
         };
         match json_config::read_object(&self.config_path) {
-            Ok(config) => mcp::inspect_mcp_entry(
-                &config,
-                entry_name,
-                transport,
-                command,
-                args,
-                cwd.as_deref(),
-                environment,
-                *enabled,
-            ),
+            Ok(config) => mcp::inspect_mcp_entry(&config, &entry),
             Err(reason) => blocked(reason),
         }
     }
@@ -342,16 +325,7 @@ impl IntegrationPort for OpenCodeIntegration {
         if inspection.state != AttachmentState::Matched {
             return Ok(inspection);
         }
-        let ManagedArtifact::VendorConfigEntry {
-            entry_name,
-            command,
-            args,
-            transport,
-            cwd,
-            environment,
-            enabled,
-        } = &receipt.artifact
-        else {
+        let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
                 return self.detach_hook_bridge(receipt, path);
             }
@@ -363,16 +337,7 @@ impl IntegrationPort for OpenCodeIntegration {
             }
             return Ok(detached);
         };
-        mcp::detach_mcp_config(
-            &self.config_path,
-            entry_name,
-            transport,
-            command,
-            args,
-            cwd.as_deref(),
-            environment,
-            *enabled,
-        )
+        mcp::detach_mcp_config(&self.config_path, &entry)
     }
 }
 
@@ -445,28 +410,20 @@ impl OpenCodeIntegration {
                 source,
             })?;
         let active = self.active_hook_ids(package_id, None);
+        // Manifest order, the attached group included, is the order
+        // inspection regenerates in; appending it would make the file
+        // depend on which group happened to attach last.
         let mut groups = hook_projection::groups_with_ids(package_root, &|id| {
-            active.iter().any(|active| active == id)
+            id == current.id || active.iter().any(|active| active == id)
         })?;
         if !groups.iter().any(|group| group.id == current.id) {
             groups.push(current);
         }
         let references: Vec<&PortableHook> = groups.iter().collect();
-        if let Some(parent) = bridge_path.parent() {
-            fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-                path: parent.to_path_buf(),
-                source,
-            })?;
-        }
-        fs::write(
+        uze_core::persistence::write_atomic(
             bridge_path,
-            hook_projection::opencode_bridge(&references, package_root, package_id),
+            hook_projection::opencode_bridge(&references, package_root, package_id).as_bytes(),
         )
-        .map_err(|source| UzeError::Write {
-            path: bridge_path.to_path_buf(),
-            source,
-        })?;
-        Ok(())
     }
 
     /// The hook group ids this integration still has receipts for on one
@@ -537,6 +494,18 @@ impl OpenCodeIntegration {
                 state: AttachmentState::Matched,
                 reason: "the managed bridge file matches the Store-derived content".to_owned(),
             },
+            Ok(bytes)
+                if hook_projection::bridge_carries_groups(
+                    &String::from_utf8_lossy(&bytes),
+                    &references,
+                    &package_root,
+                ) =>
+            {
+                AttachmentInspection {
+                    state: AttachmentState::Matched,
+                    reason: "the managed bridge carries the Store's groups in an earlier build's form; the next install rewrites it".to_owned(),
+                }
+            }
             Ok(_) => AttachmentInspection {
                 state: AttachmentState::Drifted,
                 reason:
@@ -579,14 +548,11 @@ impl OpenCodeIntegration {
             hook_projection::remove_bridge_file(bridge_path)?;
         } else {
             let references: Vec<&PortableHook> = groups.iter().collect();
-            fs::write(
+            uze_core::persistence::write_atomic(
                 bridge_path,
-                hook_projection::opencode_bridge(&references, &package_root, &receipt.package_id),
-            )
-            .map_err(|source| UzeError::Write {
-                path: bridge_path.to_path_buf(),
-                source,
-            })?;
+                hook_projection::opencode_bridge(&references, &package_root, &receipt.package_id)
+                    .as_bytes(),
+            )?;
         }
         Ok(AttachmentInspection {
             state: AttachmentState::Missing,

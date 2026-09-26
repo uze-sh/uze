@@ -112,7 +112,11 @@ family() {                                       # $1 pid -> $1 and its issue
 reasons=${TMPDIR:-/tmp}/hooks-exec.$$
 (set -C; : > "$reasons") 2>/dev/null || reasons=/dev/null
 discard_reasons() { [ "$reasons" = /dev/null ] || rm -f "$reasons"; }
-trap discard_reasons EXIT INT TERM
+trap discard_reasons EXIT
+# A signal ends the wrapper. A trap that only cleaned up would return into
+# the loop and run the next handler for a harness that has stopped waiting.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # $1 seconds, $2 command. Leaves what the handler wrote on stderr in
 # $reasons and answers with its exit status — or 124, the conventional

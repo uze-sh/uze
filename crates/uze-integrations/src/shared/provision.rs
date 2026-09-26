@@ -17,6 +17,24 @@ use uze_core::{
     provisioning::{ProcessRunner, ProcessSpec, ProvisionAction, ProvisioningResult},
 };
 
+/// A vendor's documented `curl -fsSL <url> | <interpreter>` installer,
+/// fetched in full before it runs. In the pipe the interpreter's status is
+/// the pipeline's, so a download that failed reported success, and one cut
+/// off midway ran whatever part of the script had arrived. POSIX `sh` has
+/// no `pipefail` to rely on.
+pub(crate) fn official_installer(url: &str, interpreter: &str) -> ProcessSpec {
+    ProcessSpec::new(
+        "sh",
+        [
+            "-c".to_owned(),
+            format!(
+                "installer=$(curl -fsSL {url}) && printf '%s\\n' \"$installer\" | {interpreter}"
+            ),
+        ],
+    )
+    .with_inherited_output()
+}
+
 /// `detect` re-probes the executable to capture its version string once
 /// installation/update has been confirmed successful; where the version sits
 /// in `--version` output is the vendor's (`process::VersionToken`).
@@ -73,6 +91,51 @@ pub(crate) fn provision_cli(
         method,
         detect(executable),
     ))
+}
+
+#[cfg(all(test, unix))]
+mod official_installer_tests {
+    use std::process::Command;
+
+    use super::official_installer;
+
+    fn run(spec: &uze_core::provisioning::ProcessSpec, path: &std::path::Path) -> bool {
+        Command::new(&spec.program)
+            .args(&spec.arguments)
+            .env("PATH", uze_testkit::temp::path_prefixed(path))
+            .output()
+            .unwrap()
+            .status
+            .success()
+    }
+
+    #[test]
+    fn a_download_that_fails_fails_the_install_and_runs_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let bin = uze_testkit::temp::scratch("installer-curl-fails");
+        std::fs::create_dir_all(&bin).unwrap();
+        let curl = bin.join("curl");
+        let marker = bin.join("ran");
+        // The interpreter stands in for the vendor's: it records that it ran.
+        let spec = official_installer(
+            "https://example.invalid/install.sh",
+            &format!("cat > '{}'", marker.display()),
+        );
+
+        std::fs::write(&curl, "#!/bin/sh\necho 'partial'\nexit 22\n").unwrap();
+        std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            !run(&spec, &bin),
+            "the pipe's last status would have been success"
+        );
+        assert!(!marker.exists(), "nothing runs from a failed download");
+
+        std::fs::write(&curl, "#!/bin/sh\necho 'complete'\n").unwrap();
+        assert!(run(&spec, &bin));
+        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "complete\n");
+        let _ = std::fs::remove_dir_all(bin);
+    }
 }
 
 #[cfg(test)]

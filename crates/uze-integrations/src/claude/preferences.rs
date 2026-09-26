@@ -44,7 +44,7 @@ const MODEL: &[&str] = &["model"];
 /// Claude cannot resolve it, so nobody would have chosen it. A `haiku` or
 /// `opus` there may be the operator's own choice — nothing in the file says
 /// who wrote it — so asking for Claude's default leaves those alone.
-const UNRESOLVABLE_MODELS: &[&str] = &["default"];
+const UNRESOLVABLE_MODELS: &[Value] = &[Value::Text("default")];
 
 /// What the machine offers Claude's sandbox. Read by the integration, not
 /// here, so the translation stays a function of its inputs.

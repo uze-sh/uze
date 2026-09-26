@@ -14,7 +14,9 @@ use uze_core::{
 };
 
 use super::CodexIntegration;
-use crate::shared::mcp::{cli_add, cli_remove, managed_stdio_plan};
+use crate::shared::mcp::{
+    McpEntry, claim_existing, cli_add, cli_exists, cli_remove, managed_stdio_plan,
+};
 use crate::shared::plan::{blocked, unsupported};
 use crate::shared::process::{capture, is_cli_safe_token};
 
@@ -48,7 +50,8 @@ impl CodexIntegration {
     }
 }
 
-/// Registers the server globally — Codex has no scope flag.
+/// Registers the server globally — Codex has no scope flag. A name Codex
+/// already knows is claimed only when it is exactly the planned entry.
 pub(super) fn attach_mcp_entry(
     executable: &Path,
     command_home: &Path,
@@ -56,6 +59,16 @@ pub(super) fn attach_mcp_entry(
     command: &Path,
     args: &[String],
 ) -> Result<()> {
+    if cli_exists(executable, command_home, entry_name) {
+        return claim_existing(
+            inspect_codex_mcp(
+                executable,
+                command_home,
+                &McpEntry::planned(entry_name, command, args),
+            ),
+            &command_home.join(".codex").join("config.toml"),
+        );
+    }
     cli_add(
         executable,
         command_home,
@@ -70,18 +83,12 @@ pub(super) fn attach_mcp_entry(
 /// Inspects `codex mcp get --json`, the documented structured Codex surface.
 /// No TOML is read or written by UZE; an unavailable or malformed response is
 /// deliberately BLOCKED rather than interpreted as absence.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn inspect_codex_mcp(
     executable: &Path,
     command_home: &Path,
-    entry_name: &str,
-    transport: &str,
-    command: &Path,
-    args: &[String],
-    cwd: Option<&Path>,
-    environment: &[uze_core::exposure::McpEnvironmentReference],
-    enabled: Option<bool>,
+    entry: &McpEntry,
 ) -> AttachmentInspection {
+    let entry_name = entry.name;
     let output = match capture(
         executable,
         command_home,
@@ -115,29 +122,22 @@ pub(super) fn inspect_codex_mcp(
         Ok(value) => value,
         Err(error) => return blocked(format!("Codex MCP JSON is invalid: {error}")),
     };
-    inspect_codex_mcp_value(
-        &value,
-        entry_name,
-        transport,
-        command,
-        args,
-        cwd,
-        environment,
-        enabled,
-    )
+    inspect_codex_mcp_value(&value, entry)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn inspect_codex_mcp_value(
     value: &serde_json::Value,
-    entry_name: &str,
-    expected_transport: &str,
-    command: &Path,
-    args: &[String],
-    expected_cwd: Option<&Path>,
-    expected_environment: &[uze_core::exposure::McpEnvironmentReference],
-    expected_enabled: Option<bool>,
+    entry: &McpEntry,
 ) -> AttachmentInspection {
+    let McpEntry {
+        name: entry_name,
+        transport: expected_transport,
+        command,
+        args,
+        cwd: expected_cwd,
+        environment: expected_environment,
+        enabled: expected_enabled,
+    } = *entry;
     let object = value
         .as_object()
         .or_else(|| value.get("server")?.as_object());
@@ -246,7 +246,7 @@ mod mcp_tests {
 
     use uze_core::integration::AttachmentState;
 
-    use super::inspect_codex_mcp_value;
+    use super::{McpEntry, inspect_codex_mcp_value};
 
     #[test]
     fn structured_mcp_inspection_distinguishes_match_drift_and_conflict() {
@@ -261,13 +261,7 @@ mod mcp_tests {
         assert_eq!(
             inspect_codex_mcp_value(
                 &exact,
-                "uze-example",
-                "stdio",
-                &expected_command,
-                &expected_args,
-                None,
-                &[],
-                None
+                &McpEntry::planned("uze-example", &expected_command, &expected_args),
             )
             .state,
             AttachmentState::Matched
@@ -279,13 +273,7 @@ mod mcp_tests {
         assert_eq!(
             inspect_codex_mcp_value(
                 &official_shape,
-                "uze-example",
-                "stdio",
-                &expected_command,
-                &expected_args,
-                None,
-                &[],
-                None,
+                &McpEntry::planned("uze-example", &expected_command, &expected_args),
             )
             .state,
             AttachmentState::Matched
@@ -295,13 +283,7 @@ mod mcp_tests {
         assert_eq!(
             inspect_codex_mcp_value(
                 &changed,
-                "uze-example",
-                "stdio",
-                &expected_command,
-                &expected_args,
-                None,
-                &[],
-                None
+                &McpEntry::planned("uze-example", &expected_command, &expected_args),
             )
             .state,
             AttachmentState::Drifted
@@ -311,13 +293,7 @@ mod mcp_tests {
         assert_eq!(
             inspect_codex_mcp_value(
                 &foreign,
-                "uze-example",
-                "stdio",
-                &expected_command,
-                &expected_args,
-                None,
-                &[],
-                None
+                &McpEntry::planned("uze-example", &expected_command, &expected_args),
             )
             .state,
             AttachmentState::Conflict
@@ -325,13 +301,7 @@ mod mcp_tests {
         assert_eq!(
             inspect_codex_mcp_value(
                 &serde_json::json!({}),
-                "uze-example",
-                "stdio",
-                &expected_command,
-                &expected_args,
-                None,
-                &[],
-                None,
+                &McpEntry::planned("uze-example", &expected_command, &expected_args),
             )
             .state,
             AttachmentState::Blocked

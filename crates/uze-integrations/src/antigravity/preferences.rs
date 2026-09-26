@@ -37,7 +37,7 @@ const AGENT_MODE: &[&str] = &["agentMode"];
 /// is rejected outright (an earlier release wrote it); `accept-edits` stops
 /// asking before edits, which is the opposite of what `Manual` asks for.
 /// `plan` is more careful than the default mode, so it stays.
-const AGENT_MODES_MANUAL_REMOVES: &[&str] = &["default", "accept-edits"];
+const AGENT_MODES_MANUAL_REMOVES: &[Value] = &[Value::Text("default"), Value::Text("accept-edits")];
 const TOOL_PERMISSION: &[&str] = &["toolPermission"];
 const TERMINAL_SANDBOX: &[&str] = &["enableTerminalSandbox"];
 const NON_WORKSPACE: &[&str] = &["allowNonWorkspaceAccess"];

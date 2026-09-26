@@ -43,21 +43,20 @@ pub(crate) enum Value {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Write {
     Set(&'static [&'static str], Value),
-    /// Removes the key entirely. Not the same as writing a default: a
-    /// harness that reads an absent key as "unset" must see it absent.
-    Clear(&'static [&'static str]),
     /// Removes the key only while it holds one of these values — the ones
     /// UZE itself writes there. A value outside the list is the operator's
     /// own choice, and "use the harness's default" is no reason to erase
     /// it; a value inside it is UZE's earlier answer, which would otherwise
-    /// outlive the preference that produced it.
-    Release(&'static [&'static str], &'static [&'static str]),
+    /// outlive the preference that produced it. Removing is not the same as
+    /// writing a default: a harness that reads an absent key as "unset"
+    /// must see it absent.
+    Release(&'static [&'static str], &'static [Value]),
 }
 
 impl Write {
     fn path(&self) -> &'static [&'static str] {
         match self {
-            Self::Set(path, _) | Self::Clear(path) | Self::Release(path, _) => path,
+            Self::Set(path, _) | Self::Release(path, _) => path,
         }
     }
 
@@ -68,7 +67,7 @@ impl Write {
         // vertical already had, kept deliberately.
         match self {
             Self::Set(path, _) => Some(path.join(".")),
-            Self::Clear(_) | Self::Release(..) => None,
+            Self::Release(..) => None,
         }
     }
 
@@ -76,10 +75,8 @@ impl Write {
     fn removes(&self, current: Option<&Scalar>) -> bool {
         match self {
             Self::Set(..) => false,
-            Self::Clear(_) => true,
-            Self::Release(_, owned) => {
-                matches!(current, Some(Scalar::Text(text)) if owned.contains(&text.as_str()))
-            }
+            Self::Release(_, owned) => current
+                .is_some_and(|current| owned.iter().any(|value| Scalar::from(*value) == *current)),
         }
     }
 
@@ -211,15 +208,10 @@ impl Axis {
         self
     }
 
-    pub(crate) fn clear(mut self, path: &'static [&'static str]) -> Self {
-        self.writes.push(Write::Clear(path));
-        self
-    }
-
     pub(crate) fn release(
         mut self,
         path: &'static [&'static str],
-        owned: &'static [&'static str],
+        owned: &'static [Value],
     ) -> Self {
         self.writes.push(Write::Release(path, owned));
         self

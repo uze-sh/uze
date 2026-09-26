@@ -85,9 +85,10 @@ mod skills;
 
 use crate::hooks::{HookEntry, HookTarget};
 use crate::shared::agent::{agent_name, markdown_agent_plan};
+use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
 use crate::shared::process::real_executable;
-use crate::shared::provision::provision_cli;
+use crate::shared::provision::{official_installer, provision_cli};
 use generate::remove_generated_plugin_by_id;
 use mcp::attach_mcp_entry;
 use plugin::{
@@ -108,7 +109,7 @@ pub const ID: &str = "antigravity";
 /// shell profiles (`~/.bashrc`/`~/.zshrc`/`~/.profile`) — vendor behavior
 /// surfaced in its own output, unavoidable in this version. Documented
 /// destination: `~/.local/bin/agy`.
-const INSTALLER_COMMAND: &str = "curl -fsSL https://antigravity.google/cli/install.sh | bash";
+const INSTALLER_URL: &str = "https://antigravity.google/cli/install.sh";
 
 #[derive(Clone)]
 pub struct AntigravityIntegration {
@@ -319,7 +320,7 @@ impl IntegrationPort for AntigravityIntegration {
         // The installer appends its own PATH export to the user's shell
         // profiles — vendor behavior; the docs' `--skip-aliases`/
         // `--skip-path` flags are rejected by the current script (see
-        // INSTALLER_COMMAND). Update: the installer exits early when the
+        // INSTALLER_URL). Update: the installer exits early when the
         // binary already exists ("agy automatically self-updates in the
         // background"), so the update verb is the official `agy update`
         // subcommand (present in 1.1.19's `--help`).
@@ -334,7 +335,7 @@ impl IntegrationPort for AntigravityIntegration {
             &executable,
             "Antigravity CLI",
             self.detect(),
-            ProcessSpec::new("sh", ["-c", INSTALLER_COMMAND]).with_inherited_output(),
+            official_installer(INSTALLER_URL, "bash"),
             ProcessSpec::new(&executable, ["update"]).with_inherited_output(),
             "official-native-installer",
             provision::detect_binary,
@@ -530,23 +531,9 @@ impl IntegrationPort for AntigravityIntegration {
                     Err(message) => blocked(message),
                 }
             }
-            ManagedArtifact::VendorConfigEntry {
-                entry_name,
-                transport,
-                command,
-                args,
-                cwd,
-                environment,
-                enabled,
-            } => mcp::inspect_antigravity_mcp(
+            artifact @ ManagedArtifact::VendorConfigEntry { .. } => mcp::inspect_antigravity_mcp(
                 &self.mcp_config_path,
-                entry_name,
-                transport,
-                command,
-                args,
-                cwd.as_deref(),
-                environment,
-                *enabled,
+                &McpEntry::recorded(artifact).expect("a vendor config entry"),
             ),
             ManagedArtifact::HookConfigEntry {
                 config_file,
