@@ -28,7 +28,10 @@ mod paint;
 mod route;
 mod sequence;
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     Host,
@@ -41,6 +44,7 @@ use crate::{
 
 use crate::shared::canvas::{Canvas, Frame, Glyphs};
 use crate::shared::checkout;
+use crate::shared::nearest;
 use catalog::Catalog;
 
 pub use catalog::Artifact;
@@ -114,6 +118,13 @@ pub struct ArchitectView {
     corner: Option<(i32, i32)>,
     picked: Option<usize>,
     drawing: Drawing,
+    /// Which artifact `drawing` was made from, once one has been.
+    drawn: Option<usize>,
+    /// Drawings already laid out and routed, by artifact, for the ones not
+    /// on show. Going back up a level or round the menu is the commonest
+    /// thing done here, and laying a large board out again each time is
+    /// the most expensive; the artifacts only change when they are read.
+    laid_out: HashMap<usize, Drawing>,
     canvas: Option<Canvas>,
     /// Why there is nothing on the board, while there is nothing: the
     /// read still in flight, or what it found instead of artifacts.
@@ -369,6 +380,23 @@ fn checked(artifact: &Artifact) -> Checked {
     }
 }
 
+/// `link` as a path inside the project, or `None` for one that leaves it.
+///
+/// The diagram is repository content, and the code surface a link opens
+/// offers to edit and delete what it lands on — so an absolute path or a
+/// `..` is not followed anywhere, and the box is drawn as leading nowhere.
+fn within_project(link: &str) -> Option<&Path> {
+    let path = Path::new(link);
+    path.components()
+        .all(|component| {
+            matches!(
+                component,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+        .then_some(path)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArchitectOutcome {
     Stay,
@@ -399,6 +427,8 @@ impl ArchitectView {
             corner: None,
             picked: None,
             drawing: Drawing::Unreadable(String::new()),
+            drawn: None,
+            laid_out: HashMap::new(),
             canvas: None,
             nothing: Some(("Reading the project's artifacts".to_owned(), None)),
             choosing: None,
@@ -444,6 +474,8 @@ impl ArchitectView {
 
     pub fn absorb(&mut self, answer: ArtifactsAnswer) {
         self.branch = answer.branch;
+        self.drawn = None;
+        self.laid_out.clear();
         match answer.artifacts {
             Artifacts::Found { artifacts, project } => {
                 self.catalog = Catalog::of(artifacts);
@@ -687,15 +719,28 @@ impl ArchitectView {
         self.selected = artifact % count;
         self.corner = None;
         self.picked = None;
-        self.drawing = match self.catalog.get(self.selected) {
+        if self.drawn != Some(self.selected) {
+            let drawing = match self.laid_out.remove(&self.selected) {
+                Some(drawing) => drawing,
+                None => self.draw(self.selected),
+            };
+            let left = std::mem::replace(&mut self.drawing, drawing);
+            if let Some(left_from) = self.drawn.replace(self.selected) {
+                self.laid_out.insert(left_from, left);
+            }
+        }
+        self.repaint();
+    }
+
+    fn draw(&self, artifact: usize) -> Drawing {
+        match self.catalog.get(artifact) {
             Some(artifact) => match mermaid::parse(artifact.diagram()) {
                 Ok(Diagram::Graph(graph)) => Drawing::Graph(Box::new(Scene::of(graph))),
                 Ok(Diagram::Sequence(sequence)) => Drawing::Sequence(sequence),
                 Err(reason) => Drawing::Unreadable(reason),
             },
             None => Drawing::Unreadable("there is nothing to draw".to_owned()),
-        };
-        self.repaint();
+        }
     }
 
     fn repaint(&mut self) {
@@ -831,7 +876,7 @@ impl ArchitectView {
         let node = &scene.graph.nodes[node];
         if self.inside_of(&node.id).is_some() {
             Leads::Inside
-        } else if node.link.is_some() {
+        } else if node.link.as_deref().and_then(within_project).is_some() {
             Leads::ToCode
         } else {
             Leads::Nowhere
@@ -861,7 +906,7 @@ impl ArchitectView {
             self.show_artifact(below);
             return ArchitectOutcome::Stay;
         }
-        match &node.link {
+        match node.link.as_deref().and_then(within_project) {
             Some(link) => ArchitectOutcome::OpenPath {
                 project: self.project.clone(),
                 target: self.project.join(link),
@@ -907,9 +952,7 @@ impl ArchitectView {
     }
 
     /// Picks the box that lies `direction` of the picked one — or, with
-    /// nothing picked, the one nearest the middle of the screen. A row of
-    /// cells is twice as tall as a column is wide, so a step down counts
-    /// double: "nearest" has to mean what it looks like.
+    /// nothing picked, the one nearest the middle of the screen.
     fn pick_toward(&mut self, direction: PanDirection, space: Size) {
         let Drawing::Graph(scene) = &self.drawing else {
             return;
@@ -922,26 +965,14 @@ impl ArchitectView {
                 corner.1 + i32::from(space.height) / 2,
             ),
         };
-        let nearest = scene
+        let candidates = scene
             .placement
             .nodes
             .iter()
             .enumerate()
             .filter(|(node, _)| Some(*node) != self.picked)
-            .filter_map(|(node, frame)| {
-                let centre = frame.center();
-                let (dx, dy) = (centre.0 - from.0, (centre.1 - from.1) * 2);
-                let (along, across) = match direction {
-                    PanDirection::Left => (-dx, dy),
-                    PanDirection::Right => (dx, dy),
-                    PanDirection::Up => (-dy, dx),
-                    PanDirection::Down => (dy, dx),
-                };
-                let ahead = self.picked.is_none() || along > 0;
-                ahead.then(|| (along.abs() + across.abs() * 2, node))
-            })
-            .min()
-            .map(|(_, node)| node);
+            .map(|(node, frame)| (node, frame.center()));
+        let nearest = nearest::toward(from, direction, self.picked.is_some(), candidates);
         if let Some(node) = nearest {
             self.picked = Some(node);
             self.bring_into_view(node, space, false);
@@ -1099,6 +1130,7 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
         }),
         content: content(state, space),
         footer: footer(state),
+        notice: None,
         modes: MODES
             .iter()
             .map(|&(showing, label)| Mode {

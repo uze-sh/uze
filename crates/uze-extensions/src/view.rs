@@ -143,6 +143,12 @@ pub struct View {
     /// name them. The host prints each with the key that reaches it — an
     /// extension no more writes a key than it writes a colour.
     pub footer: Vec<Command>,
+    /// What just happened, or the question a gesture is waiting on, said
+    /// at the far end of the footer: a refusal nothing else on screen
+    /// would explain is a key that seemed to do nothing. A span, so the
+    /// extension says whether it is a warning and the host decides what
+    /// one looks like. `None` when there is nothing to say.
+    pub notice: Option<Span>,
     /// The ways this surface can show what it is showing, in the order
     /// they should be offered, with the current one marked. Empty when
     /// there is only one way, which is most of the time.

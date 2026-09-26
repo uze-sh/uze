@@ -86,8 +86,11 @@ pub(super) fn collect_tree_items(
     folded: &BTreeSet<String>,
     items: &mut Vec<FileTreeItem>,
 ) {
+    // A name can be a file and a directory at once — `x` deleted and
+    // `x/y` added in its place — and then it is both rows, or whatever
+    // is under it could not be reached.
     for (name, child) in &node.children {
-        if child.file_index.is_none() {
+        if !child.children.is_empty() {
             let (name, child) = compact_directory(name, child);
             let path = if parent.is_empty() {
                 name.clone()
@@ -149,6 +152,47 @@ mod tests {
 
     use super::*;
     use crate::code::changes::{ChangedFile, FileStatus};
+
+    /// `x` deleted and `x/y` added in its place: the directory is drawn
+    /// as well as the file, or `x/y` has no row to be reached by.
+    #[test]
+    fn a_path_that_is_a_file_and_a_directory_keeps_both_rows() {
+        let root = PathBuf::from("/repo");
+        let changes = Changes {
+            files: vec![
+                ChangedFile {
+                    status: FileStatus::Deleted,
+                    path: root.join("x"),
+                },
+                ChangedFile {
+                    status: FileStatus::Untracked,
+                    path: root.join("x/y"),
+                },
+            ],
+            ..Changes::default()
+        };
+        let items = file_tree_items(&changes, &root);
+        assert_eq!(items.len(), 3);
+        assert!(
+            matches!(items[0], FileTreeItem::Directory { ref name, depth: 0, .. } if name == "x")
+        );
+        assert!(matches!(
+            items[1],
+            FileTreeItem::File {
+                index: 1,
+                depth: 1,
+                ..
+            }
+        ));
+        assert!(matches!(
+            items[2],
+            FileTreeItem::File {
+                index: 0,
+                depth: 0,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn projects_changed_paths_as_a_compact_navigator() {

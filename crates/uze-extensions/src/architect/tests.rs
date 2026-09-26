@@ -863,3 +863,68 @@ fn what_a_project_declares_decides_whether_having_no_diagrams_is_a_fault() {
         "a project may declare where its diagrams will go before drawing one"
     );
 }
+
+/// A link is repository content, and what it opens can be edited and
+/// deleted: one that climbs out of the project, or names a path from the
+/// root, is not followed and is not drawn as leading anywhere.
+#[test]
+fn a_link_that_leaves_the_project_leads_nowhere() {
+    for (link, followed) in [
+        ("crates/core", true),
+        ("./docs", true),
+        ("../elsewhere", false),
+        ("docs/../../elsewhere", false),
+        ("/etc/passwd", false),
+    ] {
+        let mut state = ArchitectView::opening("~/project".to_owned());
+        state.absorb(ArtifactsAnswer {
+            branch: "main".to_owned(),
+            artifacts: Artifacts::Found {
+                artifacts: vec![Artifact::read(
+                    "linked.mmd",
+                    format!("flowchart TD\n a --> b\n click a \"{link}\"\n"),
+                )],
+                project: PathBuf::from("/project"),
+            },
+        });
+        pick(&mut state, "a");
+        let Drawing::Graph(scene) = &state.drawing else {
+            panic!("a flowchart is a graph");
+        };
+        let a = state.picked.expect("picked");
+        assert_eq!(
+            state.leads(scene, a) == Leads::ToCode,
+            followed,
+            "{link} is marked as leading to code"
+        );
+        let outcome = handle_command(&mut state, Command::Activate, SPACE);
+        assert_eq!(
+            matches!(outcome, ArchitectOutcome::OpenPath { .. }),
+            followed,
+            "{link} is followed"
+        );
+    }
+}
+
+/// Laying a board out and routing it is the most expensive thing this
+/// surface does, so a diagram already drawn is not drawn again for going
+/// back to it — until the artifacts are read again.
+#[test]
+fn a_diagram_already_laid_out_is_not_laid_out_again() {
+    let laid_out = |state: &ArchitectView| match &state.drawing {
+        Drawing::Graph(scene) => &**scene as *const Scene,
+        _ => panic!("a graph is on show"),
+    };
+    let mut state = showing("System context");
+    let first = laid_out(&state);
+    pick(&mut state, "uze");
+    handle_command(&mut state, Command::Activate, SPACE);
+    assert_eq!(here(&state), "Containers");
+    handle_command(&mut state, Command::Back, SPACE);
+    assert_eq!(here(&state), "System context");
+    assert_eq!(laid_out(&state), first, "the same layout, not a new one");
+
+    assert!(!state.laid_out.is_empty(), "the level left is kept");
+    let state = filled(state);
+    assert!(state.laid_out.is_empty(), "a fresh read lays out afresh");
+}

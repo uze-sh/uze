@@ -31,8 +31,46 @@ impl Files {
         flatten(root, &self.listings, &self.expanded)
     }
 
+    /// The row `path` is drawn as, if it is drawn — asked by every key
+    /// and every frame, so it is looked up in the listing holding it
+    /// rather than found by flattening the whole tree.
     pub(super) fn row_at(&self, root: &Path, path: &Path) -> Option<TreeRow> {
-        self.rows(root).into_iter().find(|row| row.path == path)
+        let parent = path.parent()?;
+        let entry = self.entry(parent, path)?;
+        let depth = self.depth_of_open(root, parent)?;
+        let directory = entry.directory;
+        Some(TreeRow {
+            path: path.to_path_buf(),
+            name: entry.name.clone(),
+            depth,
+            directory,
+            expanded: directory && self.expanded.contains(path),
+        })
+    }
+
+    /// How deep the rows inside `directory` sit, if it and every directory
+    /// above it up to `root` are open — which is what being drawn takes.
+    fn depth_of_open(&self, root: &Path, directory: &Path) -> Option<usize> {
+        let mut depth = 0;
+        let mut at = directory;
+        while at != root {
+            let parent = at.parent()?;
+            if !self.expanded.contains(at) || !self.entry(parent, at)?.directory {
+                return None;
+            }
+            depth += 1;
+            at = parent;
+        }
+        Some(depth)
+    }
+
+    /// The first entry of `parent`'s listing that is `path`, as the tree
+    /// would join it.
+    fn entry(&self, parent: &Path, path: &Path) -> Option<&DirEntry> {
+        self.listings
+            .get(parent)?
+            .iter()
+            .find(|entry| parent.join(&entry.name) == path)
     }
 }
 
@@ -139,5 +177,65 @@ pub(super) fn icon_for(name: &str, directory: bool, expanded: bool) -> RowIcon {
         "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "ico" | "bmp" | "avif" => RowIcon::Image,
         "zip" | "gz" | "tar" | "tgz" | "bz2" | "xz" | "zst" | "7z" | "rar" => RowIcon::Archive,
         _ => RowIcon::File,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(name: &str, directory: bool) -> DirEntry {
+        DirEntry {
+            name: name.to_owned(),
+            directory,
+        }
+    }
+
+    /// The lookup answers exactly what finding the row among every row
+    /// would: the same row where one is drawn, and nothing where a folded
+    /// or unlisted directory hides it.
+    #[test]
+    fn a_row_looked_up_by_its_listing_is_the_row_the_tree_draws() {
+        let root = PathBuf::from("/w");
+        let mut files = Files::default();
+        files.listings.insert(
+            root.clone(),
+            vec![
+                entry("src", true),
+                entry("docs", true),
+                entry("a.rs", false),
+            ],
+        );
+        files.listings.insert(
+            root.join("src"),
+            vec![entry("ui", true), entry("main.rs", false)],
+        );
+        files
+            .listings
+            .insert(root.join("src/ui"), vec![entry("view.rs", false)]);
+        files
+            .listings
+            .insert(root.join("docs"), vec![entry("guide.md", false)]);
+        files.expanded.insert(root.join("src"));
+        files.expanded.insert(root.join("src/ui"));
+
+        let asked = [
+            "/w/src",
+            "/w/src/ui",
+            "/w/src/ui/view.rs",
+            "/w/src/main.rs",
+            "/w/docs",
+            "/w/docs/guide.md",
+            "/w/a.rs",
+            "/w/missing.rs",
+            "/w",
+            "/elsewhere/a.rs",
+        ];
+        for path in asked.map(Path::new) {
+            let flattened = files.rows(&root).into_iter().find(|row| row.path == path);
+            assert_eq!(files.row_at(&root, path), flattened, "{}", path.display());
+        }
+        files.expanded.remove(&root.join("src"));
+        assert_eq!(files.row_at(&root, Path::new("/w/src/ui/view.rs")), None);
     }
 }

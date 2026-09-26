@@ -85,15 +85,22 @@ pub(crate) fn highlighter_for_language(
     HighlightLines::new(syntax, theme(theme_name))
 }
 
-/// One line, highlighted in `highlighter`'s ongoing state.
-pub(crate) fn line(highlighter: &mut HighlightLines<'_>, text: &str) -> Vec<(Rgb, String)> {
+/// One line, highlighted in `highlighter`'s ongoing state — or, where
+/// syntect gives up on it, the text uncoloured in `theme_name`'s own
+/// foreground: an empty answer is drawn as a blank line, and a line whose
+/// grammar failed still has its text.
+pub(crate) fn line(
+    highlighter: &mut HighlightLines<'_>,
+    text: &str,
+    theme_name: &str,
+) -> Vec<(Rgb, String)> {
     // syntect's line-oriented highlighter expects a trailing newline
     // (matches `load_defaults_newlines` above) to track multi-line
     // constructs correctly across calls.
     let newline_terminated = format!("{text}\n");
-    let ranges = highlighter
-        .highlight_line(&newline_terminated, syntax_set())
-        .unwrap_or_default();
+    let Ok(ranges) = highlighter.highlight_line(&newline_terminated, syntax_set()) else {
+        return plain(theme_name, text);
+    };
     ranges
         .into_iter()
         .map(|(style, piece)| {
@@ -137,6 +144,6 @@ pub(crate) fn lines(
     let mut highlighter = highlighter(path, theme_name);
     text.lines()
         .take(limit)
-        .map(|text| line(&mut highlighter, text))
+        .map(|text| line(&mut highlighter, text, theme_name))
         .collect()
 }

@@ -311,30 +311,43 @@ fn without_cycles(count: usize, links: &[(usize, usize)]) -> Vec<(usize, usize)>
         Open,
         Done,
     }
-    fn visit(
-        node: usize,
-        links: &[(usize, usize)],
-        marks: &mut [Mark],
-        forward: &mut Vec<(usize, usize)>,
-    ) {
-        marks[node] = Mark::Open;
-        for &(from, to) in links.iter().filter(|(from, _)| *from == node) {
-            match marks[to] {
-                Mark::Open => forward.push((to, from)),
-                Mark::Unseen => {
-                    forward.push((from, to));
-                    visit(to, links, marks, forward);
-                }
-                Mark::Done => forward.push((from, to)),
-            }
+    let mut outgoing = vec![Vec::new(); count];
+    for &(from, to) in links {
+        if let Some(targets) = outgoing.get_mut(from) {
+            targets.push(to);
         }
-        marks[node] = Mark::Done;
     }
     let mut marks = vec![Mark::Unseen; count];
-    let mut forward = Vec::new();
-    for node in 0..count {
-        if marks[node] == Mark::Unseen {
-            visit(node, links, &mut marks, &mut forward);
+    let mut forward = Vec::with_capacity(links.len());
+    // A depth-first walk with its own stack — each entry a node and how
+    // many of its links have been followed — because a long chain is
+    // exactly what a diagram is, and recursion would spend the thread's
+    // stack one frame per box.
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    for start in 0..count {
+        if marks[start] != Mark::Unseen {
+            continue;
+        }
+        marks[start] = Mark::Open;
+        stack.push((start, 0));
+        while let Some(&(node, followed)) = stack.last() {
+            let Some(&to) = outgoing[node].get(followed) else {
+                marks[node] = Mark::Done;
+                stack.pop();
+                continue;
+            };
+            if let Some(top) = stack.last_mut() {
+                top.1 += 1;
+            }
+            match marks[to] {
+                Mark::Open => forward.push((to, node)),
+                Mark::Unseen => {
+                    forward.push((node, to));
+                    marks[to] = Mark::Open;
+                    stack.push((to, 0));
+                }
+                Mark::Done => forward.push((node, to)),
+            }
         }
     }
     forward
@@ -499,6 +512,27 @@ mod tests {
         };
         let placement = place(&graph);
         (graph, placement)
+    }
+
+    /// A chain far longer than any diagram is turned around nowhere, and
+    /// walking it spends no stack: a box per frame was a crash waiting
+    /// for a long enough file.
+    #[test]
+    fn a_long_chain_is_walked_without_the_threads_stack() {
+        let count = 200_000;
+        let links: Vec<(usize, usize)> = (1..count).map(|to| (to - 1, to)).collect();
+        assert_eq!(without_cycles(count, &links), links);
+    }
+
+    /// Every link comes out once, and a cycle is broken by turning its
+    /// closing link around, in the order the links were walked.
+    #[test]
+    fn a_cycle_is_broken_by_turning_the_link_that_closes_it() {
+        let links = [(0, 1), (1, 2), (2, 0), (0, 3), (3, 1), (2, 2)];
+        assert_eq!(
+            without_cycles(4, &links),
+            [(0, 1), (1, 2), (0, 2), (2, 2), (0, 3), (3, 1)]
+        );
     }
 
     #[test]

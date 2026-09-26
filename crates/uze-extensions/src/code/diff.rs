@@ -73,10 +73,10 @@ pub(super) fn parse_unified_diff(output: &str) -> Vec<DiffLine> {
             continue;
         };
         if kind != DiffLineKind::Added {
-            old_no += 1;
+            old_no = old_no.saturating_add(1);
         }
         if kind != DiffLineKind::Removed {
-            new_no += 1;
+            new_no = new_no.saturating_add(1);
         }
         lines.push(DiffLine {
             kind,
@@ -148,11 +148,11 @@ pub(super) fn highlight(lines: Vec<DiffLine>, path: &Path, theme_name: &str) -> 
                     };
                 }
                 let spans = match kind {
-                    DiffLineKind::Removed => super::highlight::line(&mut old, &text),
-                    DiffLineKind::Added => super::highlight::line(&mut new, &text),
+                    DiffLineKind::Removed => super::highlight::line(&mut old, &text, theme_name),
+                    DiffLineKind::Added => super::highlight::line(&mut new, &text, theme_name),
                     DiffLineKind::Context => {
-                        super::highlight::line(&mut old, &text);
-                        super::highlight::line(&mut new, &text)
+                        super::highlight::line(&mut old, &text, theme_name);
+                        super::highlight::line(&mut new, &text, theme_name)
                     }
                 };
                 DiffCell {
@@ -194,6 +194,16 @@ pub(super) fn content_line(cell: &DiffCell) -> ContentLine {
 mod tests {
     use super::*;
     use crate::code::highlight::FALLBACK_SYNTAX_THEME;
+
+    /// The line numbers come from Git's own header, and a number at the
+    /// top of the range stays there rather than wrapping or panicking.
+    #[test]
+    fn a_hunk_at_the_last_line_number_does_not_overflow() {
+        let lines =
+            parse_unified_diff("@@ -4294967295 +4294967295 @@\n context\n+added\n-removed\n");
+        assert_eq!(lines.len(), 3);
+        assert!(lines.iter().all(|line| line.line_no == u32::MAX));
+    }
 
     /// A diff longer than colouring pays for keeps every line and every
     /// byte; only the lines past the bound are drawn in one ink.
