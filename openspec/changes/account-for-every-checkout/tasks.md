@@ -5,7 +5,8 @@
 - [ ] 1.3 In the same spec, except a subagent's checkout joined into its own agent from "Sibling tasks share work only through the target", and add that an agent with unjoined children is not delivered.
 - [ ] 1.4 In the same spec, change "The declaration is projected without triggering foreign isolation" so subagent isolation is stated through the `work` verbs, not a Git command.
 - [ ] 1.5 Add to that change's `tasks.md` a pointer task naming this change as the one that carries these edits out, as 9.5 does for `add-space-kinds`.
-- [ ] 1.6 Add a row for repository-side files (`.git/info/exclude`, the per-worktree record) to AGENTS.md "What UZE persists".
+- [ ] 1.6 In the same spec, replace the removal requirement's "idle beyond a declared age" wording with a pointer to `checkout-accounting`'s spare-slot rule.
+- [ ] 1.7 Add a row for repository-side files (`.git/info/exclude`, the per-worktree record) to AGENTS.md "What UZE persists".
 
 ## 2. The record
 
@@ -26,6 +27,12 @@
 
 - [ ] 4.1 Decide "holds uncommitted work" for park/free only, with the derived exception: a changed `agents.lock` counts unless every plugin in both locks keeps its revision and digest; a changed `AGENTS.md` counts only when it differs from `HEAD` outside the regions UZE manages. Rebase, join and delivery keep requiring a Git-clean tree.
 - [ ] 4.2 L1 tests for the spec scenarios (entries added or dropped is free, a moved pin is parked, region-only is free, a hand edit beside a region is parked), and that reuse leaves the base's lock and instruction file.
+
+## 4b. Spare slots
+
+- [ ] 4b.1 Declare `worktrees.spare` (default 2) and `worktrees.idle` (default three days) in the manifest, authored and additive: an unknown or malformed value reads as the default and is reported; add them to the commented template beside `slots`.
+- [ ] 4b.2 In collection, keep the `spare` most recently used free slots and remove every other free slot's directory; remove any free slot idle beyond `idle`; keep branches; never touch parked or occupied slots. Replace `IDLE_SLOT_AGE`.
+- [ ] 4b.3 L1 tests for the four spec scenarios.
 
 ## 5. In use
 
@@ -59,7 +66,7 @@
 
 ## 9. The operator's view
 
-- [ ] 9.1 `CheckoutsView` read model in `uze-application` with each checkout's owner and facts, including what holds a slot in use.
+- [ ] 9.1 `CheckoutsView` read model in `uze-application` with each checkout's owner and facts, including what holds a slot in use and its size on disk (measured in the background read), and the total.
 - [ ] 9.2 Draw a subagent checkout under its parent in the agent column.
 - [ ] 9.3 Checkouts view in the space's menu through `spawn_checkouts`/`absorb_checkouts`: open a space, adopt (isolation directory only, with the "becomes free" notice), remove (inspect first, keep the branch), clean up (the operator's class only: clean, unused, in the target; harness isolation left to its harness), and join a parked child into its parked parent.
 - [ ] 9.4 `TestBackend` tests for grouping, refusal reasons and the clean-up summary; architecture suite green.

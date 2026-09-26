@@ -107,6 +107,32 @@ with no uncommitted change at all.
 - **WHEN** the instruction file also has a change outside every managed region
 - **THEN** the checkout holds work and is parked
 
+### Requirement: The pool keeps a few spare slots and no more
+The system SHALL keep at most a declared number of free slots — two when
+the project declares none — choosing the most recently used, and SHALL
+remove the directory of every other free slot on the next collection. It
+SHALL also remove the directory of a free slot unused for longer than a
+declared age — three days when the project declares none. Both rules
+SHALL apply to free slots only, SHALL keep each removed slot's branch, and
+SHALL be decided from the slots' present state alone, with no record of
+past use. A project MAY declare either number under its worktree policy.
+
+#### Scenario: Closing agents leaves spares for the next ones
+- **WHEN** five agents are working and two of them end with nothing left in their checkouts
+- **THEN** both checkouts stay, and the next two agents created are placed in them rather than in new directories
+
+#### Scenario: Spares beyond the declared number are removed
+- **WHEN** five agents end with nothing left in their checkouts and the project declares no number
+- **THEN** the two most recently used checkouts stay and the other three directories are removed on the next collection
+
+#### Scenario: An idle project gives its disk back
+- **WHEN** a free slot has not been used for more than three days and the project declares no age
+- **THEN** its directory is removed and its branch is kept
+
+#### Scenario: Work is never trimmed
+- **WHEN** the pool holds more checkouts than the declared number and some of them are parked or occupied
+- **THEN** none of the parked or occupied checkouts is removed
+
 ### Requirement: Every worktree of a project is accounted for
 The system SHALL account for every worktree the repository registers,
 wherever it is on disk, and SHALL classify each by owner: an agent's
