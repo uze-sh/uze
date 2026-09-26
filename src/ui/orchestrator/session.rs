@@ -273,7 +273,7 @@ impl Attach<'_> {
             return Flow::Continue;
         }
         let surface = chrome.map_or(
-            crate::ui::management::modal_area(Rect::new(
+            crate::ui::widget::modal::area(Rect::new(
                 0,
                 0,
                 viewport.size.width,
@@ -283,7 +283,7 @@ impl Attach<'_> {
         );
         // A width dragged inside the modal is measured against the
         // rectangle its contents were drawn in.
-        let inner = crate::ui::management::modal_surface(surface);
+        let inner = crate::ui::widget::modal::inside(surface);
         let intent = self
             .model
             .manage
@@ -366,10 +366,8 @@ impl Attach<'_> {
             Scope::Rename
         } else if self.model.agent_picker.is_some() {
             Scope::AgentPicker
-        } else if self.model.preserved.is_some() {
-            Scope::PreservedWork
-        } else if self.model.checkouts.is_some() {
-            Scope::Checkouts
+        } else if let Some(work) = &self.model.work {
+            work.section.scope()
         } else if self.model.context_menu.is_some() {
             Scope::ContextMenu
         } else if self
@@ -450,12 +448,9 @@ impl Attach<'_> {
         } else if self.model.context_menu.is_some() {
             self.model.context_menu = None;
             self.model.dirty = true;
-        } else if let Some(overlay) = self.model.preserved.as_mut() {
+        } else if let Some(work) = self.model.work.as_mut() {
             // A key that is not the confirmation withdraws the question.
-            overlay.confirm_discard = false;
-            self.model.dirty = true;
-        } else if let Some(overlay) = self.model.checkouts.as_mut() {
-            overlay.asking = None;
+            work.withdraw();
             self.model.dirty = true;
         } else if self.model.no_modal_open() {
             self.pane_key(key, chord);
@@ -514,7 +509,7 @@ impl Attach<'_> {
             Action::NewAgent => self.model.agent_picker.is_some() || self.model.placement_pending,
             Action::NextAgent => self.asked_for_a_tab,
             Action::ToggleChanges | Action::ToggleFiles => self.model.code.is_some(),
-            Action::TogglePreservedWork => self.model.preserved.is_some(),
+            Action::ToggleWork => self.model.work.is_some(),
             Action::OpenActionIndex => self.model.action_index.is_some(),
             _ => false,
         }
@@ -570,12 +565,8 @@ impl Attach<'_> {
             self.agent_picker_action(action);
             return Flow::Continue;
         }
-        if self.model.preserved.is_some() {
-            self.preserved_action(action);
-            return Flow::Continue;
-        }
-        if self.model.checkouts.is_some() {
-            self.checkouts_action(action, viewport);
+        if self.model.work.is_some() {
+            self.work_action(action, viewport);
             return Flow::Continue;
         }
         if self.model.context_menu.is_some() {
@@ -668,32 +659,18 @@ impl Attach<'_> {
                     self.model.set_busy_notice("delivering all".to_owned());
                 }
             }
-            Action::ToggleCheckouts => {
-                if let Some(root) = self
+            Action::ToggleWork | Action::ShowCheckouts => {
+                let section = if action == Action::ShowCheckouts {
+                    WorkSection::Checkouts
+                } else {
+                    WorkSection::Preserved
+                };
+                let root = self
                     .model
                     .session
                     .as_ref()
-                    .map(|session| session.selected_space().root.clone())
-                {
-                    self.open_checkouts(root);
-                }
-            }
-            Action::TogglePreservedWork => {
-                self.model.preserved = match self.model.preserved {
-                    Some(_) => None,
-                    None => {
-                        // Asked for on opening, and drawn from the last
-                        // answer while this one is out: an empty list that
-                        // fills a moment later reads as work having been
-                        // lost, which is the opposite of what this says.
-                        self.sweep_preserved_work();
-                        Some(PreservedOverlay {
-                            selected: 0,
-                            confirm_discard: false,
-                        })
-                    }
-                };
-                self.model.dirty = true;
+                    .map(|session| session.selected_space().root.clone());
+                self.open_work(section, root);
             }
             _ => {}
         }
@@ -957,13 +934,57 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// The preserved-work list: tasks holding work no live tab is in
-    /// front of, with resume and a confirmed discard.
+    /// The work modal: moving between its sections, closing it, and
+    /// everything else asked of whichever section is in front.
+    pub(super) fn work_action(&mut self, action: Action, viewport: &Viewport) {
+        let Some(work) = self.model.work.as_mut() else {
+            return;
+        };
+        match action {
+            Action::ToggleWork => self.model.work = None,
+            Action::NextSection | Action::PreviousSection => {
+                work.withdraw();
+                work.section = work.section.step(action == Action::NextSection);
+            }
+            Action::ShowCheckouts => {
+                work.withdraw();
+                work.section = WorkSection::Checkouts;
+            }
+            Action::Dismiss => {
+                if !work.withdraw() {
+                    self.model.work = None;
+                }
+            }
+            _ => match work.section {
+                WorkSection::Preserved => self.preserved_action(action),
+                WorkSection::Checkouts => self.checkouts_action(action, viewport),
+            },
+        }
+        self.model.dirty = true;
+    }
+
+    /// Opens the work modal on `section`, asking for both of its reads: the
+    /// machine's preserved work, and the checkouts of the project `root`
+    /// belongs to. Each is drawn from its last answer while the new one is
+    /// out: an empty list that fills a moment later reads as work having
+    /// been lost, which is the opposite of what this says.
+    fn open_work(&mut self, section: WorkSection, root: Option<PathBuf>) {
+        self.sweep_preserved_work();
+        if let Some(root) = &root {
+            self.read_checkouts(root.clone());
+        }
+        self.model.work = Some(WorkOverlay::open(section, root));
+        self.model.dirty = true;
+    }
+
+    /// The preserved section: tasks holding work no live tab is in front
+    /// of, with resume, deliver, mark done and a confirmed discard.
     fn preserved_action(&mut self, action: Action) {
         let preserved = self.model.preserved_tasks();
-        let overlay = self.model.preserved.as_mut().expect("guarded");
+        let Some(overlay) = self.model.work.as_mut().map(|work| &mut work.preserved) else {
+            return;
+        };
         match action {
-            Action::Dismiss => self.model.preserved = None,
             Action::SelectPrevious => {
                 overlay.selected = overlay.selected.saturating_sub(1);
                 overlay.confirm_discard = false;
@@ -1004,13 +1025,13 @@ impl Attach<'_> {
                         // no dead tab behind it.
                         replacing: None,
                     };
-                    self.model.preserved = None;
+                    self.model.work = None;
                     self.offer_agents(Rect::default(), Some(resume));
                 }
             }
             // Discard is the one action that deletes work, so
             // it is the one that asks twice.
-            Action::DiscardTask => overlay.confirm_discard = true,
+            Action::DiscardTask if !preserved.is_empty() => overlay.confirm_discard = true,
             Action::ConfirmDiscard if overlay.confirm_discard => {
                 overlay.confirm_discard = false;
                 let selected = overlay.selected;
@@ -1023,27 +1044,36 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// The checkouts view: open a space in one, adopt, remove, clean up —
-    /// each change asked once before it is made.
+    /// The checkouts section: open a space in one, adopt, remove, join,
+    /// clean up — each change asked once before it is made, and a refusal
+    /// the last read already knows said at once instead.
     pub(super) fn checkouts_action(&mut self, action: Action, viewport: &Viewport) {
-        let Some(overlay) = self.model.checkouts.as_ref() else {
+        let Some(overlay) = self
+            .model
+            .work
+            .as_ref()
+            .and_then(|work| work.checkouts.as_ref())
+        else {
             return;
         };
-        let count = answer_for(&self.model, overlay)
-            .and_then(|answer| answer.view.as_ref())
-            .map_or(0, |view| view.checkouts.len());
+        let count = checkout_count(&self.model, overlay).unwrap_or(0);
         let selected = selected_checkout(&self.model, overlay).cloned();
+        let cleans_anything = clean_up_would_remove(&self.model, overlay);
+        let answered = checkout_count(&self.model, overlay).is_some();
         let asking = overlay.asking;
         let ask = |model: &mut WorkspaceModel, question: Option<CheckoutQuestion>| {
-            if let Some(overlay) = model.checkouts.as_mut() {
+            if let Some(overlay) = model.work.as_mut().and_then(|work| work.checkouts.as_mut()) {
                 overlay.asking = question;
             }
         };
         match action {
-            Action::Dismiss if asking.is_some() => ask(&mut self.model, None),
-            Action::Dismiss | Action::ToggleCheckouts => self.model.checkouts = None,
             Action::SelectPrevious | Action::SelectNext => {
-                if let Some(overlay) = self.model.checkouts.as_mut() {
+                if let Some(overlay) = self
+                    .model
+                    .work
+                    .as_mut()
+                    .and_then(|work| work.checkouts.as_mut())
+                {
                     overlay.selected = if action == Action::SelectNext {
                         (overlay.selected + 1).min(count.saturating_sub(1))
                     } else {
@@ -1054,7 +1084,7 @@ impl Attach<'_> {
             }
             Action::Activate => {
                 if let Some(checkout) = selected {
-                    self.model.checkouts = None;
+                    self.model.work = None;
                     self.open_space_at(checkout.path, viewport.columns, viewport.rows);
                 }
             }
@@ -1073,8 +1103,6 @@ impl Attach<'_> {
                 ),
                 None => {}
             },
-            // A refusal the last read already knows is said at once, rather
-            // than asked about and then refused.
             Action::RemoveCheckout => match selected {
                 Some(checkout) if checkout.removal_refusal.is_some() => self.model.raise_toast(
                     ToastKind::Failed,
@@ -1089,7 +1117,27 @@ impl Attach<'_> {
                 Some(_) => ask(&mut self.model, Some(CheckoutQuestion::Remove)),
                 None => {}
             },
-            Action::CleanUpCheckouts => ask(&mut self.model, Some(CheckoutQuestion::CleanUp)),
+            Action::JoinCheckout => match selected {
+                Some(checkout) if join_of(&checkout).is_some() => {
+                    ask(&mut self.model, Some(CheckoutQuestion::Join));
+                }
+                Some(checkout) => self.model.raise_toast(
+                    ToastKind::Failed,
+                    "not joined",
+                    format!("{}: {}", checkout.name, join_refusal(&checkout)),
+                    None,
+                ),
+                None => {}
+            },
+            Action::CleanUpCheckouts if cleans_anything => {
+                ask(&mut self.model, Some(CheckoutQuestion::CleanUp));
+            }
+            Action::CleanUpCheckouts if answered => self.model.raise_toast(
+                ToastKind::Told,
+                "nothing to clean up",
+                "no checkout of yours is clean, unused and in the target",
+                None,
+            ),
             Action::ConfirmCheckoutChange => {
                 let change = match (asking, selected) {
                     (Some(CheckoutQuestion::Adopt), Some(checkout)) => {
@@ -1104,6 +1152,7 @@ impl Attach<'_> {
                             name: checkout.name,
                         })
                     }
+                    (Some(CheckoutQuestion::Join), Some(checkout)) => join_of(&checkout),
                     (Some(CheckoutQuestion::CleanUp), _) => Some(CheckoutChange::CleanUp),
                     _ => None,
                 };
@@ -1114,14 +1163,6 @@ impl Attach<'_> {
             }
             _ => ask(&mut self.model, None),
         }
-        self.model.dirty = true;
-    }
-
-    /// Opens the checkouts view over `project`, asking for a fresh read.
-    /// The last answer for the same directory stays drawn meanwhile.
-    fn open_checkouts(&mut self, project: PathBuf) {
-        self.model.checkouts = Some(CheckoutsOverlay::over(project.clone()));
-        self.read_checkouts(project);
         self.model.dirty = true;
     }
 
@@ -1145,14 +1186,21 @@ impl Attach<'_> {
         );
     }
 
+    /// The checkouts section's state, while the work modal is open on a
+    /// space.
+    fn checkouts_overlay(&self) -> Option<&CheckoutsOverlay> {
+        self.model
+            .work
+            .as_ref()
+            .and_then(|work| work.checkouts.as_ref())
+    }
+
     /// Makes one change to the checkouts, off this thread. One at a time:
     /// a second started while the first is still removing directories
     /// would inspect what the first is taking away.
     fn change_checkouts(&mut self, change: CheckoutChange) {
         let Some(project) = self
-            .model
-            .checkouts
-            .as_ref()
+            .checkouts_overlay()
             .map(|overlay| overlay.project.clone())
         else {
             return;
@@ -1163,6 +1211,7 @@ impl Attach<'_> {
         self.model.set_busy_notice(match &change {
             CheckoutChange::Adopt { name, .. } => format!("adopting {name}"),
             CheckoutChange::Remove { name, .. } => format!("removing {name}"),
+            CheckoutChange::Join { topic, parent, .. } => format!("joining {topic} into {parent}"),
             CheckoutChange::CleanUp => "cleaning up checkouts".to_owned(),
         });
         spawn_checkout_change(
@@ -1180,15 +1229,20 @@ impl Attach<'_> {
     }
 
     /// A read of the checkouts, kept only while it answers the question
-    /// the open view is asking: one about a directory the view has since
-    /// left is dropped.
+    /// the open section is asking: one about a directory the modal has
+    /// since left is dropped.
     fn absorb_checkouts(&mut self) {
         while let Ok(resolution) = self.channels.checkouts.receiver.try_recv() {
             let latest = resolution.asked == self.model.remembered.checkouts_asked;
             if latest {
                 self.model.remembered.checkouts_pending = None;
             }
-            let Some(overlay) = self.model.checkouts.as_mut() else {
+            let Some(overlay) = self
+                .model
+                .work
+                .as_mut()
+                .and_then(|work| work.checkouts.as_mut())
+            else {
                 continue;
             };
             if !latest || overlay.project != resolution.project {
@@ -1204,9 +1258,10 @@ impl Attach<'_> {
         }
     }
 
-    /// Changes to the checkouts that ended, each said either way; the view
-    /// and the project's tasks are read again, since a slot may have come
-    /// or gone.
+    /// Changes to the checkouts that ended, each said either way; the
+    /// section, the preserved work and the project's tasks are read again,
+    /// since a slot may have come or gone and a join changes what an agent
+    /// holds.
     fn absorb_checkout_changes(&mut self) {
         while let Ok(resolution) = self.channels.checkout_changes.receiver.try_recv() {
             self.model.remembered.checkout_change_pending = false;
@@ -1214,14 +1269,15 @@ impl Attach<'_> {
             let (kind, title, detail) = describe_change(&resolution.outcome);
             self.model.raise_toast(kind, title, detail, None);
             if self
-                .model
-                .checkouts
-                .as_ref()
+                .checkouts_overlay()
                 .is_some_and(|overlay| overlay.project == resolution.project)
             {
                 // Whatever read is out began before this change landed.
                 self.model.remembered.checkouts_pending = None;
                 self.read_checkouts(resolution.project.clone());
+            }
+            if matches!(resolution.outcome, CheckoutOutcome::Joined { .. }) {
+                self.sweep_preserved_work();
             }
             self.model.schedule_evaluation(
                 self.home,
@@ -1841,21 +1897,32 @@ impl Attach<'_> {
                 self.model.status_catalog = None;
                 self.model.dirty = true;
             }
-            _ if self.model.checkouts.is_some() => {
+            _ if self.model.work.is_some() => {
                 match self.model.hit_at(mouse.column, mouse.row) {
-                    Some(WorkspaceHit::CheckoutRow(index)) => {
-                        if let Some(overlay) = self.model.checkouts.as_mut() {
-                            overlay.selected = index;
-                            overlay.asking = None;
+                    Some(WorkspaceHit::WorkRow(index)) => {
+                        if let Some(work) = self.model.work.as_mut() {
+                            work.withdraw();
+                            match work.section {
+                                WorkSection::Preserved => work.preserved.selected = index,
+                                WorkSection::Checkouts => {
+                                    if let Some(checkouts) = work.checkouts.as_mut() {
+                                        checkouts.selected = index;
+                                    }
+                                }
+                            }
                         }
                     }
-                    Some(WorkspaceHit::CheckoutAction(action)) => {
-                        self.checkouts_action(action, viewport);
+                    Some(WorkspaceHit::WorkSection(section)) => {
+                        if let Some(work) = self.model.work.as_mut() {
+                            work.withdraw();
+                            work.section = section;
+                        }
                     }
-                    Some(WorkspaceHit::CheckoutsBody) => {}
-                    // A click outside the view closes it, the way it
-                    // closes every other dialog here.
-                    _ => self.model.checkouts = None,
+                    Some(WorkspaceHit::WorkAction(action)) => self.work_action(action, viewport),
+                    Some(WorkspaceHit::WorkBody) => {}
+                    // The close mark, and a click outside the modal, close
+                    // it the way they close every other dialog here.
+                    _ => self.model.work = None,
                 }
                 self.model.dirty = true;
             }
@@ -2274,7 +2341,7 @@ impl Attach<'_> {
                 {
                     let items = vec![
                         Action::RenameSelection,
-                        Action::ToggleCheckouts,
+                        Action::ShowCheckouts,
                         Action::CloseTab,
                     ];
                     self.model.context_menu = Some(ContextMenu {
@@ -2437,6 +2504,16 @@ impl Attach<'_> {
                     Action::SelectNext
                 };
                 return self.action_index_action(action, viewport);
+            }
+            // A list in front of everything: the wheel walks it, and
+            // nothing behind the modal scrolls.
+            _ if self.model.work.is_some() => {
+                let action = if mouse.kind == MouseEventKind::ScrollUp {
+                    Action::SelectPrevious
+                } else {
+                    Action::SelectNext
+                };
+                self.work_action(action, viewport);
             }
             _ if self.model.architect.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
@@ -2759,11 +2836,13 @@ impl Attach<'_> {
                 // `DraggingSpace`).
                 self.model.dragging_space = Some(DraggingSpace::armed_at(space, mouse.row));
             }
-            // Only reachable while the checkouts view is open, which the
+            // Only reachable while the work modal is open, which the
             // guarded arm in `press` answers first.
-            WorkspaceHit::CheckoutRow(_)
-            | WorkspaceHit::CheckoutAction(_)
-            | WorkspaceHit::CheckoutsBody => {}
+            WorkspaceHit::WorkSection(_)
+            | WorkspaceHit::WorkRow(_)
+            | WorkspaceHit::WorkAction(_)
+            | WorkspaceHit::WorkClose
+            | WorkspaceHit::WorkBody => {}
             WorkspaceHit::ContextMenuAction(_) => {
                 // Only reachable while the context menu is
                 // open, which the guarded arm above already
@@ -3013,7 +3092,7 @@ impl Attach<'_> {
     /// the one it took over from — because that is what moving an agent
     /// between directories is: a process cannot be told to stand
     /// somewhere else.
-    fn perform_menu_action(&mut self, target: MenuTarget, action: Action) {
+    pub(super) fn perform_menu_action(&mut self, target: MenuTarget, action: Action) {
         match action {
             Action::IsolateAgent => {
                 self.isolate_agent(target, uze_application::Carry::CopyOfChanges)
@@ -3021,11 +3100,11 @@ impl Attach<'_> {
             Action::IsolateAgentAtCommit => {
                 self.isolate_agent(target, uze_application::Carry::Nothing)
             }
-            Action::ToggleCheckouts => {
+            Action::ShowCheckouts => {
                 if let MenuTarget::Space(space) = target
                     && let Some(root) = self.model.space_root(space)
                 {
-                    self.open_checkouts(root);
+                    self.open_work(WorkSection::Checkouts, Some(root));
                 }
             }
             _ => dispatch_menu_action(

@@ -163,11 +163,11 @@ scopes! {
     Rename => "rename", "While renaming", Workspace, seals: true, text: true;
     /// The harness picker a new agent is born from.
     AgentPicker => "agent-picker", "Choosing an agent", Workspace, seals: true, text: false;
-    /// The list of work no live tab is in front of.
-    PreservedWork => "preserved-work", "Preserved work", Workspace,
+    /// The work modal on the work no live tab is in front of.
+    PreservedWork => "preserved-work", "Work: preserved", Workspace,
         seals: true, text: false;
-    /// Every checkout of a space's project, grouped by who it belongs to.
-    Checkouts => "checkouts", "Checkouts", Workspace, seals: true, text: false;
+    /// The work modal on every checkout of a space's project.
+    Checkouts => "checkouts", "Work: checkouts", Workspace, seals: true, text: false;
     /// The tab/space context menu.
     ContextMenu => "context-menu", "A tab's actions", Workspace, seals: true, text: false;
 

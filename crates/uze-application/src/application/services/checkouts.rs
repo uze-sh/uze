@@ -11,7 +11,7 @@ use std::time::SystemTime;
 
 use uze_core::{
     checkout::{self, AccountedCheckout, CheckoutId, Owner, Presence, Refusal},
-    task::{self, AgentStore},
+    task::{self, AgentStore, WorkState},
     worktree::{self, WORKTREES_DIRECTORY},
 };
 
@@ -83,6 +83,7 @@ impl Workspace<'_> {
                     branch: found.branch.clone(),
                     dirty: facts.dirty,
                     in_target: facts.in_target,
+                    ahead: facts.ahead,
                     in_use: facts.in_use,
                     last_changed,
                     bytes,
@@ -209,11 +210,20 @@ impl Workspace<'_> {
             Owner::Agent => CheckoutOwner::Agent {
                 holder: slot_holder(store, path).map(|agent| agent.label.clone()),
             },
-            Owner::Subagent { parent } => CheckoutOwner::Subagent {
-                parent: store
-                    .get(parent)
-                    .map_or_else(|| parent.to_string(), |agent| agent.label.clone()),
-            },
+            Owner::Subagent { parent } => {
+                let agent = store.get(parent);
+                let child = slot_holder(store, path).filter(|child| {
+                    child.parent.as_ref() == Some(parent)
+                        && (checkout::is_live(&child.state) || child.state == WorkState::Parked)
+                });
+                CheckoutOwner::Subagent {
+                    parent: agent.map_or_else(|| parent.to_string(), |agent| agent.label.clone()),
+                    parent_id: parent.to_string(),
+                    topic: child.map(|child| child.label.clone()),
+                    joinable: child.is_some()
+                        && agent.is_some_and(|agent| agent.state == WorkState::Parked),
+                }
+            }
             Owner::Harness { harness } => CheckoutOwner::Harness {
                 harness: self.harness_name(harness),
             },
@@ -250,14 +260,21 @@ impl Workspace<'_> {
 struct Facts {
     dirty: bool,
     in_target: bool,
+    ahead: usize,
     in_use: bool,
 }
 
 impl Facts {
     fn read(target: &str, found: &AccountedCheckout, presence: &Presence) -> Self {
+        let in_target = checkout::is_integrated(&found.path, target, "HEAD");
         Self {
             dirty: checkout::holds_uncommitted_work(&found.path),
-            in_target: checkout::is_integrated(&found.path, target, "HEAD"),
+            in_target,
+            ahead: if in_target {
+                0
+            } else {
+                checkout::commits_ahead(&found.path, target, "HEAD")
+            },
             in_use: presence.inside(&found.path),
         }
     }
@@ -351,6 +368,9 @@ pub struct CheckoutView {
     pub dirty: bool,
     /// Everything its `HEAD` carries is already in the target.
     pub in_target: bool,
+    /// Commits its `HEAD` has that the target lacks; zero once it is in
+    /// the target, even when a squash left them counted.
+    pub ahead: usize,
     /// A live process is working inside it.
     pub in_use: bool,
     pub last_changed: Option<SystemTime>,
@@ -370,7 +390,16 @@ pub enum CheckoutOwner {
     /// held it.
     Agent { holder: Option<String> },
     /// A checkout UZE made for one of `parent`'s subagents.
-    Subagent { parent: String },
+    Subagent {
+        /// The agent's label, as the operator knows it.
+        parent: String,
+        /// The agent's identity, which an operator's join names it by.
+        parent_id: String,
+        /// The subagent's topic, while it still holds this checkout.
+        topic: Option<String>,
+        /// Its agent is parked, so the operator may join it there.
+        joinable: bool,
+    },
     /// A harness's own isolation, left to that harness.
     Harness { harness: String },
     /// Everyone else's: a person's, or one an agent made by hand.

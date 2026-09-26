@@ -14,7 +14,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Clear, Padding, Paragraph},
+    widgets::Padding,
 };
 
 use uze_application::{FirstStepsLayout, ManagementLayout, UzeHome};
@@ -27,8 +27,8 @@ use super::worker::{
     spawn_startup,
 };
 use super::{overlay, view};
-use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{self, Edge, Rule, Surface, hint, text};
+use crate::ui::theme::{self, Token};
+use crate::ui::widget::{self, Edge, Rule, hint, modal, text};
 
 /// How long a resolution of the machine stands for before opening the
 /// modal re-resolves it. The window exists for one case: the session's
@@ -247,65 +247,6 @@ fn context_root() -> PathBuf {
 
 // --- Geometry -----------------------------------------------------------
 
-/// Where the modal sits in `frame`: wide, because it holds whole screens
-/// with a menu, a list and a drawer side by side, but inset on every side
-/// so the workspace is visibly still there behind it. The inset scales
-/// down with the terminal rather than being a fixed margin — on a small
-/// one the screens need the columns more than the backdrop needs to show.
-///
-/// Below [`ROOMY_WIDTH`]×[`ROOMY_HEIGHT`] it takes the whole frame. The
-/// scaling inset answered the wrong question there: it kept the margin
-/// proportional while the thing inside it was already short of room, so
-/// a small laptop paid a border, two rules and a backdrop out of the
-/// columns a menu, a list and a drawer were sharing. Showing the
-/// workspace behind is worth a margin only once the screens in front do
-/// not need it.
-pub(crate) fn modal_area(frame: Rect) -> Rect {
-    if frame.width < ROOMY_WIDTH || frame.height < ROOMY_HEIGHT {
-        return frame;
-    }
-    let horizontal = (frame.width / 16).min(6);
-    let vertical = (frame.height / 12).min(2);
-    Rect::new(
-        frame.x + horizontal,
-        frame.y + vertical,
-        frame.width.saturating_sub(2 * horizontal),
-        frame.height.saturating_sub(2 * vertical),
-    )
-}
-
-/// The frame a modal is willing to spend a margin out of. Under either
-/// measure it fills the screen instead.
-///
-/// The width is what the management surface itself asks for: a menu, a
-/// list at its minimum and a drawer at its minimum come to the high
-/// seventies, and `render`'s own `narrow` fold sits at 90. Below that the
-/// screens are already giving things up, and a margin makes them give up
-/// more. The height is two rows of cards plus the chrome around them.
-const ROOMY_WIDTH: u16 = 100;
-const ROOMY_HEIGHT: u16 = 30;
-
-/// Where the management surface is drawn inside a modal at `area`: inside
-/// the border, and one blank row under the title, so the menu's first
-/// route never sits against it. The workspace measures a drag inside the
-/// modal against the same rectangle.
-pub(crate) fn modal_surface(area: Rect) -> Rect {
-    Rect::new(
-        area.x + 1,
-        area.y + 2,
-        area.width.saturating_sub(2),
-        area.height.saturating_sub(3),
-    )
-}
-
-/// The rectangles a frame of the modal leaves for the workspace's input
-/// handling: the modal itself, and the mark on its title that closes it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ModalChrome {
-    pub(crate) area: Rect,
-    pub(crate) close: Rect,
-}
-
 /// The modal, over a frame the scrim has already pushed back: its border,
 /// its title row, and the management surface inside.
 pub(crate) fn render_modal(
@@ -313,48 +254,17 @@ pub(crate) fn render_modal(
     frame_area: Rect,
     model: &TuiModel,
     hits: &mut Vec<(Rect, Hit)>,
-) -> ModalChrome {
-    let area = modal_area(frame_area);
-    frame.render_widget(Clear, area);
-    // The same border every popup of the workspace draws, so the modal
-    // reads as one more of its surfaces rather than a different product.
-    Surface::card().render(frame, area);
-
-    // The title row is drawn by hand rather than through the block's own
-    // titles so the close mark has a rect the click can be tested against.
-    // Its name is set the way `super::title_row` sets every popup's.
-    let title = Rect::new(area.x + 2, area.y, area.width.saturating_sub(4), 1);
-    frame.render_widget(
-        Paragraph::new(Span::styled(" manage ", theme::fg_bold(Token::TextBright))),
-        title,
-    );
-    // Only the close mark on the right: the key that closes the modal is
-    // the one that opened it, and the index lists it for anyone asking.
-    let mark = theme::glyph(Symbol::MarkClose);
-    let mark_width = theme::width(Symbol::MarkClose);
-    let close = Rect::new(
-        title.right().saturating_sub(mark_width + 1),
-        title.y,
-        mark_width + 2,
-        1,
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            format!(" {mark} "),
-            theme::fg(Token::TextMuted),
-        )),
-        close,
-    );
-
+) -> modal::Chrome {
+    let chrome = modal::render(frame, modal::area(frame_area), "manage");
     // A dialog open inside recedes the modal's own chrome too — its title
     // row and the row under it sit outside the surface `render` dims.
     // `render` paints its whole area afresh, so what it draws is dimmed
     // once, by itself.
     if !matches!(model.overlay, Overlay::None) {
-        widget::scrim::render(frame, area);
+        widget::scrim::render(frame, chrome.area);
     }
-    render(frame, modal_surface(area), model, hits);
-    ModalChrome { area, close }
+    render(frame, modal::inside(chrome.area), model, hits);
+    chrome
 }
 
 // --- Layout ------------------------------------------------------------
@@ -656,9 +566,7 @@ fn render_sidebar(
     }
 }
 
-/// One route in the sidebar: a bar at its edge, its name with the count
-/// pinned right, and — on a row two tall — its subtitle beneath. The
-/// selected route is a raised band the bar lights up on.
+/// One route in the sidebar, drawn as the modal's navigation entry.
 fn route_row(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -666,72 +574,14 @@ fn route_row(
     selected: bool,
     count: Option<usize>,
 ) {
-    let ground = if selected {
-        Token::SurfaceRaised
-    } else {
-        Token::SurfaceBackground
-    };
-    if selected {
-        widget::fill(frame, rect, ground);
-    }
-    let bar_hue = if selected {
-        Token::Accent
-    } else {
-        Token::SurfaceBackground
-    };
-    for dy in 0..rect.height {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                theme::glyph(Symbol::BarMedium),
-                theme::on(bar_hue, ground),
-            )),
-            Rect::new(rect.x, rect.y + dy, 1, 1),
-        );
-    }
-
-    let text_x = rect.x + 2;
-    let text_width = rect.width.saturating_sub(3);
-    let raised = |style: Style| {
-        if selected {
-            style.bg(theme::color(Token::SurfaceRaised))
-        } else {
-            style
-        }
-    };
-    let label_style = if selected {
-        raised(theme::fg_bold(Token::TextBright))
-    } else {
-        theme::fg(Token::TextInactive)
-    };
-    let label_rect = Rect::new(text_x, rect.y, text_width, 1);
-    let label_rect = match count {
-        Some(count) => {
-            let count = text::small_digits(count);
-            let [label, count_rect] =
-                Layout::horizontal([Constraint::Min(1), Constraint::Length(count.len() as u16)])
-                    .areas(label_rect);
-            frame.render_widget(
-                Paragraph::new(Span::styled(count, raised(theme::fg(Token::Accent))))
-                    .alignment(ratatui::layout::Alignment::Right),
-                count_rect,
-            );
-            label
-        }
-        None => label_rect,
-    };
-    frame.render_widget(
-        Paragraph::new(route_label_line(route, label_style)),
-        label_rect,
+    widget::nav::entry(
+        frame,
+        rect,
+        route_label_line(route, widget::nav::label_style(selected)),
+        route.subtitle(),
+        selected,
+        count,
     );
-    if rect.height > 1 {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                text::elide(route.subtitle(), usize::from(text_width)),
-                raised(theme::fg(Token::TextDim)),
-            )),
-            Rect::new(text_x, rect.y + 1, text_width, 1),
-        );
-    }
 }
 
 fn render_footer(
@@ -740,28 +590,11 @@ fn render_footer(
     model: &TuiModel,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let inner = Rule::new(Edge::Top)
-        .padding(Padding::new(1, 1, 0, 0))
-        .render(frame, area);
-
-    let version = format!("v{}", crate::self_update::running());
     // The way into the index is at the foot of the sidebar now, with the
     // other chrome that belongs to uze rather than to a screen — one place
     // in both surfaces, rather than a button here and a chip on the tab
     // strip over there. This row is the hint line and the version.
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(10),
-            Constraint::Length(2),
-            Constraint::Length(version.len() as u16),
-        ])
-        .split(inner);
-    // One row: a line that does not fit is elided rather than wrapped into
-    // a second row the footer does not have.
-    let mut line = footer_line(model);
-    text::clip(&mut line, columns[0].width as usize);
-    frame.render_widget(Paragraph::new(line), columns[0]);
+    //
     // Brighter than the hints beside it because it answers a click: it
     // opens this release's notes. Brighter still under the pointer.
     let tone = if model.version_hovered {
@@ -769,12 +602,13 @@ fn render_footer(
     } else {
         Token::TextSecondary
     };
-    frame.render_widget(
-        Paragraph::new(Span::styled(version, theme::fg(tone)))
-            .alignment(ratatui::layout::Alignment::Right),
-        columns[2],
+    let version = Span::styled(
+        format!("v{}", crate::self_update::running()),
+        theme::fg(tone),
     );
-    hits.push((columns[2], Hit::RunningReleaseNotes));
+    if let Some(rect) = widget::footer::render(frame, area, footer_line(model), Some(version)) {
+        hits.push((rect, Hit::RunningReleaseNotes));
+    }
 }
 
 /// The hint line: what can be done here, with the keys that do it.
@@ -824,33 +658,6 @@ fn footer_line(model: &TuiModel) -> Line<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A terminal with room to spare keeps the backdrop visible around
-    /// the modal; one without gives the whole frame to what is in front.
-    ///
-    /// The inset used to scale and never reach zero, which answered the
-    /// wrong question on a small screen: it held the margin proportional
-    /// while a menu, a list and a drawer were already short of columns,
-    /// so the border and the backdrop were paid for out of them.
-    #[test]
-    fn the_modal_fills_a_small_frame_and_insets_a_roomy_one() {
-        let roomy = Rect::new(0, 0, ROOMY_WIDTH, ROOMY_HEIGHT);
-        let inset = modal_area(roomy);
-        assert!(inset.x > roomy.x, "a margin beside it: {inset:?}");
-        assert!(inset.width < roomy.width, "and narrower for it: {inset:?}");
-
-        for cramped in [
-            Rect::new(0, 0, ROOMY_WIDTH - 1, ROOMY_HEIGHT),
-            Rect::new(0, 0, ROOMY_WIDTH, ROOMY_HEIGHT - 1),
-            Rect::new(0, 0, 80, 24),
-        ] {
-            assert_eq!(
-                modal_area(cramped),
-                cramped,
-                "either measure short of roomy takes the frame: {cramped:?}"
-            );
-        }
-    }
 
     /// The workspace loop turns the modal's clock every few milliseconds;
     /// a turn that moved nothing must not cost a frame, and a spinner on

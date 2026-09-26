@@ -332,8 +332,7 @@ fn default_bindings() -> Vec<Binding> {
         // --- Workspace, the work ----------------------------------------
         bind(Scope::Workspace, "alt+i", Action::DeliverTask),
         bind(Scope::Workspace, "alt+shift+i", Action::DeliverAllTasks),
-        bind(Scope::Workspace, "alt+p", Action::TogglePreservedWork),
-        bind(Scope::Workspace, "alt+w", Action::ToggleCheckouts),
+        bind(Scope::Workspace, "alt+p", Action::ToggleWork),
         // --- Workspace, the surfaces that seal --------------------------
         bind(Scope::Code, "esc", Action::Dismiss),
         // The doors stay doors: the one already showing closes, the other
@@ -401,7 +400,14 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "enter", Action::InsertNewline),
         bind(Scope::CodeEditing, "backspace", Action::EraseBack),
         bind(Scope::CodeEditing, "delete", Action::EraseForward),
+        // The work modal: one scope per section, since a letter means
+        // something different in each, and the same way between them.
         bind(Scope::PreservedWork, "esc", Action::Dismiss),
+        bind(Scope::PreservedWork, "alt+p", Action::ToggleWork),
+        bind(Scope::PreservedWork, "tab", Action::NextSection),
+        bind(Scope::PreservedWork, "right", Action::NextSection),
+        bind(Scope::PreservedWork, "shift+tab", Action::PreviousSection),
+        bind(Scope::PreservedWork, "left", Action::PreviousSection),
         bind(Scope::PreservedWork, "down", Action::SelectNext),
         bind(Scope::PreservedWork, "up", Action::SelectPrevious),
         bind(Scope::PreservedWork, "i", Action::DeliverTask),
@@ -410,10 +416,16 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::PreservedWork, "d", Action::DiscardTask),
         bind(Scope::PreservedWork, "y", Action::ConfirmDiscard),
         bind(Scope::Checkouts, "esc", Action::Dismiss),
+        bind(Scope::Checkouts, "alt+p", Action::ToggleWork),
+        bind(Scope::Checkouts, "tab", Action::NextSection),
+        bind(Scope::Checkouts, "right", Action::NextSection),
+        bind(Scope::Checkouts, "shift+tab", Action::PreviousSection),
+        bind(Scope::Checkouts, "left", Action::PreviousSection),
         bind(Scope::Checkouts, "down", Action::SelectNext),
         bind(Scope::Checkouts, "up", Action::SelectPrevious),
         bind(Scope::Checkouts, "enter", Action::Activate),
         bind(Scope::Checkouts, "a", Action::AdoptCheckout),
+        bind(Scope::Checkouts, "j", Action::JoinCheckout),
         bind(Scope::Checkouts, "d", Action::RemoveCheckout),
         bind(Scope::Checkouts, "c", Action::CleanUpCheckouts),
         bind(Scope::Checkouts, "y", Action::ConfirmCheckoutChange),
@@ -508,7 +520,10 @@ mod tests {
                 // artifacts, which has the key: `o`, then the arrow. A
                 // letter of its own would be one of the four nobody could
                 // guess.
-                "choose-area"
+                "choose-area",
+                // The work modal's own key opens it; this is the space
+                // menu's way straight to the checkouts of that space.
+                "show-checkouts",
             ],
             "an action gained or lost a chord; say so here on purpose"
         );

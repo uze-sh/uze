@@ -192,10 +192,12 @@ mod input;
 mod render;
 mod selection;
 mod session;
+mod work;
 use checkouts::*;
 use input::*;
 use render::*;
 use session::*;
+use work::*;
 
 /// Why an attach ended.
 pub(crate) enum WorkspaceExit {
@@ -398,8 +400,6 @@ struct PendingAgentTab {
     size: (u16, u16),
 }
 
-/// Open state of the preserved-work list: tasks holding work that no live
-/// tab is in front of.
 /// Everything reachable with `scopes` open, each with the key that
 /// reaches it. The workspace's counterpart to the management model's own
 /// `action_index_rows` — the same question, read from the same keymap, so
@@ -421,6 +421,8 @@ struct ActionIndexOverlay {
     selected: usize,
 }
 
+/// The work modal's preserved section: tasks holding work that no live
+/// tab is in front of.
 struct PreservedOverlay {
     selected: usize,
     /// A discard was asked for and waits for its confirmation.
@@ -671,7 +673,7 @@ fn spawn_checkouts(
     });
 }
 
-/// Adopts, removes or cleans up checkouts, off the UI thread: a removal is
+/// Adopts, removes, joins or cleans up checkouts, off the UI thread: a removal is
 /// `git worktree remove` over a directory that may hold a build's worth of
 /// files, and a clean-up is several of them.
 fn spawn_checkout_change(
@@ -708,6 +710,19 @@ fn spawn_checkout_change(
                                 .map_err(|refusal| refusal.to_string())
                         }),
                     },
+                    CheckoutChange::Join {
+                        parent_id,
+                        parent,
+                        topic,
+                    } => CheckoutOutcome::Joined {
+                        topic: topic.clone(),
+                        parent: parent.clone(),
+                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
+                            workspace
+                                .join_parked_work(&project, parent_id, topic)
+                                .map_err(|refusal| refusal.to_string())
+                        }),
+                    },
                     CheckoutChange::CleanUp => CheckoutOutcome::CleanedUp(
                         workspace
                             .map(|workspace| workspace.clean_up_checkouts(&project, &occupied))
@@ -723,6 +738,11 @@ fn spawn_checkout_change(
                 CheckoutChange::Remove { name, .. } => CheckoutOutcome::Removed {
                     name: name.clone(),
                     answer: Err(failed(name)),
+                },
+                CheckoutChange::Join { parent, topic, .. } => CheckoutOutcome::Joined {
+                    topic: topic.clone(),
+                    parent: parent.clone(),
+                    answer: Err(failed(topic)),
                 },
                 CheckoutChange::CleanUp => {
                     CheckoutOutcome::CleanedUp(uze_application::CleanUp::default())
@@ -1600,14 +1620,17 @@ impl WorkspaceShape {
 /// hit-testing vec just for one extension.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum WorkspaceHit {
-    /// One row of the open checkouts view, by index into
-    /// [`checkouts::listed`].
-    CheckoutRow(usize),
-    /// One of the checkouts view's buttons, by the action it performs.
-    CheckoutAction(Action),
-    /// Anywhere else on the checkouts view: answers nothing, and is not a
+    /// One of the work modal's sections, in its sidebar.
+    WorkSection(WorkSection),
+    /// One row of the work modal's open section, by its index there.
+    WorkRow(usize),
+    /// One of the work modal's buttons, by the action it performs.
+    WorkAction(Action),
+    /// The mark on the work modal's title that closes it.
+    WorkClose,
+    /// Anywhere else on the work modal: answers nothing, and is not a
     /// click outside it.
-    CheckoutsBody,
+    WorkBody,
     SelectTab(TabId),
     CloseTab(TabId),
     NewTab,
@@ -2886,10 +2909,8 @@ struct WorkspaceModel {
     /// sent before that lands in whichever space is selected — which is
     /// the bug this whole path exists to fix, reintroduced by racing it.
     pending_agent_tab: Option<PendingAgentTab>,
-    /// Open state of the preserved-work list; `None` when closed.
-    preserved: Option<PreservedOverlay>,
-    /// Open state of the checkouts view; `None` when closed.
-    checkouts: Option<CheckoutsOverlay>,
+    /// Open state of the work modal; `None` when closed.
+    work: Option<WorkOverlay>,
     /// Everything that can be done here, each with the key that reaches
     /// it. The workspace had no help surface at all — `alt+shift+i`
     /// delivers every task in a space, and there was no way to find that
@@ -2947,7 +2968,7 @@ struct WorkspaceModel {
     /// Where the last frame drew the modal, for the click that lands
     /// beside it — or on its close mark — to be told apart from one
     /// inside.
-    manage_chrome: Option<super::management::ModalChrome>,
+    manage_chrome: Option<super::widget::modal::Chrome>,
     /// The modal's shape as it was last closed, kept here so the layout
     /// file is written from this model alone (see `shape`).
     management_layout: uze_application::ManagementLayout,
@@ -3251,8 +3272,7 @@ impl WorkspaceModel {
             && self.agent_picker.is_none()
             && self.support_dropdown.is_none()
             && self.status_catalog.is_none()
-            && self.preserved.is_none()
-            && self.checkouts.is_none()
+            && self.work.is_none()
             && self.context_menu.is_none()
             && self.action_index.is_none()
             && self.release_notes.is_none()
@@ -3722,6 +3742,27 @@ impl WorkspaceModel {
     /// The agent a tab was launched for, by the identity the session echoes.
     pub(super) fn tab_agent_id(&self, tab: TabId) -> Option<&str> {
         self.tab(tab).and_then(launched_agent_id)
+    }
+
+    /// The subagents of the agent on `tab` that still hold a checkout of
+    /// their own, as the last evaluation listed them: what the column
+    /// draws under that agent.
+    pub(super) fn subagents_of(&self, tab: TabId) -> Vec<&AgentView> {
+        let Some(id) = self.tab_agent_id(tab) else {
+            return Vec::new();
+        };
+        self.remembered
+            .tasks
+            .values()
+            .flatten()
+            .filter(|task| {
+                task.parent.as_deref() == Some(id)
+                    && !matches!(
+                        task.state,
+                        WorkStateView::Integrated | WorkStateView::Closed
+                    )
+            })
+            .collect()
     }
 
     /// The task listed for an identity, whichever repository listed it.

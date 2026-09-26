@@ -10,7 +10,7 @@ use crate::ui::Rows;
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
     self, Chip, ChipState, Edge, POPUP_H_PAD, POPUP_V_PAD, Rule, Surface, TRAILING_PAD,
-    action_index, chip, hint, mark, row, text,
+    action_index, chip, mark, row, text,
 };
 
 pub(super) fn blank_pane(pane: PaneId, columns: u16, rows: u16) -> PaneSnapshot {
@@ -114,7 +114,7 @@ pub(super) struct FrameMetrics {
 /// client's, since its clicks are resolved by its own model.
 #[derive(Debug)]
 pub(super) struct ManageFrame {
-    pub(super) chrome: crate::ui::management::ModalChrome,
+    pub(super) chrome: crate::ui::widget::modal::Chrome,
     pub(super) hits: Vec<(Rect, crate::ui::hit::Hit)>,
 }
 
@@ -159,11 +159,7 @@ pub(super) fn render(
     // a screen that is still live — so the scrim covers these two and
     // nothing else. Same placement as the management modal's: between
     // what was drawn and what is drawn over it.
-    if model.preserved.is_some()
-        || model.checkouts.is_some()
-        || model.action_index.is_some()
-        || model.release_notes.is_some()
-    {
+    if model.work.is_some() || model.action_index.is_some() || model.release_notes.is_some() {
         crate::ui::widget::scrim::render(frame, frame.area());
     }
     if let Some(modal) = &model.release_notes {
@@ -177,11 +173,8 @@ pub(super) fn render(
             ],
         );
     }
-    if let Some(overlay) = &model.preserved {
-        render_preserved(frame, frame.area(), model, overlay);
-    }
-    if let Some(overlay) = &model.checkouts {
-        render_checkouts(frame, frame.area(), model, overlay, hits);
+    if let Some(overlay) = &model.work {
+        render_work(frame, frame.area(), model, overlay, hits);
     }
     if let Some(index) = &model.action_index {
         render_action_index(frame, frame.area(), index, hits);
@@ -872,7 +865,7 @@ fn tree_rows(
             } else if agents == 0 {
                 1
             } else {
-                agent_rows(agents)
+                agent_rows(agents) + subagent_rows(model, space, identities)
             };
             let margin = rearranging
                 || !model.space_folded(space)
@@ -981,6 +974,15 @@ fn agent_rows(agents: u16) -> u16 {
     (agents * 3).saturating_sub(1)
 }
 
+/// The rows a space's subagents take, one under the agent each belongs
+/// to.
+fn subagent_rows(model: &WorkspaceModel, space: &Space, identities: &[AgentIdentity]) -> u16 {
+    agent_tabs_of(space, identities)
+        .iter()
+        .map(|tab| model.subagents_of(tab.id).len() as u16)
+        .sum()
+}
+
 /// One agent of a space, resolved once: what its two rows say and
 /// which of its states are on.
 struct SidebarAgent<'a> {
@@ -1010,6 +1012,9 @@ struct TreeCaption {
     /// is gone.
     detail: String,
     detail_color: Color,
+    /// The agent's subagents holding a checkout, each as its topic and
+    /// what is worth saying about it.
+    subagents: Vec<(String, Option<String>)>,
 }
 
 impl TreeCaption {
@@ -1052,11 +1057,24 @@ impl TreeCaption {
         } else {
             caption_color(agent.is_current)
         };
+        let subagents = model
+            .subagents_of(tab.id)
+            .into_iter()
+            .map(|child| {
+                let said = match child.state {
+                    WorkStateView::Parked => Some("parked".to_owned()),
+                    _ if child.ahead > 0 => Some(format!("{} ahead", child.ahead)),
+                    _ => None,
+                };
+                (child.label.clone(), said)
+            })
+            .collect();
         Self {
             task_mark,
             resumable,
             detail,
             detail_color,
+            subagents,
         }
     }
 }
@@ -1428,6 +1446,52 @@ fn draw_tree(
             // just the label text above it.
             hits.push((detail_rect, WorkspaceHit::SelectTab(tab.id)));
         }
+
+        // A subagent works in a checkout of its own, but its work is its
+        // agent's: it hangs under that agent's item, one level in, rather
+        // than standing as an agent of the space.
+        for (index, (topic, said)) in caption.subagents.iter().enumerate() {
+            let Some(child_rect) = rows.slot(1).visible() else {
+                continue;
+            };
+            let last = index + 1 == caption.subagents.len();
+            let mut spans = vec![
+                space_gutter(is_active_space, lit),
+                branch.stem(),
+                Span::raw(" "),
+                Branch::drawn(if last {
+                    Symbol::TreeLast
+                } else {
+                    Symbol::TreeBranch
+                }),
+                Span::raw(" "),
+            ];
+            let taken: u16 = spans.iter().map(|span| span.width() as u16).sum::<u16>()
+                + said
+                    .as_ref()
+                    .map_or(0, |said| text::columns(said) as u16 + 1)
+                + TRAILING_PAD;
+            spans.push(Span::styled(
+                text::elide(
+                    topic,
+                    usize::from(child_rect.width.saturating_sub(taken).max(1)),
+                ),
+                Style::default().fg(caption_color(agent.is_current)),
+            ));
+            if let Some(said) = said {
+                row::push_trailing(
+                    &mut spans,
+                    child_rect.width,
+                    said.clone(),
+                    theme::color(Token::TextDim),
+                );
+            }
+            if let Some(surface) = surface {
+                row::pad_to(&mut spans, child_rect.width, surface);
+            }
+            frame.render_widget(Paragraph::new(Line::from(spans)), child_rect);
+            hits.push((child_rect, WorkspaceHit::SelectTab(tab.id)));
+        }
     }
 }
 
@@ -1442,7 +1506,7 @@ pub(super) const FIRST_STEPS: [Action; 6] = [
     Action::NextAgent,
     Action::ToggleChanges,
     Action::ToggleFiles,
-    Action::TogglePreservedWork,
+    Action::ToggleWork,
     Action::OpenActionIndex,
 ];
 
@@ -2546,16 +2610,6 @@ fn delivery_subject(task: &AgentView) -> String {
     }
 }
 
-/// The preserved-work list: every task holding work that no live tab is in
-/// front of, with the keys that move it on. Discard asks twice.
-/// The reading width this client's centred dialogs keep. A dialog as wide
-/// as the terminal is one nobody reads across — the eye loses the line on
-/// the way back — and both of these are short lists of short rows. One
-/// pair of numbers so the two are the same shape rather than each what its
-/// own content happened to come to.
-const MIN_POPUP_WIDTH: u16 = 30;
-const MAX_POPUP_WIDTH: u16 = 72;
-
 /// Everything that can be done here, each with the key that reaches it.
 ///
 /// The workspace had no such surface at all: two of its most useful
@@ -2581,140 +2635,6 @@ pub(super) fn render_action_index(
     );
     // Prepended: what is underneath must not answer a click meant here.
     hits.splice(0..0, entries);
-}
-
-pub(super) fn render_preserved(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    model: &WorkspaceModel,
-    overlay: &PreservedOverlay,
-) {
-    let preserved = model.preserved_tasks();
-    let mut selected_line = None;
-    let mut lines = vec![Line::from(Span::styled(
-        "PRESERVED WORK",
-        theme::fg(Token::TextMuted),
-    ))];
-    if preserved.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "nothing preserved — every task is either live or delivered",
-            theme::fg(Token::TextSecondary),
-        )));
-    }
-    for (index, work) in preserved.iter().enumerate() {
-        let selected = index == overlay.selected;
-        let (mark, hue) = task_mark(&work.state)
-            .unwrap_or_else(|| (theme::glyph(Symbol::MarkDot), theme::color(Token::TextDim)));
-        // What the *record* says, which is all this list asks. How far a
-        // branch is ahead and what the forge holds are questions about the
-        // project you are in, and asking them here would put one Git read
-        // per project on the machine behind a keystroke.
-        let what = match &work.state {
-            WorkStateView::Parked if work.checkout.is_none() => "checkout removed".to_owned(),
-            WorkStateView::Parked => "nobody is there".to_owned(),
-            WorkStateView::Uncommitted => "uncommitted changes".to_owned(),
-            WorkStateView::Conflicted { .. } => "conflict to resolve".to_owned(),
-            WorkStateView::GateFailed => "checks failed".to_owned(),
-            WorkStateView::Running => "was running".to_owned(),
-            WorkStateView::Integrating => "delivering".to_owned(),
-            _ => work.branch.clone(),
-        };
-        // The project, because this list crosses them: two agents carrying
-        // a branch of the same name in two repositories are one row twice
-        // without it.
-        let project = work
-            .project
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| work.project.display().to_string());
-        let spans = vec![
-            Span::styled(
-                if selected {
-                    format!("{} ", theme::glyph(Symbol::ChevronCollapsed))
-                } else {
-                    "  ".to_owned()
-                },
-                theme::fg(Token::Accent),
-            ),
-            Span::styled(format!("{mark} "), Style::default().fg(hue)),
-            Span::styled(
-                work.label.clone(),
-                Style::default().fg(if selected {
-                    theme::color(Token::TextBright)
-                } else {
-                    theme::color(Token::TextPrimary)
-                }),
-            ),
-            Span::styled(format!("  {project}"), theme::fg(Token::TextMuted)),
-            Span::styled(format!("  {what}"), theme::fg(Token::TextSecondary)),
-        ];
-        if selected {
-            // Filled after the popup is measured, not here: a selection
-            // that reaches the frame's edge before anything has decided
-            // how wide the dialog is *becomes* how wide the dialog is.
-            selected_line = Some(lines.len());
-        }
-        lines.push(Line::from(spans));
-    }
-    lines.push(Line::from(""));
-    // Read off the keymap like every other hint. These five keys were
-    // written into the string by hand — the last place in the client that
-    // still claimed a key nothing had resolved, so a rebinding left it
-    // quietly wrong.
-    const SCOPES: &[uze_keys::Scope] = &[uze_keys::Scope::Global, uze_keys::Scope::PreservedWork];
-    lines.push(if overlay.confirm_discard {
-        let mut line = Line::from(Span::styled(
-            "discard this task and its branch?  ",
-            theme::fg(Token::StateWarning),
-        ));
-        line.spans
-            .extend(hint::line(SCOPES, &[Action::ConfirmDiscard, Action::Dismiss]).spans);
-        line
-    } else {
-        hint::line(
-            SCOPES,
-            &[
-                Action::ResumeTask,
-                Action::DeliverTask,
-                Action::FinishTask,
-                Action::DiscardTask,
-                Action::Dismiss,
-            ],
-        )
-    });
-    // Measured from the words, then held to the same reading width the
-    // index beside it keeps: a dialog as wide as the terminal is a dialog
-    // nobody can read across, and this one is a short list of short rows.
-    let content = lines.iter().map(Line::width).max().unwrap_or(0) as u16;
-    let width = (content + 2 + 2 * POPUP_H_PAD)
-        .clamp(MIN_POPUP_WIDTH, MAX_POPUP_WIDTH)
-        .min(area.width)
-        .max(1);
-    let text_width = width.saturating_sub(2 + 2 * POPUP_H_PAD);
-    for line in &mut lines {
-        text::clip(line, text_width as usize);
-    }
-    if let Some(index) = selected_line {
-        row::pad_to(
-            &mut lines[index].spans,
-            text_width,
-            theme::color(Token::SurfaceSelected),
-        );
-    }
-    let height = (lines.len() as u16 + 2).min(area.height).max(1);
-    let popup = Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y + area.height.saturating_sub(height) / 3,
-        width,
-        height,
-    );
-    frame.render_widget(Clear, popup);
-    // No row above: these lines are a list, and the first of them is the
-    // one the popup exists to show.
-    let inner = Surface::floating()
-        .padding(Padding::new(POPUP_H_PAD, POPUP_H_PAD, 0, 0))
-        .render(frame, popup);
-    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 pub(super) fn agent_activity_frame(tick: usize) -> String {

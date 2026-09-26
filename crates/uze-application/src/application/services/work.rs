@@ -18,7 +18,7 @@ use uze_core::{
     conversation::{self, Claim},
     landing,
     task::{self, Agent, AgentId, AgentStore, Base, WorkState},
-    worktree::WorktreePolicy,
+    worktree::{self, WorktreePolicy},
 };
 
 use super::{Workspace, tasks::target_of};
@@ -136,13 +136,51 @@ impl Workspace<'_> {
     #[tracing::instrument(name = "workspace.join_work", skip_all, fields(agent = %claim.id, topic), err)]
     pub fn join_work(&self, claim: Claim<'_>, topic: &str) -> Result<JoinedWork> {
         let caller = self.caller(claim)?;
-        task::locked(&self.0.home, &caller.primary, |store| {
-            let parent = parent_checkout(store, &caller.agent, &caller.primary)?;
-            let child = own_child(store, &caller.agent, topic)?;
+        self.join_child(&caller.primary, &caller.agent, topic)
+    }
+
+    /// The operator's join: a parked agent's subagent on `topic`, joined
+    /// into that agent's kept checkout. A running agent joins its own, so
+    /// only a parked one is joined from outside.
+    #[tracing::instrument(name = "workspace.join_parked_work", skip_all, fields(cwd = %cwd.display(), parent, topic), err)]
+    pub fn join_parked_work(&self, cwd: &Path, parent: &str, topic: &str) -> Result<JoinedWork> {
+        let primary = worktree::primary_checkout(cwd)
+            .ok_or_else(|| refused("not inside a Git working tree"))?;
+        let store = task::load(&self.0.home, &primary)?;
+        let agent = store
+            .agents
+            .iter()
+            .find(|agent| agent.id.as_str() == parent)
+            .ok_or_else(|| refused("the agent this subagent belongs to is no longer recorded"))?;
+        if checkout::is_live(&agent.state) {
+            return Err(refused(&format!(
+                "{} is still running; it joins its own subagents",
+                agent.label
+            )));
+        }
+        if agent.state != WorkState::Parked {
+            return Err(refused(&format!(
+                "{} has ended and no longer keeps a checkout to join into",
+                agent.label
+            )));
+        }
+        let parent = agent.id.clone();
+        self.join_child(&primary, &parent, topic)
+    }
+
+    fn join_child(
+        &self,
+        primary: &Path,
+        parent_agent: &AgentId,
+        topic: &str,
+    ) -> Result<JoinedWork> {
+        task::locked(&self.0.home, primary, |store| {
+            let parent = parent_checkout(store, parent_agent, primary)?;
+            let child = own_child(store, parent_agent, topic)?;
             let isolation = child
                 .isolation()
                 .ok_or_else(|| refused("the subagent's record has no checkout"))?;
-            let directory = child_directory(child, &caller.primary)?;
+            let directory = child_directory(child, primary)?;
             let branch = isolation.branch.clone();
             if checkout::is_dirty(&parent.directory) {
                 return Err(refused(
@@ -186,14 +224,9 @@ impl Workspace<'_> {
                 _ => isolation.base_commit.clone(),
             };
             let child_id = child.id.clone();
-            let outcome = subagent::join(
-                &caller.primary,
-                &parent.directory,
-                &directory,
-                &branch,
-                &split_at,
-            )
-            .map_err(|failure| refused(&failure.to_string()))?;
+            let outcome =
+                subagent::join(primary, &parent.directory, &directory, &branch, &split_at)
+                    .map_err(|failure| refused(&failure.to_string()))?;
             match outcome {
                 JoinOutcome::Conflicted { paths } => Ok(JoinedWork::Conflicted {
                     checkout: directory,
@@ -209,13 +242,19 @@ impl Workspace<'_> {
                             &directory,
                             &CheckoutRecord {
                                 path: directory.clone(),
-                                parent: Some(caller.agent.clone()),
+                                parent: Some(parent_agent.clone()),
                                 split_at: Some(split_at),
                             },
                         );
                     }
                     let into = parent.branch.clone();
-                    checkout::release(&caller.primary, child, &into);
+                    // A child parked with its agent is not live, so release
+                    // leaves its state alone; joined, it holds nothing.
+                    if checkout::release(primary, child, &into) == checkout::SlotState::Free
+                        && child.state == WorkState::Parked
+                    {
+                        child.state = WorkState::Closed;
+                    }
                     Ok(JoinedWork::Joined { commits })
                 }
             }

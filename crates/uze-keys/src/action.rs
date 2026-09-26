@@ -295,8 +295,12 @@ actions! {
         "Deliver", "Deliver the selected task the way the project says";
     DeliverAllTasks => "deliver-all-tasks", false,
         "Deliver all", "Deliver every deliverable task in this space";
-    TogglePreservedWork => "toggle-preserved-work", false,
-        "Preserved work", "Show the work no live tab is in front of";
+    ToggleWork => "toggle-work", false,
+        "Work", "Show the work no live tab is in front of, and this project's checkouts";
+    NextSection => "next-section", false,
+        "Next section", "Move to the next section of the work modal";
+    PreviousSection => "previous-section", false,
+        "Previous section", "Move to the previous section of the work modal";
     ResumeTask => "resume-task", false,
         "Resume", "Put the selected preserved task back into a slot";
     FinishTask => "finish-task", false,
@@ -307,14 +311,18 @@ actions! {
         "Confirm discard", "Confirm destroying the work, having been asked once";
 
     // --- Workspace, the project's checkouts -------------------------------
-    ToggleCheckouts => "toggle-checkouts", false,
-        "Checkouts", "List every checkout of this space's project, by who it belongs to";
+    ShowCheckouts => "show-checkouts", false,
+        "Checkouts", "Open the work modal on every checkout of this space's project";
     AdoptCheckout => "adopt-checkout", false,
         "Adopt",
         "Record the selected checkout as UZE's own slot; a clean one is free for \
          the next agent at once";
     RemoveCheckout => "remove-checkout", true,
         "Remove", "Remove the selected checkout's directory, keeping its branch";
+    JoinCheckout => "join-checkout", false,
+        "Join",
+        "Bring a parked agent's subagent's commits onto that agent's branch, and free \
+         its checkout";
     CleanUpCheckouts => "clean-up-checkouts", true,
         "Clean up",
         "Remove every checkout of yours that is clean, unused and already in the target";

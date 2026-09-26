@@ -318,3 +318,58 @@ fn an_agent_is_not_delivered_while_a_child_holds_unjoined_work() {
         other => panic!("expected a refusal, got {other:?}"),
     }
 }
+
+/// An agent that ended with a subagent holding work is parked with it; the
+/// operator joins the two from outside, naming the agent rather than
+/// speaking as it.
+#[test]
+fn the_operator_joins_a_parked_agents_subagent_into_its_kept_checkout() {
+    let world = World::new("work-join-parked");
+    let agent = world.agent();
+    let child = world.split(&agent, "parser").unwrap();
+    world.commit(&child.path, "parser.rs", "fn parse() {}\n");
+    let workspace = world.app.workspace();
+
+    assert!(
+        refusal(workspace.join_parked_work(world.root(), &agent.0, "parser"))
+            .contains("still running"),
+        "a running agent joins its own"
+    );
+
+    workspace.release_abandoned_tasks(world.root(), &[], &[]);
+    let view = workspace.checkouts(world.root(), &[]).unwrap();
+    let owner = view
+        .checkouts
+        .iter()
+        .map(|checkout| &checkout.owner)
+        .find(|owner| matches!(owner, crate::CheckoutOwner::Subagent { .. }))
+        .expect("the subagent's checkout is listed");
+    assert_eq!(
+        owner,
+        &crate::CheckoutOwner::Subagent {
+            parent: workspace
+                .evaluate_tasks(world.root(), &[])
+                .tasks
+                .iter()
+                .find(|task| task.id == agent.0)
+                .map(|task| task.label.clone())
+                .unwrap(),
+            parent_id: agent.0.clone(),
+            topic: Some("parser".to_owned()),
+            joinable: true,
+        }
+    );
+
+    assert_eq!(
+        workspace
+            .join_parked_work(world.root(), &agent.0, "parser")
+            .unwrap(),
+        JoinedWork::Joined { commits: 1 }
+    );
+    assert!(agent.1.join("parser.rs").is_file());
+    assert!(
+        refusal(workspace.join_parked_work(world.root(), &agent.0, "parser"))
+            .contains("no subagent working on `parser`"),
+        "a joined subagent is gone"
+    );
+}

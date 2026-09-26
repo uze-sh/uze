@@ -834,6 +834,14 @@ impl Workspace<'_> {
                 in_the_root: OnceCell::new(),
                 occupied,
                 owners: store.slot_owners(),
+                holding_children: store
+                    .agents
+                    .iter()
+                    .filter(|agent| {
+                        checkout::is_live(&agent.state) || agent.state == WorkState::Parked
+                    })
+                    .filter_map(|agent| agent.parent.clone())
+                    .collect(),
                 vocabulary: &policy.branch,
                 completion,
             };
@@ -1435,6 +1443,9 @@ struct EvaluationPass<'a> {
     /// The checkout directories a live pane still sits in.
     occupied: &'a [PathBuf],
     owners: BTreeSet<AgentId>,
+    /// Agents a subagent still holds a checkout for. One parked for its
+    /// children is parked for their work, however level its own branch is.
+    holding_children: BTreeSet<AgentId>,
     vocabulary: &'a BranchVocabulary,
     completion: CompletionBehavior,
 }
@@ -1512,7 +1523,9 @@ impl EvaluationPass<'_> {
         // the forge. Left parked, it was listed as preserved work for good
         // and its slot never went back to the pool.
         if parked_alone {
-            landing::settle_delivered(primary, state, task);
+            if !self.holding_children.contains(&id) {
+                landing::settle_delivered(primary, state, task);
+            }
             return None;
         }
         // A rebase paused on work the target already carries — what an
@@ -1893,6 +1906,10 @@ pub struct AgentView {
     /// the rule at the call site — `branch` is not a proxy for it, because
     /// an agent in the project's root is on one too.
     pub isolated: bool,
+    /// The agent whose subagent this is: its checkout was split from that
+    /// agent's, and its work joins that agent's branch rather than the
+    /// target.
+    pub parent: Option<String>,
     pub state: WorkStateView,
     /// What delivering this task does — the project's own say, carried on
     /// the task so a surface offering the delivery can name its ending
@@ -1986,6 +2003,10 @@ impl AgentView {
             state: drawn_state(primary, &agent.state, task, unsynced),
             completion,
             isolated: true,
+            parent: agent
+                .parent
+                .as_ref()
+                .map(|parent| parent.as_str().to_owned()),
             ahead: checkout::commits_ahead(primary, &task.base_commit, &task.branch),
             published_as: published.map(|published| published.branch),
             published_request: task.published_request,
@@ -2026,6 +2047,7 @@ impl AgentView {
             state: WorkStateView::from(&agent.state),
             completion,
             isolated: false,
+            parent: None,
             published_as: None,
             published_request: None,
             forge,

@@ -1,26 +1,21 @@
-//! The checkouts view: every worktree of a space's project, grouped by who
-//! it belongs to, and the few explicit things the operator may do to one.
+//! The work modal's checkouts section: every worktree of a space's
+//! project, grouped by who it belongs to, and the few explicit things the
+//! operator may do to one.
 //!
 //! What is listed is read on a thread (`spawn_checkouts`) because it walks
 //! every checkout to measure it, and every change runs on one too
 //! (`spawn_checkout_change`); this module only draws the last answer and
 //! says what a change came to.
 
+use super::work::{Section, list_row};
 use super::*;
-use crate::ui::widget::{Align, Button, POPUP_H_PAD, Surface, button_row, hint, row, text};
-use uze_application::{CheckoutOwner, CheckoutView, CheckoutsView, CleanUp};
+use crate::ui::widget::{Button, RowState, stat::Stat, text};
+use uze_application::{CheckoutOwner, CheckoutView, CheckoutsView, CleanUp, JoinedWork};
 
-/// A row carries a path, a branch and the facts about it, which is more
-/// than the preserved list's short rows, so this dialog reads wider.
-const CHECKOUTS_MAX_WIDTH: u16 = 100;
-const CHECKOUTS_MIN_WIDTH: u16 = 40;
-
-const SCOPES: &[uze_keys::Scope] = &[uze_keys::Scope::Global, uze_keys::Scope::Checkouts];
-
-/// Open state of the checkouts view.
+/// The checkouts section's own state.
 pub(super) struct CheckoutsOverlay {
-    /// The directory the view was asked about — the space's root. An
-    /// answer about any other directory is not this view's.
+    /// The directory the section was asked about — the space's root. An
+    /// answer about any other directory is not this section's.
     pub(super) project: PathBuf,
     /// Index into [`listed`].
     pub(super) selected: usize,
@@ -42,14 +37,27 @@ impl CheckoutsOverlay {
 pub(super) enum CheckoutQuestion {
     Adopt,
     Remove,
+    Join,
     CleanUp,
 }
 
 /// A change to the checkouts, as it travels to the thread that makes it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum CheckoutChange {
-    Adopt { path: PathBuf, name: String },
-    Remove { path: PathBuf, name: String },
+    Adopt {
+        path: PathBuf,
+        name: String,
+    },
+    Remove {
+        path: PathBuf,
+        name: String,
+    },
+    /// A parked agent's subagent, joined into that agent.
+    Join {
+        parent_id: String,
+        parent: String,
+        topic: String,
+    },
     CleanUp,
 }
 
@@ -76,10 +84,15 @@ pub(super) enum CheckoutOutcome {
         name: String,
         answer: std::result::Result<uze_application::RemovedCheckout, String>,
     },
+    Joined {
+        topic: String,
+        parent: String,
+        answer: std::result::Result<JoinedWork, String>,
+    },
     CleanedUp(CleanUp),
 }
 
-/// The owner groups, in the order the view lists them.
+/// The owner groups, in the order the section lists them.
 fn group_of(owner: &CheckoutOwner) -> (usize, &'static str) {
     match owner {
         CheckoutOwner::Agent { .. } => (0, "AGENT SLOTS"),
@@ -124,6 +137,30 @@ pub(super) fn selected_checkout<'a>(
     listed(view).get(overlay.selected).copied()
 }
 
+/// How many checkouts the last answer listed.
+pub(super) fn checkout_count(model: &WorkspaceModel, overlay: &CheckoutsOverlay) -> Option<usize> {
+    answer_for(model, overlay)
+        .and_then(|answer| answer.view.as_ref())
+        .map(|view| view.checkouts.len())
+}
+
+/// What the sidebar says under the section's name.
+pub(super) fn sidebar_caption(
+    model: &WorkspaceModel,
+    overlay: Option<&CheckoutsOverlay>,
+) -> String {
+    let Some(overlay) = overlay else {
+        return "no space open".to_owned();
+    };
+    match answer_for(model, overlay) {
+        None => "reading…".to_owned(),
+        Some(CheckoutsResolution { view: None, .. }) => "no repository".to_owned(),
+        Some(CheckoutsResolution {
+            view: Some(view), ..
+        }) => format!("{} on disk", bytes_to_say(view.total_bytes)),
+    }
+}
+
 /// `812 KB`, `1.4 GB`: the unit that keeps the number short.
 pub(super) fn bytes_to_say(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -154,13 +191,29 @@ fn age_to_say(changed: Option<std::time::SystemTime>) -> Option<String> {
 fn owner_to_say(owner: &CheckoutOwner) -> Option<String> {
     match owner {
         CheckoutOwner::Agent { holder } => holder.clone(),
-        CheckoutOwner::Subagent { parent } => Some(format!("of {parent}")),
+        CheckoutOwner::Subagent {
+            parent,
+            topic,
+            joinable,
+            ..
+        } => Some(
+            [
+                topic.clone(),
+                Some(format!("of {parent}")),
+                joinable.then(|| "parked".to_owned()),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · "),
+        ),
         CheckoutOwner::Harness { harness } => Some(format!("left to {harness}")),
         CheckoutOwner::Operator | CheckoutOwner::Unreadable => None,
     }
 }
 
-/// The facts about one checkout, in the order a decision reads them.
+/// The facts about one checkout, in the order a decision reads them, and
+/// its size last.
 fn facts_to_say(checkout: &CheckoutView, target: &str) -> String {
     let mut facts = Vec::new();
     if checkout.in_use {
@@ -169,13 +222,91 @@ fn facts_to_say(checkout: &CheckoutView, target: &str) -> String {
     if checkout.dirty {
         facts.push("uncommitted".to_owned());
     }
-    facts.push(if checkout.in_target {
-        format!("in {target}")
-    } else {
-        format!("not in {target}")
+    facts.push(match (checkout.in_target, checkout.ahead) {
+        (true, _) => "done".to_owned(),
+        (false, 0) => format!("not in {target}"),
+        (false, ahead) => format!("{ahead} ahead"),
     });
     facts.extend(age_to_say(checkout.last_changed));
+    facts.push(bytes_to_say(checkout.bytes));
     facts.join(" · ")
+}
+
+/// The mark in front of a row, in the hue of the fact that matters most.
+fn mark_of(checkout: &CheckoutView) -> Span<'static> {
+    let hue = if checkout.in_use {
+        Token::Accent
+    } else if checkout.dirty {
+        Token::StateWarning
+    } else if checkout.in_target {
+        Token::TextDim
+    } else {
+        Token::TextSecondary
+    };
+    Span::styled(
+        format!("{} ", theme::glyph(Symbol::MarkDot)),
+        theme::fg(hue),
+    )
+}
+
+/// What the checkout's row is called: its branch, which is what the
+/// operator knows it by. The path is the selected row's detail.
+fn title_of(checkout: &CheckoutView) -> &str {
+    checkout.branch.as_deref().unwrap_or("detached")
+}
+
+/// Checkouts clean-up would remove as the last read saw them: the
+/// operator's own, clean, unused and in the target.
+fn clean_up_candidates(view: &CheckoutsView) -> Vec<&CheckoutView> {
+    view.checkouts
+        .iter()
+        .filter(|checkout| {
+            checkout.owner == CheckoutOwner::Operator
+                && checkout.removal_refusal.is_none()
+                && checkout.in_target
+                && !checkout.in_use
+                && !checkout.dirty
+        })
+        .collect()
+}
+
+/// Whether a clean-up would find anything, as the last read saw it: one
+/// that would not is said at once rather than asked about.
+pub(super) fn clean_up_would_remove(model: &WorkspaceModel, overlay: &CheckoutsOverlay) -> bool {
+    answer_for(model, overlay)
+        .and_then(|answer| answer.view.as_ref())
+        .is_some_and(|view| !clean_up_candidates(view).is_empty())
+}
+
+/// The join a subagent's checkout offers: into its agent, once that agent
+/// is parked. A running agent joins its own.
+pub(super) fn join_of(checkout: &CheckoutView) -> Option<CheckoutChange> {
+    match &checkout.owner {
+        CheckoutOwner::Subagent {
+            parent,
+            parent_id,
+            topic: Some(topic),
+            joinable: true,
+        } => Some(CheckoutChange::Join {
+            parent_id: parent_id.clone(),
+            parent: parent.clone(),
+            topic: topic.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// Why a join is not offered for `checkout`, said when it is asked for.
+pub(super) fn join_refusal(checkout: &CheckoutView) -> String {
+    match &checkout.owner {
+        CheckoutOwner::Subagent { topic: None, .. } => {
+            "no subagent holds it any more; remove it instead".to_owned()
+        }
+        CheckoutOwner::Subagent { parent, .. } => {
+            format!("{parent} is still running, and joins its own subagents")
+        }
+        _ => "only a subagent's checkout joins into its agent".to_owned(),
+    }
 }
 
 /// What a change came to, as the toast says it: the kind, a title and a
@@ -220,6 +351,44 @@ pub(super) fn describe_change(outcome: &CheckoutOutcome) -> (ToastKind, String, 
             ToastKind::Failed,
             "not removed".to_owned(),
             format!("{name}: {reason}"),
+        ),
+        CheckoutOutcome::Joined {
+            topic,
+            parent,
+            answer: Ok(JoinedWork::Joined { commits }),
+        } => (
+            ToastKind::Done,
+            "joined".to_owned(),
+            format!(
+                "{topic} into {parent} · {commits} commit{}",
+                if *commits == 1 { "" } else { "s" }
+            ),
+        ),
+        CheckoutOutcome::Joined {
+            topic,
+            answer: Ok(JoinedWork::Conflicted { checkout, paths }),
+            ..
+        } => (
+            ToastKind::Warned,
+            "join paused".to_owned(),
+            format!(
+                "{topic} conflicts on {}; resolve it in {}, continue the rebase, and join again",
+                paths
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                checkout.display()
+            ),
+        ),
+        CheckoutOutcome::Joined {
+            topic,
+            answer: Err(reason),
+            ..
+        } => (
+            ToastKind::Failed,
+            "not joined".to_owned(),
+            format!("{topic}: {reason}"),
         ),
         CheckoutOutcome::CleanedUp(clean_up) => describe_clean_up(clean_up),
     }
@@ -266,96 +435,144 @@ fn describe_clean_up(clean_up: &CleanUp) -> (ToastKind, String, String) {
 fn question_to_say(
     question: CheckoutQuestion,
     selected: Option<&CheckoutView>,
-    target: &str,
+    view: Option<&CheckoutsView>,
 ) -> String {
-    let name = selected.map_or("this checkout", |checkout| checkout.name.as_str());
+    let title = selected.map_or("this checkout", title_of);
+    let target = view.map_or("the target", |view| view.target.as_str());
     match question {
         CheckoutQuestion::Adopt => format!(
-            "adopt {name} as UZE's slot? a clean one is free at once, and the next agent resets it"
+            "adopt {title} as UZE's slot? a clean one becomes free for the next agent at once"
         ),
-        CheckoutQuestion::Remove => format!("remove {name}? its branch is kept"),
+        CheckoutQuestion::Remove => format!(
+            "remove {title}? its branch is kept, and {} is freed",
+            selected.map_or_else(
+                || "its directory".to_owned(),
+                |checkout| bytes_to_say(checkout.bytes)
+            )
+        ),
+        CheckoutQuestion::Join => match selected.and_then(join_of) {
+            Some(CheckoutChange::Join { parent, topic, .. }) => format!(
+                "join {topic} into {parent}? its commits are replayed onto {parent}'s branch"
+            ),
+            _ => "join this subagent into its agent?".to_owned(),
+        },
         CheckoutQuestion::CleanUp => {
-            format!("remove every checkout of yours that is clean, unused and in {target}?")
+            let candidates = view.map(clean_up_candidates).unwrap_or_default();
+            let bytes: u64 = candidates.iter().map(|checkout| checkout.bytes).sum();
+            let one = candidates.len() == 1;
+            format!(
+                "clean up? removes {} checkout{} of yours that {} clean, unused and in \
+                 {target}, freeing {}",
+                candidates.len(),
+                if one { "" } else { "s" },
+                if one { "is" } else { "are" },
+                bytes_to_say(bytes)
+            )
         }
     }
 }
 
-/// The checkouts view, centred over the workspace like the preserved list.
-pub(super) fn render_checkouts(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
+/// The figures above the list.
+fn cards(view: &CheckoutsView) -> Vec<Stat> {
+    let count = |predicate: &dyn Fn(&CheckoutView) -> bool| {
+        view.checkouts
+            .iter()
+            .filter(|checkout| predicate(checkout))
+            .count()
+            .to_string()
+    };
+    vec![
+        Stat {
+            label: "In use".to_owned(),
+            value: count(&|checkout| checkout.in_use),
+            hue: Token::TextBright,
+        },
+        Stat {
+            label: "Free".to_owned(),
+            value: count(&|checkout| {
+                matches!(checkout.owner, CheckoutOwner::Agent { .. })
+                    && !checkout.in_use
+                    && !checkout.dirty
+                    && checkout.in_target
+            }),
+            hue: Token::TextBright,
+        },
+        Stat {
+            label: "Can remove".to_owned(),
+            value: count(&|checkout| checkout.removal_refusal.is_none()),
+            hue: Token::TextBright,
+        },
+        Stat {
+            label: "On disk".to_owned(),
+            value: bytes_to_say(view.total_bytes),
+            hue: Token::StateWarning,
+        },
+    ]
+}
+
+/// The checkouts section, laid out for a list `width` columns wide.
+pub(super) fn checkouts_section(
     model: &WorkspaceModel,
-    overlay: &CheckoutsOverlay,
-    hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
-    let answer = answer_for(model, overlay);
+    overlay: Option<&CheckoutsOverlay>,
+    width: u16,
+) -> Section {
+    let answer = overlay.and_then(|overlay| answer_for(model, overlay));
     let view = answer.and_then(|answer| answer.view.as_ref());
     let rows = view.map(listed).unwrap_or_default();
     let target = view.map_or("the target", |view| view.target.as_str());
-
     let project = view
         .map(|view| view.primary.as_path())
-        .unwrap_or(&overlay.project)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let title = Line::from(vec![
-        Span::styled("CHECKOUTS", theme::fg(Token::TextMuted)),
-        Span::styled(format!("  {project}"), theme::fg(Token::TextSecondary)),
-    ]);
+        .or(overlay.map(|overlay| overlay.project.as_path()))
+        .and_then(Path::file_name)
+        .map(|name| name.to_string_lossy().into_owned());
 
-    // The body: group headings and rows, with the row each line selects.
-    let mut body: Vec<(Line<'static>, Option<usize>)> = Vec::new();
-    let mut selected_line = None;
-    match (answer, view) {
-        (None, _) => body.push((
-            Line::from(Span::styled(
-                "reading every checkout…",
-                theme::fg(Token::TextSecondary),
-            )),
-            None,
-        )),
-        (Some(_), None) => body.push((
-            Line::from(Span::styled(
-                "not a Git repository, so it has no checkouts",
-                theme::fg(Token::TextSecondary),
-            )),
-            None,
-        )),
-        (Some(_), Some(_)) if rows.is_empty() => body.push((
-            Line::from(Span::styled(
-                "no checkout besides the project's own",
-                theme::fg(Token::TextSecondary),
-            )),
-            None,
-        )),
-        _ => {}
+    let mut section = Section::new(
+        uze_keys::Scope::Checkouts,
+        "Checkouts",
+        "this project's worktrees",
+    );
+    section.trailer = project.map(|name| Span::styled(name, theme::fg(Token::TextSecondary)));
+    match (overlay, answer, view) {
+        (None, ..) => section.say("open a space to see its project's checkouts"),
+        (Some(_), None, _) => section.say("reading every checkout…"),
+        (Some(_), Some(_), None) => section.say("not a Git repository, so it has no checkouts"),
+        (Some(_), Some(_), Some(view)) => {
+            section.cards = cards(view);
+            if rows.is_empty() {
+                section.say("no checkout besides the project's own");
+            }
+        }
     }
+
+    let selected_index = overlay.map(|overlay| overlay.selected);
     let mut heading = None;
     for (index, checkout) in rows.iter().enumerate() {
         let (_, group) = group_of(&checkout.owner);
         if heading != Some(group) {
             if heading.is_some() {
-                body.push((Line::from(""), None));
+                section.lines.push((Line::from(""), None));
             }
             heading = Some(group);
-            body.push((
+            section.lines.push((
                 Line::from(Span::styled(group, theme::fg(Token::TextDim))),
                 None,
             ));
         }
-        let selected = index == overlay.selected;
-        let mut spans = vec![
+        let selected = Some(index) == selected_index;
+        let state = RowState::of(
+            selected,
+            model.hovered == Some(WorkspaceHit::WorkRow(index)),
+        );
+        let facts = facts_to_say(checkout, target);
+        let room = usize::from(width)
+            .saturating_sub(text::columns(&facts) + 6)
+            .max(8);
+        let title = text::elide(title_of(checkout), room);
+        let mut lead = vec![
+            Span::raw(" "),
+            mark_of(checkout),
             Span::styled(
-                if selected {
-                    format!("{} ", theme::glyph(Symbol::ChevronCollapsed))
-                } else {
-                    "  ".to_owned()
-                },
-                theme::fg(Token::Accent),
-            ),
-            Span::styled(
-                checkout.name.clone(),
+                title.clone(),
                 theme::fg(if selected {
                     Token::TextBright
                 } else {
@@ -364,188 +581,77 @@ pub(super) fn render_checkouts(
             ),
         ];
         if let Some(owner) = owner_to_say(&checkout.owner) {
-            spans.push(Span::styled(
-                format!("  {owner}"),
-                theme::fg(Token::TextMuted),
-            ));
-        }
-        spans.push(Span::styled(
-            format!("  {}", checkout.branch.as_deref().unwrap_or("detached")),
-            theme::fg(Token::TextSecondary),
-        ));
-        spans.push(Span::styled(
-            format!("  {}", facts_to_say(checkout, target)),
-            theme::fg(Token::TextMuted),
-        ));
-        spans.push(Span::styled(
-            format!("  {}", bytes_to_say(checkout.bytes)),
-            theme::fg(Token::TextSecondary),
-        ));
-        if selected {
-            selected_line = Some(body.len());
-        }
-        body.push((Line::from(spans), Some(index)));
-        if selected && let Some(reason) = &checkout.removal_refusal {
-            body.push((
-                Line::from(Span::styled(
-                    format!("    cannot remove: {reason}"),
+            let left = room.saturating_sub(text::columns(&title) + 2);
+            if left > 3 {
+                lead.push(Span::styled(
+                    format!("  {}", text::elide(&owner, left)),
                     theme::fg(Token::TextMuted),
-                )),
-                Some(index),
-            ));
-        }
-    }
-
-    let selected = rows.get(overlay.selected).copied();
-    let total = view.map(|view| {
-        Line::from(Span::styled(
-            format!(
-                "{} checkouts · {} on disk",
-                view.checkouts.len(),
-                bytes_to_say(view.total_bytes)
-            ),
-            theme::fg(Token::TextSecondary),
-        ))
-    });
-    let (prompt, buttons) = match overlay.asking {
-        Some(question) => {
-            let mut line = Line::from(Span::styled(
-                format!("{}  ", question_to_say(question, selected, target)),
-                theme::fg(Token::StateWarning),
-            ));
-            line.spans.extend(
-                hint::line(SCOPES, &[Action::ConfirmCheckoutChange, Action::Dismiss]).spans,
-            );
-            let buttons = vec![
-                (
-                    Button::new(Action::ConfirmCheckoutChange.label(), Token::StateDanger)
-                        .strong(true),
-                    WorkspaceHit::CheckoutAction(Action::ConfirmCheckoutChange),
-                ),
-                (
-                    Button::new("Cancel", Token::TextSecondary),
-                    WorkspaceHit::CheckoutAction(Action::Dismiss),
-                ),
-            ];
-            (line, buttons)
-        }
-        None => {
-            let mut offered = vec![Action::Activate];
-            let mut buttons = vec![(
-                Button::new("Open space", Token::Accent),
-                WorkspaceHit::CheckoutAction(Action::Activate),
-            )];
-            if selected.is_some_and(|checkout| checkout.adoptable) {
-                offered.push(Action::AdoptCheckout);
-                buttons.push((
-                    Button::new(Action::AdoptCheckout.label(), Token::Accent),
-                    WorkspaceHit::CheckoutAction(Action::AdoptCheckout),
                 ));
             }
-            offered.extend([
-                Action::RemoveCheckout,
-                Action::CleanUpCheckouts,
-                Action::Dismiss,
-            ]);
-            buttons.extend([
-                (
-                    Button::new(Action::RemoveCheckout.label(), Token::StateDanger),
-                    WorkspaceHit::CheckoutAction(Action::RemoveCheckout),
+        }
+        let first = section.lines.len();
+        section
+            .lines
+            .push((list_row(lead, Some(facts), width, state), Some(index)));
+        if selected {
+            let mut details = vec![Span::styled(
+                text::elide_head(
+                    &checkout.path.display().to_string(),
+                    usize::from(width).saturating_sub(4),
                 ),
-                (
-                    Button::new(Action::CleanUpCheckouts.label(), Token::StateDanger),
-                    WorkspaceHit::CheckoutAction(Action::CleanUpCheckouts),
-                ),
-            ]);
-            if selected.is_none() {
-                buttons.retain(|(_, hit)| {
-                    *hit == WorkspaceHit::CheckoutAction(Action::CleanUpCheckouts)
-                });
+                theme::fg(Token::TextMuted),
+            )];
+            if let Some(reason) = &checkout.removal_refusal {
+                details.push(Span::styled(
+                    format!("cannot remove: {reason}"),
+                    theme::fg(Token::StateWarning),
+                ));
             }
-            (hint::line(SCOPES, &offered), buttons)
+            for detail in details {
+                section.lines.push((
+                    list_row(vec![Span::raw("   "), detail], None, width, state),
+                    Some(index),
+                ));
+            }
+            section.focus = Some((first, section.lines.len() - 1));
         }
-    };
-
-    let mut foot: Vec<Line<'static>> = Vec::new();
-    foot.extend(total);
-    foot.push(prompt);
-
-    let content = std::iter::once(&title)
-        .chain(body.iter().map(|(line, _)| line))
-        .chain(foot.iter())
-        .map(Line::width)
-        .max()
-        .unwrap_or(0) as u16;
-    let width = (content + 2 + 2 * POPUP_H_PAD)
-        .clamp(CHECKOUTS_MIN_WIDTH, CHECKOUTS_MAX_WIDTH)
-        .min(area.width)
-        .max(1);
-    let text_width = width.saturating_sub(2 + 2 * POPUP_H_PAD);
-    // Title, a blank, the body, a blank, the foot, a blank and the buttons.
-    let chrome = 1 + 1 + 1 + foot.len() as u16 + 1 + 1;
-    let height = (body.len() as u16 + chrome + 2).min(area.height).max(1);
-    let popup = Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y + area.height.saturating_sub(height) / 3,
-        width,
-        height,
-    );
-    frame.render_widget(Clear, popup);
-    let inner = Surface::floating()
-        .padding(Padding::new(POPUP_H_PAD, POPUP_H_PAD, 0, 0))
-        .render(frame, popup);
-    let [title_area, _, body_area, _, foot_area, _, buttons_area] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Min(1),
-        Constraint::Length(1),
-        Constraint::Length(foot.len() as u16),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .areas(inner);
-
-    let mut title = title;
-    text::clip(&mut title, text_width as usize);
-    frame.render_widget(Paragraph::new(title), title_area);
-
-    // The selection is kept on screen: the view scrolls with it, and never
-    // further than the list goes.
-    let visible = usize::from(body_area.height);
-    let offset = selected_line
-        .map_or(0, |line| (line + 2).saturating_sub(visible))
-        .min(body.len().saturating_sub(visible));
-    let mut mine: Vec<(Rect, WorkspaceHit)> = Vec::new();
-    let mut lines: Vec<Line<'static>> = Vec::with_capacity(visible);
-    for (position, (line, index)) in body.iter().enumerate().skip(offset).take(visible) {
-        let mut line = line.clone();
-        text::clip(&mut line, text_width as usize);
-        if Some(position) == selected_line {
-            row::pad_to(
-                &mut line.spans,
-                text_width,
-                theme::color(Token::SurfaceSelected),
-            );
-        }
-        if let Some(index) = index {
-            let y = body_area.y + (position - offset) as u16;
-            mine.push((
-                Rect::new(body_area.x, y, body_area.width, 1),
-                WorkspaceHit::CheckoutRow(*index),
-            ));
-        }
-        lines.push(line);
     }
-    frame.render_widget(Paragraph::new(lines), body_area);
 
-    for line in &mut foot {
-        text::clip(line, text_width as usize);
+    let selected = overlay.and_then(|overlay| selected_checkout(model, overlay));
+    match overlay.and_then(|overlay| overlay.asking) {
+        Some(question) => section.ask(
+            question_to_say(question, selected, view),
+            Action::ConfirmCheckoutChange,
+        ),
+        None => {
+            section.offer(vec![
+                (
+                    Button::new("Open space", Token::Accent).enabled(selected.is_some()),
+                    Action::Activate,
+                ),
+                (
+                    Button::new(Action::AdoptCheckout.label(), Token::Accent)
+                        .enabled(selected.is_some_and(|checkout| checkout.adoptable)),
+                    Action::AdoptCheckout,
+                ),
+                (
+                    Button::new(Action::JoinCheckout.label(), Token::Accent)
+                        .enabled(selected.and_then(join_of).is_some()),
+                    Action::JoinCheckout,
+                ),
+                (
+                    Button::new(Action::RemoveCheckout.label(), Token::StateDanger).enabled(
+                        selected.is_some_and(|checkout| checkout.removal_refusal.is_none()),
+                    ),
+                    Action::RemoveCheckout,
+                ),
+                (
+                    Button::new(Action::CleanUpCheckouts.label(), Token::StateDanger)
+                        .enabled(view.is_some()),
+                    Action::CleanUpCheckouts,
+                ),
+            ]);
+        }
     }
-    frame.render_widget(Paragraph::new(foot), foot_area);
-    mine.extend(button_row(frame, buttons_area, &buttons, Align::Left));
-    // Last of this dialog's own, so a click on its rows and buttons finds
-    // them first and a click elsewhere on it finds nothing to act on.
-    mine.push((popup, WorkspaceHit::CheckoutsBody));
-    // Prepended: what is underneath must not answer a click meant here.
-    hits.splice(0..0, mine);
+    section
 }

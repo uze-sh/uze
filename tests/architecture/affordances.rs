@@ -260,39 +260,54 @@ fn affordances() -> BTreeMap<Action, Affordance> {
              gesture; a button for it would be one misclick from doing it",
         ),
     );
+    put(Action::ToggleWork, Control("the first-steps section"));
     put(
-        Action::TogglePreservedWork,
-        Control("the first-steps section"),
+        Action::NextSection,
+        Control("the work modal's sidebar of sections"),
     );
-    put(Action::ResumeTask, Control("its row in the preserved list"));
-    put(Action::FinishTask, Control("its row in the preserved list"));
+    put(
+        Action::PreviousSection,
+        Control("the work modal's sidebar of sections"),
+    );
+    put(
+        Action::ResumeTask,
+        Control("the work modal's resume button"),
+    );
+    put(
+        Action::FinishTask,
+        Control("the work modal's mark-done button"),
+    );
     put(
         Action::DiscardTask,
-        Control("its row in the preserved list"),
+        Control("the work modal's discard button"),
     );
     put(
         Action::ConfirmDiscard,
-        Control("the confirmation the row raises"),
+        Control("the confirm button the discard raises"),
     );
     put(
-        Action::ToggleCheckouts,
+        Action::ShowCheckouts,
         Control("the space header's right-click menu"),
     );
     put(
         Action::AdoptCheckout,
-        Control("the checkouts view's adopt button"),
+        Control("the work modal's adopt button"),
+    );
+    put(
+        Action::JoinCheckout,
+        Control("the work modal's join button"),
     );
     put(
         Action::RemoveCheckout,
-        Control("the checkouts view's remove button"),
+        Control("the work modal's remove button"),
     );
     put(
         Action::CleanUpCheckouts,
-        Control("the checkouts view's clean-up button"),
+        Control("the work modal's clean-up button"),
     );
     put(
         Action::ConfirmCheckoutChange,
-        Control("the confirm button the checkouts view raises"),
+        Control("the confirm button the work modal raises"),
     );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
