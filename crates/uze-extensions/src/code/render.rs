@@ -287,7 +287,7 @@ pub(super) fn changes_navigator(code: &CodeView) -> Navigator {
                 FileTreeItem::File { index, name, depth } => NavigatorRow::Item {
                     id: *index,
                     name: name.clone(),
-                    depth: depth + 1,
+                    depth: *depth,
                     marker: Span::new(
                         code.changes.files[*index].status.glyph(),
                         code.changes.files[*index].status.role(),
