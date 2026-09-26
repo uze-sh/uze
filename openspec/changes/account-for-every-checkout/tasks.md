@@ -19,7 +19,7 @@
 
 - [x] 3.1 On every accounting pass, record checkouts under the isolation directory that a launched agent's record names (non-empty harness) and legacy `agent-<n>` ones; list store-named checkouts without a record as to adopt.
 - [x] 3.2 Replace `registered_checkouts`' parent-directory filter and `CheckoutId::is_uze_made` with classification by record and location: agent slot, subagent checkout, harness isolation, operator's; a recorded checkout outside the isolation directory is foreign. Stop adopting unrecorded checkouts in `reconcile`.
-- [ ] 3.3 Add `own_worktree_dirs` to `IntegrationPort` (default none), answer `.claude/worktrees` from the Claude integration, collect them in `uze-application` and pass them to core as data; match under any checkout of the project.
+- [x] 3.3 Add `own_worktree_dirs` to `IntegrationPort` (default none), answer `.claude/worktrees` from the Claude integration, collect them in `uze-application` and pass them to core as data; match under any checkout of the project.
 - [ ] 3.4 Conformance: a Claude vertical check that the harness's own worktree lands under the declared directory.
 - [x] 3.5 L1 tests: an upgrade keeps every launched agent's slot; an inferred adoption is not recorded and is listed; a slot an older build makes later is recorded on sight; a harness worktree inside a slot is classified as that harness's.
 
@@ -66,10 +66,10 @@
 
 ## 9. The operator's view
 
-- [ ] 9.1 `CheckoutsView` read model in `uze-application` with each checkout's owner and facts, including what holds a slot in use and its size on disk (measured in the background read), and the total.
+- [x] 9.1 `CheckoutsView` read model in `uze-application` with each checkout's owner and facts, including what holds a slot in use and its size on disk (measured in the background read), and the total.
 - [ ] 9.2 Draw a subagent checkout under its parent in the agent column.
-- [ ] 9.3 Checkouts view in the space's menu through `spawn_checkouts`/`absorb_checkouts`: open a space, adopt (isolation directory only, with the "becomes free" notice), remove (inspect first, keep the branch), clean up (the operator's class only: clean, unused, in the target; harness isolation left to its harness), and join a parked child into its parked parent.
-- [ ] 9.4 `TestBackend` tests for grouping, refusal reasons and the clean-up summary; architecture suite green.
+- [x] 9.3 Checkouts view in the space's menu through `spawn_checkouts`/`absorb_checkouts`: open a space, adopt (isolation directory only, with the "becomes free" notice), remove (inspect first, keep the branch), clean up (the operator's class only: clean, unused, in the target; harness isolation left to its harness), and join a parked child into its parked parent (join lands with the children's lifecycle, task group 6).
+- [x] 9.4 `TestBackend` tests for grouping, refusal reasons and the clean-up summary; architecture suite green.
 
 ## 10. Gate
 

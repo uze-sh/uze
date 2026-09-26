@@ -166,6 +166,8 @@ scopes! {
     /// The list of work no live tab is in front of.
     PreservedWork => "preserved-work", "Preserved work", Workspace,
         seals: true, text: false;
+    /// Every checkout of a space's project, grouped by who it belongs to.
+    Checkouts => "checkouts", "Checkouts", Workspace, seals: true, text: false;
     /// The tab/space context menu.
     ContextMenu => "context-menu", "A tab's actions", Workspace, seals: true, text: false;
 

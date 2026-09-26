@@ -6,6 +6,7 @@
 
 use super::*;
 
+mod checkouts;
 #[cfg(test)]
 mod perf;
 
@@ -5476,7 +5477,7 @@ mod workspace_tests {
 
     /// The keystroke a chord is: the inverse of `keys::chord_of`, so a test
     /// can press what the keymap says rather than a key typed by hand.
-    fn key_event(chord: uze_keys::Chord) -> crossterm::event::KeyEvent {
+    pub(super) fn key_event(chord: uze_keys::Chord) -> crossterm::event::KeyEvent {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         use uze_keys::Key;
         let code = match chord.key {
@@ -9132,7 +9133,8 @@ mod workspace_tests {
         assert_eq!(selected(&driven), Some(0), "it stops at the first item");
         press(&mut driven, uze_keys::Action::SelectNext);
         press(&mut driven, uze_keys::Action::SelectNext);
-        assert_eq!(selected(&driven), Some(1), "and at the last");
+        press(&mut driven, uze_keys::Action::SelectNext);
+        assert_eq!(selected(&driven), Some(2), "and at the last");
 
         let _ = driven.sent();
         press(&mut driven, uze_keys::Action::Activate);
@@ -9269,6 +9271,7 @@ mod workspace_tests {
             menu.items,
             vec![
                 uze_keys::Action::RenameSelection,
+                uze_keys::Action::ToggleCheckouts,
                 uze_keys::Action::CloseTab
             ]
         );

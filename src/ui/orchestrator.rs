@@ -187,10 +187,12 @@ const AGENT_REDRAW_GRACE: Duration = Duration::from_millis(1000);
 const AGENT_SETTLE_QUIET: Duration = Duration::from_millis(400);
 const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
+mod checkouts;
 mod input;
 mod render;
 mod selection;
 mod session;
+use checkouts::*;
 use input::*;
 use render::*;
 use session::*;
@@ -633,6 +635,101 @@ fn spawn_task_mutation(
             mutation,
             outcome,
         });
+    });
+}
+
+/// Reads every checkout of the repository `project` belongs to, measuring
+/// each — a walk of every directory, which no frame may wait on.
+///
+/// Answers even when it found nothing: the pending flag is released on
+/// arrival, and a read that returned in silence would never be asked again.
+fn spawn_checkouts(
+    home: &UzeHome,
+    project: PathBuf,
+    asked: u64,
+    occupied: Vec<PathBuf>,
+    sender: mpsc::Sender<CheckoutsResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::debug_span!("tui.checkouts_read").entered();
+        let view = answered_or(
+            || {
+                tui_application(home)
+                    .ok()
+                    .and_then(|app| app.workspace().checkouts(&project, &occupied))
+            },
+            None,
+        );
+        let _ = sender.send(CheckoutsResolution {
+            project,
+            asked,
+            view,
+        });
+    });
+}
+
+/// Adopts, removes or cleans up checkouts, off the UI thread: a removal is
+/// `git worktree remove` over a directory that may hold a build's worth of
+/// files, and a clean-up is several of them.
+fn spawn_checkout_change(
+    home: &UzeHome,
+    project: PathBuf,
+    change: CheckoutChange,
+    occupied: Vec<PathBuf>,
+    sender: mpsc::Sender<CheckoutChangeResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.checkout_change").entered();
+        let failed = |name: &str| format!("changing {name} failed");
+        let outcome = answered_or(
+            || {
+                let app = tui_application(home).map_err(|error| error.to_string());
+                let workspace = app.as_ref().map(|app| app.workspace());
+                match &change {
+                    CheckoutChange::Adopt { path, name } => CheckoutOutcome::Adopted {
+                        name: name.clone(),
+                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
+                            workspace
+                                .adopt_checkout(&project, path)
+                                .map_err(|refusal| refusal.to_string())
+                        }),
+                    },
+                    CheckoutChange::Remove { path, name } => CheckoutOutcome::Removed {
+                        name: name.clone(),
+                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
+                            workspace
+                                .remove_checkout(&project, path, &occupied)
+                                .map_err(|refusal| refusal.to_string())
+                        }),
+                    },
+                    CheckoutChange::CleanUp => CheckoutOutcome::CleanedUp(
+                        workspace
+                            .map(|workspace| workspace.clean_up_checkouts(&project, &occupied))
+                            .unwrap_or_default(),
+                    ),
+                }
+            },
+            match &change {
+                CheckoutChange::Adopt { name, .. } => CheckoutOutcome::Adopted {
+                    name: name.clone(),
+                    answer: Err(failed(name)),
+                },
+                CheckoutChange::Remove { name, .. } => CheckoutOutcome::Removed {
+                    name: name.clone(),
+                    answer: Err(failed(name)),
+                },
+                CheckoutChange::CleanUp => {
+                    CheckoutOutcome::CleanedUp(uze_application::CleanUp::default())
+                }
+            },
+        );
+        let _ = sender.send(CheckoutChangeResolution { project, outcome });
     });
 }
 
@@ -1503,6 +1600,14 @@ impl WorkspaceShape {
 /// hit-testing vec just for one extension.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum WorkspaceHit {
+    /// One row of the open checkouts view, by index into
+    /// [`checkouts::listed`].
+    CheckoutRow(usize),
+    /// One of the checkouts view's buttons, by the action it performs.
+    CheckoutAction(Action),
+    /// Anywhere else on the checkouts view: answers nothing, and is not a
+    /// click outside it.
+    CheckoutsBody,
     SelectTab(TabId),
     CloseTab(TabId),
     NewTab,
@@ -2417,6 +2522,10 @@ struct Channels {
     /// read: it opens `$UZE_HOME` and walks every project UZE has
     /// recorded, which is not something a frame may wait on.
     preserved: Answers<PreservedResolution>,
+    /// Every checkout of a project, measured: a walk of every directory.
+    checkouts: Answers<CheckoutsResolution>,
+    /// Adopting, removing and cleaning up checkouts.
+    checkout_changes: Answers<CheckoutChangeResolution>,
     occupancy: Answers<OccupancyResolution>,
     placements: Answers<PlacementResolution>,
     artifacts: Answers<ArtifactsResolution>,
@@ -2482,6 +2591,19 @@ struct Remembered {
     /// Whether a sweep is out, so the list asks once rather than once per
     /// frame.
     preserved_pending: bool,
+    /// The checkouts view's last answer, for the directory it was asked
+    /// about. Drawn while the next read is out.
+    checkouts: Option<CheckoutsResolution>,
+    /// The directory a checkouts read is out for.
+    checkouts_pending: Option<PathBuf>,
+    /// How many checkouts reads were asked for: only the answer to the
+    /// last one is drawn, so a read that began before a change landed
+    /// never replaces the one that began after it.
+    checkouts_asked: u64,
+    /// Whether a change to the checkouts is out: a clean-up walks and
+    /// removes several directories, and a second one started beside it
+    /// would inspect what the first is removing.
+    checkout_change_pending: bool,
     /// Every repository's tasks as last evaluated, keyed by its primary
     /// checkout. Display state: the truth is Git and the task store.
     tasks: BTreeMap<PathBuf, Vec<AgentView>>,
@@ -2766,6 +2888,8 @@ struct WorkspaceModel {
     pending_agent_tab: Option<PendingAgentTab>,
     /// Open state of the preserved-work list; `None` when closed.
     preserved: Option<PreservedOverlay>,
+    /// Open state of the checkouts view; `None` when closed.
+    checkouts: Option<CheckoutsOverlay>,
     /// Everything that can be done here, each with the key that reaches
     /// it. The workspace had no help surface at all — `alt+shift+i`
     /// delivers every task in a space, and there was no way to find that
@@ -3128,6 +3252,7 @@ impl WorkspaceModel {
             && self.support_dropdown.is_none()
             && self.status_catalog.is_none()
             && self.preserved.is_none()
+            && self.checkouts.is_none()
             && self.context_menu.is_none()
             && self.action_index.is_none()
             && self.release_notes.is_none()

@@ -309,7 +309,7 @@ fn measure(root: &Path, others: &[PathBuf]) -> (u64, Option<SystemTime>) {
             if let Ok(modified) = metadata.modified() {
                 newest = Some(newest.map_or(modified, |seen| seen.max(modified)));
             }
-            if metadata.is_dir() && !others.iter().any(|other| *other == path) {
+            if metadata.is_dir() && !others.contains(&path) {
                 pending.push(path);
             }
         }

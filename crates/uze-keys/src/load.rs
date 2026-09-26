@@ -333,6 +333,7 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Workspace, "alt+i", Action::DeliverTask),
         bind(Scope::Workspace, "alt+shift+i", Action::DeliverAllTasks),
         bind(Scope::Workspace, "alt+p", Action::TogglePreservedWork),
+        bind(Scope::Workspace, "alt+w", Action::ToggleCheckouts),
         // --- Workspace, the surfaces that seal --------------------------
         bind(Scope::Code, "esc", Action::Dismiss),
         // The doors stay doors: the one already showing closes, the other
@@ -408,6 +409,14 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::PreservedWork, "r", Action::ResumeTask),
         bind(Scope::PreservedWork, "d", Action::DiscardTask),
         bind(Scope::PreservedWork, "y", Action::ConfirmDiscard),
+        bind(Scope::Checkouts, "esc", Action::Dismiss),
+        bind(Scope::Checkouts, "down", Action::SelectNext),
+        bind(Scope::Checkouts, "up", Action::SelectPrevious),
+        bind(Scope::Checkouts, "enter", Action::Activate),
+        bind(Scope::Checkouts, "a", Action::AdoptCheckout),
+        bind(Scope::Checkouts, "d", Action::RemoveCheckout),
+        bind(Scope::Checkouts, "c", Action::CleanUpCheckouts),
+        bind(Scope::Checkouts, "y", Action::ConfirmCheckoutChange),
         bind(Scope::AgentPicker, "down", Action::SelectNext),
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
@@ -543,6 +552,9 @@ mod tests {
                 "code.confirm-delete=y",
                 "preserved-work.discard-task=d",
                 "preserved-work.confirm-discard=y",
+                "checkouts.remove-checkout=d",
+                "checkouts.clean-up-checkouts=c",
+                "checkouts.confirm-checkout-change=y",
             ]
         );
     }

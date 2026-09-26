@@ -159,7 +159,11 @@ pub(super) fn render(
     // a screen that is still live — so the scrim covers these two and
     // nothing else. Same placement as the management modal's: between
     // what was drawn and what is drawn over it.
-    if model.preserved.is_some() || model.action_index.is_some() || model.release_notes.is_some() {
+    if model.preserved.is_some()
+        || model.checkouts.is_some()
+        || model.action_index.is_some()
+        || model.release_notes.is_some()
+    {
         crate::ui::widget::scrim::render(frame, frame.area());
     }
     if let Some(modal) = &model.release_notes {
@@ -175,6 +179,9 @@ pub(super) fn render(
     }
     if let Some(overlay) = &model.preserved {
         render_preserved(frame, frame.area(), model, overlay);
+    }
+    if let Some(overlay) = &model.checkouts {
+        render_checkouts(frame, frame.area(), model, overlay, hits);
     }
     if let Some(index) = &model.action_index {
         render_action_index(frame, frame.area(), index, hits);

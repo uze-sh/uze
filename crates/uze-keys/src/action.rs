@@ -305,6 +305,21 @@ actions! {
         "Discard", "Destroy the selected task's uncommitted work";
     ConfirmDiscard => "confirm-discard", true,
         "Confirm discard", "Confirm destroying the work, having been asked once";
+
+    // --- Workspace, the project's checkouts -------------------------------
+    ToggleCheckouts => "toggle-checkouts", false,
+        "Checkouts", "List every checkout of this space's project, by who it belongs to";
+    AdoptCheckout => "adopt-checkout", false,
+        "Adopt",
+        "Record the selected checkout as UZE's own slot; a clean one is free for \
+         the next agent at once";
+    RemoveCheckout => "remove-checkout", true,
+        "Remove", "Remove the selected checkout's directory, keeping its branch";
+    CleanUpCheckouts => "clean-up-checkouts", true,
+        "Clean up",
+        "Remove every checkout of yours that is clean, unused and already in the target";
+    ConfirmCheckoutChange => "confirm-checkout-change", true,
+        "Confirm", "Go ahead with the change to the checkouts, having been asked once";
 }
 
 impl fmt::Display for Action {
@@ -373,13 +388,16 @@ mod tests {
             destructive,
             BTreeSet::from_iter(
                 [
+                    "clean-up-checkouts",
                     "clear-prompt-history",
                     "close-tab",
+                    "confirm-checkout-change",
                     "confirm-delete",
                     "confirm-discard",
                     "delete-file",
                     "delete-profile",
                     "discard-task",
+                    "remove-checkout",
                     "remove-plugin",
                 ]
                 .map(str::to_owned)

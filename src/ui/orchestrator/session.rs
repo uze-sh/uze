@@ -368,6 +368,8 @@ impl Attach<'_> {
             Scope::AgentPicker
         } else if self.model.preserved.is_some() {
             Scope::PreservedWork
+        } else if self.model.checkouts.is_some() {
+            Scope::Checkouts
         } else if self.model.context_menu.is_some() {
             Scope::ContextMenu
         } else if self
@@ -451,6 +453,9 @@ impl Attach<'_> {
         } else if let Some(overlay) = self.model.preserved.as_mut() {
             // A key that is not the confirmation withdraws the question.
             overlay.confirm_discard = false;
+            self.model.dirty = true;
+        } else if let Some(overlay) = self.model.checkouts.as_mut() {
+            overlay.asking = None;
             self.model.dirty = true;
         } else if self.model.no_modal_open() {
             self.pane_key(key, chord);
@@ -569,6 +574,10 @@ impl Attach<'_> {
             self.preserved_action(action);
             return Flow::Continue;
         }
+        if self.model.checkouts.is_some() {
+            self.checkouts_action(action, viewport);
+            return Flow::Continue;
+        }
         if self.model.context_menu.is_some() {
             self.context_menu_action(action);
             return Flow::Continue;
@@ -657,6 +666,16 @@ impl Attach<'_> {
                         self.channels.deliveries.sender.clone(),
                     );
                     self.model.set_busy_notice("delivering all".to_owned());
+                }
+            }
+            Action::ToggleCheckouts => {
+                if let Some(root) = self
+                    .model
+                    .session
+                    .as_ref()
+                    .map(|session| session.selected_space().root.clone())
+                {
+                    self.open_checkouts(root);
                 }
             }
             Action::TogglePreservedWork => {
@@ -1002,6 +1021,215 @@ impl Attach<'_> {
             _ => overlay.confirm_discard = false,
         }
         self.model.dirty = true;
+    }
+
+    /// The checkouts view: open a space in one, adopt, remove, clean up —
+    /// each change asked once before it is made.
+    pub(super) fn checkouts_action(&mut self, action: Action, viewport: &Viewport) {
+        let Some(overlay) = self.model.checkouts.as_ref() else {
+            return;
+        };
+        let count = answer_for(&self.model, overlay)
+            .and_then(|answer| answer.view.as_ref())
+            .map_or(0, |view| view.checkouts.len());
+        let selected = selected_checkout(&self.model, overlay).cloned();
+        let asking = overlay.asking;
+        let ask = |model: &mut WorkspaceModel, question: Option<CheckoutQuestion>| {
+            if let Some(overlay) = model.checkouts.as_mut() {
+                overlay.asking = question;
+            }
+        };
+        match action {
+            Action::Dismiss if asking.is_some() => ask(&mut self.model, None),
+            Action::Dismiss | Action::ToggleCheckouts => self.model.checkouts = None,
+            Action::SelectPrevious | Action::SelectNext => {
+                if let Some(overlay) = self.model.checkouts.as_mut() {
+                    overlay.selected = if action == Action::SelectNext {
+                        (overlay.selected + 1).min(count.saturating_sub(1))
+                    } else {
+                        overlay.selected.saturating_sub(1)
+                    };
+                    overlay.asking = None;
+                }
+            }
+            Action::Activate => {
+                if let Some(checkout) = selected {
+                    self.model.checkouts = None;
+                    self.open_space_at(checkout.path, viewport.columns, viewport.rows);
+                }
+            }
+            Action::AdoptCheckout => match selected {
+                Some(checkout) if checkout.adoptable => {
+                    ask(&mut self.model, Some(CheckoutQuestion::Adopt));
+                }
+                Some(checkout) => self.model.raise_toast(
+                    ToastKind::Failed,
+                    "not adopted",
+                    format!(
+                        "{}: only a checkout of yours directly under .worktrees/ can be adopted",
+                        checkout.name
+                    ),
+                    None,
+                ),
+                None => {}
+            },
+            // A refusal the last read already knows is said at once, rather
+            // than asked about and then refused.
+            Action::RemoveCheckout => match selected {
+                Some(checkout) if checkout.removal_refusal.is_some() => self.model.raise_toast(
+                    ToastKind::Failed,
+                    "not removed",
+                    format!(
+                        "{}: {}",
+                        checkout.name,
+                        checkout.removal_refusal.unwrap_or_default()
+                    ),
+                    None,
+                ),
+                Some(_) => ask(&mut self.model, Some(CheckoutQuestion::Remove)),
+                None => {}
+            },
+            Action::CleanUpCheckouts => ask(&mut self.model, Some(CheckoutQuestion::CleanUp)),
+            Action::ConfirmCheckoutChange => {
+                let change = match (asking, selected) {
+                    (Some(CheckoutQuestion::Adopt), Some(checkout)) => {
+                        Some(CheckoutChange::Adopt {
+                            path: checkout.path,
+                            name: checkout.name,
+                        })
+                    }
+                    (Some(CheckoutQuestion::Remove), Some(checkout)) => {
+                        Some(CheckoutChange::Remove {
+                            path: checkout.path,
+                            name: checkout.name,
+                        })
+                    }
+                    (Some(CheckoutQuestion::CleanUp), _) => Some(CheckoutChange::CleanUp),
+                    _ => None,
+                };
+                ask(&mut self.model, None);
+                if let Some(change) = change {
+                    self.change_checkouts(change);
+                }
+            }
+            _ => ask(&mut self.model, None),
+        }
+        self.model.dirty = true;
+    }
+
+    /// Opens the checkouts view over `project`, asking for a fresh read.
+    /// The last answer for the same directory stays drawn meanwhile.
+    fn open_checkouts(&mut self, project: PathBuf) {
+        self.model.checkouts = Some(CheckoutsOverlay::over(project.clone()));
+        self.read_checkouts(project);
+        self.model.dirty = true;
+    }
+
+    fn read_checkouts(&mut self, project: PathBuf) {
+        if self.model.remembered.checkouts_pending.as_ref() == Some(&project) {
+            return;
+        }
+        self.model.remembered.checkouts_pending = Some(project.clone());
+        self.model.remembered.checkouts_asked += 1;
+        spawn_checkouts(
+            self.home,
+            project,
+            self.model.remembered.checkouts_asked,
+            self.model
+                .remembered
+                .occupied_checkouts
+                .iter()
+                .cloned()
+                .collect(),
+            self.channels.checkouts.sender.clone(),
+        );
+    }
+
+    /// Makes one change to the checkouts, off this thread. One at a time:
+    /// a second started while the first is still removing directories
+    /// would inspect what the first is taking away.
+    fn change_checkouts(&mut self, change: CheckoutChange) {
+        let Some(project) = self
+            .model
+            .checkouts
+            .as_ref()
+            .map(|overlay| overlay.project.clone())
+        else {
+            return;
+        };
+        if std::mem::replace(&mut self.model.remembered.checkout_change_pending, true) {
+            return;
+        }
+        self.model.set_busy_notice(match &change {
+            CheckoutChange::Adopt { name, .. } => format!("adopting {name}"),
+            CheckoutChange::Remove { name, .. } => format!("removing {name}"),
+            CheckoutChange::CleanUp => "cleaning up checkouts".to_owned(),
+        });
+        spawn_checkout_change(
+            self.home,
+            project,
+            change,
+            self.model
+                .remembered
+                .occupied_checkouts
+                .iter()
+                .cloned()
+                .collect(),
+            self.channels.checkout_changes.sender.clone(),
+        );
+    }
+
+    /// A read of the checkouts, kept only while it answers the question
+    /// the open view is asking: one about a directory the view has since
+    /// left is dropped.
+    fn absorb_checkouts(&mut self) {
+        while let Ok(resolution) = self.channels.checkouts.receiver.try_recv() {
+            let latest = resolution.asked == self.model.remembered.checkouts_asked;
+            if latest {
+                self.model.remembered.checkouts_pending = None;
+            }
+            let Some(overlay) = self.model.checkouts.as_mut() else {
+                continue;
+            };
+            if !latest || overlay.project != resolution.project {
+                continue;
+            }
+            let count = resolution
+                .view
+                .as_ref()
+                .map_or(0, |view| view.checkouts.len());
+            overlay.selected = overlay.selected.min(count.saturating_sub(1));
+            self.model.remembered.checkouts = Some(resolution);
+            self.model.dirty = true;
+        }
+    }
+
+    /// Changes to the checkouts that ended, each said either way; the view
+    /// and the project's tasks are read again, since a slot may have come
+    /// or gone.
+    fn absorb_checkout_changes(&mut self) {
+        while let Ok(resolution) = self.channels.checkout_changes.receiver.try_recv() {
+            self.model.remembered.checkout_change_pending = false;
+            self.model.clear_busy_notice();
+            let (kind, title, detail) = describe_change(&resolution.outcome);
+            self.model.raise_toast(kind, title, detail, None);
+            if self
+                .model
+                .checkouts
+                .as_ref()
+                .is_some_and(|overlay| overlay.project == resolution.project)
+            {
+                // Whatever read is out began before this change landed.
+                self.model.remembered.checkouts_pending = None;
+                self.read_checkouts(resolution.project.clone());
+            }
+            self.model.schedule_evaluation(
+                self.home,
+                resolution.project,
+                &self.channels.tasks.sender,
+            );
+            self.model.dirty = true;
+        }
     }
 
     /// Finishes or discards one preserved task, off this thread.
@@ -1613,6 +1841,24 @@ impl Attach<'_> {
                 self.model.status_catalog = None;
                 self.model.dirty = true;
             }
+            _ if self.model.checkouts.is_some() => {
+                match self.model.hit_at(mouse.column, mouse.row) {
+                    Some(WorkspaceHit::CheckoutRow(index)) => {
+                        if let Some(overlay) = self.model.checkouts.as_mut() {
+                            overlay.selected = index;
+                            overlay.asking = None;
+                        }
+                    }
+                    Some(WorkspaceHit::CheckoutAction(action)) => {
+                        self.checkouts_action(action, viewport);
+                    }
+                    Some(WorkspaceHit::CheckoutsBody) => {}
+                    // A click outside the view closes it, the way it
+                    // closes every other dialog here.
+                    _ => self.model.checkouts = None,
+                }
+                self.model.dirty = true;
+            }
             _ if self.model.context_menu.is_some() => {
                 // `.rev()`: the popup renders last, so its own rows sit
                 // at the tail of `hits` — searching forward could match
@@ -2026,7 +2272,11 @@ impl Attach<'_> {
                     WorkspaceHit::SelectSpace(space) | WorkspaceHit::ToggleSpaceCollapsed(space),
                 ) = hit
                 {
-                    let items = vec![Action::RenameSelection, Action::CloseTab];
+                    let items = vec![
+                        Action::RenameSelection,
+                        Action::ToggleCheckouts,
+                        Action::CloseTab,
+                    ];
                     self.model.context_menu = Some(ContextMenu {
                         target: MenuTarget::Space(space),
                         items,
@@ -2509,6 +2759,11 @@ impl Attach<'_> {
                 // `DraggingSpace`).
                 self.model.dragging_space = Some(DraggingSpace::armed_at(space, mouse.row));
             }
+            // Only reachable while the checkouts view is open, which the
+            // guarded arm in `press` answers first.
+            WorkspaceHit::CheckoutRow(_)
+            | WorkspaceHit::CheckoutAction(_)
+            | WorkspaceHit::CheckoutsBody => {}
             WorkspaceHit::ContextMenuAction(_) => {
                 // Only reachable while the context menu is
                 // open, which the guarded arm above already
@@ -2765,6 +3020,13 @@ impl Attach<'_> {
             }
             Action::IsolateAgentAtCommit => {
                 self.isolate_agent(target, uze_application::Carry::Nothing)
+            }
+            Action::ToggleCheckouts => {
+                if let MenuTarget::Space(space) = target
+                    && let Some(root) = self.model.space_root(space)
+                {
+                    self.open_checkouts(root);
+                }
             }
             _ => dispatch_menu_action(
                 &mut self.stream,
@@ -3120,6 +3382,8 @@ impl Attach<'_> {
             self.model.remembered.preserved_work = resolution.work;
             self.model.dirty = true;
         }
+        self.absorb_checkouts();
+        self.absorb_checkout_changes();
         self.absorb_task_evaluations();
         self.absorb_deliveries();
         self.absorb_task_mutations();

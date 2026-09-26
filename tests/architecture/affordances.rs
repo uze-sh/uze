@@ -274,6 +274,26 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::ConfirmDiscard,
         Control("the confirmation the row raises"),
     );
+    put(
+        Action::ToggleCheckouts,
+        Control("the space header's right-click menu"),
+    );
+    put(
+        Action::AdoptCheckout,
+        Control("the checkouts view's adopt button"),
+    );
+    put(
+        Action::RemoveCheckout,
+        Control("the checkouts view's remove button"),
+    );
+    put(
+        Action::CleanUpCheckouts,
+        Control("the checkouts view's clean-up button"),
+    );
+    put(
+        Action::ConfirmCheckoutChange,
+        Control("the confirm button the checkouts view raises"),
+    );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }
