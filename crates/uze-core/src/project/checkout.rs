@@ -7,17 +7,22 @@
 //! one task to the next, and the number of directories is bounded by peak
 //! concurrency rather than by history.
 //!
-//! Nothing here is persisted on its own. A slot's state is derived from two
-//! sources that already exist: the directories Git registers as worktrees,
-//! and the tasks recorded for the project. That is also why adoption is
-//! cheap — a directory nobody recorded is a slot whose task was never
-//! written down, and its Git state says whether it holds work.
+//! Which directories are slots is not inferred from where they sit or what
+//! they are called: the isolation directory is shared with people and their
+//! agents, who add worktrees there too. A slot is a checkout carrying the
+//! record UZE writes when it makes one ([`record`]); every other worktree is
+//! somebody else's, and nothing here resets, reuses or removes it. Beyond
+//! that record, a slot's state is derived from the directories Git
+//! registers, the tasks recorded for the project, and whether any process
+//! is working inside it ([`Presence`]).
 //!
 //! Nothing that can hold work is removed here on any automatic path. A
 //! dirty tree, or a branch with commits the target lacks, is parked; the
 //! two removals that are safe — a branch fully contained in the target, and
-//! the *directory* of a clean slot idle beyond an age, its branch kept —
-//! are the only ones offered.
+//! the *directory* of a free slot beyond the spares the pool keeps, its
+//! branch kept — are the only ones offered.
+
+pub mod record;
 
 use std::{
     fmt, fs,
@@ -27,13 +32,48 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::process_cwd::Presence;
 use crate::{
     task::{Agent, AgentId, AgentStore, Base, Isolation, WorkState},
-    worktree::{BRANCH_PREFIX, WORKTREES_DIRECTORY, label_of},
+    worktree::{BRANCH_PREFIX, WORKTREES_DIRECTORY, WorktreePolicy, label_of},
 };
+use record::{CheckoutRecord, Recorded};
 
-/// A clean slot nobody has used for this long may lose its directory.
-pub const IDLE_SLOT_AGE: Duration = Duration::from_secs(14 * 24 * 60 * 60);
+/// How many free slots are kept, and for how long. Decided from the slots
+/// as they stand, never from a history of how many were used: a rule with
+/// no memory has nothing to get wrong about the past.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Pool {
+    /// Free slots kept warm for the next agents, the most recently used.
+    pub spare: usize,
+    /// Unused this long, even a spare gives its disk back.
+    pub idle: Duration,
+}
+
+impl Default for Pool {
+    fn default() -> Self {
+        Self {
+            spare: 2,
+            idle: Duration::from_secs(3 * 24 * 60 * 60),
+        }
+    }
+}
+
+impl Pool {
+    pub fn declared_by(policy: Option<&WorktreePolicy>) -> Self {
+        let default = Self::default();
+        Self {
+            spare: policy
+                .and_then(|policy| policy.spare)
+                .unwrap_or(default.spare),
+            idle: policy
+                .and_then(|policy| policy.idle_days)
+                .map_or(default.idle, |days| {
+                    Duration::from_secs(days.saturating_mul(24 * 60 * 60))
+                }),
+        }
+    }
+}
 
 /// The generated, immutable name of a slot — the directory under the
 /// isolation directory. Never derived from a task or a label, so a slot
@@ -52,21 +92,12 @@ impl CheckoutId {
         Self(name.to_owned())
     }
 
-    /// Whether UZE made this checkout: a name of the shape
-    /// [`CheckoutId::generate`] gives, or the `agent-<n>` the builds before
-    /// slots gave. The isolation directory is also where people and their
-    /// agents put checkouts of their own, and nothing but the name says a
-    /// directory was made to be recycled.
-    pub fn is_uze_made(&self) -> bool {
-        let generated = self.0.len() == crate::task::IDENTIFIER_CHARS
-            && self
-                .0
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit());
-        let legacy = self.0.strip_prefix("agent-").is_some_and(|number| {
+    /// Whether the name is the `agent-<n>` the builds before slots gave
+    /// their checkouts, which carry no record of their own.
+    fn is_legacy(&self) -> bool {
+        self.0.strip_prefix("agent-").is_some_and(|number| {
             !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
-        });
-        generated || legacy
+        })
     }
 
     pub fn as_str(&self) -> &str {
@@ -140,23 +171,22 @@ impl fmt::Display for AcquireError {
 impl std::error::Error for AcquireError {}
 
 /// The slots of `primary` and their state, derived from Git, `store`, and
-/// `occupied` — the directories a live pane still sits in. The task record
-/// alone cannot say whether an agent is still there: a task ends when its
-/// work is delivered, and the agent that delivered it is usually still in
-/// the checkout, so a slot read without the panes would be handed to the
-/// next agent under the feet of the last.
-/// Only checkouts UZE generated are slots: reuse resets and cleans one,
-/// and collection removes it, which is only safe for a directory nobody
-/// else made.
-pub fn slots(primary: &Path, store: &AgentStore, occupied: &[PathBuf]) -> Vec<Slot> {
-    registered_checkouts(primary)
+/// `presence` — where somebody is working. The task record alone cannot
+/// say whether an agent is still there: a task ends when its work is
+/// delivered, and the agent that delivered it is usually still in the
+/// checkout, so a slot read without the process table would be handed to
+/// the next agent under the feet of the last.
+///
+/// Only a recorded checkout in the isolation directory is a slot: reuse
+/// resets and cleans one and collection removes it, which is only safe
+/// for a directory UZE made.
+pub fn slots(primary: &Path, store: &AgentStore, presence: &Presence) -> Vec<Slot> {
+    isolated_checkouts(primary)
         .into_iter()
-        .filter_map(|(path, branch)| {
+        .filter(|(path, _)| matches!(record::read(path), Recorded::Ours(_)))
+        .map(|(path, branch)| {
             let id = CheckoutId::adopted(&slot_name(&path));
-            id.is_uze_made().then_some((path, branch, id))
-        })
-        .map(|(path, branch, id)| {
-            let state = slot_state(primary, &path, branch.as_deref(), &id, store, occupied);
+            let state = slot_state(primary, &path, branch.as_deref(), &id, store, presence);
             Slot {
                 id,
                 path,
@@ -185,7 +215,7 @@ pub fn acquire(
     isolation: &Isolation,
     base_tip: &str,
     cap: Option<usize>,
-    occupied: &[PathBuf],
+    presence: &Presence,
 ) -> Result<Acquired, AcquireError> {
     take(
         primary,
@@ -193,7 +223,7 @@ pub fn acquire(
         &isolation.branch,
         Start::Branching { base_tip },
         cap,
-        occupied,
+        presence,
     )
 }
 
@@ -207,7 +237,7 @@ pub fn resume(
     store: &AgentStore,
     isolation: &Isolation,
     cap: Option<usize>,
-    occupied: &[PathBuf],
+    presence: &Presence,
 ) -> Result<Acquired, AcquireError> {
     if !branch_exists(primary, &isolation.branch) {
         return Err(AcquireError::Git(format!(
@@ -221,7 +251,7 @@ pub fn resume(
         &isolation.branch,
         Start::Existing,
         cap,
-        occupied,
+        presence,
     )
 }
 
@@ -231,7 +261,7 @@ fn take(
     branch: &str,
     start: Start<'_>,
     cap: Option<usize>,
-    occupied: &[PathBuf],
+    presence: &Presence,
 ) -> Result<Acquired, AcquireError> {
     // Reuse resets a slot's working tree to this commit, so a base nobody
     // could resolve is refused before a slot is chosen rather than handed
@@ -244,7 +274,7 @@ fn take(
         ));
     }
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        let existing = slots(primary, store, occupied);
+        let existing = slots(primary, store, presence);
         if let Some(free) = existing
             .iter()
             .filter(|slot| slot.state == SlotState::Free)
@@ -281,6 +311,9 @@ fn reuse(slot: &Slot, branch: &str, start: Start<'_>) -> Result<Acquired, Acquir
     // Without `-x` on purpose: ignored artifacts are what make the slot
     // worth keeping.
     git(root, &["clean", "--quiet", "-fd"])?;
+    // Rewritten, not kept: a subagent's record names an agent this new
+    // holder is not the child of.
+    record::write(root, &CheckoutRecord::made_at(root)).map_err(AcquireError::Git)?;
     Ok(Acquired {
         id: slot.id.clone(),
         path: root.clone(),
@@ -310,9 +343,25 @@ fn create(primary: &Path, branch: &str, start: Start<'_>) -> Result<Acquired, Ac
         )?,
     };
     exclude_isolation_directory(primary)?;
+    let path = primary.join(relative);
+    // Unrecorded, the directory would be nobody's to reuse or remove for
+    // good; one that cannot carry its record is not kept at all.
+    if let Err(reason) = record::write(&path, &CheckoutRecord::made_at(&path)) {
+        let _ = git(
+            primary,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                "--",
+                &path.to_string_lossy(),
+            ],
+        );
+        return Err(AcquireError::Git(reason));
+    }
     Ok(Acquired {
         id,
-        path: primary.join(relative),
+        path,
         branch: branch.to_owned(),
         created: true,
     })
@@ -394,13 +443,15 @@ pub struct Reconciliation {
     pub revived: Vec<AgentId>,
 }
 
-/// Brings `store` in line with the isolation directory: adopts checkouts
-/// without a task (parked when they hold work), marks tasks without a
-/// checkout from where their branch stands, and prunes Git's registry only
-/// after every directory has been looked at.
+/// Brings `store` in line with the isolation directory: records the
+/// checkouts UZE can show it made, adopts recorded checkouts without a task
+/// (parked when they hold work), marks tasks without a checkout from where
+/// their branch stands, and prunes Git's registry only after every
+/// directory has been looked at.
 pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconciliation {
     let mut report = Reconciliation::default();
-    let registered = registered_checkouts(primary);
+    let registered = isolated_checkouts(primary);
+    record_on_sight(&registered, store);
 
     for (path, branch) in &registered {
         let id = CheckoutId::adopted(&slot_name(path));
@@ -437,12 +488,12 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
             }
             continue;
         }
-        // A checkout UZE did not generate is somebody else's, record or not:
-        // adopting it would make it a slot the next agent resets.
-        if !id.is_uze_made() {
+        // A checkout without UZE's record is somebody else's, whatever it
+        // is called: adopting it would make it a slot the next agent resets.
+        if !matches!(record::read(path), Recorded::Ours(_)) {
             continue;
         }
-        let holds_work = is_dirty(path)
+        let holds_work = holds_uncommitted_work(path)
             || branch
                 .as_deref()
                 .is_some_and(|branch| !is_integrated(primary, target, branch));
@@ -518,6 +569,31 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
 
     let _ = git(primary, &["worktree", "prune"]);
     report
+}
+
+/// Records the checkouts UZE can show it made but that carry no record:
+/// the slot of an agent it launched — one with a harness, which an adoption
+/// by inference never had — and the `agent-<n>` of the builds before slots.
+/// A standing rule rather than a one-time step, because an older build on
+/// the same machine goes on making slots it does not record.
+fn record_on_sight(registered: &[(PathBuf, Option<String>)], store: &AgentStore) {
+    for (path, _) in registered {
+        if record::read(path) != Recorded::Absent {
+            continue;
+        }
+        let id = CheckoutId::adopted(&slot_name(path));
+        let launched_here = store.agents.iter().any(|agent| {
+            !agent.harness.is_empty()
+                && agent
+                    .isolation()
+                    .is_some_and(|isolation| isolation.checkout.as_ref() == Some(&id))
+        });
+        if (launched_here || id.is_legacy())
+            && let Err(reason) = record::write(path, &CheckoutRecord::made_at(path))
+        {
+            tracing::warn!(checkout = %path.display(), %reason, "could not record a checkout UZE made");
+        }
+    }
 }
 
 /// Ends a task that no longer has a checkout of its own, by what its
@@ -597,8 +673,8 @@ pub struct Collected {
 }
 
 /// The two removals that cannot lose work, as one critical section: a
-/// branch whose every commit is in the target, and the directory of a clean
-/// slot nobody has touched for `age`, its branch kept.
+/// branch whose every commit is in the target, and the directory of a free
+/// slot the `pool` does not keep, its branch kept.
 ///
 /// Both are safe on their own; taking the write lock once around them is
 /// what keeps a branch from being pruned in the moment a concurrent
@@ -607,12 +683,12 @@ pub fn collect(
     primary: &Path,
     store: &AgentStore,
     target: &str,
-    age: Duration,
-    occupied: &[PathBuf],
+    pool: Pool,
+    presence: &Presence,
 ) -> Collected {
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || Collected {
         branches: prune_integrated_branches(primary, store, target),
-        slots: remove_idle_slots(primary, store, age, occupied),
+        slots: trim_free_slots(primary, store, pool, presence),
     })
     .unwrap_or_default()
 }
@@ -631,7 +707,7 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
     if tip_of(primary, target).is_empty() {
         return Vec::new();
     }
-    let checked_out: Vec<String> = registered_checkouts(primary)
+    let checked_out: Vec<String> = linked_worktrees(primary)
         .into_iter()
         .filter_map(|(_, branch)| branch)
         .collect();
@@ -665,24 +741,26 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
     removed
 }
 
-/// Removes the directory of every free slot untouched for longer than
-/// `age`, keeping its branch. Returns the slots removed.
-pub fn remove_idle_slots(
+/// Removes the directory of every free slot the `pool` does not keep —
+/// beyond its spares, the most recently used first, or unused past its idle
+/// age — keeping each one's branch. Returns the slots removed.
+pub fn trim_free_slots(
     primary: &Path,
     store: &AgentStore,
-    age: Duration,
-    occupied: &[PathBuf],
+    pool: Pool,
+    presence: &Presence,
 ) -> Vec<CheckoutId> {
     let now = SystemTime::now();
+    let mut free: Vec<(SystemTime, Slot)> = slots(primary, store, presence)
+        .into_iter()
+        .filter(|slot| slot.state == SlotState::Free)
+        .map(|slot| (modified_at(&slot.path), slot))
+        .collect();
+    free.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
     let mut removed = Vec::new();
-    for slot in slots(primary, store, occupied) {
-        if slot.state != SlotState::Free {
-            continue;
-        }
-        let idle = now
-            .duration_since(modified_at(&slot.path))
-            .unwrap_or_default();
-        if idle < age {
+    for (kept, (modified, slot)) in free.into_iter().enumerate() {
+        let idle = now.duration_since(modified).unwrap_or_default();
+        if kept < pool.spare && idle < pool.idle {
             continue;
         }
         let path = slot.path.to_string_lossy().into_owned();
@@ -711,7 +789,7 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str) -> SlotState {
         .map(|checkout| checkout.directory(primary))
         .filter(|path| path.is_dir());
     let holds_work = directory
-        .is_some_and(|path| is_dirty(&path) || holds_unbranched_commits(&path))
+        .is_some_and(|path| holds_uncommitted_work(&path) || holds_unbranched_commits(&path))
         || (branch_exists(primary, &isolation.branch)
             && !is_integrated(primary, target, &isolation.branch));
     if is_live(&agent.state) {
@@ -768,10 +846,6 @@ pub fn is_live(state: &WorkState) -> bool {
     )
 }
 
-/// The branch checked out in `root`, or `None` for a detached `HEAD`.
-/// `symbolic-ref` rather than `rev-parse --abbrev-ref`: it still names the
-/// branch when it has no commit yet, which is the case that must be told
-/// apart from "no branch at all".
 /// Renames a branch, under the repository's write lock.
 ///
 /// Taken in the primary the way every other write is, so a rename cannot
@@ -787,6 +861,10 @@ pub fn rename_branch(primary: &Path, from: &str, to: &str) -> crate::Result<()> 
     .map_err(|reason| crate::UzeError::TaskNaming(reason.to_string()))?
 }
 
+/// The branch checked out in `root`, or `None` for a detached `HEAD`.
+/// `symbolic-ref` rather than `rev-parse --abbrev-ref`: it still names the
+/// branch when it has no commit yet, which is the case that must be told
+/// apart from "no branch at all".
 pub fn current_branch(root: &Path) -> Option<String> {
     let branch = uze_git::read(root, &["symbolic-ref", "--short", "--quiet", "HEAD"])
         .ok()?
@@ -814,12 +892,117 @@ pub fn tip_of(root: &Path, reference: &str) -> String {
     .unwrap_or_default()
 }
 
-/// Uncommitted changes, tracked or untracked-but-not-ignored.
+/// Uncommitted changes, tracked or untracked-but-not-ignored. What rebasing,
+/// joining and delivering ask: they need a tree with nothing at all in it.
 pub fn is_dirty(root: &Path) -> bool {
     uze_git::read(root, &["status", "--porcelain"])
         .ok()
         .and_then(|output| output.successful().ok())
         .is_none_or(|status| !status.trim().is_empty())
+}
+
+/// Whether `root` holds uncommitted changes that are somebody's work — the
+/// question a checkout is parked or freed by. Content UZE derives and can
+/// produce again is not: a lock that only gained or lost entries, which is
+/// all `install` does to it, and an instruction file that changed only
+/// inside the regions UZE manages. Left alone, those are what a slot
+/// collects just by having UZE run in it, and each parked the slot for
+/// good. A question Git could not answer is taken as yes.
+fn holds_uncommitted_work(root: &Path) -> bool {
+    let Some(status) = uze_git::read(root, &["status", "--porcelain=v1", "-z"])
+        .ok()
+        .and_then(|output| output.successful().ok())
+    else {
+        return true;
+    };
+    status
+        .split('\0')
+        .filter(|record| !record.is_empty())
+        .any(|record| match record.split_at_checked(3) {
+            // A rename or a copy is an edit somebody made, whatever it names.
+            Some((code, _)) if code.starts_with(['R', 'C']) => true,
+            Some((_, path)) if path == crate::project_lock::LOCK_FILE_NAME => {
+                !lock_moves_no_pin(root)
+            }
+            Some((_, path)) if path == crate::project_context::AGENTS_MD_FILE_NAME => {
+                !instructions_changed_only_in_regions(root)
+            }
+            _ => true,
+        })
+}
+
+/// Whether every plugin the committed lock and the working one both carry
+/// keeps its revision and its digest: only entries were added or dropped.
+/// A moved pin is what `update` exists to write, and that is work.
+fn lock_moves_no_pin(root: &Path) -> bool {
+    use crate::project_lock::{LOCK_FILE_NAME, ProjectLock, parse_lock_str};
+
+    let path = root.join(LOCK_FILE_NAME);
+    let committed = match committed_text(root, LOCK_FILE_NAME) {
+        Committed::Absent => ProjectLock::default(),
+        Committed::Text(text) => match parse_lock_str(&text, &path) {
+            Ok(lock) => lock,
+            Err(_) => return false,
+        },
+        Committed::Unknown => return false,
+    };
+    let working = match crate::project_lock::load_lock(root) {
+        Ok(lock) => lock.unwrap_or_default(),
+        Err(_) => return false,
+    };
+    let revision = |lock: &ProjectLock, marketplace: &str| {
+        lock.marketplaces
+            .get(marketplace)
+            .map(|entry| entry.revision.clone())
+    };
+    working.plugins.iter().all(|(name, now)| {
+        committed.plugins.get(name).is_none_or(|before| {
+            before.integrity == now.integrity
+                && revision(&committed, &before.marketplace) == revision(&working, &now.marketplace)
+        })
+    })
+}
+
+fn instructions_changed_only_in_regions(root: &Path) -> bool {
+    use crate::project_context::AGENTS_MD_FILE_NAME;
+
+    let committed = match committed_text(root, AGENTS_MD_FILE_NAME) {
+        Committed::Absent => String::new(),
+        Committed::Text(text) => text,
+        Committed::Unknown => return false,
+    };
+    let working = match fs::read(root.join(AGENTS_MD_FILE_NAME)) {
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(text) => text,
+            Err(_) => return false,
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(_) => return false,
+    };
+    crate::text_region::same_outside_managed_regions(&committed, &working)
+}
+
+enum Committed {
+    Absent,
+    Text(String),
+    Unknown,
+}
+
+/// A top-level file as `HEAD` has it.
+fn committed_text(root: &Path, name: &str) -> Committed {
+    let Some(listed) = uze_git::read(root, &["ls-tree", "--name-only", "HEAD", "--", name])
+        .ok()
+        .and_then(|output| output.successful().ok())
+    else {
+        return Committed::Unknown;
+    };
+    if listed.trim().is_empty() {
+        return Committed::Absent;
+    }
+    uze_git::read(root, &["show", &format!("HEAD:{name}")])
+        .ok()
+        .and_then(|output| output.successful().ok())
+        .map_or(Committed::Unknown, Committed::Text)
 }
 
 /// How far the branch checked out in `root` and its upstream have moved
@@ -995,11 +1178,10 @@ fn agent_branches(root: &Path) -> Vec<String> {
     .unwrap_or_default()
 }
 
-/// Every linked worktree Git registers under the isolation directory,
-/// with the branch it has checked out. Read from `git worktree list`, so a
-/// directory that exists but was never registered is not a slot.
-fn registered_checkouts(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
-    let container = primary.join(WORKTREES_DIRECTORY);
+/// Every linked worktree Git registers, wherever it is, with the branch it
+/// has checked out — the primary checkout left out. Read from `git worktree
+/// list`, so a directory that exists but was never registered is none.
+pub fn linked_worktrees(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
     let Some(listing) = uze_git::read(primary, &["worktree", "list", "--porcelain"])
         .ok()
         .and_then(|output| output.successful().ok())
@@ -1008,6 +1190,8 @@ fn registered_checkouts(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
     };
     let mut checkouts = Vec::new();
     let mut current: Option<(PathBuf, Option<String>)> = None;
+    // The first entry Git lists is always the main worktree.
+    let mut main = true;
     for line in listing.lines().chain(std::iter::once("")) {
         if let Some(path) = line.strip_prefix("worktree ") {
             current = Some((PathBuf::from(path), None));
@@ -1022,7 +1206,7 @@ fn registered_checkouts(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
             );
         } else if line.is_empty()
             && let Some(entry) = current.take()
-            && entry.0.parent() == Some(container.as_path())
+            && !std::mem::take(&mut main)
             && entry.0.is_dir()
         {
             checkouts.push(entry);
@@ -1030,6 +1214,16 @@ fn registered_checkouts(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
     }
     checkouts.sort();
     checkouts
+}
+
+/// The linked worktrees directly under the isolation directory: the only
+/// place a slot can be, and so the only place a record is honoured.
+fn isolated_checkouts(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
+    let container = primary.join(WORKTREES_DIRECTORY);
+    linked_worktrees(primary)
+        .into_iter()
+        .filter(|(path, _)| path.parent() == Some(container.as_path()))
+        .collect()
 }
 
 fn slot_name(path: &Path) -> String {
@@ -1044,21 +1238,21 @@ fn slot_state(
     branch: Option<&str>,
     id: &CheckoutId,
     store: &AgentStore,
-    occupied: &[PathBuf],
+    presence: &Presence,
 ) -> SlotState {
     let owner = store.slot_owner(id);
     let isolation = owner.and_then(Agent::isolation);
-    let pane_inside = occupied.iter().any(|pane| pane.starts_with(path));
+    let somebody_inside = presence.inside(path);
     if let Some(owner) = owner
-        && (is_live(&owner.state) || pane_inside)
+        && (is_live(&owner.state) || somebody_inside)
     {
         return SlotState::Occupied {
             task: owner.id.clone(),
         };
     }
-    // A pane in a directory no agent ever claimed is still somebody at
-    // work there; only the operator moves it on.
-    if pane_inside || is_dirty(path) {
+    // Somebody at work in a directory no agent claims is still somebody
+    // at work there; only the operator moves it on.
+    if somebody_inside || holds_uncommitted_work(path) {
         return SlotState::Parked;
     }
     let declared_done = owner.is_some_and(|owner| owner.state == WorkState::Integrated);
@@ -1146,14 +1340,15 @@ fn git(root: &Path, args: &[&str]) -> Result<String, AcquireError> {
 }
 
 #[cfg(test)]
+mod accounting_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use uze_testkit::git::Repository;
 
     const TARGET: &str = "main";
 
-    /// A repository whose `.gitignore` already ignores `target/`, the way a
-    /// Rust project does — the artifact reuse exists to preserve.
     #[test]
     fn an_exclude_file_that_is_not_text_keeps_every_byte_it_had() {
         let repository = repository("exclude-not-text");
@@ -1170,6 +1365,8 @@ mod tests {
         assert!(written.ends_with(format!("/{WORKTREES_DIRECTORY}/\n").as_bytes()));
     }
 
+    /// A repository whose `.gitignore` already ignores `target/`, the way a
+    /// Rust project does — the artifact reuse exists to preserve.
     fn repository(label: &str) -> Repository {
         let repository = Repository::new(label);
         repository.commit_file(".gitignore", "target/\n");
@@ -1199,10 +1396,30 @@ mod tests {
         let mut agent = task(label);
         let base = tip_of(primary, TARGET);
         isolation(&mut agent).base_commit = base.clone();
-        let acquired = acquire(primary, store, isolation(&mut agent), &base, None, &[]).unwrap();
+        let acquired = acquire(
+            primary,
+            store,
+            isolation(&mut agent),
+            &base,
+            None,
+            &nobody(),
+        )
+        .unwrap();
         isolation(&mut agent).checkout = Some(acquired.id.clone());
         store.upsert(agent.clone());
         (agent, acquired)
+    }
+
+    fn nobody() -> Presence {
+        Presence::Known(Vec::new())
+    }
+
+    /// A pool that keeps no free slot, so every free one is collectable.
+    fn keep_nothing() -> Pool {
+        Pool {
+            spare: 0,
+            idle: Duration::ZERO,
+        }
     }
 
     fn set_state(store: &mut AgentStore, id: &AgentId, state: WorkState) {
@@ -1230,7 +1447,7 @@ mod tests {
             "it ended with nothing; nothing of it reached the target"
         );
         assert_eq!(
-            slots(repository.root(), &store, &[])[0].state,
+            slots(repository.root(), &store, &nobody())[0].state,
             SlotState::Free,
             "nothing is in front of it and it holds nothing"
         );
@@ -1451,9 +1668,9 @@ mod tests {
         repository.git_in(&slot.path, &["add", "."]);
         repository.git_in(&slot.path, &["commit", "-qm", "work"]);
         set_state(&mut store, &first.id, WorkState::Integrated);
-        assert_eq!(slots(primary, &store, &[])[0].state, SlotState::Free);
+        assert_eq!(slots(primary, &store, &nobody())[0].state, SlotState::Free);
 
-        let removed = remove_idle_slots(primary, &store, Duration::ZERO, &[]);
+        let removed = trim_free_slots(primary, &store, keep_nothing(), &nobody());
         assert_eq!(removed, vec![slot.id]);
         assert!(!slot.path.exists());
         assert!(
@@ -1479,8 +1696,11 @@ mod tests {
         let mut forgotten = AgentStore::default();
         reconcile(primary, &mut forgotten, TARGET);
 
-        assert_eq!(slots(primary, &forgotten, &[])[0].state, SlotState::Parked);
-        assert!(remove_idle_slots(primary, &forgotten, Duration::ZERO, &[]).is_empty());
+        assert_eq!(
+            slots(primary, &forgotten, &nobody())[0].state,
+            SlotState::Parked
+        );
+        assert!(trim_free_slots(primary, &forgotten, keep_nothing(), &nobody()).is_empty());
         assert!(slot.path.join("work.rs").exists());
     }
 
@@ -1494,7 +1714,10 @@ mod tests {
         let mut forgotten = AgentStore::default();
         reconcile(primary, &mut forgotten, TARGET);
 
-        assert_eq!(slots(primary, &forgotten, &[])[0].state, SlotState::Free);
+        assert_eq!(
+            slots(primary, &forgotten, &nobody())[0].state,
+            SlotState::Free
+        );
     }
 
     #[test]
@@ -1506,7 +1729,7 @@ mod tests {
         fs::write(slot.path.join("dirty"), b"").unwrap();
         let mut forgotten = AgentStore::default();
         reconcile(primary, &mut forgotten, TARGET);
-        assert!(remove_idle_slots(primary, &forgotten, Duration::ZERO, &[]).is_empty());
+        assert!(trim_free_slots(primary, &forgotten, keep_nothing(), &nobody()).is_empty());
         assert!(slot.path.join("dirty").exists());
     }
 
@@ -1567,12 +1790,12 @@ mod tests {
         }
         assert!(tip_of(primary, MISSING).is_empty(), "the target is absent");
 
-        let collected = collect(primary, &store, MISSING, Duration::ZERO, &[]);
+        let collected = collect(primary, &store, MISSING, keep_nothing(), &nobody());
         assert_eq!(collected, Collected::default(), "nothing may be removed");
         assert!(branch_exists(primary, &parked.isolation().unwrap().branch));
         assert!(slot.path.join("a.rs").is_file());
         assert_eq!(
-            slots(primary, &store, &[])[0].state,
+            slots(primary, &store, &nobody())[0].state,
             SlotState::Parked,
             "a slot measured against a target that does not resolve holds work"
         );
@@ -1595,7 +1818,7 @@ mod tests {
             blocked.isolation().unwrap(),
             &tip_of(primary, TARGET),
             Some(2),
-            &[],
+            &nobody(),
         )
         .unwrap_err();
         assert!(
@@ -1610,7 +1833,7 @@ mod tests {
             blocked.isolation().unwrap(),
             &tip_of(primary, TARGET),
             Some(2),
-            &[],
+            &nobody(),
         )
         .unwrap();
         assert!(!reused.created);
@@ -1672,7 +1895,7 @@ mod tests {
         let report = reconcile(primary, &mut store, TARGET);
         assert!(report.revived.is_empty(), "{report:?}");
         assert_eq!(store.get(&first.id).unwrap().state, WorkState::Integrated);
-        assert_eq!(slots(primary, &store, &[])[0].state, SlotState::Free);
+        assert_eq!(slots(primary, &store, &nobody())[0].state, SlotState::Free);
 
         fs::write(slot.path.join("after.rs"), b"fn b() {}").unwrap();
         repository.git_in(&slot.path, &["add", "."]);
@@ -1683,7 +1906,7 @@ mod tests {
         let task = store.get(&first.id).unwrap();
         assert_eq!(task.state, WorkState::Running, "live again, and re-read");
         assert_eq!(
-            slots(primary, &store, &[])[0].state,
+            slots(primary, &store, &nobody())[0].state,
             SlotState::Occupied {
                 task: first.id.clone()
             },
@@ -1705,12 +1928,12 @@ mod tests {
         let inside = vec![slot.path.join("src")];
 
         assert_eq!(
-            slots(primary, &store, &[])[0].state,
+            slots(primary, &store, &nobody())[0].state,
             SlotState::Free,
             "the record alone reads as free"
         );
         assert_eq!(
-            slots(primary, &store, &inside)[0].state,
+            slots(primary, &store, &Presence::Known(inside.clone()))[0].state,
             SlotState::Occupied {
                 task: first.id.clone()
             },
@@ -1724,7 +1947,7 @@ mod tests {
             second.isolation().unwrap(),
             &tip_of(primary, TARGET),
             None,
-            &inside,
+            &Presence::Known(inside.clone()),
         )
         .unwrap();
         assert!(
@@ -1734,7 +1957,12 @@ mod tests {
         assert_ne!(acquired.path, slot.path);
         // The new directory belongs to no recorded task and reads as idle,
         // so an immediate sweep may take it; the pane's own must survive.
-        let removed = remove_idle_slots(primary, &store, Duration::ZERO, &inside);
+        let removed = trim_free_slots(
+            primary,
+            &store,
+            keep_nothing(),
+            &Presence::Known(inside.clone()),
+        );
         assert!(
             !removed.contains(&slot.id) && slot.path.is_dir(),
             "the directory is not swept out from under the pane: {removed:?}"
@@ -1762,7 +1990,7 @@ mod tests {
         assert_eq!(task.state, WorkState::Parked, "a commit the target lacks");
         assert_eq!(task.isolation().unwrap().checkout, None);
 
-        let resumed = resume(primary, &store, task.isolation().unwrap(), None, &[]).unwrap();
+        let resumed = resume(primary, &store, task.isolation().unwrap(), None, &nobody()).unwrap();
         assert_eq!(resumed.branch, task.isolation().unwrap().branch);
         assert_eq!(
             current_branch(&resumed.path).as_deref(),
@@ -1812,12 +2040,13 @@ mod tests {
             WorkState::Closed,
             "clean and nothing ahead: free to reuse, and no delivery to claim"
         );
-        assert_eq!(slots(primary, &store, &[])[0].state, SlotState::Free);
+        assert_eq!(slots(primary, &store, &nobody())[0].state, SlotState::Free);
     }
 
-    /// Adoption takes the branch as Git has it. A checkout found on a
-    /// branch somebody named keeps that name — final, like any chosen one —
-    /// and its label reads from it rather than from the slot's identifier.
+    /// Adoption takes the branch as Git has it. A slot UZE made, found on a
+    /// branch somebody named after its task's record was lost, keeps that
+    /// name — final, like any chosen one — and its label reads from it
+    /// rather than from the slot's identifier.
     #[test]
     fn a_checkout_on_a_named_branch_is_adopted_under_its_name() {
         let repository = repository("slots-legacy-named");
@@ -1831,6 +2060,8 @@ mod tests {
             ".worktrees/k3y4ap",
             "HEAD",
         ]);
+        let slot = primary.join(".worktrees/k3y4ap");
+        record::write(&slot, &CheckoutRecord::made_at(&slot)).unwrap();
         let mut store = AgentStore::default();
         let report = reconcile(primary, &mut store, TARGET);
         assert_eq!(report.adopted.len(), 1);
@@ -1915,12 +2146,12 @@ mod tests {
 
         let report = reconcile(primary, &mut store, TARGET);
         assert!(report.adopted.is_empty(), "never adopted");
-        assert!(slots(primary, &store, &[]).is_empty(), "never a slot");
+        assert!(slots(primary, &store, &nobody()).is_empty(), "never a slot");
 
         let (_, placed) = launch(&repository, &mut store, "next");
         assert!(placed.created, "never offered to an agent");
 
-        let collected = collect(primary, &store, TARGET, Duration::ZERO, &[]);
+        let collected = collect(primary, &store, TARGET, keep_nothing(), &nobody());
         assert!(foreign.is_dir(), "never swept as idle");
         assert!(
             !collected
@@ -1957,7 +2188,7 @@ mod tests {
 
         let report = reconcile(primary, &mut store, TARGET);
         assert!(report.adopted.is_empty(), "never adopted");
-        assert!(slots(primary, &store, &[]).is_empty(), "never a slot");
+        assert!(slots(primary, &store, &nobody()).is_empty(), "never a slot");
 
         let (_, placed) = launch(&repository, &mut store, "next");
         assert!(placed.created, "never offered to an agent");
@@ -1970,24 +2201,15 @@ mod tests {
             "its branch is where its owner left it"
         );
 
-        collect(primary, &store, TARGET, Duration::ZERO, &[]);
+        collect(primary, &store, TARGET, keep_nothing(), &nobody());
         assert!(hand_made.is_dir(), "never swept as idle");
     }
 
     #[test]
-    fn a_name_uze_gave_is_told_from_a_chosen_one() {
-        assert!(CheckoutId::generate().is_uze_made());
-        assert!(CheckoutId::adopted("agent-2").is_uze_made());
-        for chosen in [
-            "hardening-integrations",
-            "journal",
-            "Abc123",
-            "abc12",
-            "abc1234",
-            "agent-",
-            "agent-x",
-        ] {
-            assert!(!CheckoutId::adopted(chosen).is_uze_made(), "{chosen}");
+    fn only_the_numbered_names_before_slots_are_legacy() {
+        assert!(CheckoutId::adopted("agent-2").is_legacy());
+        for chosen in ["hardening-integrations", "abc123", "agent-", "agent-x"] {
+            assert!(!CheckoutId::adopted(chosen).is_legacy(), "{chosen}");
         }
     }
 
@@ -2025,7 +2247,7 @@ mod tests {
             task("x").isolation().unwrap(),
             "HEAD",
             None,
-            &[],
+            &nobody(),
         )
         .unwrap_err();
         assert!(matches!(error, AcquireError::Git(_)), "{error}");

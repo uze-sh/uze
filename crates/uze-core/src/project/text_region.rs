@@ -118,8 +118,14 @@ fn read_lines(path: &Path) -> Result<Option<(Vec<Line>, Newline)>> {
     };
     let content =
         String::from_utf8(bytes).map_err(|_| UzeError::InvalidTextEncoding(path.to_path_buf()))?;
+    let lines = lines_of(&content);
+    let style = majority_newline(&lines);
+    Ok(Some((lines, style)))
+}
+
+fn lines_of(content: &str) -> Vec<Line> {
     let mut lines = Vec::new();
-    let mut rest = content.as_str();
+    let mut rest = content;
     while !rest.is_empty() {
         match rest.find('\n') {
             Some(index) => {
@@ -140,8 +146,7 @@ fn read_lines(path: &Path) -> Result<Option<(Vec<Line>, Newline)>> {
             }
         }
     }
-    let style = majority_newline(&lines);
-    Ok(Some((lines, style)))
+    lines
 }
 
 /// The style to give lines UZE inserts: whichever `lines` use most, LF on a
@@ -737,6 +742,29 @@ fn identities_in(lines: &[Line]) -> Vec<String> {
         .collect()
 }
 
+/// Whether two versions of a file say the same thing outside the regions
+/// UZE manages in them: the same non-blank lines, in the same order, once
+/// every well-formed region is set aside. Blank lines are not compared,
+/// because attaching a region is what adds the one that separates it.
+pub fn same_outside_managed_regions(left: &str, right: &str) -> bool {
+    authored_lines(&lines_of(left)).eq(authored_lines(&lines_of(right)))
+}
+
+fn authored_lines(lines: &[Line]) -> impl Iterator<Item = &str> {
+    let mut owned = std::collections::BTreeSet::new();
+    for identity in identities_in(lines) {
+        let (begin_marker, end_marker) = markers(&identity);
+        if let Scan::WellFormed { begin, end } = scan(lines, &begin_marker, &end_marker) {
+            owned.extend(begin..=end);
+        }
+    }
+    lines
+        .iter()
+        .enumerate()
+        .filter(move |(index, line)| !owned.contains(index) && !line.text.trim().is_empty())
+        .map(|(_, line)| line.text.as_str())
+}
+
 /// Whether `target_file` holds any content that is not part of a
 /// well-formed UZE-managed region — i.e. whether a user (or anything other
 /// than UZE) wrote something into it independently. A missing file, or one
@@ -748,17 +776,7 @@ pub fn has_content_outside_managed_regions(target_file: &Path) -> bool {
     let Ok(Some((lines, _style))) = read_lines(target_file) else {
         return false;
     };
-    let mut owned = std::collections::BTreeSet::new();
-    for identity in region_identities_present(target_file) {
-        let (begin_marker, end_marker) = markers(&identity);
-        if let Scan::WellFormed { begin, end } = scan(&lines, &begin_marker, &end_marker) {
-            owned.extend(begin..=end);
-        }
-    }
-    lines
-        .iter()
-        .enumerate()
-        .any(|(index, line)| !owned.contains(&index) && !line.text.trim().is_empty())
+    authored_lines(&lines).next().is_some()
 }
 
 #[cfg(test)]

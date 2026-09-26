@@ -1211,7 +1211,15 @@ mod tests {
             .isolation_mut()
             .expect("an isolated agent carries its isolation");
         let base = isolation.base_commit.clone();
-        let acquired = acquire(primary, store, isolation, &base, None, &[]).unwrap();
+        let acquired = acquire(
+            primary,
+            store,
+            isolation,
+            &base,
+            None,
+            &crate::checkout::Presence::Known(Vec::new()),
+        )
+        .unwrap();
         isolation.checkout = Some(acquired.id);
         store.upsert(agent.clone());
         agent

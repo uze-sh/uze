@@ -238,6 +238,12 @@ worktrees:
   # concurrency is the only bound.
   # slots: 3
 
+  # Free checkouts kept warm for the next agents, the most recently used
+  # first; every other free one is removed, its branch kept. And the days
+  # a free checkout may sit unused before it is removed too.
+  # spare: 2
+  # idle_days: 3
+
 # The marketplaces this project draws from, and what it takes from each.
 # Exactly one source per marketplace — `git:` or `path:` — and a Git one may
 # be narrowed by `ref:` and `subdirectory:`. The `ref:` is also the pin: it
@@ -942,6 +948,8 @@ mod tests {
             setup: vec!["pnpm install".to_owned()],
             gate: vec!["pnpm test".to_owned()],
             slots: Some(3),
+            spare: Some(2),
+            idle_days: Some(3),
         };
         let marketplace = DeclaredMarketplace {
             git: Some("https://example.invalid/ai".to_owned()),

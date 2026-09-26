@@ -941,12 +941,22 @@ fn which_uze() -> Option<PathBuf> {
 }
 
 fn start_server(seat: &SpaceSeat) -> Result<(), RuntimeError> {
+    server_command(&server_executable()?, seat).spawn()?;
+    Ok(())
+}
+
+fn server_command(executable: &Path, seat: &SpaceSeat) -> std::process::Command {
     use std::os::unix::process::CommandExt;
 
-    let executable = server_executable()?;
-    std::process::Command::new(executable)
+    let mut command = std::process::Command::new(executable);
+    command
         .args(["terminal", "serve", "--root"])
         .arg(&seat.root)
+        // The first `uze` usually runs inside an agent's checkout, and a
+        // server left working there for its whole life would hold that
+        // checkout in use long after the agent ended. Every pane is started
+        // in a directory of its own, so the server needs none.
+        .current_dir("/")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -959,9 +969,8 @@ fn start_server(seat: &SpaceSeat) -> Result<(), RuntimeError> {
         // terminal's: a `SIGHUP` when that terminal closes, or a `Ctrl+C`
         // to its foreground group, would take down every pane — precisely
         // the property this runtime exists to hold (ADR-038).
-        .process_group(0)
-        .spawn()?;
-    Ok(())
+        .process_group(0);
+    command
 }
 
 /// How long a client waits for a server to answer: one that is still
@@ -4164,6 +4173,13 @@ mod tests {
             flushed,
             "the silent pane was never offered to the broadcaster"
         );
+    }
+
+    #[test]
+    fn the_server_works_in_no_checkout() {
+        let command =
+            super::server_command(Path::new("/usr/bin/uze"), &seat_at(Path::new("/project")));
+        assert_eq!(command.get_current_dir(), Some(Path::new("/")));
     }
 
     /// A program that does not read its input fills the terminal's buffer,

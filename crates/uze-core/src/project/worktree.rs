@@ -41,6 +41,11 @@ pub const WORKTREES_DIRECTORY: &str = ".worktrees";
 /// the slots, so none of them is ever taken for one.
 pub const SUBAGENTS_DIRECTORY: &str = "subagents";
 
+/// The file, in a linked worktree's Git administrative directory, saying
+/// UZE made that checkout (`checkout::record`). A path UZE writes outside
+/// `$UZE_HOME`, beside the line it adds to `.git/info/exclude`.
+pub const CHECKOUT_RECORD_FILE: &str = "uze-checkout.json";
+
 /// The branch prefix isolated work is created under. Fixed for the same
 /// reason. Generic on purpose: a branch name travels to remotes and
 /// reviewers, and says what it is, not what made it.
@@ -378,6 +383,14 @@ pub struct WorktreePolicy {
     /// concurrency is the only bound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slots: Option<usize>,
+    /// How many free checkouts are kept warm for the next agents.
+    /// Undeclared, two.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spare: Option<usize>,
+    /// After how many days unused a free checkout gives its disk back.
+    /// Undeclared, three.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_days: Option<u64>,
 }
 
 /// One command, or an ordered list of them. A single command is the

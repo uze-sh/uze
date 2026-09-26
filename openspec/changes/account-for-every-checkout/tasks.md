@@ -10,14 +10,14 @@
 
 ## 2. The record
 
-- [ ] 2.1 Add a shaped `CheckoutRecord` (checkout path, optional parent agent id, optional split commit) read and written in the worktree's Git administrative directory; `rev-parse --git-dir` through `uze-git`, the file with `fs` under the repository write lock; a newer or unreadable record is never written over; a path mismatch reads as no record; the primary is never recorded.
-- [ ] 2.2 Name the record's file name in `uze-core`'s worktree module.
-- [ ] 2.3 Record every checkout `create` makes, and rewrite the record for the new holder on every reuse.
-- [ ] 2.4 L1 tests: a made checkout is recorded; the record survives deleting UZE's state; `worktree remove` and `prune` leave no record; a copied checkout repaired onto the same admin directory is not taken for UZE's; a newer record blocks reuse and removal.
+- [x] 2.1 Add a shaped `CheckoutRecord` (checkout path, optional parent agent id, optional split commit) read and written in the worktree's Git administrative directory; `rev-parse --git-dir` through `uze-git`, the file with `fs` under the repository write lock; a newer or unreadable record is never written over; a path mismatch reads as no record; the primary is never recorded.
+- [x] 2.2 Name the record's file name in `uze-core`'s worktree module.
+- [x] 2.3 Record every checkout `create` makes, and rewrite the record for the new holder on every reuse.
+- [x] 2.4 L1 tests: a made checkout is recorded; the record survives deleting UZE's state; `worktree remove` and `prune` leave no record; a copied checkout repaired onto the same admin directory is not taken for UZE's; a newer record blocks reuse and removal.
 
 ## 3. Recording on sight and classification
 
-- [ ] 3.1 On every accounting pass, record checkouts under the isolation directory that a launched agent's record names (non-empty harness) and legacy `agent-<n>` ones; list store-named checkouts without a record as to adopt.
+- [x] 3.1 On every accounting pass, record checkouts under the isolation directory that a launched agent's record names (non-empty harness) and legacy `agent-<n>` ones; list store-named checkouts without a record as to adopt.
 - [ ] 3.2 Replace `registered_checkouts`' parent-directory filter and `CheckoutId::is_uze_made` with classification by record and location: agent slot, subagent checkout, harness isolation, operator's; a recorded checkout outside the isolation directory is foreign. Stop adopting unrecorded checkouts in `reconcile`.
 - [ ] 3.3 Add `own_worktree_dirs` to `IntegrationPort` (default none), answer `.claude/worktrees` from the Claude integration, collect them in `uze-application` and pass them to core as data; match under any checkout of the project.
 - [ ] 3.4 Conformance: a Claude vertical check that the harness's own worktree lands under the declared directory.
@@ -25,21 +25,21 @@
 
 ## 4. Derived dirt
 
-- [ ] 4.1 Decide "holds uncommitted work" for park/free only, with the derived exception: a changed `agents.lock` counts unless every plugin in both locks keeps its revision and digest; a changed `AGENTS.md` counts only when it differs from `HEAD` outside the regions UZE manages. Rebase, join and delivery keep requiring a Git-clean tree.
-- [ ] 4.2 L1 tests for the spec scenarios (entries added or dropped is free, a moved pin is parked, region-only is free, a hand edit beside a region is parked), and that reuse leaves the base's lock and instruction file.
+- [x] 4.1 Decide "holds uncommitted work" for park/free only, with the derived exception: a changed `agents.lock` counts unless every plugin in both locks keeps its revision and digest; a changed `AGENTS.md` counts only when it differs from `HEAD` outside the regions UZE manages. Rebase, join and delivery keep requiring a Git-clean tree.
+- [x] 4.2 L1 tests for the spec scenarios (entries added or dropped is free, a moved pin is parked, region-only is free, a hand edit beside a region is parked), and that reuse leaves the base's lock and instruction file.
 
 ## 4b. Spare slots
 
-- [ ] 4b.1 Declare `worktrees.spare` (default 2) and `worktrees.idle` (default three days) in the manifest, authored and additive: an unknown or malformed value reads as the default and is reported; add them to the commented template beside `slots`.
-- [ ] 4b.2 In collection, keep the `spare` most recently used free slots and remove every other free slot's directory; remove any free slot idle beyond `idle`; keep branches; never touch parked or occupied slots. Replace `IDLE_SLOT_AGE`.
-- [ ] 4b.3 L1 tests for the four spec scenarios.
+- [x] 4b.1 Declare `worktrees.spare` (default 2) and `worktrees.idle_days` (default 3) in the manifest the way `slots` is declared, and add them to the commented template beside it.
+- [x] 4b.2 In collection, keep the `spare` most recently used free slots and remove every other free slot's directory; remove any free slot idle beyond `idle`; keep branches; never touch parked or occupied slots. Replace `IDLE_SLOT_AGE`.
+- [x] 4b.3 L1 tests for the four spec scenarios.
 
 ## 5. In use
 
-- [ ] 5.1 Add `machine::process_cwd` for Linux and macOS: skip per-process EACCES/ENOENT, fail closed only when enumeration fails, exclude the caller and its Git children.
-- [ ] 5.2 Make the terminal server `chdir("/")` at start, with a test that a server started from inside a directory holds nothing there.
-- [ ] 5.3 Switch `slots`, `take`, `collect`, `remove_idle_slots` and the operator's remove to the probe; keep the pane list for `release_abandoned_tasks` and `parked_with_agent`.
-- [ ] 5.4 L1 tests: a process sleeping inside a free-looking slot keeps it from reuse and collection; once it exits the slot is free; an unreadable single process is skipped; enumeration failure holds every checkout. Measure the occupancy pass with the probe.
+- [x] 5.1 Add `machine::process_cwd` for Linux and macOS: skip per-process EACCES/ENOENT, fail closed only when enumeration fails, exclude the caller and its Git children.
+- [x] 5.2 Make the terminal server `chdir("/")` at start, with a test that a server started from inside a directory holds nothing there.
+- [x] 5.3 Switch `slots`, `take`, `collect`, `remove_idle_slots` and the operator's remove to the probe; keep the pane list for `release_abandoned_tasks` and `parked_with_agent`.
+- [x] 5.4 L1 tests: a process sleeping inside a free-looking slot keeps it from reuse and collection; once it exits the slot is free; an unreadable single process is skipped; enumeration failure holds every checkout. 
 
 ## 6. Children on the agent record
 

@@ -265,7 +265,7 @@ impl Workspace<'_> {
                 isolation,
                 &base_tip,
                 policy.slots,
-                occupied,
+                &checkout::Presence::observe_with(occupied),
             ) {
                 Ok(acquired) => acquired,
                 // Nothing was taken, and the reconciliation above is
@@ -388,7 +388,7 @@ impl Workspace<'_> {
                 &isolation,
                 &base_tip,
                 policy.slots,
-                occupied,
+                &checkout::Presence::observe_with(occupied),
             ) {
                 Ok(acquired) => acquired,
                 Err(refusal) => return Ok(Err(refusal.to_string())),
@@ -489,8 +489,14 @@ impl Workspace<'_> {
                     view: None,
                 });
             }
-            let acquired = checkout::resume(&primary, &snapshot, task, policy.slots, occupied)
-                .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
+            let acquired = checkout::resume(
+                &primary,
+                &snapshot,
+                task,
+                policy.slots,
+                &checkout::Presence::observe_with(occupied),
+            )
+            .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
             task.checkout = Some(acquired.id.clone());
             *state = WorkState::Running;
             let placement = Placement::Isolated {
@@ -1220,22 +1226,23 @@ impl Workspace<'_> {
     }
 
     /// Takes out the safe removals: an `agent/` branch whose every commit
-    /// is already in the target, and the directory of a clean slot nobody
-    /// has touched in a fortnight — its branch kept. Nothing holding work
-    /// is ever touched here, and nothing a live pane sits in (`occupied`);
-    /// that is the operator's alone.
+    /// is already in the target, and the directory of every free slot the
+    /// project's pool does not keep — its branch kept. Nothing holding work
+    /// is ever touched here, and nothing somebody is working in; that is
+    /// the operator's alone.
     #[tracing::instrument(name = "workspace.collect_slot_garbage", skip_all, fields(cwd = %cwd.display()))]
     fn collect_slot_garbage(&self, cwd: &Path, occupied: &[PathBuf]) -> Vec<String> {
         let Some(repository) = self.repository(cwd) else {
             return Vec::new();
         };
         let target = repository.target();
+        let pool = checkout::Pool::declared_by(self.policy(&repository.primary).ok().as_ref());
         let collected = checkout::collect(
             &repository.primary,
             &repository.store,
             &target,
-            checkout::IDLE_SLOT_AGE,
-            occupied,
+            pool,
+            &checkout::Presence::observe_with(occupied),
         );
         collected
             .branches
