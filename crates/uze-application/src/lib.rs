@@ -5,9 +5,10 @@ pub mod bootstrap;
 
 pub use application::UzeApplication;
 pub use application::services::{
-    AgentIdentity, AgentNotice, AgentPlacement, AgentView, Carry, DeliveryOutcome,
-    DeliveryPolicyView, DeliveryReport, Evaluation, JoinedWork, NamedTask, Placement,
-    PlacementKind, PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, SplitWork,
+    AdoptedCheckout, AgentIdentity, AgentNotice, AgentPlacement, AgentView, Carry, CheckoutOwner,
+    CheckoutRefusal, CheckoutView, CheckoutsView, CleanUp, DeliveryOutcome, DeliveryPolicyView,
+    DeliveryReport, Evaluation, JoinedWork, KeptCheckout, NamedTask, Placement, PlacementKind,
+    PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, RemovedCheckout, SplitWork,
     SubagentCheckout, UpstreamSync, WorkStateView, project_artifacts,
 };
 

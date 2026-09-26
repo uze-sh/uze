@@ -625,7 +625,7 @@ impl Workspace<'_> {
     /// never declares a policy of its own, and nothing machine-scoped
     /// participates, so the same repository resolves identically everywhere.
     /// A malformed manifest is an error rather than a silent default.
-    fn policy(&self, primary: &Path) -> Result<WorktreePolicy> {
+    pub(super) fn policy(&self, primary: &Path) -> Result<WorktreePolicy> {
         manifest::worktree_policy(primary)
     }
 
