@@ -580,6 +580,15 @@ impl Workspace<'_> {
                 checkout::rename_branch(&primary, &task.branch.clone(), &branch)?;
             }
             agent.take_name(branch.clone());
+            let agent_id = agent.id.clone();
+            for child in store.agents.iter_mut() {
+                if child.parent.as_ref() == Some(&agent_id)
+                    && let Some(isolation) = child.isolation_mut()
+                {
+                    isolation.target = branch.clone();
+                }
+            }
+            let agent = store.get(&agent_id).ok_or_else(not_an_agent)?;
             Ok(NamedTask {
                 task: agent.id.as_str().to_owned(),
                 branch: Some(branch),
@@ -650,7 +659,7 @@ impl Workspace<'_> {
     /// takes the document, so the one read it acts on is the one
     /// [`task::locked`] takes under the lock rather than an earlier one
     /// somebody else has since replaced.
-    fn repository_context(&self, cwd: &Path) -> Option<(PathBuf, WorktreePolicy)> {
+    pub(super) fn repository_context(&self, cwd: &Path) -> Option<(PathBuf, WorktreePolicy)> {
         let primary = worktree::primary_checkout(cwd)?;
         let policy = self.policy(&primary).ok()?;
         Some((primary, policy))
@@ -831,7 +840,13 @@ impl Workspace<'_> {
             // Every agent, not only the isolated ones: where the work
             // stands is a fact about the checkout an agent sits in, and
             // one in the project's own root sits in a checkout too.
-            for agent in store.agents.iter_mut() {
+            // A subagent's checkout answers to its agent alone: nothing
+            // is ready, named, followed or delivered there.
+            for agent in store
+                .agents
+                .iter_mut()
+                .filter(|agent| agent.parent.is_none())
+            {
                 if let Some(read) = pass.evaluate(agent) {
                     ask_the_remote.extend(read.ask_the_remote);
                     notices.extend(read.notice);
@@ -979,6 +994,9 @@ impl Workspace<'_> {
         policy: &WorktreePolicy,
         task_id: &str,
     ) -> Option<DeliveryReport> {
+        if let Some(waiting) = self.unjoined_children(primary, task_id) {
+            return self.refused_delivery(primary, policy, task_id, waiting);
+        }
         let claimed = task::locked(&self.0.home, primary, |store| {
             Ok(task_mut(store, task_id).and_then(|agent| {
                 // Claimed as it stands, then marked: the delivery reads
@@ -1001,7 +1019,12 @@ impl Workspace<'_> {
             // "nothing ready": the operator who waited on a busy document
             // would be told the task they can see is not there.
             Err(error) => {
-                return self.unclaimed_delivery(primary, policy, task_id, &error);
+                return self.refused_delivery(
+                    primary,
+                    policy,
+                    task_id,
+                    format!("the delivery could not start: {error}"),
+                );
             }
         };
         let id = agent.id.clone();
@@ -1047,12 +1070,42 @@ impl Workspace<'_> {
     /// replaced atomically, so a reader sees one version or the other.
     /// `None` only where there is genuinely nothing to report about: no
     /// document, or no such task in it.
-    fn unclaimed_delivery(
+    /// Why an agent cannot be delivered yet because of its children: each
+    /// one holding uncommitted changes, or commits its agent's branch
+    /// lacks, is work the delivery would leave behind.
+    fn unjoined_children(&self, primary: &Path, task_id: &str) -> Option<String> {
+        let store = task::load(&self.0.home, primary).ok()?;
+        let waiting: Vec<&str> = store
+            .agents
+            .iter()
+            .filter(|child| child.parent.as_ref().map(AgentId::as_str) == Some(task_id))
+            .filter(|child| checkout::is_live(&child.state) || child.state == WorkState::Parked)
+            .filter_map(|child| {
+                let isolation = child.isolation()?;
+                let dirty = isolation
+                    .checkout
+                    .as_ref()
+                    .map(|checkout| checkout.directory(primary))
+                    .is_some_and(|directory| directory.is_dir() && checkout::is_dirty(&directory));
+                let unjoined = checkout::branch_exists(primary, &isolation.branch)
+                    && !checkout::is_integrated(primary, &isolation.target, &isolation.branch);
+                (dirty || unjoined).then_some(child.label.as_str())
+            })
+            .collect();
+        (!waiting.is_empty()).then(|| {
+            format!(
+                "its subagents hold work not joined yet ({}); join them first",
+                waiting.join(", ")
+            )
+        })
+    }
+
+    fn refused_delivery(
         &self,
         primary: &Path,
         policy: &WorktreePolicy,
         task_id: &str,
-        error: &UzeError,
+        reason: String,
     ) -> Option<DeliveryReport> {
         let store = task::load(&self.0.home, primary).ok()?;
         let agent = store.agent(task_id)?;
@@ -1064,7 +1117,7 @@ impl Workspace<'_> {
                 &target_of(primary, policy),
                 landing::forge(primary),
             )?,
-            outcome: DeliveryOutcome::Refused(format!("the delivery could not start: {error}")),
+            outcome: DeliveryOutcome::Refused(reason),
             warnings: Vec::new(),
         })
     }
@@ -1193,8 +1246,10 @@ impl Workspace<'_> {
             for agent in store.agents.iter_mut() {
                 let id = agent.id.clone();
                 let label = agent.label.clone();
-                // A delivery in flight owns the agent until it answers.
-                if !is_agents_turn(&agent.state) {
+                // A delivery in flight owns the agent until it answers. A
+                // subagent's checkout carries no pane of its own, and ends
+                // with its agent below rather than here.
+                if !is_agents_turn(&agent.state) || agent.parent.is_some() {
                     continue;
                 }
                 let Some(task) = agent.isolation() else {
@@ -1212,6 +1267,11 @@ impl Workspace<'_> {
                     label,
                     parked: slot == checkout::SlotState::Parked,
                 });
+            }
+            for parent in released.iter_mut() {
+                if release_children(&primary, store, &parent.id) {
+                    parent.parked = true;
+                }
             }
             Ok(())
         });
@@ -1324,6 +1384,32 @@ impl Repository {
 /// not owned by a delivery in flight.
 fn is_agents_turn(state: &WorkState) -> bool {
     checkout::is_live(state) && *state != WorkState::Integrating
+}
+
+/// Ends the children of an agent that ended: each holding nothing its
+/// agent's branch lacks goes back to the pool, and each holding work is
+/// parked — and then so is the agent, whose checkout is the only way that
+/// work reaches the target. Returns whether any child was parked.
+fn release_children(primary: &Path, store: &mut AgentStore, parent: &str) -> bool {
+    let mut parked_a_child = false;
+    for child in store.agents.iter_mut() {
+        if child.parent.as_ref().map(AgentId::as_str) != Some(parent)
+            || !checkout::is_live(&child.state)
+        {
+            continue;
+        }
+        let into = child
+            .isolation()
+            .map(|isolation| isolation.target.clone())
+            .unwrap_or_default();
+        if checkout::release(primary, child, &into) == checkout::SlotState::Parked {
+            parked_a_child = true;
+        }
+    }
+    if parked_a_child && let Some(agent) = task_mut(store, parent) {
+        agent.state = WorkState::Parked;
+    }
+    parked_a_child
 }
 
 /// What reading one task from its checkout came to: the task as the remote
@@ -1546,7 +1632,7 @@ impl EvaluationPass<'_> {
 
 /// The branch this project delivers into: what it declared, else whatever
 /// the primary checkout is on.
-fn target_of(primary: &Path, policy: &WorktreePolicy) -> String {
+pub(super) fn target_of(primary: &Path, policy: &WorktreePolicy) -> String {
     policy
         .target
         .clone()

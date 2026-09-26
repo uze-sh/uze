@@ -171,6 +171,13 @@ pub struct Agent {
     /// on: it has no branch of its own to deliver and nothing to preserve,
     /// which is why those facts live inside this and not beside it.
     pub isolation: Option<Isolation>,
+    /// For a subagent's checkout, the agent it was split from. A child is
+    /// held until it is joined or its agent ends, and nothing else about
+    /// an agent's lifecycle — readiness, naming, delivery, following the
+    /// target — applies to it. Additive rather than a new shape: an older
+    /// build that drops it is corrected from the checkout's own record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<AgentId>,
 }
 
 /// What an isolated agent has that an agent in the root does not: a
@@ -308,6 +315,7 @@ impl Agent {
             ended_at_unix: None,
             state: WorkState::Running,
             isolation: None,
+            parent: None,
         }
     }
 

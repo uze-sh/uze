@@ -103,18 +103,17 @@ turn ends.
 
 ## Give parallel subagents their own checkout
 
-UZE cannot see subagents you spawn inside your own session, so isolating
-them is yours to do. Before two of them write files, give each one its own
-checkout, resolved against the *primary* so one worktree never nests inside
-another:
+Before two subagents write files, give each one its own checkout, and ask
+UZE for it rather than making it with Git:
 
 ```bash
-git worktree add -b agent/<topic> \
-  "$(git rev-parse --path-format=absolute --git-common-dir)/../.worktrees/subagents/<topic>" HEAD
+path="$(uze agent work split parser)"   # prints the checkout's path, nothing else
 ```
 
-Keep them under `.worktrees/subagents/`, never directly in `.worktrees/`:
-that level is where UZE keeps the checkouts it recycles for new agents.
+The checkout is cut from your current commit, recorded as yours, and taken
+from the same pool as an agent's, so its build caches are warm. Hand the
+path to the subagent and tell it to work and commit there. Asking again for
+the same topic answers with the same checkout.
 
 One checkout has exactly one writer. Split the work by file or component
 boundary and state each owner's paths before they start. If their changes
@@ -122,17 +121,30 @@ cannot be made disjoint, sequence them rather than hoping Git can merge them
 later. Repository-level Git metadata is shared across worktrees, so do not
 rebase, force-push, or delete branches while other writers are active.
 
-When a subagent is done, bring its commits onto *your* branch — a
-fast-forward or a merge on your side — and hand the whole to UZE as one
-branch. Do not leave work only on a subagent's branch: UZE delivers your
-branch, not theirs.
+When a subagent is done, commit in both checkouts and bring its commits
+onto *your* branch:
+
+```bash
+uze agent work join parser
+```
+
+Its commits are replayed onto your current commit and your branch moves
+forward to them, with no merge commit. On a conflict the replay pauses in
+the subagent's checkout: resolve it there, run `git rebase --continue`, and
+join again. `uze agent work list` shows every checkout you split, whether it
+holds uncommitted work, and how many commits your branch still lacks. UZE
+delivers your branch, not theirs, and will not deliver it while a subagent
+holds work you have not joined.
+
+An agent working in the operator's own checkout has no branch of its own to
+join into; run its subagents one after another instead.
 
 ## Retire checkouts safely
 
-Checkouts are UZE's to reuse and remove; leave them. If you created one for a
-subagent, remove it only when it is clean *and* its commits are on your
-branch: a clean working tree is not proof that there is nothing to lose.
-Never force removal to discard uncommitted work.
+Checkouts are UZE's to reuse and remove; leave them. A subagent's checkout
+goes back to the pool when you join it, or when you end with it clean; one
+still holding work is kept for the operator. Never remove a checkout
+yourself, and never force removal to discard uncommitted work.
 
 Finish with a compact handoff: your branch, its tip commit, the checks you
 ran, and any file another agent is likely to have touched too.

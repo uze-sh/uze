@@ -6,9 +6,9 @@ pub mod bootstrap;
 pub use application::UzeApplication;
 pub use application::services::{
     AgentIdentity, AgentNotice, AgentPlacement, AgentView, Carry, DeliveryOutcome,
-    DeliveryPolicyView, DeliveryReport, Evaluation, NamedTask, Placement, PlacementKind,
-    PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, UpstreamSync, WorkStateView,
-    project_artifacts,
+    DeliveryPolicyView, DeliveryReport, Evaluation, JoinedWork, NamedTask, Placement,
+    PlacementKind, PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, SplitWork,
+    SubagentCheckout, UpstreamSync, WorkStateView, project_artifacts,
 };
 
 /// Types the read models above are made of. Presentation consumes these

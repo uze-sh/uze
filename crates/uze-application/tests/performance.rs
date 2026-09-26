@@ -365,6 +365,14 @@ fn the_agent_surface_meets_the_budget() {
             )
             .ok()
     });
+    world.within_budget("agent work list", |app| {
+        app.workspace()
+            .list_work(uze_core::conversation::Claim {
+                id: "budget",
+                cwd: &world.project,
+            })
+            .ok()
+    });
 }
 
 /// `config notification` is one `config.toml` key read or written — a

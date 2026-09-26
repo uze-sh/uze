@@ -43,26 +43,26 @@
 
 ## 6. Children on the agent record
 
-- [ ] 6.1 Add `parent: Option<AgentId>` to `Agent` (serde default, no shape bump); the child's split commit is its `base_commit`.
-- [ ] 6.2 Exclude children from `release_abandoned_tasks`, reconcile's revival, follow-the-target rebases, naming from a commit, readiness evaluation and delivery.
-- [ ] 6.3 At a parent's end: release clean children; park children holding work and park the parent with them, keeping its checkout.
-- [ ] 6.4 Refuse delivery of an agent with a child holding commits its branch lacks or uncommitted changes, naming the child.
-- [ ] 6.7 On accounting, restore a child's `parent` from its record when the store's holder has none and its `base_commit` equals the record's split commit; L1 test simulating an older build's save.
-- [ ] 6.5 Prune a released child's branch once it is reachable from its parent's branch.
-- [ ] 6.6 L1 tests: a child with no process inside is never offered to a new agent; a parent's end releases clean children and parks the rest with the parent; delivery waits for children.
+- [x] 6.1 Add `parent: Option<AgentId>` to `Agent` (serde default, no shape bump); the child's split commit is its `base_commit`.
+- [x] 6.2 Exclude children from `release_abandoned_tasks`, reconcile's revival, follow-the-target rebases, naming from a commit, readiness evaluation and delivery.
+- [x] 6.3 At a parent's end: release clean children; park children holding work and park the parent with them, keeping its checkout.
+- [x] 6.4 Refuse delivery of an agent with a child holding commits its branch lacks or uncommitted changes, naming the child.
+- [x] 6.7 On accounting, restore a child's `parent` from its record when the store's holder has none and its `base_commit` equals the record's split commit; L1 test simulating an older build's save.
+- [x] 6.5 Prune a released child's branch once it is reachable from its parent's branch.
+- [x] 6.6 L1 tests: a child with no process inside is never offered to a new agent; a parent's end releases clean children and parks the rest with the parent; delivery waits for children.
 
 ## 7. The `work` verbs
 
-- [ ] 7.1 `uze agent work split <topic>`: resolve the caller as `work name` does; refuse outside an agent, for an unisolated caller, from inside a child, during a rebase or merge, and at the cap, each with its reason; acquire, materialize, record as a child with the split commit, print the path alone; answer an existing live child for the same topic.
-- [ ] 7.2 `uze agent work join <topic>`: refuse over uncommitted changes on either side, a replay paused in the child, a child off its recorded branch, a process other than the caller in the child's checkout, and another agent's child; fast-forward only when the caller's `HEAD` is an ancestor of the child's tip, otherwise `rebase --onto` in the child and `merge --ff-only` in the caller, under the write lock; after a replay, move the child's split commit to the `HEAD` it was replayed onto; on conflict leave the rebase paused in the child, print the paths, exit non-zero; complete on a call after `rebase --continue`; release the child.
-- [ ] 7.3 `uze agent work list`: one tab-separated line per child.
-- [ ] 7.4 Classify the leaves in `command_performance.rs` (`list` budgeted with its `BUDGETED_COMMAND_TESTS` entry and timing test; `split`, `join` justified slow).
-- [ ] 7.5 Acceptance: a hand-made checkout and a `work split` child both survive a new agent launched beside them; split, commit in the child, rebase the parent onto the target, join: the parent gains exactly the child's commits and no merge commit; the child's slot goes to the next agent.
+- [x] 7.1 `uze agent work split <topic>`: resolve the caller as `work name` does; refuse outside an agent, for an unisolated caller, from inside a child, during a rebase or merge, and at the cap, each with its reason; acquire, materialize, record as a child with the split commit, print the path alone; answer an existing live child for the same topic.
+- [x] 7.2 `uze agent work join <topic>`: refuse over uncommitted changes on either side, a replay paused in the child, a child off its recorded branch, a process other than the caller in the child's checkout, and another agent's child; fast-forward only when the caller's `HEAD` is an ancestor of the child's tip, otherwise `rebase --onto` in the child and `merge --ff-only` in the caller, under the write lock; after a replay, move the child's split commit to the `HEAD` it was replayed onto; on conflict leave the rebase paused in the child, print the paths, exit non-zero; complete on a call after `rebase --continue`; release the child.
+- [x] 7.3 `uze agent work list`: one tab-separated line per child.
+- [x] 7.4 Classify the leaves in `command_performance.rs` (`list` budgeted with its `BUDGETED_COMMAND_TESTS` entry and timing test; `split`, `join` justified slow).
+- [x] 7.5 Acceptance: a hand-made checkout and a `work split` child both survive a new agent launched beside them; split, commit in the child, rebase the parent onto the target, join: the parent gains exactly the child's commits and no merge commit; the child's slot goes to the next agent.
 
 ## 8. Projection and the Skill
 
-- [ ] 8.1 Replace the subagent block of the projected worktree-policy region with the three verbs; drop `.worktrees/subagents/` and the Git command; update projection tests.
-- [ ] 8.2 Update `plugins/uze/skills/worktree/SKILL.md` to match, and reconcile this repository's `AGENTS.md`.
+- [x] 8.1 Replace the subagent block of the projected worktree-policy region with the three verbs; drop `.worktrees/subagents/` and the Git command; update projection tests.
+- [x] 8.2 Update `plugins/uze/skills/worktree/SKILL.md` to match, and reconcile this repository's `AGENTS.md`.
 
 ## 9. The operator's view
 

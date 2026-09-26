@@ -23,6 +23,7 @@
 //! branch kept — are the only ones offered.
 
 pub mod record;
+pub mod subagent;
 
 use std::{
     fmt, fs,
@@ -452,13 +453,14 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
     let mut report = Reconciliation::default();
     let registered = isolated_checkouts(primary);
     record_on_sight(&registered, store);
+    restore_parents(&registered, store);
 
     for (path, branch) in &registered {
         let id = CheckoutId::adopted(&slot_name(path));
         if let Some(owner_id) = store.slot_owner(&id).map(|agent| agent.id.clone()) {
             let revived = store
                 .get_mut(&owner_id)
-                .filter(|agent| agent.is_isolated())
+                .filter(|agent| agent.is_isolated() && agent.parent.is_none())
                 .is_some_and(|agent| {
                     let state = agent.state.clone();
                     let isolation = agent.isolation_mut().expect("filtered to isolated");
@@ -592,6 +594,35 @@ fn record_on_sight(registered: &[(PathBuf, Option<String>)], store: &AgentStore)
             && let Err(reason) = record::write(path, &CheckoutRecord::made_at(path))
         {
             tracing::warn!(checkout = %path.display(), %reason, "could not record a checkout UZE made");
+        }
+    }
+}
+
+/// Gives a subagent's checkout back its agent when the task store lost it:
+/// an older build knows nothing of `parent` and drops it on its next save.
+/// Only the holder still starting at the record's split point is the child
+/// the record describes; one an older build placed there since is not.
+fn restore_parents(registered: &[(PathBuf, Option<String>)], store: &mut AgentStore) {
+    for (path, _) in registered {
+        let Recorded::Ours(CheckoutRecord {
+            parent: Some(parent),
+            split_at: Some(split_at),
+            ..
+        }) = record::read(path)
+        else {
+            continue;
+        };
+        let id = CheckoutId::adopted(&slot_name(path));
+        let Some(holder) = store.slot_owner(&id).map(|agent| agent.id.clone()) else {
+            continue;
+        };
+        if let Some(agent) = store.get_mut(&holder)
+            && agent.parent.is_none()
+            && agent
+                .isolation()
+                .is_some_and(|isolation| isolation.base_commit == split_at)
+        {
+            agent.parent = Some(parent);
         }
     }
 }
@@ -732,7 +763,14 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         if checked_out.contains(&branch) || live.contains(&branch.as_str()) {
             continue;
         }
-        if is_integrated(primary, target, &branch)
+        // A subagent's branch is done once its agent's branch has it.
+        let into = store
+            .isolated()
+            .filter(|agent| agent.parent.is_some())
+            .filter_map(Agent::isolation)
+            .find(|isolation| isolation.branch == branch)
+            .map_or(target, |isolation| isolation.target.as_str());
+        if is_integrated(primary, into, &branch)
             && git(primary, &["branch", "-D", "--", &branch]).is_ok()
         {
             removed.push(branch);
@@ -1317,6 +1355,16 @@ fn slot_state(
     // Somebody at work in a directory no agent claims is still somebody
     // at work there; only the operator moves it on.
     if somebody_inside || holds_uncommitted_work(path) {
+        return SlotState::Parked;
+    }
+    // An agent that ended with a child still holding work keeps its own
+    // checkout: the child's work reaches the target only through it.
+    let keeps_a_child = owner.is_some_and(|owner| {
+        store.agents.iter().any(|child| {
+            child.parent.as_ref() == Some(&owner.id) && child.state == WorkState::Parked
+        })
+    });
+    if keeps_a_child {
         return SlotState::Parked;
     }
     let declared_done = owner.is_some_and(|owner| owner.state == WorkState::Integrated);

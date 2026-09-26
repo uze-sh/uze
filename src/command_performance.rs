@@ -52,6 +52,21 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     // and performs one Git ref rename. An agent waiting on this is an
     // agent not working.
     ("agent work name", PerformanceClass::Budgeted),
+    ("agent work list", PerformanceClass::Budgeted),
+    (
+        "agent work split",
+        PerformanceClass::JustifiedSlow(
+            "prepares a checkout the way an agent's is prepared, which runs the project's \
+             declared setup",
+        ),
+    ),
+    (
+        "agent work join",
+        PerformanceClass::JustifiedSlow(
+            "replays a subagent's commits onto its agent's branch, which is Git work \
+             proportional to what the subagent made",
+        ),
+    ),
     // Not budgeted: it walks the declared directory, reads every file in
     // it and lays out and routes every diagram. The cost is the project's
     // own — what it declares and how large those diagrams are — and there
@@ -184,6 +199,10 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     ),
     (
         "agent work name",
+        "crates/uze-application/tests/performance.rs::the_agent_surface_meets_the_budget",
+    ),
+    (
+        "agent work list",
         "crates/uze-application/tests/performance.rs::the_agent_surface_meets_the_budget",
     ),
     (

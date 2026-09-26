@@ -618,7 +618,7 @@ trait proven by conformance tests across all four harnesses, rather than
 split into per-capability traits (`PackageDelivery`, `SkillDelivery`, …) —
 that fragmentation has been considered and rejected absent a concrete
 implementation problem forcing it.
-<!-- uze:begin project:worktree-policy/b7badd513471c849 -->
+<!-- uze:begin project:worktree-policy/370c8d1fcf2aeea0 -->
 ## Concurrent work isolation
 
 - Name the work as your first action, before reading a file, planning or editing: `uze agent work name <type>/<subject>`. Types this project accepts: `feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert`. The subject is one or two words naming the intention, not a description of the task — `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The request you were given is where the intention comes from, so nothing you read later makes the name easier to choose. Work that reaches a commit still unnamed is named by UZE from that commit's subject, which is a worse name than the one you would have chosen. Either way your branch is renamed, so ask Git for its name rather than remembering it. Name it again with the same command whenever the work turns out to be something else — the last name given is the one that stands.
@@ -627,11 +627,5 @@ implementation problem forcing it.
 - If your working directory is not inside `.worktrees/`, you are in the operator's own checkout, on the branch they are on: commit there, as you go, and never switch, reset, stash or clean it — the operator's uncommitted work is theirs. Nothing below about delivery applies to you; the branch already has the name it will keep.
 - Commit your work on your own branch, as you go. Never commit to, merge into, rebase, or reset the target branch: delivery is UZE's — UZE rebases your branch onto the target, runs the project's checks and publishes it, then asks you to open the request for it; commit on your branch and stop until it does.
 - If UZE tells you a rebase is paused in your checkout, resolve the conflicts preserving the intent of your change, run `git rebase --continue`, run the project's checks, and end your turn.
-- Before spawning parallel subagents that write files, give each its own checkout so they cannot collide:
-
-```bash
-git worktree add -b agent/<topic> "$(git rev-parse --path-format=absolute --git-common-dir)/../.worktrees/subagents/<topic>" HEAD
-```
-
-- The path above is resolved against the *primary* checkout on purpose — a path relative to your own would nest one worktree inside another — and sits under `.worktrees/subagents/`, never directly in `.worktrees/`, where UZE recycles the checkouts it made.
-<!-- uze:end project:worktree-policy/b7badd513471c849 -->
+- Before spawning parallel subagents that write files, give each its own checkout: `uze agent work split <topic>` prints the path of one cut from your current commit — hand that path to the subagent. When it is done, commit in both checkouts and run `uze agent work join <topic>` to bring its commits onto your branch; on a conflict, resolve it in the subagent's checkout, run `git rebase --continue` there, and join again. `uze agent work list` shows them. Never make a worktree with Git for this: UZE only knows the checkouts it made. An agent in the operator's checkout has no branch of its own to join into, and runs its subagents one after another instead.
+<!-- uze:end project:worktree-policy/370c8d1fcf2aeea0 -->

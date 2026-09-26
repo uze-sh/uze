@@ -306,6 +306,16 @@ pub struct Claim<'a> {
 /// does not allow — which is what keeps an ordinary invocation ordinary
 /// and keeps a process that edits its own environment inside the directory
 /// its record already gave it.
+/// The project whose task store the directory falls under: the nearest
+/// ancestor one is kept for. The same walk [`owner_of`] makes, for a claim
+/// it did not recognize.
+pub fn project_of(home: &UzeHome, cwd: &Path) -> Option<PathBuf> {
+    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    cwd.ancestors()
+        .find(|root| task::store_path(home, root).exists())
+        .map(Path::to_path_buf)
+}
+
 pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
     let cwd = claim
         .cwd

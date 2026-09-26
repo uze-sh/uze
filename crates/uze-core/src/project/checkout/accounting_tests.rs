@@ -22,7 +22,7 @@ fn nobody() -> Presence {
 fn launch(repository: &Repository, store: &mut AgentStore, label: &str) -> (Agent, Acquired) {
     let primary = repository.root();
     let mut agent = Agent::isolated(
-        "claude",
+        "a-harness",
         Some(label),
         Base::Ref(TARGET.into()),
         tip_of(primary, TARGET),
@@ -214,6 +214,60 @@ fn an_earlier_builds_inference_is_not_inherited() {
     assert!(slots(primary, &store, &nobody()).is_empty());
 }
 
+/// An older build saved the task store without `parent`; the checkout's
+/// own record still says whose child it is, and at which commit it split.
+#[test]
+fn a_child_whose_agent_an_older_build_forgot_is_given_it_back() {
+    let repository = repository("record-parent");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (agent, _) = launch(&repository, &mut store, "agent");
+    let (child, slot) = launch(&repository, &mut store, "child");
+    let split_at = child.isolation().unwrap().base_commit.clone();
+    record::write(
+        &slot.path,
+        &CheckoutRecord {
+            path: slot.path.clone(),
+            parent: Some(agent.id.clone()),
+            split_at: Some(split_at),
+        },
+    )
+    .unwrap();
+    assert_eq!(store.get(&child.id).unwrap().parent, None);
+
+    reconcile(primary, &mut store, TARGET);
+
+    assert_eq!(store.get(&child.id).unwrap().parent, Some(agent.id));
+}
+
+/// A released child's branch is done once its agent's branch carries it,
+/// long before anything reaches the project's target.
+#[test]
+fn a_joined_childs_branch_is_pruned_against_its_agents_branch() {
+    let repository = repository("prune-child");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (agent, parent) = launch(&repository, &mut store, "agent");
+    let (mut child, slot) = launch(&repository, &mut store, "child");
+    fs::write(slot.path.join("child.rs"), "fn child() {}\n").unwrap();
+    repository.git_in(&slot.path, &["add", "."]);
+    repository.git_in(&slot.path, &["commit", "-qm", "child"]);
+    repository.git_in(&parent.path, &["merge", "-q", "--ff-only", &slot.branch]);
+    child.parent = Some(agent.id.clone());
+    child.isolation_mut().unwrap().target = parent.branch.clone();
+    child.state = WorkState::Closed;
+    store.upsert(child);
+    repository.git_in(&slot.path, &["switch", "-q", "--detach"]);
+
+    let pruned = prune_integrated_branches(primary, &store, TARGET);
+
+    assert_eq!(pruned, vec![slot.branch.clone()]);
+    assert!(
+        branch_exists(primary, &parent.branch),
+        "the agent's own branch stays"
+    );
+}
+
 /// A harness isolating on its own from inside a slot, a worktree added by
 /// hand in the isolation directory, and one somewhere else entirely.
 #[test]
@@ -230,7 +284,7 @@ fn every_worktree_is_accounted_for_by_owner() {
         "worktree-agent-x",
         &slot
             .path
-            .join(".claude/worktrees/agent-x")
+            .join(".harness/worktrees/agent-x")
             .to_string_lossy(),
         "HEAD",
     ]);
@@ -253,7 +307,7 @@ fn every_worktree_is_accounted_for_by_owner() {
         "HEAD",
     ]);
 
-    let owners: Vec<(String, Owner)> = account(primary, &[("claude", ".claude/worktrees")])
+    let owners: Vec<(String, Owner)> = account(primary, &[("a-harness", ".harness/worktrees")])
         .into_iter()
         .map(|checkout| (checkout.branch.unwrap_or_default(), checkout.owner))
         .collect();
@@ -262,7 +316,7 @@ fn every_worktree_is_accounted_for_by_owner() {
     assert!(owners.contains(&(
         "worktree-agent-x".to_owned(),
         Owner::Harness {
-            harness: "claude".to_owned()
+            harness: "a-harness".to_owned()
         }
     )));
     assert!(owners.contains(&("by-hand".to_owned(), Owner::Operator)));
@@ -512,7 +566,7 @@ mod in_use {
     ) -> (Agent, Acquired) {
         let primary = repository.root();
         let agent = Agent::isolated(
-            "claude",
+            "a-harness",
             Some("next"),
             Base::Ref(TARGET.into()),
             tip_of(primary, TARGET),

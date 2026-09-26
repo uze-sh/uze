@@ -305,6 +305,24 @@ enum AgentWorkAction {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Give a subagent a checkout of its own, cut from this agent's commit;
+    /// prints its path alone
+    Split {
+        /// One word naming what the subagent works on
+        topic: String,
+    },
+    /// Bring a subagent's commits onto this agent's branch, and give its
+    /// checkout back
+    Join {
+        /// The topic the subagent's checkout was split for
+        topic: String,
+    },
+    /// This agent's subagents' checkouts: topic, path, branch, state, and
+    /// commits this agent's branch lacks
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -3193,22 +3211,22 @@ fn render_check(report: &uze_application::ValidationReport, as_marketplace: bool
     text
 }
 
+/// The identity the agent's launch carried, inherited by every process the
+/// harness starts — this one included. Without it there is no agent to
+/// answer: a person's shell, or a harness started by hand, is not an agent
+/// UZE launched.
+fn launched_agent(refusal: fn(String) -> uze_application::UzeError) -> Result<String> {
+    std::env::var(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
+        .ok()
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| refusal("this process is not an agent UZE launched".to_owned()))
+}
+
 fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> Result<()> {
+    let cwd = cwd()?;
     match action {
         AgentWorkAction::Name { name, format } => {
-            let cwd = cwd()?;
-            // The identity the agent's launch carried, inherited by every
-            // process the harness starts — this one included. Without it
-            // there is no agent to name: a person's shell, or a harness
-            // started by hand, is not an agent UZE launched.
-            let id = std::env::var(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
-                .ok()
-                .filter(|id| !id.is_empty())
-                .ok_or_else(|| {
-                    uze_application::UzeError::TaskNaming(
-                        "this process is not an agent UZE launched".to_owned(),
-                    )
-                })?;
+            let id = launched_agent(uze_application::UzeError::TaskNaming)?;
             let named = app
                 .workspace()
                 .name_task(uze_application::Claim { id: &id, cwd: &cwd }, &name)?;
@@ -3227,8 +3245,89 @@ fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> Result<()> {
                 }
             });
         }
+        AgentWorkAction::Split { topic } => {
+            let id = launched_agent(uze_application::UzeError::AgentWork)?;
+            let split = app.workspace().split_work(
+                uze_application::Claim { id: &id, cwd: &cwd },
+                &topic,
+                &[],
+            )?;
+            for warning in &split.warnings {
+                eprintln!("{} {warning}", progress::warning_icon());
+            }
+            // The path alone, so `cd "$(uze agent work split <topic>)"` works.
+            println!("{}", split.path.display());
+        }
+        AgentWorkAction::Join { topic } => {
+            let id = launched_agent(uze_application::UzeError::AgentWork)?;
+            match app
+                .workspace()
+                .join_work(uze_application::Claim { id: &id, cwd: &cwd }, &topic)?
+            {
+                uze_application::JoinedWork::Joined { commits } => println!(
+                    "{} joined {commits} commit{} from `{topic}`",
+                    progress::success_icon(),
+                    if commits == 1 { "" } else { "s" }
+                ),
+                uze_application::JoinedWork::Conflicted { checkout, paths } => {
+                    let listed: Vec<String> = paths
+                        .iter()
+                        .map(|path| format!("  {}", path.display()))
+                        .collect();
+                    return Err(uze_application::UzeError::AgentWork(format!(
+                        "replaying `{topic}` onto this branch stopped on conflicts in {}:\n{}\n\
+                         resolve them there, run `git rebase --continue`, and join again",
+                        checkout.display(),
+                        listed.join("\n")
+                    )));
+                }
+            }
+        }
+        AgentWorkAction::List { format } => {
+            let id = launched_agent(uze_application::UzeError::AgentWork)?;
+            let children = app
+                .workspace()
+                .list_work(uze_application::Claim { id: &id, cwd: &cwd })?;
+            let report: Vec<SubagentReport> = children.iter().map(SubagentReport::from).collect();
+            emit(format, &report, |_| {
+                children
+                    .iter()
+                    .map(|child| {
+                        format!(
+                            "{}\t{}\t{}\t{}\t{}\n",
+                            child.topic,
+                            child.path.display(),
+                            child.branch,
+                            if child.dirty { "dirty" } else { "clean" },
+                            child.ahead
+                        )
+                    })
+                    .collect()
+            });
+        }
     }
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct SubagentReport<'a> {
+    topic: &'a str,
+    path: &'a Path,
+    branch: &'a str,
+    dirty: bool,
+    ahead: usize,
+}
+
+impl<'a> From<&'a uze_application::SubagentCheckout> for SubagentReport<'a> {
+    fn from(child: &'a uze_application::SubagentCheckout) -> Self {
+        Self {
+            topic: &child.topic,
+            path: &child.path,
+            branch: &child.branch,
+            dirty: child.dirty,
+            ahead: child.ahead,
+        }
+    }
 }
 
 #[derive(serde::Serialize)]

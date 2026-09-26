@@ -36,11 +36,6 @@ pub const POLICY_REGION_PREFIX: &str = "project:worktree-policy";
 /// project-level default to configure.
 pub const WORKTREES_DIRECTORY: &str = ".worktrees";
 
-/// Where an agent puts the checkouts it gives its own subagents: inside the
-/// isolation directory, so it is excluded the same way, but a level below
-/// the slots, so none of them is ever taken for one.
-pub const SUBAGENTS_DIRECTORY: &str = "subagents";
-
 /// The file, in a linked worktree's Git administrative directory, saying
 /// UZE made that checkout (`checkout::record`). A path UZE writes outside
 /// `$UZE_HOME`, beside the line it adds to `.git/info/exclude`.
@@ -527,8 +522,9 @@ impl WorktreePolicy {
     /// The rendered statement projected into the project's shared
     /// instruction file — the exact bytes the managed region carries.
     ///
-    /// Written for a writer UZE did not place. It states the layout so a
-    /// subagent can reproduce it, and it states where the reader already is
+    /// Written for a writer UZE did not place. It names the verbs a
+    /// subagent's checkout is asked for through, and it states where the
+    /// reader already is
     /// — isolated in a slot, or running in the operator's own checkout —
     /// so an agent UZE isolated does not isolate itself again and an agent
     /// UZE placed on the operator's branch does not go looking for a slot.
@@ -557,20 +553,16 @@ impl WorktreePolicy {
              - If UZE tells you a rebase is paused in your checkout, resolve the conflicts \
              preserving the intent of your change, run `git rebase --continue`, run the \
              project's checks, and end your turn.\n\
-             - Before spawning parallel subagents that write files, give each its own checkout \
-             so they cannot collide:\n\
-             \n\
-             ```bash\n\
-             git worktree add -b {prefix}<topic> \"$(git rev-parse --path-format=absolute \
-             --git-common-dir)/../{directory}/{subagents}/<topic>\" HEAD\n\
-             ```\n\
-             \n\
-             - The path above is resolved against the *primary* checkout on purpose — a path \
-             relative to your own would nest one worktree inside another — and sits under \
-             `{directory}/{subagents}/`, never directly in `{directory}/`, where UZE recycles \
-             the checkouts it made.\n",
+             - Before spawning parallel subagents that write files, give each its own \
+             checkout: `uze agent work split <topic>` prints the path of one cut from your \
+             current commit — hand that path to the subagent. When it is done, commit in both \
+             checkouts and run `uze agent work join <topic>` to bring its commits onto your \
+             branch; on a conflict, resolve it in the subagent's checkout, run `git rebase \
+             --continue` there, and join again. `uze agent work list` shows them. Never make \
+             a worktree with Git for this: UZE only knows the checkouts it made. An agent in \
+             the operator's checkout has no branch of its own to join into, and runs its \
+             subagents one after another instead.\n",
             directory = WORKTREES_DIRECTORY,
-            subagents = SUBAGENTS_DIRECTORY,
             prefix = BRANCH_PREFIX,
             naming = self.naming_clause(),
             target = self
@@ -678,9 +670,15 @@ mod tests {
         assert!(text.contains(WORKTREES_DIRECTORY));
         assert!(text.contains(BRANCH_PREFIX));
         assert!(text.contains(CompletionBehavior::Handoff.instruction_clause()));
+        for verb in ["split", "join", "list"] {
+            assert!(
+                text.contains(&format!("uze agent work {verb}")),
+                "a subagent's checkout is asked for through `work {verb}`: {text}"
+            );
+        }
         assert!(
-            text.contains("git rev-parse"),
-            "a subagent's worktree must resolve against the primary, not its own checkout"
+            !text.contains("git worktree add"),
+            "no Git command makes a subagent's worktree: {text}"
         );
 
         let merging = WorktreePolicy {

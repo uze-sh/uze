@@ -156,6 +156,8 @@ pub struct AgentIdentity {
 /// for resolving a project root.
 mod artifacts;
 mod tasks;
+mod work;
 
 pub use artifacts::*;
 pub use tasks::*;
+pub use work::*;

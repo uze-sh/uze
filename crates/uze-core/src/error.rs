@@ -129,6 +129,10 @@ pub enum UzeError {
     /// accepts, because a refusal is that agent's only feedback channel.
     #[error("{0}")]
     TaskNaming(String),
+    /// A subagent's checkout could not be split, joined or listed. Written
+    /// for the agent that asked, which acts on nothing else.
+    #[error("{0}")]
+    AgentWork(String),
     /// Artifacts the project declares do not draw as written. The report
     /// printed before this says which and why; this is the verdict, so a
     /// check is a gate rather than something to read.
