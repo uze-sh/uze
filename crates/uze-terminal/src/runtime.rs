@@ -6,7 +6,7 @@ use std::{
     os::unix::io::AsRawFd,
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc},
+    sync::{Arc, Condvar, Mutex, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -428,20 +428,18 @@ pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
     spawn_status_ticker(Arc::clone(&state));
     spawn_endpoint_watch(Arc::clone(&state));
 
-    let accepted = accept_connections(listener, Arc::clone(&state));
-    state.stop_panes();
-    {
-        // Under the same flag [`spawn_endpoint_watch`] holds while it
-        // decides whether to rebind, so this clears an endpoint the watch
-        // cannot then put back — and the watch, if it is mid-rebind,
-        // finishes before the clearing rather than after it. Set here too
-        // because `accept_connections` can also return on an accept error,
-        // with nobody having asked the server to stop.
-        let mut stopped = state.stopped.lock().expect("stop state poisoned");
-        *stopped = true;
-        let _ = fs::remove_file(&socket);
-    }
-    accepted
+    let accepting = Arc::clone(&state);
+    thread::spawn(move || accept_connections(listener, accepting));
+
+    // Waited on rather than joined: after a rebind the first listener
+    // blocks on an inode nothing can reach, so its loop never returns.
+    // `shut_down` has already stopped every pane. The endpoint is cleared
+    // under the same flag [`spawn_endpoint_watch`] holds while it decides
+    // whether to rebind, so the watch cannot put it back, and a rebind in
+    // progress finishes before the clearing.
+    let _stopped = state.await_stop();
+    let _ = fs::remove_file(&socket);
+    Ok(())
 }
 
 /// Binds the endpoint over whatever sits at its path — only ever called by
@@ -460,22 +458,30 @@ fn bind_endpoint(socket: &Path) -> Result<UnixListener, RuntimeError> {
     Ok(listener)
 }
 
-fn accept_connections(listener: UnixListener, server: Arc<Server>) -> Result<(), RuntimeError> {
+/// Accepts until the server stops. A failed `accept` is logged and
+/// survived: returning would take every live pane down with it, for a
+/// condition (a descriptor limit, an aborted handshake) that passes.
+fn accept_connections(listener: UnixListener, server: Arc<Server>) {
     for stream in listener.incoming() {
-        let stream = stream?;
-        let client_state = Arc::clone(&server);
-        thread::spawn(move || client_state.handle_client(stream));
-        if server
-            .stopped
-            .lock()
-            .expect("stop state poisoned")
-            .to_owned()
-        {
+        if *server.stopped.lock().expect("stop state poisoned") {
             break;
         }
+        match stream {
+            Ok(stream) => {
+                let client_state = Arc::clone(&server);
+                thread::spawn(move || client_state.handle_client(stream));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the terminal endpoint failed to accept a connection");
+                thread::sleep(ACCEPT_RETRY_DELAY);
+            }
+        }
     }
-    Ok(())
 }
+
+/// How long the accept loop rests after a failed `accept`, so a descriptor
+/// limit does not turn it into a busy loop.
+const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 /// How long a Unix-domain socket path may be, with room to spare.
 ///
@@ -944,6 +950,11 @@ fn start_server(seat: &SpaceSeat) -> Result<(), RuntimeError> {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
+        // The server outlives the command that started it, and every pane
+        // inherits its environment: a trace context left here would join
+        // everything run in any pane to that one command's trace.
+        .env_remove("TRACEPARENT")
+        .env_remove("TRACESTATE")
         // A process group of its own, or the server sits in the launching
         // terminal's: a `SIGHUP` when that terminal closes, or a `Ctrl+C`
         // to its foreground group, would take down every pane — precisely
@@ -1170,6 +1181,13 @@ impl Outbox {
         }
     }
 
+    /// Whether this client missed broadcasts, caught up or not.
+    fn is_stale(&self) -> bool {
+        self.backlog
+            .stale
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Whether this client missed broadcasts and has since caught up with
     /// everything it was sent, so a resync would reach it.
     fn awaits_resync(&self) -> bool {
@@ -1203,6 +1221,7 @@ struct Server {
     clients: Mutex<Vec<Client>>,
     next_client: std::sync::atomic::AtomicU64,
     stopped: Mutex<bool>,
+    stop_requested: Condvar,
     socket: PathBuf,
     /// Held for as long as this server exists — see [`WorkspaceLock`].
     _workspace: WorkspaceLock,
@@ -1257,6 +1276,7 @@ impl Server {
             clients: Mutex::new(Vec::new()),
             next_client: std::sync::atomic::AtomicU64::new(1),
             stopped: Mutex::new(false),
+            stop_requested: Condvar::new(),
             socket,
             _workspace: workspace_lock,
             persisting: Mutex::new(()),
@@ -1832,10 +1852,29 @@ impl Server {
                 session.update_pane_status(pane_id, cwd, process);
             }
         }
-        self.panes
-            .lock()
-            .expect("panes poisoned")
-            .insert(pane_id, Arc::new(runtime));
+        let runtime = Arc::new(runtime);
+        let replaced = {
+            let mut panes = self.panes.lock().expect("panes poisoned");
+            // A tab closed while this pane was being spawned has already
+            // stopped the runtimes it knew of; this one it never saw.
+            let closed = self
+                .session
+                .lock()
+                .expect("session poisoned")
+                .pane(pane_id)
+                .is_none();
+            if closed {
+                drop(panes);
+                runtime.stop();
+                return Err(RuntimeError::Protocol("unknown pane".into()));
+            }
+            panes.insert(pane_id, Arc::clone(&runtime))
+        };
+        // The replaced runtime's reader and reaper end with it rather than
+        // with the server.
+        if let Some(replaced) = replaced {
+            replaced.stop();
+        }
         // The reader is live before the pane is registered, and damage for
         // a pane the broadcaster cannot find yet is dropped. A program that
         // prints once and then waits — a harness's banner, then its prompt —
@@ -1851,15 +1890,21 @@ impl Server {
     /// input/damage hot paths.
     fn refresh_pane_status(&self) {
         self.restore_finished_agent_panes();
-        let probes: Vec<(PaneId, PathBuf, String)> = self
+        // Probed after the map's lock is released: each probe reads `/proc`,
+        // and the input and damage paths wait on that lock.
+        let runtimes: Vec<(PaneId, Arc<PaneRuntime>)> = self
             .panes
             .lock()
             .expect("panes poisoned")
             .iter()
-            .filter_map(|(&id, runtime)| {
+            .map(|(&id, runtime)| (id, Arc::clone(runtime)))
+            .collect();
+        let probes: Vec<(PaneId, PathBuf, String)> = runtimes
+            .iter()
+            .filter_map(|(id, runtime)| {
                 runtime
                     .foreground_status()
-                    .map(|(cwd, process)| (id, cwd, process))
+                    .map(|(cwd, process)| (*id, cwd, process))
             })
             .collect();
         if probes.is_empty() {
@@ -1887,7 +1932,11 @@ impl Server {
             .lock()
             .expect("panes poisoned")
             .iter()
-            .filter_map(|(&pane, runtime)| runtime.finished_agent().then_some(pane))
+            .filter(|(_, runtime)| runtime.finished_agent())
+            .map(|(&pane, runtime)| {
+                runtime.end_leftovers();
+                pane
+            })
             .collect();
         let mut restored = false;
         for pane in finished {
@@ -1901,18 +1950,26 @@ impl Server {
         }
     }
 
+    /// The pane's runtime, with the map's lock already released: a PTY
+    /// write blocks for as long as the program in the pane is not reading,
+    /// and holding `panes` across it would freeze every other pane.
+    fn runtime(&self, pane: PaneId) -> Option<Arc<PaneRuntime>> {
+        self.panes
+            .lock()
+            .expect("panes poisoned")
+            .get(&pane)
+            .cloned()
+    }
+
     fn write_input(&self, pane: PaneId, bytes: &[u8]) {
-        if let Some(runtime) = self.panes.lock().expect("panes poisoned").get(&pane) {
+        if let Some(runtime) = self.runtime(pane) {
             runtime.write(bytes);
         }
     }
 
     fn scroll_pane(&self, pane: PaneId, lines: i32) {
         let changed = self
-            .panes
-            .lock()
-            .expect("panes poisoned")
-            .get(&pane)
+            .runtime(pane)
             .is_some_and(|runtime| runtime.scroll(lines));
         if changed {
             self.broadcast_pane_damage(pane);
@@ -1920,7 +1977,7 @@ impl Server {
     }
 
     fn resize_pane(&self, pane: PaneId, columns: u16, rows: u16) {
-        if let Some(runtime) = self.panes.lock().expect("panes poisoned").get(&pane) {
+        if let Some(runtime) = self.runtime(pane) {
             runtime.resize(columns, rows);
         }
         // A resize doesn't guarantee new PTY output on its own (an idle
@@ -1936,20 +1993,15 @@ impl Server {
     /// go out, and only the ones that actually changed since the last
     /// event this pane sent (see [`PaneRuntime::damage_since_last`]).
     fn broadcast_pane_damage(&self, pane: PaneId) {
-        let Some(runtime) = self
-            .panes
-            .lock()
-            .expect("panes poisoned")
-            .get(&pane)
-            .cloned()
-        else {
+        let Some(runtime) = self.runtime(pane) else {
             return;
         };
-        let damage = runtime.damage_since_last();
-        self.clients
-            .lock()
-            .expect("clients poisoned")
-            .retain(|client| client.events.offer(ClientEvent::Damage(damage.clone())));
+        runtime.offer_damage(|damage| {
+            self.clients
+                .lock()
+                .expect("clients poisoned")
+                .retain(|client| client.events.offer(ClientEvent::Damage(damage.clone())));
+        });
     }
 
     /// Sends just the tab/selection structure to every attached client —
@@ -2009,18 +2061,27 @@ impl Server {
                 })
             });
         for pane in panes {
-            let repaint = whole_pane(pane.snapshot_and_remember());
-            self.clients
-                .lock()
-                .expect("clients poisoned")
-                .retain(|client| client.events.offer(ClientEvent::Damage(repaint.clone())));
+            pane.offer_repaint(|repaint| {
+                self.clients
+                    .lock()
+                    .expect("clients poisoned")
+                    .retain(|client| client.events.offer(ClientEvent::Damage(repaint.clone())));
+            });
         }
     }
 
     /// Sends the whole workspace to every client that fell behind and has
     /// since drained what it was sent. Built from `snapshot`, not
-    /// `snapshot_and_remember`: the damage baseline is shared by every
+    /// `offer_repaint`: the damage baseline is shared by every
     /// client, and resetting it for one would cost the others a change.
+    fn has_stale_client(&self) -> bool {
+        self.clients
+            .lock()
+            .expect("clients poisoned")
+            .iter()
+            .any(|client| client.events.is_stale())
+    }
+
     fn resync_stale_clients(&self) {
         let stale = self
             .clients
@@ -2067,14 +2128,26 @@ impl Server {
         }
     }
 
-    /// Takes the server down: no new work, no live panes, and one
-    /// connection of its own so [`accept_connections`] wakes from `accept`
-    /// and reads the flag instead of blocking until somebody happens to
-    /// attach.
+    /// Takes the server down: no new work, no live panes, [`serve`]
+    /// released, and one connection of its own so [`accept_connections`]
+    /// wakes from `accept` and reads the flag instead of blocking until
+    /// somebody happens to attach.
     fn shut_down(&self) {
         *self.stopped.lock().expect("stop state poisoned") = true;
+        self.stop_requested.notify_all();
         self.stop_panes();
         let _ = UnixStream::connect(&self.socket);
+    }
+
+    /// Blocks until [`Server::shut_down`] runs, and returns holding the
+    /// stop flag.
+    fn await_stop(&self) -> std::sync::MutexGuard<'_, bool> {
+        self.stop_requested
+            .wait_while(
+                self.stopped.lock().expect("stop state poisoned"),
+                |stopped| !*stopped,
+            )
+            .expect("stop state poisoned")
     }
 }
 
@@ -2086,7 +2159,17 @@ fn spawn_damage_broadcaster(server: Arc<Server>, damage: mpsc::Receiver<PaneId>)
     thread::spawn(move || {
         let mut dirty = std::collections::BTreeSet::new();
         loop {
-            match damage.recv_timeout(Duration::from_millis(8)) {
+            // Idle, nothing wakes the thread but new damage. A stale client
+            // is the exception: its catching up sends no damage, so the
+            // resync below has to be looked for on the tick.
+            let next = if server.has_stale_client() {
+                damage.recv_timeout(Duration::from_millis(8))
+            } else {
+                damage
+                    .recv()
+                    .map_err(|mpsc::RecvError| mpsc::RecvTimeoutError::Disconnected)
+            };
+            match next {
                 Ok(pane) => {
                     dirty.insert(pane);
                 }
@@ -2210,11 +2293,7 @@ fn spawn_endpoint_watch(server: Arc<Server>) {
                     // The listener this replaces is left blocked in
                     // `accept` on an inode nothing can reach any more, so it
                     // costs one idle thread and answers nobody.
-                    thread::spawn(move || {
-                        if let Err(error) = accept_connections(listener, accepting) {
-                            tracing::warn!(%error, "the rebound terminal endpoint stopped accepting");
-                        }
-                    });
+                    thread::spawn(move || accept_connections(listener, accepting));
                 }
                 Err(error) => {
                     tracing::warn!(%error, "could not rebind the terminal endpoint")
@@ -2230,6 +2309,10 @@ struct PaneRuntime {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     /// Shared with the thread that reaps it once the pane is stopped.
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
+    /// Read while the leader is alive: once a finished leader is reaped,
+    /// its group can no longer be asked for, though what it left running
+    /// is still in it. See [`PaneRuntime::end_leftovers`].
+    process_group: Option<libc::pid_t>,
     terminal: Arc<Mutex<Term<ReplySink>>>,
     /// What this pane was spawned as — kept so a workspace restart can
     /// respawn the same launch in the same tab (see [`Server::persist`]),
@@ -2342,19 +2425,24 @@ impl PaneRuntime {
         if env::var_os("TERM").is_none() {
             command.env("TERM", "xterm-256color");
         }
-        let child = pair
+        let mut child = pair
             .slave
             .spawn_command(command)
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let writer = Arc::new(Mutex::new(
+        let process_group = child.process_id().and_then(own_process_group);
+        let endpoints = pair.master.try_clone_reader().and_then(|reader| {
             pair.master
                 .take_writer()
-                .map_err(|error| RuntimeError::Pty(error.to_string()))?,
-        ));
+                .map(|writer| (reader, Arc::new(Mutex::new(writer))))
+        });
+        let (reader, writer) = match endpoints {
+            Ok(endpoints) => endpoints,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(RuntimeError::Pty(error.to_string()));
+            }
+        };
         let (reply_sender, reply_receiver) = mpsc::channel();
         let terminal = Arc::new(Mutex::new(Term::new(
             Config::default(),
@@ -2393,6 +2481,7 @@ impl PaneRuntime {
             master: Mutex::new(pair.master),
             writer,
             child: Arc::new(Mutex::new(child)),
+            process_group,
             terminal,
             launch,
             last_sent: Mutex::new(None),
@@ -2455,6 +2544,21 @@ impl PaneRuntime {
         })
     }
 
+    /// Kills what a finished agent left running in its group: workers that
+    /// ignore the hangup keep the old terminal open, and its reader alive.
+    /// Called only right after [`PaneRuntime::finished_agent`] reaped the
+    /// leader. A group id outlives its leader only while members remain,
+    /// so the longer the gap, the likelier an empty group's id has gone to
+    /// a newer process that leads a group of its own.
+    fn end_leftovers(&self) {
+        if let Some(group) = self.process_group {
+            // SAFETY: `group` is a positive process-group id that was the
+            // pane's own and not this process's at spawn
+            // (`own_process_group`), and its leader was reaped a moment ago.
+            unsafe { libc::kill(-group, libc::SIGKILL) };
+        }
+    }
+
     fn finished_agent(&self) -> bool {
         matches!(self.launch, Launch::Program { .. })
             && self
@@ -2487,14 +2591,31 @@ impl PaneRuntime {
         snapshot(self.id, &self.terminal.lock().expect("terminal poisoned"))
     }
 
-    /// A full snapshot, remembered as the baseline for the next
-    /// [`PaneRuntime::damage_since_last`] diff — used for the rare
+    /// Hands `send` a full snapshot and remembers it as the baseline for
+    /// the next [`PaneRuntime::damage_since_last`] diff — used for the rare
     /// whole-session broadcasts (attach, tab create/select), which a newly
     /// attached client has no prior state to diff against.
-    fn snapshot_and_remember(&self) -> PaneSnapshot {
+    fn offer_repaint(&self, send: impl FnOnce(PaneDamage)) {
+        let mut last_sent = self.last_sent.lock().expect("last_sent poisoned");
         let current = self.snapshot();
-        *self.last_sent.lock().expect("last_sent poisoned") = Some(current.clone());
-        current
+        *last_sent = Some(current.clone());
+        send(whole_pane(current));
+    }
+
+    /// Hands `send` the damage since the last baseline. The baseline lock
+    /// is held from the snapshot through the send, because two threads
+    /// diffing the same pane at once would otherwise store the older
+    /// snapshot as the baseline, or deliver their events out of order, and
+    /// either leaves stale cells on screen until the pane next changes.
+    fn offer_damage(&self, send: impl FnOnce(&PaneDamage)) {
+        let mut last_sent = self.last_sent.lock().expect("last_sent poisoned");
+        let damage = self.diff_against(&mut last_sent);
+        send(&damage);
+    }
+
+    #[cfg(test)]
+    fn damage_since_last(&self) -> PaneDamage {
+        self.diff_against(&mut self.last_sent.lock().expect("last_sent poisoned"))
     }
 
     /// The steady-state update: only the cells that changed since the
@@ -2502,24 +2623,21 @@ impl PaneRuntime {
     /// damage event). Falls back to "every cell changed" the first time,
     /// or whenever dimensions moved since the baseline — a resize can't be
     /// expressed as a sparse diff against a differently-shaped grid.
-    fn damage_since_last(&self) -> PaneDamage {
+    fn diff_against(&self, last_sent: &mut Option<PaneSnapshot>) -> PaneDamage {
         let current = self.snapshot();
-        let mut last_sent = self.last_sent.lock().expect("last_sent poisoned");
         let same_shape = last_sent.as_ref().is_some_and(|previous| {
             previous.columns == current.columns && previous.rows == current.rows
         });
-        let changed = if same_shape {
-            let previous = last_sent.as_ref().expect("checked above");
-            current
+        let changed = match last_sent.as_ref() {
+            Some(previous) if same_shape => current
                 .cells
                 .iter()
                 .zip(previous.cells.iter())
                 .enumerate()
                 .filter(|(_, (new, old))| new != old)
                 .map(|(index, (new, _))| cell_coordinates(index, current.columns, new.clone()))
-                .collect()
-        } else {
-            whole_pane(current.clone()).changed
+                .collect(),
+            _ => whole_pane(current.clone()).changed,
         };
         let damage = PaneDamage {
             pane: self.id,
@@ -4046,6 +4164,62 @@ mod tests {
             flushed,
             "the silent pane was never offered to the broadcaster"
         );
+    }
+
+    /// A program that does not read its input fills the terminal's buffer,
+    /// and the write into it blocks for as long as the program runs. That
+    /// wait belongs to the one pane: the map every other pane's input,
+    /// output and resize go through stays free.
+    #[test]
+    fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
+        let scratch = uze_testkit::temp::socket_scratch("blocked-write");
+        let uze_home = scratch.join("home");
+        let project = scratch.join("project");
+        let runtime_dir = scratch.join("runtime");
+        for directory in [&uze_home, &project, &runtime_dir] {
+            std::fs::create_dir_all(directory).unwrap();
+        }
+        let mut env = uze_testkit::env::scope();
+        env.set("UZE_HOME", &uze_home)
+            .set("XDG_RUNTIME_DIR", &runtime_dir);
+
+        let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+        let server = Arc::new(server);
+        let pane = server
+            .session
+            .lock()
+            .expect("session poisoned")
+            .create_space(None, seat_at(&project), 80, 24)
+            .pane;
+        // Raw, because a canonical-mode terminal discards what overflows
+        // its line buffer instead of blocking the writer.
+        let deaf = Launch::Program {
+            argv: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "stty raw -echo; sleep 30".into(),
+            ],
+            env: Vec::new(),
+        };
+        server.spawn_pane(pane, deaf).unwrap();
+
+        let writing = Arc::clone(&server);
+        thread::spawn(move || writing.write_input(pane, &vec![b'x'; 1 << 20]));
+        thread::sleep(Duration::from_millis(500));
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let free = loop {
+            if server.panes.try_lock().is_ok() {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline {
+                break false;
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        // Stopping takes the same map, so it would hang where this fails.
+        assert!(free, "a blocked write held the pane map");
+        server.stop_panes();
     }
 
     #[test]
