@@ -82,11 +82,13 @@ pub(crate) fn render_overview(
             label: "Harnesses detected".to_owned(),
             value: format!("{harness_detected}/{harness_total}"),
             hue: Token::TextBright,
+            mark: None,
         },
         Stat {
             label: "Plugins installed".to_owned(),
             value: model.remembered.plugins.len().to_string(),
             hue: Token::TextBright,
+            mark: None,
         },
         Stat {
             label: "Active profile".to_owned(),
@@ -97,6 +99,7 @@ pub(crate) fn render_overview(
                 .find(|profile| profile.active)
                 .map_or_else(|| "none".to_owned(), |profile| profile.id.clone()),
             hue: Token::StateSuccess,
+            mark: None,
         },
     ];
     if y + 1 < content.y + content.height {

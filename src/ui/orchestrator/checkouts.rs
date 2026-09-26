@@ -103,14 +103,17 @@ fn group_of(owner: &CheckoutOwner) -> (usize, &'static str) {
     }
 }
 
-/// Every checkout in the order it is drawn and selected in: by group, and
-/// by name within one.
+/// Every checkout in the order it is drawn and selected in: by group, then
+/// what somebody is working in, then the most recently changed — the order
+/// an operator deciding what to keep reads them in.
 pub(super) fn listed(view: &CheckoutsView) -> Vec<&CheckoutView> {
     let mut listed: Vec<&CheckoutView> = view.checkouts.iter().collect();
     listed.sort_by(|left, right| {
         group_of(&left.owner)
             .0
             .cmp(&group_of(&right.owner).0)
+            .then_with(|| right.in_use.cmp(&left.in_use))
+            .then_with(|| right.last_changed.cmp(&left.last_changed))
             .then_with(|| left.name.cmp(&right.name))
     });
     listed
@@ -188,9 +191,28 @@ fn age_to_say(changed: Option<std::time::SystemTime>) -> Option<String> {
     })
 }
 
-fn owner_to_say(owner: &CheckoutOwner) -> Option<String> {
+/// Who the checkout is for, when that says something its branch does not:
+/// an agent labelled from its branch reads as the branch said twice.
+fn owner_to_say(owner: &CheckoutOwner, branch: Option<&str>) -> Option<String> {
+    let said_by_branch = |label: &str| {
+        let words = |text: &str| {
+            text.chars()
+                .map(|character| {
+                    if character.is_alphanumeric() {
+                        character.to_ascii_lowercase()
+                    } else {
+                        ' '
+                    }
+                })
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        branch.is_some_and(|branch| words(branch).ends_with(&words(label)))
+    };
     match owner {
-        CheckoutOwner::Agent { holder } => holder.clone(),
+        CheckoutOwner::Agent { holder } => holder.clone().filter(|label| !said_by_branch(label)),
         CheckoutOwner::Subagent {
             parent,
             topic,
@@ -212,41 +234,86 @@ fn owner_to_say(owner: &CheckoutOwner) -> Option<String> {
     }
 }
 
-/// The facts about one checkout, in the order a decision reads them, and
-/// its size last.
+/// The facts about one checkout as fixed columns — what is happening in it,
+/// where its work stands, how long since it changed, and its size — so a
+/// column of rows reads down each fact instead of across a sentence.
 fn facts_to_say(checkout: &CheckoutView, target: &str) -> String {
-    let mut facts = Vec::new();
-    if checkout.in_use {
-        facts.push("in use".to_owned());
-    }
-    if checkout.dirty {
-        facts.push("uncommitted".to_owned());
-    }
-    facts.push(match (checkout.in_target, checkout.ahead) {
-        (true, _) => "done".to_owned(),
+    let happening = if checkout.in_use {
+        "in use"
+    } else if checkout.dirty {
+        "uncommitted"
+    } else {
+        ""
+    };
+    let work = match (checkout.in_target, checkout.ahead) {
+        (true, _) => format!("in {target}"),
         (false, 0) => format!("not in {target}"),
         (false, ahead) => format!("{ahead} ahead"),
-    });
-    facts.extend(age_to_say(checkout.last_changed));
-    facts.push(bytes_to_say(checkout.bytes));
-    facts.join(" · ")
+    };
+    let age = age_to_say(checkout.last_changed).unwrap_or_default();
+    format!(
+        "{happening:>11}  {work:>11}  {age:>4}  {:>8}",
+        bytes_to_say(checkout.bytes)
+    )
 }
 
-/// The mark in front of a row, in the hue of the fact that matters most.
+/// Where a checkout stands, one answer per checkout: the summary cards
+/// count these, and each row carries the same mark as the card that counts
+/// it, so the cards are the legend the rows are read by.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing {
+    InUse,
+    HoldsWork,
+    /// One of UZE's slots, ready for the next agent.
+    Free,
+    /// One of the operator's, which clean-up takes.
+    Removable,
+    /// Nothing to do: a harness's, or one somebody else keeps.
+    Settled,
+}
+
+impl Standing {
+    fn of(checkout: &CheckoutView) -> Self {
+        if checkout.in_use {
+            Self::InUse
+        } else if checkout.dirty || !checkout.in_target {
+            Self::HoldsWork
+        } else if matches!(
+            checkout.owner,
+            CheckoutOwner::Agent { .. } | CheckoutOwner::Subagent { .. }
+        ) {
+            Self::Free
+        } else if checkout.owner == CheckoutOwner::Operator && checkout.removal_refusal.is_none() {
+            Self::Removable
+        } else {
+            Self::Settled
+        }
+    }
+
+    fn mark(self) -> (Symbol, Token) {
+        match self {
+            Self::InUse => (Symbol::MarkToggleOn, Token::Accent),
+            Self::HoldsWork => (Symbol::MarkDot, Token::StateWarning),
+            Self::Free => (Symbol::MarkToggleOff, Token::StateSuccess),
+            Self::Removable => (Symbol::MarkCross, Token::StateDanger),
+            Self::Settled => (Symbol::MarkDot, Token::TextDim),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::InUse => "In use",
+            Self::HoldsWork => "Holds work",
+            Self::Free => "Free",
+            Self::Removable => "Can remove",
+            Self::Settled => "Settled",
+        }
+    }
+}
+
 fn mark_of(checkout: &CheckoutView) -> Span<'static> {
-    let hue = if checkout.in_use {
-        Token::Accent
-    } else if checkout.dirty {
-        Token::StateWarning
-    } else if checkout.in_target {
-        Token::TextDim
-    } else {
-        Token::TextSecondary
-    };
-    Span::styled(
-        format!("{} ", theme::glyph(Symbol::MarkDot)),
-        theme::fg(hue),
-    )
+    let (symbol, hue) = Standing::of(checkout).mark();
+    Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(hue))
 }
 
 /// What the checkout's row is called: its branch, which is what the
@@ -474,40 +541,35 @@ fn question_to_say(
 
 /// The figures above the list.
 fn cards(view: &CheckoutsView) -> Vec<Stat> {
-    let count = |predicate: &dyn Fn(&CheckoutView) -> bool| {
-        view.checkouts
-            .iter()
-            .filter(|checkout| predicate(checkout))
-            .count()
-            .to_string()
-    };
-    vec![
-        Stat {
-            label: "In use".to_owned(),
-            value: count(&|checkout| checkout.in_use),
-            hue: Token::TextBright,
-        },
-        Stat {
-            label: "Free".to_owned(),
-            value: count(&|checkout| {
-                matches!(checkout.owner, CheckoutOwner::Agent { .. })
-                    && !checkout.in_use
-                    && !checkout.dirty
-                    && checkout.in_target
-            }),
-            hue: Token::TextBright,
-        },
-        Stat {
-            label: "Can remove".to_owned(),
-            value: count(&|checkout| checkout.removal_refusal.is_none()),
-            hue: Token::TextBright,
-        },
-        Stat {
-            label: "On disk".to_owned(),
-            value: bytes_to_say(view.total_bytes),
-            hue: Token::StateWarning,
-        },
+    let mut cards: Vec<Stat> = [
+        Standing::InUse,
+        Standing::HoldsWork,
+        Standing::Free,
+        Standing::Removable,
     ]
+    .into_iter()
+    .map(|standing| {
+        let (symbol, hue) = standing.mark();
+        Stat {
+            label: standing.label().to_owned(),
+            value: view
+                .checkouts
+                .iter()
+                .filter(|checkout| Standing::of(checkout) == standing)
+                .count()
+                .to_string(),
+            hue: Token::TextBright,
+            mark: Some((theme::glyph(symbol).to_string(), hue)),
+        }
+    })
+    .collect();
+    cards.push(Stat {
+        label: "On disk".to_owned(),
+        value: bytes_to_say(view.total_bytes),
+        hue: Token::StateWarning,
+        mark: None,
+    });
+    cards
 }
 
 /// The checkouts section, laid out for a list `width` columns wide.
@@ -580,7 +642,7 @@ pub(super) fn checkouts_section(
                 }),
             ),
         ];
-        if let Some(owner) = owner_to_say(&checkout.owner) {
+        if let Some(owner) = owner_to_say(&checkout.owner, checkout.branch.as_deref()) {
             let left = room.saturating_sub(text::columns(&title) + 2);
             if left > 3 {
                 lead.push(Span::styled(
@@ -601,10 +663,18 @@ pub(super) fn checkouts_section(
                 ),
                 theme::fg(Token::TextMuted),
             )];
-            if let Some(reason) = &checkout.removal_refusal {
+            // Said only where removing is the operator's to do: UZE recycles
+            // its own slots, and a harness keeps its own, so on those rows
+            // the refusal is the same sentence under every one.
+            if let Some(reason) = &checkout.removal_refusal
+                && matches!(
+                    checkout.owner,
+                    CheckoutOwner::Operator | CheckoutOwner::Unreadable
+                )
+            {
                 details.push(Span::styled(
-                    format!("cannot remove: {reason}"),
-                    theme::fg(Token::StateWarning),
+                    format!("kept: {reason}"),
+                    theme::fg(Token::TextMuted),
                 ));
             }
             for detail in details {

@@ -323,7 +323,11 @@ fn every_checkout_is_drawn_under_its_owner_by_its_branch() {
     assert!(lines[row_of(&lines, "branch-slot")].contains("reviewer"));
     assert!(lines[row_of(&lines, "branch-child")].contains("lexer · of parser"));
     assert!(lines[row_of(&lines, "branch-own")].contains("left to Keeper"));
-    assert!(lines[row_of(&lines, "branch-slot")].contains("done · 2.0 KB"));
+    let slot = &lines[row_of(&lines, "branch-slot")];
+    assert!(
+        slot.contains("in main") && slot.contains("2.0 KB"),
+        "{slot}"
+    );
 }
 
 #[test]
@@ -338,18 +342,91 @@ fn only_the_selected_checkout_says_where_it_is() {
         ahead,
     ]);
     let lines = drawn(&model);
-    row_of(&lines, "/work/project/.worktrees/a-first");
+    // What somebody is working in comes first, so it is the selection.
+    row_of(&lines, "/work/project/.worktrees/ahead");
     assert!(
         !lines
             .iter()
-            .any(|line| line.contains("/work/project/.worktrees/ahead")),
+            .any(|line| line.contains("/work/project/.worktrees/a-first")),
         "a path is the selection's detail, not every row's:\n{}",
         lines.join("\n")
     );
+    let row = &lines[row_of(&lines, "branch-ahead")];
+    assert!(row.contains("in use") && row.contains("3 ahead"), "{row}");
+}
+
+/// Facts line up in columns, so the same fact sits in the same place on
+/// every row.
+#[test]
+fn every_rows_facts_line_up_in_columns() {
+    let mut busy = checkout(".worktrees/busy", CheckoutOwner::Operator);
+    busy.in_use = true;
+    busy.in_target = false;
+    busy.ahead = 12;
+    let model = showing(vec![
+        busy,
+        checkout(".worktrees/quiet", CheckoutOwner::Operator),
+    ]);
+    let lines = drawn(&model);
+    let size_column = |branch: &str| {
+        let line = &lines[row_of(&lines, branch)];
+        let byte = line.find("KB").expect("a size is drawn");
+        line[..byte].chars().count()
+    };
+    assert_eq!(size_column("branch-busy"), size_column("branch-quiet"));
+}
+
+/// Every row carries the mark of the card that counts it, so the cards
+/// are the legend the rows are read by.
+#[test]
+fn each_row_wears_the_mark_of_the_card_that_counts_it() {
+    let mut busy = checkout(".worktrees/busy", CheckoutOwner::Operator);
+    busy.in_use = true;
+    let lines = drawn(&showing(vec![
+        busy,
+        checkout(".worktrees/free", CheckoutOwner::Agent { holder: None }),
+        checkout(".worktrees/mine", CheckoutOwner::Operator),
+    ]));
+    let cards = &lines[row_of(&lines, "In use")];
+    for (card, branch) in [
+        ("In use", "branch-busy"),
+        ("Free", "branch-free"),
+        ("Can remove", "branch-mine"),
+    ] {
+        let at = cards.find(card).unwrap();
+        let mark = cards[..at].trim_end().chars().last().unwrap();
+        assert!(
+            lines[row_of(&lines, branch)].contains(mark),
+            "{branch} wears {card}'s mark {mark:?}"
+        );
+    }
+}
+
+/// An agent labelled from its branch is not named twice on its row.
+#[test]
+fn a_label_the_branch_already_says_is_not_repeated() {
+    let slot = checkout(
+        ".worktrees/space-control",
+        CheckoutOwner::Agent {
+            holder: Some("space control".to_owned()),
+        },
+    );
+    let lines = drawn(&showing(vec![slot]));
+    let row = &lines[row_of(&lines, "branch-space-control")];
+    assert_eq!(row.matches("control").count(), 1, "{row}");
+}
+
+/// UZE recycles its own slots, so a refusal to remove one is the same
+/// sentence under every row, and is not said.
+#[test]
+fn an_agents_slot_does_not_say_why_it_cannot_be_removed() {
+    let mut slot = checkout(".worktrees/slot", CheckoutOwner::Agent { holder: None });
+    slot.removal_refusal = Some("an agent holds it".to_owned());
+    let lines = drawn(&showing(vec![slot]));
     assert!(
-        lines[row_of(&lines, "branch-ahead")].contains("in use · uncommitted · 3 ahead"),
+        !lines.iter().any(|line| line.contains("an agent holds it")),
         "{}",
-        lines[row_of(&lines, "branch-ahead")]
+        lines.join("\n")
     );
 }
 
@@ -370,7 +447,7 @@ fn the_summary_cards_count_what_the_list_holds() {
     ]);
     let lines = drawn(&model);
     let labels = row_of(&lines, "In use");
-    for label in ["Free", "Can remove", "On disk"] {
+    for label in ["Holds work", "Free", "Can remove", "On disk"] {
         assert!(lines[labels].contains(label), "{}", lines[labels]);
     }
     let values: Vec<&str> = lines[labels + 1]
@@ -381,8 +458,8 @@ fn the_summary_cards_count_what_the_list_holds() {
         })
         .collect();
     assert!(
-        values.ends_with(&["1", "1", "2", "6.0", "KB"]),
-        "in use 1, free 1, can remove 2, 6 KB: {values:?}"
+        values.ends_with(&["1", "0", "1", "1", "6.0", "KB"]),
+        "in use 1, holds work 0, free 1, can remove 1, 6 KB: {values:?}"
     );
 }
 
@@ -395,7 +472,7 @@ fn a_removal_the_view_already_knows_is_refused_says_why_at_once() {
     let model = showing(vec![dirty]);
 
     let lines = drawn(&model);
-    row_of(&lines, "cannot remove: it holds uncommitted work");
+    row_of(&lines, "kept: it holds uncommitted work");
 
     let mut driven = driven(model, &home);
     on_checkouts(&mut driven, Action::RemoveCheckout);

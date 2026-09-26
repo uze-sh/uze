@@ -18,6 +18,9 @@ pub(crate) struct Stat {
     pub(crate) label: String,
     pub(crate) value: String,
     pub(crate) hue: Token,
+    /// The glyph, in its hue, that marks what this figure counts wherever
+    /// it is drawn beside the cards: the key a reader matches rows by.
+    pub(crate) mark: Option<(String, Token)>,
 }
 
 /// Draws `stats` side by side across `area`, each an equal share of it,
@@ -38,11 +41,18 @@ pub(crate) fn cards(frame: &mut ratatui::Frame<'_>, area: Rect, stats: &[Stat]) 
     for (cell, stat) in cells.iter().zip(stats) {
         let inner = Rule::new(Edge::Left).render(frame, *cell);
         let room = usize::from(inner.width.saturating_sub(1));
+        let mut label = vec![Span::raw(" ")];
+        let mut left = room;
+        if let Some((glyph, hue)) = &stat.mark {
+            label.push(Span::styled(format!("{glyph} "), theme::fg(*hue)));
+            left = left.saturating_sub(text::columns(glyph) + 1);
+        }
+        label.push(Span::styled(
+            text::elide(&stat.label, left),
+            theme::fg(Token::TextMuted),
+        ));
         frame.render_widget(
-            Paragraph::new(Span::styled(
-                format!(" {}", text::elide(&stat.label, room)),
-                theme::fg(Token::TextMuted),
-            )),
+            Paragraph::new(ratatui::text::Line::from(label)),
             Rect { height: 1, ..inner },
         );
         if inner.height > 1 {
