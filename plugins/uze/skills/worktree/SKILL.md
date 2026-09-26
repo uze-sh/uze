@@ -110,8 +110,11 @@ another:
 
 ```bash
 git worktree add -b agent/<topic> \
-  "$(git rev-parse --path-format=absolute --git-common-dir)/../.worktrees/<topic>" HEAD
+  "$(git rev-parse --path-format=absolute --git-common-dir)/../.worktrees/subagents/<topic>" HEAD
 ```
+
+Keep them under `.worktrees/subagents/`, never directly in `.worktrees/`:
+that level is where UZE keeps the checkouts it recycles for new agents.
 
 One checkout has exactly one writer. Split the work by file or component
 boundary and state each owner's paths before they start. If their changes

@@ -46,7 +46,7 @@ pub const SCHEMA_VERSION: u32 = 4;
 
 /// Long enough to read, short enough for a sidebar.
 const LABEL_MAX_CHARS: usize = 40;
-const IDENTIFIER_CHARS: usize = 6;
+pub(crate) const IDENTIFIER_CHARS: usize = 6;
 
 /// A generated, immutable identifier for an agent UZE launched — what a
 /// launch carries, what a conversation is keyed by, and what an agent
@@ -393,14 +393,7 @@ pub fn label_from_prompt(prompt: &str, fallback: &AgentId) -> String {
     if slug.is_empty() {
         return fallback.as_str().to_owned();
     }
-    if slug.chars().count() <= LABEL_MAX_CHARS {
-        return slug;
-    }
-    let cut: String = slug.chars().take(LABEL_MAX_CHARS).collect();
-    match cut.rfind('-') {
-        Some(boundary) if boundary > 0 => cut[..boundary].to_owned(),
-        _ => cut,
-    }
+    crate::worktree::cut_at_word_boundary(&slug, LABEL_MAX_CHARS)
 }
 
 /// Every agent a project's launches recorded, isolated in a slot of its

@@ -36,6 +36,11 @@ pub const POLICY_REGION_PREFIX: &str = "project:worktree-policy";
 /// project-level default to configure.
 pub const WORKTREES_DIRECTORY: &str = ".worktrees";
 
+/// Where an agent puts the checkouts it gives its own subagents: inside the
+/// isolation directory, so it is excluded the same way, but a level below
+/// the slots, so none of them is ever taken for one.
+pub const SUBAGENTS_DIRECTORY: &str = "subagents";
+
 /// The branch prefix isolated work is created under. Fixed for the same
 /// reason. Generic on purpose: a branch name travels to remotes and
 /// reviewers, and says what it is, not what made it.
@@ -237,6 +242,19 @@ pub fn label_of(branch: &str) -> String {
         .next()
         .unwrap_or(branch)
         .replace('-', " ")
+}
+
+/// `slug` cut to at most `limit` characters at its last hyphen, so a long
+/// one reads as a name rather than as a truncation.
+pub(crate) fn cut_at_word_boundary(slug: &str, limit: usize) -> String {
+    if slug.chars().count() <= limit {
+        return slug.to_owned();
+    }
+    let cut: String = slug.chars().take(limit).collect();
+    match cut.rfind('-') {
+        Some(boundary) if boundary > 0 => cut[..boundary].to_owned(),
+        _ => cut,
+    }
 }
 
 /// Where an agent starts: in the project's own root, or in a checkout of
@@ -531,12 +549,15 @@ impl WorktreePolicy {
              \n\
              ```bash\n\
              git worktree add -b {prefix}<topic> \"$(git rev-parse --path-format=absolute \
-             --git-common-dir)/../{directory}/<topic>\" HEAD\n\
+             --git-common-dir)/../{directory}/{subagents}/<topic>\" HEAD\n\
              ```\n\
              \n\
              - The path above is resolved against the *primary* checkout on purpose — a path \
-             relative to your own would nest one worktree inside another.\n",
+             relative to your own would nest one worktree inside another — and sits under \
+             `{directory}/{subagents}/`, never directly in `{directory}/`, where UZE recycles \
+             the checkouts it made.\n",
             directory = WORKTREES_DIRECTORY,
+            subagents = SUBAGENTS_DIRECTORY,
             prefix = BRANCH_PREFIX,
             naming = self.naming_clause(),
             target = self

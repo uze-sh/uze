@@ -52,6 +52,23 @@ impl CheckoutId {
         Self(name.to_owned())
     }
 
+    /// Whether UZE made this checkout: a name of the shape
+    /// [`CheckoutId::generate`] gives, or the `agent-<n>` the builds before
+    /// slots gave. The isolation directory is also where people and their
+    /// agents put checkouts of their own, and nothing but the name says a
+    /// directory was made to be recycled.
+    pub fn is_uze_made(&self) -> bool {
+        let generated = self.0.len() == crate::task::IDENTIFIER_CHARS
+            && self
+                .0
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit());
+        let legacy = self.0.strip_prefix("agent-").is_some_and(|number| {
+            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+        });
+        generated || legacy
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -128,11 +145,17 @@ impl std::error::Error for AcquireError {}
 /// work is delivered, and the agent that delivered it is usually still in
 /// the checkout, so a slot read without the panes would be handed to the
 /// next agent under the feet of the last.
+/// Only checkouts UZE generated are slots: reuse resets and cleans one,
+/// and collection removes it, which is only safe for a directory nobody
+/// else made.
 pub fn slots(primary: &Path, store: &AgentStore, occupied: &[PathBuf]) -> Vec<Slot> {
     registered_checkouts(primary)
         .into_iter()
-        .map(|(path, branch)| {
+        .filter_map(|(path, branch)| {
             let id = CheckoutId::adopted(&slot_name(&path));
+            id.is_uze_made().then_some((path, branch, id))
+        })
+        .map(|(path, branch, id)| {
             let state = slot_state(primary, &path, branch.as_deref(), &id, store, occupied);
             Slot {
                 id,
@@ -414,6 +437,11 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
             }
             continue;
         }
+        // A checkout UZE did not generate is somebody else's, record or not:
+        // adopting it would make it a slot the next agent resets.
+        if !id.is_uze_made() {
+            continue;
+        }
         let holds_work = is_dirty(path)
             || branch
                 .as_deref()
@@ -682,7 +710,8 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str) -> SlotState {
         .as_ref()
         .map(|checkout| checkout.directory(primary))
         .filter(|path| path.is_dir());
-    let holds_work = directory.is_some_and(|path| is_dirty(&path))
+    let holds_work = directory
+        .is_some_and(|path| is_dirty(&path) || holds_unbranched_commits(&path))
         || (branch_exists(primary, &isolation.branch)
             && !is_integrated(primary, target, &isolation.branch));
     if is_live(&agent.state) {
@@ -1037,13 +1066,27 @@ fn slot_state(
     let holds_commits = match (branch, target) {
         (Some(branch), Some(target)) => !is_integrated(primary, target, branch),
         (Some(branch), None) => !is_integrated(primary, "HEAD", branch),
-        (None, _) => false,
+        (None, _) => holds_unbranched_commits(path),
     };
     if holds_commits && !declared_done {
         SlotState::Parked
     } else {
         SlotState::Free
     }
+}
+
+/// Whether a detached `HEAD` in `path` carries commits no branch reaches.
+/// Nothing but this checkout points at them, so reusing or removing it is
+/// what would lose them. A question Git could not answer is taken as yes,
+/// as [`is_integrated`] takes it.
+fn holds_unbranched_commits(path: &Path) -> bool {
+    uze_git::read(
+        path,
+        &["rev-list", "--max-count=1", "HEAD", "--not", "--branches"],
+    )
+    .ok()
+    .and_then(|output| output.successful().ok())
+    .is_none_or(|unbranched| !unbranched.trim().is_empty())
 }
 
 fn modified_at(path: &Path) -> SystemTime {
@@ -1060,8 +1103,19 @@ pub fn exclude_isolation_directory(primary: &Path) -> Result<(), AcquireError> {
     let common = uze_git::repository::common_dir(primary).map_err(AcquireError::Git)?;
     let exclude = common.join("info").join("exclude");
     let entry = format!("/{WORKTREES_DIRECTORY}/");
-    let current = fs::read_to_string(&exclude).unwrap_or_default();
-    if current.lines().any(|line| {
+    // Bytes, not text: the file is the operator's, and a line this build
+    // cannot decode is still one it must hand back exactly as it was.
+    let current = match fs::read(&exclude) {
+        Ok(current) => current,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => {
+            return Err(AcquireError::Git(format!(
+                "could not read {}: {error}",
+                exclude.display()
+            )));
+        }
+    };
+    if String::from_utf8_lossy(&current).lines().any(|line| {
         let line = line.trim();
         line == entry || line == format!("{WORKTREES_DIRECTORY}/") || line == WORKTREES_DIRECTORY
     }) {
@@ -1073,11 +1127,11 @@ pub fn exclude_isolation_directory(primary: &Path) -> Result<(), AcquireError> {
         })?;
     }
     let mut next = current;
-    if !next.is_empty() && !next.ends_with('\n') {
-        next.push('\n');
+    if !next.is_empty() && !next.ends_with(b"\n") {
+        next.push(b'\n');
     }
-    next.push_str(&entry);
-    next.push('\n');
+    next.extend_from_slice(entry.as_bytes());
+    next.push(b'\n');
     fs::write(&exclude, next).map_err(|error| {
         AcquireError::Git(format!("could not update {}: {error}", exclude.display()))
     })
@@ -1100,6 +1154,22 @@ mod tests {
 
     /// A repository whose `.gitignore` already ignores `target/`, the way a
     /// Rust project does — the artifact reuse exists to preserve.
+    #[test]
+    fn an_exclude_file_that_is_not_text_keeps_every_byte_it_had() {
+        let repository = repository("exclude-not-text");
+        let primary = repository.root();
+        let exclude = primary.join(".git/info/exclude");
+        fs::create_dir_all(exclude.parent().unwrap()).unwrap();
+        let not_text = b"secrets/\n\xff\xfe\n";
+        fs::write(&exclude, not_text).unwrap();
+
+        exclude_isolation_directory(primary).unwrap();
+
+        let written = fs::read(&exclude).unwrap();
+        assert!(written.starts_with(not_text));
+        assert!(written.ends_with(format!("/{WORKTREES_DIRECTORY}/\n").as_bytes()));
+    }
+
     fn repository(label: &str) -> Repository {
         let repository = Repository::new(label);
         repository.commit_file(".gitignore", "target/\n");
@@ -1394,6 +1464,37 @@ mod tests {
             commits_ahead(primary, TARGET, &first.isolation().unwrap().branch),
             1
         );
+    }
+
+    #[test]
+    fn commits_made_on_a_detached_head_park_the_slot_instead_of_freeing_it() {
+        let repository = repository("slots-detached-commits");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let (_, slot) = launch(&repository, &mut store, "detached");
+        repository.git_in(&slot.path, &["checkout", "--quiet", "--detach"]);
+        fs::write(slot.path.join("work.rs"), b"").unwrap();
+        repository.git_in(&slot.path, &["add", "."]);
+        repository.git_in(&slot.path, &["commit", "-qm", "only here"]);
+        let mut forgotten = AgentStore::default();
+        reconcile(primary, &mut forgotten, TARGET);
+
+        assert_eq!(slots(primary, &forgotten, &[])[0].state, SlotState::Parked);
+        assert!(remove_idle_slots(primary, &forgotten, Duration::ZERO, &[]).is_empty());
+        assert!(slot.path.join("work.rs").exists());
+    }
+
+    #[test]
+    fn a_detached_head_on_a_branched_commit_leaves_the_slot_free() {
+        let repository = repository("slots-detached-clean");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let (_, slot) = launch(&repository, &mut store, "detached");
+        repository.git_in(&slot.path, &["checkout", "--quiet", "--detach"]);
+        let mut forgotten = AgentStore::default();
+        reconcile(primary, &mut forgotten, TARGET);
+
+        assert_eq!(slots(primary, &forgotten, &[])[0].state, SlotState::Free);
     }
 
     #[test]
@@ -1829,6 +1930,65 @@ mod tests {
             "its branch is never pruned"
         );
         assert!(branch_exists(primary, "worktree-agent-x"));
+    }
+
+    /// The isolation directory is shared: a person, or an agent giving its
+    /// subagents checkouts of their own, adds worktrees there by hand. One
+    /// that was just added is clean and holds nothing the target lacks,
+    /// which is exactly what a free slot looks like, so its name is what
+    /// keeps the next agent from resetting it out from under its owner.
+    #[test]
+    fn a_checkout_added_by_hand_beside_the_slots_is_never_taken_as_one() {
+        let repository = repository("slots-hand-made");
+        let primary = repository.root();
+        repository.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "agent/hardening-integrations",
+            &format!("{WORKTREES_DIRECTORY}/hardening-integrations"),
+            "HEAD",
+        ]);
+        let hand_made = primary
+            .join(WORKTREES_DIRECTORY)
+            .join("hardening-integrations");
+        let mut store = AgentStore::default();
+
+        let report = reconcile(primary, &mut store, TARGET);
+        assert!(report.adopted.is_empty(), "never adopted");
+        assert!(slots(primary, &store, &[]).is_empty(), "never a slot");
+
+        let (_, placed) = launch(&repository, &mut store, "next");
+        assert!(placed.created, "never offered to an agent");
+        assert_ne!(placed.path, hand_made);
+        assert_eq!(
+            repository
+                .git_in(&hand_made, &["branch", "--show-current"])
+                .trim(),
+            "agent/hardening-integrations",
+            "its branch is where its owner left it"
+        );
+
+        collect(primary, &store, TARGET, Duration::ZERO, &[]);
+        assert!(hand_made.is_dir(), "never swept as idle");
+    }
+
+    #[test]
+    fn a_name_uze_gave_is_told_from_a_chosen_one() {
+        assert!(CheckoutId::generate().is_uze_made());
+        assert!(CheckoutId::adopted("agent-2").is_uze_made());
+        for chosen in [
+            "hardening-integrations",
+            "journal",
+            "Abc123",
+            "abc12",
+            "abc1234",
+            "agent-",
+            "agent-x",
+        ] {
+            assert!(!CheckoutId::adopted(chosen).is_uze_made(), "{chosen}");
+        }
     }
 
     #[test]
