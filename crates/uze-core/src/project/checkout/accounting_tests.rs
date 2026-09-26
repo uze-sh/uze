@@ -214,6 +214,62 @@ fn an_earlier_builds_inference_is_not_inherited() {
     assert!(slots(primary, &store, &nobody()).is_empty());
 }
 
+/// A harness isolating on its own from inside a slot, a worktree added by
+/// hand in the isolation directory, and one somewhere else entirely.
+#[test]
+fn every_worktree_is_accounted_for_by_owner() {
+    let repository = repository("account-owners");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (_, slot) = launch(&repository, &mut store, "agent");
+    repository.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "worktree-agent-x",
+        &slot
+            .path
+            .join(".claude/worktrees/agent-x")
+            .to_string_lossy(),
+        "HEAD",
+    ]);
+    repository.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "by-hand",
+        ".worktrees/by-hand",
+        "HEAD",
+    ]);
+    repository.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "elsewhere",
+        "../elsewhere",
+        "HEAD",
+    ]);
+
+    let owners: Vec<(String, Owner)> = account(primary, &[("claude", ".claude/worktrees")])
+        .into_iter()
+        .map(|checkout| (checkout.branch.unwrap_or_default(), checkout.owner))
+        .collect();
+
+    assert!(owners.contains(&(slot.branch.clone(), Owner::Agent)));
+    assert!(owners.contains(&(
+        "worktree-agent-x".to_owned(),
+        Owner::Harness {
+            harness: "claude".to_owned()
+        }
+    )));
+    assert!(owners.contains(&("by-hand".to_owned(), Owner::Operator)));
+    assert!(owners.contains(&("elsewhere".to_owned(), Owner::Operator)));
+    assert_eq!(owners.len(), 4, "the primary is never listed");
+}
+
 /// A lock with the same pins and fewer or more entries is what `install`
 /// leaves; a moved pin is what `update` leaves, and that is somebody's work.
 mod derived_content {

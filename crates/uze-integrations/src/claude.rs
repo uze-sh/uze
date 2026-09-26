@@ -143,6 +143,10 @@ impl IntegrationPort for ClaudeIntegration {
         "Anthropic's official coding agent CLI"
     }
 
+    fn own_worktree_dirs(&self) -> &'static [&'static str] {
+        &[".claude/worktrees"]
+    }
+
     fn invocation_prefix(&self) -> &'static str {
         "/"
     }

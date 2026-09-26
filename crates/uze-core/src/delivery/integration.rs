@@ -169,6 +169,14 @@ pub trait IntegrationPort: Send + Sync {
 
     fn capabilities(&self) -> HarnessCapabilities;
 
+    /// Where, relative to any checkout of a project, this harness keeps
+    /// worktrees of its own isolation. A worktree found there is accounted
+    /// for as that harness's: shown, never driven, never removed. Defaults
+    /// to none.
+    fn own_worktree_dirs(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// The hook semantics this harness can preserve (ADR-033): the semantic
     /// events, effects, matcher translation, input transformation,
     /// ordering, and handler types an integration can honestly deliver.

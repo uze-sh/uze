@@ -1216,6 +1216,70 @@ pub fn linked_worktrees(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
     checkouts
 }
 
+/// Who a worktree of the project belongs to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Owner {
+    /// A slot UZE made for an agent.
+    Agent,
+    /// A checkout UZE made for one of an agent's subagents.
+    Subagent { parent: AgentId },
+    /// A harness's own isolation, found where its integration says that
+    /// harness keeps worktrees.
+    Harness { harness: String },
+    /// UZE made it, but its record is one this build cannot read.
+    Unreadable,
+    /// Everyone else's: a person's, or one an agent made by hand.
+    Operator,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountedCheckout {
+    pub path: PathBuf,
+    pub branch: Option<String>,
+    pub owner: Owner,
+}
+
+/// Every linked worktree of the repository, wherever it is, with its owner.
+/// `harness_dirs` pairs a harness with where, relative to any checkout of
+/// the project, it keeps worktrees of its own.
+pub fn account(primary: &Path, harness_dirs: &[(&str, &str)]) -> Vec<AccountedCheckout> {
+    let linked = linked_worktrees(primary);
+    let container = primary.join(WORKTREES_DIRECTORY);
+    let roots: Vec<&Path> = std::iter::once(primary)
+        .chain(linked.iter().map(|(path, _)| path.as_path()))
+        .collect();
+    linked
+        .iter()
+        .map(|(path, branch)| {
+            let harness = harness_dirs.iter().find(|(_, directory)| {
+                roots
+                    .iter()
+                    .any(|root| path.starts_with(root.join(directory)))
+            });
+            let owner = match (harness, path.parent() == Some(container.as_path())) {
+                (Some((harness, _)), _) => Owner::Harness {
+                    harness: (*harness).to_owned(),
+                },
+                (None, true) => match record::read(path) {
+                    Recorded::Ours(CheckoutRecord {
+                        parent: Some(parent),
+                        ..
+                    }) => Owner::Subagent { parent },
+                    Recorded::Ours(_) => Owner::Agent,
+                    Recorded::Unreadable => Owner::Unreadable,
+                    Recorded::Absent => Owner::Operator,
+                },
+                (None, false) => Owner::Operator,
+            };
+            AccountedCheckout {
+                path: path.clone(),
+                branch: branch.clone(),
+                owner,
+            }
+        })
+        .collect()
+}
+
 /// The linked worktrees directly under the isolation directory: the only
 /// place a slot can be, and so the only place a record is honoured.
 fn isolated_checkouts(primary: &Path) -> Vec<(PathBuf, Option<String>)> {

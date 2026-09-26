@@ -18,10 +18,10 @@
 ## 3. Recording on sight and classification
 
 - [x] 3.1 On every accounting pass, record checkouts under the isolation directory that a launched agent's record names (non-empty harness) and legacy `agent-<n>` ones; list store-named checkouts without a record as to adopt.
-- [ ] 3.2 Replace `registered_checkouts`' parent-directory filter and `CheckoutId::is_uze_made` with classification by record and location: agent slot, subagent checkout, harness isolation, operator's; a recorded checkout outside the isolation directory is foreign. Stop adopting unrecorded checkouts in `reconcile`.
+- [x] 3.2 Replace `registered_checkouts`' parent-directory filter and `CheckoutId::is_uze_made` with classification by record and location: agent slot, subagent checkout, harness isolation, operator's; a recorded checkout outside the isolation directory is foreign. Stop adopting unrecorded checkouts in `reconcile`.
 - [ ] 3.3 Add `own_worktree_dirs` to `IntegrationPort` (default none), answer `.claude/worktrees` from the Claude integration, collect them in `uze-application` and pass them to core as data; match under any checkout of the project.
 - [ ] 3.4 Conformance: a Claude vertical check that the harness's own worktree lands under the declared directory.
-- [ ] 3.5 L1 tests: an upgrade keeps every launched agent's slot; an inferred adoption is not recorded and is listed; a slot an older build makes later is recorded on sight; a harness worktree inside a slot is classified as that harness's.
+- [x] 3.5 L1 tests: an upgrade keeps every launched agent's slot; an inferred adoption is not recorded and is listed; a slot an older build makes later is recorded on sight; a harness worktree inside a slot is classified as that harness's.
 
 ## 4. Derived dirt
 
