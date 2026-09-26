@@ -295,7 +295,9 @@ actions! {
         "Deliver", "Deliver the selected task the way the project says";
     DeliverAllTasks => "deliver-all-tasks", false,
         "Deliver all", "Deliver every deliverable task in this space";
-    ToggleWork => "toggle-work", false,
+    // Named for what it opened when released: an operator's keys.json
+    // binds it by this name, and a new one would drop the binding.
+    ToggleWork => "toggle-preserved-work", false,
         "Work", "Show the work no live tab is in front of, and this project's checkouts";
     NextSection => "next-section", false,
         "Next section", "Move to the next section of the work modal";
