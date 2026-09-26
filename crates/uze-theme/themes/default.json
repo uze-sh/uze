@@ -92,8 +92,8 @@
     "status.completed": "✓",
     "status.selected": "●",
     "status.idle": "○",
-    "sync.behind": "⇣",
-    "sync.ahead": "⇡",
+    "sync.behind": "↓",
+    "sync.ahead": "↑",
     "commit.head": "◉",
     "commit": "●",
 

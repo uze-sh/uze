@@ -51,7 +51,7 @@ scenes:
           git -C "$slot" commit -qm 'feat(api): answer ping with pong'
         say: the agent commits, and names nothing
       - wait: screen
-        until: "# ⇡"
+        until: "# ↑"
         in: strip
         timeout: 40
         settle: 1.0
@@ -68,7 +68,7 @@ scenes:
 
   - scene: publishing gives it a name the reviewer can read
     when:
-      - click: "# ⇡"
+      - click: "# ↑"
         say: publish the branch
         in: strip
         expect: "pushed"

@@ -1801,7 +1801,7 @@ pub(super) fn render_space_header(
                     Style::default().fg(status.color()),
                 ));
             }
-            push_trailing_controls(&mut spans, hits, rect, model, space, selected, identities);
+            push_trailing_controls(&mut spans, hits, rect, model, selected);
         }
     }
     // The space's own row is a target like any other, so when it is the
@@ -2214,124 +2214,82 @@ pub(super) fn render_status_catalog(
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-/// Pins what a pull and a push would move to the space header's right
-/// edge — the column every row in the sidebar keeps free, the one the
-/// agent rows pin their task mark to — followed, on the space in front,
-/// by the control that places a new agent in it.
+/// Pins, on the space in front, the control that places a new agent in
+/// it to the space header's right edge — the column every row in the
+/// sidebar keeps free, the one the agent rows pin their task mark to.
 ///
 /// The control is here rather than in the tab strip because an agent is
 /// placed in a space, and this is the row that names it. Only the
 /// selected space carries it: the new agent lands in the space in front,
 /// and one on every header would be a column of the same word to read
 /// past, each promising a space it would not land in.
-///
-/// The counts are on the header because that is whose fact it is. They
-/// are read from the checkout, so they are the same two numbers for every
-/// agent standing in one, and the agent rows printed them once each: four
-/// agents in a space's own root is an ordinary day, and the column said
-/// `⇣₁₁ ⇡₁₉` four times under four different names. Nothing when there is
-/// nothing to move, and nothing for a space whose own directory is a slot
-/// — that checkout belongs to a task, and what its branch owes upstream
-/// is the task's business, not the space's.
 fn push_trailing_controls(
     spans: &mut Vec<Span<'_>>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
     rect: Rect,
     model: &WorkspaceModel,
-    space: &Space,
     selected: bool,
-    identities: &[AgentIdentity],
 ) {
-    let mut drawn: Vec<Span<'_>> = unisolated_sync_caption(model, &space_cwd(space, identities))
-        .into_iter()
-        .enumerate()
-        .map(|(index, (text, hue))| {
-            let gap = if index == 0 { "" } else { " " };
-            Span::styled(format!("{gap}{text}"), Style::default().fg(hue))
-        })
-        .collect();
-    let new = selected.then(|| surface_label(Symbol::MarkSparkle, "new"));
-    if let Some(label) = &new {
-        if !drawn.is_empty() {
-            drawn.push(Span::raw(" "));
-        }
-        // The hue the caption of the agent receiving keystrokes wears
-        // (`caption_color`), because this is where the next one lands —
-        // held back until the pointer asks for it, so the row's one
-        // coloured word does not outshout the name beside it.
-        let hue = match chip_state(model, Some(WorkspaceHit::NewAgentMenu)) {
-            ChipState::Hovered | ChipState::Pressed => Token::StateWarning,
-            ChipState::Resting | ChipState::Static => Token::StateWarningMuted,
-        };
-        drawn.push(Span::styled(label.clone(), theme::fg_bold(hue)));
-    }
-    if drawn.is_empty() {
+    if !selected {
         return;
     }
-    let used: u16 = spans
-        .iter()
-        .chain(&drawn)
-        .map(|span| span.width() as u16)
-        .sum::<u16>()
-        + TRAILING_PAD;
-    let Some(gap) = rect.width.checked_sub(used) else {
+    let label = surface_label(Symbol::MarkSparkle, "new");
+    let width = Span::raw(label.as_str()).width() as u16;
+    let Some(gap) = rect.width.checked_sub(
+        spans.iter().map(|span| span.width() as u16).sum::<u16>() + width + TRAILING_PAD,
+    ) else {
         return;
     };
-    if let Some(label) = &new {
-        let width = Span::raw(label.as_str()).width() as u16;
-        // Ahead of the row's own `SelectSpace`, so it wins the click.
-        hits.push((
-            Rect::new(rect.right() - TRAILING_PAD - width, rect.y, width, 1),
-            WorkspaceHit::NewAgentMenu,
-        ));
-    }
+    // The hue the caption of the agent receiving keystrokes wears
+    // (`caption_color`), because this is where the next one lands —
+    // held back until the pointer asks for it, so the row's one
+    // coloured word does not outshout the name beside it.
+    let hue = match chip_state(model, Some(WorkspaceHit::NewAgentMenu)) {
+        ChipState::Hovered | ChipState::Pressed => Token::StateWarning,
+        ChipState::Resting | ChipState::Static => Token::StateWarningMuted,
+    };
+    // Ahead of the row's own `SelectSpace`, so it wins the click.
+    hits.push((
+        Rect::new(rect.right() - TRAILING_PAD - width, rect.y, width, 1),
+        WorkspaceHit::NewAgentMenu,
+    ));
     spans.push(Span::raw(" ".repeat(gap as usize)));
-    spans.extend(drawn);
+    spans.push(Span::styled(label, theme::fg_bold(hue)));
     spans.push(Span::raw(" ".repeat(TRAILING_PAD as usize)));
 }
 
-/// What a pull and a push would move for a checkout outside any slot,
-/// when its branch is the delivery target and something is due either
-/// way: `⇣1` in the danger hue for what is to pull, `⇡2` in the success
-/// hue for what is to push, each only while its count is non-zero — the
-/// shape a shell prompt gives the same fact. No word: the two colours say
-/// which is which. Empty inside a slot, on any other branch, without an
-/// upstream, or in sync — a caption that says "nothing to do" says it
-/// best by saying nothing.
+/// What a pull and a push would move for the checkout in front, when it
+/// is outside any slot, its branch is the delivery target and something
+/// is due either way: `↓1` in the danger hue for what is to pull, `↑2` in
+/// the success hue for what is to push, each only while its count is
+/// non-zero, and nothing between them — one reading, the shape a shell
+/// prompt gives the same fact. No word: the two colours say which is
+/// which. Empty inside a slot, on any other branch, without an upstream,
+/// or in sync — a caption that says "nothing to do" says it best by
+/// saying nothing. A slot's branch owes upstream what its delivery chip
+/// already counts.
 ///
 /// Ordinary digits, not the small forms. Those exist so a count can ride
 /// *inside* a line of text without breaking it, and this one does not
-/// ride inside anything — it stands alone at the edge of a row. At that
-/// size two small digits beside an arrow read as a smudge on the arrow
-/// rather than as a number, which is the one thing a count has to be.
-fn unisolated_sync_caption(model: &WorkspaceModel, cwd: &Path) -> Vec<(String, Color)> {
+/// ride inside anything — it stands alone in its zone. At that size two
+/// small digits beside an arrow read as a smudge on the arrow rather than
+/// as a number, which is the one thing a count has to be.
+fn sync_counts(model: &WorkspaceModel, cwd: &Path) -> Vec<Span<'static>> {
     if !is_unisolated(cwd) {
         return Vec::new();
     }
-    sync_caption(model, cwd)
-}
-
-/// The pull and push counts for the directory evaluated at `key`, in the
-/// shape `unisolated_sync_caption` gives them.
-fn sync_caption(model: &WorkspaceModel, key: &Path) -> Vec<(String, Color)> {
-    let Some(sync) = model.remembered.upstream_syncs.get(&evaluation_key(key)) else {
+    let Some(sync) = model.remembered.upstream_syncs.get(&evaluation_key(cwd)) else {
         return Vec::new();
     };
     [
-        (
-            Symbol::SyncBehind,
-            sync.pull,
-            theme::color(Token::StateDanger),
-        ),
-        (
-            Symbol::SyncAhead,
-            sync.push,
-            theme::color(Token::StateSuccess),
-        ),
+        (Symbol::SyncBehind, sync.pull, Token::StateDanger),
+        (Symbol::SyncAhead, sync.push, Token::StateSuccess),
     ]
     .into_iter()
     .filter(|(_, count, _)| *count > 0)
-    .map(|(arrow, count, hue)| (format!("{}{count}", theme::glyph(arrow)), hue))
+    .map(|(arrow, count, hue)| {
+        Span::styled(format!("{}{count}", theme::glyph(arrow)), theme::fg(hue))
+    })
     .collect()
 }
 
@@ -2964,13 +2922,23 @@ pub(super) fn render_tab_strip(
     // much as a door, and a badge with nothing to say says nothing rather
     // than zero — which costs no reachability, because the diff is one
     // mode switch away inside the surface `code` opens.
-    if let Some(summary) = model
+    //
+    // What the checkout owes its upstream shares the zone, left of the
+    // counts: it is the same checkout's git state, and only a report —
+    // the pull and the push are the operator's to run.
+    let summary = model
         .remembered
         .git_badge
         .as_ref()
-        .and_then(|badge| badge.summary)
-    {
+        .and_then(|badge| badge.summary);
+    let sync = model
+        .focused_cwd()
+        .map(|cwd| sync_counts(model, &cwd))
+        .unwrap_or_default();
+    if summary.is_some() || !sync.is_empty() {
         trailing_right = render_zone_hairline(frame, inner, trailing_right, ZoneEdge::Bare);
+    }
+    if let Some(summary) = summary {
         let hit = WorkspaceHit::OpenChanges;
         let (additions, deletions) = match chip_state(model, Some(hit)) {
             ChipState::Resting | ChipState::Static => (
@@ -3002,6 +2970,19 @@ pub(super) fn render_tab_strip(
             rect,
         );
         hits.push((rect, hit));
+        trailing_right = if sync.is_empty() {
+            ZoneEdge::Bare.left_of(rect.x)
+        } else {
+            rect.x
+        };
+    }
+    if !sync.is_empty() {
+        // The changes' own inset already stands between the two readings.
+        let trailing = if summary.is_some() { "" } else { " " };
+        let line = Line::from([vec![Span::raw(" ")], sync, vec![Span::raw(trailing)]].concat());
+        let width = line.width() as u16;
+        let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
+        frame.render_widget(Paragraph::new(line), rect);
         trailing_right = ZoneEdge::Bare.left_of(rect.x);
     }
 

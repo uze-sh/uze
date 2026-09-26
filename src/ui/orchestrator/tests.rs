@@ -1772,7 +1772,7 @@ mod workspace_tests {
         );
 
         let (rows, hits) = tab_strip(&model);
-        assert!(rows.iter().any(|row| row.contains("→ main ⇡3")), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains("→ main ↑3")), "{rows:?}");
         assert!(
             hits.iter()
                 .any(|(_, hit)| matches!(hit, WorkspaceHit::Deliver(_))),
@@ -1885,7 +1885,7 @@ mod workspace_tests {
         };
 
         assert!(
-            ending(CompletionBehavior::Merge).contains("→ main ⇡3"),
+            ending(CompletionBehavior::Merge).contains("→ main ↑3"),
             "{}",
             ending(CompletionBehavior::Merge)
         );
@@ -1893,12 +1893,12 @@ mod workspace_tests {
         // idiom both of them write — naming one would be picking a
         // vendor's word for the other's thing.
         assert!(
-            ending(CompletionBehavior::Pr).contains("# ⇡3"),
+            ending(CompletionBehavior::Pr).contains("# ↑3"),
             "{}",
             ending(CompletionBehavior::Pr)
         );
         assert!(
-            ending(CompletionBehavior::Handoff).contains("hand off ⇡3"),
+            ending(CompletionBehavior::Handoff).contains("hand off ↑3"),
             "a completion that writes to nothing names no target: {}",
             ending(CompletionBehavior::Handoff)
         );
@@ -1922,17 +1922,17 @@ mod workspace_tests {
         };
 
         assert!(
-            strip(Forge::GitHub, None).contains("PR ⇡3"),
+            strip(Forge::GitHub, None).contains("PR ↑3"),
             "{}",
             strip(Forge::GitHub, None)
         );
         assert!(
-            strip(Forge::GitLab, None).contains("MR ⇡3"),
+            strip(Forge::GitLab, None).contains("MR ↑3"),
             "{}",
             strip(Forge::GitLab, None)
         );
         assert!(
-            strip(Forge::Unknown, None).contains("# ⇡3"),
+            strip(Forge::Unknown, None).contains("# ↑3"),
             "an unrecognized remote claims neither name: {}",
             strip(Forge::Unknown, None)
         );
@@ -1965,7 +1965,7 @@ mod workspace_tests {
         );
         let (rows, _) = tab_strip(&model);
         let strip = rows.join("\n");
-        assert!(strip.contains("→ main ⇡3"), "{strip}");
+        assert!(strip.contains("→ main ↑3"), "{strip}");
         assert!(
             !strip.contains(mark.trim()),
             "and never the mark that would claim a request this press does not open: {strip}"
@@ -1983,7 +1983,7 @@ mod workspace_tests {
         }
         let (before, _) = tab_strip(&model);
         let before = before.join("\n");
-        assert!(before.contains("# ⇡4"), "{before}");
+        assert!(before.contains("# ↑4"), "{before}");
         assert!(
             !before.contains(&crate::ui::theme::glyph(
                 crate::ui::theme::Symbol::TaskReady
@@ -1996,9 +1996,9 @@ mod workspace_tests {
         }
         let (after, _) = tab_strip(&model);
         let after = after.join("\n");
-        assert!(after.contains("#11 ⇡4"), "{after}");
+        assert!(after.contains("#11 ↑4"), "{after}");
         assert!(
-            !after.contains("# ⇡4"),
+            !after.contains("# ↑4"),
             "a request that exists is named by its number, not by the placeholder: {after}"
         );
     }
@@ -2020,7 +2020,7 @@ mod workspace_tests {
         let synced = synced.join("\n");
         assert!(synced.contains("#20 ↗"), "{synced}");
         assert!(
-            !synced.contains("⇡6"),
+            !synced.contains("↑6"),
             "the target is still six commits away, and that is not this button's question: {synced}"
         );
         assert!(
@@ -2037,7 +2037,7 @@ mod workspace_tests {
         }
         let (behind_by_two, _) = tab_strip(&model);
         let behind_by_two = behind_by_two.join("\n");
-        assert!(behind_by_two.contains("#20 ⇡2"), "{behind_by_two}");
+        assert!(behind_by_two.contains("#20 ↑2"), "{behind_by_two}");
     }
 
     /// The sidebar and the header answer the same question, so they had
@@ -5980,64 +5980,68 @@ mod workspace_tests {
     }
 
     /// The operator's own tree is where a pull or a push is due, so the
-    /// space standing in it carries what each would move at the right
-    /// edge of its header — an arrow for the direction and the count,
-    /// red for what is to pull and green for what is to push — and only
-    /// the halves that have a count.
+    /// header's git zone carries what each would move for the checkout in
+    /// front — an arrow for the direction and the count, red for what is
+    /// to pull and green for what is to push, with nothing between them —
+    /// and only the halves that have a count. The sidebar says none of it.
     #[test]
-    fn a_space_outside_any_slot_says_what_a_pull_and_a_push_would_move() {
+    fn the_header_says_what_a_pull_and_a_push_would_move() {
         let mut model = agent_session_in("/repo");
-        model
-            .remembered
-            .branches
-            .insert(PathBuf::from("/repo"), "main".into());
         model
             .remembered
             .upstream_syncs
             .insert(PathBuf::from("/repo"), UpstreamSync { pull: 1, push: 12 });
         let header = |model: &WorkspaceModel| {
-            let Sidebar {
-                rows, hits, buffer, ..
-            } = sidebar(model, &identities_fixture());
-            let at = space_header(&hits, SpaceId(1)).y as usize;
-            let hue = |text: &str| {
-                rows[at].find(text).map(|offset| {
-                    let column = rows[at][..offset].chars().count() as u16;
-                    buffer[(column, at as u16)].fg
+            let mut terminal = Terminal::new(TestBackend::new(80, 3)).unwrap();
+            let mut hits = Vec::new();
+            terminal
+                .draw(|frame| {
+                    render_tab_strip(frame, frame.area(), model, &identities_fixture(), &mut hits)
                 })
+                .unwrap();
+            let buffer = terminal.backend().buffer().clone();
+            let (row, cells) = (0..buffer.area.height)
+                .map(|y| {
+                    let cells: Vec<_> = (0..buffer.area.width)
+                        .map(|x| buffer[(x, y)].clone())
+                        .collect();
+                    (
+                        cells.iter().map(|cell| cell.symbol()).collect::<String>(),
+                        cells,
+                    )
+                })
+                .find(|(row, _)| row.contains("code"))
+                .expect("the header row");
+            let hue = |glyph: &str| {
+                cells
+                    .iter()
+                    .find(|cell| cell.symbol() == glyph)
+                    .map(|cell| cell.fg)
             };
-            (
-                at,
-                rows.clone(),
-                rows[at].clone(),
-                hue("\u{21e3}"),
-                hue("\u{21e1}"),
-            )
+            (row.clone(), hue("\u{2193}"), hue("\u{2191}"))
         };
 
-        let (at, rows, row, pull, push) = header(&model);
+        let (row, pull, push) = header(&model);
         assert!(
-            row.ends_with("\u{21e3}1 \u{21e1}12 \u{2726} new \u{2502}"),
-            "the arrows sit just before \u{2726} new, one pad off the divider: {row:?}"
+            row.contains("\u{2193}1\u{2191}12"),
+            "pull and push read as one, with no gap: {row:?}"
         );
         assert_eq!(pull, Some(theme::color(Token::StateDanger)));
         assert_eq!(push, Some(theme::color(Token::StateSuccess)));
-        // And no other row says it.
+        let rows = sidebar(&model, &identities_fixture()).rows;
         assert!(
             rows.iter()
-                .enumerate()
-                .filter(|(index, _)| *index != at)
-                .all(|(_, row)| !row.contains('\u{21e3}') && !row.contains('\u{21e1}')),
-            "the header is the only row that carries it: {rows:?}"
+                .all(|row| !row.contains('\u{2193}') && !row.contains('\u{2191}')),
+            "the sidebar leaves it to the header: {rows:?}"
         );
 
         model
             .remembered
             .upstream_syncs
             .insert(PathBuf::from("/repo"), UpstreamSync { pull: 0, push: 3 });
-        let (_, _, row, ..) = header(&model);
+        let (row, ..) = header(&model);
         assert!(
-            !row.contains('\u{21e3}') && row.ends_with("\u{21e1}3 \u{2726} new \u{2502}"),
+            !row.contains('\u{2193}') && row.contains("\u{2191}3"),
             "nothing to pull, three to push: {row:?}"
         );
 
@@ -6045,40 +6049,16 @@ mod workspace_tests {
             .remembered
             .upstream_syncs
             .insert(PathBuf::from("/repo"), UpstreamSync::default());
-        let (_, _, row, ..) = header(&model);
+        let (row, ..) = header(&model);
         assert!(
-            !row.contains('\u{21e1}') && !row.contains('\u{21e3}'),
+            !row.contains('\u{2191}') && !row.contains('\u{2193}'),
             "in sync says nothing: {row:?}"
         );
     }
 
-    /// It is read from the checkout, not from the agent, so a space's
-    /// agents all stand in the same one and used to print the same two
-    /// numbers each — four in a root is an ordinary day. Said once, on the
-    /// header of the space whose checkout it is about.
-    #[test]
-    fn what_a_pull_and_a_push_would_move_is_said_once_per_checkout() {
-        let mut model = agents_in_the_root_session();
-        model
-            .remembered
-            .upstream_syncs
-            .insert(PathBuf::from("/repo"), UpstreamSync { pull: 1, push: 12 });
-        let Sidebar { rows, hits, .. } = sidebar(&model, &identities_in_the_root());
-        assert_eq!(
-            agent_rows(&hits).len(),
-            4,
-            "two agents, two rows each: {rows:?}"
-        );
-        assert_eq!(
-            rows.iter().filter(|row| row.contains('\u{21e1}')).count(),
-            1,
-            "one row carries it, whatever the agents number: {rows:?}"
-        );
-    }
-
     /// Inside a slot the remote is the target's business, not the task's:
-    /// an agent standing in one carries no arrow of its own, whatever the
-    /// space it hangs under reads.
+    /// the header carries no pull or push for it, whatever the primary
+    /// checkout owes.
     #[test]
     fn a_slot_never_shows_the_primary_sync() {
         let mut model = agent_session_in("/repo/.worktrees/ai");
@@ -6086,14 +6066,12 @@ mod workspace_tests {
             .remembered
             .upstream_syncs
             .insert(PathBuf::from("/repo"), UpstreamSync { pull: 2, push: 2 });
-        let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
-        for row in agent_rows(&hits) {
-            let row = &rows[row as usize];
-            assert!(
-                !row.contains('\u{21e1}') && !row.contains('\u{21e3}'),
-                "no arrow on a slot's own rows: {row:?}"
-            );
-        }
+        let (rows, _) = tab_strip(&model);
+        assert!(
+            rows.iter()
+                .all(|row| !row.contains('\u{2193}') && !row.contains('\u{2191}')),
+            "no arrow for a slot: {rows:?}"
+        );
     }
 
     /// A shell opened beside an agent is part of that agent's context:
