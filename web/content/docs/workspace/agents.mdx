@@ -23,7 +23,19 @@ other's files, or yours.
   ```
 
 Checkouts are reused, so a second agent does not pay for a fresh
-`node_modules/` or a cold build.
+`node_modules/` or a cold build. uze keeps two free checkouts warm for the
+next agents and gives the disk of any other one back, and a free checkout
+unused for three days goes too. Both numbers are yours to change:
+
+```yaml
+worktrees:
+  spare: 2       # free checkouts kept warm
+  idle_days: 3   # after this long unused, even a spare goes
+```
+
+uze only ever reuses or removes a checkout it made itself, and never one
+something is still working in. A worktree you or a tool added by hand is
+shown, never touched.
 
 ## Its work gets a name
 
@@ -62,10 +74,31 @@ worktrees:
 If the checks fail or the rebase conflicts, nothing reaches the target and the
 agent gets the problem back.
 
+## Subagents
+
+An agent that splits its work across subagents asks uze for a checkout for
+each one, the same way it names its work:
+
+```bash
+uze agent work split parser   # a checkout cut from the agent's commit, printed as a path
+uze agent work join parser    # the subagent's commits land on the agent's branch
+```
+
+The subagent's checkout comes from the same pool, so it starts warm. Joining
+replays its commits onto the agent's branch with no merge commit. uze keeps
+the checkout until it is joined or the agent ends, and does not deliver the
+agent while a subagent still holds work.
+
 ## Work nobody finished
 
 Close an agent with commits still on its branch and the work is kept, not lost.
-`Alt+P` lists it: resume it with a new agent, deliver it, or discard it.
+`Alt+P` opens **Work**, which lists it: resume it with a new agent, deliver it,
+or discard it.
+
+The same view lists every checkout of the project, whoever made it, with what
+each one holds and how much disk it takes. Open a space in one, adopt one you
+made by hand so uze can reuse it, remove one, or clean up in one step every
+checkout of yours whose work is already in the target.
 
 <Cards>
   <Card title="Extensions" href="/docs/workspace/extensions" />

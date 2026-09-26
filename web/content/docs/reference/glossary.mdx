@@ -87,8 +87,13 @@ running after you close the UI.
 **Isolated checkout.** A Git worktree of its own for one agent, at
 `.worktrees/<id>` on branch `agent/<id>`.
 
-**Slot.** An isolated checkout uze reuses for the next agent instead of creating
-a new one. See [Running agents](/docs/workspace/agents#where-an-agent-works).
+**Slot.** An isolated checkout uze made and reuses for the next agent instead of
+creating a new one. uze records that it made it, and only ever reuses or
+removes a checkout it made. See [Running agents](/docs/workspace/agents#where-an-agent-works).
+
+**Subagent checkout.** A slot an agent asked for with `uze agent work split`
+for one of its subagents. Its work comes back to the agent with
+`uze agent work join`. See [Subagents](/docs/workspace/agents#subagents).
 
 **Delivery (of work).** Rebasing an agent's branch onto the target, running the
 project's checks, then merging or opening a pull request.

@@ -10,6 +10,9 @@ it yourself.
 
 ```bash
 uze agent work name <type>/<subject>   # name the work: renames the branch and the tab
+uze agent work split <topic>           # a checkout for a subagent, printed as a path
+uze agent work join <topic>            # bring the subagent's commits onto this branch
+uze agent work list                    # this agent's subagent checkouts
 uze agent artifacts check [path]       # draw every declared diagram, fail on one that does not
 uze agent context inspect [path]       # what each agent currently sees of AGENTS.md
 uze agent context plan [path]          # what reconciling would change
@@ -31,6 +34,21 @@ agent's own work. The types it accepts come from `worktrees.branch` in
 `agents.yaml`: a preset (`conventional`, `gitflow`, `flat`) or your own list.
 Work that reaches a commit unnamed is named from the commit's subject; a branch
 you rename by hand is never renamed again.
+
+## Subagent checkouts
+
+`split` gives the calling agent a checkout for a subagent, cut from its
+current commit and taken from the same pool as an agent's. It prints the path
+alone, so `cd "$(uze agent work split parser)"` works. Asking again for the
+same topic answers with the same checkout.
+
+`join` needs both checkouts committed. It replays the subagent's commits onto
+the agent's current commit and moves the agent's branch forward, with no merge
+commit. On a conflict the replay pauses in the subagent's checkout: resolve it
+there, run `git rebase --continue`, and join again.
+
+Only an agent in a checkout of its own has subagent checkouts. Every refusal
+says which condition held.
 
 ## Checking diagrams
 

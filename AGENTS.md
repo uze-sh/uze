@@ -533,7 +533,7 @@ properties):
 - **Machine and project scope are independent**: `uze setup`, `uze doctor`,
   `uze theme`, `uze market …` and `uze plugin …` are machine-scoped
   (`~/.uze`); `uze <plugin>@<market>`, `uze install` (aliased `uze i`),
-  `uze remove`, `uze status` and `uze agent …` (`agent task name`,
+  `uze remove`, `uze status` and `uze agent …` (`agent work name|split|join|list`,
   `agent context inspect|plan|reconcile`) are project-scoped
   (`agents.yaml`, `agents.lock`, `AGENTS.md`). Neither touches the other's state — see
   `docs/adr/019-explicit-project-machine-boundary-in-cli-command-grammar.md`.
@@ -566,13 +566,17 @@ properties):
   `AGENTS.md` acts on. A person asks `uze status` whether the project is
   ready and `uze install` to make it so, so anything a person needs to
   know about the context belongs in `status`, never in a fourth verb of
-  their own. `uze agent task name <type>/<subject>` is how work
+  their own. `uze agent work name <type>/<subject>` is how work
   acquires the branch a reviewer sees and the label an operator reads; the
   vocabulary it is judged against is `worktrees.branch` in `agents.yaml`.
   Work that reaches its first commit still unnamed is named from that
   commit's subject, judged against the same vocabulary — a Git fact read on
   the evaluation pass, never a harness feature. That derivation fires once
   and never again; asking by name renames, however often it is asked.
+  `uze agent work split|join|list` is how an agent gives its subagents
+  checkouts of their own and brings their work back: a subagent's checkout
+  is a slot UZE recorded as that agent's child, never a worktree made with
+  Git by hand, which UZE would neither see nor protect.
 - **`agents.yaml` is authored, `agents.lock` is derived**: the manifest holds
   what the project declared (marketplaces, plugins, the `worktrees:` policy);
   the lock holds only what resolving it produced — a commit per marketplace and

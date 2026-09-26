@@ -1,0 +1,24 @@
+---
+title: Subagent checkouts
+---
+sequenceDiagram
+  participant agent as Agent
+  participant cli as uze agent work
+  participant app as Application
+  participant core as Core checkout
+  participant git as Git
+  agent->>cli: split parser
+  cli->>app: split_work, identified by UZE_AGENT
+  app->>core: acquire a slot from the pool
+  core->>git: reuse a free slot, or worktree add
+  core->>git: record the child and its split commit
+  app-->>cli: the checkout's path
+  cli-->>agent: path alone on stdout
+  Note over agent: the subagent works and commits there
+  agent->>cli: join parser
+  cli->>app: join_work
+  app->>core: refuse over uncommitted work, a paused replay, a process inside
+  core->>git: rebase --onto the agent's HEAD from the split commit
+  core->>git: merge --ff-only into the agent's branch
+  app->>core: release the child's slot to the pool
+  cli-->>agent: joined N commits, no merge commit
