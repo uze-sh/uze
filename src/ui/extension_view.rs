@@ -449,12 +449,21 @@ pub(crate) struct Rendered {
     pub(crate) content_space: uze_extensions::view::Size,
 }
 
+/// Where the host holds the navigator this frame: the width it was
+/// dragged to, where its list is scrolled, and whether its edge is being
+/// dragged right now.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct NavigatorFrame {
+    pub(crate) width: Option<u16>,
+    pub(crate) scroll: NavigatorScroll,
+    pub(crate) resizing: bool,
+}
+
 pub(crate) fn render(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
-    navigator_width_override: Option<u16>,
-    navigator_scroll: NavigatorScroll,
+    held: NavigatorFrame,
     scope: uze_keys::Scope,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -473,7 +482,7 @@ pub(crate) fn render(
     // column: a navigator's column left empty reads as a list that failed
     // to draw, and pushes the message and the keys off to one side.
     let (navigator_area, content_area, footer) = match view.navigator {
-        Some(_) => content_columns(area, navigator_width_override),
+        Some(_) => content_columns(area, held.width),
         None => whole_width(area),
     };
     // The nav is the surface's, not the list's: it spans the frame, and
@@ -497,7 +506,7 @@ pub(crate) fn render(
     let content_area = below_nav(content_area, nav_rows);
 
     let mut rendered = Rendered {
-        navigator_scroll,
+        navigator_scroll: held.scroll,
         ..Rendered::default()
     };
     if let Some(navigator) = view.navigator.as_ref() {
@@ -506,7 +515,8 @@ pub(crate) fn render(
             navigator_area,
             navigator,
             &view.subjects,
-            navigator_scroll,
+            held.scroll,
+            held.resizing,
             hits,
         );
         rendered.navigator_scroll = settled;
@@ -1172,13 +1182,13 @@ fn render_navigator(
     navigator: &Navigator,
     subjects: &[Mode],
     scroll: NavigatorScroll,
+    resizing: bool,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> (NavigatorScroll, Option<Scrollbar>) {
     // Padding on the divider's side only: a column indented from the
     // pane's own edge as well leaves its rows further in than the nav
     // above them, and there is nothing on that side for them to clear.
-    let inner = Rule::new(Edge::Right)
-        .tone(Token::BorderDefault)
+    let inner = Rule::draggable(Edge::Right, resizing)
         .ground(Token::SurfaceBackground)
         .padding(Padding::new(0, 1, 0, 0))
         .render(frame, area);
@@ -2510,8 +2520,11 @@ mod tests {
                     frame,
                     view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut hits,
                 );
@@ -2607,8 +2620,11 @@ mod tests {
                     frame,
                     &view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut Vec::new(),
                 );
@@ -2995,8 +3011,11 @@ mod tests {
                     frame,
                     view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut hits,
                 );
@@ -3085,8 +3104,11 @@ mod tests {
                     frame,
                     view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Architect,
                     &mut hits,
                 );
@@ -3158,8 +3180,11 @@ mod tests {
                         frame,
                         &view,
                         frame.area(),
-                        Some(24),
-                        NavigatorScroll::default(),
+                        NavigatorFrame {
+                            width: Some(24),
+                            scroll: NavigatorScroll::default(),
+                            resizing: false,
+                        },
                         uze_keys::Scope::Architect,
                         &mut hits,
                     )
@@ -3837,8 +3862,11 @@ mod tests {
                     frame,
                     &view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut hits,
                 );
@@ -3959,8 +3987,11 @@ mod tests {
                     frame,
                     &sample(),
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut Vec::new(),
                 );
@@ -4079,8 +4110,11 @@ mod tests {
                     frame,
                     view,
                     frame.area(),
-                    Some(24),
-                    scroll,
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll,
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut Vec::new(),
                 )

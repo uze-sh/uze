@@ -297,8 +297,13 @@ fn render_extension(
         frame,
         &view,
         area,
-        model.code_tree_width,
-        model.code_tree_scroll,
+        crate::ui::extension_view::NavigatorFrame {
+            width: model.code_tree_width,
+            scroll: model.code_tree_scroll,
+            resizing: model
+                .code_edge_drag
+                .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
+        },
         scope,
         &mut view_hits,
     ));
