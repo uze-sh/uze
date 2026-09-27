@@ -11,15 +11,13 @@
 //! it is easiest to break.
 
 use super::{
-    CodeView, ContentMode, Focus, Half, MapShowing, NavigatorMode, Showing,
-    changes_tree::{FileTreeItem, file_tree_items, selected_tree_row},
-    diff::content_line,
+    CodeView, ContentMode, Focus, Half, MapShowing, NavigatorMode, Showing, diff::content_line,
     editor::OpenFile,
 };
 use crate::shared::{canvas::Glyphs, checkout};
 use crate::view::{
-    Command, Content, ContentLine, Layout, LineTone, Mode, Navigator, NavigatorRow, Role, RowIcon,
-    Size, Span, TrailStep, View,
+    Command, Content, ContentLine, Layout, LineTone, MarkerSide, Mode, Navigator, NavigatorRow,
+    Role, RowIcon, Size, Span, TrailStep, View,
 };
 
 /// `space` is advisory: it bounds how much content is worth producing,
@@ -274,7 +272,11 @@ fn footer(code: &CodeView) -> Vec<Command> {
             Command::Close,
         ];
     }
-    let mut commands = vec![Command::SelectNext, Command::Collapse, Command::Expand];
+    let mut commands = vec![Command::SelectNext];
+    // The changes are one flat list: nothing in it opens or closes.
+    if code.navigator() == NavigatorMode::Files {
+        commands.extend([Command::Collapse, Command::Expand]);
+    }
     if code.selected_is_markdown() {
         commands.push(Command::TogglePreview);
     }
@@ -288,42 +290,43 @@ fn footer(code: &CodeView) -> Vec<Command> {
     commands
 }
 
+/// The changes as one flat list, each file named first and its directory
+/// after it, quieter: what a reviewer scans for is the file, and a tree
+/// spends a row on every directory above it to say what one caption can.
 pub(super) fn changes_navigator(code: &CodeView) -> Navigator {
-    let items = file_tree_items(&code.changes, &code.root);
     let selected = code.selected_change();
     Navigator {
         heading: "CHANGES".to_owned(),
         badge: code.changes.files.len().to_string(),
         focused: code.focus == Focus::Navigator,
-        anchor: selected_tree_row(&items, selected),
+        anchor: selected,
         choosing: None,
-        rows: items
+        rows: code
+            .changes
+            .files
             .iter()
             .enumerate()
-            .map(|(row, item)| match item {
-                FileTreeItem::Directory {
+            .map(|(index, file)| {
+                let relative = file.path.strip_prefix(&code.root).unwrap_or(&file.path);
+                let name = relative
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                NavigatorRow::Item {
+                    id: index,
+                    // The status is the mark this list exists for, and a
+                    // kind icon beside it would be a second one per row.
+                    icon: RowIcon::None,
+                    detail: relative
+                        .parent()
+                        .map(|parent| parent.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
                     name,
-                    depth,
-                    folded,
-                    ..
-                } => NavigatorRow::Group {
-                    id: row,
-                    name: format!("{name}/"),
-                    depth: *depth,
-                    collapsed: *folded,
-                    icon: RowIcon::None,
-                },
-                FileTreeItem::File { index, name, depth } => NavigatorRow::Item {
-                    id: *index,
-                    name: name.clone(),
-                    depth: *depth,
-                    marker: Span::new(
-                        code.changes.files[*index].status.glyph(),
-                        code.changes.files[*index].status.role(),
-                    ),
-                    selected: selected == Some(*index),
-                    icon: RowIcon::None,
-                },
+                    depth: 0,
+                    marker: Span::new(file.status.glyph(), file.status.role()),
+                    marker_side: MarkerSide::Trailing,
+                    selected: selected == Some(index),
+                }
             })
             .collect(),
     }
@@ -364,6 +367,8 @@ fn files_navigator(code: &CodeView) -> Navigator {
                         ),
                         None => Span::new(String::new(), Role::Muted),
                     },
+                    marker_side: MarkerSide::Leading,
+                    detail: String::new(),
                     depth: row.depth,
                     selected: code.selected.as_ref() == Some(&row.path),
                     icon: super::files::icon_for(&row.name, false, false),

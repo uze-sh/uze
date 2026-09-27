@@ -324,12 +324,32 @@ pub enum NavigatorRow {
         id: usize,
         name: String,
         depth: usize,
-        /// A short status mark before the name.
+        /// A short status mark.
         marker: Span,
+        /// Which end of the row the marker stands at.
+        marker_side: MarkerSide,
+        /// Drawn quieter after the name, when the row's depth does not
+        /// already say where it sits — a flat list's `mod.rs` is only
+        /// told from another `mod.rs` by its directory. Empty for none.
+        detail: String,
         selected: bool,
         /// What this row is, for the mark the host draws before its name.
         icon: RowIcon,
     },
+}
+
+/// Where a [`NavigatorRow::Item`]'s marker stands.
+///
+/// Before the name in a tree, where it holds the column a folder's
+/// disclosure mark does and so lines files up with the folders beside
+/// them. After it, pinned to the right edge, in a flat list, where there
+/// is no such column and a mark before each name would stagger the names
+/// by the width of whatever each one says.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MarkerSide {
+    #[default]
+    Leading,
+    Trailing,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

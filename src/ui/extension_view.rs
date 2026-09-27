@@ -19,9 +19,9 @@ use ratatui::{
     widgets::{Clear, Padding, Paragraph, Wrap},
 };
 use uze_extensions::view::{
-    Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, Mode,
-    Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section, Size,
-    Span, TrailStep, View, ViewHit,
+    Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
+    Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section,
+    Size, Span, TrailStep, View, ViewHit,
 };
 
 use crate::ui::theme::{self, Symbol, Token};
@@ -1085,6 +1085,8 @@ fn render_navigator(
                 name,
                 depth,
                 marker,
+                marker_side,
+                detail,
                 selected,
                 icon,
             } => {
@@ -1099,12 +1101,6 @@ fn render_navigator(
                 // the product marks its selection — the accent bar and the
                 // selected surface the status listing uses — rather than a
                 // neutral lift that the diff beside it easily outshone.
-                // The marker stands in the column a group's fold mark does,
-                // and holds that column's width even when it has nothing to
-                // say — so a file with no status still lines its icon and
-                // name up with the folders beside it.
-                let fold_width = TextSpan::raw(theme::glyph(Symbol::ChevronCollapsed)).width();
-                let marker_width = TextSpan::raw(marker.text.as_str()).width();
                 let mut spans = vec![
                     TextSpan::styled(
                         if *selected {
@@ -1115,17 +1111,18 @@ fn render_navigator(
                         theme::fg(Token::Accent),
                     ),
                     TextSpan::raw("  ".repeat(*depth)),
-                    styled(&Span {
-                        text: format!(
-                            "{}{} ",
-                            marker.text,
-                            " ".repeat(fold_width.saturating_sub(marker_width))
-                        ),
-                        ..marker.clone()
-                    }),
                 ];
-                spans.extend(row_icon(*icon));
-                spans.push(TextSpan::styled(name.clone(), label_style));
+                match marker_side {
+                    MarkerSide::Leading => {
+                        spans.push(leading_marker(marker));
+                        spans.extend(row_icon(*icon));
+                        spans.push(TextSpan::styled(name.clone(), label_style));
+                    }
+                    MarkerSide::Trailing => {
+                        spans.extend(row_icon(*icon));
+                        push_flat_label(&mut spans, rect.width, name, detail, label_style, marker);
+                    }
+                }
                 if *selected {
                     row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceSelected));
                 }
@@ -1138,6 +1135,55 @@ fn render_navigator(
         bar.render(frame, settled.first);
     }
     (settled, bar)
+}
+
+/// A tree row's marker: in the column a group's fold mark stands in, and
+/// holding that column's width even when it has nothing to say — so a
+/// file with no status still lines its icon and name up with the folders
+/// beside it.
+fn leading_marker(marker: &Span) -> TextSpan<'static> {
+    let fold_width = TextSpan::raw(theme::glyph(Symbol::ChevronCollapsed)).width();
+    let marker_width = TextSpan::raw(marker.text.as_str()).width();
+    styled(&Span {
+        text: format!(
+            "{}{} ",
+            marker.text,
+            " ".repeat(fold_width.saturating_sub(marker_width))
+        ),
+        ..marker.clone()
+    })
+}
+
+/// A flat row's name, its `detail` quieter after it, and the marker pinned
+/// to the right edge. The name gives way last: it is what the row is read
+/// for, and the detail only tells apart two rows that share one.
+fn push_flat_label(
+    spans: &mut Vec<TextSpan<'static>>,
+    width: u16,
+    name: &str,
+    detail: &str,
+    label_style: Style,
+    marker: &Span,
+) {
+    let leading: usize = spans.iter().map(TextSpan::width).sum();
+    let marker_width = TextSpan::raw(marker.text.as_str()).width();
+    let room = usize::from(width)
+        .saturating_sub(leading + marker_width + usize::from(TRAILING_PAD) + 1)
+        .max(1);
+    let name = text::elide(name, room);
+    let left = room.saturating_sub(TextSpan::raw(name.as_str()).width());
+    spans.push(TextSpan::styled(name, label_style));
+    if !detail.is_empty() && left > 1 {
+        spans.push(TextSpan::styled(
+            format!(" {}", text::elide(detail, left - 1)),
+            theme::fg(Token::TextMuted),
+        ));
+    }
+    let hue = styled(marker)
+        .style
+        .fg
+        .unwrap_or_else(|| color(marker.role));
+    row::push_trailing(spans, width, marker.text.clone(), hue);
 }
 
 /// The content column: a heading, then as many lines as fit.
@@ -2102,6 +2148,8 @@ mod tests {
                         name: "ui.rs".to_owned(),
                         depth: 1,
                         marker: Span::new("M", Role::Warning),
+                        marker_side: MarkerSide::Leading,
+                        detail: String::new(),
                         selected: true,
                         icon: RowIcon::Code,
                     },
@@ -2253,6 +2301,45 @@ mod tests {
         );
     }
 
+    /// A flat row reads name, then where it sits, quieter, then its status
+    /// at the right edge — and in a narrow column the place gives way
+    /// before the name does.
+    #[test]
+    fn a_flat_row_pins_its_marker_right_and_gives_up_the_detail_first() {
+        let marker = Span::new("M", Role::Warning);
+        let drawn = |width: u16| {
+            let mut spans = vec![TextSpan::raw(" ")];
+            push_flat_label(
+                &mut spans,
+                width,
+                "ui.rs",
+                "src/components/network",
+                Style::default(),
+                &marker,
+            );
+            spans
+        };
+
+        let wide = drawn(40);
+        let text: String = wide.iter().map(|span| span.content.as_ref()).collect();
+        assert!(
+            text.starts_with(" ui.rs src/components/network"),
+            "{text:?}"
+        );
+        assert!(text.ends_with(&format!("M{}", " ".repeat(TRAILING_PAD.into()))));
+        assert_eq!(spans_width(&wide), 40, "the marker is pinned to the edge");
+        let detail = wide
+            .iter()
+            .find(|span| span.content.contains("src/"))
+            .expect("the place is drawn");
+        assert_eq!(detail.style.fg, Some(theme::color(Token::TextMuted)));
+
+        let narrow = drawn(12);
+        let text: String = narrow.iter().map(|span| span.content.as_ref()).collect();
+        assert!(text.contains("ui.rs") && !text.contains("src"), "{text:?}");
+        assert_eq!(spans_width(&narrow), 12);
+    }
+
     /// The header is one row with a question at each end: which half you
     /// are in, and how the half you are in is drawn.
     ///
@@ -2274,6 +2361,8 @@ mod tests {
                     name: "main.rs".to_owned(),
                     depth: 0,
                     marker: Span::new("", Role::Muted),
+                    marker_side: MarkerSide::Leading,
+                    detail: String::new(),
                     selected: true,
                     icon: RowIcon::None,
                 }],
@@ -2583,6 +2672,8 @@ mod tests {
                 name: format!("Artifact {group}{item}"),
                 depth: 1,
                 marker: Span::default(),
+                marker_side: MarkerSide::Leading,
+                detail: String::new(),
                 selected: group == 0 && item == 0,
                 icon: RowIcon::None,
             }));
@@ -2736,6 +2827,8 @@ mod tests {
             name: format!("Flow {id:02}"),
             depth: 1,
             marker: Span::default(),
+            marker_side: MarkerSide::Leading,
+            detail: String::new(),
             selected: id == 0,
             icon: RowIcon::None,
         }));
@@ -3363,6 +3456,8 @@ mod tests {
                         name: format!("file-{index}.rs"),
                         depth: 0,
                         marker: Span::new("M", Role::Warning),
+                        marker_side: MarkerSide::Leading,
+                        detail: String::new(),
                         selected: Some(index) == anchor,
                     })
                     .collect(),
@@ -3563,6 +3658,8 @@ mod tests {
                         name: "Cargo.toml".to_owned(),
                         depth: 0,
                         marker: Span::new(String::new(), Role::Muted),
+                        marker_side: MarkerSide::Leading,
+                        detail: String::new(),
                         selected: false,
                         icon: RowIcon::Config,
                     },
@@ -3571,6 +3668,8 @@ mod tests {
                         name: "main.rs".to_owned(),
                         depth: 0,
                         marker: Span::new("M", Role::Warning),
+                        marker_side: MarkerSide::Leading,
+                        detail: String::new(),
                         selected: false,
                         icon: RowIcon::Code,
                     },

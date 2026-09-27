@@ -7,7 +7,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
 };
 
@@ -20,7 +20,9 @@ use super::{
 use crate::{
     DirEntry,
     code::highlight::FALLBACK_SYNTAX_THEME,
-    view::{Command, Content, LineTone, NavigatorRow, Role, RowIcon, RowMark, Size, Span},
+    view::{
+        Command, Content, LineTone, MarkerSide, NavigatorRow, Role, RowIcon, RowMark, Size, Span,
+    },
 };
 
 fn space() -> Size {
@@ -88,79 +90,92 @@ fn fixture() -> CodeView {
     view
 }
 
-/// Three files under two directories, opened on the deepest one.
-fn tree_fixture() -> CodeView {
+/// Git's porcelain for three files under two directories, in the order
+/// the index keeps them, opened on the deepest one.
+fn flat_fixture() -> CodeView {
     let root = PathBuf::from("/repo");
-    let mut view = surface(
+    let files = changes::parse_porcelain_status(
+        " M src/ui/git_diff.rs\0A  src/ui.rs\0?? README.md\0 M src/Main.rs\0",
         &root,
-        vec![
-            ChangedFile {
-                status: FileStatus::Modified,
-                path: root.join("src/ui/git_diff.rs"),
-            },
-            ChangedFile {
-                status: FileStatus::Added,
-                path: root.join("src/ui.rs"),
-            },
-            ChangedFile {
-                status: FileStatus::Untracked,
-                path: root.join("README.md"),
-            },
-        ],
-        0,
     );
+    let deepest = files
+        .iter()
+        .position(|file| file.path.ends_with("git_diff.rs"))
+        .expect("the deepest file is listed");
+    let mut view = surface(&root, files, deepest);
     view.changes.diff_pending = false;
     view
 }
 
-fn group_names(view: &CodeView) -> Vec<(String, bool)> {
+/// Each row as the reader scans it: the name, then where it sits.
+fn flat_rows(view: &CodeView) -> Vec<(String, String)> {
     navigator(view)
         .rows
         .into_iter()
         .filter_map(|row| match row {
-            NavigatorRow::Group {
-                name, collapsed, ..
-            } => Some((name, collapsed)),
-            NavigatorRow::Item { .. } => None,
-        })
-        .collect()
-}
-
-fn item_names(view: &CodeView) -> Vec<String> {
-    navigator(view)
-        .rows
-        .into_iter()
-        .filter_map(|row| match row {
-            NavigatorRow::Item { name, .. } => Some(name),
+            NavigatorRow::Item { name, detail, .. } => Some((name, detail)),
             NavigatorRow::Group { .. } => None,
         })
         .collect()
 }
 
-/// A changed file is indented the way the files tree indents it: one
-/// step per directory above it, so it lines up with a folder beside it
-/// rather than a step past one. The host keeps the fold mark's column for
-/// the status marker, so no extra step is owed for it.
+/// The changes are one flat list: no row for a directory, every file at
+/// the same depth, named first with its directory after it, grouped by
+/// that directory and by name within it — whatever order Git kept them in.
 #[test]
-fn a_changed_file_sits_at_the_depth_the_files_tree_gives_it() {
-    let depths: Vec<(String, usize)> = navigator(&tree_fixture())
-        .rows
-        .into_iter()
-        .map(|row| match row {
-            NavigatorRow::Group { name, depth, .. } | NavigatorRow::Item { name, depth, .. } => {
-                (name, depth)
+fn the_changes_are_a_flat_list_named_first_and_placed_after() {
+    let view = flat_fixture();
+    let rows = navigator(&view).rows;
+
+    assert!(
+        rows.iter().all(|row| matches!(
+            row,
+            NavigatorRow::Item {
+                depth: 0,
+                marker_side: MarkerSide::Trailing,
+                ..
             }
-        })
-        .collect();
+        )),
+        "no directory rows, no indent, the status at the right edge"
+    );
     assert_eq!(
-        depths,
+        flat_rows(&view),
         [
-            ("src/".to_owned(), 0),
-            ("ui/".to_owned(), 1),
-            ("git_diff.rs".to_owned(), 2),
-            ("ui.rs".to_owned(), 1),
-            ("README.md".to_owned(), 0),
+            ("README.md".to_owned(), String::new()),
+            ("Main.rs".to_owned(), "src".to_owned()),
+            ("ui.rs".to_owned(), "src".to_owned()),
+            ("git_diff.rs".to_owned(), "src/ui".to_owned()),
         ]
+    );
+    assert_eq!(navigator(&view).anchor, Some(3), "the selection is its row");
+}
+
+/// The arrows walk the list as drawn, and hold at either end.
+#[test]
+fn the_arrows_walk_the_list_as_drawn() {
+    let mut view = flat_fixture();
+
+    press(&mut view, Command::SelectNext);
+    assert_eq!(view.selected_change(), Some(3), "the last row holds");
+    press(&mut view, Command::SelectPrevious);
+    assert_eq!(view.selected_change(), Some(2));
+    for _ in 0..5 {
+        press(&mut view, Command::SelectPrevious);
+    }
+    assert_eq!(view.selected_change(), Some(0), "the first row holds");
+}
+
+/// Nothing in a flat list opens or closes, so neither is offered.
+#[test]
+fn a_flat_list_offers_no_folding() {
+    let mut view = flat_fixture();
+    press(&mut view, Command::Collapse);
+    assert_eq!(flat_rows(&view).len(), 4);
+    assert!(
+        !super::view(&view, space())
+            .footer
+            .iter()
+            .any(|command| matches!(command, Command::Collapse | Command::Expand))
     );
 }
 
@@ -257,119 +272,6 @@ fn selecting_a_file_asks_for_its_diff_rather_than_reading_it() {
     );
 }
 
-/// A folded directory keeps its files off the list and the selection
-/// where it was: the diff being read is not changed by tidying the tree
-/// around it.
-#[test]
-fn folding_a_directory_hides_its_files_and_moves_nothing_else() {
-    let mut view = tree_fixture();
-    let ui_group = navigator(&view)
-        .rows
-        .iter()
-        .position(|row| matches!(row, NavigatorRow::Group { name, .. } if name == "ui/"))
-        .expect("the ui directory is a group");
-
-    handle_mouse(&mut view, Some(ViewHit::ToggleGroup(ui_group)), space());
-
-    assert_eq!(item_names(&view), vec!["ui.rs", "README.md"]);
-    assert_eq!(
-        group_names(&view),
-        vec![("src/".to_owned(), false), ("ui/".to_owned(), true)]
-    );
-    assert_eq!(
-        view.selected_change(),
-        Some(0),
-        "the selection is hidden, not moved"
-    );
-    assert!(!view.diff_pending(), "and its diff was not re-read");
-    assert_eq!(
-        navigator(&view).anchor,
-        None,
-        "nothing to keep on screen while the selection is folded away"
-    );
-
-    handle_mouse(&mut view, Some(ViewHit::ToggleGroup(ui_group)), space());
-    assert_eq!(item_names(&view), vec!["git_diff.rs", "ui.rs", "README.md"]);
-    assert_eq!(navigator(&view).anchor, Some(2));
-}
-
-/// The arrows walk the tree as drawn — directories first, folded ones
-/// skipped — rather than the flat order `git status` answered in.
-#[test]
-fn the_arrows_walk_the_tree_as_drawn_and_step_over_a_fold() {
-    let mut view = tree_fixture();
-
-    press(&mut view, Command::SelectNext);
-    assert_eq!(
-        view.selected_change(),
-        Some(1),
-        "src/ui.rs follows src/ui/git_diff.rs"
-    );
-    press(&mut view, Command::SelectNext);
-    assert_eq!(
-        view.selected_change(),
-        Some(2),
-        "README.md is last, under every directory"
-    );
-    press(&mut view, Command::SelectNext);
-    assert_eq!(view.selected_change(), Some(2), "the last row holds");
-
-    view.changes.folded.insert("src".to_owned());
-    press(&mut view, Command::SelectPrevious);
-    assert_eq!(
-        view.selected_change(),
-        Some(2),
-        "nothing above README.md is showing"
-    );
-
-    view.changes.folded.clear();
-    view.changes.folded.insert("src/ui".to_owned());
-    press(&mut view, Command::SelectPrevious);
-    assert_eq!(
-        view.selected_change(),
-        Some(1),
-        "the folded file is stepped over"
-    );
-    press(&mut view, Command::SelectPrevious);
-    assert_eq!(
-        view.selected_change(),
-        Some(1),
-        "and the fold is the top of what shows"
-    );
-}
-
-/// Left closes the tree outward from the selection, Right opens it back
-/// inward, one directory at a time.
-#[test]
-fn left_folds_outward_and_right_unfolds_inward() {
-    let mut view = tree_fixture();
-
-    press(&mut view, Command::Collapse);
-    assert_eq!(view.changes.folded, BTreeSet::from(["src/ui".to_owned()]));
-    press(&mut view, Command::Collapse);
-    assert_eq!(
-        view.changes.folded,
-        BTreeSet::from(["src".to_owned(), "src/ui".to_owned()])
-    );
-    assert_eq!(item_names(&view), vec!["README.md"]);
-    press(&mut view, Command::Collapse);
-    assert_eq!(
-        view.changes.folded.len(),
-        2,
-        "nothing above the root to fold"
-    );
-
-    press(&mut view, Command::Expand);
-    assert_eq!(view.changes.folded, BTreeSet::from(["src/ui".to_owned()]));
-    press(&mut view, Command::Expand);
-    assert!(view.changes.folded.is_empty());
-    assert_eq!(
-        view.selected_change(),
-        Some(0),
-        "folding never moved the selection"
-    );
-}
-
 /// The wheel over the content scrolls the content and nothing else: the
 /// selection is not a scroll position.
 #[test]
@@ -381,25 +283,6 @@ fn the_wheel_scrolls_the_content_and_leaves_the_selection_alone() {
     assert_eq!(view.scroll, 3);
     assert_eq!(view.selected_change(), Some(1));
     assert!(!view.diff_pending());
-}
-
-/// A refresh answers what changed. Tidying the tree around it is the
-/// viewer's, and not something the answer gets to undo.
-#[test]
-fn a_refresh_keeps_the_folds_the_viewer_made() {
-    let mut view = tree_fixture();
-    view.changes.folded.insert("src/ui".to_owned());
-
-    view.absorb_changes(RefreshedChanges {
-        placement: view.placement(),
-        branch: "main".to_owned(),
-        changes: Changes {
-            files: view.changes.files.clone(),
-            ..Changes::default()
-        },
-    });
-
-    assert_eq!(view.changes.folded, BTreeSet::from(["src/ui".to_owned()]));
 }
 
 /// The section names meaning, never colour — the same contract the

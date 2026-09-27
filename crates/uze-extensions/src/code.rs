@@ -72,7 +72,6 @@ use crate::{
 };
 
 mod changes;
-mod changes_tree;
 mod diff;
 mod editor;
 mod files;
@@ -92,7 +91,6 @@ pub use render::view;
 pub use request::{FileAnswer, FileRequest, LoadedFile, fulfill, unanswered};
 
 use changes::Changes;
-use changes_tree::{FileTreeItem, file_tree_items};
 use diff::DiffLineKind;
 use editor::OpenFile;
 use files::Files;
@@ -263,8 +261,7 @@ pub struct CodeView {
 /// [`CodeView::resuming`] the next time that checkout is opened.
 ///
 /// What it holds is navigation and nothing else — the file being read,
-/// the directories opened to reach it, the ones folded away, and how far
-/// down it. Deliberately not the content mode: the mode is the door that
+/// the directories opened to reach it, and how far down it. Deliberately not the content mode: the mode is the door that
 /// was used (`Alt+G` reviews, `Alt+E` navigates), and a door that
 /// remembered where it last led would stop being one. Deliberately not a
 /// buffer either: an unsaved edit belongs to the surface that has it
@@ -282,7 +279,6 @@ pub struct CodePlace {
     /// surface where nothing had gone wrong.
     selected_is_a_file: bool,
     expanded: BTreeSet<PathBuf>,
-    folded: BTreeSet<String>,
     scroll: u16,
 }
 
@@ -377,10 +373,8 @@ impl CodeView {
             selected,
             selected_is_a_file,
             expanded,
-            folded,
             scroll,
         } = place;
-        self.changes.folded = folded;
         // Sorted, so a directory is asked for after the one containing it.
         for directory in expanded {
             self.expand(directory);
@@ -411,7 +405,6 @@ impl CodeView {
             selected_is_a_file: self.selected_is_a_file(),
             selected: self.selected.clone(),
             expanded: self.files.expanded.clone(),
-            folded: self.changes.folded.clone(),
             scroll: self.scroll,
         }
     }
@@ -562,10 +555,6 @@ impl CodeView {
             mut changes,
         } = refreshed;
         self.branch = branch;
-        // The folds are the viewer's, not the read's: a refresh answers
-        // what changed, and tidying the tree around it is not something
-        // it gets to undo.
-        changes.folded = std::mem::take(&mut self.changes.folded);
         changes.inherit(&mut self.changes);
         if placement.path != self.selected {
             // The selection moved while the read was out, so its diff is
@@ -1104,7 +1093,7 @@ impl CodeView {
                     }
                     return;
                 };
-                if let Some(index) = self.changes.neighbour(&self.root, from, direction)
+                if let Some(index) = self.changes.neighbour(from, direction)
                     && let Some(file) = self.changes.files.get(index)
                 {
                     let path = file.path.clone();
@@ -1351,31 +1340,23 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
             Focus::Navigator => view.step(ScrollDirection::Down),
             Focus::Content => view.scroll = view.scroll.saturating_add(1),
         },
-        Command::Collapse if view.focus == Focus::Navigator => match view.navigator() {
-            NavigatorMode::Changes => {
-                if let Some(selected) = view.selected_change() {
-                    view.changes.fold(&view.root, selected);
-                }
+        Command::Collapse
+            if view.focus == Focus::Navigator && view.navigator() == NavigatorMode::Files =>
+        {
+            fold_tree_row(view)
+        }
+        Command::Expand
+            if view.focus == Focus::Navigator && view.navigator() == NavigatorMode::Files =>
+        {
+            if let Some(row) = view
+                .selected
+                .clone()
+                .and_then(|path| view.files.row_at(&view.root, &path))
+                .filter(|row| row.directory)
+            {
+                view.expand(row.path);
             }
-            NavigatorMode::Files => fold_tree_row(view),
-        },
-        Command::Expand if view.focus == Focus::Navigator => match view.navigator() {
-            NavigatorMode::Changes => {
-                if let Some(selected) = view.selected_change() {
-                    view.changes.unfold(&view.root, selected);
-                }
-            }
-            NavigatorMode::Files => {
-                if let Some(row) = view
-                    .selected
-                    .clone()
-                    .and_then(|path| view.files.row_at(&view.root, &path))
-                    .filter(|row| row.directory)
-                {
-                    view.expand(row.path);
-                }
-            }
-        },
+        }
         Command::Activate if view.focus == Focus::Navigator => activate_selection(view),
         Command::ScrollPageUp => view.scroll = view.scroll.saturating_sub(space.height.max(1)),
         Command::ScrollPageDown => view.scroll = view.scroll.saturating_add(space.height.max(1)),
@@ -1520,17 +1501,8 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
             }
         },
         Some(ViewHit::ToggleGroup(row)) => match view.navigator() {
-            NavigatorMode::Changes => {
-                // The id handed back is the row's place in the tree this
-                // view last described — rebuilt here from the same state,
-                // so it names the same directory.
-                if let Some(FileTreeItem::Directory { path, .. }) =
-                    file_tree_items(&view.changes, &view.root).get(row)
-                {
-                    let path = path.clone();
-                    view.changes.toggle_directory(path);
-                }
-            }
+            // A flat list has no groups to toggle.
+            NavigatorMode::Changes => {}
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(row) {
                     view.selected = Some(row.path.clone());
