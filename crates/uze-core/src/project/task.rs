@@ -285,6 +285,17 @@ impl Agent {
         }
     }
 
+    /// Takes `name` as the visible label of an agent with no branch of
+    /// its own. The name is judged by the caller, exactly as a branch
+    /// would be, so a label reads the same wherever the agent was placed.
+    pub fn take_label(&mut self, name: &str) {
+        debug_assert!(
+            !self.is_isolated(),
+            "an isolated agent is named by its branch"
+        );
+        self.label = crate::worktree::label_of(name);
+    }
+
     /// An agent launched into the project's own root: no branch, no
     /// checkout, nothing to deliver.
     pub fn in_the_root(harness: &str) -> Self {
