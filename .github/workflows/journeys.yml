@@ -42,7 +42,7 @@ jobs:
     # and the rest, where the pair now reads as what each tier drives
     # end to end — this one drives UZE, those drive a vendor's harness. The
     # platform is in the name because the two runs prove different halves.
-    name: E2E - UZE (${{ matrix.target.platform }}, ${{ matrix.shard }}/4)
+    name: E2E - UZE (${{ matrix.target.platform }}, ${{ matrix.shard }}/5)
     # Pinned images, never `-latest`. The journey drives a rendered screen, so
     # the terminal is part of the contract — the tmux build, the locale and
     # the unicode width tables decide where a glyph lands, and a moving
@@ -63,11 +63,12 @@ jobs:
         target: ${{ fromJSON(inputs.platforms || '[{"platform":"linux","runner":"ubuntu-24.04"},{"platform":"macos","runner":"macos-15"}]') }}
         # The suite ran as one serial queue: forty journeys, 11.5 minutes on
         # Linux and 16.3 on macOS, on the critical path of every run. Every
-        # journey builds its own world, so four runners each take an
-        # interleaved quarter (`journey.py --shard`); measured against the
-        # durations of a green run, the longest quarter is 3.4 and 5.0
-        # minutes. `--shard` in the args below and `4` here are one number.
-        shard: [1, 2, 3, 4]
+        # journey builds its own world, so each runner takes an interleaved
+        # slice (`journey.py --shard`). Five, not four: against measured
+        # durations the longest of four was 5.0 minutes on macOS and above
+        # `Test (macos)`, the longest of five is 3.7 and 3.0 on Linux.
+        # `--shard` in the args below and `5` here are one number.
+        shard: [1, 2, 3, 4, 5]
     permissions:
       contents: read
       # To find a proof, which is an artifact of an earlier run.
@@ -96,14 +97,14 @@ jobs:
           fresh=()
           if [ "${FRESH}" = true ]; then fresh=(--fresh); fi
           python3 .github/scripts/proof.py journeys --platform "${{ matrix.target.platform }}" \
-            --shard "${{ matrix.shard }}/4" --runner "${ImageOS}-${ImageVersion}" "${fresh[@]}" >> "${GITHUB_OUTPUT}"
+            --shard "${{ matrix.shard }}/5" --runner "${ImageOS}-${ImageVersion}" "${fresh[@]}" >> "${GITHUB_OUTPUT}"
           cat "${GITHUB_OUTPUT}"
       - name: Already proven
         if: steps.proof.outputs.proven != ''
         env:
           PROVEN: ${{ steps.proof.outputs.proven }}
         run: |
-          echo "::notice title=Journeys ${{ matrix.target.platform }} ${{ matrix.shard }}/4 already proven::passed in ${PROVEN}"
+          echo "::notice title=Journeys ${{ matrix.target.platform }} ${{ matrix.shard }}/5 already proven::passed in ${PROVEN}"
           echo "Reused: nothing this slice reads changed since ${PROVEN}" >> "${GITHUB_STEP_SUMMARY}"
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         if: steps.proof.outputs.proven == ''
@@ -159,7 +160,7 @@ jobs:
         if: steps.proof.outputs.proven == ''
         with:
           # Nightly runs everything, not just the gate tag, and records a cast.
-          args: ${{ github.event_name == 'schedule' && '--record' || '--tag gate' }} --shard ${{ matrix.shard }}/4
+          args: ${{ github.event_name == 'schedule' && '--record' || '--tag gate' }} --shard ${{ matrix.shard }}/5
 
       # Named, because "No files were found" on the upload below is how a
       # failing run lost its own evidence once: the artifact is silent about

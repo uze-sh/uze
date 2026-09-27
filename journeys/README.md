@@ -24,8 +24,8 @@ python3 journeys/journey.py validate <spec|dir>
 ```
 
 A spec carries `tags:`. `--tag gate` is what a pull request runs; a nightly
-runs the directory with no tag at all. CI splits either across four runners
-with `--shard I/4`, an interleaved quarter each, which is only sound because
+runs the directory with no tag at all. CI splits either across five runners
+with `--shard I/5`, an interleaved slice each, which is only sound because
 no journey depends on another having run.
 
 `run` builds the world, performs every scene in order, and stops at the first
