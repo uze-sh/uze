@@ -3252,10 +3252,39 @@ impl WorkspaceModel {
                     }
                 }
             }
+            ClientEvent::SelectionText { pane, text } => self.copy(pane, text),
             ClientEvent::Error { message } => self.error = Some(message),
             ClientEvent::Detached | ClientEvent::Stopped => {}
         }
     }
+    /// Puts a released selection's text on the clipboard. A drag that
+    /// covered only blanks copies nothing and says nothing, and the server
+    /// has already put it away; an answer about a selection this client
+    /// has since dropped is not one anybody is waiting for.
+    fn copy(&mut self, pane: uze_terminal::PaneId, text: String) {
+        if self
+            .selection
+            .is_none_or(|selection| selection.pane != pane)
+        {
+            return;
+        }
+        if text.is_empty() {
+            self.selection = None;
+            return;
+        }
+        let characters = text.chars().count();
+        self.raise_toast(
+            ToastKind::Done,
+            "copied",
+            format!(
+                "{characters} character{} to the clipboard",
+                if characters == 1 { "" } else { "s" }
+            ),
+            None,
+        );
+        self.clipboard = Some(text);
+    }
+
     /// Clears an in-progress tab drag if the tab it names no longer exists
     /// — closed by another client, or by a concurrent `CloseTab`, while
     /// this one was mid-drag. Called on every `SessionUpdated`; leaves an

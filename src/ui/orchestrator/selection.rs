@@ -7,12 +7,12 @@
 //! program might bind has to be taken from it.
 
 use ratatui::layout::Rect;
-use ratatui::text::Span;
-use uze_terminal::{PaneId, PaneSnapshot};
+use uze_terminal::{ClientRequest, PaneId, SelectionGesture};
 
 /// A press in a pane and where the pointer has carried it since, in the
-/// pane's own 0-indexed cells. Ordered the way it was drawn, not the way it
-/// reads: `anchor` is where the press landed and may come after `head`.
+/// pane's own 0-indexed cells. Only the gesture lives here: what it covers
+/// is the terminal server's, which anchors it to the lines under it, so it
+/// stays on them while the view scrolls and copies what scrolled away.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct PaneSelection {
     pub(super) pane: PaneId,
@@ -21,6 +21,9 @@ pub(super) struct PaneSelection {
     /// Whether the pointer has left the cell it was pressed in. A press
     /// that never moved is a click, and a click selects nothing.
     moved: bool,
+    /// Whether the button is still down, so the view moving means the
+    /// selection's end moves with it.
+    held: bool,
 }
 
 impl PaneSelection {
@@ -31,71 +34,73 @@ impl PaneSelection {
             anchor: at,
             head: at,
             moved: false,
+            held: true,
         }
     }
 
     /// Follows the pointer, clamped to the pane: a drag that overshoots the
     /// edge still means "to the edge", which is how a selection reaches the
-    /// last column without the pointer landing exactly on it.
-    pub(super) fn follow(&mut self, area: Rect, column: u16, row: u16) -> bool {
+    /// last column without the pointer landing exactly on it. Past the top
+    /// or the bottom it also scrolls by the overshoot, which is how a
+    /// selection reaches text that is not on screen.
+    pub(super) fn follow(&mut self, area: Rect, column: u16, row: u16) -> Vec<ClientRequest> {
         let head = cell_in(area, column, row);
-        let changed = head != self.head;
+        let lines = if row < area.y {
+            i32::from(area.y - row)
+        } else if row >= area.bottom() {
+            -i32::from(row - area.bottom() + 1)
+        } else {
+            0
+        };
+        if head == self.head && lines == 0 {
+            return Vec::new();
+        }
         self.head = head;
-        self.moved |= head != self.anchor;
-        changed
+        let gesture = if self.moved {
+            SelectionGesture::Extend { head }
+        } else if head != self.anchor || lines != 0 {
+            self.moved = true;
+            SelectionGesture::Begin {
+                anchor: self.anchor,
+                head,
+            }
+        } else {
+            return Vec::new();
+        };
+        let mut requests = Vec::new();
+        if lines != 0 {
+            requests.push(ClientRequest::Scroll {
+                pane: self.pane,
+                lines,
+            });
+        }
+        requests.push(self.request(gesture));
+        requests
     }
 
-    pub(super) fn is_visible(&self) -> bool {
+    /// What to say after the view moved under a held pointer: the cell it
+    /// rests on now holds a different line.
+    pub(super) fn rescrolled(&self) -> Option<ClientRequest> {
+        (self.held && self.moved)
+            .then(|| self.request(SelectionGesture::Extend { head: self.head }))
+    }
+
+    /// The button came up; whether this was a drag rather than a click.
+    pub(super) fn release(&mut self) -> bool {
+        self.held = false;
         self.moved
     }
 
-    /// Whether the cell is inside the selection, read as text reads: whole
-    /// rows between the first and last, partial rows at either end.
-    pub(super) fn contains(&self, column: u16, row: u16) -> bool {
-        let (start, end) = self.ordered();
-        self.moved && (row, column) >= (start.1, start.0) && (row, column) <= (end.1, end.0)
+    /// What to say when the selection is dropped: nothing for a click,
+    /// which never reached the server.
+    pub(super) fn cleared(&self) -> Option<ClientRequest> {
+        self.moved.then(|| self.request(SelectionGesture::Clear))
     }
 
-    /// The selected cells as text: trailing blanks dropped from each row,
-    /// and blank rows from the end, since a terminal pads every line to its
-    /// width and nobody selected the padding; the cell a wide character
-    /// spills into skipped, since it holds a blank that is not in the text.
-    /// Empty when the selection covered nothing but blanks.
-    pub(super) fn text(&self, snapshot: &PaneSnapshot) -> String {
-        if !self.moved {
-            return String::new();
-        }
-        let (start, end) = self.ordered();
-        let columns = snapshot.columns;
-        let last_column = columns.saturating_sub(1);
-        let mut lines = Vec::new();
-        for row in start.1..=end.1.min(snapshot.rows.saturating_sub(1)) {
-            let from = if row == start.1 { start.0 } else { 0 };
-            let to = if row == end.1 { end.0 } else { last_column };
-            let mut line = String::new();
-            let mut column = from;
-            while column <= to.min(last_column) {
-                let index = usize::from(row) * usize::from(columns) + usize::from(column);
-                let Some(cell) = snapshot.cells.get(index) else {
-                    break;
-                };
-                line.push(cell.character);
-                column += Span::raw(cell.character.to_string()).width().max(1) as u16;
-            }
-            lines.push(line.trim_end().to_owned());
-        }
-        while lines.last().is_some_and(String::is_empty) {
-            lines.pop();
-        }
-        lines.join("\n")
-    }
-
-    fn ordered(&self) -> ((u16, u16), (u16, u16)) {
-        let reads_first = |(column, row): (u16, u16)| (row, column);
-        if reads_first(self.anchor) <= reads_first(self.head) {
-            (self.anchor, self.head)
-        } else {
-            (self.head, self.anchor)
+    fn request(&self, gesture: SelectionGesture) -> ClientRequest {
+        ClientRequest::Select {
+            pane: self.pane,
+            gesture,
         }
     }
 }
@@ -142,34 +147,6 @@ fn base64(input: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uze_terminal::{CellAttributes, Cursor, MouseMode, RenderCell, TerminalColor};
-
-    fn snapshot(lines: &[&str], columns: u16) -> PaneSnapshot {
-        let cells = lines
-            .iter()
-            .flat_map(|line| {
-                let mut row: Vec<char> = line.chars().collect();
-                row.resize(usize::from(columns), ' ');
-                row
-            })
-            .map(|character| RenderCell {
-                character,
-                foreground: TerminalColor::DefaultForeground,
-                background: TerminalColor::DefaultBackground,
-                attributes: CellAttributes::default(),
-            })
-            .collect();
-        PaneSnapshot {
-            pane: PaneId(1),
-            columns,
-            rows: lines.len() as u16,
-            cursor: Cursor { column: 0, row: 0 },
-            alternate_screen: false,
-            mouse: MouseMode::default(),
-            bracketed_paste: false,
-            cells,
-        }
-    }
 
     const AREA: Rect = Rect {
         x: 10,
@@ -178,64 +155,90 @@ mod tests {
         height: 3,
     };
 
-    fn dragged(from: (u16, u16), to: (u16, u16)) -> PaneSelection {
-        let mut selection =
-            PaneSelection::pressed(PaneId(1), AREA, AREA.x + from.0, AREA.y + from.1);
-        selection.follow(AREA, AREA.x + to.0, AREA.y + to.1);
-        selection
+    fn select(gesture: SelectionGesture) -> ClientRequest {
+        ClientRequest::Select {
+            pane: PaneId(1),
+            gesture,
+        }
     }
 
     #[test]
-    fn a_press_that_never_moved_selects_nothing() {
-        let selection = PaneSelection::pressed(PaneId(1), AREA, 12, 6);
-        assert!(!selection.is_visible());
-        assert_eq!(selection.text(&snapshot(&["hello"], 12)), "");
+    fn a_press_that_never_moved_says_nothing() {
+        let mut selection = PaneSelection::pressed(PaneId(1), AREA, 12, 6);
+        assert!(selection.follow(AREA, 12, 6).is_empty());
+        assert!(!selection.release());
+        assert_eq!(selection.cleared(), None);
     }
 
     #[test]
-    fn a_drag_across_rows_reads_as_text_without_the_padding() {
-        let pane = snapshot(&["first line", "second", "third"], 12);
-        assert_eq!(dragged((6, 0), (2, 2)).text(&pane), "line\nsecond\nthi");
-    }
-
-    #[test]
-    fn a_drag_backwards_selects_the_same_text() {
-        let pane = snapshot(&["first line", "second", "third"], 12);
+    fn the_first_movement_begins_and_the_rest_extend() {
+        let mut selection = PaneSelection::pressed(PaneId(1), AREA, 12, 6);
         assert_eq!(
-            dragged((2, 2), (6, 0)).text(&pane),
-            dragged((6, 0), (2, 2)).text(&pane)
+            selection.follow(AREA, 14, 6),
+            [select(SelectionGesture::Begin {
+                anchor: (2, 1),
+                head: (4, 1),
+            })]
         );
+        assert_eq!(
+            selection.follow(AREA, 15, 7),
+            [select(SelectionGesture::Extend { head: (5, 2) })]
+        );
+        assert!(selection.follow(AREA, 15, 7).is_empty());
     }
 
     #[test]
     fn a_drag_past_the_edge_selects_to_the_edge() {
-        let pane = snapshot(&["abc", "defghijklmno"], 12);
         let mut selection = PaneSelection::pressed(PaneId(1), AREA, AREA.x, AREA.y + 1);
-        selection.follow(AREA, AREA.right() + 20, AREA.y + 1);
-        assert_eq!(selection.text(&pane), "defghijklmno");
+        assert_eq!(
+            selection.follow(AREA, AREA.right() + 20, AREA.y + 1),
+            [select(SelectionGesture::Begin {
+                anchor: (0, 1),
+                head: (11, 1),
+            })]
+        );
     }
 
     #[test]
-    fn the_blank_a_wide_character_spills_into_is_not_copied() {
-        let pane = snapshot(&["日 本 x"], 12);
-        assert_eq!(dragged((0, 0), (4, 0)).text(&pane), "日本x");
+    fn a_drag_past_the_top_or_bottom_scrolls_by_the_overshoot() {
+        let mut selection = PaneSelection::pressed(PaneId(1), AREA, 12, 6);
+        assert_eq!(
+            selection.follow(AREA, 12, AREA.y - 2),
+            [
+                ClientRequest::Scroll {
+                    pane: PaneId(1),
+                    lines: 2,
+                },
+                select(SelectionGesture::Begin {
+                    anchor: (2, 1),
+                    head: (2, 0),
+                }),
+            ]
+        );
+        assert_eq!(
+            selection.follow(AREA, 12, AREA.bottom()),
+            [
+                ClientRequest::Scroll {
+                    pane: PaneId(1),
+                    lines: -1,
+                },
+                select(SelectionGesture::Extend { head: (2, 2) }),
+            ]
+        );
     }
 
     #[test]
-    fn blank_rows_at_the_end_are_padding_too() {
-        let pane = snapshot(&["first", "", ""], 12);
-        assert_eq!(dragged((0, 0), (11, 2)).text(&pane), "first");
-        assert_eq!(dragged((6, 0), (11, 2)).text(&pane), "");
-    }
-
-    #[test]
-    fn highlight_follows_reading_order() {
-        let selection = dragged((6, 0), (2, 2));
-        assert!(selection.contains(11, 0));
-        assert!(!selection.contains(5, 0));
-        assert!(selection.contains(0, 1));
-        assert!(selection.contains(2, 2));
-        assert!(!selection.contains(3, 2));
+    fn the_view_moving_under_a_held_drag_extends_it_and_under_a_released_one_does_not() {
+        let mut selection = PaneSelection::pressed(PaneId(1), AREA, 12, 6);
+        assert_eq!(selection.rescrolled(), None);
+        selection.follow(AREA, 14, 7);
+        assert_eq!(
+            selection.rescrolled(),
+            Some(select(SelectionGesture::Extend { head: (4, 2) }))
+        );
+        assert!(selection.release());
+        assert_eq!(selection.rescrolled(), None);
+        assert_eq!(selection.cleared(), Some(select(SelectionGesture::Clear)));
     }
 
     #[test]

@@ -67,7 +67,7 @@ mod workspace_tests {
     use uze_extensions::view::ViewHit;
     use uze_terminal::{
         CellAttributes, ClientEvent, ClientRequest, Cursor, MouseMode, Pane, PaneDamage, PaneId,
-        RenderCell, Session, SpaceId, Tab, TabId, TerminalColor,
+        RenderCell, SelectionGesture, Session, SpaceId, Tab, TabId, TerminalColor,
     };
 
     /// A fresh one-space session over `root`, at the size every test
@@ -8312,15 +8312,50 @@ mod workspace_tests {
         }
     }
 
+    /// The server's answer to the copy a release asks for.
+    fn copy_answered(driven: &mut Driven<'_>, text: &str) {
+        let pane = driven.attach.model.focused_pane();
+        driven
+            .events_sender
+            .as_ref()
+            .expect("the runtime is still there")
+            .send(ClientEvent::SelectionText {
+                pane,
+                text: text.to_owned(),
+            })
+            .unwrap();
+        driven.pump();
+    }
+
     #[test]
     fn releasing_a_drag_over_a_pane_copies_what_it_covered() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-copy-on-select"));
         let mut model = model_of(session("/tmp"));
         pane_showing(&mut model, "hello world", false);
         let mut driven = driven(model, &home);
+        let pane = driven.attach.model.focused_pane();
 
         drag_across_the_first_word(&mut driven, crossterm::event::KeyModifiers::empty());
 
+        assert_eq!(
+            driven.sent(),
+            [
+                ClientRequest::Select {
+                    pane,
+                    gesture: SelectionGesture::Begin {
+                        anchor: (0, 0),
+                        head: (4, 0),
+                    },
+                },
+                ClientRequest::Select {
+                    pane,
+                    gesture: SelectionGesture::Release,
+                },
+                ClientRequest::CopySelection { pane },
+            ],
+            "the server holds the selection, so the view can scroll under it"
+        );
+        copy_answered(&mut driven, "hello");
         assert_eq!(driven.attach.model.clipboard.as_deref(), Some("hello"));
         assert!(
             driven.attach.model.selection.is_some(),
@@ -8334,6 +8369,13 @@ mod workspace_tests {
             driven.attach.model.selection.is_none(),
             "and the next key puts it away"
         );
+        assert!(
+            driven.sent().contains(&ClientRequest::Select {
+                pane,
+                gesture: SelectionGesture::Clear,
+            }),
+            "on the server too"
+        );
     }
 
     #[test]
@@ -8345,7 +8387,6 @@ mod workspace_tests {
 
         drag_across_the_first_word(&mut driven, crossterm::event::KeyModifiers::empty());
 
-        assert_eq!(driven.attach.model.clipboard.as_deref(), Some("hello"));
         assert!(
             forwarded_input(&mut driven).is_empty(),
             "the program is not told about a drag it did not get"
@@ -8402,11 +8443,53 @@ mod workspace_tests {
 
         drag_across_the_first_word(&mut driven, crossterm::event::KeyModifiers::empty());
 
-        assert_eq!(driven.attach.model.clipboard, None);
-        assert!(driven.attach.model.selection.is_none());
         assert!(
             forwarded_input(&mut driven).is_empty(),
             "the program was not handed a click the operator never made"
+        );
+        copy_answered(&mut driven, "");
+        assert_eq!(driven.attach.model.clipboard, None);
+        assert!(
+            driven.attach.model.selection.is_none(),
+            "a selection of blanks is not kept drawn"
+        );
+    }
+
+    #[test]
+    fn a_drag_past_the_top_of_a_full_screen_program_scrolls_it_with_the_wheel() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-drag-past-top"));
+        let mut model = model_of(session("/tmp"));
+        pane_showing(&mut model, "hello world", true);
+        let focused = model.focused_pane();
+        if let Some(snapshot) = model.panes.get_mut(&focused) {
+            snapshot.alternate_screen = true;
+        }
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+
+        driven.press(pane.x + 2, pane.y + 1);
+        driven.mouse(
+            pane.x + 2,
+            pane.y - 1,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+
+        let sent = driven.sent();
+        assert!(
+            !sent
+                .iter()
+                .any(|request| matches!(request, ClientRequest::Scroll { .. })),
+            "the alternate screen has no scrollback to move: {sent:?}"
+        );
+        let wheel = sent.iter().find_map(|request| match request {
+            ClientRequest::Input { bytes, .. } => Some(bytes.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            wheel.as_deref(),
+            Some(&b"\x1b[<64;3;1M"[..]),
+            "the program scrolls itself, at the edge the pointer overshot"
         );
     }
 

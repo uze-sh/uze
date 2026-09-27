@@ -24,10 +24,11 @@ use thiserror::Error;
 
 use crate::{
     CellAttributes, ClientEvent, ClientRequest, Cursor, MouseMode, NewSpace, PROTOCOL_VERSION,
-    Palette, PaneDamage, PaneId, PaneSnapshot, RenderCell, Seating, Session, SpaceId, SpaceSeat,
-    TabId, TerminalColor,
+    Palette, PaneDamage, PaneId, PaneSnapshot, RenderCell, Seating, SelectionGesture, Session,
+    SpaceId, SpaceSeat, TabId, TerminalColor,
     launch::Launch,
     process_probe,
+    selection::PaneSelection,
     state::{OpenedSpace, PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed},
 };
 
@@ -1507,6 +1508,10 @@ impl Server {
         // holding threads it never intends to use.
         reader.get_mut().attached();
 
+        // A selection is drawn for every client, but only the one that
+        // made it can end it; one that leaves, however it leaves, takes
+        // its selections with it.
+        let mut selecting = std::collections::BTreeSet::new();
         while let Ok(Some(request)) = read_message::<_, ClientRequest>(&mut reader) {
             // A keystroke is a request too, and there are thousands: debug
             // level, so a trace of the server is what a person did to it
@@ -1521,6 +1526,22 @@ impl Server {
                 ClientRequest::SetPalette(palette) => self.set_palette(palette),
                 ClientRequest::Input { pane, bytes } => self.write_input(pane, &bytes),
                 ClientRequest::Scroll { pane, lines } => self.scroll_pane(pane, lines),
+                ClientRequest::Select { pane, gesture } => {
+                    selecting.insert(pane);
+                    self.select_in_pane(pane, gesture);
+                }
+                ClientRequest::CopySelection { pane } => {
+                    let text = self
+                        .runtime(pane)
+                        .map(|runtime| runtime.selected_text())
+                        .unwrap_or_default();
+                    // A drag over nothing but blanks selected nothing worth
+                    // keeping drawn.
+                    if text.is_empty() {
+                        self.select_in_pane(pane, SelectionGesture::Clear);
+                    }
+                    events.reply(ClientEvent::SelectionText { pane, text });
+                }
                 ClientRequest::Resize {
                     pane,
                     columns,
@@ -1739,6 +1760,9 @@ impl Server {
                 }
                 ClientRequest::Attach { .. } => {}
             }
+        }
+        for pane in selecting {
+            self.select_in_pane(pane, SelectionGesture::Clear);
         }
         self.clients
             .lock()
@@ -1980,6 +2004,15 @@ impl Server {
         let changed = self
             .runtime(pane)
             .is_some_and(|runtime| runtime.scroll(lines));
+        if changed {
+            self.broadcast_pane_damage(pane);
+        }
+    }
+
+    fn select_in_pane(&self, pane: PaneId, gesture: SelectionGesture) {
+        let changed = self
+            .runtime(pane)
+            .is_some_and(|runtime| runtime.select(gesture));
         if changed {
             self.broadcast_pane_damage(pane);
         }
@@ -2331,6 +2364,10 @@ struct PaneRuntime {
     /// [`PaneRuntime::damage_since_last`] can diff against what they
     /// already have instead of resending every cell on every PTY read.
     last_sent: Mutex<Option<PaneSnapshot>>,
+    /// Shared with the thread that reads the pane's output, which has to
+    /// follow the content under a selection the moment it is drawn. Always
+    /// locked after `terminal`, never before it.
+    selection: Arc<Mutex<PaneSelection>>,
 }
 
 /// Answers a pane's own program, including its OSC 10/11 colour queries.
@@ -2459,6 +2496,8 @@ impl PaneRuntime {
             ReplySink::new(reply_sender, palette),
         )));
         let parser_terminal = Arc::clone(&terminal);
+        let selection = Arc::new(Mutex::new(PaneSelection::default()));
+        let parser_selection = Arc::clone(&selection);
         thread::spawn(move || {
             let mut reader = reader;
             let mut parser: Processor = Processor::new();
@@ -2467,10 +2506,13 @@ impl PaneRuntime {
                 match std::io::Read::read(&mut reader, &mut buffer) {
                     Ok(0) | Err(_) => break,
                     Ok(read) => {
-                        parser.advance(
-                            &mut *parser_terminal.lock().expect("terminal poisoned"),
-                            &buffer[..read],
-                        );
+                        let mut terminal = parser_terminal.lock().expect("terminal poisoned");
+                        parser.advance(&mut *terminal, &buffer[..read]);
+                        parser_selection
+                            .lock()
+                            .expect("selection poisoned")
+                            .observe(&terminal);
+                        drop(terminal);
                         let _ = damage.send(id);
                     }
                 }
@@ -2494,6 +2536,7 @@ impl PaneRuntime {
             terminal,
             launch,
             last_sent: Mutex::new(None),
+            selection,
         })
     }
 
@@ -2510,6 +2553,23 @@ impl PaneRuntime {
         terminal.scroll_display(Scroll::Delta(lines));
         terminal.grid().display_offset() != before
     }
+
+    fn select(&self, gesture: SelectionGesture) -> bool {
+        let mut terminal = self.terminal.lock().expect("terminal poisoned");
+        self.selection
+            .lock()
+            .expect("selection poisoned")
+            .apply(&mut terminal, gesture)
+    }
+
+    fn selected_text(&self) -> String {
+        let terminal = self.terminal.lock().expect("terminal poisoned");
+        self.selection
+            .lock()
+            .expect("selection poisoned")
+            .text(&terminal)
+    }
+
     fn resize(&self, columns: u16, rows: u16) {
         let _ = self
             .master
@@ -2597,7 +2657,12 @@ impl PaneRuntime {
     }
 
     fn snapshot(&self) -> PaneSnapshot {
-        snapshot(self.id, &self.terminal.lock().expect("terminal poisoned"))
+        let terminal = self.terminal.lock().expect("terminal poisoned");
+        snapshot_selected(
+            self.id,
+            &terminal,
+            &self.selection.lock().expect("selection poisoned"),
+        )
     }
 
     /// Hands `send` a full snapshot and remembers it as the baseline for
@@ -2748,8 +2813,18 @@ fn whole_pane(snapshot: PaneSnapshot) -> PaneDamage {
     }
 }
 
+#[cfg(test)]
 fn snapshot(pane: PaneId, terminal: &Term<ReplySink>) -> PaneSnapshot {
+    snapshot_selected(pane, terminal, &PaneSelection::default())
+}
+
+fn snapshot_selected(
+    pane: PaneId,
+    terminal: &Term<ReplySink>,
+    selection: &PaneSelection,
+) -> PaneSnapshot {
     let content = terminal.renderable_content();
+    let highlight = selection.highlight(terminal);
     let columns = terminal.grid().columns() as u16;
     let rows = terminal.grid().screen_lines() as u16;
     let cells = terminal
@@ -2769,6 +2844,7 @@ fn snapshot(pane: PaneId, terminal: &Term<ReplySink>) -> PaneSnapshot {
                     inverse: cell.flags.contains(Flags::INVERSE),
                     hidden: cell.flags.contains(Flags::HIDDEN),
                     strikeout: cell.flags.contains(Flags::STRIKEOUT),
+                    selected: highlight.contains(indexed.point),
                 },
             }
         })
@@ -4792,6 +4868,7 @@ mod tests {
                     inverse: true,
                     hidden: true,
                     strikeout: true,
+                    selected: true,
                 },
             },
         );
@@ -4893,6 +4970,108 @@ mod tests {
         let _ = serving.join();
         server.stop_panes();
 
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A selection is drawn for every client, so the server puts it away
+    /// itself when nobody will: when the drag covered only blanks, and when
+    /// the client that made it leaves without saying so.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
+        let scratch = uze_testkit::temp::socket_scratch("selectleave");
+        let uze_home = scratch.join("home");
+        let project = scratch.join("project");
+        let runtime_dir = scratch.join("runtime");
+        for directory in [&uze_home, &project, &runtime_dir] {
+            std::fs::create_dir_all(directory).unwrap();
+        }
+        let mut env = uze_testkit::env::scope();
+        env.set("UZE_HOME", &uze_home)
+            .set("XDG_RUNTIME_DIR", &runtime_dir);
+
+        let socket = socket_path().unwrap();
+        let (server, _damage) = Server::new(seat_at(&project), socket).unwrap();
+        let server = Arc::new(server);
+        let pane = server
+            .session
+            .lock()
+            .expect("session poisoned")
+            .selected_tab()
+            .pane
+            .id;
+        let selected_cells = || {
+            server
+                .runtime(pane)
+                .expect("the pane is running")
+                .snapshot()
+                .cells
+                .iter()
+                .filter(|cell| cell.attributes.selected)
+                .count()
+        };
+        let blank_rows = crate::SelectionGesture::Begin {
+            anchor: (0, 20),
+            head: (10, 22),
+        };
+
+        let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+        let serving = {
+            let server = Arc::clone(&server);
+            std::thread::spawn(move || server.handle_client(client))
+        };
+        let mut writer = driver.try_clone().unwrap();
+        driver
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .unwrap();
+        let mut reader = std::io::BufReader::new(driver);
+        for request in [
+            crate::ClientRequest::Attach {
+                version: crate::PROTOCOL_VERSION,
+                columns: 0,
+                rows: 0,
+                seating: crate::Seating::WhereItLeftOff,
+            },
+            crate::ClientRequest::Select {
+                pane,
+                gesture: blank_rows,
+            },
+            crate::ClientRequest::CopySelection { pane },
+        ] {
+            send_request(&mut writer, &request).unwrap();
+        }
+        let copied = loop {
+            match read_event(&mut reader).expect("the server must still be speaking") {
+                Some(crate::ClientEvent::SelectionText { text, .. }) => break text,
+                Some(_) => {}
+                None => panic!("the server hung up before answering the copy"),
+            }
+        };
+        assert_eq!(copied, "");
+        assert_eq!(
+            selected_cells(),
+            0,
+            "a selection of blanks is not kept drawn"
+        );
+
+        send_request(
+            &mut writer,
+            &crate::ClientRequest::Select {
+                pane,
+                gesture: blank_rows,
+            },
+        )
+        .unwrap();
+        drop(writer);
+        drop(reader);
+        let _ = serving.join();
+        assert_eq!(
+            selected_cells(),
+            0,
+            "a client that left took its selection with it"
+        );
+
+        server.stop_panes();
         let _ = std::fs::remove_dir_all(&scratch);
     }
 

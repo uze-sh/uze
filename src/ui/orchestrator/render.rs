@@ -3479,9 +3479,6 @@ pub(super) fn render_pane(frame: &mut ratatui::Frame<'_>, area: Rect, model: &Wo
     };
     let width = area.width.min(snapshot.columns);
     let height = area.height.min(snapshot.rows);
-    let selection = model
-        .selection
-        .filter(|selection| selection.pane == snapshot.pane && selection.is_visible());
     let palette = theme::Palette::active();
     let buffer = frame.buffer_mut();
     let mut encoded = [0u8; 4];
@@ -3494,7 +3491,7 @@ pub(super) fn render_pane(frame: &mut ratatui::Frame<'_>, area: Rect, model: &Wo
                 // tinted with one of ours: a pane's content can be any
                 // colour at all, and inversion is the one mark that
                 // stays legible over every one of them.
-                if selection.is_some_and(|selection| selection.contains(column, row)) {
+                if cell.attributes.selected {
                     style = if cell.attributes.inverse {
                         style.remove_modifier(Modifier::REVERSED)
                     } else {

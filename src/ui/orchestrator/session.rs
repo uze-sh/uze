@@ -400,9 +400,7 @@ impl Attach<'_> {
     /// Keyboard input: say what is open, then act on what the keystroke
     /// means. Which key that was is `crate::ui::keys`'s business.
     fn key(&mut self, key: KeyEvent, viewport: &Viewport) -> Flow {
-        if self.model.selection.take().is_some() {
-            self.model.dirty = true;
-        }
+        self.drop_selection();
         // Three surfaces are notices rather than questions — read, then
         // gone — so any keystroke dismisses one. That is a property of a
         // surface with nothing to answer, not a binding, and so not the
@@ -1910,9 +1908,7 @@ impl Attach<'_> {
             rows,
             ..
         } = *viewport;
-        if self.model.selection.take().is_some() {
-            self.model.dirty = true;
-        }
+        self.drop_selection();
         // An open extension answers only for the place it is drawn in: the
         // sidebar and the strip around it are still the chrome's. That
         // place is the pane and one column more — the content's groove
@@ -2211,10 +2207,14 @@ impl Attach<'_> {
         } = *viewport;
         match mouse {
             _ if self.model.selection.is_some() => {
-                if let Some(selection) = self.model.selection.as_mut()
-                    && selection.follow(layout.pane, mouse.column, mouse.row)
-                {
-                    self.model.dirty = true;
+                let requests = self
+                    .model
+                    .selection
+                    .as_mut()
+                    .map(|selection| selection.follow(layout.pane, mouse.column, mouse.row))
+                    .unwrap_or_default();
+                for request in requests {
+                    self.send_selection_request(request, mouse, layout.pane);
                 }
             }
             _ if self.model.architect_grab.is_some() => {
@@ -2316,8 +2316,8 @@ impl Attach<'_> {
     /// it would.
     fn release(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
         let Viewport { ref layout, .. } = *viewport;
-        if let Some(selection) = self.model.selection {
-            self.release_selection(selection, mouse, layout.pane);
+        if self.model.selection.is_some() {
+            self.release_selection(mouse, layout.pane);
             return Flow::Continue;
         }
         // A drag this client never owned (no flag was set, no
@@ -2401,52 +2401,77 @@ impl Attach<'_> {
             && !(program_owns_the_mouse && mouse.modifiers.contains(KeyModifiers::SHIFT))
     }
 
-    /// A selection's release. What it covers goes to the clipboard, and it
-    /// stays drawn so the reader can see what was taken. A press that never
+    /// A selection's release. What it covers is asked of the server, whose
+    /// answer goes to the clipboard (`WorkspaceModel::apply`), and it stays
+    /// drawn so the reader can see what was taken. A press that never
     /// moved was a click, and a click belongs to the pane's program: it was
     /// held back only until it could not be the start of a drag, and is
-    /// delivered now, press and release together. A drag that covered only
-    /// blanks is still a drag — it copies nothing and tells the program
-    /// nothing, rather than landing on it as a click where it ended.
-    fn release_selection(
-        &mut self,
-        selection: selection::PaneSelection,
-        mouse: MouseEvent,
-        pane: Rect,
-    ) {
-        if !selection.is_visible() {
-            self.model.selection = None;
-            let press = MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                ..mouse
-            };
-            forward_mouse(&mut self.stream, &self.model, pane, press);
-            forward_mouse(&mut self.stream, &self.model, pane, mouse);
+    /// delivered now, press and release together.
+    fn release_selection(&mut self, mouse: MouseEvent, pane: Rect) {
+        let Some(selection) = self.model.selection.as_mut() else {
+            return;
+        };
+        if selection.release() {
+            let pane = selection.pane;
+            let _ = send_request(
+                &mut self.stream,
+                &ClientRequest::Select {
+                    pane,
+                    gesture: uze_terminal::SelectionGesture::Release,
+                },
+            );
+            let _ = send_request(&mut self.stream, &ClientRequest::CopySelection { pane });
             return;
         }
-        let text = self
+        self.model.selection = None;
+        let press = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            ..mouse
+        };
+        forward_mouse(&mut self.stream, &self.model, pane, press);
+        forward_mouse(&mut self.stream, &self.model, pane, mouse);
+    }
+
+    /// Sends what a drag said, except the scroll a drag past the edge asks
+    /// for over a program on the alternate screen: that screen has no
+    /// scrollback to move, and the program scrolls itself, so it gets the
+    /// wheel — the server follows what it redraws.
+    fn send_selection_request(&mut self, request: ClientRequest, mouse: MouseEvent, pane: Rect) {
+        let alternate_screen = self
             .model
-            .panes
-            .get(&selection.pane)
-            .map(|snapshot| selection.text(snapshot))
-            .unwrap_or_default();
-        if text.is_empty() {
-            self.model.selection = None;
-            self.model.dirty = true;
-            return;
+            .selection
+            .and_then(|selection| self.model.panes.get(&selection.pane))
+            .is_some_and(|snapshot| snapshot.alternate_screen);
+        match request {
+            ClientRequest::Scroll { lines, .. } if alternate_screen => {
+                let wheel = MouseEvent {
+                    kind: if lines > 0 {
+                        MouseEventKind::ScrollUp
+                    } else {
+                        MouseEventKind::ScrollDown
+                    },
+                    column: mouse.column.clamp(pane.x, pane.right().saturating_sub(1)),
+                    row: mouse.row.clamp(pane.y, pane.bottom().saturating_sub(1)),
+                    modifiers: mouse.modifiers,
+                };
+                forward_scroll(&mut self.stream, &self.model, pane, wheel);
+            }
+            request => {
+                let _ = send_request(&mut self.stream, &request);
+            }
         }
-        let characters = text.chars().count();
-        self.model.raise_toast(
-            ToastKind::Done,
-            "copied",
-            format!(
-                "{characters} character{} to the clipboard",
-                if characters == 1 { "" } else { "s" }
-            ),
-            None,
-        );
-        self.model.clipboard = Some(text);
-        self.model.dirty = true;
+    }
+
+    /// Drops the selection a press or a key ends, and the server's with it.
+    fn drop_selection(&mut self) {
+        if let Some(clear) = self
+            .model
+            .selection
+            .take()
+            .and_then(|selection| selection.cleared())
+        {
+            let _ = send_request(&mut self.stream, &clear);
+        }
     }
 
     /// The right button: the tab/space context menu, anchored where it
@@ -2825,6 +2850,14 @@ impl Attach<'_> {
             }
             _ if self.model.no_modal_open() => {
                 forward_scroll(&mut self.stream, &self.model, layout.pane, mouse);
+                if let Some(extend) = self
+                    .model
+                    .selection
+                    .as_ref()
+                    .and_then(|selection| selection.rescrolled())
+                {
+                    let _ = send_request(&mut self.stream, &extend);
+                }
             }
             _ => {}
         }

@@ -11,7 +11,7 @@ use crate::{PaneId, Session, SpaceId, TabId};
 /// [`crate::attach`] replaces a server of another build before connecting;
 /// this is what a client that connects without it — a `uze` nested in a
 /// pane, a test — still meets.
-pub const PROTOCOL_VERSION: u16 = 17;
+pub const PROTOCOL_VERSION: u16 = 18;
 
 /// The colours a client draws a pane's default and indexed cells in. Plain
 /// `(r, g, b)` triples: this runtime holds no opinion about appearance, it
@@ -109,6 +109,19 @@ pub enum ClientRequest {
         pane: PaneId,
         lines: i32,
     },
+    /// Selects the pane's text with the pointer. The selection is the
+    /// server's because the text is: a selection held in screen cells stays
+    /// where it was drawn while the scrollback moves under it, and can only
+    /// ever copy what happens to be on screen.
+    Select {
+        pane: PaneId,
+        gesture: SelectionGesture,
+    },
+    /// Asks for the pane's selected text, answered to this client alone as
+    /// [`ClientEvent::SelectionText`].
+    CopySelection {
+        pane: PaneId,
+    },
     Resize {
         pane: PaneId,
         columns: u16,
@@ -201,6 +214,8 @@ impl ClientRequest {
             Self::SetPalette(_) => "set_palette",
             Self::Input { .. } => "input",
             Self::Scroll { .. } => "scroll",
+            Self::Select { .. } => "select",
+            Self::CopySelection { .. } => "copy_selection",
             Self::Resize { .. } => "resize",
             Self::CreateTab { .. } => "create_tab",
             Self::SelectTab { .. } => "select_tab",
@@ -215,6 +230,28 @@ impl ClientRequest {
             Self::Stop => "stop",
         }
     }
+}
+
+/// A pointer gesture over a pane's text, in the pane's 0-indexed cells as
+/// the client sees them now; the server anchors them to the lines they
+/// name, so they keep naming those lines however the view moves after.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum SelectionGesture {
+    /// The first movement away from a press: a press alone is a click, and
+    /// selects nothing.
+    Begin {
+        anchor: (u16, u16),
+        head: (u16, u16),
+    },
+    /// The pointer has moved on, or the view has moved under it. Both ends
+    /// are included whichever way the pointer went.
+    Extend {
+        head: (u16, u16),
+    },
+    /// The button came up: the view moving from now on no longer moves the
+    /// selection's end.
+    Release,
+    Clear,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -250,6 +287,12 @@ pub enum ClientEvent {
         /// it may throw away.
         kept_at: std::path::PathBuf,
         reason: String,
+    },
+    /// The text [`ClientRequest::CopySelection`] asked for; empty when the
+    /// selection covered only blanks, or no longer exists.
+    SelectionText {
+        pane: PaneId,
+        text: String,
     },
     Error {
         message: String,
@@ -341,6 +384,10 @@ pub struct CellAttributes {
     pub inverse: bool,
     pub hidden: bool,
     pub strikeout: bool,
+    /// Inside the pane's selection. Carried with the cell rather than as a
+    /// range beside the grid, so a selection moving is damage like any
+    /// other change and reaches the client by the path cells already take.
+    pub selected: bool,
 }
 
 #[cfg(test)]
