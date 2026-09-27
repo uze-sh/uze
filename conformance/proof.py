@@ -14,7 +14,8 @@ is the same key as the commit it started from, and a change to another
 vendor's integration is not this vertical's input at all.
 
     proof.py versions                       probe every harness in the image
-    proof.py key --harness h --versions J   the key this vertical would prove
+    proof.py key --harness h --part p --versions J
+                                            the key this leg would prove
 
 A harness whose version could not be probed has no key: an `unknown` version
 cannot be the same as anything, so it always runs.
@@ -93,11 +94,13 @@ def tree_digest(harness, repo):
     return hashlib.sha256(listing).hexdigest()
 
 
-def key(harness, version, digest):
+def key(harness, version, digest, part="all"):
     if not version or version == "unknown":
         return ""
-    identity = hashlib.sha256(f"{harness}\0{version}\0{digest}".encode()).hexdigest()
-    return f"conformance-proof-{SCHEME}-{harness}-{identity[:40]}"
+    identity = hashlib.sha256(
+        f"{harness}\0{part}\0{version}\0{digest}".encode()
+    ).hexdigest()
+    return f"conformance-proof-{SCHEME}-{harness}-{part}-{identity[:40]}"
 
 
 def probe_versions():
@@ -119,6 +122,9 @@ def main(argv=None):
     )
     key_parser.add_argument("--harness", required=True, choices=HARNESSES)
     key_parser.add_argument(
+        "--part", default="all", help="the half of the vertical the leg runs"
+    )
+    key_parser.add_argument(
         "--versions", required=True, help="JSON from `proof.py versions`"
     )
     key_parser.add_argument(
@@ -132,7 +138,8 @@ def main(argv=None):
 
     version = json.loads(args.versions or "{}").get(args.harness, "unknown")
     print(f"version={version}")
-    print(f"key={key(args.harness, version, tree_digest(args.harness, args.repo))}")
+    digest = tree_digest(args.harness, args.repo)
+    print(f"key={key(args.harness, version, digest, args.part)}")
     return 0
 
 

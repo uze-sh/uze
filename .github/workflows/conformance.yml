@@ -90,13 +90,19 @@ jobs:
           if-no-files-found: error
 
   conformance:
-    name: E2E - ${{ matrix.label }}
+    name: E2E - ${{ matrix.label }} (${{ matrix.part }})
     needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
+      # Each vertical is two legs: the contract every harness must hold, and
+      # what is unique to the vendor (`lab.py --part`). A vertical ran them
+      # one after the other in a single leg — Antigravity's ten minutes were
+      # two halves of four and a half, and nothing between them.
       matrix:
+        harness: [antigravity, claude, codex, opencode]
+        part: [contract, vendor]
         include:
           - harness: antigravity
             label: Antigravity
@@ -117,7 +123,7 @@ jobs:
         name: Name what this leg would prove
         env:
           VERSIONS: ${{ needs.image.outputs.versions }}
-        run: python3 conformance/proof.py key --harness ${{ matrix.harness }} --versions "${VERSIONS}" >> "${GITHUB_OUTPUT}"
+        run: python3 conformance/proof.py key --harness ${{ matrix.harness }} --part ${{ matrix.part }} --versions "${VERSIONS}" >> "${GITHUB_OUTPUT}"
       # The nightly and a hand-started run always run: they are the record
       # that a verdict still holds, and what refreshes the proof on `main`
       # for every pull request to read. A proof saved by a pull request is
@@ -132,7 +138,7 @@ jobs:
       - name: Already proven
         if: steps.reuse.outputs.cache-hit == 'true'
         run: |
-          echo "::notice title=${{ matrix.label }} already proven::$(head -n1 /tmp/conformance-proof/proof.md)"
+          echo "::notice title=${{ matrix.label }} (${{ matrix.part }}) already proven::$(head -n1 /tmp/conformance-proof/proof.md)"
           cat /tmp/conformance-proof/proof.md >> "${GITHUB_STEP_SUMMARY}"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: steps.reuse.outputs.cache-hit != 'true'
@@ -148,19 +154,19 @@ jobs:
       - name: Install Lab runner dependency
         if: steps.reuse.outputs.cache-hit != 'true'
         run: python3 -m pip install --user pexpect
-      - name: Run the ${{ matrix.harness }} vertical
+      - name: Run the ${{ matrix.harness }} ${{ matrix.part }} half
         if: steps.reuse.outputs.cache-hit != 'true'
         run: |
-          python3 conformance/lab.py --harness ${{ matrix.harness }} --write-summary --retry-once
+          python3 conformance/lab.py --harness ${{ matrix.harness }} --part ${{ matrix.part }} --write-summary --retry-once
         env:
-          AGY_OUTDIR: /tmp/harness-conformance/${{ matrix.harness }}/run1
-          UZE_EVIDENCE_DIR: /tmp/harness-conformance/${{ matrix.harness }}/run1/evidence
+          AGY_OUTDIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1
+          UZE_EVIDENCE_DIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1/evidence
       - name: Upload evidence
         if: always() && steps.reuse.outputs.cache-hit != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: conformance-evidence-${{ matrix.harness }}
-          path: /tmp/harness-conformance/${{ matrix.harness }}/run1/
+          name: conformance-evidence-${{ matrix.harness }}-${{ matrix.part }}
+          path: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1/
           retention-days: 90
           if-no-files-found: ignore
       # Evidence lives in Actions artifacts (downloadable via UI/API,

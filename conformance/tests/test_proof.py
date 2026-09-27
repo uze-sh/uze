@@ -119,6 +119,12 @@ class KeyTest(unittest.TestCase):
             proof.key("claude", "2.1.240 (Claude Code)", "d"),
         )
 
+    def test_each_half_of_a_vertical_is_its_own_proof(self):
+        self.assertNotEqual(
+            proof.key("claude", "2.1.239", "d", "contract"),
+            proof.key("claude", "2.1.239", "d", "vendor"),
+        )
+
     def test_the_key_names_its_vertical(self):
         self.assertIn("-codex-", proof.key("codex", "codex-cli 0.160.0", "d"))
 

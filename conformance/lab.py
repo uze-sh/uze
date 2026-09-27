@@ -109,6 +109,12 @@ def parse_args(argv):
         help="matrix: comma-separated harness subset (default: all four)",
     )
     parser.add_argument(
+        "--part",
+        choices=PARTS,
+        help="run one half of the vertical: the common `contract` or the "
+        "`vendor` scenarios (default: both, in that order)",
+    )
+    parser.add_argument(
         "--discovery",
         action="store_true",
         help="capture raw provider-side requests beside the run evidence "
@@ -151,7 +157,12 @@ def load_bindings(harness):
     return None
 
 
-def run_once(cfg, scenario, variation=None, discovery=False):
+#: The two halves of a vertical, in the order a full run performs them. CI
+#: runs them as parallel legs, each provisioning its own world.
+PARTS = ("contract", "vendor")
+
+
+def run_once(cfg, scenario, variation=None, discovery=False, part=None):
     """One full vertical: provision, run, adjudicate. Returns the outcome
     dict plus the run manifest; `outcome["crash"]` records a run-level
     crash (never an assertion failure — those are verdict entries)."""
@@ -167,9 +178,14 @@ def run_once(cfg, scenario, variation=None, discovery=False):
         # this vendor. Order matters for reading a failed run: a contract
         # failure is the product; a vertical failure is one harness.
         bindings = load_bindings(cfg.harness)
-        if bindings is not None:
+        if bindings is not None and part in (None, "contract"):
             contract.run(cfg, prov_ip, bindings)
-        scenario.run(cfg, prov_ip)
+        if part in (None, "vendor"):
+            scenario.run(cfg, prov_ip)
+        # A half that asserted nothing would read as a clean pass; a harness
+        # with no bindings yet has no contract half to run.
+        if not common.results:
+            raise RuntimeError(f"the {part or 'full'} run asserted nothing")
     except Exception as exc:
         crash = f"{type(exc).__name__}: {exc}"
 
@@ -187,6 +203,7 @@ def run_once(cfg, scenario, variation=None, discovery=False):
     manifest = common.run_manifest(cfg, harness_version, started_at, crash=crash)
     manifest["variation"] = variation
     manifest["discovery"] = bool(discovery)
+    manifest["part"] = part or "all"
     verdict = {"manifest": manifest, "gate": "v1", "results": results}
     with open(os.path.join(cfg.outdir, "verdict.json"), "w") as f:
         json.dump(verdict, f, indent=1)
@@ -256,7 +273,11 @@ def run_canonical(cfg, scenario, args):
             )
             retry = 1
         outcome = run_once(
-            cfg, scenario, variation=args.variation, discovery=args.discovery
+            cfg,
+            scenario,
+            variation=args.variation,
+            discovery=args.discovery,
+            part=args.part,
         )
         # Assertion failures and gate failures return normally — never
         # retried. Only a crash may trigger the retry budget.
