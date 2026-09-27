@@ -141,6 +141,10 @@ vocabulary! {
         MarkToggleOff = "mark.toggle-off",
         /// Selectable, currently on.
         MarkToggleOn = "mark.toggle-on",
+        /// Where a thing stands, said by its hue alone. One glyph for every
+        /// standing, so a list of them reads as one column of colour
+        /// rather than a row of shapes of different weights.
+        MarkStanding = "mark.standing",
 
         // ── what a row of a file tree is ───────────────────────────────
         //

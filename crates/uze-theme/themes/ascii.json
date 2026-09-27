@@ -17,6 +17,7 @@
     "mark.sparkle": "+",
     "mark.toggle-off": "o",
     "mark.toggle-on": "@",
+    "mark.standing": "*",
 
     "file.directory": "",
     "file.directory-open": "",

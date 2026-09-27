@@ -291,13 +291,14 @@ impl Standing {
     }
 
     fn mark(self) -> (Symbol, Token) {
-        match self {
-            Self::InUse => (Symbol::MarkToggleOn, Token::Accent),
-            Self::HoldsWork => (Symbol::MarkDot, Token::StateWarning),
-            Self::Free => (Symbol::MarkToggleOff, Token::StateSuccess),
-            Self::Removable => (Symbol::MarkCross, Token::StateDanger),
-            Self::Settled => (Symbol::MarkDot, Token::TextDim),
-        }
+        let hue = match self {
+            Self::InUse => Token::Accent,
+            Self::HoldsWork => Token::StateWarning,
+            Self::Free => Token::StateSuccess,
+            Self::Removable => Token::StateDanger,
+            Self::Settled => Token::TextDim,
+        };
+        (Symbol::MarkStanding, hue)
     }
 
     fn label(self) -> &'static str {
