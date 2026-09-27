@@ -71,8 +71,8 @@ pub(crate) fn highlighter(
     HighlightLines::new(syntax_for(path, first_line), theme(theme_name))
 }
 
-/// The grammar for `path`: by its whole name, then by its extension, then
-/// by `first_line`, where a shebang or a modeline says what an unnamed
+/// The grammar for `path`: by its whole name, then as a lockfile, then by
+/// its extension, then by `first_line`, where a shebang or a modeline says what an unnamed
 /// script is. The name comes first because the grammars list some files
 /// by it — `Makefile`, `Dockerfile`, `.bashrc` — and one of them,
 /// `CMakeLists.txt`, has an extension that would find plain text.
@@ -93,10 +93,42 @@ pub(crate) fn syntax_for(path: &Path, first_line: Option<&str>) -> &'static Synt
             .and_then(|name| syntax_set.find_syntax_by_extension(name))
     };
     let by_first_line = || first_line.and_then(|line| syntax_set.find_syntax_by_first_line(line));
+    let as_lockfile = || {
+        let name = path.file_name()?.to_str()?;
+        syntax_set.find_syntax_by_extension(lockfile_language(name, first_line)?)
+    };
     by_name()
+        .or_else(as_lockfile)
         .or(by_extension)
         .or_else(by_first_line)
         .unwrap_or_else(|| syntax_set.find_syntax_plain_text())
+}
+
+/// The extension of the format a lockfile is written in.
+///
+/// `.lock` names no format: `Cargo.lock` is TOML, `composer.lock` JSON,
+/// `yarn.lock` YAML. The package managers that write them are known by
+/// name; a lockfile none of them wrote is read from its first line, where
+/// JSON opens a brace, TOML a table or an assignment, and YAML a key.
+fn lockfile_language(name: &str, first_line: Option<&str>) -> Option<&'static str> {
+    let known = match name {
+        "Cargo.lock" | "poetry.lock" | "uv.lock" | "pdm.lock" => Some("toml"),
+        "composer.lock" | "flake.lock" | "Pipfile.lock" | "deno.lock" | "bun.lock" => Some("json"),
+        "yarn.lock" | "pubspec.lock" | "Podfile.lock" | "agents.lock" => Some("yaml"),
+        "mix.lock" => Some("ex"),
+        _ => None,
+    };
+    if known.is_some() || !name.ends_with(".lock") {
+        return known;
+    }
+    let line = first_line?.trim();
+    match line.chars().next()? {
+        '{' => Some("json"),
+        '[' => Some("toml"),
+        _ if line.contains(" = ") => Some("toml"),
+        _ if line.ends_with(':') || line.contains(": ") => Some("yaml"),
+        _ => None,
+    }
 }
 
 /// The grammar an extension more than one grammar claims is meant as,

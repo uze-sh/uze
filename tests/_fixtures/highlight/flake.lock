@@ -1,0 +1,6 @@
+{
+  "nodes": {
+    "nixpkgs": { "locked": { "rev": "a1b2c3", "type": "github" } }
+  },
+  "version": 7
+}
