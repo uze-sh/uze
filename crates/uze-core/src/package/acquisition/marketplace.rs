@@ -184,7 +184,8 @@ pub struct MarketplacePluginEntry {
 
 /// Parses and validates a `marketplace.json` payload. Validation is limited
 /// to what this module itself must be able to rely on: well-formed JSON
-/// matching the shape, and no two plugins claiming the same name. It does
+/// matching the shape, a marketplace name every package id it qualifies
+/// can carry, and no two plugins claiming the same name. It does
 /// not check that any `source` exists — that happens per-lookup in
 /// [`resolve_plugin_source`], scoped to the one entry actually requested.
 pub fn parse_manifest(bytes: &[u8]) -> Result<MarketplaceManifest> {
@@ -193,6 +194,11 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<MarketplaceManifest> {
             path: PathBuf::from("marketplace.json"),
             source,
         })?;
+    // Checked on read rather than only on record: a Git marketplace's mirror
+    // is keyed by this name before anything is recorded.
+    if !crate::store::is_valid_package_name(&manifest.name) {
+        return Err(UzeError::InvalidMarketplaceName(manifest.name));
+    }
     let mut seen = std::collections::BTreeSet::new();
     for entry in &manifest.plugins {
         if !seen.insert(entry.name.as_str()) {
@@ -358,6 +364,15 @@ mod tests {
         .unwrap();
         assert_eq!(manifest.name, "uze");
         assert_eq!(manifest.plugins.len(), 1);
+    }
+
+    #[test]
+    fn a_marketplace_named_outside_the_rule_is_refused_with_the_name_it_meant() {
+        let refused = parse_manifest(br#"{"name":"My_Market","plugins":[]}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("`My_Market`"), "{refused}");
+        assert!(refused.contains("try `my-market`"), "{refused}");
     }
 
     #[test]

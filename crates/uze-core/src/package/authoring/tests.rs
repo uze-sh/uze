@@ -192,8 +192,19 @@ fn create_refuses_to_collide() -> Result<()> {
     // An existing plugin is refused, never overwritten.
     scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
     assert!(scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default()).is_err());
-    // A name outside the charset is refused by the same rule an id is held to.
+    // A name outside the rule is refused by the same rule an id is held to,
+    // and told the name it meant.
     assert!(scaffold_plugin(&market, "-flag", None, &ScaffoldCapabilities::default()).is_err());
+    let refused = scaffold_plugin(&market, "My_Plugin", None, &ScaffoldCapabilities::default())
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("try `my-plugin`"), "{refused}");
+    assert!(!market.join("plugins/My_Plugin").exists());
+    let refused = scaffold_marketplace("My Market", None, &root.join("named"))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("try `my-market`"), "{refused}");
+    assert!(!root.join("named").exists());
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }
@@ -216,6 +227,17 @@ fn check_reports_what_install_would_refuse() -> Result<()> {
     assert!(report.findings.iter().any(|f| f.contains("name")));
     fs::write(
         plugin.join("plugin.json"),
+        r#"{ "name": "Greet", "description": "x" }"#,
+    )
+    .unwrap();
+    let report = check_plugin(&plugin)?;
+    assert!(
+        report.findings.iter().any(|f| f.contains("try `greet`")),
+        "an uppercase name is told the name it meant: {:?}",
+        report.findings
+    );
+    fs::write(
+        plugin.join("plugin.json"),
         r#"{ "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "greet", "description": "x" }"#,
     )
     .unwrap();
@@ -233,6 +255,36 @@ fn check_reports_what_install_would_refuse() -> Result<()> {
             .iter()
             .any(|finding| finding.starts_with("escape")),
         "the finding locates the plugin that escapes: {:?}",
+        market_report.findings
+    );
+
+    // A marketplace name and an entry name are held to the rule too.
+    fs::write(
+        root.join("market/marketplace.json"),
+        r#"{ "name": "Tools", "plugins": [] }"#,
+    )
+    .unwrap();
+    let market_report = check_marketplace(&root.join("market"))?;
+    assert!(
+        market_report
+            .findings
+            .iter()
+            .any(|finding| finding.contains("`Tools`") && finding.contains("try `tools`")),
+        "{:?}",
+        market_report.findings
+    );
+    fs::write(
+        root.join("market/marketplace.json"),
+        r#"{ "name": "tools", "plugins": [ { "name": "Greet", "source": "./plugins/greet" } ] }"#,
+    )
+    .unwrap();
+    let market_report = check_marketplace(&root.join("market"))?;
+    assert!(
+        market_report
+            .findings
+            .iter()
+            .any(|finding| finding.starts_with("Greet") && finding.contains("try `greet`")),
+        "{:?}",
         market_report.findings
     );
     fs::remove_dir_all(&root).expect("teardown");
@@ -368,6 +420,15 @@ fn check_reports_a_skill_a_harness_could_not_read() -> Result<()> {
             "not valid YAML",
         ),
         ("---\nname: greet\n---\nbody\n", "no `description`"),
+        ("---\ndescription: x\n---\nbody\n", "no `name`"),
+        (
+            "---\nname: Greet_Skill\ndescription: x\n---\nbody\n",
+            "try `greet-skill`",
+        ),
+        (
+            "---\nname: hello\ndescription: x\n---\nbody\n",
+            "differs from its directory `greet`",
+        ),
     ] {
         fs::write(&skill, body).unwrap();
         let report = check_plugin(&plugin)?;

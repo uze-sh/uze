@@ -43,8 +43,16 @@ pub enum UzeError {
     UnsafePathReference { path: PathBuf, reference: String },
     #[error("Agent Plugin manifest is missing a string name: {0}")]
     MissingPackageName(PathBuf),
-    #[error("invalid Agent Plugin name `{name}` in {path}")]
+    #[error(
+        "invalid Agent Plugin name `{name}` in {path}: {rule}",
+        rule = crate::store::name_rule(name)
+    )]
     InvalidPackageName { path: PathBuf, name: String },
+    #[error(
+        "invalid marketplace name `{0}`: {rule}",
+        rule = crate::store::name_rule(.0)
+    )]
+    InvalidMarketplaceName(String),
     #[error("package `{id}` is already registered from {existing}, not {requested}")]
     PackageConflict {
         id: String,

@@ -299,6 +299,9 @@ pub fn marketplace_add(
     name: &str,
     source: crate::acquisition::PackageSource,
 ) -> Result<bool> {
+    if !crate::store::is_valid_package_name(name) {
+        return Err(UzeError::InvalidMarketplaceName(name.to_owned()));
+    }
     home.ensure_layout()?;
     let path = home.marketplaces_path();
     let mut registry: MarketplaceRegistry = read_json_or_default(&path)?;
@@ -434,6 +437,19 @@ mod tests {
         let all = load(&home).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all["claude-code"].version.as_deref(), Some("2.1.238"));
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn a_marketplace_named_outside_the_rule_is_never_recorded() {
+        let home = temp_home("marketplace-name-rule");
+        let source = crate::acquisition::PackageSource::Local {
+            path: home.root().join("tools"),
+        };
+        let refused = marketplace_add(&home, "Tools", source.clone()).unwrap_err();
+        assert!(matches!(refused, UzeError::InvalidMarketplaceName(ref name) if name == "Tools"));
+        assert!(marketplace_list(&home).unwrap().is_empty());
+        assert!(marketplace_add(&home, "tools", source).unwrap());
         fs::remove_dir_all(home.root()).unwrap();
     }
 

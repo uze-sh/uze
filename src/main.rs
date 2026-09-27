@@ -74,7 +74,7 @@ enum Command {
         /// marketplace, install this one under `NAME` instead, so both stay
         /// active side by side. Package installs only; conflicts with
         /// `--replace`.
-        #[arg(long, conflicts_with = "replace")]
+        #[arg(long, conflicts_with = "replace", value_parser = typed_name)]
         alias: Option<String>,
         /// If the package's bare name is already active from a different
         /// marketplace, remove that one first (once safe to) and let this
@@ -92,6 +92,7 @@ enum Command {
     /// installed on this machine is re-resolved from its own source.
     Update {
         /// One package. Omit to update what the manifest declares.
+        #[arg(value_parser = typed_name)]
         plugin: Option<String>,
         path: Option<PathBuf>,
         /// Authorize executable capabilities
@@ -111,6 +112,7 @@ enum Command {
     /// them. `-m` is the machine removal, subject to the same lifecycle and
     /// drift safety. Neither is implied by the other.
     Remove {
+        #[arg(value_parser = typed_name)]
         plugin: String,
         /// Remove from this machine instead of undeclaring
         #[arg(short = 'm', long)]
@@ -120,6 +122,7 @@ enum Command {
     },
     /// Inspect one installed package's delivery
     Inspect {
+        #[arg(value_parser = typed_name)]
         plugin: String,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -268,7 +271,7 @@ enum AgentPluginAction {
         name: String,
         /// The marketplace the plugin is authored into; linked, or
         /// registered from a local path
-        #[arg(long)]
+        #[arg(long, value_parser = typed_name)]
         market: String,
         #[arg(long)]
         description: Option<String>,
@@ -398,6 +401,7 @@ enum MarketAction {
     /// teardown is blocked keeps the marketplace registered, named in the
     /// answer.
     Remove {
+        #[arg(value_parser = typed_name)]
         name: String,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -409,9 +413,16 @@ enum MarketAction {
     /// its plugins follow your working tree — ignored files excluded — and
     /// `agents.lock` is not pinned from it, because a revision taken from
     /// unpublished work is one a collaborator cannot reach.
-    Link { name: String, checkout: PathBuf },
+    Link {
+        #[arg(value_parser = typed_name)]
+        name: String,
+        checkout: PathBuf,
+    },
     /// Stop reading a marketplace from a checkout.
-    Unlink { name: String },
+    Unlink {
+        #[arg(value_parser = typed_name)]
+        name: String,
+    },
     /// The hosts `owner/repo` and `alias:owner/repo` resolve against.
     ///
     /// With no argument, lists them. With an alias, makes it the default.
@@ -431,6 +442,7 @@ enum MarketAction {
     /// Distinct from inspecting one plugin within a marketplace
     /// (`uze inspect <plugin>`).
     Inspect {
+        #[arg(value_parser = typed_name)]
         name: String,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -518,7 +530,7 @@ struct ShorthandArgs {
     /// If the package's bare name is already active from a different
     /// marketplace, install this one under `NAME` instead. Conflicts with
     /// `--replace`.
-    #[arg(long, conflicts_with = "replace")]
+    #[arg(long, conflicts_with = "replace", value_parser = typed_name)]
     alias: Option<String>,
     /// If the package's bare name is already active from a different
     /// marketplace, remove that one first (once safe to) and let this
@@ -2426,6 +2438,12 @@ mod capturing_runner_tests {
     }
 }
 
+/// A plugin or marketplace name as a person typed it. Every name on record
+/// is lowercase, so the case typed is forgiven before anything resolves.
+fn typed_name(value: &str) -> std::result::Result<String, std::convert::Infallible> {
+    Ok(uze_application::typed_name(value))
+}
+
 /// `uze <plugin>@<market>` — the project shorthand. Reached only from
 /// `Command::External`; see that variant's doc comment for the precedence
 /// argument. Semantically equivalent to `add_project_plugin`: this
@@ -2784,7 +2802,9 @@ impl PromptingCollisionAuthority {
             Some(2) => match prompt::ask("New local name") {
                 // An alias nobody typed is not a name to install under.
                 Some(alias) if !alias.is_empty() => {
-                    uze_application::NameCollisionResolution::Alias(alias)
+                    uze_application::NameCollisionResolution::Alias(uze_application::typed_name(
+                        &alias,
+                    ))
                 }
                 _ => uze_application::NameCollisionResolution::Abort,
             },

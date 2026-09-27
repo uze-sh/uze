@@ -363,6 +363,19 @@ declarations; it invokes nothing.
 
 > `tests/packages/acquisition.rs::submodules_are_not_recursed_into`
 
+### A name has one spelling, the one every harness accepts
+
+Plugin names, marketplace names and install aliases are lowercase
+kebab-case of at most 64 characters, the intersection of what every
+harness accepts, so UZE never installs a name a harness refuses on
+delivery, and two spellings of one name never become two packages. A
+marketplace's name is held to it before anything is recorded or mirrored;
+a name a person types is lowercased before it resolves.
+
+> `crates/uze-core/src/package/store.rs::tests::a_name_is_lowercase_kebab_case_of_at_most_64_characters`
+> `crates/uze-core/src/delivery/state.rs::tests::a_marketplace_named_outside_the_rule_is_never_recorded`
+> `tests/cli/machine.rs::a_name_typed_in_another_case_resolves_to_the_one_on_record`
+
 ### A marketplace is named by its URL's shape, never by a machine
 
 `git@host:owner/repo.git`, `ssh://git@host/owner/repo` and

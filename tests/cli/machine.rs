@@ -810,6 +810,59 @@ fn plugin_remove_uses_the_package_centric_application_flow() {
     let _ = std::fs::remove_dir_all(home);
 }
 
+/// Every name on record is lowercase, so the case a person types is
+/// forgiven: `Name@Test` installs `name@test`, and `NAME` removes it.
+#[test]
+fn a_name_typed_in_another_case_resolves_to_the_one_on_record() {
+    let home = temporary_home("cli-typed-case");
+    let (market_args, install_args) =
+        uze_testkit::marketplace::marketplace_install_args(&home, &package_fixture());
+    let uze = |args: &[String]| {
+        Command::new(env!("CARGO_BIN_EXE_uze"))
+            .env("UZE_HOME", &home)
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .current_dir(&home)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(uze(&market_args).status.success());
+    let spec = install_args.last().unwrap();
+    let shouted: Vec<String> = install_args
+        .iter()
+        .map(|arg| {
+            if arg == spec {
+                arg.to_uppercase()
+            } else {
+                arg.clone()
+            }
+        })
+        .collect();
+    let install = uze(&shouted);
+    assert!(
+        install.status.success(),
+        "{}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    let plugin = spec.split_once('@').unwrap().0;
+    let remove = uze(&[
+        "remove".to_owned(),
+        "-m".to_owned(),
+        plugin.to_uppercase(),
+        "--format".to_owned(),
+        "json".to_owned(),
+    ]);
+    assert!(
+        remove.status.success(),
+        "{}",
+        String::from_utf8_lossy(&remove.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&remove.stdout).unwrap();
+    assert_eq!(report["outcome"], "REMOVED");
+    let _ = std::fs::remove_dir_all(home);
+}
+
 /// ADR-019's central breaking change: root `uze remove` is strictly
 /// project-scoped. Run with no `agents.lock` anywhere in `home`'s ancestry
 /// (a plain temp dir, not a project), this must now fail loudly — never
