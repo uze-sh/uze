@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use uze_testkit::temp::TempDir;
 
 use super::{
-    Found, SpecAnswer, SpecOutcome, SpecView, Subject,
+    Found, SpecAnswer, SpecOutcome, SpecPlace, SpecView, Subject,
     catalog::Unit,
-    dialect::{Collection, Dialect, OPENSPEC, Order, Role},
+    dialect::{Dialect, OPENSPEC, Role, SPEC_KIT},
     handle_command, handle_mouse, read_with, view,
 };
 use crate::{
@@ -62,25 +62,6 @@ impl Host for DiskHost {
         FALLBACK_SYNTAX_THEME.to_owned()
     }
 }
-
-/// Kiro's layout, as a catalog entry the build does not ship: the proof
-/// that the shape is not OpenSpec's shape. The farthest tool from OpenSpec
-/// that still fits — no specs, no archive, its own file names.
-const KIRO: Dialect = Dialect {
-    name: "Kiro",
-    marker: ".kiro/specs",
-    collections: &[Collection {
-        subject: Subject::Changes,
-        path: ".kiro/specs",
-        skip: &[],
-        order: Order::Ascending,
-    }],
-    roles: &[
-        ("requirements.md", Role::Why),
-        ("design.md", Role::How),
-        ("tasks.md", Role::Steps),
-    ],
-};
 
 fn write(root: &Path, relative: &str, contents: &str) {
     let path = root.join(relative);
@@ -177,6 +158,35 @@ fn an_openspec_checkout_lists_its_changes_specs_and_archive() {
 }
 
 #[test]
+fn a_nested_capability_is_one_spec_named_by_its_path() {
+    let dir = TempDir::new("spec-nested-capabilities");
+    write(dir.path(), "openspec/specs/billing/spec.md", "# billing\n");
+    write(
+        dir.path(),
+        "openspec/specs/identity/user-auth/spec.md",
+        "# user auth\n",
+    );
+    write(
+        dir.path(),
+        "openspec/specs/identity/session-expiry/spec.md",
+        "# expiry\n",
+    );
+    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC]);
+
+    assert_eq!(
+        names(units(&answer), Subject::Specs),
+        ["billing", "identity/session-expiry", "identity/user-auth"],
+        "`identity` holds no spec of its own, so it is no unit"
+    );
+    let expiry = units(&answer)
+        .iter()
+        .find(|unit| unit.name == "identity/session-expiry")
+        .unwrap();
+    assert_eq!(expiry.relative, "openspec/specs/identity/session-expiry");
+    assert_eq!(expiry.artifacts.len(), 1);
+}
+
+#[test]
 fn a_changes_artifacts_come_in_role_order_with_unnamed_files_last() {
     let dir = openspec_checkout("spec-role-order");
     let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC]);
@@ -259,41 +269,237 @@ fn a_checkout_with_no_marker_has_no_layout() {
     );
 }
 
-#[test]
-fn a_second_dialect_is_a_table_entry_and_nothing_else() {
-    let dir = TempDir::new("spec-kiro");
-    write(dir.path(), ".kiro/specs/login/requirements.md", "# login\n");
-    write(dir.path(), ".kiro/specs/login/design.md", "# design\n");
+/// A Spec Kit project as its own scripts and templates lay it out
+/// (github/spec-kit `c00dc05`, 2026-09-25): `.specify/` from `init`,
+/// `specs/NNN-name/` from `specify`, the companions `plan` writes beside
+/// the plan, and task lines in the tasks template's shape.
+fn spec_kit_checkout(label: &str) -> TempDir {
+    let dir = TempDir::new(label);
+    let root = dir.path();
     write(
-        dir.path(),
-        ".kiro/specs/login/tasks.md",
-        "- [x] a\n- [ ] b\n",
+        root,
+        ".specify/memory/constitution.md",
+        "# Project Constitution\n",
     );
-    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC, KIRO]);
+    let feature = "specs/001-user-auth";
+    write(
+        root,
+        &format!("{feature}/spec.md"),
+        "# Feature Specification: User auth\n\n## User Scenarios & Testing\n",
+    );
+    write(
+        root,
+        &format!("{feature}/plan.md"),
+        "# Implementation Plan: User auth\n",
+    );
+    write(root, &format!("{feature}/research.md"), "# Research\n");
+    write(root, &format!("{feature}/data-model.md"), "# Data Model\n");
+    write(root, &format!("{feature}/quickstart.md"), "# Quickstart\n");
+    write(
+        root,
+        &format!("{feature}/contracts/auth-api.md"),
+        "# Auth API\n",
+    );
+    write(
+        root,
+        &format!("{feature}/checklists/requirements.md"),
+        "- [x] CHK001 No implementation details\n- [ ] CHK002 Requirements are testable\n",
+    );
+    write(
+        root,
+        &format!("{feature}/tasks.md"),
+        "## Phase 1: Setup\n\n- [x] T001 Create project structure per implementation plan\n\
+         - [x] T002 [P] Configure linting and formatting tools\n\n\
+         ## Phase 3: User Story 1\n\n- [ ] T003 [P] [US1] Create User model in src/models/user.py\n",
+    );
+    write(
+        root,
+        "specs/002-refunds/tasks.md",
+        "- [x] T001 Setup\n- [X] T002 Build\n",
+    );
+    write(
+        root,
+        &format!("{feature}/contracts/openapi.yaml"),
+        "openapi: 3.1.0\npaths: {}\n",
+    );
+    write(
+        root,
+        "specs/002-refunds/spec.md",
+        "# Feature Specification: Refunds\n",
+    );
+    dir
+}
 
-    let Found::Units { dialects, units } = &answer.found else {
-        panic!("expected Kiro to be detected");
+#[test]
+fn a_spec_kit_checkout_lists_its_features_and_its_constitution() {
+    let dir = spec_kit_checkout("spec-kit-detect");
+    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC, SPEC_KIT]);
+
+    let Found::Units { dialects, .. } = &answer.found else {
+        panic!("expected Spec Kit to be detected");
     };
-    assert_eq!(dialects, &["Kiro"]);
+    assert_eq!(dialects, &["Spec Kit"]);
     assert_eq!(
         answer.subjects,
-        [Subject::Changes],
-        "Kiro has no specs or archive"
+        [Subject::Changes, Subject::Specs],
+        "Spec Kit archives nothing"
     );
-    let login = &units[0];
     assert_eq!(
-        login
+        names(units(&answer), Subject::Changes),
+        ["001-user-auth", "002-refunds"]
+    );
+    assert_eq!(names(units(&answer), Subject::Specs), ["constitution"]);
+    let constitution = units(&answer)
+        .iter()
+        .find(|unit| unit.subject == Subject::Specs)
+        .unwrap();
+    assert_eq!(constitution.relative, ".specify/memory/constitution.md");
+    assert_eq!(
+        constitution
             .artifacts
             .iter()
-            .map(|artifact| artifact.role)
+            .map(|artifact| (artifact.role, artifact.name.as_str()))
             .collect::<Vec<_>>(),
-        [Role::Why, Role::How, Role::Steps]
+        [(Role::Contract, "constitution")]
+    );
+}
+
+#[test]
+fn a_unit_that_is_one_file_is_headed_by_where_it_lives() {
+    let dir = spec_kit_checkout("spec-kit-constitution");
+    let state = opened_at(
+        read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]),
+        SpecPlace {
+            subject: Subject::Specs,
+            unit: "constitution".to_owned(),
+            artifact: Some("constitution.md".to_owned()),
+        },
+    );
+    let Content::Lines { heading, .. } = view(&state, space()).content else {
+        panic!("expected the constitution on show");
+    };
+    assert_eq!(heading, ".specify/memory/constitution.md");
+}
+
+#[test]
+fn a_contract_that_is_not_markdown_is_listed_and_shown_as_its_source() {
+    let dir = spec_kit_checkout("spec-kit-openapi");
+    let state = opened_at(
+        read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]),
+        SpecPlace {
+            subject: Subject::Changes,
+            unit: "001-user-auth".to_owned(),
+            artifact: Some("contracts/openapi.yaml".to_owned()),
+        },
+    );
+    let Content::Lines { heading, lines, .. } = view(&state, space()).content else {
+        panic!("expected the contract on show");
+    };
+    assert_eq!(heading, "001-user-auth/contracts/openapi.yaml");
+    assert_eq!(
+        lines[0].number, "1",
+        "Preview has nothing to render in YAML, so it shows the source"
+    );
+}
+
+#[test]
+fn a_spec_kit_feature_reads_spec_then_plan_and_its_companions_then_tasks() {
+    let dir = spec_kit_checkout("spec-kit-roles");
+    let answer = read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]);
+    let feature = &units(&answer)[0];
+
+    let listed: Vec<(Role, &str)> = feature
+        .artifacts
+        .iter()
+        .map(|artifact| (artifact.role, artifact.name.as_str()))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            (Role::Why, "spec"),
+            (Role::How, "plan"),
+            (Role::How, "research"),
+            (Role::How, "data-model"),
+            (Role::How, "quickstart"),
+            (Role::Steps, "tasks"),
+            (Role::Other, "checklists/requirements"),
+            (Role::Other, "contracts/auth-api"),
+            (Role::Other, "contracts/openapi.yaml"),
+        ]
     );
     assert_eq!(
-        login
+        feature
             .progress
             .map(|progress| (progress.done, progress.total)),
-        Some((1, 2))
+        Some((2, 3)),
+        "counted from tasks.md, never from a checklist"
+    );
+}
+
+#[test]
+fn a_finished_feature_is_done_where_nothing_is_archived_and_done_opens_folded() {
+    let dir = spec_kit_checkout("spec-kit-bands");
+    let state = opened(read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]));
+
+    assert_eq!(
+        row_names(&state),
+        ["# in progress (1)", "  001-user-auth", "", "# done (1)"]
+    );
+}
+
+#[test]
+fn done_stays_open_when_it_is_where_the_viewer_lands() {
+    let dir = TempDir::new("spec-kit-only-done");
+    write(dir.path(), ".specify/memory/constitution.md", "# c\n");
+    write(dir.path(), "specs/001-a/tasks.md", "- [x] T001 a\n");
+    let state = opened(read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]));
+
+    assert_eq!(row_names(&state), ["# done (1)", "  001-a"]);
+}
+
+#[test]
+fn nothing_in_flight_points_nowhere_when_there_is_nowhere_to_point() {
+    let dir = TempDir::new("spec-kit-nothing-in-flight");
+    write(dir.path(), ".specify/memory/constitution.md", "# c\n");
+    let state = opened(read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]));
+    let Content::Message { text, hint, .. } = view(&state, space()).content else {
+        panic!("expected a message");
+    };
+    assert_eq!(text, "Nothing in flight");
+    assert_eq!(
+        hint, None,
+        "Spec Kit archives nothing, so no finished change is anywhere else"
+    );
+}
+
+#[test]
+fn a_checkout_with_two_tools_names_each_units_tool_and_only_then() {
+    let dir = openspec_checkout("spec-two-tools");
+    let feature = "specs/001-user-auth";
+    write(dir.path(), ".specify/memory/constitution.md", "# c\n");
+    write(dir.path(), &format!("{feature}/spec.md"), "# s\n");
+    let details = |dialects: &[Dialect]| -> Vec<(String, String)> {
+        let state = opened(read_with(&DiskHost, dir.path(), None, dialects));
+        view(&state, space())
+            .navigator
+            .expect("a navigator")
+            .rows
+            .into_iter()
+            .filter_map(|row| match row {
+                NavigatorRow::Item { name, detail, .. } => Some((name, detail)),
+                _ => None,
+            })
+            .collect()
+    };
+
+    let mixed = details(&[OPENSPEC, SPEC_KIT]);
+    assert!(mixed.contains(&("b-change".to_owned(), "OpenSpec".to_owned())));
+    assert!(mixed.contains(&("001-user-auth".to_owned(), "Spec Kit".to_owned())));
+    assert!(
+        details(&[OPENSPEC])
+            .iter()
+            .all(|(_, detail)| detail.is_empty()),
+        "one tool alone is never named"
     );
 }
 
@@ -301,6 +507,12 @@ fn a_second_dialect_is_a_table_entry_and_nothing_else() {
 
 fn opened(answer: SpecAnswer) -> SpecView {
     let mut state = SpecView::opening("~/project".to_owned());
+    state.absorb(answer);
+    state
+}
+
+fn opened_at(answer: SpecAnswer, place: SpecPlace) -> SpecView {
+    let mut state = SpecView::opening("~/project".to_owned()).resuming(place);
     state.absorb(answer);
     state
 }
@@ -439,7 +651,7 @@ fn nothing_in_flight_points_at_the_archive_and_the_specs() {
 }
 
 #[test]
-fn no_layout_names_the_layouts_it_reads() {
+fn no_layout_lists_every_tool_it_reads_in_columns() {
     let dir = TempDir::new("spec-no-layout-view");
     let state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
     let shown = view(&state, space());
@@ -449,7 +661,17 @@ fn no_layout_names_the_layouts_it_reads() {
         panic!("expected a message");
     };
     assert_eq!(text, "No spec layout found in this checkout");
-    assert!(hint.unwrap().contains("OpenSpec (openspec/)"));
+    let hint = hint.unwrap();
+    let tools: Vec<&str> = hint.lines().skip(2).collect();
+    assert_eq!(
+        tools,
+        ["OpenSpec   openspec/", "Spec Kit   .specify/"],
+        "one line per shipped tool, whatever the checkout was read for"
+    );
+    assert!(
+        tools.iter().all(|tool| tool.len() == tools[0].len()),
+        "padded to one width, so centred lines stay a column"
+    );
 }
 
 #[test]

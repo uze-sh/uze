@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    dialect::{Dialect, Order, Role, Subject, classify},
+    dialect::{Collection, Dialect, Order, Role, Shape, Subject, classify},
     progress::{self, Progress},
 };
 use crate::Host;
@@ -26,6 +26,8 @@ pub struct Artifact {
     pub relative: String,
     pub role: Role,
     pub name: String,
+    /// Where it lists among the files sharing its role.
+    pub rank: usize,
     /// The text, or why it could not be read — a state the surface shows,
     /// never a reason to drop the file.
     pub text: Result<String, String>,
@@ -39,7 +41,10 @@ pub struct Unit {
     /// Relative to the repository root, as Git names paths.
     pub relative: String,
     pub dialect: &'static str,
-    /// In role order, then by name.
+    /// Whether its dialect puts it away once it is finished.
+    pub archives: bool,
+    /// In role order, then as the dialect lists the role's files, then
+    /// by name.
     pub artifacts: Vec<Artifact>,
     /// Counted for changes in flight only.
     pub progress: Option<Progress>,
@@ -89,31 +94,29 @@ pub fn read_subjects(
             .iter()
             .filter(|collection| subjects.contains(&collection.subject))
         {
-            let directory = root.join(collection.path);
-            let Ok(entries) = host.list_dir(&directory) else {
-                continue;
-            };
-            let mut names: Vec<String> = entries
-                .into_iter()
-                .filter(|entry| entry.directory && !entry.name.starts_with('.'))
-                .map(|entry| entry.name)
-                .filter(|name| !collection.skip.contains(&name.as_str()))
-                .filter(|name| keep(&format!("{}/{name}", collection.path)))
-                .collect();
-            names.sort();
+            let mut found = unit_places(host, root, collection);
+            found.retain(|place| keep(&place.relative));
+            found.sort_by(|a, b| a.name.cmp(&b.name));
             if collection.order == Order::Descending {
-                names.reverse();
+                found.reverse();
             }
-            units.extend(names.into_iter().map(|name| {
-                let artifacts = artifacts(host, dialect, &directory.join(&name));
+            units.extend(found.into_iter().map(|place| {
+                let artifacts = match collection.shape {
+                    Shape::File => vec![artifact(host, dialect, root, &place.relative)],
+                    Shape::Holding(_) => artifacts(host, dialect, &root.join(&place.relative), 1),
+                    Shape::Directories => {
+                        artifacts(host, dialect, &root.join(&place.relative), DEPTH)
+                    }
+                };
                 let progress = (collection.subject == Subject::Changes)
                     .then(|| steps_progress(&artifacts))
                     .flatten();
                 Unit {
                     subject: collection.subject,
-                    relative: format!("{}/{name}", collection.path),
-                    name,
+                    relative: place.relative,
+                    name: place.name,
                     dialect: dialect.name,
+                    archives: dialect.archives(),
                     artifacts,
                     progress,
                     own: false,
@@ -135,24 +138,124 @@ fn steps_progress(artifacts: &[Artifact]) -> Option<Progress> {
         .and_then(progress::count)
 }
 
-fn artifacts(host: &dyn Host, dialect: &Dialect, unit: &Path) -> Vec<Artifact> {
+/// A unit before it is opened: what to call it, and where it is.
+struct Place {
+    name: String,
+    /// Relative to the repository root, as Git names paths.
+    relative: String,
+}
+
+fn unit_places(host: &dyn Host, root: &Path, collection: &Collection) -> Vec<Place> {
+    match collection.shape {
+        Shape::File => host
+            .read_file(&root.join(collection.path))
+            .is_ok()
+            .then(|| Place {
+                name: stem(collection.path),
+                relative: collection.path.to_owned(),
+            })
+            .into_iter()
+            .collect(),
+        Shape::Directories => subdirectories(host, root, collection, collection.path)
+            .into_iter()
+            .map(|name| Place {
+                relative: format!("{}/{name}", collection.path),
+                name,
+            })
+            .collect(),
+        Shape::Holding(file) => {
+            let mut places = Vec::new();
+            holding(host, root, collection, file, "", DEPTH, &mut places);
+            places
+        }
+    }
+}
+
+/// The directories directly inside `relative` that can be units.
+fn subdirectories(
+    host: &dyn Host,
+    root: &Path,
+    collection: &Collection,
+    relative: &str,
+) -> Vec<String> {
+    host.list_dir(&root.join(relative))
+        .map(|entries| {
+            entries
+                .into_iter()
+                .filter(|entry| entry.directory && !entry.name.starts_with('.'))
+                .map(|entry| entry.name)
+                .filter(|name| !collection.skip.contains(&name.as_str()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every directory beneath the collection, to `depth`, that holds `file`.
+fn holding(
+    host: &dyn Host,
+    root: &Path,
+    collection: &Collection,
+    file: &str,
+    prefix: &str,
+    depth: usize,
+    places: &mut Vec<Place>,
+) {
+    let here = format!("{}/{prefix}", collection.path);
+    for directory in subdirectories(host, root, collection, &here) {
+        let name = format!("{prefix}{directory}");
+        let relative = format!("{}/{name}", collection.path);
+        if host.read_file(&root.join(&relative).join(file)).is_ok() {
+            places.push(Place {
+                name: name.clone(),
+                relative,
+            });
+        }
+        if depth > 1 {
+            holding(
+                host,
+                root,
+                collection,
+                file,
+                &format!("{name}/"),
+                depth - 1,
+                places,
+            );
+        }
+    }
+}
+
+fn artifact(host: &dyn Host, dialect: &Dialect, base: &Path, relative: &str) -> Artifact {
+    let path = base.join(relative);
+    let classified = classify(dialect, file_name(relative));
+    Artifact {
+        text: host.read_file(&path),
+        path,
+        relative: file_name(relative).to_owned(),
+        role: classified.role,
+        name: classified.name,
+        rank: classified.rank,
+    }
+}
+
+fn artifacts(host: &dyn Host, dialect: &Dialect, unit: &Path, depth: usize) -> Vec<Artifact> {
     let mut found = Vec::new();
-    collect(host, unit, "", DEPTH, &mut found);
+    collect(host, unit, "", depth, &mut found);
     let mut artifacts: Vec<Artifact> = found
         .into_iter()
         .map(|relative| {
             let path = unit.join(&relative);
-            let (role, name) = classify(dialect, &relative);
+            let classified = classify(dialect, &relative);
             Artifact {
                 text: host.read_file(&path),
                 path,
                 relative,
-                role,
-                name,
+                role: classified.role,
+                name: classified.name,
+                rank: classified.rank,
             }
         })
         .collect();
-    artifacts.sort_by(|a, b| (a.role, &a.name).cmp(&(b.role, &b.name)));
+    artifacts.sort_by(|a, b| (a.role, a.rank, &a.name).cmp(&(b.role, b.rank, &b.name)));
     artifacts
 }
 
@@ -175,13 +278,36 @@ fn collect(host: &dyn Host, directory: &Path, prefix: &str, depth: usize, found:
                     found,
                 );
             }
-        } else if is_markdown(&entry.name) {
+        } else if is_document(&entry.name) {
             found.push(relative);
         }
     }
 }
 
-fn is_markdown(name: &str) -> bool {
-    name.rsplit_once('.')
-        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("md"))
+/// Markdown, and the text formats a plan writes its interface contracts
+/// in. Named rather than "any file", because a unit is a directory
+/// somebody else writes into and a binary in the list is noise.
+const DOCUMENTS: [&str; 7] = ["md", "yaml", "yml", "json", "graphql", "gql", "proto"];
+
+fn is_document(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, extension)| {
+        DOCUMENTS
+            .iter()
+            .any(|document| extension.eq_ignore_ascii_case(document))
+    })
+}
+
+/// Whether a document reads as Markdown, rather than only as its source.
+pub fn is_markdown(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+}
+
+fn file_name(relative: &str) -> &str {
+    relative.rsplit('/').next().unwrap_or(relative)
+}
+
+fn stem(relative: &str) -> String {
+    let file = file_name(relative);
+    file.strip_suffix(".md").unwrap_or(file).to_owned()
 }

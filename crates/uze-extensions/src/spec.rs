@@ -9,7 +9,10 @@
 //! [`Role`]s, and a tool is a [`dialect::Dialect`] — a table, detected by
 //! the marker the tool itself defines rather than declared in
 //! `agents.yaml`, because where the tool keeps its files is the tool's
-//! decision and not the project's. OpenSpec is the one shipped.
+//! decision and not the project's. OpenSpec and Spec Kit are the ones
+//! shipped, and they differ on screen only where their tables do: which
+//! subjects exist, what counts as one unit of each, what the files are
+//! called, and whether a finished change is put away.
 //!
 //! # Read from the checkout
 //!
@@ -146,24 +149,29 @@ fn mark_own(host: &dyn Host, root: &Path, target: Option<&str>, units: &mut [Uni
 enum Band {
     Own,
     InProgress,
+    /// Finished, in a dialect that puts finished units away.
     Ready,
+    /// Finished, in a dialect that leaves them where they are.
+    Done,
 }
 
 impl Band {
-    const ALL: [Band; 3] = [Band::Own, Band::InProgress, Band::Ready];
+    const ALL: [Band; 4] = [Band::Own, Band::InProgress, Band::Ready, Band::Done];
 
     fn label(self) -> &'static str {
         match self {
             Band::Own => "this checkout",
             Band::InProgress => "in progress",
             Band::Ready => "ready to archive",
+            Band::Done => "done",
         }
     }
 
     fn of(unit: &Unit) -> Self {
         match unit.progress {
             _ if unit.own => Band::Own,
-            Some(progress) if progress.complete() => Band::Ready,
+            Some(progress) if progress.complete() && unit.archives => Band::Ready,
+            Some(progress) if progress.complete() => Band::Done,
             _ => Band::InProgress,
         }
     }
@@ -217,6 +225,7 @@ enum State {
     Found {
         units: Vec<Unit>,
         subjects: Vec<Subject>,
+        dialects: Vec<&'static str>,
     },
 }
 
@@ -316,14 +325,23 @@ impl SpecView {
         self.theme = answer.theme;
         self.state = match answer.found {
             Found::NoLayout => State::NoLayout,
-            Found::Units { units, .. } => State::Found {
+            Found::Units { units, dialects } => State::Found {
                 units,
                 subjects: answer.subjects,
+                dialects,
             },
         };
         let place = self.resuming.take();
         if !place.is_some_and(|place| self.restore(&place)) {
             self.land();
+        }
+        // A tool that puts nothing away only ever adds to what is done, so
+        // that band opens folded — unless the viewer is being put in it.
+        let selected_band = self
+            .selected
+            .map(|target| Band::of(&self.units()[target.unit()]));
+        if selected_band != Some(Band::Done) {
+            self.folded.insert(Band::Done);
         }
         self.redraw();
     }
@@ -387,6 +405,12 @@ impl SpecView {
             State::Found { subjects, .. } => subjects.clone(),
             _ => Vec::new(),
         }
+    }
+
+    /// Whether a unit's tool has to be named beside it, which it does only
+    /// where more than one tool shares the list.
+    fn mixed(&self) -> bool {
+        matches!(&self.state, State::Found { dialects, .. } if dialects.len() > 1)
     }
 
     /// The units of `subject` in the order they are listed: this
@@ -533,8 +557,10 @@ impl SpecView {
         self.lines = match self.on_show() {
             Some((_, artifact)) => match &artifact.text {
                 Ok(text) => match self.showing {
-                    Showing::Preview => markdown::render(text, &self.theme),
-                    Showing::Source => source_lines(text, &artifact.path, &self.theme),
+                    Showing::Preview if catalog::is_markdown(&artifact.path) => {
+                        markdown::render(text, &self.theme)
+                    }
+                    _ => source_lines(text, &artifact.path, &self.theme),
                 },
                 Err(_) => Vec::new(),
             },
@@ -646,14 +672,7 @@ pub fn view(state: &SpecView, space: Size) -> View {
         State::NoLayout => View {
             content: message(
                 "No spec layout found in this checkout",
-                Some(format!(
-                    "Reads {}. A project using it shows up here.",
-                    dialect::SHIPPED
-                        .iter()
-                        .map(|dialect| format!("{} ({}/)", dialect.name, dialect.marker))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )),
+                Some(supported_tools(dialect::SHIPPED)),
             ),
             ..base
         },
@@ -694,6 +713,37 @@ pub fn view(state: &SpecView, space: Size) -> View {
     }
 }
 
+/// The tools this surface reads, one to a line with the directory that
+/// gives each away, padded to one width: the host centres each line, and
+/// only lines of one width stay lined up as a list when it does.
+fn supported_tools(dialects: &[dialect::Dialect]) -> String {
+    let markers: Vec<String> = dialects
+        .iter()
+        .map(|dialect| format!("{}/", dialect.marker))
+        .collect();
+    let name_width = dialects
+        .iter()
+        .map(|dialect| dialect.name.chars().count())
+        .max()
+        .unwrap_or(0);
+    let marker_width = markers
+        .iter()
+        .map(|marker| marker.chars().count())
+        .max()
+        .unwrap_or(0);
+    let tools: Vec<String> = dialects
+        .iter()
+        .zip(&markers)
+        .map(|(dialect, marker)| {
+            format!("{:<name_width$}   {:<marker_width$}", dialect.name, marker)
+        })
+        .collect();
+    format!(
+        "A project using one of these shows up here:\n\n{}",
+        tools.join("\n")
+    )
+}
+
 fn message(text: &str, hint: Option<String>) -> Content {
     Content::Message {
         text: text.to_owned(),
@@ -729,11 +779,14 @@ fn navigator(state: &SpecView) -> Navigator {
                         depth,
                         marker: progress_marker(unit_record.progress),
                         marker_side: MarkerSide::Trailing,
-                        detail: if unit_record.own && !state.banded() {
-                            Band::Own.label().to_owned()
-                        } else {
-                            String::new()
-                        },
+                        detail: [
+                            (unit_record.own && !state.banded()).then_some(Band::Own.label()),
+                            state.mixed().then_some(unit_record.dialect),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>()
+                        .join(" · "),
                         selected: selected == Some(id),
                         icon: if state.expanded.contains(&unit) {
                             RowIcon::DirectoryOpen
@@ -788,16 +841,26 @@ fn role_marker(role: Role) -> Span {
     }
 }
 
+/// Where a finished change went, told only as far as the checkout's
+/// tools have somewhere for it to go.
+fn where_finished(subjects: &[Subject]) -> Option<String> {
+    if !subjects.contains(&Subject::Archive) {
+        return None;
+    }
+    Some(
+        if subjects.contains(&Subject::Specs) {
+            "Finished changes are under Archive, and what they left under Specs."
+        } else {
+            "Finished changes are under Archive."
+        }
+        .to_owned(),
+    )
+}
+
 fn content(state: &SpecView, space: Size) -> Content {
     if state.listed(state.subject).is_empty() {
         return match state.subject {
-            Subject::Changes => message(
-                "Nothing in flight",
-                Some(
-                    "Finished changes are under Archive, and what they left under Specs."
-                        .to_owned(),
-                ),
-            ),
+            Subject::Changes => message("Nothing in flight", where_finished(&state.subjects())),
             Subject::Specs => message("No specs yet", None),
             Subject::Archive => message("Nothing archived yet", None),
         };
@@ -822,8 +885,15 @@ fn content(state: &SpecView, space: Size) -> Content {
     }
     let window = usize::from(space.height).saturating_mul(2);
     let first = state.scroll.min(state.lines.len().saturating_sub(1));
+    // A unit that is one file is named by where it lives; its name alone
+    // repeats the file's.
+    let heading = if state.root.join(&unit.relative) == artifact.path {
+        unit.relative.clone()
+    } else {
+        format!("{}/{}", unit.name, artifact.relative)
+    };
     Content::Lines {
-        heading: format!("{}/{}", unit.name, artifact.relative),
+        heading,
         scroll: u16::try_from(first).unwrap_or(u16::MAX),
         first,
         lines: state

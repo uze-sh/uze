@@ -87,11 +87,11 @@ fn parse_status(output: &str) -> Vec<String> {
     paths
 }
 
-/// Whether `path` lies inside the unit at `unit`, both relative to the
-/// repository root.
+/// Whether `path` lies inside the unit at `unit`, or is it where the unit
+/// is one file, both relative to the repository root.
 pub fn lies_in(path: &str, unit: &str) -> bool {
     path.strip_prefix(unit)
-        .is_some_and(|rest| rest.starts_with('/'))
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
 #[cfg(test)]
@@ -109,13 +109,22 @@ mod tests {
     }
 
     #[test]
-    fn a_path_lies_in_a_unit_only_below_it() {
+    fn a_path_lies_in_a_unit_below_it_or_as_it() {
         assert!(lies_in("openspec/changes/x/tasks.md", "openspec/changes/x"));
         assert!(!lies_in(
             "openspec/changes/xy/tasks.md",
             "openspec/changes/x"
         ));
-        assert!(!lies_in("openspec/changes/x", "openspec/changes/x"));
+        // Git names files, so a path equal to a unit is a unit that is one
+        // file, touched.
+        assert!(lies_in(
+            ".specify/memory/constitution.md",
+            ".specify/memory/constitution.md"
+        ));
+        assert!(!lies_in(
+            ".specify/memory/constitution.md.bak",
+            ".specify/memory/constitution.md"
+        ));
     }
 
     #[test]
