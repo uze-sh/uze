@@ -152,6 +152,19 @@ fails on any flake — the promotion gate for changing the registry or the
 suite. Verify the gate locally with `python3 conformance/tests/test_gate.py`
 (no docker needed).
 
+**Reusing a passed vertical**: a pull request or a push to `main` does not
+run a vertical again when one already passed against the same harness
+version and the same content of everything that vertical reads
+(`conformance/proof.py` names both halves; `test_proof.py` holds which
+paths reach which vertical). The versions are read from the freshly built
+image, so a vendor release is always a real run; a change to one vendor's
+integration or scenarios runs only that vertical; the terminal UI, its
+extensions and the Lab's own unit tests reach none. A pass records a proof
+in the Actions cache pointing at the run whose evidence earned it, and a
+reused leg shows that link in its summary. This is a decision about whether
+to run, not a record of what ran: the evidence above is untouched, and an
+`unknown` version, the nightly and a hand-started run always run for real.
+
 ## Exploration modes (sandbox, experiments, variations, matrix)
 
 The Lab doubles as an exploration surface for the agent or a maintainer —
