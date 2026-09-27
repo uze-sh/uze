@@ -465,10 +465,12 @@ fn each_row_offers_only_what_applies_to_it() {
     };
 
     let task = selected_on(&mut model, "agent/t1");
-    for offered in ["Resume", "Deliver", "Mark done", "Open space", "Discard"] {
+    for offered in ["Resume", "Deliver", "Mark done", "Discard"] {
         assert!(task.contains(offered), "a task offers {offered}: {task}");
     }
-    for absent in ["Adopt", "Join", "Remove"] {
+    // A task is entered by resuming it into its project's space; a space
+    // rooted at its slot would send every agent asked for there elsewhere.
+    for absent in ["Open space", "Adopt", "Join", "Remove"] {
         assert!(!task.contains(absent), "a task offers no {absent}: {task}");
     }
 

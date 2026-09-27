@@ -5279,6 +5279,35 @@ mod workspace_tests {
         assert_eq!(picker.anchor, sparkle, "anchored under the ✦ button");
     }
 
+    /// Resuming from the work list asks the same question as a new agent,
+    /// so it hangs off the same button — not off the frame's corner, which
+    /// is where a list with no click behind it once put it.
+    #[test]
+    fn resuming_from_the_work_list_opens_the_picker_under_the_new_agent_button() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-by-resume"));
+        set_up_every_harness(&home);
+        let mut model = agent_with_task(WorkStateView::Ready, 1);
+        model.remembered.preserved_work =
+            vec![preserved("/repo", "t9", "kept", WorkStateView::Parked)];
+        model.work = Some(WorkOverlay::open(None));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let sparkle = driven.hit(|hit| *hit == WorkspaceHit::NewAgentMenu);
+        let resume = uze_keys::active()
+            .chord_for(uze_keys::Action::ResumeTask, &[uze_keys::Scope::Work])
+            .expect("resume is bound in the list");
+
+        driven.press_key(key_event(resume));
+
+        let picker = driven
+            .attach
+            .model
+            .agent_picker
+            .as_ref()
+            .expect("the resume asked which harness");
+        assert_eq!(picker.anchor, sparkle, "anchored under the ✦ button");
+    }
+
     /// A machine where no harness was set up has nothing to launch: the
     /// picker lists none of the harnesses it merely knows, and its one row
     /// takes the operator to Integrations, where one is set up.
@@ -10057,9 +10086,23 @@ mod workspace_tests {
     /// rather than landing in the one in front of the operator.
     #[test]
     fn resuming_a_preserved_task_that_kept_its_checkout_opens_a_stamped_tab() {
-        let repository = uze_testkit::git::Repository::new("orchestrator-resume-kept");
+        resumes_the_task_in_its_projects_space(uze_keys::Action::ResumeTask, "resume");
+    }
+
+    /// Entering a task is resuming it. It once opened a space rooted at the
+    /// task's slot, where the task did not continue and every agent asked
+    /// for landed in the project's space instead.
+    #[test]
+    fn entering_a_preserved_task_resumes_it_rather_than_opening_its_slot() {
+        resumes_the_task_in_its_projects_space(uze_keys::Action::Activate, "enter");
+    }
+
+    fn resumes_the_task_in_its_projects_space(asked_by: uze_keys::Action, name: &str) {
+        let repository = uze_testkit::git::Repository::new(&format!("orchestrator-{name}-kept"));
         let root = repository.root().to_path_buf();
-        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-resume-kept-home"));
+        let home = UzeHome::at(uze_testkit::temp::scratch(&format!(
+            "orchestrator-{name}-kept-home"
+        )));
         set_up_every_harness(&home);
         let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
         let placement = app
@@ -10082,8 +10125,8 @@ mod workspace_tests {
 
         let keymap = uze_keys::active();
         let resume = keymap
-            .chord_for(uze_keys::Action::ResumeTask, &[uze_keys::Scope::Work])
-            .expect("resume is bound here");
+            .chord_for(asked_by, &[uze_keys::Scope::Work])
+            .expect("bound in the list");
         let pick = keymap
             .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::AgentPicker])
             .expect("picking is bound here");
