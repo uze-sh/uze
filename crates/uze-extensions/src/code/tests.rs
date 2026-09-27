@@ -261,6 +261,26 @@ fn the_menu_shuts_on_anything_that_is_not_meant_for_it() {
     assert_eq!(view.selected_change(), Some(3), "the click only shut it");
 }
 
+/// The pointer over an entry highlights it, the way the arrows do, and
+/// only a move onto another entry asks for a new frame.
+#[test]
+fn the_pointer_highlights_the_entry_it_is_over() {
+    let mut view = flat_fixture();
+    press(&mut view, Command::OpenMenu);
+
+    assert!(handle_hover(&mut view, Some(ViewHit::MenuEntry(2))));
+    assert_eq!(menu_of(&view).map(|(.., highlighted)| highlighted), Some(2));
+    assert!(
+        !handle_hover(&mut view, Some(ViewHit::MenuEntry(2))),
+        "already there"
+    );
+    assert!(
+        !handle_hover(&mut view, Some(ViewHit::SelectItem(0))),
+        "off the menu"
+    );
+    assert_eq!(menu_of(&view).map(|(.., highlighted)| highlighted), Some(2));
+}
+
 /// A deleted file has nothing on disk to open.
 #[test]
 fn a_deleted_file_is_not_offered_to_open() {

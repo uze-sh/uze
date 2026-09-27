@@ -2507,6 +2507,18 @@ impl Attach<'_> {
                 {
                     self.model.dirty = true;
                 }
+                let over_code = match hovered {
+                    Some(WorkspaceHit::Extension(ExtensionHit::Code(hit))) => Some(hit),
+                    _ => None,
+                };
+                if self
+                    .model
+                    .code
+                    .as_mut()
+                    .is_some_and(|view| code::handle_hover(view, over_code))
+                {
+                    self.model.dirty = true;
+                }
                 if self.model.hovered != hovered {
                     self.model.hovered = hovered;
                     self.model.dirty = true;

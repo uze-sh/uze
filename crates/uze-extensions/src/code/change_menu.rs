@@ -120,6 +120,20 @@ pub(super) fn mouse(view: &mut CodeView, hit: Option<ViewHit>) -> CodeOutcome {
     }
 }
 
+/// The pointer over an entry highlights it, the way the arrows do.
+/// Answers whether the highlight moved.
+pub(super) fn hover(view: &mut CodeView, hit: Option<ViewHit>) -> bool {
+    match (view.menu.as_mut(), hit) {
+        (Some(menu), Some(ViewHit::MenuEntry(entry)))
+            if entry < menu.actions.len() && entry != menu.highlighted =>
+        {
+            menu.highlighted = entry;
+            true
+        }
+        _ => false,
+    }
+}
+
 fn perform(view: &mut CodeView, entry: usize) -> CodeOutcome {
     let Some(menu) = view.menu.take() else {
         return CodeOutcome::Stay;

@@ -1531,6 +1531,12 @@ fn activate_selection(view: &mut CodeView) {
     }
 }
 
+/// The pointer moved over the surface, without pressing anything.
+/// Answers whether the frame has to be drawn again.
+pub fn handle_hover(view: &mut CodeView, hit: Option<ViewHit>) -> bool {
+    change_menu::hover(view, hit)
+}
+
 pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> CodeOutcome {
     view.notice = None;
     if view.content == ContentMode::Map {
