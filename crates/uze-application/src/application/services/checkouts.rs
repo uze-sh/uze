@@ -80,6 +80,7 @@ impl Workspace<'_> {
                     name: display_name(&primary, &found.path),
                     path: found.path.clone(),
                     owner: self.owner_view(&found.owner, &store, &found.path),
+                    task: slot_holder(&store, &found.path).map(|agent| agent.id.to_string()),
                     branch: found.branch.clone(),
                     dirty: facts.dirty,
                     in_target: facts.in_target,
@@ -207,9 +208,13 @@ impl Workspace<'_> {
 
     fn owner_view(&self, owner: &Owner, store: &AgentStore, path: &Path) -> CheckoutOwner {
         match owner {
-            Owner::Agent => CheckoutOwner::Agent {
-                holder: slot_holder(store, path).map(|agent| agent.label.clone()),
-            },
+            Owner::Agent => {
+                let holder = slot_holder(store, path);
+                CheckoutOwner::Agent {
+                    holder: holder.map(|agent| agent.label.clone()),
+                    live: holder.is_some_and(|agent| agent.is_live()),
+                }
+            }
             Owner::Subagent { parent } => {
                 let agent = store.get(parent);
                 let child = slot_holder(store, path).filter(|child| {
@@ -361,6 +366,9 @@ pub struct CheckoutView {
     /// The path relative to the project, or whole when it lies elsewhere.
     pub name: String,
     pub owner: CheckoutOwner,
+    /// The task the store records in this checkout, by id: how a list of
+    /// kept work finds the checkout each task left behind.
+    pub task: Option<String>,
     /// `None` for a detached `HEAD`.
     pub branch: Option<String>,
     /// Uncommitted work, as a slot is parked or freed by: content UZE
@@ -387,8 +395,8 @@ pub struct CheckoutView {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckoutOwner {
     /// A slot UZE made; `holder` is the agent the task store says last
-    /// held it.
-    Agent { holder: Option<String> },
+    /// held it, and `live` whether that agent is still working there.
+    Agent { holder: Option<String>, live: bool },
     /// A checkout UZE made for one of `parent`'s subagents.
     Subagent {
         /// The agent's label, as the operator knows it.

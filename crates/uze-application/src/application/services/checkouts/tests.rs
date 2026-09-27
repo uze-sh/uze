@@ -105,8 +105,16 @@ fn every_checkout_is_listed_under_its_owner_with_its_facts() {
     assert_eq!(view.checkouts.len(), 4, "{view:?}");
     assert!(matches!(
         row(&view, &slot).owner,
-        CheckoutOwner::Agent { holder: Some(_) }
+        CheckoutOwner::Agent {
+            holder: Some(_),
+            live: true,
+        }
     ));
+    assert!(
+        row(&view, &slot).task.is_some(),
+        "the slot names the task recorded in it, which kept work is matched by"
+    );
+    assert_eq!(row(&view, &by_hand).task, None);
     assert_eq!(row(&view, &by_hand).owner, CheckoutOwner::Operator);
     assert!(
         row(&view, &by_hand).adoptable,
@@ -263,7 +271,7 @@ fn an_adopted_clean_checkout_is_the_next_agents_slot() {
     let view = app.workspace().checkouts_seen(&root, &nobody()).unwrap();
     assert!(matches!(
         row(&view, &path).owner,
-        CheckoutOwner::Agent { holder: None }
+        CheckoutOwner::Agent { holder: None, .. }
     ));
 
     let placed = app
