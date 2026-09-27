@@ -285,7 +285,7 @@ fn every_route_renders_without_panicking() {
 /// described instead of listed, because a glyph beside it would name a
 /// mark that is never on screen.
 #[test]
-fn the_harness_legend_names_the_one_mark_a_card_wears() {
+fn the_harness_legend_names_the_words_a_card_carries() {
     use ratatui::{Terminal, backend::TestBackend};
 
     let mut model = model_with_data();
@@ -299,15 +299,12 @@ fn the_harness_legend_names_the_one_mark_a_card_wears() {
     let legend = buffer_rows(&terminal).join("\n");
 
     assert!(
-        legend.contains(&format!(
-            "{} Configured",
-            theme::glyph(theme::Symbol::MarkOk)
-        )),
-        "the one mark, with the word for it: {legend}"
+        legend.contains("Enabled"),
+        "the word a set-up card carries: {legend}"
     );
     assert!(
         legend.contains("Not configured"),
-        "and the state that wears none, said in words: {legend}"
+        "and the word the rest carry: {legend}"
     );
     for gone in ["Not installed", "PATH shadowed"] {
         assert!(
@@ -1801,6 +1798,60 @@ fn extension_filter_narrows_visible_selection() {
     assert_eq!(model.extension_visible_indices(), vec![0, 1]);
 }
 
+/// The screen offers what can still be done to the selection: switching
+/// off one that is on, switching on one that is off, and Enter doing
+/// whichever of the two applies.
+#[test]
+fn an_extension_is_switched_by_its_key_and_by_enter() {
+    use crate::ui::worker::Intent;
+
+    let mut model = TuiModel {
+        route: Route::Extensions,
+        focus: Focus::Content,
+        extensions: uze_extensions::registry::ExtensionRegistry::builtin()
+            .all()
+            .to_vec(),
+        ..TuiModel::default()
+    };
+    let selected = model.selected_extension().expect("a selection").to_owned();
+    let switched = |enabled| Intent::SwitchExtension {
+        id: selected.id.to_owned(),
+        name: selected.name.to_owned(),
+        enabled,
+    };
+
+    assert_eq!(
+        model.apply_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)),
+        Intent::None,
+        "already on"
+    );
+    assert_eq!(
+        model.apply_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE)),
+        switched(false)
+    );
+    assert_eq!(
+        model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        switched(false)
+    );
+
+    model.disabled_extensions.insert(selected.id.to_owned());
+    assert_eq!(
+        model.apply_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE)),
+        Intent::None,
+        "already off"
+    );
+    assert_eq!(
+        model.apply_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)),
+        switched(true)
+    );
+    assert!(
+        model
+            .selected_offers()
+            .iter()
+            .any(|offer| offer.action == uze_keys::Action::EnableExtension && offer.is_available())
+    );
+}
+
 #[test]
 fn marketplace_group_collapse_hides_its_plugins() {
     let mut model = TuiModel {
@@ -2965,80 +3016,71 @@ fn every_harness_in_the_catalog_can_be_set_up() {
     );
 }
 
-/// The catalog asks one question of each harness and marks only a "yes".
-/// A harness UZE configured wears its mark; one it has not wears nothing
-/// — being unmarked is already the whole state, and a second way of
-/// saying it turns a machine's ordinary condition (most CLIs installed by
-/// their owner, or not installed at all) into a column of warnings.
-///
-/// What the mark is worn *with* follows the room on the card: the word
-/// where it fits beside the name, the mark alone where it does not. The
-/// one thing a card never shows is the word cut in half against the name
-/// it is glued to.
+/// A harness card says its state at its foot, beside its id, the way an
+/// extension card does: "Enabled" for the one UZE set up, "Not configured"
+/// for the rest. The title carries the name alone, so a narrowed card has
+/// nothing to clip against it.
 #[test]
-fn a_harness_card_marks_only_what_uze_configured() {
+fn a_harness_card_says_its_state_at_its_foot() {
     let mut model = model_with_data();
     model.set_route(Route::Harnesses);
     model.focus = Focus::Content;
-    // By each card's own hit rect, so this reads title rows rather than
+    // By each card's own hit rect, so this reads a card's rows rather than
     // the first mention of a name anywhere on the screen.
-    let titles = |width: u16| {
+    let cards = |width: u16| {
         let mut terminal = Terminal::new(TestBackend::new(width, 40)).unwrap();
         let mut hits = Vec::new();
         terminal
             .draw(|frame| render(frame, frame.area(), &model, &mut hits))
             .unwrap();
         let rows = buffer_rows(&terminal);
-        let titles: Vec<String> = hits
+        let row_of = |rect: Rect, offset: u16| -> String {
+            rows[(rect.y + offset) as usize]
+                .chars()
+                .skip(rect.x as usize)
+                .take(rect.width as usize)
+                .collect()
+        };
+        let cards: Vec<(String, String)> = hits
             .iter()
             .filter_map(|(rect, hit)| matches!(hit, Hit::HarnessRow(_)).then_some(*rect))
-            .map(|rect| {
-                rows[(rect.y + 1) as usize]
-                    .chars()
-                    .skip(rect.x as usize)
-                    .take(rect.width as usize)
-                    .collect()
-            })
+            .map(|rect| (row_of(rect, 1), row_of(rect, 5)))
             .collect();
-        assert!(!titles.is_empty(), "no harness card was drawn: {rows:?}");
-        (titles, rows)
+        assert!(!cards.is_empty(), "no harness card was drawn: {rows:?}");
+        (cards, rows)
     };
-    let card = |titles: &[String], name: &str| {
-        titles
+    let card = |cards: &[(String, String)], name: &str| {
+        cards
             .iter()
-            .find(|title| title.contains(name))
-            .unwrap_or_else(|| panic!("{name} has no card: {titles:?}"))
+            .find(|(title, _)| title.contains(name))
+            .unwrap_or_else(|| panic!("{name} has no card: {cards:?}"))
             .clone()
     };
 
-    let (wide, rows) = titles(200);
-    let configured = card(&wide, "Claude Code");
+    let (wide, rows) = cards(200);
+    let (title, foot) = card(&wide, "Claude Code");
+    assert_eq!(title.trim(), "Claude Code", "the title is the name alone");
     assert!(
-        configured.contains(&format!(
-            "{} Configured",
-            theme::glyph(theme::Symbol::MarkOk)
-        )),
-        "the one UZE set up says so: {configured:?}"
+        foot.contains("Enabled"),
+        "the one UZE set up says so: {foot:?}"
     );
-    let theirs = card(&wide, "Codex");
+    let (title, foot) = card(&wide, "Codex");
+    assert_eq!(title.trim(), "Codex");
     assert!(
-        theirs.trim() == "Codex",
-        "and the one it did not wears no state at all: {theirs:?}"
+        foot.contains("Not configured"),
+        "and the one it did not says that: {foot:?}"
     );
     assert!(
         !rows.iter().any(|row| row.contains("PATH")),
         "least of all a sentence about this machine's PATH: {rows:?}"
     );
 
-    let (narrow, _) = titles(120);
-    let squeezed = card(&narrow, "Claude Code");
+    let (narrow, _) = cards(120);
+    let (title, foot) = card(&narrow, "Claude Code");
+    assert_eq!(title.trim(), "Claude Code");
     assert!(
-        squeezed.contains(&theme::glyph(theme::Symbol::MarkOk)),
-        "a narrowed card keeps the mark: {squeezed:?}"
-    );
-    assert!(
-        !squeezed.contains("Config"),
-        "and drops the word rather than clipping it: {squeezed:?}"
+        foot.contains("Enabled"),
+        "a narrowed card keeps it: {foot:?}"
     );
 }
 

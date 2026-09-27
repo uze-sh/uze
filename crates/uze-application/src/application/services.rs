@@ -63,6 +63,17 @@ impl UzeApplication {
     }
 }
 
+/// Which of the workspace's built-in extensions are switched on.
+pub struct Extensions<'a>(pub(super) &'a UzeApplication);
+
+impl UzeApplication {
+    /// The operator's choice of which extensions the workspace offers.
+    /// Only the choice: what an extension is belongs to the client.
+    pub fn extensions(&self) -> Extensions<'_> {
+        Extensions(self)
+    }
+}
+
 /// Marketplaces this machine knows, and the plugins they publish.
 pub struct Marketplace<'a>(pub(super) &'a UzeApplication);
 

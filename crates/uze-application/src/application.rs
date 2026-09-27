@@ -40,6 +40,7 @@ mod agent_context;
 mod authoring;
 mod context;
 mod doctor;
+mod extensions;
 mod freshness;
 mod inspection_cache;
 mod lifecycle;

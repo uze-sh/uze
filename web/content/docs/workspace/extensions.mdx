@@ -136,6 +136,22 @@ then puts the file back the way the last commit has it. There is no stage or
 commit here: the checkout belongs to the agent working in it, and the agent
 commits its own work.
 
+## Turning one off
+
+All three are on until you say otherwise. Under management (`Ctrl+O`), on
+**Extensions**, select one and press `o` to turn it off, `e` to turn it back
+on, or `Enter` to switch it. The workspace follows at once: its button leaves
+the tab strip, its keys go to the program in the pane, it leaves the action
+index (`F1`), and its sidebar section is gone with it (the timeline for
+Code, the tasks for Spec).
+
+The choice is kept in `~/.uze/config.toml`, so you can also write it by hand:
+
+```toml
+[extensions]
+architect = false
+```
+
 <Cards>
   <Card title="uze Skills" href="/docs/plugins/skills" />
   <Card title="All keys" href="/docs/configuration/keys" />

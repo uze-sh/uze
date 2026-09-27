@@ -5,11 +5,11 @@
 //! delivered *to* harnesses — see `view::plugins`). Rows come straight
 //! from `uze_extensions::registry::ExtensionRegistry::builtin`, the one
 //! composition root that knows the extension set, so nothing here is
-//! hand-maintained. Today every entry is bundled with the binary (there is
-//! no loading/enablement surface yet); a responsive catalog of compact cards,
-//! and the detail drawer describes the selection the same way
-//! Plugins/Harnesses do — its content is static catalog metadata, so there
-//! is nothing to fetch.
+//! hand-maintained. Every entry is bundled with the binary, so the one
+//! thing an operator decides about one is whether the workspace offers it;
+//! a responsive catalog of compact cards says which, and the detail drawer
+//! describes the selection the same way Plugins/Harnesses do — its content
+//! is static catalog metadata, so there is nothing to fetch.
 
 use ratatui::{
     layout::Rect,
@@ -47,7 +47,7 @@ pub(crate) fn render_extensions(
         header_area,
         Route::Extensions,
         Some(Span::styled(
-            format!("{} bundled", model.extensions.len()),
+            bundled_caption(model),
             theme::fg(Token::TextMuted),
         )),
     );
@@ -87,7 +87,14 @@ pub(crate) fn render_extensions(
         .enumerate()
     {
         let selected = position == model.remembered.extension_screen.selected;
-        render_extension_card(frame, rect, &model.extensions[extension_index], selected);
+        let extension = &model.extensions[extension_index];
+        render_extension_card(
+            frame,
+            rect,
+            extension,
+            model.extension_enabled(extension.id),
+            selected,
+        );
         hits.push((rect, Hit::ExtensionRow(position)));
     }
 
@@ -96,10 +103,25 @@ pub(crate) fn render_extensions(
     }
 }
 
+fn bundled_caption(model: &TuiModel) -> String {
+    let bundled = model.extensions.len();
+    let off = model
+        .extensions
+        .iter()
+        .filter(|extension| !model.extension_enabled(extension.id))
+        .count();
+    if off == 0 {
+        format!("{bundled} bundled")
+    } else {
+        format!("{bundled} bundled · {off} disabled")
+    }
+}
+
 fn render_extension_card(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
     extension: &uze_extensions::registry::BuiltinExtension,
+    enabled: bool,
     selected: bool,
 ) {
     render_card(
@@ -113,11 +135,12 @@ fn render_extension_card(
                 color: theme::color(Token::StateInfo),
             }),
             description: extension.description,
-            caption: Line::from(vec![
-                Span::styled(extension.surface, theme::fg(Token::TextMuted)),
-                Span::raw("  "),
-                Span::styled("Built-in", theme::fg(Token::TextMuted)),
-            ]),
+            caption: Span::styled(extension.surface, theme::fg(Token::TextMuted)),
+            state: Some(if enabled {
+                Span::styled("Enabled", theme::fg(Token::StateSuccess))
+            } else {
+                Span::styled("Disabled", theme::fg(Token::TextDim))
+            }),
         },
         selected,
     );
@@ -131,7 +154,8 @@ fn render_extension_drawer(
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     let inner = super::drawer(frame, content, ResizablePanel::ExtensionDrawer, model, hits);
-    let offers = uze_application::application::offers::extension_offers();
+    let enabled = model.extension_enabled(extension.id);
+    let offers = uze_application::application::offers::extension_offers(enabled);
     let (body, status) = super::drawer_body_and_footer(inner, &offers);
 
     let lines = vec![
@@ -168,10 +192,18 @@ fn render_extension_drawer(
     render_drawer_footer(
         frame,
         status,
-        DrawerStatus {
-            color: theme::color(Token::Accent),
-            headline: "Bundled",
-            subtitle: "Ships with uze — always available",
+        if enabled {
+            DrawerStatus {
+                color: theme::color(Token::StateSuccess),
+                headline: "Enabled",
+                subtitle: "Ships with uze and is offered in the workspace",
+            }
+        } else {
+            DrawerStatus {
+                color: theme::color(Token::TextDim),
+                headline: "Disabled",
+                subtitle: "Its keys, buttons and sidebar sections are withdrawn",
+            }
         },
         &offers,
         model.hovered_offer,

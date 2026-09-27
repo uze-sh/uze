@@ -141,13 +141,20 @@ impl ProfileSummary {
 ///
 /// A free function rather than a method: the catalog entry belongs to
 /// `uze-extensions`, which knows nothing of this crate and should not.
-/// The answer is short because extensions ship in the binary — but it is
-/// not empty, and that matters: a row whose actions are empty is a
-/// gesture that appears to do nothing, which is the defect this whole
-/// mechanism exists to remove.
-pub fn extension_offers() -> Vec<ActionOffer> {
+/// Extensions ship in the binary, so what is left to decide about one is
+/// whether the workspace offers it.
+pub fn extension_offers(enabled: bool) -> Vec<ActionOffer> {
     vec![
-        ActionOffer::available(Action::Activate),
+        if enabled {
+            ActionOffer::unavailable(Action::EnableExtension, "already enabled")
+        } else {
+            ActionOffer::available(Action::EnableExtension)
+        },
+        if enabled {
+            ActionOffer::available(Action::DisableExtension)
+        } else {
+            ActionOffer::unavailable(Action::DisableExtension, "already disabled")
+        },
         ActionOffer::unavailable(
             Action::InstallPlugin,
             "extensions ship inside uze; there is nothing to install",
@@ -260,7 +267,8 @@ mod tests {
         for offers in [
             plugin(false, None, "community").offers(),
             plugin(true, Some(true), "community").offers(),
-            extension_offers(),
+            extension_offers(true),
+            extension_offers(false),
         ] {
             assert!(offers.iter().any(ActionOffer::is_available), "{offers:?}");
         }

@@ -392,6 +392,15 @@ fn notification_choice_meets_the_budget() {
 }
 
 #[test]
+fn extension_switch_meets_the_budget() {
+    let world = World::build("budget-extension");
+    world.within_budget("config extension", |app| {
+        app.extensions().set_enabled("architect", false).unwrap();
+        assert!(app.extensions().disabled().unwrap().contains("architect"));
+    });
+}
+
+#[test]
 fn doctor_meets_the_budget() {
     let world = World::build("budget-doctor");
     world.within_budget("doctor", |app| app.health().report());

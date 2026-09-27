@@ -262,6 +262,8 @@ impl TuiModel {
                 }
                 Intent::None
             }
+            Action::EnableExtension => self.switch_selected_extension(true),
+            Action::DisableExtension => self.switch_selected_extension(false),
             Action::AddMarketplace => {
                 self.overlay = Overlay::AddMarketplace(String::new());
                 Intent::None
@@ -454,7 +456,12 @@ impl TuiModel {
                 }
                 self.marketplace_inspect_intent()
             }
-            Route::Extensions => Intent::None,
+            Route::Extensions => match self.selected_extension() {
+                Some(extension) => {
+                    self.switch_selected_extension(!self.extension_enabled(extension.id))
+                }
+                None => Intent::None,
+            },
             // List: jump straight into editing, the same way Enter opens a
             // drawer elsewhere. Editor: change the highlighted value.
             // Harnesses: no-op — toggling is the toggle action's job,

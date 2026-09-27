@@ -413,8 +413,11 @@ struct PendingAgentTab {
 fn action_index_rows(
     scopes: &[uze_keys::Scope],
     filter: &str,
+    disabled: &std::collections::BTreeSet<String>,
 ) -> Vec<(uze_keys::Action, Option<uze_keys::Chord>)> {
-    action_index::narrowed(uze_keys::active().available(scopes), filter)
+    let mut rows = uze_keys::active().available(scopes);
+    rows.retain(|(action, _)| super::extension_switch::offered(*action, disabled));
+    action_index::narrowed(rows, filter)
 }
 
 /// The open index of everything, in the workspace client.
@@ -1468,6 +1471,7 @@ pub(crate) fn attach_workspace(
         first_steps_collapsed: layout.first_steps.collapsed,
         first_steps_closed: layout.first_steps.closed,
         steps_taken: layout.first_steps.taken.clone(),
+        disabled_extensions: super::extension_switch::disabled(),
         timeline_collapsed: layout.workspace.timeline_collapsed,
         timeline_rows: layout.workspace.timeline_rows,
         collapsed_space_roots: layout.workspace.collapsed_space_roots.clone(),
@@ -1582,6 +1586,9 @@ pub(crate) fn attach_workspace(
             attach.model.absorb_manage_frame(metrics.manage);
             attach.model.dirty = false;
         }
+        attach
+            .model
+            .follow_extension_switch(super::extension_switch::disabled());
         if attach
             .model
             .take_ring(super::chime::current(), Instant::now())
@@ -2853,6 +2860,11 @@ struct WorkspaceModel {
     /// management modal, because it is one list drawn at the foot of both
     /// sidebars and a step taken in one surface is taken.
     steps_taken: std::collections::BTreeSet<String>,
+    /// The extensions switched off, as this client last took them from
+    /// `extension_switch`. Everything that offers an extension — a key, a
+    /// button, an entry in the index, a sidebar section, the reads that
+    /// feed one — asks this, so switching one off is one place changing.
+    disabled_extensions: std::collections::BTreeSet<String>,
     dragging_sidebar: bool,
     /// What's being renamed (a tab or a space) and its live edit buffer.
     /// While set, all keyboard input edits this instead of reaching the
@@ -3633,7 +3645,10 @@ impl WorkspaceModel {
     /// The list at the foot of the sidebar, as it stands.
     fn first_steps(&self) -> crate::ui::FirstSteps<'_> {
         crate::ui::FirstSteps {
-            steps: &render::FIRST_STEPS,
+            steps: render::FIRST_STEPS
+                .into_iter()
+                .filter(|action| self.offers_action(*action))
+                .collect(),
             taken: &self.steps_taken,
             collapsed: self.first_steps_collapsed,
             closed: self.first_steps_closed,
@@ -4217,6 +4232,9 @@ impl WorkspaceModel {
     /// path — which is the point: the read it schedules is the expensive
     /// half, and it now happens where nobody is waiting for a frame.
     fn schedule_git_read(&mut self, sender: &mpsc::Sender<GitResolution>) {
+        if !self.offers_extension(code::CATALOG.id) {
+            return;
+        }
         let Some(cwd) = self.focused_cwd() else {
             self.remembered.git_badge = None;
             return;
@@ -4246,6 +4264,9 @@ impl WorkspaceModel {
     /// Asks for the spec summary of the checkout in front when the one
     /// held is about another or has gone stale.
     fn schedule_spec_summary(&mut self, sender: &mpsc::Sender<SpecSummaryResolution>) {
+        if !self.offers_extension(spec::CATALOG.id) {
+            return;
+        }
         let Some(cwd) = self.focused_cwd() else {
             self.remembered.spec_summary = None;
             return;
@@ -4270,7 +4291,9 @@ impl WorkspaceModel {
         if self.remembered.spec_summary_pending.as_ref() == Some(&resolution.cwd) {
             self.remembered.spec_summary_pending = None;
         }
-        if self.focused_cwd().as_ref() != Some(&resolution.cwd) {
+        if self.focused_cwd().as_ref() != Some(&resolution.cwd)
+            || !self.offers_extension(spec::CATALOG.id)
+        {
             return false;
         }
         let changed =
@@ -4302,7 +4325,9 @@ impl WorkspaceModel {
             self.remembered.git_pending = None;
         }
         self.remembered.git_took = resolution.took;
-        if self.focused_cwd().as_ref() != Some(&resolution.cwd) {
+        if self.focused_cwd().as_ref() != Some(&resolution.cwd)
+            || !self.offers_extension(code::CATALOG.id)
+        {
             return false;
         }
         let now = Instant::now();
@@ -5613,6 +5638,39 @@ impl WorkspaceModel {
         }
     }
 
+    fn offers_extension(&self, id: &str) -> bool {
+        !self.disabled_extensions.contains(id)
+    }
+
+    fn offers_action(&self, action: Action) -> bool {
+        super::extension_switch::offered(action, &self.disabled_extensions)
+    }
+
+    /// Takes the operator's latest switch into this client: a surface
+    /// standing in the pane for an extension switched off closes, and what
+    /// its sidebar section was drawn from is let go so nothing of it stays
+    /// on screen until the next read — which it no longer schedules.
+    fn follow_extension_switch(&mut self, disabled: std::collections::BTreeSet<String>) {
+        if disabled == self.disabled_extensions {
+            return;
+        }
+        self.disabled_extensions = disabled;
+        if !self.offers_extension(code::CATALOG.id) {
+            self.close_code();
+            self.remembered.git_badge = None;
+            self.commit_detail = None;
+            self.commit_detail_pending = None;
+        }
+        if !self.offers_extension(architect::CATALOG.id) {
+            self.close_architect();
+        }
+        if !self.offers_extension(spec::CATALOG.id) {
+            self.close_spec();
+            self.remembered.spec_summary = None;
+        }
+        self.dirty = true;
+    }
+
     /// Closes whichever surface is standing in the pane.
     fn close_extension(&mut self) {
         self.close_code();
@@ -5642,6 +5700,9 @@ impl WorkspaceModel {
 }
 
 fn open_architect(model: &mut WorkspaceModel) {
+    if !model.offers_extension(architect::CATALOG.id) {
+        return;
+    }
     let Some(session) = model.session.as_ref() else {
         return;
     };
@@ -5673,6 +5734,9 @@ fn open_spec_at(model: &mut WorkspaceModel, change: &str) {
 }
 
 fn open_spec_on(model: &mut WorkspaceModel, sent_to: Option<spec::SpecPlace>) {
+    if !model.offers_extension(spec::CATALOG.id) {
+        return;
+    }
     let Some(session) = model.session.as_ref() else {
         return;
     };
@@ -5701,6 +5765,9 @@ fn open_spec_on(model: &mut WorkspaceModel, sent_to: Option<spec::SpecPlace>) {
 /// path was written relative to the project and may sit outside a tab
 /// that is somewhere below it.
 fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &Path) {
+    if !model.offers_extension(code::CATALOG.id) {
+        return;
+    }
     let display_root = crate::ui::display_project_path(project);
     let place = code::CodePlace::at(project, target, target.is_dir());
     let view = code::CodeView::opening(
@@ -5719,6 +5786,9 @@ fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &Path) {
 }
 
 fn open_code(model: &mut WorkspaceModel, mode: code::ContentMode) {
+    if !model.offers_extension(code::CATALOG.id) {
+        return;
+    }
     let Some(session) = model.session.as_ref() else {
         return;
     };

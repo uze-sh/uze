@@ -427,6 +427,10 @@ impl Attach<'_> {
         };
         let scopes = self.scopes();
         match uze_keys::active().resolve(chord, &scopes) {
+            Resolution::Act(action) if !self.model.offers_action(action) => {
+                self.unclaimed(key, chord);
+                Flow::Continue
+            }
             Resolution::Act(action) => self.act(action, viewport),
             Resolution::Text => {
                 if let Some(character) = crate::ui::keys::text_of(key) {
@@ -492,6 +496,9 @@ impl Attach<'_> {
     /// tell it. It asks *after*, and asks for evidence: a gesture that did
     /// nothing would otherwise tick itself off.
     fn act(&mut self, action: Action, viewport: &Viewport) -> Flow {
+        if !self.model.offers_action(action) {
+            return Flow::Continue;
+        }
         self.asked_for_a_tab = false;
         // The gesture, named the way the operator would name it, and the
         // parent of everything it starts — the workspace's counterpart to
@@ -766,7 +773,13 @@ impl Attach<'_> {
             .model
             .action_index
             .as_ref()
-            .map(|index| action_index_rows(&index.scopes, &index.filter))
+            .map(|index| {
+                action_index_rows(
+                    &index.scopes,
+                    &index.filter,
+                    &self.model.disabled_extensions,
+                )
+            })
             .unwrap_or_default();
         match action {
             Action::SelectNext => {
@@ -1908,9 +1921,13 @@ impl Attach<'_> {
                 let chosen = match hit_at(&self.model, mouse.column, mouse.row) {
                     Some(WorkspaceHit::ActionIndexEntry(position)) => {
                         self.model.action_index.as_ref().and_then(|index| {
-                            action_index_rows(&index.scopes, &index.filter)
-                                .get(position)
-                                .map(|(action, _)| *action)
+                            action_index_rows(
+                                &index.scopes,
+                                &index.filter,
+                                &self.model.disabled_extensions,
+                            )
+                            .get(position)
+                            .map(|(action, _)| *action)
                         })
                     }
                     _ => None,

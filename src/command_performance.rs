@@ -103,12 +103,14 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     // Machine scope: config. `theme`/`icons` are each a small JSON read plus
     // a directory listing under `$UZE_HOME` — no harness is probed, and no
     // theme is resolved that is not the one being asked about.
-    // `notification` is one `config.toml` key read or written.
+    // `notification` and `extension` are each one `config.toml` section
+    // read or one key written.
     ("config theme list", PerformanceClass::Budgeted),
     ("config theme set", PerformanceClass::Budgeted),
     ("config theme show", PerformanceClass::Budgeted),
     ("config icons", PerformanceClass::Budgeted),
     ("config notification", PerformanceClass::Budgeted),
+    ("config extension", PerformanceClass::Budgeted),
     // The authoring surface: the marketplace scaffold is born with an
     // initial commit, so its cost is the author's own Git identity. The
     // checks read and parse every file the artifact carries — like
@@ -250,6 +252,10 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     (
         "config notification",
         "crates/uze-application/tests/performance.rs::notification_choice_meets_the_budget",
+    ),
+    (
+        "config extension",
+        "crates/uze-application/tests/performance.rs::extension_switch_meets_the_budget",
     ),
     (
         "agent plugin create",

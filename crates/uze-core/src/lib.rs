@@ -70,6 +70,10 @@ pub mod appearance;
 /// `[notifications]`: whether the workspace rings when an agent finishes.
 pub mod notifications;
 
+/// `[extensions]`: which of the workspace's built-in extensions are
+/// switched off.
+pub mod extensions;
+
 // Flat public API. Each line also says which concern the module belongs to,
 // which is the second reason for keeping them: the crate root is where a
 // reader looks first.

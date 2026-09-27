@@ -105,6 +105,8 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(Action::AddMarketplace, Index);
     put(Action::InstallProjectEnvironment, Index);
     put(Action::ClearPromptHistory, Index);
+    put(Action::EnableExtension, Control("the drawer's buttons"));
+    put(Action::DisableExtension, Control("the drawer's buttons"));
     put(Action::SetupHarness, Control("the drawer's buttons"));
     put(Action::AnalyzeContext, Index);
     put(Action::ApplyContextPlan, Index);

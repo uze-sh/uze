@@ -452,6 +452,16 @@ enum ConfigAction {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// The workspace's built-in extensions and whether each is offered, or
+    /// `<id> on|off` to switch one
+    Extension {
+        /// `code`, `architect` or `spec`; omitted, every extension
+        id: Option<String>,
+        /// `on` or `off`; omitted, the choice in force
+        state: Option<String>,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
     /// Which finished agent turns ring, or `test` to hear one now
     Notification {
         /// `on`, `off` or `silent`; omitted, the choice in force
@@ -1375,7 +1385,7 @@ fn run_context(app: &UzeApplication, action: ContextAction) -> Result<()> {
 /// `uze market …` — the marketplaces a machine knows about.
 /// `uze config …` — this machine's authored configuration: the palette,
 /// the glyph set the installed font can draw, and which finished turns
-/// ring. All machine-scoped; the file they write is the operator's own
+/// ring, and which extensions the workspace offers. All machine-scoped; the file they write is the operator's own
 /// `config.toml`, never a project's.
 fn run_config(app: &UzeApplication, home: &UzeHome, action: ConfigAction) -> Result<()> {
     match action {
@@ -1439,6 +1449,9 @@ fn run_config(app: &UzeApplication, home: &UzeHome, action: ConfigAction) -> Res
                 progress::success(&format!("Drawing with the {set} glyphs"));
             }
         },
+        ConfigAction::Extension { id, state, format } => {
+            run_config_extension(app, id.as_deref(), state.as_deref(), format)?
+        }
         ConfigAction::Notification { state, format } => match state.as_deref() {
             None => {
                 let written = app.notifications().agent_finished_as_written()?;
@@ -1491,6 +1504,101 @@ fn run_config(app: &UzeApplication, home: &UzeHome, action: ConfigAction) -> Res
         },
     }
     Ok(())
+}
+
+/// `uze config extension` — the same switch the management screen flips,
+/// written to the same `[extensions]` section, so a workspace launched
+/// afterwards offers exactly what either surface last chose.
+fn run_config_extension(
+    app: &UzeApplication,
+    id: Option<&str>,
+    state: Option<&str>,
+    format: OutputFormat,
+) -> Result<()> {
+    let registry = uze_extensions::registry::ExtensionRegistry::builtin();
+    let Some(id) = id else {
+        let disabled = app.extensions().disabled()?;
+        let extensions: Vec<_> = registry
+            .all()
+            .iter()
+            .map(|extension| (extension, !disabled.contains(extension.id)))
+            .collect();
+        emit(
+            format,
+            &extensions
+                .iter()
+                .map(|(extension, enabled)| extension_json(extension, *enabled))
+                .collect::<Vec<_>>(),
+            |_| render_extensions(&extensions),
+        );
+        return Ok(());
+    };
+    let Some(extension) = registry.get(id) else {
+        setup_usage_error(&format!(
+            "no extension `{id}`; UZE carries {}",
+            registry.ids().join(", ")
+        ));
+    };
+    match state {
+        None => {
+            let enabled = !app.extensions().disabled()?.contains(extension.id);
+            emit(format, &extension_json(extension, enabled), |_| {
+                progress::key_value(extension.name, extension_label(enabled))
+            });
+        }
+        Some(state) => {
+            let enabled = match state {
+                "on" => true,
+                "off" => false,
+                _ => setup_usage_error("extension state is `on` or `off`"),
+            };
+            app.extensions().set_enabled(extension.id, enabled)?;
+            if matches!(format, OutputFormat::Text) {
+                progress::success(&format!("{}: {}", extension.name, extension_label(enabled)));
+            } else {
+                print_json(&extension_json(extension, enabled));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn extension_label(enabled: bool) -> &'static str {
+    if enabled { "enabled" } else { "disabled" }
+}
+
+fn extension_json(
+    extension: &uze_extensions::registry::BuiltinExtension,
+    enabled: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": extension.id,
+        "name": extension.name,
+        "enabled": enabled,
+    })
+}
+
+fn render_extensions(extensions: &[(&uze_extensions::registry::BuiltinExtension, bool)]) -> String {
+    let mut out = String::new();
+    out.push_str(&progress::section("Extensions\n"));
+    let rows: Vec<Vec<String>> = extensions
+        .iter()
+        .map(|(extension, enabled)| {
+            let mark = if *enabled {
+                progress::success_icon()
+            } else {
+                " ".to_owned()
+            };
+            vec![
+                mark,
+                progress::title(extension.id),
+                progress::label(extension_label(*enabled)),
+            ]
+        })
+        .collect();
+    out.push_str(&progress::aligned_rows(rows));
+    out.push('\n');
+    out
 }
 
 fn chime_label(chime: Chime) -> &'static str {
