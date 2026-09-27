@@ -648,6 +648,16 @@ impl Marketplace<'_> {
     /// `Marketplace::list`'s own `plugin_count: 0` fallback.
     #[tracing::instrument(name = "marketplace.plugins", skip_all, err)]
     pub fn plugins(&self) -> Result<Vec<MarketplacePluginSummary>> {
+        self.plugins_offered_by(|_| true)
+    }
+
+    /// [`Self::plugins`], asking only the marketplaces `asked` accepts: one
+    /// plugin's detail has no reason to read every other catalogue on the
+    /// machine, nor to compare every installed package with its source.
+    fn plugins_offered_by(
+        &self,
+        asked: impl Fn(&str) -> bool,
+    ) -> Result<Vec<MarketplacePluginSummary>> {
         let installed_packages = self.0.installed_packages();
         let installed: std::collections::BTreeMap<&str, &StoredPackage> = installed_packages
             .iter()
@@ -656,7 +666,12 @@ impl Marketplace<'_> {
 
         let mut out = Vec::new();
 
-        out.extend(bootstrap::entries()?.plugins.into_iter().map(|entry| {
+        let official = if asked(BUILT_IN_MARKETPLACE) {
+            bootstrap::entries()?.plugins
+        } else {
+            Vec::new()
+        };
+        out.extend(official.into_iter().map(|entry| {
             // `installed` is keyed by the full `plugin@marketplace` identity
             // (ADR-036); a catalog entry's own `name` is bare, scoped to
             // *this* marketplace listing, so the lookup must reconstruct the
@@ -680,6 +695,9 @@ impl Marketplace<'_> {
         }));
 
         for (name, record) in uze_core::state::marketplace_list(&self.0.home)? {
+            if !asked(&name) {
+                continue;
+            }
             // As it stands: this list is drawn on every refresh of the
             // plugins screen, and a refill here is a remote inside a
             // render.
@@ -708,7 +726,7 @@ impl Marketplace<'_> {
     #[tracing::instrument(name = "marketplace.inspect_plugin", skip_all, fields(marketplace = %marketplace, name = %name), err)]
     pub fn inspect_plugin(&self, marketplace: &str, name: &str) -> Result<MarketplacePluginDetail> {
         let summary = self
-            .plugins()?
+            .plugins_offered_by(|asked| asked == marketplace)?
             .into_iter()
             .find(|plugin| plugin.marketplace == marketplace && plugin.name == name)
             .ok_or_else(|| UzeError::UnknownPackage(name.to_owned()))?;

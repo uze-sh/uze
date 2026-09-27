@@ -114,6 +114,13 @@ impl Catalogue {
                 } else {
                     out.join(&within)
                 };
+                // Held from the look to the write: two readers of one
+                // plugin would otherwise each find it missing, and the
+                // second would clear what the first is writing.
+                static MATERIALIZING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+                let _materializing = MATERIALIZING
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 if !root.exists() {
                     // Cleared first: what is there is the residue of a
                     // materialization that did not finish, and writing over

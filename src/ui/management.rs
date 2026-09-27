@@ -217,8 +217,13 @@ impl ManagementMemory {
             changed = true;
         }
         changed |= drain_worker_results(model, &self.receiver);
+        let drawer = if model.selection_settling(Instant::now()) {
+            Intent::None
+        } else {
+            model.drawer_inspect_intent()
+        };
         for missing in [
-            model.drawer_inspect_intent(),
+            drawer,
             model.profile_preview_intent(),
             model.settings_intent(),
         ] {

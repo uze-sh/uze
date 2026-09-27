@@ -370,6 +370,27 @@ pub fn distance(directory: &Path, pinned: &str, head: &str) -> Option<usize> {
     (counted > 0).then_some(counted)
 }
 
+/// One lock per mirror, held across a materialization.
+///
+/// A checkout into a bare mirror writes the mirror's own `index`, and the
+/// next one removes it: two at once in one process — a browser looking at
+/// one plugin while an install writes out another — collide on
+/// `index.lock` or delete the index under each other.
+fn checkout_lock(directory: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
+    static CHECKOUTS: std::sync::Mutex<
+        Vec<(std::path::PathBuf, std::sync::Arc<std::sync::Mutex<()>>)>,
+    > = std::sync::Mutex::new(Vec::new());
+    let mut checkouts = CHECKOUTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((_, lock)) = checkouts.iter().find(|(known, _)| known == directory) {
+        return lock.clone();
+    }
+    let lock = std::sync::Arc::new(std::sync::Mutex::new(()));
+    checkouts.push((directory.to_path_buf(), lock.clone()));
+    lock
+}
+
 /// Writes `subdirectory` at `commit` into `destination`, which must not
 /// exist.
 ///
@@ -386,6 +407,10 @@ pub fn materialize_subdirectory(
     if let Some(subdirectory) = subdirectory {
         reject_option_shaped(subdirectory, "subdirectory")?;
     }
+    let mirror = checkout_lock(directory);
+    let _checking_out = mirror
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     std::fs::create_dir_all(destination).map_err(|source| UzeError::Write {
         path: destination.to_path_buf(),
         source,

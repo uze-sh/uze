@@ -163,8 +163,15 @@ pub(crate) enum WorkerResult {
         applied: Vec<String>,
         data: std::result::Result<RefreshData, String>,
     },
-    PluginInspected(std::result::Result<uze_application::application::PluginInspection, String>),
+    /// Each inspection carries the question it answers: the selection may
+    /// have moved on by the time it lands, and an answer about a row the
+    /// operator left is neither drawn nor reported.
+    PluginInspected(
+        Intent,
+        std::result::Result<uze_application::application::PluginInspection, String>,
+    ),
     MarketplaceInspected(
+        Intent,
         std::result::Result<uze_application::application::MarketplacePluginDetail, String>,
     ),
     Mutated(std::result::Result<(String, RefreshData), String>),
@@ -380,7 +387,8 @@ fn clear_prompt_history(home: &UzeHome, model: &mut TuiModel) {
 }
 
 fn inspect_plugin(id: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
-    model.inspection_in_flight = Some(Intent::InspectPlugin(id.clone()));
+    let asked = Intent::InspectPlugin(id.clone());
+    model.inspection_in_flight = Some(asked.clone());
     model.status = Status::Working(format!("Inspecting {id}…"));
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
@@ -395,7 +403,7 @@ fn inspect_plugin(id: String, home: &UzeHome, sender: &Sender<WorkerResult>, mod
             },
             Err(format!("Inspecting {id} failed")),
         );
-        let _ = sender.send(WorkerResult::PluginInspected(result));
+        let _ = sender.send(WorkerResult::PluginInspected(asked, result));
     });
 }
 
@@ -406,10 +414,11 @@ fn inspect_marketplace_plugin(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.inspection_in_flight = Some(Intent::InspectMarketplacePlugin {
+    let asked = Intent::InspectMarketplacePlugin {
         name: name.clone(),
         marketplace: marketplace.clone(),
-    });
+    };
+    model.inspection_in_flight = Some(asked.clone());
     model.status = Status::Working(format!("Inspecting {name}…"));
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
@@ -424,7 +433,7 @@ fn inspect_marketplace_plugin(
             },
             Err(format!("Inspecting {name} failed")),
         );
-        let _ = sender.send(WorkerResult::MarketplaceInspected(result));
+        let _ = sender.send(WorkerResult::MarketplaceInspected(asked, result));
     });
 }
 
@@ -921,12 +930,25 @@ pub(crate) fn drain_worker_results(
                     ));
                 }
             }
-            WorkerResult::PluginInspected(Ok(inspection)) => {
+            // The operator moved on before this landed. Were it absorbed, it
+            // would displace the detail of the row they are on and have the
+            // per-frame check ask for that one again; were it a failure, it
+            // would report an error about a row nobody is looking at.
+            WorkerResult::PluginInspected(asked, _)
+            | WorkerResult::MarketplaceInspected(asked, _)
+                if model.marketplace_inspect_intent() != asked =>
+            {
+                if model.inspection_in_flight.as_ref() == Some(&asked) {
+                    model.inspection_in_flight = None;
+                    model.status = Status::Idle;
+                }
+            }
+            WorkerResult::PluginInspected(_, Ok(inspection)) => {
                 model.plugin_detail = Some(inspection);
                 model.inspection_in_flight = None;
                 model.status = Status::Idle;
             }
-            WorkerResult::MarketplaceInspected(Ok(detail)) => {
+            WorkerResult::MarketplaceInspected(_, Ok(detail)) => {
                 model.marketplace_detail = Some(detail);
                 model.inspection_in_flight = None;
                 model.status = Status::Idle;
@@ -975,8 +997,8 @@ pub(crate) fn drain_worker_results(
             // A failed inspection stays failed until the selection moves:
             // clearing the in-flight marker here would have the per-frame
             // check retry it forever, error after error.
-            WorkerResult::PluginInspected(Err(error))
-            | WorkerResult::MarketplaceInspected(Err(error)) => {
+            WorkerResult::PluginInspected(_, Err(error))
+            | WorkerResult::MarketplaceInspected(_, Err(error)) => {
                 model.status = Status::Error(error);
             }
             WorkerResult::Mutated(Err(error))
@@ -1344,17 +1366,63 @@ mod tests {
     /// failed until the selection moves.
     #[test]
     fn a_failed_inspection_keeps_its_marker_so_it_is_not_retried_every_frame() {
-        let inspecting = Intent::InspectPlugin("flow@market".to_owned());
+        let inspecting = Intent::InspectPlugin("one".to_owned());
         let model = drained(
-            vec![WorkerResult::PluginInspected(Err("unreadable".to_owned()))],
+            vec![WorkerResult::PluginInspected(
+                inspecting.clone(),
+                Err("unreadable".to_owned()),
+            )],
             TuiModel {
                 inspection_in_flight: Some(inspecting.clone()),
-                ..TuiModel::default()
+                ..browsing(&["one", "two"])
             },
         );
 
         assert_eq!(model.inspection_in_flight, Some(inspecting));
         assert_eq!(model.status, Status::Error("unreadable".to_owned()));
+    }
+
+    /// An answer about a row the operator already left is neither drawn
+    /// nor reported, and does not release the inspection now running for
+    /// the row they are on.
+    #[test]
+    fn an_answer_for_a_row_left_behind_is_dropped() {
+        let current = Intent::InspectPlugin("two".to_owned());
+        let mut moved_on = browsing(&["one", "two"]);
+        moved_on.remembered.plugin_screen.selected = 1;
+        moved_on.inspection_in_flight = Some(current.clone());
+        moved_on.status = Status::Working("Inspecting two…".to_owned());
+
+        let model = drained(
+            vec![WorkerResult::PluginInspected(
+                Intent::InspectPlugin("one".to_owned()),
+                Err("index.lock exists".to_owned()),
+            )],
+            moved_on,
+        );
+
+        assert_eq!(model.inspection_in_flight, Some(current));
+        assert_eq!(model.status, Status::Working("Inspecting two…".to_owned()));
+    }
+
+    fn browsing(ids: &[&str]) -> TuiModel {
+        let mut model = TuiModel {
+            focus: super::super::model::Focus::Content,
+            route: super::super::model::Route::Plugins,
+            ..TuiModel::default()
+        };
+        model.remembered.plugins = ids
+            .iter()
+            .map(|id| uze_application::application::PluginSummary {
+                id: (*id).to_owned(),
+                active_name: (*id).to_owned(),
+                source: "embedded:example".to_owned(),
+                store_path: PathBuf::from("/store/example"),
+                capability_count: 1,
+                freshness: uze_application::application::Freshness::not_checked(),
+            })
+            .collect();
+        model
     }
 
     #[test]
