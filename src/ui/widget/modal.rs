@@ -69,7 +69,12 @@ pub(crate) struct Chrome {
 
 /// Clears `area` and draws the modal's border, its name on the top edge
 /// and the close mark at the other end of it.
-pub(crate) fn render(frame: &mut ratatui::Frame<'_>, area: Rect, name: &str) -> Chrome {
+pub(crate) fn render(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    name: &str,
+    close_hovered: bool,
+) -> Chrome {
     frame.render_widget(Clear, area);
     Surface::card().render(frame, area);
 
@@ -85,7 +90,6 @@ pub(crate) fn render(frame: &mut ratatui::Frame<'_>, area: Rect, name: &str) -> 
     );
     // Only the close mark on the right: the key that closes the modal is
     // the one that opened it, and the index lists it for anyone asking.
-    let mark = theme::glyph(Symbol::MarkClose);
     let mark_width = theme::width(Symbol::MarkClose);
     let close = Rect::new(
         title.right().saturating_sub(mark_width + 1),
@@ -93,14 +97,25 @@ pub(crate) fn render(frame: &mut ratatui::Frame<'_>, area: Rect, name: &str) -> 
         (mark_width + 2).min(area.width),
         1.min(area.height),
     );
+    close_mark(frame, close, close_hovered);
+    Chrome { area, close }
+}
+
+/// The mark that closes a modal, drawn into `rect` with a cell of room
+/// either side. It goes red under the pointer: at rest it is quiet chrome,
+/// and the hover is where it says that a click here throws the modal away.
+pub(crate) fn close_mark(frame: &mut ratatui::Frame<'_>, rect: Rect, hovered: bool) {
+    let tone = match hovered {
+        true => Token::StateDanger,
+        false => Token::TextMuted,
+    };
     frame.render_widget(
         Paragraph::new(Span::styled(
-            format!(" {mark} "),
-            theme::fg(Token::TextMuted),
+            format!(" {} ", theme::glyph(Symbol::MarkClose)),
+            theme::fg(tone),
         )),
-        close,
+        rect,
     );
-    Chrome { area, close }
 }
 
 #[cfg(test)]
@@ -114,6 +129,26 @@ mod tests {
     /// wrong question on a small screen: it held the margin proportional
     /// while a menu, a list and a drawer were already short of columns,
     /// so the border and the backdrop were paid for out of them.
+    /// The close mark is quiet at rest and red under the pointer: the
+    /// hover is where it says a click there throws the modal away.
+    #[test]
+    fn the_close_mark_goes_red_only_under_the_pointer() {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let mark_tone = |hovered: bool| {
+            let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+            let mut close = Rect::default();
+            terminal
+                .draw(|frame| close = render(frame, frame.area(), "work", hovered).close)
+                .unwrap();
+            let buffer = terminal.backend().buffer().clone();
+            buffer[(close.x + 1, close.y)].fg
+        };
+
+        assert_eq!(mark_tone(false), theme::color(Token::TextMuted));
+        assert_eq!(mark_tone(true), theme::color(Token::StateDanger));
+    }
+
     #[test]
     fn the_modal_fills_a_small_frame_and_insets_a_roomy_one() {
         let roomy = Rect::new(0, 0, ROOMY_WIDTH, ROOMY_HEIGHT);

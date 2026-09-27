@@ -237,8 +237,8 @@ fn a_surface_with_nothing_to_draw_says_why_and_what_to_do() {
         fn repository_root(&self, _: &std::path::Path) -> Result<PathBuf, String> {
             Err("no git here".to_owned())
         }
-        fn read_file(&self, _: &std::path::Path) -> Result<String, String> {
-            Err("no such file".to_owned())
+        fn read_file(&self, _: &std::path::Path) -> Result<String, crate::Unreadable> {
+            Err(crate::Unreadable::Failed("no such file".to_owned()))
         }
         fn list_dir(&self, _: &std::path::Path) -> Result<Vec<crate::DirEntry>, String> {
             Ok(Vec::new())
@@ -745,13 +745,13 @@ impl Host for Written {
     fn repository_root(&self, _: &std::path::Path) -> Result<PathBuf, String> {
         Err("not asked".to_owned())
     }
-    fn read_file(&self, path: &std::path::Path) -> Result<String, String> {
+    fn read_file(&self, path: &std::path::Path) -> Result<String, crate::Unreadable> {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         self.0
             .iter()
             .find(|(written, _)| *written == name)
             .map(|(_, source)| (*source).to_owned())
-            .ok_or_else(|| "no such file".to_owned())
+            .ok_or_else(|| crate::Unreadable::Failed("no such file".to_owned()))
     }
     fn list_dir(&self, _: &std::path::Path) -> Result<Vec<crate::DirEntry>, String> {
         Ok(self

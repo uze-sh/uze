@@ -2207,7 +2207,7 @@ fn a_dialog_in_the_manage_modal_recedes_its_title_too() {
         let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
         terminal
             .draw(|frame| {
-                super::management::render_modal(frame, frame.area(), model, &mut Vec::new());
+                super::management::render_modal(frame, frame.area(), model, false, &mut Vec::new());
             })
             .unwrap();
         let buffer = terminal.backend().buffer();

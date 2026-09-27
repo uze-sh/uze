@@ -236,6 +236,7 @@ impl Attach<'_> {
         self.model.first_steps_closed = first_steps.closed;
         self.model.steps_taken = first_steps.taken;
         self.model.manage_chrome = None;
+        self.model.manage_close_hovered = false;
         self.model.remember_sidebar();
         self.model.dirty = true;
     }
@@ -271,6 +272,9 @@ impl Attach<'_> {
         if mouse.kind == MouseEventKind::Down(MouseButton::Left) && (!inside || on_close) {
             self.close_manage();
             return Flow::Continue;
+        }
+        if mouse.kind == MouseEventKind::Moved {
+            self.model.manage_close_hovered = on_close;
         }
         let surface = chrome.map_or(
             crate::ui::widget::modal::area(Rect::new(

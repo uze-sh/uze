@@ -14,6 +14,7 @@ use super::{
     CodeView, ContentMode, Focus, Half, MapShowing, NavigatorMode, Showing, diff::content_line,
     editor::OpenFile,
 };
+use crate::Unreadable;
 use crate::shared::{canvas::Glyphs, checkout};
 use crate::view::{
     Command, Confirm, Content, ContentLine, Layout, LineTone, MarkerSide, Mode, Navigator,
@@ -445,15 +446,20 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
             role: Role::Muted,
         };
     }
+    let path = &code.changes.files[index].path;
+    if code.changes.diff_binary {
+        return not_text(
+            path,
+            "Git records that it changed, but has no lines to compare in it.",
+        );
+    }
     let diff = &code.changes.diff;
     Content::Lines {
         caret: None,
         total: diff.len(),
         heading: format!(
             "DIFF · {}",
-            code.changes.files[index]
-                .path
-                .strip_prefix(&code.root)
+            path.strip_prefix(&code.root)
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|_| code.display_root.clone())
         ),
@@ -521,12 +527,21 @@ fn readable_open_file<'a>(
             role: Role::Muted,
         });
     };
-    if let Some(message) = &open.error {
-        return Err(Content::Message {
-            text: message.clone(),
-            hint: None,
-            role: Role::Danger,
-        });
+    match &open.error {
+        Some(Unreadable::NotText) => {
+            return Err(not_text(
+                &open.path,
+                "There is no text in it to show here. Open it with an app that reads its format.",
+            ));
+        }
+        Some(Unreadable::Failed(message)) => {
+            return Err(Content::Message {
+                text: message.clone(),
+                hint: None,
+                role: Role::Danger,
+            });
+        }
+        None => {}
     }
     if open.loading {
         return Err(Content::Message {
@@ -536,6 +551,21 @@ fn readable_open_file<'a>(
         });
     }
     Ok(open)
+}
+
+/// What stands where a file's lines would, when it has none a text view
+/// can draw: an image, an archive, a font. Muted, because nothing failed —
+/// the file is exactly what it should be, just not something to read.
+fn not_text(path: &std::path::Path, hint: &str) -> Content {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Content::Message {
+        text: format!("{name} is not a text file"),
+        hint: Some(hint.to_owned()),
+        role: Role::Muted,
+    }
 }
 
 fn contents_content(code: &CodeView, space: Size) -> Content {

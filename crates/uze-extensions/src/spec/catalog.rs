@@ -228,7 +228,7 @@ fn artifact(host: &dyn Host, dialect: &Dialect, base: &Path, relative: &str) -> 
     let path = base.join(relative);
     let classified = classify(dialect, file_name(relative));
     Artifact {
-        text: host.read_file(&path),
+        text: host.read_file(&path).map_err(|reason| reason.to_string()),
         path,
         relative: file_name(relative).to_owned(),
         role: classified.role,
@@ -246,7 +246,7 @@ fn artifacts(host: &dyn Host, dialect: &Dialect, unit: &Path, depth: usize) -> V
             let path = unit.join(&relative);
             let classified = classify(dialect, &relative);
             Artifact {
-                text: host.read_file(&path),
+                text: host.read_file(&path).map_err(|reason| reason.to_string()),
                 path,
                 relative,
                 role: classified.role,

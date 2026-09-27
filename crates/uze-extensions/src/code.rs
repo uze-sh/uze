@@ -573,6 +573,7 @@ impl CodeView {
             // diff on screen — or the one-file read already asked for it
             // — is left as it stands.
             changes.diff = std::mem::take(&mut self.changes.diff);
+            changes.diff_binary = self.changes.diff_binary;
             changes.diff_digest = self.changes.diff_digest;
             changes.diff_unchanged = false;
             changes.diff_pending = self.changes.diff_pending;
@@ -580,6 +581,7 @@ impl CodeView {
             // The read found the diff exactly as it is here, so here is
             // where it stays — the cells were never sent back.
             changes.diff = std::mem::take(&mut self.changes.diff);
+            changes.diff_binary = self.changes.diff_binary;
         }
         self.changes = changes;
         if self.selected.is_none() {
@@ -609,10 +611,27 @@ impl CodeView {
     /// Installs what the host did about a [`FileRequest`].
     pub fn absorb(&mut self, answer: FileAnswer) {
         match answer {
-            FileAnswer::Listed { path, entries } => match entries {
+            FileAnswer::Listed {
+                path,
+                entries,
+                chain,
+            } => match entries {
                 Ok(mut entries) => {
                     entries.retain(files::is_shown);
-                    self.files.listings.insert(path.clone(), entries);
+                    let first_read = self.files.listings.insert(path.clone(), entries).is_none();
+                    for (directory, mut listed) in chain {
+                        listed.retain(files::is_shown);
+                        self.files.listings.entry(directory).or_insert(listed);
+                    }
+                    // A directory opened onto a single directory is drawn
+                    // as one row with it (see `files::row_for`), so the
+                    // opening carries on down the chain — a row that has
+                    // to be opened again after it was opened reads as a
+                    // press that did nothing. Only on the first read: a
+                    // re-read must not reopen what the viewer folded.
+                    if first_read && self.files.expanded.contains(&path) {
+                        self.open_chain_below(&path);
+                    }
                     if self.selected.is_none() {
                         self.selected = self
                             .files
@@ -785,6 +804,7 @@ impl CodeView {
         self.selected = Some(path);
         self.scroll = 0;
         self.changes.diff = Vec::new();
+        self.changes.diff_binary = false;
         self.changes.diff_pending = true;
         self.read_selection_as_what_it_is();
     }
@@ -1109,6 +1129,21 @@ impl CodeView {
         self.queue.push_back(FileRequest::Read(path));
     }
 
+    /// Opens every directory down `directory`'s chain of only children,
+    /// and moves a selection on `directory` to the row the chain is drawn
+    /// as. The listing brought the chain with it, so this reads nothing
+    /// unless the chain ran past what one listing reads.
+    fn open_chain_below(&mut self, directory: &Path) {
+        let mut deepest = directory.to_path_buf();
+        while let Some(only) = files::only_subdirectory(&deepest, &self.files.listings) {
+            deepest = deepest.join(&only.name);
+            self.expand(deepest.clone());
+        }
+        if deepest != directory && self.selected.as_deref() == Some(directory) {
+            self.selected = Some(deepest);
+        }
+    }
+
     /// Opens a directory, reading it the first time it is opened.
     fn expand(&mut self, path: PathBuf) {
         // Neither read nor already asked for: a directory opened twice
@@ -1230,6 +1265,7 @@ impl DiffAnswer {
         Self(changes::DiffRead {
             path: request.path.clone(),
             digest: 0,
+            binary: false,
             outcome: Err(reason),
         })
     }
@@ -1548,8 +1584,8 @@ fn fold_tree_row(view: &mut CodeView) {
     };
     if row.directory && row.expanded {
         view.files.expanded.remove(&row.path);
-    } else if let Some(parent) = row.path.parent().filter(|parent| *parent != view.root) {
-        view.selected = Some(parent.to_path_buf());
+    } else if let Some(parent) = view.files.enclosing_row(&view.root, &row.path) {
+        view.selected = Some(parent);
     }
 }
 

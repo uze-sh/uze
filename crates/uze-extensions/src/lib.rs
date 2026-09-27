@@ -80,6 +80,26 @@ pub enum ExtensionHit {
     SpecSummary(view::ViewHit),
 }
 
+/// Why [`Host::read_file`] has no contents to give.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unreadable {
+    /// The file is there and it is not text: an image, an archive, a
+    /// font. Nothing went wrong, so a view says there is nothing it can
+    /// draw rather than reporting a failure.
+    NotText,
+    /// Anything that did go wrong, as the sentence to show.
+    Failed(String),
+}
+
+impl std::fmt::Display for Unreadable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotText => f.write_str("not readable as text"),
+            Self::Failed(reason) => f.write_str(reason),
+        }
+    }
+}
+
 /// One entry of a directory listing, as [`Host::list_dir`] answers it.
 ///
 /// A name and a kind, never a handle: the extension addresses a child by
@@ -152,7 +172,7 @@ pub trait Host {
     /// reasons are not interchangeable to the person looking at the row,
     /// and only the host knows which one applies: a binary, a file it may
     /// not read, and one too large to hold in memory all land here.
-    fn read_file(&self, path: &std::path::Path) -> Result<String, String>;
+    fn read_file(&self, path: &std::path::Path) -> Result<String, Unreadable>;
 
     /// How many lines a file has, counted the way [`str::lines`] counts
     /// them. Separate from [`Host::read_file`] because the badge asks this

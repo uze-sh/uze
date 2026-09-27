@@ -612,6 +612,7 @@ mod workspace_tests {
             let view = model.code.as_mut().expect("the surface is open");
             view.take_request();
             view.absorb(code::FileAnswer::Listed {
+                chain: Vec::new(),
                 path: PathBuf::from(root),
                 entries: Ok(vec![
                     DirEntry {
@@ -840,6 +841,7 @@ mod workspace_tests {
         );
         view.take_request();
         view.absorb(code::FileAnswer::Listed {
+            chain: Vec::new(),
             path: root.clone(),
             entries: Ok(vec![DirEntry {
                 directory: false,
@@ -1456,6 +1458,7 @@ mod workspace_tests {
         // way for the test to fail for reasons of its own.
         view.take_request();
         view.absorb(code::FileAnswer::Listed {
+            chain: Vec::new(),
             path: root,
             entries: Ok(vec![
                 DirEntry {

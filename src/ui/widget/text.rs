@@ -85,6 +85,32 @@ pub(crate) fn elide_head(text: &str, width: usize) -> String {
     kept
 }
 
+/// A file name cut to `width` columns in the middle, keeping its
+/// extension: `a_very_long_na….rs` still says what kind of file it is,
+/// which a cut at the end throws away first.
+///
+/// Falls back to [`elide`] where there is no extension worth keeping, or
+/// no room for one beside at least a few characters of the stem.
+pub(crate) fn elide_file_name(name: &str, width: usize) -> String {
+    const LONGEST_EXTENSION: usize = 8;
+    const SHORTEST_STEM: usize = 3;
+    if columns(name) <= width {
+        return name.to_owned();
+    }
+    let Some(dot) = name.rfind('.').filter(|dot| *dot > 0) else {
+        return elide(name, width);
+    };
+    let (stem, extension) = name.split_at(dot);
+    let extension_width = columns(extension);
+    let mark = theme::width(Symbol::Ellipsis) as usize;
+    if extension_width > LONGEST_EXTENSION || width < extension_width + mark + SHORTEST_STEM {
+        return elide(name, width);
+    }
+    let mut kept = elide(stem, width - extension_width);
+    kept.push_str(extension);
+    kept
+}
+
 /// Cuts `line` to `max` columns in place, keeping every span that fits
 /// whole and eliding the one that straddles the edge.
 ///
@@ -275,6 +301,23 @@ mod tests {
         assert_eq!(cut, format!("{ellipsis}クト/src"));
         assert_eq!(elide_head("~/code/uze", 6), format!("{ellipsis}e/uze"));
         assert_eq!(elide_head("~/uze", 6), "~/uze");
+    }
+
+    /// A long file name loses the middle of its stem, not its extension —
+    /// unless there is too little room for the two to share.
+    #[test]
+    fn an_elided_file_name_keeps_its_extension() {
+        let ellipsis = theme::glyph(Symbol::Ellipsis);
+        let mark = theme::width(Symbol::Ellipsis) as usize;
+        let cut = elide_file_name("InvoiceLineItemAggregate.java", 12 + mark);
+        assert_eq!(cut, format!("Invoice{ellipsis}.java"));
+        assert!(columns(&cut) <= 12 + mark);
+        assert_eq!(elide_file_name("main.rs", 20), "main.rs");
+        assert_eq!(
+            elide_file_name("Makefile.orig", 5),
+            elide("Makefile.orig", 5)
+        );
+        assert_eq!(elide_file_name(".gitignore", 6), elide(".gitignore", 6));
     }
 
     #[test]

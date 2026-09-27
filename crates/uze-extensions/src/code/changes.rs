@@ -32,6 +32,10 @@ pub(super) struct Changes {
     /// [`parse_porcelain_status`].
     pub(super) files: Vec<ChangedFile>,
     pub(super) diff: Vec<DiffCell>,
+    /// Git answered for the selected file that it is binary, so `diff` is
+    /// empty because there are no lines to compare, not because nothing
+    /// changed.
+    pub(super) diff_binary: bool,
     /// Set when the selection moved and cleared when a read catches up.
     ///
     /// Reading and highlighting a diff is the one thing here whose cost
@@ -134,6 +138,7 @@ impl Changes {
             .and_then(|index| self.files.get(index))
         else {
             self.diff = Vec::new();
+            self.diff_binary = false;
             return;
         };
         let read = read_diff(host, root, &file.path.clone(), file.status, shown);
@@ -152,6 +157,7 @@ impl Changes {
                 self.diff_digest = read.digest;
                 self.diff_unchanged = false;
                 self.diff = cells;
+                self.diff_binary = read.binary;
             }
         }
     }
@@ -183,6 +189,7 @@ impl Changes {
 pub(super) struct DiffRead {
     pub(super) path: PathBuf,
     pub(super) digest: u64,
+    pub(super) binary: bool,
     /// `Ok(None)` when the read found the diff already on screen
     /// (`shown`), so nothing was coloured again.
     pub(super) outcome: Result<Option<Vec<DiffCell>>, String>,
@@ -216,6 +223,7 @@ pub(super) fn read_diff(
             return DiffRead {
                 path: path.to_path_buf(),
                 digest: 0,
+                binary: false,
                 outcome: Err(message),
             };
         }
@@ -230,6 +238,7 @@ pub(super) fn read_diff(
     DiffRead {
         path: path.to_path_buf(),
         digest,
+        binary: diff::is_binary(&output),
         outcome,
     }
 }

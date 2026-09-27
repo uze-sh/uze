@@ -449,12 +449,21 @@ pub(crate) struct Rendered {
     pub(crate) content_space: uze_extensions::view::Size,
 }
 
+/// Where the host holds the navigator this frame: the width it was
+/// dragged to, where its list is scrolled, and whether its edge is being
+/// dragged right now.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct NavigatorFrame {
+    pub(crate) width: Option<u16>,
+    pub(crate) scroll: NavigatorScroll,
+    pub(crate) resizing: bool,
+}
+
 pub(crate) fn render(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
-    navigator_width_override: Option<u16>,
-    navigator_scroll: NavigatorScroll,
+    held: NavigatorFrame,
     scope: uze_keys::Scope,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -473,7 +482,7 @@ pub(crate) fn render(
     // column: a navigator's column left empty reads as a list that failed
     // to draw, and pushes the message and the keys off to one side.
     let (navigator_area, content_area, footer) = match view.navigator {
-        Some(_) => content_columns(area, navigator_width_override),
+        Some(_) => content_columns(area, held.width),
         None => whole_width(area),
     };
     // The nav is the surface's, not the list's: it spans the frame, and
@@ -497,7 +506,7 @@ pub(crate) fn render(
     let content_area = below_nav(content_area, nav_rows);
 
     let mut rendered = Rendered {
-        navigator_scroll,
+        navigator_scroll: held.scroll,
         ..Rendered::default()
     };
     if let Some(navigator) = view.navigator.as_ref() {
@@ -506,7 +515,8 @@ pub(crate) fn render(
             navigator_area,
             navigator,
             &view.subjects,
-            navigator_scroll,
+            held.scroll,
+            held.resizing,
             hits,
         );
         rendered.navigator_scroll = settled;
@@ -1172,13 +1182,13 @@ fn render_navigator(
     navigator: &Navigator,
     subjects: &[Mode],
     scroll: NavigatorScroll,
+    resizing: bool,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> (NavigatorScroll, Option<Scrollbar>) {
     // Padding on the divider's side only: a column indented from the
     // pane's own edge as well leaves its rows further in than the nav
     // above them, and there is nothing on that side for them to clear.
-    let inner = Rule::new(Edge::Right)
-        .tone(Token::BorderDefault)
+    let inner = Rule::draggable(Edge::Right, resizing)
         .ground(Token::SurfaceBackground)
         .padding(Padding::new(0, 1, 0, 0))
         .render(frame, area);
@@ -1284,14 +1294,19 @@ fn render_navigator(
                 let fold = mark::disclosure(!*collapsed);
                 let mut spans = vec![
                     TextSpan::raw(" "),
-                    TextSpan::raw("  ".repeat(*depth)),
+                    TextSpan::raw(tree_indent(*depth, rect.width)),
                     TextSpan::styled(format!("{fold} "), theme::fg(Token::TextMuted)),
                 ];
                 spans.extend(row_icon(*icon));
-                spans.push(TextSpan::styled(
-                    name.clone(),
-                    theme::fg(Token::TextSecondary),
-                ));
+                // A compact row's name is a path, whose end is where the
+                // row leads; a plain directory's is a name, read from the
+                // start.
+                let room = label_room(&spans, rect.width);
+                let name = match name.contains('/') {
+                    true => text::elide_head(name, room),
+                    false => text::elide(name, room),
+                };
+                spans.push(TextSpan::styled(name, theme::fg(Token::TextSecondary)));
                 frame.render_widget(Paragraph::new(Line::from(spans)), rect);
                 hits.push((rect, ViewHit::ToggleGroup(*id)));
             }
@@ -1325,13 +1340,17 @@ fn render_navigator(
                         },
                         theme::fg(Token::Accent),
                     ),
-                    TextSpan::raw("  ".repeat(*depth)),
+                    TextSpan::raw(tree_indent(*depth, rect.width)),
                 ];
                 match marker_side {
                     MarkerSide::Leading => {
                         spans.push(leading_marker(marker));
                         spans.extend(row_icon(*icon));
-                        spans.push(TextSpan::styled(name.clone(), label_style));
+                        let room = label_room(&spans, rect.width);
+                        spans.push(TextSpan::styled(
+                            text::elide_file_name(name, room),
+                            label_style,
+                        ));
                     }
                     MarkerSide::Trailing => {
                         spans.extend(row_icon(*icon));
@@ -1347,7 +1366,7 @@ fn render_navigator(
         }
     }
     if let Some(bar) = bar {
-        bar.render(frame, settled.first);
+        bar.render_on_draggable(frame, settled.first, resizing);
     }
     (settled, bar)
 }
@@ -1372,6 +1391,34 @@ fn leading_marker(marker: &Span) -> TextSpan<'static> {
 /// A flat row's name, its `detail` quieter after it, and the marker pinned
 /// to the right edge. The name gives way last: it is what the row is read
 /// for, and the detail only tells apart two rows that share one.
+/// Levels past which a tree indents by one column rather than two.
+const FULL_INDENT_LEVELS: usize = 4;
+
+/// Columns a tree row keeps for its name however deep it sits.
+const LABEL_FLOOR: usize = 12;
+
+/// The blank a row at `depth` starts with.
+///
+/// Two columns a level near the top, where the shape of the tree is read,
+/// and one past [`FULL_INDENT_LEVELS`], where it is only counted; and never
+/// so much that fewer than [`LABEL_FLOOR`] columns are left for the name.
+/// Indentation that pushes the name out of the column shows where a file
+/// is at the cost of which file it is.
+fn tree_indent(depth: usize, width: u16) -> String {
+    let natural = 2 * depth.min(FULL_INDENT_LEVELS) + depth.saturating_sub(FULL_INDENT_LEVELS);
+    let ceiling = usize::from(width).saturating_sub(LABEL_FLOOR + usize::from(TRAILING_PAD) + 4);
+    " ".repeat(natural.min(ceiling))
+}
+
+/// The columns left for a row's name after what `spans` already holds,
+/// keeping the trailing pad off the divider.
+fn label_room(spans: &[TextSpan<'_>], width: u16) -> usize {
+    let used: usize = spans.iter().map(TextSpan::width).sum();
+    usize::from(width)
+        .saturating_sub(used + usize::from(TRAILING_PAD))
+        .max(1)
+}
+
 fn push_flat_label(
     spans: &mut Vec<TextSpan<'static>>,
     width: u16,
@@ -2510,8 +2557,11 @@ mod tests {
                     frame,
                     view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut hits,
                 );
@@ -2607,8 +2657,11 @@ mod tests {
                     frame,
                     &view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut Vec::new(),
                 );
@@ -2995,8 +3048,11 @@ mod tests {
                     frame,
                     view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut hits,
                 );
@@ -3085,8 +3141,11 @@ mod tests {
                     frame,
                     view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Architect,
                     &mut hits,
                 );
@@ -3158,8 +3217,11 @@ mod tests {
                         frame,
                         &view,
                         frame.area(),
-                        Some(24),
-                        NavigatorScroll::default(),
+                        NavigatorFrame {
+                            width: Some(24),
+                            scroll: NavigatorScroll::default(),
+                            resizing: false,
+                        },
                         uze_keys::Scope::Architect,
                         &mut hits,
                     )
@@ -3837,8 +3899,11 @@ mod tests {
                     frame,
                     &view,
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut hits,
                 );
@@ -3959,8 +4024,11 @@ mod tests {
                     frame,
                     &sample(),
                     frame.area(),
-                    Some(24),
-                    NavigatorScroll::default(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut Vec::new(),
                 );
@@ -4079,8 +4147,11 @@ mod tests {
                     frame,
                     view,
                     frame.area(),
-                    Some(24),
-                    scroll,
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll,
+                        resizing: false,
+                    },
                     uze_keys::Scope::Code,
                     &mut Vec::new(),
                 )

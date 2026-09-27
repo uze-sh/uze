@@ -185,7 +185,12 @@ pub(super) fn render(
         );
     }
     if let Some(modal) = &model.release_notes {
-        let targets = crate::ui::release_notes::render(frame, frame.area(), modal);
+        let targets = crate::ui::release_notes::render(
+            frame,
+            frame.area(),
+            modal,
+            model.hovered == Some(WorkspaceHit::ReleaseNotesClose),
+        );
         // Prepended: what is underneath must not answer a click meant here.
         hits.splice(
             0..0,
@@ -226,8 +231,13 @@ pub(super) fn render(
     if let Some(manage) = &model.manage {
         crate::ui::widget::scrim::render(frame, frame.area());
         let mut manage_hits = Vec::new();
-        let chrome =
-            crate::ui::management::render_modal(frame, frame.area(), manage, &mut manage_hits);
+        let chrome = crate::ui::management::render_modal(
+            frame,
+            frame.area(),
+            manage,
+            model.manage_close_hovered,
+            &mut manage_hits,
+        );
         metrics.manage = Some(ManageFrame {
             chrome,
             hits: manage_hits,
@@ -297,8 +307,13 @@ fn render_extension(
         frame,
         &view,
         area,
-        model.code_tree_width,
-        model.code_tree_scroll,
+        crate::ui::extension_view::NavigatorFrame {
+            width: model.code_tree_width,
+            scroll: model.code_tree_scroll,
+            resizing: model
+                .code_edge_drag
+                .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
+        },
         scope,
         &mut view_hits,
     ));

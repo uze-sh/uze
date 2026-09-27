@@ -41,6 +41,14 @@ pub(super) fn read(output: &str, path: &Path, theme_name: &str) -> Vec<DiffCell>
     highlight(parse_unified_diff(output), path, theme_name)
 }
 
+/// Whether Git answered with a note that the file is binary instead of
+/// hunks: `Binary files … differ`, or the header of a binary patch.
+pub(super) fn is_binary(output: &str) -> bool {
+    output
+        .lines()
+        .any(|line| line.starts_with("Binary files ") || line == "GIT binary patch")
+}
+
 /// Parses unified diff output (`git diff`'s own format) into line-numbered,
 /// classified lines in the order Git wrote them. Preamble lines
 /// (`diff --git`, `index`, `---`, `+++`) are skipped; only content inside a

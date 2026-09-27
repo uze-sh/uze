@@ -93,7 +93,7 @@ pub(super) struct OpenFile {
     /// Whether the read that fills this in has landed yet.
     pub(super) loading: bool,
     /// Why it could not be shown, when it could not be.
-    pub(super) error: Option<String>,
+    pub(super) error: Option<crate::Unreadable>,
     /// How many times the text has changed. The identity the rendered
     /// preview is kept against — a number rather than the text itself,
     /// because comparing a document to decide whether to re-render it

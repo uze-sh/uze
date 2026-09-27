@@ -583,8 +583,11 @@ impl Host for RepositoryHost {
         uze_git::repository::root(path)
     }
 
-    fn read_file(&self, path: &Path) -> Result<String, String> {
-        std::fs::read_to_string(path).map_err(|error| error.to_string())
+    fn read_file(&self, path: &Path) -> Result<String, crate::Unreadable> {
+        std::fs::read_to_string(path).map_err(|error| match error.kind() {
+            std::io::ErrorKind::InvalidData => crate::Unreadable::NotText,
+            _ => crate::Unreadable::Failed(error.to_string()),
+        })
     }
 
     fn syntax_theme(&self) -> String {
@@ -630,8 +633,8 @@ impl Host for StillRepository {
         Ok(path.to_path_buf())
     }
 
-    fn read_file(&self, _path: &Path) -> Result<String, String> {
-        Err("nothing is read here".to_owned())
+    fn read_file(&self, _path: &Path) -> Result<String, crate::Unreadable> {
+        Err(crate::Unreadable::Failed("nothing is read here".to_owned()))
     }
 
     fn list_dir(&self, _path: &Path) -> Result<Vec<DirEntry>, String> {
@@ -800,12 +803,12 @@ impl Host for FakeMachine {
         Err("no git here".to_owned())
     }
 
-    fn read_file(&self, path: &Path) -> Result<String, String> {
+    fn read_file(&self, path: &Path) -> Result<String, crate::Unreadable> {
         self.files
             .borrow()
             .get(path)
             .cloned()
-            .ok_or_else(|| "not readable as text".to_owned())
+            .ok_or(crate::Unreadable::NotText)
     }
 
     fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>, String> {
@@ -850,6 +853,49 @@ fn settle(view: &mut CodeView, machine: &FakeMachine) {
 
 fn files_at(root: &str) -> CodeView {
     CodeView::opening(PathBuf::from(root), root.to_owned(), ContentMode::Contents)
+}
+
+/// Opening a directory that holds only a directory carries on down the
+/// chain in the one press, and the selection follows onto the row the
+/// chain is drawn as.
+#[test]
+fn opening_a_chain_of_only_children_opens_all_of_it() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_directory("/w/src/main")
+        .with_directory("/w/src/main/java")
+        .with_file("/w/src/main/java/App.java", "class App {}\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src")));
+
+    press(&mut view, Command::Activate);
+    // One answer brings the whole chain: the tree draws between answers,
+    // and a chain read a level per answer is seen folding into its row.
+    let request = view.take_request().expect("the opened directory is read");
+    view.absorb(fulfill(&machine, request));
+    assert!(
+        view.take_request().is_none(),
+        "nothing further down the chain is left to read"
+    );
+
+    let rows = view.files.rows(&view.root);
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    assert_eq!(names, ["src/main/java", "App.java", "README.md"]);
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/src/main/java")),
+        "the selection is on a row that is drawn"
+    );
+
+    // Left on a file inside the chain steps out to the chain's row.
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::Collapse);
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/src/main/java"))
+    );
 }
 
 #[test]
@@ -1459,14 +1505,17 @@ fn editing_a_crlf_file_keeps_every_other_line_crlf() {
     );
 }
 
+/// An image or an archive is a file the tree is right to list and the
+/// text view has nothing to draw for. That is a state of the file, not a
+/// failure, so it reads as an empty state rather than in red.
 #[test]
-fn an_unreadable_file_says_so_where_its_contents_would_be() {
+fn a_file_that_is_not_text_is_an_empty_state_where_its_contents_would_be() {
     let mut machine = FakeMachine::default();
     machine.directories.insert(
         PathBuf::from("/w"),
         vec![DirEntry {
             directory: false,
-            name: "binary.bin".to_owned(),
+            name: "logo.png".to_owned(),
         }],
     );
     let mut view = files_at("/w");
@@ -1474,13 +1523,34 @@ fn an_unreadable_file_says_so_where_its_contents_would_be() {
     press(&mut view, Command::Activate);
     settle(&mut view, &machine);
 
-    assert!(matches!(
-        super::view(&view, space()).content,
-        Content::Message {
-            role: Role::Danger,
-            ..
-        }
+    let Content::Message { text, hint, role } = super::view(&view, space()).content else {
+        panic!("there are no lines to show");
+    };
+    assert_eq!(role, Role::Muted, "nothing failed");
+    assert!(text.contains("logo.png"), "it names the file: {text}");
+    assert!(hint.is_some(), "and says why there is nothing to read");
+}
+
+/// Git answers a binary change with a note rather than hunks. Drawn as
+/// lines, that is an empty pane under the file's name, which reads as
+/// "nothing changed" about a file the list says did.
+#[test]
+fn a_binary_change_is_an_empty_state_rather_than_an_empty_diff() {
+    let output = "diff --git a/logo.png b/logo.png\nindex 1..2 100644\nBinary files a/logo.png and b/logo.png differ\n";
+    assert!(diff::is_binary(output));
+    assert!(!diff::is_binary(
+        "@@ -1 +1 @@\n-Binary files are fun\n+text\n"
     ));
+
+    let mut view = fixture();
+    view.changes.diff = diff::read(output, Path::new("/repo/src/ui.rs"), FALLBACK_SYNTAX_THEME);
+    view.changes.diff_binary = true;
+
+    let Content::Message { text, role, .. } = super::view(&view, space()).content else {
+        panic!("a binary change has no lines to compare");
+    };
+    assert_eq!(role, Role::Muted, "nothing failed");
+    assert!(text.contains("ui.rs"), "it names the file: {text}");
 }
 
 /// A click says "this many cells into that line"; the caret has to end

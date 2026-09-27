@@ -1243,8 +1243,8 @@ mod tests {
         fn repository_root(&self, _: &Path) -> Result<PathBuf, String> {
             Ok(PathBuf::from("/project"))
         }
-        fn read_file(&self, _: &Path) -> Result<String, String> {
-            Err("not asked".to_owned())
+        fn read_file(&self, _: &Path) -> Result<String, crate::Unreadable> {
+            Err(crate::Unreadable::Failed("not asked".to_owned()))
         }
         fn list_dir(&self, _: &Path) -> Result<Vec<crate::DirEntry>, String> {
             Err("not asked".to_owned())

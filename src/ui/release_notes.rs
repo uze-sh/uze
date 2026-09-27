@@ -234,7 +234,12 @@ pub(crate) struct Targets {
 }
 
 /// Draws the modal centred in `area`.
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, modal: &ReleaseNotesModal) -> Targets {
+pub(crate) fn render(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    modal: &ReleaseNotesModal,
+    close_hovered: bool,
+) -> Targets {
     let layout = layout(area, modal);
     frame.render_widget(Clear, layout.popup);
     surface().render(frame, layout.popup);
@@ -246,13 +251,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, modal: &ReleaseNotesModa
         mark + 2,
         1,
     );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            format!(" {} ", theme::glyph(Symbol::MarkClose)),
-            theme::fg(Token::TextMuted),
-        )),
-        close,
-    );
+    crate::ui::widget::modal::close_mark(frame, close, close_hovered);
     frame.render_widget(Paragraph::new(header_line(modal)), layout.header);
     let scroll = modal.scroll.min(layout.scroll_limit());
     modal.drawn.set(Drawn {
@@ -303,7 +302,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal
             .draw(|frame| {
-                render(frame, frame.area(), modal);
+                render(frame, frame.area(), modal, false);
             })
             .unwrap();
         let buffer = terminal.backend().buffer();
