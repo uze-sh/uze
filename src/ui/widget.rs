@@ -23,7 +23,8 @@
 //! # Primitives and composites
 //!
 //! Most of this is primitives — a surface, a rule, a chip, a row's ground.
-//! [`action_index`] is not: it is a whole overlay, assembled from them. It
+//! [`action_index`] and [`dialog`] are not: each is a whole overlay,
+//! assembled from them. It
 //! earns its place on the same evidence, which is that both clients drew
 //! it and until now both *built* it, and the two builds had already
 //! drifted where a reader could not see.

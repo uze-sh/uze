@@ -1713,6 +1713,18 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
+            _ if self
+                .model
+                .code
+                .as_ref()
+                .is_some_and(code::CodeView::editing) =>
+            {
+                let space = self.code_space();
+                if let Some(view) = self.model.code.as_mut() {
+                    view.paste(&text, space);
+                }
+                self.model.dirty = true;
+            }
             _ if self.model.no_modal_open() => {
                 let pane = self.model.focused_pane();
                 self.model

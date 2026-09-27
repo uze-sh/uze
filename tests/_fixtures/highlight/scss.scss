@@ -1,0 +1,6 @@
+$accent: #7c3aed;
+
+.button {
+  color: $accent;
+  &:hover { opacity: 0.8; }
+}

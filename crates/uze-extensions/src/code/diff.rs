@@ -126,8 +126,15 @@ pub(super) fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
 const COLOURED_DIFF_LINES: usize = 2000;
 
 pub(super) fn highlight(lines: Vec<DiffLine>, path: &Path, theme_name: &str) -> Vec<DiffCell> {
-    let mut old = super::highlight::highlighter(path, theme_name);
-    let mut new = super::highlight::highlighter(path, theme_name);
+    // The new file's first line, when the diff reaches it: all a script
+    // with no extension says about its language is its shebang, and a
+    // new script is exactly the diff that starts there.
+    let first_line = lines
+        .iter()
+        .find(|line| line.kind != DiffLineKind::Removed && line.line_no == 1)
+        .map(|line| line.text.clone());
+    let mut old = super::highlight::highlighter(path, first_line.as_deref(), theme_name);
+    let mut new = super::highlight::highlighter(path, first_line.as_deref(), theme_name);
     lines
         .into_iter()
         .enumerate()
@@ -203,6 +210,15 @@ mod tests {
             parse_unified_diff("@@ -4294967295 +4294967295 @@\n context\n+added\n-removed\n");
         assert_eq!(lines.len(), 3);
         assert!(lines.iter().all(|line| line.line_no == u32::MAX));
+    }
+
+    /// A new script with no extension is named by its shebang in the
+    /// diff too, not only once opened.
+    #[test]
+    fn a_new_script_is_coloured_by_its_shebang() {
+        let output = "@@ -0,0 +1,2 @@\n+#!/usr/bin/env bash\n+export NAME=\"$HOME\"\n";
+        let cells = read(output, Path::new("bin/run"), FALLBACK_SYNTAX_THEME);
+        assert!(cells[1].spans.len() > 1, "{:?}", cells[1].spans);
     }
 
     /// A diff longer than colouring pays for keeps every line and every

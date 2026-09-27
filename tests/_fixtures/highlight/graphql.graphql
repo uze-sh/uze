@@ -1,0 +1,8 @@
+type User {
+  id: ID!
+  name: String
+}
+
+query Users($first: Int = 10) {
+  users(first: $first) { id name }
+}

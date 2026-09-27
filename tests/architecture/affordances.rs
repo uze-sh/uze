@@ -226,11 +226,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::ConfirmDelete,
-        KeyboardOnly(
-            "it answers a question the footer just asked, and a question \
-             answered by hunting for a control is one the operator answers \
-             wrong",
-        ),
+        Control("the Delete button of the dialog that asks about the file"),
     );
     for caret in [
         Action::CaretLeft,
@@ -238,6 +234,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::CaretLineStart,
         Action::CaretLineEnd,
         Action::InsertNewline,
+        Action::InsertIndent,
         Action::EraseForward,
     ] {
         put(
@@ -371,11 +368,11 @@ fn a_bound_action_is_never_reachable_by_keyboard_alone_without_a_reason() {
                 "caret-line-end",
                 "caret-line-start",
                 "caret-right",
-                "confirm-delete",
                 "deliver-all-tasks",
                 "edit-file",
                 "erase-back",
                 "erase-forward",
+                "insert-indent",
                 "insert-newline",
                 "save-file",
             ]

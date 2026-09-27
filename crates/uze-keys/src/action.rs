@@ -289,6 +289,8 @@ actions! {
         "Line end", "Move the caret to the end of its line";
     InsertNewline => "insert-newline", false,
         "New line", "Split the line at the caret";
+    InsertIndent => "insert-indent", false,
+        "Indent", "Insert one level of the file's own indentation at the caret";
     EraseForward => "erase-forward", false,
         "Delete", "Delete the character under the caret";
 

@@ -16,8 +16,8 @@ use super::{
 };
 use crate::shared::{canvas::Glyphs, checkout};
 use crate::view::{
-    Command, Content, ContentLine, Layout, LineTone, MarkerSide, Mode, Navigator, NavigatorRow,
-    Role, RowIcon, Size, Span, TrailStep, View,
+    Command, Confirm, Content, ContentLine, Layout, LineTone, MarkerSide, Mode, Navigator,
+    NavigatorRow, Role, RowIcon, Size, Span, TrailStep, View,
 };
 
 /// `space` is advisory: it bounds how much content is worth producing,
@@ -86,7 +86,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
         },
         footer,
         notice: notice(code),
-        confirm: super::change_menu::confirm(code),
+        confirm: super::change_menu::confirm(code).or_else(|| delete_confirm(code)),
         modes: modes(code),
         subjects: subjects(code),
         layout: Layout::Sidebar,
@@ -228,16 +228,29 @@ fn mode_label(showing: Showing) -> String {
     }
 }
 
+/// Deleting cannot be taken back, so it is asked in the dialog every
+/// other such question is, naming the file.
+fn delete_confirm(code: &CodeView) -> Option<Confirm> {
+    let deleting = code.confirming_delete.as_ref()?;
+    Some(Confirm {
+        title: "Delete file".to_owned(),
+        subject: deleting
+            .path
+            .strip_prefix(&code.root)
+            .unwrap_or(&deleting.path)
+            .display()
+            .to_string(),
+        body: "Removes it from the checkout. Anything Git has not recorded of it is lost."
+            .to_owned(),
+        confirm: "Delete".to_owned(),
+        on_confirm: deleting.on_confirm,
+    })
+}
+
 /// What the footer says beside the keys: the question a second press
 /// answers while one is waiting, and otherwise the last thing that
 /// happened.
 fn notice(code: &CodeView) -> Option<Span> {
-    if let Some(path) = &code.confirming_delete {
-        return Some(Span::new(
-            format!("delete {}?", super::file_name(path)),
-            Role::Danger,
-        ));
-    }
     if code.confirming_discard {
         let name = code
             .open

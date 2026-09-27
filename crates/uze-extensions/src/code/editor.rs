@@ -9,7 +9,7 @@ use std::{cell::RefCell, collections::VecDeque, path::PathBuf};
 
 use super::request::LoadedFile;
 use crate::view::Command;
-use crate::view::{Caret, ContentLine, Rgb};
+use crate::view::{Caret, ContentLine, Rgb, TAB_WIDTH};
 
 /// How the file terminated its lines when it was read.
 ///
@@ -150,9 +150,12 @@ impl OpenFile {
         };
         let mut cells = 0usize;
         for (column, character) in text.chars().enumerate() {
-            let width = unicode_width::UnicodeWidthChar::width(character)
-                .unwrap_or(1)
-                .max(1);
+            let width = match character {
+                '\t' => TAB_WIDTH,
+                _ => unicode_width::UnicodeWidthChar::width(character)
+                    .unwrap_or(1)
+                    .max(1),
+            };
             // Landing anywhere inside a wide glyph means that glyph, not
             // the one after it.
             if cell < cells + width {
@@ -263,15 +266,8 @@ impl OpenFile {
     /// the next save re-reads the file and colours all of it properly —
     /// so the error is bounded in both size and lifetime.
     pub(super) fn recolour_caret_line(&mut self) {
-        self.changed();
-        let Some(text) = self.lines.get(self.caret.line) else {
-            return;
-        };
-        let mut highlighter = crate::code::highlight::highlighter(&self.path, &self.theme);
-        let spans = crate::code::highlight::line(&mut highlighter, text, &self.theme);
-        if let Some(slot) = self.highlighted.get_mut(self.caret.line) {
-            *slot = spans;
-        }
+        let line = self.caret.line;
+        self.recolour(line..=line);
     }
 
     pub(super) fn insert(&mut self, character: char) {
@@ -284,6 +280,100 @@ impl OpenFile {
         self.caret.column += 1;
         self.modified = true;
         self.recolour_caret_line();
+    }
+
+    /// One level of this file's indentation at the caret: a tab where the
+    /// file indents with tabs — a Makefile has no other kind — and
+    /// otherwise the spaces that reach the next step of its own width.
+    pub(super) fn indent(&mut self) {
+        match self.indentation() {
+            Indentation::Tabs => self.insert('\t'),
+            Indentation::Spaces(width) => {
+                let spaces = width - self.caret.column % width;
+                self.insert_text(&" ".repeat(spaces));
+            }
+        }
+    }
+
+    /// How the file indents, read from its lines: tabs if any line starts
+    /// with one, otherwise the narrowest run of leading spaces it uses —
+    /// the step every deeper level is a multiple of.
+    fn indentation(&self) -> Indentation {
+        if self.lines.iter().any(|line| line.starts_with('\t')) {
+            return Indentation::Tabs;
+        }
+        let narrowest = self
+            .lines
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                line.chars()
+                    .take_while(|character| *character == ' ')
+                    .count()
+            })
+            .filter(|spaces| *spaces > 0)
+            .min();
+        Indentation::Spaces(narrowest.unwrap_or(TAB_WIDTH).min(8))
+    }
+
+    /// Text arriving all at once — a paste — placed at the caret, its line
+    /// breaks splitting lines the way Enter would, and the caret left
+    /// after it.
+    ///
+    /// One edit rather than a keystroke per character, because each of
+    /// those recolours its line and a pasted block of any size would pay
+    /// that once per character instead of once per line.
+    pub(super) fn insert_text(&mut self, pasted: &str) {
+        let pasted = pasted.replace("\r\n", "\n").replace('\r', "\n");
+        if pasted.is_empty() {
+            return;
+        }
+        let first = self.caret.line;
+        let Some(text) = self.lines.get_mut(first) else {
+            return;
+        };
+        let at = byte_offset(text, self.caret.column);
+        let tail = text.split_off(at);
+        let mut pieces = pasted.split('\n');
+        text.push_str(pieces.next().unwrap_or_default());
+        let mut line = first;
+        for piece in pieces {
+            line += 1;
+            self.lines.insert(line, piece.to_owned());
+            self.highlighted.insert(line, Vec::new());
+        }
+        let column = self.line_len(line);
+        self.lines[line].push_str(&tail);
+        self.caret = Caret { line, column };
+        self.modified = true;
+        self.recolour(first..=line);
+    }
+
+    /// Moves the caret a page of `rows` lines up or down, keeping its
+    /// column where the line allows.
+    pub(super) fn page(&mut self, rows: usize, down: bool) {
+        let rows = rows.max(1);
+        let line = match down {
+            true => self.caret.line.saturating_add(rows),
+            false => self.caret.line.saturating_sub(rows),
+        };
+        self.place_caret(line);
+    }
+
+    /// Recolours `lines` as one stream, so a construct opened on the
+    /// first of them carries into the rest.
+    fn recolour(&mut self, lines: std::ops::RangeInclusive<usize>) {
+        self.changed();
+        let first_line = self.lines.first().map(String::as_str);
+        let mut highlighter =
+            crate::code::highlight::highlighter(&self.path, first_line, &self.theme);
+        for index in lines {
+            let (Some(text), Some(slot)) = (self.lines.get(index), self.highlighted.get_mut(index))
+            else {
+                break;
+            };
+            *slot = crate::code::highlight::line(&mut highlighter, text, &self.theme);
+        }
     }
 
     pub(super) fn split_line(&mut self) {
@@ -399,6 +489,13 @@ impl OpenFile {
         }
         text
     }
+}
+
+/// What one level of a file's indentation is made of.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Indentation {
+    Tabs,
+    Spaces(usize),
 }
 
 /// The byte offset of character `column` in `text`, clamped to its end.

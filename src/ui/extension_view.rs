@@ -21,7 +21,7 @@ use ratatui::{
 use uze_extensions::view::{
     Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
     Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section,
-    Size, Span, TrailStep, View, ViewHit,
+    Size, Span, TAB_WIDTH, TrailStep, View, ViewHit,
 };
 
 use crate::ui::theme::{self, Symbol, Token};
@@ -116,7 +116,87 @@ fn styled(span: &Span) -> TextSpan<'static> {
         true => style.add_modifier(Modifier::ITALIC),
         false => style.remove_modifier(Modifier::ITALIC),
     };
-    TextSpan::styled(span.text.clone(), style)
+    TextSpan::styled(without_tabs(&span.text), style)
+}
+
+/// `text` with each tab spelled as the [`TAB_WIDTH`] spaces it occupies.
+///
+/// ratatui drops control characters as it draws, so a tab left in is an
+/// indentation that silently is not there — and a caret counted past it
+/// sits a column short of the character it names.
+fn without_tabs(text: &str) -> String {
+    match text.contains('\t') {
+        true => text.replace('\t', &" ".repeat(TAB_WIDTH)),
+        false => text.to_owned(),
+    }
+}
+
+/// How many cells `character` takes: a tab its [`TAB_WIDTH`], anything
+/// else what Unicode says, and never nothing — a zero-width character the
+/// caret can stand on still needs a cell to be seen standing there.
+fn cell_width(character: char) -> usize {
+    match character {
+        '\t' => TAB_WIDTH,
+        _ => unicode_width::UnicodeWidthChar::width(character)
+            .unwrap_or(0)
+            .max(1),
+    }
+}
+
+/// Folds `line` at `width` cells, calling `visit` with the row and cell
+/// each character lands on, and answers where the next one would.
+///
+/// One walk for the three things that must agree about it — which row a
+/// character is drawn on, how many rows the line takes, and where the
+/// caret stands — because the paragraph wrap this replaced broke at
+/// words while the other two counted cells, and a caret on a long line
+/// drifted a word further off with every row.
+fn fold(
+    line: &ContentLine,
+    width: usize,
+    mut visit: impl FnMut(usize, usize, &Span, char),
+) -> (usize, usize) {
+    let width = width.max(1);
+    let (mut row, mut cell) = (0usize, 0usize);
+    for span in &line.spans {
+        for character in span.text.chars() {
+            let taken = cell_width(character);
+            if cell > 0 && cell + taken > width {
+                row += 1;
+                cell = 0;
+            }
+            visit(row, cell, span, character);
+            cell += taken;
+        }
+    }
+    (row, cell)
+}
+
+/// `line`'s spans, styled and folded into the rows [`fold`] puts them on.
+fn folded_rows(line: &ContentLine, width: usize) -> Vec<Vec<TextSpan<'static>>> {
+    let mut rows: Vec<Vec<TextSpan<'static>>> = vec![Vec::new()];
+    let mut last: Option<*const Span> = None;
+    fold(line, width, |row, _, span, character| {
+        if rows.len() <= row {
+            rows.push(Vec::new());
+            last = None;
+        }
+        let spans = rows.last_mut().expect("a row was pushed above");
+        let text = match character {
+            '\t' => " ".repeat(TAB_WIDTH),
+            _ => character.to_string(),
+        };
+        match spans.last_mut() {
+            Some(piece) if last == Some(std::ptr::from_ref(span)) => {
+                piece.content.to_mut().push_str(&text);
+            }
+            _ => {
+                spans.push(TextSpan::styled(text, styled(span).style));
+                last = Some(std::ptr::from_ref(span));
+            }
+        }
+    });
+    rows
 }
 
 pub(crate) fn clamp_navigator_width(width: u16, total_width: u16) -> u16 {
@@ -1672,25 +1752,23 @@ fn render_caret(
     gutter: u16,
 ) {
     let width = text_width(row.width, gutter);
-    let mut before = 0usize;
-    let mut remaining = column;
-    for span in &line.spans {
-        for character in span.text.chars() {
-            if remaining == 0 {
-                break;
-            }
-            before += TextSpan::raw(character.to_string()).width().max(1);
-            remaining -= 1;
+    let mut seen = 0usize;
+    let mut at = None;
+    let end = fold(line, width, |row, cell, _, _| {
+        if seen == column {
+            at = Some((row, cell));
         }
-        if remaining == 0 {
-            break;
-        }
-    }
+        seen += 1;
+    });
     // A caret past the last character sits one cell beyond it, which is
-    // where the next one will be typed.
-    before += remaining;
-    let x = row.x + gutter + (before % width) as u16;
-    let y = row.y + (before / width) as u16;
+    // where the next one will be typed — on the next row when this one is
+    // full.
+    let (down, across) = at.unwrap_or(match end {
+        (row, cell) if cell >= width => (row + 1, 0),
+        (row, cell) => (row, cell + column.saturating_sub(seen)),
+    });
+    let x = row.x + gutter + across as u16;
+    let y = row.y + down as u16;
     if y >= row.bottom() || x >= row.right() {
         return;
     }
@@ -1719,13 +1797,10 @@ fn render_scrollbar(
 }
 
 fn line_height(line: &ContentLine, width: u16, gutter: u16) -> u16 {
-    let content_width = text_width(width, gutter);
-    let text_width: usize = line.spans.iter().map(|span| styled(span).width()).sum();
-    (text_width.max(1).div_ceil(content_width)) as u16
+    let (row, _) = fold(line, text_width(width, gutter), |_, _, _, _| {});
+    u16::try_from(row + 1).unwrap_or(u16::MAX)
 }
 
-/// One line: a gutter mark, one stable number column, then content wrapped
-/// to the width that is left.
 fn render_line(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -1766,12 +1841,34 @@ fn render_line(
             columns[0],
         );
     }
-    let mut text = Paragraph::new(Line::from(content_spans))
-        .style(Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))));
-    // A drawing is cut at the edge; only prose is folded at it.
-    if wrapped {
-        text = text.wrap(Wrap { trim: false });
+    // A drawing is cut at the edge and prose breaks at its words. Code
+    // is folded at the cell, by the same walk that places the caret on
+    // it, since a caret is only ever drawn on a numbered line.
+    if wrapped && gutter == 0 {
+        let text = Paragraph::new(Line::from(content_spans))
+            .style(
+                Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))),
+            )
+            .wrap(Wrap { trim: false });
+        frame.render_widget(text, columns[1]);
+        return;
     }
+    let lines = match wrapped {
+        true => folded_rows(line, usize::from(columns[1].width))
+            .into_iter()
+            .map(|mut row| {
+                if let Some(background) = background {
+                    for span in &mut row {
+                        span.style = span.style.bg(background);
+                    }
+                }
+                Line::from(row)
+            })
+            .collect(),
+        false => vec![Line::from(content_spans)],
+    };
+    let text = Paragraph::new(lines)
+        .style(Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))));
     frame.render_widget(text, columns[1]);
 }
 
@@ -1831,7 +1928,7 @@ fn render_footer(
 /// is bound to. Kept here, beside the render that needs it, rather than in
 /// the extension, which knows nothing of either. Where two actions reach
 /// one command, the first row is the one a footer names.
-const COMMAND_ACTIONS: [(Command, uze_keys::Action); 38] = [
+const COMMAND_ACTIONS: [(Command, uze_keys::Action); 39] = [
     (Command::Close, uze_keys::Action::Dismiss),
     (Command::FocusNext, uze_keys::Action::FocusNext),
     (Command::FocusNext, uze_keys::Action::FocusPrevious),
@@ -1853,6 +1950,7 @@ const COMMAND_ACTIONS: [(Command, uze_keys::Action); 38] = [
     (Command::CaretLineStart, uze_keys::Action::CaretLineStart),
     (Command::CaretLineEnd, uze_keys::Action::CaretLineEnd),
     (Command::Newline, uze_keys::Action::InsertNewline),
+    (Command::Indent, uze_keys::Action::InsertIndent),
     (Command::EraseBack, uze_keys::Action::EraseBack),
     (Command::EraseForward, uze_keys::Action::EraseForward),
     (Command::Pan(PanDirection::Left), uze_keys::Action::PanLeft),
@@ -3564,6 +3662,52 @@ mod tests {
             theme::color(Token::Accent),
             "and it is marked by inverting its cell"
         );
+    }
+
+    fn code_line(text: &str) -> ContentLine {
+        ContentLine {
+            gutter: " ".to_owned(),
+            number: "1".to_owned(),
+            tone: LineTone::Neutral,
+            spans: vec![Span::new(text, Role::Default)],
+        }
+    }
+
+    /// Draws `line` with the caret at `column` into a text column
+    /// `width` cells wide, and answers what landed where.
+    fn drawn_with_caret(line: &ContentLine, width: u16, column: usize) -> ratatui::buffer::Buffer {
+        let area = Rect::new(0, 0, GUTTER_WIDTH + width, 4);
+        let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_line(frame, area, line, GUTTER_WIDTH, true);
+                render_caret(frame, area, line, column, GUTTER_WIDTH);
+            })
+            .unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    /// ratatui drops a tab as a control character, which drew every
+    /// tab-indented file flush left and put the caret a tab short.
+    #[test]
+    fn a_tab_is_drawn_as_the_indentation_it_is() {
+        let buffer = drawn_with_caret(&code_line("\tx"), 10, 1);
+        let x = GUTTER_WIDTH + TAB_WIDTH as u16;
+        assert_eq!(buffer[(x, 0)].symbol(), "x");
+        assert_eq!(buffer[(x, 0)].bg, theme::color(Token::Accent));
+    }
+
+    /// Folded code breaks at the cell, not the word, and the caret is
+    /// placed by the same walk: under word wrap the caret on a long
+    /// line drifted off the character it named.
+    #[test]
+    fn the_caret_on_a_folded_line_sits_on_its_own_character() {
+        let line = code_line("abcd efghijkl");
+        assert_eq!(line_height(&line, GUTTER_WIDTH + 6, GUTTER_WIDTH), 3);
+        let buffer = drawn_with_caret(&line, 6, 9);
+        let (x, y) = (GUTTER_WIDTH + 3, 1);
+        assert_eq!(buffer[(x, y)].symbol(), "i");
+        assert_eq!(buffer[(x, y)].bg, theme::color(Token::Accent));
     }
 
     /// A click resolves to a text position through two halves that each
