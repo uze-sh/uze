@@ -265,6 +265,8 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Plugins, "i", Action::InstallPlugin),
         bind(Scope::Plugins, "u", Action::UpdatePlugin),
         bind(Scope::Plugins, "r", Action::RemovePlugin),
+        bind(Scope::Plugins, "pagedown", Action::ScrollPageDown),
+        bind(Scope::Plugins, "pageup", Action::ScrollPageUp),
         bind(Scope::Extensions, "e", Action::EnableExtension),
         bind(Scope::Extensions, "o", Action::DisableExtension),
         bind(Scope::Harnesses, "s", Action::SetupHarness),
@@ -553,6 +555,10 @@ mod tests {
                 // reset is rare enough to live on its button and menu.
                 "change-key",
                 "reset-key",
+                // On the Marketplace rail the removal key already reaches it:
+                // `r` removes the thing you are on, and there that is a
+                // marketplace.
+                "remove-marketplace",
                 "install-project-environment",
                 "open-glossary",
                 "apply-profile",

@@ -15,8 +15,14 @@ use uze_keys::{Action, Resolution, Scope};
 
 use super::hit::Hit;
 use super::keys;
-use super::model::{Confirmation, Focus, Overlay, ProfilePanel, ResizablePanel, Route, TuiModel};
+use super::model::{
+    Confirmation, Focus, Overlay, PluginPane, ProfilePanel, ResizablePanel, Route, TuiModel,
+};
 use super::worker::Intent;
+
+/// How far one wheel notch and one page key move a resource's preview.
+const PREVIEW_WHEEL: i16 = 3;
+const PREVIEW_PAGE: i16 = 12;
 
 impl TuiModel {
     /// What is open, outermost first — the value that replaced an ordering
@@ -156,10 +162,15 @@ impl TuiModel {
             // screen is wanting to be on it.
             Action::NextScreen => self.step_route(1),
             Action::PreviousScreen => self.step_route(-1),
+            Action::FocusSidebar if self.in_plugins_content() => {
+                self.step_plugins_back();
+                Intent::None
+            }
             Action::FocusSidebar => {
                 self.focus = Focus::Sidebar;
                 Intent::None
             }
+            Action::FocusContent if self.in_plugins_content() => self.step_plugins_in(),
             Action::FocusContent => {
                 self.focus = Focus::Content;
                 Intent::None
@@ -181,6 +192,10 @@ impl TuiModel {
                 }
                 if self.route == Route::Settings {
                     return self.activate_settings();
+                }
+                if self.route == Route::Plugins && self.plugin_pane == PluginPane::Markets {
+                    self.plugin_pane = PluginPane::Plugins;
+                    return self.marketplace_inspect_intent();
                 }
                 self.open_or_act()
             }
@@ -239,6 +254,18 @@ impl TuiModel {
                         focus: None,
                     };
                 }
+                Intent::None
+            }
+            // One letter removes the thing you are on, and on the rail that
+            // is a marketplace.
+            Action::RemovePlugin
+                if self.route == Route::Plugins && self.plugin_pane == PluginPane::Markets =>
+            {
+                self.confirm_market_removal();
+                Intent::None
+            }
+            Action::RemoveMarketplace => {
+                self.confirm_market_removal();
                 Intent::None
             }
             Action::RemovePlugin => {
@@ -320,6 +347,14 @@ impl TuiModel {
                 Intent::None
             }
             Action::ApplyProfile => self.apply_selected_profile(),
+            Action::ScrollPageDown => {
+                self.scroll_resource_preview(PREVIEW_PAGE);
+                Intent::None
+            }
+            Action::ScrollPageUp => {
+                self.scroll_resource_preview(-PREVIEW_PAGE);
+                Intent::None
+            }
             Action::PreviewProfile => {
                 self.toggle_profile_preview();
                 Intent::None
@@ -378,6 +413,15 @@ impl TuiModel {
                 self.move_prompt_selection(delta);
                 Intent::None
             }
+            Route::Plugins if self.plugin_pane == PluginPane::Markets => {
+                self.move_plugin_market(delta);
+                Intent::None
+            }
+            Route::Plugins => {
+                self.move_plugin_row(delta);
+                self.selection_moved_at = Some(std::time::Instant::now());
+                Intent::None
+            }
             // The detail is asked for by the per-frame check once the
             // selection rests: holding an arrow down would otherwise start
             // an inspection for every row it passes over.
@@ -393,6 +437,13 @@ impl TuiModel {
     /// instead of the generic sidebar/content toggle — scoped to that
     /// route so every other screen's focus behaviour is unchanged.
     fn cycle_focus(&mut self, forward: bool) -> Intent {
+        if self.in_plugins_content() {
+            self.plugin_pane = match self.plugin_pane {
+                PluginPane::Markets => PluginPane::Plugins,
+                PluginPane::Plugins => PluginPane::Markets,
+            };
+            return Intent::None;
+        }
         if self.route == Route::Profiles && self.focus == Focus::Content {
             self.profile_panel = if forward {
                 self.profile_panel.next()
@@ -406,6 +457,82 @@ impl TuiModel {
             Focus::Content => Focus::Sidebar,
         };
         Intent::None
+    }
+
+    fn in_plugins_content(&self) -> bool {
+        self.route == Route::Plugins && self.focus == Focus::Content
+    }
+
+    /// Left on the Plugins screen walks back out one step at a time: an
+    /// unfolded plugin folds, the plugins hand over to the marketplaces,
+    /// and the marketplaces to the sidebar.
+    fn step_plugins_back(&mut self) {
+        if self.plugin_pane == PluginPane::Plugins && self.selected_resource().is_some() {
+            let position = self.remembered.plugin_screen.selected;
+            self.select_plugin_row(position, None);
+            return;
+        }
+        match self.plugin_pane {
+            PluginPane::Markets => self.focus = Focus::Sidebar,
+            PluginPane::Plugins => match self
+                .selected_marketplace_plugin()
+                .map(|plugin| self.marketplace_plugin_id(&plugin))
+                .filter(|id| self.expanded_plugins.contains(id))
+            {
+                Some(id) => self.toggle_plugin_expanded(&id),
+                None => self.plugin_pane = PluginPane::Markets,
+            },
+        }
+    }
+
+    /// Right walks in the same steps the other way, ending by unfolding
+    /// the selected plugin — asking for its resources, which is what an
+    /// unfolded row draws.
+    fn step_plugins_in(&mut self) -> Intent {
+        match self.plugin_pane {
+            PluginPane::Markets => {
+                self.plugin_pane = PluginPane::Plugins;
+                self.marketplace_inspect_intent()
+            }
+            PluginPane::Plugins => {
+                let Some(plugin) = self
+                    .selected_marketplace_plugin()
+                    .filter(|_| self.selected_resource().is_none())
+                else {
+                    return Intent::None;
+                };
+                let id = self.marketplace_plugin_id(&plugin);
+                self.expanded_plugins.insert(id);
+                self.marketplace_inspect_intent()
+            }
+        }
+    }
+
+    /// Scrolls the drawer's preview of the selected resource, between its
+    /// top and the row that puts its end at the drawer's bottom.
+    pub(crate) fn scroll_resource_preview(&mut self, rows: i16) {
+        if self.route == Route::Plugins && self.selected_resource().is_some() {
+            self.resource_scroll = self
+                .resource_scroll
+                .saturating_add_signed(rows)
+                .min(super::view::plugins::preview_scroll_limit());
+        }
+    }
+
+    /// Removing a marketplace is asked about, like removing a plugin; the
+    /// built-in one and the local group of ad-hoc installs have nothing to
+    /// remove, and the key says so rather than doing nothing.
+    pub(crate) fn confirm_market_removal(&mut self) {
+        match self.selected_market_summary() {
+            Some(market) if market.offers().iter().any(|offer| offer.is_available()) => {
+                self.overlay = Overlay::Confirm {
+                    kind: Confirmation::RemoveMarketplace(market.name.clone()),
+                    focus: Some(1),
+                };
+            }
+            Some(market) => self.say(format!("{} ships inside uze", market.name)),
+            None => self.say("Select a marketplace to remove"),
+        }
     }
 
     /// Closes the innermost thing that is open — a capture, a filter, a
@@ -558,6 +685,20 @@ impl TuiModel {
                 if let Overlay::ReleaseNotes(modal) = &mut self.overlay {
                     modal.wheel(event.kind == MouseEventKind::ScrollDown);
                 }
+                Intent::None
+            }
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
+                if self.overlay == Overlay::None
+                    && matches!(
+                        self.hit_at(event.column, event.row),
+                        Some(Hit::ResourcePreview)
+                    ) =>
+            {
+                self.scroll_resource_preview(if event.kind == MouseEventKind::ScrollDown {
+                    PREVIEW_WHEEL
+                } else {
+                    -PREVIEW_WHEEL
+                });
                 Intent::None
             }
             MouseEventKind::ScrollDown if self.overlay == Overlay::None => {

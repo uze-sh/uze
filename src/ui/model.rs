@@ -1,6 +1,6 @@
 //! TUI — navigation, selection, and overlay state.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::{
     path::PathBuf,
     time::{Duration, Instant},
@@ -13,9 +13,9 @@ use uze_extensions::registry::BuiltinExtension;
 use uze_application::application::offers::ActionOffer;
 use uze_application::application::{
     ContextPlan, DoctorReport, HarnessHealth, HarnessPreview, MarketplacePluginDetail,
-    MarketplacePluginSummary, MarketplaceSummary, OverviewWorkspaceSummary, PluginInspection,
-    PluginSummary, ProfileApplyResult, ProfilePreview, ProfileSummary, ProjectContextStatus,
-    ProjectEnvironmentState,
+    MarketplacePluginSummary, MarketplaceSummary, OverviewWorkspaceSummary, PluginCapability,
+    PluginInspection, PluginSummary, ProfileApplyResult, ProfilePreview, ProfileSummary,
+    ProjectContextStatus, ProjectEnvironmentState,
 };
 
 use super::hit::Hit;
@@ -109,7 +109,7 @@ impl Route {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Route::Overview => "Overview",
-            Route::Plugins => "Plugins",
+            Route::Plugins => "Marketplace",
             Route::Extensions => "Extensions",
             Route::Harnesses => "Integrations",
             Route::Profiles => "Profiles",
@@ -124,7 +124,7 @@ impl Route {
     pub(crate) fn subtitle(self) -> &'static str {
         match self {
             Route::Overview => "status & health",
-            Route::Plugins => "skills & MCP",
+            Route::Plugins => "plugins & skills",
             Route::Extensions => "official tools",
             Route::Harnesses => "detected agents",
             Route::Profiles => "agent preferences",
@@ -226,6 +226,16 @@ impl Route {
     pub(crate) fn from_id(id: &str) -> Option<Self> {
         routes().into_iter().find(|route| route.id() == id)
     }
+}
+
+/// The Plugins screen's two columns: the marketplaces down its left, and
+/// the plugins of whichever one is selected beside them. The detail column
+/// describes the one the keyboard is in.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum PluginPane {
+    Markets,
+    #[default]
+    Plugins,
 }
 
 /// Which of the Profiles screen's three panels currently has the arrow keys,
@@ -473,6 +483,7 @@ pub(crate) enum Overlay {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Confirmation {
     RemovePlugin(String),
+    RemoveMarketplace(String),
     UpdatePlugin(String),
     InstallPlugin {
         name: String,
@@ -607,9 +618,27 @@ pub(crate) struct TuiModel {
     pub(crate) selection_moved_at: Option<std::time::Instant>,
     /// Whether the active list screen's filter is taking text.
     pub(crate) filtering: bool,
-    /// Marketplace group names currently collapsed in the tree — absence
-    /// means expanded, so a freshly registered marketplace starts open.
-    pub(crate) collapsed_marketplaces: BTreeSet<String>,
+    /// The marketplace the Plugins rail is on, by name; `None` is "All".
+    /// A name rather than a position, so a refresh that reorders the rail
+    /// or a removal that shortens it cannot move the reader somewhere else.
+    pub(crate) plugin_market: Option<String>,
+    /// Which of the Plugins screen's two columns the keyboard is in.
+    pub(crate) plugin_pane: PluginPane,
+    /// Plugins unfolded to show their resources, by qualified id. Session
+    /// only: what was open is a question about this visit.
+    pub(crate) expanded_plugins: BTreeSet<String>,
+    /// Every plugin's resources the drawer has been told this session, by
+    /// qualified id — what an unfolded row draws, since the listing itself
+    /// carries none and asking every catalogue for them per frame would put
+    /// a read of every plugin on the render path.
+    pub(crate) plugin_resources: BTreeMap<String, Vec<PluginCapability>>,
+    /// The resource under the selected plugin the keyboard is on, by
+    /// identity; `None` is the plugin's own row. Only honoured while that
+    /// plugin is unfolded and still offers it — see
+    /// [`TuiModel::selected_resource`].
+    pub(crate) selected_resource: Option<String>,
+    /// How far the drawer's preview of that resource is scrolled, in rows.
+    pub(crate) resource_scroll: u16,
 
     /// The official uze extensions catalog, from
     /// `uze_extensions::registry::ExtensionRegistry`.
@@ -800,7 +829,12 @@ impl TuiModel {
             inspection_in_flight: None,
             selection_moved_at: None,
             filtering: false,
-            collapsed_marketplaces: layout.collapsed_marketplaces.clone(),
+            plugin_market: layout.plugin_market.clone(),
+            plugin_pane: PluginPane::default(),
+            expanded_plugins: BTreeSet::new(),
+            plugin_resources: BTreeMap::new(),
+            selected_resource: None,
+            resource_scroll: 0,
             extensions: uze_extensions::registry::ExtensionRegistry::builtin()
                 .all()
                 .to_vec(),
@@ -859,7 +893,7 @@ impl TuiModel {
             extension_drawer_width: remembered.extension_screen.drawer_width,
             harness_drawer_width: remembered.harness_screen.drawer_width,
             profile_columns_width: self.profile_columns_width,
-            collapsed_marketplaces: self.collapsed_marketplaces.clone(),
+            plugin_market: self.plugin_market.clone(),
         }
     }
 
@@ -984,10 +1018,10 @@ impl TuiModel {
             .unwrap_or_else(|| plugin.name.clone())
     }
 
-    /// Every `marketplace_rows` index that currently passes the live
-    /// filter (case-insensitive substring of plugin or marketplace name)
-    /// and belongs to a group that isn't collapsed — the single source of
-    /// truth both the list renderer and selection/navigation resolve
+    /// Every `marketplace_rows` index that belongs to the marketplace the
+    /// rail is on and passes the live filter (case-insensitive substring of
+    /// the plugin's name, its marketplace or a keyword) — the single source
+    /// of truth both the list renderer and selection/navigation resolve
     /// through, so a hidden row is never selectable and vice versa.
     pub(crate) fn marketplace_visible_indices(&self) -> Vec<usize> {
         self.visible_indices_in(&self.marketplace_rows())
@@ -998,13 +1032,18 @@ impl TuiModel {
     /// asks for it once per question composes it several times over.
     pub(crate) fn visible_indices_in(&self, rows: &[MarketplacePluginSummary]) -> Vec<usize> {
         let needle = self.remembered.plugin_screen.filter.trim().to_lowercase();
+        let market = self.market_in_rail(rows);
         rows.iter()
             .enumerate()
-            .filter(|(_, plugin)| !self.collapsed_marketplaces.contains(&plugin.marketplace))
+            .filter(|(_, plugin)| market.is_none_or(|market| plugin.marketplace == market))
             .filter(|(_, plugin)| {
                 needle.is_empty()
                     || plugin.name.to_lowercase().contains(&needle)
                     || plugin.marketplace.to_lowercase().contains(&needle)
+                    || plugin
+                        .keywords
+                        .iter()
+                        .any(|keyword| keyword.to_lowercase().contains(&needle))
             })
             .map(|(index, _)| index)
             .collect()
@@ -1128,13 +1167,155 @@ impl TuiModel {
             .is_some_and(|moved| now.saturating_duration_since(moved) < SETTLE)
     }
 
-    /// Expands/collapses one marketplace group and re-clamps the selection
-    /// so it never points past the now-shorter (or longer) visible list.
-    pub(crate) fn marketplace_toggle_group(&mut self, marketplace: &str) {
-        if !self.collapsed_marketplaces.remove(marketplace) {
-            self.collapsed_marketplaces.insert(marketplace.to_owned());
+    /// The Plugins rail, top to bottom, after its "All": every registered
+    /// marketplace in the order the machine lists them, then any group
+    /// only the plugins name — the local one, of installs no catalogue
+    /// knows about.
+    pub(crate) fn plugin_markets(&self, rows: &[MarketplacePluginSummary]) -> Vec<String> {
+        let mut markets: Vec<String> = self
+            .remembered
+            .marketplaces
+            .iter()
+            .map(|market| market.name.clone())
+            .collect();
+        for plugin in rows {
+            if !markets.contains(&plugin.marketplace) {
+                markets.push(plugin.marketplace.clone());
+            }
         }
-        self.clamp_list_selection(Route::Plugins);
+        markets
+    }
+
+    /// The marketplace the rail is on, if it is still on the rail — one
+    /// removed from under it reads as "All" rather than as an empty list.
+    pub(crate) fn market_in_rail<'a>(
+        &'a self,
+        rows: &[MarketplacePluginSummary],
+    ) -> Option<&'a str> {
+        let market = self.plugin_market.as_deref()?;
+        self.plugin_markets(rows)
+            .iter()
+            .any(|name| name == market)
+            .then_some(market)
+    }
+
+    /// Moves the rail by `delta`, "All" being its first entry, and starts
+    /// the list of what it now shows from the top.
+    pub(crate) fn move_plugin_market(&mut self, delta: isize) {
+        let rows = self.marketplace_rows();
+        let markets = self.plugin_markets(&rows);
+        let current = self
+            .market_in_rail(&rows)
+            .and_then(|market| markets.iter().position(|name| name == market))
+            .map_or(0, |position| position + 1);
+        let next = current.saturating_add_signed(delta).min(markets.len());
+        self.select_plugin_market(next.checked_sub(1).map(|index| markets[index].clone()));
+    }
+
+    pub(crate) fn select_plugin_market(&mut self, market: Option<String>) {
+        if self.plugin_market != market {
+            self.plugin_market = market;
+            self.select_plugin_row(0, None);
+        }
+    }
+
+    /// Puts the keyboard on a plugin, or on one of its resources, and
+    /// starts that resource's preview from its top.
+    pub(crate) fn select_plugin_row(&mut self, position: usize, resource: Option<String>) {
+        if self.remembered.plugin_screen.selected != position || self.selected_resource != resource
+        {
+            self.resource_scroll = 0;
+        }
+        self.remembered.plugin_screen.selected = position;
+        self.selected_resource = resource;
+    }
+
+    /// Every row of the plugin list the keyboard can stand on, top to
+    /// bottom: each visible plugin, then — when it is unfolded — each of
+    /// its resources in the order the tree draws them. A kind's heading is
+    /// drawn but never stood on.
+    pub(crate) fn plugin_list_rows(&self) -> Vec<(usize, Option<String>)> {
+        let rows = self.marketplace_rows();
+        let mut list = Vec::new();
+        for (position, &raw) in self.visible_indices_in(&rows).iter().enumerate() {
+            list.push((position, None));
+            let id = self.marketplace_plugin_id(&rows[raw]);
+            if !self.expanded_plugins.contains(&id) {
+                continue;
+            }
+            for (_, resources) in self
+                .plugin_resources_of(&id)
+                .map(super::agent_support::resource_groups)
+                .unwrap_or_default()
+            {
+                list.extend(
+                    resources
+                        .into_iter()
+                        .map(|resource| (position, Some(resource.identity.clone()))),
+                );
+            }
+        }
+        list
+    }
+
+    /// Steps the keyboard through [`Self::plugin_list_rows`], stopping at
+    /// either end the way every other list does.
+    pub(crate) fn move_plugin_row(&mut self, delta: isize) {
+        let list = self.plugin_list_rows();
+        let Some(last) = list.len().checked_sub(1) else {
+            return;
+        };
+        let here = (
+            self.remembered.plugin_screen.selected,
+            self.selected_resource().map(|resource| resource.identity),
+        );
+        let current = list
+            .iter()
+            .position(|row| *row == here)
+            .or_else(|| list.iter().position(|(position, _)| *position == here.0))
+            .unwrap_or(0);
+        let (position, resource) = list[current.saturating_add_signed(delta).min(last)].clone();
+        self.select_plugin_row(position, resource);
+    }
+
+    /// The resource the keyboard is on, while its plugin is selected,
+    /// unfolded and still offers it.
+    pub(crate) fn selected_resource(&self) -> Option<PluginCapability> {
+        let identity = self.selected_resource.as_deref()?;
+        let plugin = self.selected_marketplace_plugin()?;
+        let id = self.marketplace_plugin_id(&plugin);
+        if !self.expanded_plugins.contains(&id) {
+            return None;
+        }
+        self.plugin_resources_of(&id)?
+            .iter()
+            .find(|resource| resource.identity == identity)
+            .cloned()
+    }
+
+    /// The registered marketplace the rail is on; `None` on "All" and on
+    /// the local group, which no registration describes.
+    pub(crate) fn selected_market_summary(&self) -> Option<&MarketplaceSummary> {
+        let market = self.plugin_market.as_deref()?;
+        self.remembered
+            .marketplaces
+            .iter()
+            .find(|summary| summary.name == market)
+    }
+
+    /// Unfolds or folds one plugin's resources. Folding takes the keyboard
+    /// off a resource it hid, back to the plugin it belonged to.
+    pub(crate) fn toggle_plugin_expanded(&mut self, plugin: &str) {
+        if !self.expanded_plugins.remove(plugin) {
+            self.expanded_plugins.insert(plugin.to_owned());
+        } else {
+            self.selected_resource = None;
+        }
+    }
+
+    /// What this plugin is known to offer, if it has been asked.
+    pub(crate) fn plugin_resources_of(&self, plugin: &str) -> Option<&[PluginCapability]> {
+        self.plugin_resources.get(plugin).map(Vec::as_slice)
     }
 
     pub(crate) fn harness_visible_indices(&self) -> Vec<usize> {
@@ -1493,6 +1674,12 @@ impl TuiModel {
     /// disagreeing about whether a plugin can be updated.
     pub(crate) fn selected_offers(&self) -> Vec<ActionOffer> {
         match self.route {
+            // "All" is not a marketplace, so it offers nothing; adding
+            // another is the rail's own row.
+            Route::Plugins if self.plugin_pane == PluginPane::Markets => self
+                .selected_market_summary()
+                .map(MarketplaceSummary::offers)
+                .unwrap_or_default(),
             Route::Plugins => self
                 .selected_marketplace_plugin()
                 .map(|plugin| plugin.offers())

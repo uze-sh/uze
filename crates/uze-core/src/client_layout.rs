@@ -124,8 +124,9 @@ pub struct ManagementLayout {
     pub extension_drawer_width: Option<u16>,
     pub harness_drawer_width: Option<u16>,
     pub profile_columns_width: Option<u16>,
-    /// The marketplaces folded shut in the catalog, by name.
-    pub collapsed_marketplaces: BTreeSet<String>,
+    /// The marketplace the plugin catalog was narrowed to, by name;
+    /// `None` shows every marketplace's plugins.
+    pub plugin_market: Option<String>,
 }
 
 /// Best-effort on purpose: what the TUI was left looking like is worth
@@ -198,7 +199,7 @@ mod tests {
                 route: Some("plugins".to_owned()),
                 marketplace_drawer_width: Some(52),
                 harness_drawer_width: Some(40),
-                collapsed_marketplaces: BTreeSet::from(["uze-official".to_owned()]),
+                plugin_market: Some("uze-official".to_owned()),
                 ..ManagementLayout::default()
             },
             first_steps: FirstStepsLayout {

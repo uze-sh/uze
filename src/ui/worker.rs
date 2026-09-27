@@ -15,8 +15,9 @@ use uze_application::Preferences;
 use uze_application::{
     PromptEntry, Result, UzeApplication, UzeError, UzeHome,
     application::{
-        ContextPlan, ContextReconciliationReport, InstallReport, ProfileApplyResult,
-        ProfilePreview, ProjectContextStatus, RemovePluginReport, UpdatePluginReport,
+        ContextPlan, ContextReconciliationReport, InstallReport, MarketplaceRemovalReport,
+        ProfileApplyResult, ProfilePreview, ProjectContextStatus, RemovePluginReport,
+        UpdatePluginReport,
     },
 };
 
@@ -84,6 +85,8 @@ pub(crate) enum Intent {
     },
     Setup(String),
     AddMarketplace(String),
+    /// Take a marketplace off the machine, and every plugin it delivered.
+    RemoveMarketplace(String),
     /// Hand a URL to the reader's own browser (the plugin drawer's Source
     /// card). Not a product operation — nothing is read or written — but
     /// it spawns a process, which is not something the render thread
@@ -146,6 +149,7 @@ impl Intent {
             Self::Install { .. } => "install",
             Self::Setup(_) => "setup",
             Self::AddMarketplace(_) => "add_marketplace",
+            Self::RemoveMarketplace(_) => "remove_marketplace",
             Self::OpenLink(_) => "open_link",
             Self::ReadReleaseNotes(_) => "read_release_notes",
             Self::AcknowledgeRelease(_) => "acknowledge_release",
@@ -306,6 +310,19 @@ pub(crate) fn dispatch(
         } => install(name, marketplace, grant, home, sender, model),
         Intent::Setup(harness) => set_up(harness, home, sender, model),
         Intent::AddMarketplace(source) => add_marketplace(source, home, sender, model),
+        Intent::RemoveMarketplace(name) => {
+            model.status = Status::Working(format!("Removing marketplace {name}…"));
+            spawn_mutation(
+                home.clone(),
+                sender.clone(),
+                model.context_root.clone(),
+                move |app| {
+                    app.marketplace()
+                        .remove(&name)
+                        .map(marketplace_removal_message)
+                },
+            );
+        }
         Intent::ContextAnalyze(root) => analyze_context(root, home, sender, model),
         Intent::InstallProjectEnvironment(root) => {
             install_project_environment(root, home, sender, model)
@@ -407,7 +424,6 @@ fn clear_prompt_history(home: &UzeHome, model: &mut TuiModel) {
 fn inspect_plugin(id: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
     let asked = Intent::InspectPlugin(id.clone());
     model.inspection_in_flight = Some(asked.clone());
-    model.status = Status::Working(format!("Inspecting {id}…"));
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     thread::spawn(move || {
@@ -437,7 +453,6 @@ fn inspect_marketplace_plugin(
         marketplace: marketplace.clone(),
     };
     model.inspection_in_flight = Some(asked.clone());
-    model.status = Status::Working(format!("Inspecting {name}…"));
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     thread::spawn(move || {
@@ -958,21 +973,31 @@ pub(crate) fn drain_worker_results(
             {
                 if model.inspection_in_flight.as_ref() == Some(&asked) {
                     model.inspection_in_flight = None;
-                    model.status = Status::Idle;
                 }
             }
             WorkerResult::PluginInspected(_, Ok(inspection)) => {
+                model.plugin_resources.insert(
+                    inspection.plugin.id.clone(),
+                    inspection.capabilities.clone(),
+                );
                 model.plugin_detail = Some(inspection);
                 model.inspection_in_flight = None;
-                model.status = Status::Idle;
             }
             WorkerResult::MarketplaceInspected(_, Ok(detail)) => {
+                model.plugin_resources.insert(
+                    model.marketplace_plugin_id(&detail.summary),
+                    detail.capabilities.clone(),
+                );
                 model.marketplace_detail = Some(detail);
                 model.inspection_in_flight = None;
-                model.status = Status::Idle;
             }
             WorkerResult::Mutated(Ok((message, data))) => {
                 model.refreshed(data);
+                // What was inspected before the change describes a plugin
+                // that no longer stands as it did; the drawer asks again.
+                model.plugin_detail = None;
+                model.marketplace_detail = None;
+                model.inspection_in_flight = None;
                 model.status = Status::Success(message);
             }
             WorkerResult::TrustRequired {
@@ -1015,9 +1040,16 @@ pub(crate) fn drain_worker_results(
             // A failed inspection stays failed until the selection moves:
             // clearing the in-flight marker here would have the per-frame
             // check retry it forever, error after error.
+            //
+            // Not said over work in flight: an install or a removal changes
+            // the very thing a read of it was asking about, so a read that
+            // failed meanwhile is that work's consequence, not a fault — and
+            // the line it would take is the one saying the work is running.
             WorkerResult::PluginInspected(_, Err(error))
             | WorkerResult::MarketplaceInspected(_, Err(error)) => {
-                model.status = Status::Error(error);
+                if !matches!(model.status, Status::Working(_)) {
+                    model.status = Status::Error(error);
+                }
             }
             WorkerResult::Mutated(Err(error))
             | WorkerResult::ContextAnalyzed(Err(error))
@@ -1077,6 +1109,24 @@ fn remove_message(report: RemovePluginReport) -> String {
             )
         }
     }
+}
+
+/// A marketplace that could not be emptied stays registered, so the
+/// message says which case this was rather than claiming it is gone.
+fn marketplace_removal_message(report: MarketplaceRemovalReport) -> String {
+    if report.record_removed {
+        return format!("Removed marketplace {}", report.marketplace);
+    }
+    let blocked = report
+        .blocked
+        .iter()
+        .map(|package| package.package.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{} is still registered: {blocked} changed outside UZE and was left in place",
+        report.marketplace
+    )
 }
 
 fn update_message(report: UpdatePluginReport) -> String {
@@ -1432,6 +1482,32 @@ mod tests {
 
         assert_eq!(model.inspection_in_flight, Some(current));
         assert_eq!(model.status, Status::Working("Inspecting two…".to_owned()));
+    }
+
+    /// Reading the row the pointer lands on says nothing on the status
+    /// line: it is not work anybody asked for, and the line may already be
+    /// saying that an install is running — which a read finishing, or one
+    /// failing because the install changed what it read, must not erase.
+    #[test]
+    fn an_inspection_leaves_the_status_line_to_the_work_in_flight() {
+        let installing = Status::Working("Installing two…".to_owned());
+        let mut model = browsing(&["one", "two"]);
+        model.status = installing.clone();
+        let asked = model.marketplace_inspect_intent();
+        let Intent::InspectPlugin(id) = asked.clone() else {
+            panic!("an installed row is inspected as installed: {asked:?}");
+        };
+        model.inspection_in_flight = Some(asked.clone());
+
+        let model = drained(
+            vec![WorkerResult::PluginInspected(
+                asked,
+                Err(format!("unknown UZE package `{id}`")),
+            )],
+            model,
+        );
+
+        assert_eq!(model.status, installing);
     }
 
     fn browsing(ids: &[&str]) -> TuiModel {

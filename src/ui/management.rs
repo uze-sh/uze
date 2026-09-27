@@ -376,7 +376,7 @@ pub(crate) fn render(
                 0..0,
                 [
                     (targets.close, Hit::ReleaseNotesClose),
-                    (targets.popup, Hit::ReleaseNotesBody),
+                    (targets.popup, Hit::OverlayBody),
                 ],
             );
         }
@@ -386,17 +386,31 @@ pub(crate) fn render(
         Overlay::AddMarketplace(input) => overlay::render_text_prompt(
             frame,
             area,
-            "Add marketplace",
-            "Local path or https://... source",
+            &overlay::TextPrompt {
+                title: "Add marketplace",
+                body: "Registers it on this machine. Its plugins are listed under it, ready to \
+                       install.",
+                placeholder: "Local path or https://... source",
+                confirm: "Add",
+            },
             input,
-            "add",
+            hits,
         ),
         Overlay::ThemePicker { themes, selected } => {
             overlay::render_theme_picker(frame, area, themes, *selected)
         }
-        Overlay::NewProfile(input) => {
-            overlay::render_text_prompt(frame, area, "New profile", "Profile name", input, "create")
-        }
+        Overlay::NewProfile(input) => overlay::render_text_prompt(
+            frame,
+            area,
+            &overlay::TextPrompt {
+                title: "New profile",
+                body: "A named set of preferences, applied to the harnesses you choose.",
+                placeholder: "Profile name",
+                confirm: "Create",
+            },
+            input,
+            hits,
+        ),
     }
 }
 

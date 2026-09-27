@@ -18,7 +18,9 @@ use uze_keys::Action;
 
 use super::lifecycle::remove::is_protected_plugin;
 use super::profile::ProfileSummary;
-use super::read_models::{FreshnessState, HarnessHealth, MarketplacePluginSummary};
+use super::read_models::{
+    FreshnessState, HarnessHealth, MarketplacePluginSummary, MarketplaceSummary,
+};
 
 /// One thing that can be done to one entity, and whether it can be done
 /// now.
@@ -104,6 +106,21 @@ impl MarketplacePluginSummary {
                 ActionOffer::available(Action::RemovePlugin)
             },
         ]
+    }
+}
+
+impl MarketplaceSummary {
+    /// Adding another is not an offer about this one, so it is not here:
+    /// it is reached from the screen, whichever marketplace is selected.
+    pub fn offers(&self) -> Vec<ActionOffer> {
+        vec![if self.name == uze_core::manifest::BUILT_IN_MARKETPLACE {
+            ActionOffer::unavailable(
+                Action::RemoveMarketplace,
+                "ships inside uze, so there is nothing to take off the machine",
+            )
+        } else {
+            ActionOffer::available(Action::RemoveMarketplace)
+        }]
     }
 }
 

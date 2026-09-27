@@ -102,7 +102,14 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(Action::InstallPlugin, Control("the drawer's buttons"));
     put(Action::UpdatePlugin, Control("the drawer's buttons"));
     put(Action::RemovePlugin, Control("the drawer's buttons"));
-    put(Action::AddMarketplace, Index);
+    put(
+        Action::AddMarketplace,
+        Control("the marketplace rail's add row"),
+    );
+    put(
+        Action::RemoveMarketplace,
+        Control("a marketplace drawer's buttons"),
+    );
     put(Action::InstallProjectEnvironment, Index);
     put(Action::ClearPromptHistory, Index);
     put(Action::EnableExtension, Control("the drawer's buttons"));

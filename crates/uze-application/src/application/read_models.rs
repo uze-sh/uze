@@ -63,11 +63,7 @@ impl Plugins<'_> {
             plugin: self.0.plugin_summary(&package)?,
             capabilities: resources
                 .iter()
-                .map(|resource| PluginCapability {
-                    identity: resource.identity(),
-                    name: capability_display_name(resource),
-                    kind: resource.capability.kind,
-                })
+                .map(|resource| plugin_capability(resource))
                 .collect(),
             deliveries,
             managed_state: managed_state(&reconciliation),
@@ -165,6 +161,20 @@ pub struct PluginCapability {
     pub identity: String,
     pub name: String,
     pub kind: CapabilityKind,
+    /// What a surface shows of it for a reader to look over before
+    /// installing or while deciding what a plugin does. Not part of a JSON
+    /// report, which names resources rather than reprinting them.
+    #[serde(skip)]
+    pub preview: CapabilityPreview,
+}
+
+/// One resource as a person reads it: where it sits in its package, and
+/// its text — Markdown as written, a JSON definition laid out.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CapabilityPreview {
+    /// Relative to the package root: `skills/review/SKILL.md`.
+    pub path: String,
+    pub text: String,
 }
 
 /// What registering a marketplace did, and what it registered.
@@ -991,6 +1001,30 @@ pub struct DoctorReport {
 /// `Resource::name` (typically a bare file name like `SKILL.md`) otherwise.
 /// Display-only — never used for exposure naming, which stays entirely
 /// `IntegrationPort::exposure_name_candidates`'s decision.
+pub(crate) fn plugin_capability(resource: &uze_core::Resource) -> PluginCapability {
+    PluginCapability {
+        identity: resource.identity(),
+        name: capability_display_name(resource),
+        kind: resource.capability.kind,
+        preview: capability_preview(resource),
+    }
+}
+
+/// A resource's payload as text. A named resource — an MCP server, a hook
+/// group — carries its own entry re-serialized compactly, which is correct
+/// for delivery and unreadable on a screen, so JSON is laid out again.
+fn capability_preview(resource: &uze_core::Resource) -> CapabilityPreview {
+    let payload = &resource.capability.payload;
+    let text = serde_json::from_slice::<serde_json::Value>(payload)
+        .ok()
+        .and_then(|value| serde_json::to_string_pretty(&value).ok())
+        .unwrap_or_else(|| String::from_utf8_lossy(payload).into_owned());
+    CapabilityPreview {
+        path: resource.capability.display_path(&resource.package_root),
+        text,
+    }
+}
+
 pub(crate) fn capability_display_name(resource: &uze_core::Resource) -> String {
     resource
         .logical_capability_name()

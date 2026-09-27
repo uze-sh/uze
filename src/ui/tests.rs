@@ -11,8 +11,9 @@ use uze_application::application::{
 use super::hit::Hit;
 use super::management::render;
 use super::model::{
-    Confirmation, Focus, ListScreen, Overlay, PREFERENCE_ROW_COUNT, ProfilePanel, ROUTES,
-    RefreshData, Remembered, Route, Status, TrustedRetry, TuiModel, routes, scope_is_offered,
+    Confirmation, Focus, ListScreen, Overlay, PREFERENCE_ROW_COUNT, PluginPane, ProfilePanel,
+    ROUTES, RefreshData, Remembered, Route, Status, TrustedRetry, TuiModel, routes,
+    scope_is_offered,
 };
 use super::view::health::{Severity, actionable_alerts};
 use super::worker::{Intent, TrustGrant};
@@ -633,9 +634,7 @@ fn the_next_run_opens_on_the_screen_the_last_one_left() {
     model.set_route(Route::Profiles);
     model.remembered.harness_screen.drawer_width = Some(38);
     model.profile_columns_width = Some(28);
-    model
-        .collapsed_marketplaces
-        .insert("uze-official".to_owned());
+    model.plugin_market = Some("uze-official".to_owned());
 
     let layout = model.management_layout();
     assert_eq!(layout.route.as_deref(), Some("profiles"));
@@ -648,7 +647,7 @@ fn the_next_run_opens_on_the_screen_the_last_one_left() {
         "a drawer stays the width it was dragged to"
     );
     assert_eq!(model.profile_columns_width, Some(28));
-    assert!(model.collapsed_marketplaces.contains("uze-official"));
+    assert_eq!(model.plugin_market.as_deref(), Some("uze-official"));
 
     let unknown = uze_application::ManagementLayout {
         route: Some("a screen this build does not have".to_owned()),
@@ -955,7 +954,7 @@ fn read_only_navigation_never_produces_a_mutating_intent() {
     ] {
         let intent = model.apply_key(KeyEvent::new(key, KeyModifiers::NONE));
         // Plugins navigation may dispatch a read-only inspect fetch
-        // (keeps the drawer's RESOURCES/deliveries sections populated as
+        // (keeps the drawer's revision and the row's resources populated as
         // selection moves) — that's not a mutation, so only reject the
         // intents that actually write something.
         assert!(
@@ -1852,22 +1851,109 @@ fn an_extension_is_switched_by_its_key_and_by_enter() {
     );
 }
 
-#[test]
-fn marketplace_group_collapse_hides_its_plugins() {
-    let mut model = TuiModel {
+fn registered(name: &str) -> MarketplaceSummary {
+    MarketplaceSummary {
+        name: name.to_owned(),
+        source: format!("https://example.com/{name}"),
+        homepage: None,
+        plugin_count: 0,
+        linked_to: None,
+    }
+}
+
+fn two_market_model() -> TuiModel {
+    TuiModel {
         route: Route::Plugins,
+        focus: Focus::Content,
         remembered: Remembered {
-            marketplace_plugins: vec![marketplace_plugin("ai", "std", false)],
+            marketplaces: vec![registered("uze-official"), registered("ai")],
+            marketplace_plugins: vec![
+                marketplace_plugin("uze-official", "uze", true),
+                marketplace_plugin("ai", "git", true),
+                marketplace_plugin("ai", "env", false),
+            ],
             ..TuiModel::default().remembered
         },
         ..TuiModel::default()
-    };
+    }
+}
+
+/// The rail narrows the list to one marketplace, and walking it starts
+/// the list of what it now shows from the top.
+#[test]
+fn the_market_rail_narrows_the_plugins_to_one_marketplace() {
+    let mut model = two_market_model();
+    assert_eq!(model.list_len(model.route), 3, "All shows every plugin");
+    model.remembered.plugin_screen.selected = 2;
+
+    model.plugin_pane = PluginPane::Markets;
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(model.plugin_market.as_deref(), Some("uze-official"));
     assert_eq!(model.list_len(model.route), 1);
-    model.marketplace_toggle_group("ai");
-    assert_eq!(model.list_len(model.route), 0);
-    assert!(model.selected_marketplace_plugin().is_none());
-    model.marketplace_toggle_group("ai");
-    assert_eq!(model.list_len(model.route), 1);
+    assert_eq!(model.remembered.plugin_screen.selected, 0);
+
+    model.act(uze_keys::Action::SelectNext);
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(
+        model.plugin_market.as_deref(),
+        Some("ai"),
+        "the rail stops at its last marketplace"
+    );
+    assert_eq!(model.list_len(model.route), 2);
+
+    model.remembered.marketplaces.pop();
+    model.remembered.marketplace_plugins.truncate(1);
+    assert_eq!(
+        model.list_len(model.route),
+        1,
+        "a marketplace removed from under the rail reads as All"
+    );
+}
+
+/// Left and right walk the screen's columns in steps: into the plugins,
+/// unfolding the selected one, then back out the same way to the sidebar.
+#[test]
+fn left_and_right_walk_the_rail_the_list_and_a_plugins_resources() {
+    let mut model = two_market_model();
+    model.plugin_pane = PluginPane::Markets;
+
+    model.act(uze_keys::Action::FocusContent);
+    assert_eq!(model.plugin_pane, PluginPane::Plugins);
+    model.act(uze_keys::Action::FocusContent);
+    assert!(model.expanded_plugins.contains("uze@uze-official"));
+
+    model.act(uze_keys::Action::FocusSidebar);
+    assert!(
+        model.expanded_plugins.is_empty(),
+        "the first step back folds"
+    );
+    model.act(uze_keys::Action::FocusSidebar);
+    assert_eq!(model.plugin_pane, PluginPane::Markets);
+    model.act(uze_keys::Action::FocusSidebar);
+    assert_eq!(model.focus, Focus::Sidebar);
+}
+
+/// On the rail the removal key removes the marketplace, after asking,
+/// and the one that ships inside uze is refused with a reason.
+#[test]
+fn removing_on_the_rail_asks_about_the_marketplace() {
+    let mut model = two_market_model();
+    model.plugin_pane = PluginPane::Markets;
+    model.plugin_market = Some("ai".to_owned());
+    model.act(uze_keys::Action::RemovePlugin);
+    assert!(matches!(
+        &model.overlay,
+        Overlay::Confirm { kind: Confirmation::RemoveMarketplace(name), .. } if name == "ai"
+    ));
+    assert_eq!(
+        model.act(uze_keys::Action::Activate),
+        Intent::RemoveMarketplace("ai".to_owned())
+    );
+
+    model.close_overlay();
+    model.plugin_market = Some("uze-official".to_owned());
+    model.act(uze_keys::Action::RemovePlugin);
+    assert_eq!(model.overlay, Overlay::None);
 }
 
 #[test]
@@ -4105,48 +4191,40 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
     );
 }
 
-/// The drawer's resources are grouped by kind, so a skill never reads as
-/// a hook because the two shared one comma-joined line.
+/// An unfolded plugin's resources are grouped by kind, so a skill never
+/// reads as a hook because the two shared one line — and the drawer beside
+/// it does not say them a second time.
 #[test]
-fn the_drawer_groups_resources_by_kind_and_leaves_actions_to_the_menu() {
+fn an_unfolded_plugin_groups_its_resources_by_kind_and_the_drawer_does_not_repeat_them() {
     use uze_application::CapabilityKind;
-    use uze_application::application::{MarketplacePluginDetail, PluginCapability};
+    use uze_application::application::PluginCapability;
 
-    let summary = MarketplacePluginSummary {
-        marketplace: "team".to_owned(),
-        name: "kit".to_owned(),
-        description: None,
-        keywords: Vec::new(),
-        installed: false,
-        freshness: uze_application::application::Freshness::not_checked(),
-        is_default: false,
-    };
     let capability = |name: &str, kind| PluginCapability {
         identity: name.to_owned(),
         name: name.to_owned(),
         kind,
+        preview: Default::default(),
     };
     let mut model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Content,
-        marketplace_detail: Some(MarketplacePluginDetail {
-            revision: None,
-            summary: summary.clone(),
-            capabilities: vec![
-                capability("review", CapabilityKind::AgentSkill),
-                capability("guard", CapabilityKind::Hook),
-                capability("plan", CapabilityKind::AgentSkill),
-            ],
-        }),
         remembered: Remembered {
-            plugin_screen: ListScreen::default(),
-            marketplace_plugins: vec![summary],
+            marketplace_plugins: vec![marketplace_plugin("team", "kit", false)],
             ..TuiModel::default().remembered
         },
         ..TuiModel::default()
     };
+    model.expanded_plugins.insert("kit@team".to_owned());
+    model.plugin_resources.insert(
+        "kit@team".to_owned(),
+        vec![
+            capability("review", CapabilityKind::AgentSkill),
+            capability("guard", CapabilityKind::Hook),
+            capability("plan", CapabilityKind::AgentSkill),
+        ],
+    );
     model.remembered.plugin_screen.drawer_width = Some(52);
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
     let mut hits = Vec::new();
     terminal
         .draw(|frame| render(frame, frame.area(), &model, &mut hits))
@@ -4155,15 +4233,19 @@ fn the_drawer_groups_resources_by_kind_and_leaves_actions_to_the_menu() {
 
     let skills = rows
         .iter()
-        .position(|row| row.contains("Skills") && row.contains("review, plan"))
-        .unwrap_or_else(|| panic!("skills on a row of their own: {rows:#?}"));
+        .position(|row| row.contains("Skills  2"))
+        .unwrap_or_else(|| panic!("the skills branch: {rows:#?}"));
+    assert!(rows[skills + 1].contains("review") && rows[skills + 2].contains("plan"));
     assert!(
-        rows[skills + 1].contains("Hooks") && rows[skills + 1].contains("guard"),
-        "hooks on the next: {rows:#?}"
+        rows[skills + 3].contains("Hooks  1") && rows[skills + 4].contains("guard"),
+        "hooks on a branch of their own: {rows:#?}"
     );
     assert!(
-        !rows.iter().any(|row| row.contains("ACTIONS")),
-        "no action list in the drawer: {rows:#?}"
+        !rows.iter().any(|row| row
+            .rsplit('│')
+            .next()
+            .is_some_and(|drawer| drawer.contains("Skills"))),
+        "the drawer leaves the resources to the list: {rows:#?}"
     );
 }
 
@@ -5463,8 +5545,13 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
         .unwrap();
     let rows = buffer_rows(&terminal);
 
+    // The drawer is what follows the last rule on each row; the list
+    // beside it heads its own column with the word.
     assert!(
-        !rows.iter().any(|row| row.contains("PLUGIN")),
+        !rows.iter().any(|row| row
+            .rsplit('│')
+            .next()
+            .is_some_and(|drawer| drawer.contains("PLUGIN"))),
         "the name is the heading, not a value under a label: {rows:#?}"
     );
     let revision = rows
@@ -5489,4 +5576,194 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
         widest > 0 && widest < 120,
         "no row runs to the terminal's edge: {widest}"
     );
+}
+
+/// A dialog asking for text is answered like every other: its own buttons
+/// answer it, and a click on the field it is typed into is not an answer
+/// — closing over what was typed there would lose it.
+#[test]
+fn a_text_prompt_is_answered_by_its_buttons_and_a_click_inside_keeps_it() {
+    let mut model = two_market_model();
+    model.overlay = Overlay::AddMarketplace("https://example.com/team".to_owned());
+    let mut terminal = Terminal::new(TestBackend::new(110, 26)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .unwrap();
+    model.hits = hits;
+    let rect_of = |model: &TuiModel, wanted: Hit| {
+        model
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == wanted)
+            .map(|(rect, _)| *rect)
+            .unwrap_or_else(|| panic!("{wanted:?} registered"))
+    };
+
+    let body = rect_of(&model, Hit::OverlayBody);
+    assert_eq!(model.click(body.x + 4, body.y + 1), Intent::None);
+    assert!(
+        matches!(&model.overlay, Overlay::AddMarketplace(input) if input == "https://example.com/team"),
+        "a click inside keeps the dialog and what was typed"
+    );
+
+    let add = rect_of(&model, Hit::OfferedAction(uze_keys::Action::Activate));
+    assert_eq!(
+        model.click(add.x, add.y),
+        Intent::AddMarketplace("https://example.com/team".to_owned())
+    );
+    assert_eq!(model.overlay, Overlay::None);
+}
+
+fn resource(
+    identity: &str,
+    kind: uze_application::CapabilityKind,
+    path: &str,
+    text: &str,
+) -> uze_application::application::PluginCapability {
+    uze_application::application::PluginCapability {
+        identity: identity.to_owned(),
+        name: identity.to_owned(),
+        kind,
+        preview: uze_application::application::CapabilityPreview {
+            path: path.to_owned(),
+            text: text.to_owned(),
+        },
+    }
+}
+
+/// `git` unfolded, with a skill and an MCP server under it.
+fn unfolded_git() -> TuiModel {
+    use uze_application::CapabilityKind;
+    let mut model = two_market_model();
+    model.expanded_plugins.insert("git@ai".to_owned());
+    model.plugin_resources.insert(
+        "git@ai".to_owned(),
+        vec![
+            resource(
+                "term",
+                CapabilityKind::Mcp,
+                "mcp.json",
+                "{\n  \"command\": \"npx\"\n}",
+            ),
+            resource(
+                "commit",
+                CapabilityKind::AgentSkill,
+                "skills/commit/SKILL.md",
+                "---\nname: commit\ndescription: Conventional commit messages.\n---\n\n# Commit\n\nWrite one from the staged diff.\n",
+            ),
+        ],
+    );
+    model
+}
+
+/// The arrows walk an unfolded plugin's resources in the order the tree
+/// draws them — skills before MCP servers, whatever order they arrived in
+/// — and the step back from a resource lands on its plugin.
+#[test]
+fn the_arrows_walk_an_unfolded_plugins_resources_in_drawn_order() {
+    let mut model = unfolded_git();
+    model.select_plugin_row(1, None);
+
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(
+        model.selected_resource().map(|r| r.name).as_deref(),
+        Some("commit")
+    );
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(
+        model.selected_resource().map(|r| r.name).as_deref(),
+        Some("term")
+    );
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(
+        model.remembered.plugin_screen.selected, 2,
+        "then the next plugin"
+    );
+    assert!(model.selected_resource().is_none());
+
+    model.act(uze_keys::Action::SelectPrevious);
+    assert_eq!(
+        model.selected_resource().map(|r| r.name).as_deref(),
+        Some("term")
+    );
+    model.act(uze_keys::Action::FocusSidebar);
+    assert!(
+        model.selected_resource().is_none(),
+        "left returns to the plugin"
+    );
+    assert_eq!(model.remembered.plugin_screen.selected, 1);
+    assert!(
+        model.expanded_plugins.contains("git@ai"),
+        "which stays unfolded"
+    );
+}
+
+/// A resource the keyboard is on is previewed in the drawer: what it is,
+/// where it sits, and its text rendered — the frontmatter as YAML rather
+/// than read as a rule, the body as Markdown.
+#[test]
+fn a_selected_resource_is_previewed_in_the_drawer() {
+    let mut model = unfolded_git();
+    model.select_plugin_row(1, Some("commit".to_owned()));
+    let mut terminal = Terminal::new(TestBackend::new(150, 30)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .unwrap();
+    let drawer: Vec<String> = buffer_rows(&terminal)
+        .iter()
+        .map(|row| row.rsplit('│').next().unwrap_or_default().to_owned())
+        .collect();
+
+    for expected in [
+        "SKILL",
+        "skills/commit/SKILL.md",
+        "description: Conventional commit",
+        "Write one from the staged diff.",
+    ] {
+        assert!(
+            drawer.iter().any(|row| row.contains(expected)),
+            "{expected:?} in the drawer: {drawer:#?}"
+        );
+    }
+    assert!(
+        !drawer.iter().any(|row| row.trim() == "---"),
+        "the frontmatter's fences are not drawn as a rule: {drawer:#?}"
+    );
+    assert!(hits.iter().any(|(_, hit)| *hit == Hit::ResourcePreview));
+}
+
+/// A long preview scrolls to where its last row meets the drawer's bottom
+/// and no further, so the way back up costs no presses spent past its end.
+#[test]
+fn a_resource_preview_scrolls_to_its_end_and_stops() {
+    let mut model = unfolded_git();
+    let long: String = (0..80).map(|n| format!("Line {n}.\n\n")).collect();
+    model.plugin_resources.get_mut("git@ai").unwrap()[1]
+        .preview
+        .text = long;
+    model.select_plugin_row(1, Some("commit".to_owned()));
+    let mut terminal = Terminal::new(TestBackend::new(150, 30)).unwrap();
+    let mut draw = |model: &TuiModel| {
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .unwrap();
+    };
+    draw(&model);
+
+    for _ in 0..40 {
+        model.act(uze_keys::Action::ScrollPageDown);
+    }
+    let limit = crate::ui::view::plugins::preview_scroll_limit();
+    assert!(limit > 0, "the preview is longer than the drawer");
+    assert_eq!(model.resource_scroll, limit);
+
+    model.act(uze_keys::Action::ScrollPageUp);
+    assert!(
+        model.resource_scroll < limit,
+        "one page back is a page back"
+    );
+    draw(&model);
 }

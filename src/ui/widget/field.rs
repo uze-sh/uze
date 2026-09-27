@@ -51,7 +51,6 @@ pub(crate) struct Field<'a> {
     text: &'a str,
     placeholder: &'a str,
     focused: bool,
-    ink: Token,
 }
 
 impl<'a> Field<'a> {
@@ -64,7 +63,6 @@ impl<'a> Field<'a> {
             text,
             placeholder,
             focused: true,
-            ink: Token::TextPrimary,
         }
     }
 
@@ -73,13 +71,6 @@ impl<'a> Field<'a> {
     /// typing goes.
     pub(crate) fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
-        self
-    }
-
-    /// The typed text's colour, where the field is the thing the surface
-    /// is about rather than one control among several.
-    pub(crate) fn ink(mut self, ink: Token) -> Self {
-        self.ink = ink;
         self
     }
 
@@ -96,7 +87,10 @@ impl<'a> Field<'a> {
                 ));
             }
         } else {
-            spans.push(Span::styled(self.text.to_owned(), theme::fg(self.ink)));
+            spans.push(Span::styled(
+                self.text.to_owned(),
+                theme::fg(Token::TextPrimary),
+            ));
             if self.focused {
                 spans.push(caret());
             }

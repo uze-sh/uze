@@ -167,6 +167,8 @@ actions! {
         "Remove", "Remove the selected plugin from this machine";
     AddMarketplace => "add-marketplace", false,
         "Add marketplace", "Register a marketplace by path or URL";
+    RemoveMarketplace => "remove-marketplace", true,
+        "Remove", "Remove the selected marketplace and every plugin it delivered";
 
     // --- Management, things done to an extension -----------------------
     EnableExtension => "enable-extension", false,
@@ -420,6 +422,7 @@ mod tests {
                     "delete-file",
                     "delete-profile",
                     "discard-task",
+                    "remove-marketplace",
                     "remove-plugin",
                 ]
                 .map(str::to_owned)

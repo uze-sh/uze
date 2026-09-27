@@ -312,6 +312,41 @@ fn capability_state(support: &AgentSupport, kind: CapabilityKind) -> CapabilityS
     }
 }
 
+/// The order a reader meets a plugin's resources in: what they invoke
+/// first, what runs on its own after.
+const RESOURCE_ORDER: [CapabilityKind; 5] = [
+    CapabilityKind::AgentSkill,
+    CapabilityKind::Agent,
+    CapabilityKind::Hook,
+    CapabilityKind::Mcp,
+    CapabilityKind::Instruction,
+];
+
+/// A plugin's resources by kind, in reading order, leaving out the kinds
+/// it declares none of. The one ordering both the tree that draws them and
+/// the keyboard that walks them follow, so a step down lands on the row
+/// drawn below.
+pub(crate) fn resource_groups(
+    capabilities: &[uze_application::application::PluginCapability],
+) -> Vec<(
+    CapabilityKind,
+    Vec<&uze_application::application::PluginCapability>,
+)> {
+    RESOURCE_ORDER
+        .iter()
+        .map(|kind| {
+            (
+                *kind,
+                capabilities
+                    .iter()
+                    .filter(|capability| capability.kind == *kind)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .filter(|(_, resources)| !resources.is_empty())
+        .collect()
+}
+
 pub(crate) fn capability_label(kind: CapabilityKind) -> &'static str {
     match kind {
         CapabilityKind::Instruction => "Instructions",

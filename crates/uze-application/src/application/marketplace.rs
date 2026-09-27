@@ -787,15 +787,7 @@ impl Marketplace<'_> {
             } else {
                 self.0.offered_revision(marketplace, name)
             },
-            capabilities: inspected
-                .resources
-                .iter()
-                .map(|resource| PluginCapability {
-                    identity: resource.identity(),
-                    name: capability_display_name(resource),
-                    kind: resource.capability.kind,
-                })
-                .collect(),
+            capabilities: inspected.resources.iter().map(plugin_capability).collect(),
             summary,
         })
     }
