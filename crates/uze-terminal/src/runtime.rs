@@ -1508,6 +1508,10 @@ impl Server {
         // holding threads it never intends to use.
         reader.get_mut().attached();
 
+        // A selection is drawn for every client, but only the one that
+        // made it can end it; one that leaves, however it leaves, takes
+        // its selections with it.
+        let mut selecting = std::collections::BTreeSet::new();
         while let Ok(Some(request)) = read_message::<_, ClientRequest>(&mut reader) {
             // A keystroke is a request too, and there are thousands: debug
             // level, so a trace of the server is what a person did to it
@@ -1522,12 +1526,20 @@ impl Server {
                 ClientRequest::SetPalette(palette) => self.set_palette(palette),
                 ClientRequest::Input { pane, bytes } => self.write_input(pane, &bytes),
                 ClientRequest::Scroll { pane, lines } => self.scroll_pane(pane, lines),
-                ClientRequest::Select { pane, gesture } => self.select_in_pane(pane, gesture),
+                ClientRequest::Select { pane, gesture } => {
+                    selecting.insert(pane);
+                    self.select_in_pane(pane, gesture);
+                }
                 ClientRequest::CopySelection { pane } => {
                     let text = self
                         .runtime(pane)
                         .map(|runtime| runtime.selected_text())
                         .unwrap_or_default();
+                    // A drag over nothing but blanks selected nothing worth
+                    // keeping drawn.
+                    if text.is_empty() {
+                        self.select_in_pane(pane, SelectionGesture::Clear);
+                    }
                     events.reply(ClientEvent::SelectionText { pane, text });
                 }
                 ClientRequest::Resize {
@@ -1748,6 +1760,9 @@ impl Server {
                 }
                 ClientRequest::Attach { .. } => {}
             }
+        }
+        for pane in selecting {
+            self.select_in_pane(pane, SelectionGesture::Clear);
         }
         self.clients
             .lock()
@@ -4955,6 +4970,108 @@ mod tests {
         let _ = serving.join();
         server.stop_panes();
 
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A selection is drawn for every client, so the server puts it away
+    /// itself when nobody will: when the drag covered only blanks, and when
+    /// the client that made it leaves without saying so.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
+        let scratch = uze_testkit::temp::socket_scratch("selectleave");
+        let uze_home = scratch.join("home");
+        let project = scratch.join("project");
+        let runtime_dir = scratch.join("runtime");
+        for directory in [&uze_home, &project, &runtime_dir] {
+            std::fs::create_dir_all(directory).unwrap();
+        }
+        let mut env = uze_testkit::env::scope();
+        env.set("UZE_HOME", &uze_home)
+            .set("XDG_RUNTIME_DIR", &runtime_dir);
+
+        let socket = socket_path().unwrap();
+        let (server, _damage) = Server::new(seat_at(&project), socket).unwrap();
+        let server = Arc::new(server);
+        let pane = server
+            .session
+            .lock()
+            .expect("session poisoned")
+            .selected_tab()
+            .pane
+            .id;
+        let selected_cells = || {
+            server
+                .runtime(pane)
+                .expect("the pane is running")
+                .snapshot()
+                .cells
+                .iter()
+                .filter(|cell| cell.attributes.selected)
+                .count()
+        };
+        let blank_rows = crate::SelectionGesture::Begin {
+            anchor: (0, 20),
+            head: (10, 22),
+        };
+
+        let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+        let serving = {
+            let server = Arc::clone(&server);
+            std::thread::spawn(move || server.handle_client(client))
+        };
+        let mut writer = driver.try_clone().unwrap();
+        driver
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .unwrap();
+        let mut reader = std::io::BufReader::new(driver);
+        for request in [
+            crate::ClientRequest::Attach {
+                version: crate::PROTOCOL_VERSION,
+                columns: 0,
+                rows: 0,
+                seating: crate::Seating::WhereItLeftOff,
+            },
+            crate::ClientRequest::Select {
+                pane,
+                gesture: blank_rows,
+            },
+            crate::ClientRequest::CopySelection { pane },
+        ] {
+            send_request(&mut writer, &request).unwrap();
+        }
+        let copied = loop {
+            match read_event(&mut reader).expect("the server must still be speaking") {
+                Some(crate::ClientEvent::SelectionText { text, .. }) => break text,
+                Some(_) => {}
+                None => panic!("the server hung up before answering the copy"),
+            }
+        };
+        assert_eq!(copied, "");
+        assert_eq!(
+            selected_cells(),
+            0,
+            "a selection of blanks is not kept drawn"
+        );
+
+        send_request(
+            &mut writer,
+            &crate::ClientRequest::Select {
+                pane,
+                gesture: blank_rows,
+            },
+        )
+        .unwrap();
+        drop(writer);
+        drop(reader);
+        let _ = serving.join();
+        assert_eq!(
+            selected_cells(),
+            0,
+            "a client that left took its selection with it"
+        );
+
+        server.stop_panes();
         let _ = std::fs::remove_dir_all(&scratch);
     }
 

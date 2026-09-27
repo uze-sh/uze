@@ -2439,8 +2439,8 @@ impl Attach<'_> {
     fn send_selection_request(&mut self, request: ClientRequest, mouse: MouseEvent, pane: Rect) {
         let alternate_screen = self
             .model
-            .panes
-            .get(&self.model.focused_pane())
+            .selection
+            .and_then(|selection| self.model.panes.get(&selection.pane))
             .is_some_and(|snapshot| snapshot.alternate_screen);
         match request {
             ClientRequest::Scroll { lines, .. } if alternate_screen => {

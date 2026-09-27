@@ -170,12 +170,34 @@ impl FollowedSelection {
         selection
     }
 
+    /// Over a row that is not part of the content — a prompt, a status
+    /// line — the end goes as far as the content does: the end of the
+    /// nearest line above it, or the start of the nearest below.
     fn extend(&mut self, (column, row): (u16, u16)) -> bool {
         self.pointer = Some((column, row));
-        let Some(line) = self.lines.get(usize::from(row)).copied().flatten() else {
+        let row = usize::from(row).min(self.lines.len().saturating_sub(1));
+        let above = || {
+            self.lines[..row]
+                .iter()
+                .rev()
+                .flatten()
+                .next()
+                .map(|line| (*line, u16::MAX))
+        };
+        let below = || {
+            self.lines[row..]
+                .iter()
+                .flatten()
+                .next()
+                .map(|line| (*line, 0))
+        };
+        let Some(head) = self.lines[row]
+            .map(|line| (line, column))
+            .or_else(above)
+            .or_else(below)
+        else {
             return false;
         };
-        let head = (line, column);
         let changed = head != self.head;
         self.head = head;
         changed
@@ -225,6 +247,10 @@ impl FollowedSelection {
     /// or one carrying on the move the last redraw made.
     fn shift(&self, screen: &[Vec<char>], changed: &[usize]) -> Option<isize> {
         let before: Vec<u64> = self.screen.iter().map(|row| fingerprint(row)).collect();
+        let mut occurrences: BTreeMap<u64, usize> = BTreeMap::new();
+        for was in &before {
+            *occurrences.entry(*was).or_default() += 1;
+        }
         let mut votes: BTreeMap<isize, usize> = BTreeMap::new();
         let mut voters = 0;
         for &row in changed {
@@ -234,7 +260,11 @@ impl FollowedSelection {
             voters += 1;
             let now = fingerprint(&screen[row]);
             for (from, was) in before.iter().enumerate() {
-                if *was == now && from != row && self.lines[from].is_some() {
+                // A row whose text stood in more than one place says
+                // nothing about where it came from: two rule lines, two
+                // fences, would otherwise agree on a move nobody made.
+                if *was == now && from != row && occurrences[was] == 1 && self.lines[from].is_some()
+                {
                     *votes.entry(from as isize - row as isize).or_default() += 1;
                 }
             }
@@ -242,8 +272,13 @@ impl FollowedSelection {
         votes
             .into_iter()
             .max_by_key(|&(shift, count)| (count, std::cmp::Reverse(shift.unsigned_abs())))
+            // The rows a move brings in changed too, and match nothing: a
+            // move is judged by what it explains, the rows it carried and
+            // the ones it brought, or a jump of half the screen would read
+            // as another screen altogether.
             .filter(|&(shift, count)| {
-                (count >= 2 || Some(shift) == self.last_shift) && count * 2 >= voters
+                (count >= 2 || Some(shift) == self.last_shift)
+                    && (count + shift.unsigned_abs()) * 2 >= voters
             })
             .map(|(shift, _)| shift)
     }
@@ -264,9 +299,28 @@ impl FollowedSelection {
                 moved[row] = true;
             }
         }
+        // Between the rows it carried, a row that did not change moved all
+        // the same: a blank line inside the content is still blank one row
+        // up, and is still the content's.
+        let first = moved.iter().position(|&moved| moved);
+        let last = moved.iter().rposition(|&moved| moved);
+        if let (Some(first), Some(last)) = (first, last) {
+            for row in first..=last {
+                let from = row as isize + shift;
+                if !moved[row]
+                    && let Ok(from) = usize::try_from(from)
+                    && from < rows
+                    && screen[row] == self.screen[from]
+                    && let Some(line) = self.lines[from]
+                {
+                    lines[row] = Some(line);
+                    moved[row] = true;
+                }
+            }
+        }
         // The rows the move brought in are the lines beside the ones it
-        // carried: as many as it moved by, and only rows that changed.
-        let is_changed = |row: usize| changed.binary_search(&row).is_ok();
+        // carried, as many as it moved by — blank or not, since a line
+        // that enters blank over a blank row does not change it.
         let carried = moved.clone();
         let entering = shift.unsigned_abs();
         let order: Vec<usize> = if shift > 0 {
@@ -279,7 +333,7 @@ impl FollowedSelection {
             let (previous, row) = (pair[0], pair[1]);
             if carried[row] {
                 run = 0;
-            } else if moved[previous] && is_changed(row) && run < entering {
+            } else if moved[previous] && run < entering {
                 let step = if shift > 0 { 1 } else { -1 };
                 lines[row] = lines[previous].map(|line| line + step);
                 moved[row] = true;
@@ -302,12 +356,23 @@ impl FollowedSelection {
         self.lines = lines;
     }
 
+    /// Keeps the lines on screen, and forgets the ones the selection can no
+    /// longer reach: its end is always on screen, so it can cover nothing
+    /// outside what runs from its anchor to the screen.
     fn keep(&mut self) {
         for (row, line) in self.lines.iter().enumerate() {
             if let Some(line) = line {
                 self.kept.insert(*line, self.screen[row].clone());
             }
         }
+        let anchor = self.anchor.0;
+        let on_screen = self.lines.iter().flatten().copied();
+        let first = on_screen
+            .clone()
+            .min()
+            .map_or(anchor, |line| line.min(anchor));
+        let last = on_screen.max().map_or(anchor, |line| line.max(anchor));
+        self.kept.retain(|line, _| (first..=last).contains(line));
     }
 
     fn ordered(&self) -> ((i64, u16), (i64, u16)) {
@@ -334,12 +399,17 @@ impl FollowedSelection {
             let Some(cells) = self.kept.get(&line) else {
                 continue;
             };
-            let from = if line == start.0 { start.1 } else { 0 };
+            let mut from = usize::from(if line == start.0 { start.1 } else { 0 });
+            // Starting on the cell a wide character spills into starts on
+            // the character.
+            if from > 0 && cells.get(from) == Some(&SPILL) {
+                from -= 1;
+            }
             let to = if line == end.0 { end.1 } else { u16::MAX };
             let text: String = cells
                 .iter()
                 .enumerate()
-                .filter(|&(column, _)| (usize::from(from)..=usize::from(to)).contains(&column))
+                .filter(|&(column, _)| (from..=usize::from(to)).contains(&column))
                 .map(|(_, character)| *character)
                 .filter(|character| *character != SPILL)
                 .collect();
@@ -558,10 +628,14 @@ mod tests {
 
     impl FullScreen {
         fn showing(first: usize) -> Self {
+            Self::showing_rows(first, 5)
+        }
+
+        fn showing_rows(first: usize, rows: usize) -> Self {
             let mut screen = Self {
-                terminal: terminal(20, 5),
+                terminal: terminal(20, rows),
                 selection: PaneSelection::default(),
-                rows: 5,
+                rows,
             };
             feed(&mut screen.terminal, b"\x1b[?1049h");
             screen.transcript_from(first);
@@ -687,5 +761,179 @@ mod tests {
         screen.draw_rows(&other, 0..5);
         assert_eq!(screen.selected(), ["", "", "", "", ""]);
         assert_eq!(screen.text(), "");
+    }
+
+    #[test]
+    fn a_jump_of_more_than_half_the_screen_is_still_a_move() {
+        let mut screen = FullScreen::showing_rows(10, 10);
+        screen.apply(begin((0, 7), (9, 8)));
+        screen.apply(SelectionGesture::Release);
+        screen.transcript_from(16);
+        assert_eq!(
+            screen.selected(),
+            [
+                "",
+                "message 17          ",
+                "message 18",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+            ],
+            "three rows carried and six brought in explain the whole redraw"
+        );
+    }
+
+    #[test]
+    fn rows_repeated_on_screen_do_not_vote_for_a_move() {
+        let mut screen = FullScreen::showing(10);
+        screen.apply(begin((0, 1), (9, 1)));
+        screen.apply(SelectionGesture::Release);
+        let rule = "-".repeat(10);
+        let mut lines = FullScreen::frame(10, 5);
+        lines[2] = rule.clone();
+        lines[3] = rule.clone();
+        screen.draw_rows(&lines, 2..4);
+        let mut edited = lines.clone();
+        edited[0] = rule.clone();
+        edited[1] = rule;
+        screen.draw_rows(&edited, 0..2);
+        assert_eq!(
+            screen.selected(),
+            ["", "----------", "", "", ""],
+            "two rows turning into a rule that already stood twice is an edit where \
+             they stand, not the rules moving up two rows"
+        );
+    }
+
+    #[test]
+    fn a_selection_starting_on_a_wide_characters_spill_copies_the_character() {
+        let mut screen = FullScreen::showing(10);
+        let mut lines = FullScreen::frame(10, 5);
+        lines[0] = "日本 x".to_owned();
+        screen.draw_rows(&lines, 0..1);
+        screen.apply(begin((1, 0), (5, 0)));
+        assert_eq!(screen.text(), "日本 x");
+    }
+
+    /// A transcript whose every third line is blank, the way paragraphs
+    /// leave it, above the prompt.
+    fn paragraphs(first: usize, rows: usize) -> Vec<String> {
+        let mut lines: Vec<String> = (first..first + rows - 1)
+            .map(|line| {
+                if line % 3 == 2 {
+                    String::new()
+                } else {
+                    format!("message {line}")
+                }
+            })
+            .collect();
+        lines.push("> prompt".to_owned());
+        lines
+    }
+
+    #[test]
+    fn blank_lines_inside_the_content_move_with_it() {
+        let mut screen = FullScreen::showing_rows(10, 10);
+        screen.draw_rows(&paragraphs(10, 10), 0..10);
+        screen.apply(begin((0, 3), (9, 6)));
+        screen.apply(SelectionGesture::Release);
+        screen.draw_rows(&paragraphs(13, 10), 0..10);
+        let blank = " ".repeat(20);
+        assert_eq!(
+            screen.selected()[..5],
+            [
+                "message 13          ".to_owned(),
+                blank,
+                "message 15          ".to_owned(),
+                "message 16".to_owned(),
+                String::new(),
+            ],
+            "the blank row between 13 and 15 is the blank line between them, \
+             not the one that stood there before the move"
+        );
+    }
+
+    #[test]
+    fn lines_that_scrolled_past_a_held_press_are_still_copied() {
+        let mut screen = FullScreen::showing_rows(10, 10);
+        screen.draw_rows(&paragraphs(10, 10), 0..10);
+        screen.apply(begin((0, 0), (5, 0)));
+        screen.draw_rows(&paragraphs(13, 10), 0..10);
+        screen.apply(extend((0, 4)));
+        assert_eq!(
+            screen.text(),
+            "message 10\n\nmessage 12\nmessage 13\n\nmessage 15\nmessage 16",
+            "the press was on message 10, and the pointer came to rest on the blank row \
+             after message 16"
+        );
+    }
+
+    #[test]
+    fn a_pointer_over_the_prompt_selects_to_the_end_of_the_content() {
+        let mut screen = FullScreen::showing(10);
+        screen.apply(begin((0, 1), (3, 1)));
+        screen.transcript_from(11);
+        screen.apply(extend((5, 4)));
+        assert_eq!(
+            screen.text(),
+            "message 11\nmessage 12\nmessage 13\nmessage 14"
+        );
+    }
+
+    /// A transcript with three blank lines after every two messages.
+    fn spaced(first: usize) -> Vec<String> {
+        let mut lines: Vec<String> = (first..first + 9)
+            .map(|line| {
+                if (2..=4).contains(&(line % 5)) {
+                    String::new()
+                } else {
+                    format!("message {line}")
+                }
+            })
+            .collect();
+        lines.push("> prompt".to_owned());
+        lines
+    }
+
+    #[test]
+    fn a_run_of_blank_lines_longer_than_the_move_moves_with_it() {
+        let mut screen = FullScreen::showing_rows(10, 10);
+        screen.draw_rows(&spaced(10), 0..10);
+        screen.apply(begin((0, 1), (9, 6)));
+        screen.apply(SelectionGesture::Release);
+        screen.draw_rows(&spaced(11), 0..10);
+        let blank = " ".repeat(20);
+        assert_eq!(
+            screen.selected()[..6],
+            [
+                "message 11          ".to_owned(),
+                blank.clone(),
+                blank.clone(),
+                blank,
+                "message 15          ".to_owned(),
+                "message 16".to_owned(),
+            ],
+            "three blank lines moved by one are still the three between 11 and 15"
+        );
+    }
+
+    #[test]
+    fn a_blank_line_entering_over_a_blank_row_is_still_content() {
+        let mut screen = FullScreen::showing_rows(10, 10);
+        screen.draw_rows(&spaced(9), 0..10);
+        screen.apply(begin((0, 7), (9, 7)));
+        screen.apply(SelectionGesture::Release);
+        screen.draw_rows(&spaced(10), 0..10);
+        screen.apply(extend((9, 8)));
+        assert_eq!(
+            screen.selected()[8],
+            " ".repeat(10),
+            "the last row shows the blank line 18 the move brought in, though it \
+             was blank before too"
+        );
     }
 }

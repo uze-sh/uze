@@ -8449,6 +8449,10 @@ mod workspace_tests {
         );
         copy_answered(&mut driven, "");
         assert_eq!(driven.attach.model.clipboard, None);
+        assert!(
+            driven.attach.model.selection.is_none(),
+            "a selection of blanks is not kept drawn"
+        );
     }
 
     #[test]
