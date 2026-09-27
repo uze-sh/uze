@@ -549,3 +549,34 @@ jobs:
             exit 1
           fi
           echo "the run is green"
+
+  # Every `rust-cache` key ends in a hash of what it was built from, so each
+  # dependency change on `main` leaves the previous entry behind whole: three
+  # generations of every family sat in a 10 GB allowance, 6.5 GB of it never
+  # to be restored again, and GitHub evicting by LRU meant a fresh entry could
+  # push out the one the next pull request was about to read. Only the newest
+  # generation of each family on `main` is ever restored, so the rest goes.
+  # After the gate, so this run's own entries are already saved.
+  caches:
+    name: Prune stale caches
+    needs: gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh cache list --ref refs/heads/main --limit 500 --json id,key,createdAt \
+            | jq -r 'map(. + {family: (.key | sub("-[^-]+$"; ""))})
+                     | group_by(.family)
+                     | map(sort_by(.createdAt) | reverse | .[1:][])
+                     | .[] | "\(.id) \(.key)"' \
+            | while read -r id key; do
+                echo "deleting ${key}"
+                gh cache delete "${id}"
+              done

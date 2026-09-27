@@ -64,12 +64,43 @@ jobs:
       pending: ${{ steps.plan.outputs.pending }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: lab-release
+          # Restore everywhere, save only from `main` — see `ci.yml`'s `test`.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The Dockerfile's own `uze-build` stage compiled from nothing on every
+      # run — 295 of the job's 342 seconds, measured — because its cache
+      # mounts die with a hosted runner, and at `.cargo/config.toml`'s two
+      # jobs on a four-core machine. Here the same compile runs on the
+      # runner's own toolchain and cache, inside the image the stage names so
+      # the binaries link against the glibc the Lab image runs (the runner's
+      # is newer, and a binary built on it does not start there), and the
+      # result is handed to the Dockerfile in place of that stage. A local
+      # `docker build` still runs the stage itself.
+      - name: Build the binaries the Lab bakes
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "${PWD}:/src" -w /src \
+            -v "${HOME}/.cargo:/cargo" -v "${HOME}/.rustup:/rustup" \
+            -e HOME=/tmp -e CARGO_HOME=/cargo -e RUSTUP_HOME=/rustup \
+            -e PATH=/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e CARGO_BUILD_JOBS="$(nproc)" -e CARGO_TERM_COLOR=always \
+            rust:1.97-bookworm \
+            sh -c 'cargo build --locked --release --bin uze && cargo build --locked --release --features dev-servers --bin uze-mcp-conformance-fixture'
+          mkdir -p "${RUNNER_TEMP}/uze-build/out"
+          cp target/release/uze target/release/uze-mcp-conformance-fixture "${RUNNER_TEMP}/uze-build/out/"
       # The Lab image bakes the real harness binaries (channel-latest),
       # the `uze` binary and the fixture tree; `lab.py` runs each vertical
       # against it in a disposable `--internal` network — zero Internet,
       # zero tokens.
       - name: Build the Lab harness image
-        run: docker build -f conformance/Dockerfile -t conformance-harness:latest .
+        run: |
+          docker buildx build --load --build-context uze-build="${RUNNER_TEMP}/uze-build" \
+            -f conformance/Dockerfile -t conformance-harness:latest .
       - name: Install Lab runner dependency
         run: python3 -m pip install --user pexpect
       # Channel-latest is only known once it is installed, so the versions
