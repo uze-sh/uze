@@ -58,13 +58,29 @@ pub enum Order {
     Descending,
 }
 
-/// One directory of units: every directory directly inside `path` that is
-/// neither hidden nor in `skip` is one unit.
+/// What one unit of a collection is. Hidden entries and the collection's
+/// `skip` are never units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Shape {
+    /// Every directory directly inside the path.
+    Directories,
+    /// Every directory beneath the path that holds this file, named by its
+    /// path from the collection: a capability can sit under an area
+    /// (`identity/user-auth`), and naming it by the area alone would list
+    /// one unit where the tool keeps several.
+    Holding(&'static str),
+    /// The path is a file, and that file is the whole unit: a document a
+    /// tool keeps one of, such as a project's constitution.
+    File,
+}
+
+/// Where a dialect keeps one subject's units, and how they are found.
 #[derive(Clone, Copy, Debug)]
 pub struct Collection {
     pub subject: Subject,
     /// Relative to the checkout root.
     pub path: &'static str,
+    pub shape: Shape,
     pub skip: &'static [&'static str],
     pub order: Order,
 }
@@ -81,8 +97,20 @@ pub struct Dialect {
     /// Paths relative to a unit, first match wins; a file matching none is
     /// [`Role::Other`]. `*` stands for one path segment and `**` for one or
     /// more, and what they stood for names the file — `specs/**/spec.md`
-    /// names `specs/agent/isolation/spec.md` as `agent/isolation`.
+    /// names `specs/agent/isolation/spec.md` as `agent/isolation`. Files
+    /// sharing a role list in the order their patterns are written, so the
+    /// file a reader opens first for a role is written first.
     pub roles: &'static [(&'static str, Role)],
+}
+
+impl Dialect {
+    /// Whether a finished unit is put away, rather than staying where it
+    /// was written.
+    pub fn archives(&self) -> bool {
+        self.collections
+            .iter()
+            .any(|collection| collection.subject == Subject::Archive)
+    }
 }
 
 pub const OPENSPEC: Dialect = Dialect {
@@ -92,18 +120,21 @@ pub const OPENSPEC: Dialect = Dialect {
         Collection {
             subject: Subject::Changes,
             path: "openspec/changes",
+            shape: Shape::Directories,
             skip: &["archive"],
             order: Order::Ascending,
         },
         Collection {
             subject: Subject::Specs,
             path: "openspec/specs",
+            shape: Shape::Holding("spec.md"),
             skip: &[],
             order: Order::Ascending,
         },
         Collection {
             subject: Subject::Archive,
             path: "openspec/changes/archive",
+            shape: Shape::Directories,
             skip: &[],
             order: Order::Descending,
         },
@@ -118,14 +149,63 @@ pub const OPENSPEC: Dialect = Dialect {
     ],
 };
 
+/// GitHub's Spec Kit: one directory per feature under `specs/`, numbered
+/// or timestamped, so ascending is the order they were started in. What
+/// outlives a feature is the project's constitution, the principles every
+/// plan is checked against; nothing is put away.
+pub const SPEC_KIT: Dialect = Dialect {
+    name: "Spec Kit",
+    marker: ".specify",
+    collections: &[
+        Collection {
+            subject: Subject::Changes,
+            path: "specs",
+            shape: Shape::Directories,
+            skip: &[],
+            order: Order::Ascending,
+        },
+        Collection {
+            subject: Subject::Specs,
+            path: ".specify/memory/constitution.md",
+            shape: Shape::File,
+            skip: &[],
+            order: Order::Ascending,
+        },
+    ],
+    roles: &[
+        ("spec.md", Role::Why),
+        ("plan.md", Role::How),
+        // What `plan` writes beside the plan, read after it.
+        ("research.md", Role::How),
+        ("data-model.md", Role::How),
+        ("quickstart.md", Role::How),
+        ("tasks.md", Role::Steps),
+        ("constitution.md", Role::Contract),
+        // `contracts/` are the feature's interfaces, not a requirement that
+        // outlives it, and `checklists/` are not its steps: both stay
+        // `Other`, named by their path.
+    ],
+};
+
 /// Every dialect this build reads, in the order a checkout holding more
 /// than one lists them.
-pub const SHIPPED: &[Dialect] = &[OPENSPEC];
+pub const SHIPPED: &[Dialect] = &[OPENSPEC, SPEC_KIT];
+
+/// What a file is for, what to call it, and where it lists among the
+/// files sharing its role.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Classified {
+    pub role: Role,
+    pub name: String,
+    /// The position of the pattern that matched; past every pattern for
+    /// [`Role::Other`].
+    pub rank: usize,
+}
 
 /// What a file is for and what to call it, by its path inside its unit.
-pub fn classify(dialect: &Dialect, relative: &str) -> (Role, String) {
+pub fn classify(dialect: &Dialect, relative: &str) -> Classified {
     let segments: Vec<&str> = relative.split('/').collect();
-    for (pattern, role) in dialect.roles {
+    for (rank, (pattern, role)) in dialect.roles.iter().enumerate() {
         let pattern: Vec<&str> = pattern.split('/').collect();
         let mut captured = Vec::new();
         if matches(&pattern, &segments, &mut captured) {
@@ -134,13 +214,18 @@ pub fn classify(dialect: &Dialect, relative: &str) -> (Role, String) {
             } else {
                 captured.join("/")
             };
-            return (*role, name);
+            return Classified {
+                role: *role,
+                name,
+                rank,
+            };
         }
     }
-    (
-        Role::Other,
-        relative.strip_suffix(".md").unwrap_or(relative).to_owned(),
-    )
+    Classified {
+        role: Role::Other,
+        name: relative.strip_suffix(".md").unwrap_or(relative).to_owned(),
+        rank: dialect.roles.len(),
+    }
 }
 
 fn stem(relative: &str) -> String {
@@ -183,14 +268,19 @@ fn matches<'a>(pattern: &[&str], path: &[&'a str], captured: &mut Vec<&'a str>) 
 mod tests {
     use super::*;
 
+    fn named(dialect: &Dialect, relative: &str) -> (Role, String) {
+        let classified = classify(dialect, relative);
+        (classified.role, classified.name)
+    }
+
     #[test]
     fn a_literal_pattern_names_the_file_by_its_stem() {
         assert_eq!(
-            classify(&OPENSPEC, "proposal.md"),
+            named(&OPENSPEC, "proposal.md"),
             (Role::Why, "proposal".to_owned())
         );
         assert_eq!(
-            classify(&OPENSPEC, "tasks.md"),
+            named(&OPENSPEC, "tasks.md"),
             (Role::Steps, "tasks".to_owned())
         );
     }
@@ -198,11 +288,11 @@ mod tests {
     #[test]
     fn a_double_wildcard_names_the_file_by_what_it_stood_for() {
         assert_eq!(
-            classify(&OPENSPEC, "specs/spec-surface/spec.md"),
+            named(&OPENSPEC, "specs/spec-surface/spec.md"),
             (Role::Contract, "spec-surface".to_owned())
         );
         assert_eq!(
-            classify(&OPENSPEC, "specs/identity/user-auth/spec.md"),
+            named(&OPENSPEC, "specs/identity/user-auth/spec.md"),
             (Role::Contract, "identity/user-auth".to_owned())
         );
     }
@@ -233,7 +323,7 @@ mod tests {
         // `spec.md` would match `**/spec.md` too; the literal comes first
         // and names it by its stem.
         assert_eq!(
-            classify(&OPENSPEC, "spec.md"),
+            named(&OPENSPEC, "spec.md"),
             (Role::Contract, "spec".to_owned())
         );
     }
@@ -241,11 +331,11 @@ mod tests {
     #[test]
     fn a_file_no_pattern_names_is_other_and_keeps_its_path() {
         assert_eq!(
-            classify(&OPENSPEC, "adr/001-why.md"),
+            named(&OPENSPEC, "adr/001-why.md"),
             (Role::Other, "adr/001-why".to_owned())
         );
         assert_eq!(
-            classify(&OPENSPEC, "notes.md"),
+            named(&OPENSPEC, "notes.md"),
             (Role::Other, "notes".to_owned())
         );
     }

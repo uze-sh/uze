@@ -257,6 +257,23 @@ pub(crate) fn content_columns(
     (columns[0], content_rows[0], content_rows[1])
 }
 
+/// [`content_columns`] for a view with no navigator: no column for it,
+/// and the content and the keys across the whole width.
+fn whole_width(frame_area: Rect) -> (Rect, Rect, Rect) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(FOOTER_ROWS)])
+        .split(frame_area);
+    (
+        Rect {
+            width: 0,
+            ..frame_area
+        },
+        rows[0],
+        rows[1],
+    )
+}
+
 /// A board's rows, top to bottom: its menu, the board itself and the
 /// footer. The board gets everything the other two do not need — no
 /// navigator column, no blank row under the title, no reading margin, and
@@ -452,7 +469,13 @@ pub(crate) fn render(
         rendered.content_space = board_space(area);
         return rendered;
     }
-    let (navigator_area, content_area, footer) = content_columns(area, navigator_width_override);
+    // A view with no list — nothing found, or nothing to find — is one
+    // column: a navigator's column left empty reads as a list that failed
+    // to draw, and pushes the message and the keys off to one side.
+    let (navigator_area, content_area, footer) = match view.navigator {
+        Some(_) => content_columns(area, navigator_width_override),
+        None => whole_width(area),
+    };
     // The nav is the surface's, not the list's: it spans the frame, and
     // both columns start below it.
     let nav_rows = match view.subjects.is_empty() {
@@ -493,15 +516,17 @@ pub(crate) fn render(
     // two jobs: the split moves sideways, the list scrolls down. Which a
     // press meant is the first movement's to say — see
     // [`ViewHit::GrabNavigatorEdge`].
-    hits.push((
-        Rect::new(
-            navigator_area.right().saturating_sub(1),
-            navigator_area.y,
-            1,
-            navigator_area.height,
-        ),
-        ViewHit::GrabNavigatorEdge,
-    ));
+    if view.navigator.is_some() {
+        hits.push((
+            Rect::new(
+                navigator_area.right().saturating_sub(1),
+                navigator_area.y,
+                1,
+                navigator_area.height,
+            ),
+            ViewHit::GrabNavigatorEdge,
+        ));
+    }
     match &view.content {
         Content::Message { text, hint, role } => {
             render_message(frame, content_area, text, hint.as_deref(), color(*role))
@@ -1554,12 +1579,27 @@ fn message_lines(text: &str, hint: Option<&str>, width: u16, colour: Color) -> V
     if let Some(hint) = hint {
         lines.push(Line::from(""));
         lines.extend(
-            text::fold(hint, measure)
+            hint_rows(hint, measure)
                 .into_iter()
                 .map(|line| Line::from(TextSpan::styled(line, theme::fg(Token::TextMuted)))),
         );
     }
     lines
+}
+
+/// A hint's rows: each of its lines on a row of its own, kept as written
+/// where it fits — so a list the extension lined up in columns stays lined
+/// up — and folded between words where it does not.
+fn hint_rows(hint: &str, measure: usize) -> Vec<String> {
+    hint.lines()
+        .flat_map(|line| {
+            if text::columns(line) <= measure {
+                vec![line.to_owned()]
+            } else {
+                text::fold(line, measure)
+            }
+        })
+        .collect()
 }
 
 /// What a row's kind is called in the vocabulary.
@@ -2486,6 +2526,69 @@ mod tests {
             })
             .collect();
         (rows, hits)
+    }
+
+    /// With no list there is no list's column: the message is centred on
+    /// the whole width, the keys start at its left edge, and there is no
+    /// edge to drag.
+    #[test]
+    fn a_view_with_no_navigator_takes_the_whole_width() {
+        let view = View {
+            navigator: None,
+            content: Content::Message {
+                text: "Nothing here".to_owned(),
+                hint: None,
+                role: Role::Muted,
+            },
+            ..sample()
+        };
+        let (rows, hits) = draw(&view);
+
+        let message = rows
+            .iter()
+            .find(|row: &&String| row.contains("Nothing here"))
+            .expect("the message is drawn");
+        let left = message.find("Nothing here").unwrap();
+        let right = message.len() - left - "Nothing here".len();
+        assert!(
+            left.abs_diff(right) <= 1,
+            "centred on 90 columns: {message:?}"
+        );
+        assert!(
+            rows.last().unwrap().starts_with("esc"),
+            "the keys start at the frame's edge: {:?}",
+            rows.last()
+        );
+        assert!(
+            !hits
+                .iter()
+                .any(|(_, hit)| matches!(hit, ViewHit::GrabNavigatorEdge)),
+            "no column, no edge"
+        );
+    }
+
+    /// A hint's own lines are kept, and kept as written where they fit:
+    /// a list lined up in columns stays lined up.
+    #[test]
+    fn a_hint_keeps_its_lines_and_their_spacing() {
+        let rows = hint_rows(
+            "Pick one:\n\nOpenSpec   openspec/\nSpec Kit   .specify/",
+            48,
+        );
+        assert_eq!(
+            rows,
+            [
+                "Pick one:",
+                "",
+                "OpenSpec   openspec/",
+                "Spec Kit   .specify/"
+            ]
+        );
+        assert_eq!(
+            hint_rows("one two three", 7),
+            ["one two", "three"],
+            "a line wider than the measure still folds"
+        );
     }
 
     /// A refused gesture says so on the footer's row, in the ink its role

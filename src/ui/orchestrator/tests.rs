@@ -1235,6 +1235,7 @@ mod workspace_tests {
                     _ => spec::Role::How,
                 },
                 name: name.to_owned(),
+                rank: 0,
                 text: Ok(format!("# {name}\n")),
             };
             model.spec.as_mut().expect("open").absorb(spec::SpecAnswer {
@@ -1248,6 +1249,7 @@ mod workspace_tests {
                         name: "x".to_owned(),
                         relative: "openspec/changes/x".to_owned(),
                         dialect: "OpenSpec",
+                        archives: true,
                         artifacts: vec![artifact("proposal"), artifact("design")],
                         progress: None,
                         own: false,
