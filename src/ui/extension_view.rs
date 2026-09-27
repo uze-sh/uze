@@ -1357,7 +1357,7 @@ fn render_navigator(
         }
     }
     if let Some(bar) = bar {
-        bar.render(frame, settled.first);
+        bar.render_on_draggable(frame, settled.first, resizing);
     }
     (settled, bar)
 }

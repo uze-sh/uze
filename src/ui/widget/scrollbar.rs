@@ -121,6 +121,21 @@ impl Scrollbar {
     /// box-drawing rule is centred, and mixing the two is a line with a
     /// jog in it.
     pub(crate) fn render(self, frame: &mut Frame<'_>, first: usize) {
+        self.render_in(frame, first, Token::BorderDefault);
+    }
+
+    /// The handle on a divider the pointer can drag. It goes accent with
+    /// the rule while the divider is dragged: the handle is a stretch of
+    /// that same line, and a line lit everywhere but there reads as two.
+    pub(crate) fn render_on_draggable(self, frame: &mut Frame<'_>, first: usize, dragging: bool) {
+        let tone = match dragging {
+            true => Token::Accent,
+            false => Token::BorderDefault,
+        };
+        self.render_in(frame, first, tone);
+    }
+
+    fn render_in(self, frame: &mut Frame<'_>, first: usize, tone: Token) {
         let thumb = self.thumb_height();
         let top = self.thumb_y(first);
         for row in 0..thumb {
@@ -131,7 +146,7 @@ impl Scrollbar {
             frame.render_widget(
                 Paragraph::new(Span::styled(
                     theme::glyph(Symbol::ScrollThumb),
-                    theme::fg(Token::BorderDefault),
+                    theme::fg(tone),
                 )),
                 Rect::new(self.track.x, y, self.track.width, 1),
             );
@@ -160,6 +175,25 @@ impl Scrollbar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On a divider being dragged the handle lights with the rule, so the
+    /// line reads as one lit line rather than two tones.
+    #[test]
+    fn a_handle_on_a_dragged_divider_lights_with_it() {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let bar = Scrollbar::measure(Rect::new(0, 0, 1, 10), 10, 100).expect("it scrolls");
+        let handle_tone = |dragging: bool| {
+            let mut terminal = Terminal::new(TestBackend::new(1, 10)).unwrap();
+            terminal
+                .draw(|frame| bar.render_on_draggable(frame, 0, dragging))
+                .unwrap();
+            terminal.backend().buffer()[(0, 0)].fg
+        };
+
+        assert_eq!(handle_tone(false), theme::color(Token::BorderDefault));
+        assert_eq!(handle_tone(true), theme::color(Token::Accent));
+    }
 
     #[test]
     fn a_list_that_fits_has_no_scrollbar() {
