@@ -93,6 +93,14 @@ decided by **what deleting it costs** — never by which module wrote it:
 | generated | `runtime/`, `shims/` | nothing — it is produced again |
 | remembered | `cache/` | nothing — it is observed again |
 
+Two things live outside `$UZE_HOME`, inside the repository's own Git
+administrative directory, because what they describe lives there: the
+`/.worktrees/` line UZE adds to `.git/info/exclude` (the operator's file,
+of which UZE owns that one line), and the record in
+`.git/worktrees/<admin>/` saying UZE made that checkout — a *record* by the
+test above, since nothing else knows it, and one Git deletes with the
+worktree it describes. Both are named in `uze-core`'s worktree module.
+
 A thing must not sit in a tier that claims a different cost than it has.
 Generated harness content lived at `state/attachments/` for exactly one
 letter's distance from `attachments.json`, the ledger that says who owns
@@ -525,7 +533,7 @@ properties):
 - **Machine and project scope are independent**: `uze setup`, `uze doctor`,
   `uze theme`, `uze market …` and `uze plugin …` are machine-scoped
   (`~/.uze`); `uze <plugin>@<market>`, `uze install` (aliased `uze i`),
-  `uze remove`, `uze status` and `uze agent …` (`agent task name`,
+  `uze remove`, `uze status` and `uze agent …` (`agent work name|split|join|list`,
   `agent context inspect|plan|reconcile`) are project-scoped
   (`agents.yaml`, `agents.lock`, `AGENTS.md`). Neither touches the other's state — see
   `docs/adr/019-explicit-project-machine-boundary-in-cli-command-grammar.md`.
@@ -558,13 +566,17 @@ properties):
   `AGENTS.md` acts on. A person asks `uze status` whether the project is
   ready and `uze install` to make it so, so anything a person needs to
   know about the context belongs in `status`, never in a fourth verb of
-  their own. `uze agent task name <type>/<subject>` is how work
+  their own. `uze agent work name <type>/<subject>` is how work
   acquires the branch a reviewer sees and the label an operator reads; the
   vocabulary it is judged against is `worktrees.branch` in `agents.yaml`.
   Work that reaches its first commit still unnamed is named from that
   commit's subject, judged against the same vocabulary — a Git fact read on
   the evaluation pass, never a harness feature. That derivation fires once
   and never again; asking by name renames, however often it is asked.
+  `uze agent work split|join|list` is how an agent gives its subagents
+  checkouts of their own and brings their work back: a subagent's checkout
+  is a slot UZE recorded as that agent's child, never a worktree made with
+  Git by hand, which UZE would neither see nor protect.
 - **`agents.yaml` is authored, `agents.lock` is derived**: the manifest holds
   what the project declared (marketplaces, plugins, the `worktrees:` policy);
   the lock holds only what resolving it produced — a commit per marketplace and
@@ -610,7 +622,7 @@ trait proven by conformance tests across all four harnesses, rather than
 split into per-capability traits (`PackageDelivery`, `SkillDelivery`, …) —
 that fragmentation has been considered and rejected absent a concrete
 implementation problem forcing it.
-<!-- uze:begin project:worktree-policy/aac115eb3f0f13e0 -->
+<!-- uze:begin project:worktree-policy/8168c69dd0515645 -->
 ## Concurrent work isolation
 
 - Name the work as your first action, before reading a file, planning or editing: `uze agent work name <type>/<subject>`. Types this project accepts: `feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert`. The subject is one or two words naming the intention, not a description of the task — `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The request you were given is where the intention comes from, so nothing you read later makes the name easier to choose. Work that reaches a commit still unnamed is named by UZE from that commit's subject, which is a worse name than the one you would have chosen. Either way your branch is renamed, so ask Git for its name rather than remembering it; in the operator's checkout only your label changes. Name it again with the same command whenever the work turns out to be something else — the last name given is the one that stands.
@@ -619,11 +631,5 @@ implementation problem forcing it.
 - If your working directory is not inside `.worktrees/`, you are in the operator's own checkout, on the branch they are on: commit there, as you go, and never switch, reset, stash or clean it — the operator's uncommitted work is theirs. Nothing below about delivery applies to you; the branch already has the name it will keep.
 - Commit your work on your own branch, as you go. Never commit to, merge into, rebase, or reset the target branch: delivery is UZE's — UZE rebases your branch onto the target, runs the project's checks and publishes it, then asks you to open the request for it; commit on your branch and stop until it does.
 - If UZE tells you a rebase is paused in your checkout, resolve the conflicts preserving the intent of your change, run `git rebase --continue`, run the project's checks, and end your turn.
-- Before spawning parallel subagents that write files, give each its own checkout so they cannot collide:
-
-```bash
-git worktree add -b agent/<topic> "$(git rev-parse --path-format=absolute --git-common-dir)/../.worktrees/<topic>" HEAD
-```
-
-- The path above is resolved against the *primary* checkout on purpose — a path relative to your own would nest one worktree inside another.
-<!-- uze:end project:worktree-policy/aac115eb3f0f13e0 -->
+- Before spawning parallel subagents that write files, give each its own checkout: `uze agent work split <topic>` prints the path of one cut from your current commit — hand that path to the subagent. When it is done, commit in both checkouts and run `uze agent work join <topic>` to bring its commits onto your branch; on a conflict, resolve it in the subagent's checkout, run `git rebase --continue` there, and join again. `uze agent work list` shows them. Never make a worktree with Git for this: UZE only knows the checkouts it made. An agent in the operator's checkout has no branch of its own to join into, and runs its subagents one after another instead.
+<!-- uze:end project:worktree-policy/8168c69dd0515645 -->

@@ -16,17 +16,27 @@
 //!   boundary is *a capability that introduces process execution*, which for
 //!   M2 means MCP.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use crate::{capability::CapabilityKind, capability::Resource};
 
 /// One capability that will cause a process to run once a harness picks it
 /// up. Carries what a person needs to judge it, and nothing else.
+///
+/// The environment and working directory are part of it: `LD_PRELOAD` or a
+/// different `cwd` changes what the same command runs as much as a new
+/// argument does.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ExecutableCapability {
     pub name: String,
     pub command: String,
     pub arguments: Vec<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub environment: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<String>,
 }
 
 /// What the operator is being asked to authorize.
@@ -115,10 +125,31 @@ fn mcp_execution(resource: &Resource) -> Option<ExecutableCapability> {
                 .collect()
         })
         .unwrap_or_default();
+    let environment = config
+        .get("env")
+        .and_then(serde_json::Value::as_object)
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|(key, value)| {
+                    let value = value
+                        .as_str()
+                        .map_or_else(|| value.to_string(), str::to_owned);
+                    (key.clone(), value)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let working_directory = config
+        .get("cwd")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
     Some(ExecutableCapability {
         name: resource.name(),
         command,
         arguments,
+        environment,
+        working_directory,
     })
 }
 
@@ -132,6 +163,8 @@ fn hook_executions(resource: &Resource) -> Vec<ExecutableCapability> {
                     name: format!("{}#{index}", hook.id),
                     command: handler.command,
                     arguments: Vec::new(),
+                    environment: BTreeMap::new(),
+                    working_directory: None,
                 })
                 .collect()
         })
@@ -141,8 +174,9 @@ fn hook_executions(resource: &Resource) -> Vec<ExecutableCapability> {
 /// Whether an update introduces execution the installed package did not
 /// already have.
 ///
-/// Compares the whole invocation, not just presence: a server whose command
-/// or arguments changed materially is a new thing to authorize, even though
+/// Compares the whole invocation, not just presence: a server whose command,
+/// arguments, environment or working directory changed is a new thing to
+/// authorize, even though
 /// the package id and the capability name are unchanged. This is not a
 /// permission history — it exists so a change cannot pass unseen.
 pub fn introduces_new_execution(
@@ -177,6 +211,16 @@ mod tests {
         )
     }
 
+    fn without_context() -> ExecutableCapability {
+        ExecutableCapability {
+            name: String::new(),
+            command: String::new(),
+            arguments: Vec::new(),
+            environment: BTreeMap::new(),
+            working_directory: None,
+        }
+    }
+
     fn skill_resource() -> Resource {
         Resource::from_package(
             PackageId::from_plugin_name("demo", &PathBuf::from("plugin.json")).unwrap(),
@@ -205,6 +249,7 @@ mod tests {
                 name: "files".to_owned(),
                 command: "./bin/server".to_owned(),
                 arguments: vec!["--stdio".to_owned()],
+                ..without_context()
             }]
         );
     }
@@ -245,6 +290,7 @@ mod tests {
             name: "files".to_owned(),
             command: "./bin/server".to_owned(),
             arguments: vec!["--stdio".to_owned()],
+            ..without_context()
         }];
         assert!(!introduces_new_execution(&existing, &existing.clone()));
     }
@@ -258,15 +304,48 @@ mod tests {
             name: "files".to_owned(),
             command: "./bin/server".to_owned(),
             arguments: vec!["--stdio".to_owned()],
+            ..without_context()
         }];
         for (command, argument) in [("./bin/other", "--stdio"), ("./bin/server", "--elevated")] {
             let next = vec![ExecutableCapability {
                 name: "files".to_owned(),
                 command: command.to_owned(),
                 arguments: vec![argument.to_owned()],
+                ..without_context()
             }];
             assert!(introduces_new_execution(&previous, &next));
         }
+    }
+
+    /// `LD_PRELOAD` or a new `cwd` changes what an unchanged command runs,
+    /// so it is asked about like a changed argument.
+    #[test]
+    fn a_changed_environment_or_working_directory_introduces_new_execution() {
+        let configured = |env: serde_json::Value, cwd: Option<&str>| {
+            let mut config = serde_json::json!({ "command": "./bin/server", "env": env });
+            if let Some(cwd) = cwd {
+                config["cwd"] = serde_json::Value::from(cwd);
+            }
+            let mut resource = mcp_resource("files", "./bin/server", &[]);
+            resource.capability.payload = serde_json::to_vec(&config).unwrap();
+            executable_capabilities(&[&resource])
+        };
+        let previous = configured(serde_json::json!({ "MODE": "safe" }), None);
+        assert!(!introduces_new_execution(
+            &previous,
+            &configured(serde_json::json!({ "MODE": "safe" }), None)
+        ));
+        assert!(introduces_new_execution(
+            &previous,
+            &configured(
+                serde_json::json!({ "MODE": "safe", "LD_PRELOAD": "./evil.so" }),
+                None
+            )
+        ));
+        assert!(introduces_new_execution(
+            &previous,
+            &configured(serde_json::json!({ "MODE": "safe" }), Some("/"))
+        ));
     }
 
     #[test]
@@ -275,6 +354,7 @@ mod tests {
             name: "files".to_owned(),
             command: "./bin/server".to_owned(),
             arguments: Vec::new(),
+            ..without_context()
         }];
         assert!(!introduces_new_execution(&previous, &[]));
     }

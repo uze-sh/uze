@@ -380,8 +380,8 @@ pub struct SetupResult {
     /// `Some` when this integration opted into `EXPERIMENTAL RUNTIME
     /// DELIVERY STRATEGY` (`IntegrationPort::supports_runtime_integration`)
     /// and `ensure_runtime_shim` created/refreshed its PATH shim as an
-    /// ordinary part of this `setup` call — see this module's
-    /// `INSTRUCTION_BRIDGE_IDENTITY` doc for how this relates to the
+    /// ordinary part of this `setup` call — see
+    /// `context::INSTRUCTION_BRIDGE_IDENTITY` for how this relates to the
     /// existing, still-default,
     /// persistent `CLAUDE.md` bridge. `None` for every
     /// integration with no runtime-integration story (not an error).

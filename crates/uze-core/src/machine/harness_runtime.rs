@@ -86,12 +86,16 @@ impl HarnessRuntimeContribution {
 /// canonicalized, so a persisted result stays meaningful even if a relative
 /// `PATH` entry's meaning later changes.
 ///
-/// Never returns a path inside `shims_dir` — that is the entire recursion
-/// guard. A caller must not fall back to a bare `Command::new(name)` (or an
-/// `exec` of the bare name) when this returns `None`: that would re-enter
-/// PATH search and could resolve straight back to the shim.
+/// Never returns a path inside `shims_dir`, nor the running executable —
+/// that is the entire recursion guard. A caller must not fall back to a bare
+/// `Command::new(name)` (or an `exec` of the bare name) when this returns
+/// `None`: that would re-enter PATH search and could resolve straight back
+/// to the shim.
 pub fn resolve_real_executable(names: &[&str], shims_dir: &Path) -> Option<PathBuf> {
     let canonical_shims_dir = shims_dir.canonicalize().ok();
+    let running = std::env::current_exe()
+        .and_then(|executable| executable.canonicalize())
+        .ok();
     for dir in harness_search_path() {
         // Canonicalizing is a filesystem round trip per `PATH` entry, and
         // on a WSL `PATH` carrying Windows directories each one crosses a
@@ -110,8 +114,20 @@ pub fn resolve_real_executable(names: &[&str], shims_dir: &Path) -> Option<PathB
         }
         for name in names {
             let candidate = dir.join(name);
-            if is_executable_file(&candidate) {
-                return Some(candidate.canonicalize().unwrap_or(candidate));
+            if !is_executable_file(&candidate) {
+                continue;
+            }
+            let resolved = candidate.canonicalize().unwrap_or(candidate);
+            // The directory test above sees only the entry as spelled: a
+            // `~/.local/bin/claude` linking into the shims, or an entry
+            // that is the shims directory under another name, resolves back
+            // to UZE all the same.
+            let leads_back_to_uze = canonical_shims_dir
+                .as_ref()
+                .is_some_and(|shims| resolved.starts_with(shims))
+                || running.as_ref() == Some(&resolved);
+            if !leads_back_to_uze {
+                return Some(resolved);
             }
         }
     }
@@ -403,6 +419,55 @@ mod tests {
             resolved,
             real_bin_dir.join("claude").canonicalize().unwrap()
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_path_entry_that_links_into_the_shims_dir_is_skipped_too() {
+        let mut env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("resolve-linked");
+        let shims_dir = root.join("shims");
+        let aliased_dir = root.join("aliased");
+        let linked_bin_dir = root.join("local-bin");
+        let real_bin_dir = root.join("real-bin");
+        for dir in [&shims_dir, &linked_bin_dir, &real_bin_dir] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        make_executable(&shims_dir.join("claude"));
+        make_executable(&real_bin_dir.join("claude"));
+        std::os::unix::fs::symlink(&shims_dir, &aliased_dir).unwrap();
+        std::os::unix::fs::symlink(shims_dir.join("claude"), linked_bin_dir.join("claude"))
+            .unwrap();
+
+        env.set(
+            "PATH",
+            std::env::join_paths([&aliased_dir, &linked_bin_dir, &real_bin_dir]).unwrap(),
+        );
+
+        assert_eq!(
+            resolve_real_executable(&["claude"], &shims_dir),
+            Some(real_bin_dir.join("claude").canonicalize().unwrap())
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_running_executable_is_never_resolved_as_the_harness() {
+        let mut env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("resolve-self");
+        let shims_dir = root.join("shims");
+        let linked_bin_dir = root.join("local-bin");
+        fs::create_dir_all(&shims_dir).unwrap();
+        fs::create_dir_all(&linked_bin_dir).unwrap();
+        std::os::unix::fs::symlink(
+            std::env::current_exe().unwrap(),
+            linked_bin_dir.join("claude"),
+        )
+        .unwrap();
+
+        env.set("PATH", std::env::join_paths([&linked_bin_dir]).unwrap());
+
+        assert_eq!(resolve_real_executable(&["claude"], &shims_dir), None);
     }
 
     #[test]

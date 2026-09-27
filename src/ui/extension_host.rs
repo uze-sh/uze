@@ -145,17 +145,21 @@ impl uze_extensions::Host for WorkspaceHost {
 
     /// Refuses a path that is not already a file, so "save" can only ever
     /// mean "save this file" — never "create whatever this string names".
+    ///
+    /// Replaced by rename rather than written in place, so a save that
+    /// fails partway leaves the file as it was instead of truncated.
     fn write_file(&self, path: &Path, contents: &str) -> Result<(), String> {
-        if !path.is_file() {
-            return Err(format!("{} is not a file", path.display()));
-        }
+        let target = self.save_target(path)?;
         forget_statuses_around(path);
-        std::fs::write(path, contents).map_err(|error| error.to_string())
+        replace_contents(&target, contents.as_bytes()).map_err(|error| error.to_string())
     }
 
     /// Files only. A recursive removal is a different act from the one
     /// the gesture that reaches here describes, and the difference
     /// between them is measured in how much is gone afterwards.
+    ///
+    /// A symbolic link is removed as the link, never its target, so this
+    /// reaches nothing outside the directory the path names.
     fn delete_file(&self, path: &Path) -> Result<(), String> {
         if !path.is_file() {
             return Err(format!("{} is not a file", path.display()));
@@ -193,6 +197,79 @@ impl uze_extensions::Host for WorkspaceHost {
     fn syntax_theme(&self) -> String {
         uze_theme::active().syntax_theme().to_owned()
     }
+}
+
+impl WorkspaceHost {
+    /// The file a save of `path` lands in. A symbolic link is followed
+    /// only to a file inside the repository the link sits in: the link is
+    /// something a checkout can carry, and following one anywhere would
+    /// let a cloned project point a save at any file its reader can write.
+    fn save_target(&self, path: &Path) -> Result<PathBuf, String> {
+        use uze_extensions::Host;
+
+        let not_a_file = || format!("{} is not a file", path.display());
+        let entry = std::fs::symlink_metadata(path).map_err(|_| not_a_file())?;
+        if entry.is_file() {
+            return Ok(path.to_path_buf());
+        }
+        if !entry.file_type().is_symlink() {
+            return Err(not_a_file());
+        }
+        let target = std::fs::canonicalize(path).map_err(|_| not_a_file())?;
+        if !target.is_file() {
+            return Err(not_a_file());
+        }
+        let root = path
+            .parent()
+            .and_then(|directory| self.repository_root(directory).ok())
+            .and_then(|root| std::fs::canonicalize(root).ok());
+        match root {
+            Some(root) if target.starts_with(&root) => Ok(target),
+            _ => Err(format!("{} links outside its repository", path.display())),
+        }
+    }
+}
+
+/// Replaces `target`'s contents through a sibling that is renamed over
+/// it, carrying the permissions `target` had. A read-only file stays
+/// refused, as an in-place write would have refused it: the rename only
+/// needs the directory to be writable.
+fn replace_contents(target: &Path, contents: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    let permissions = std::fs::metadata(target)?.permissions();
+    if permissions.readonly() {
+        return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+    }
+    let directory = target
+        .parent()
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let name = target
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let temporary = directory.join(format!(
+        ".{name}.{}.{}.save",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)?;
+    let replaced = (|| {
+        file.write_all(contents)?;
+        file.set_permissions(permissions)?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, target)
+    })();
+    if replaced.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    replaced
 }
 
 /// How long a `status` answer is handed to whoever asks the same one
@@ -459,6 +536,53 @@ mod tests {
 
         assert!(WorkspaceHost.delete_file(&file).is_ok());
         assert!(!file.exists());
+        std::fs::remove_dir_all(&directory).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_save_never_follows_a_link_out_of_its_repository() {
+        let directory = scratch("uze-write-link");
+        let outside = scratch("uze-write-link-outside");
+        let secret = outside.join("secret");
+        std::fs::write(&secret, "untouched\n").unwrap();
+        let link = directory.join("innocent.txt");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+
+        assert!(WorkspaceHost.write_file(&link, "overwritten\n").is_err());
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "untouched\n");
+
+        assert!(WorkspaceHost.delete_file(&link).is_ok());
+        assert!(secret.is_file(), "deleting a link leaves its target");
+        std::fs::remove_dir_all(&directory).ok();
+        std::fs::remove_dir_all(&outside).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_save_keeps_the_permissions_the_file_had() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = scratch("uze-write-mode");
+        let script = directory.join("run.sh");
+        std::fs::write(&script, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o750)).unwrap();
+
+        WorkspaceHost
+            .write_file(&script, "#!/bin/sh\necho saved\n")
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&script).unwrap(),
+            "#!/bin/sh\necho saved\n"
+        );
+        let mode = std::fs::metadata(&script).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o750);
+        assert_eq!(
+            std::fs::read_dir(&directory).unwrap().count(),
+            1,
+            "nothing is left beside the file"
+        );
         std::fs::remove_dir_all(&directory).ok();
     }
 

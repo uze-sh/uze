@@ -389,10 +389,10 @@ mod tests {
     #[test]
     fn two_keyboards_do_not_conflict_with_each_other() {
         // `r` removes a plugin in management and resumes a task in the
-        // preserved-work overlay. Different keyboards, no collision.
+        // work modal. Different keyboards, no collision.
         Keymap::new(vec![
             bind(Scope::Plugins, "r", Action::RemovePlugin),
-            bind(Scope::PreservedWork, "r", Action::ResumeTask),
+            bind(Scope::Work, "r", Action::ResumeTask),
         ])
         .expect("different keyboards");
     }

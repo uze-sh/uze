@@ -17,7 +17,25 @@ use uze_core::{
 
 use super::services::Context;
 use super::*;
-use super::{INSTRUCTION_BRIDGE_CONTENT, INSTRUCTION_BRIDGE_IDENTITY};
+
+/// `PERSISTENT CONTEXT DELIVERY STRATEGY`: the region a harness that reads
+/// `AGENTS.md` only through a bridge gets in its own native file inside the
+/// project (see `docs/capabilities/context-manager.md`). Which harness needs
+/// one is each integration's own `context_delivery()` declaration; this is
+/// only the bridge protocol they share.
+///
+/// Kept alongside the `EXPERIMENTAL RUNTIME DELIVERY STRATEGY` (the PATH
+/// shim): whether runtime projection ever replaces this bridge waits on an
+/// empirical interactive comparison, and neither is folded into the other
+/// before it.
+///
+/// Package-independent: the bridge serves however many packages contribute
+/// to `AGENTS.md` and is owned by none of them.
+pub(super) const INSTRUCTION_BRIDGE_IDENTITY: &str = "instruction-bridge";
+
+/// The import syntax a bridge-needing harness uses to pull another Markdown
+/// file into its own native instructions file.
+pub(super) const INSTRUCTION_BRIDGE_CONTENT: &str = "@AGENTS.md";
 
 impl Context<'_> {
     #[tracing::instrument(name = "context.inspect", skip_all, fields(project_root = %project_root.display()), err)]

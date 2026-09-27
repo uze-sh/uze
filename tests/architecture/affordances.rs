@@ -260,19 +260,46 @@ fn affordances() -> BTreeMap<Action, Affordance> {
              gesture; a button for it would be one misclick from doing it",
         ),
     );
+    put(Action::ToggleWork, Control("the first-steps section"));
     put(
-        Action::TogglePreservedWork,
-        Control("the first-steps section"),
+        Action::NextProject,
+        Control("the work modal's sidebar of projects"),
     );
-    put(Action::ResumeTask, Control("its row in the preserved list"));
-    put(Action::FinishTask, Control("its row in the preserved list"));
+    put(
+        Action::PreviousProject,
+        Control("the work modal's sidebar of projects"),
+    );
+    put(
+        Action::ResumeTask,
+        Control("the work modal's resume button"),
+    );
+    put(
+        Action::FinishTask,
+        Control("the work modal's mark-done button"),
+    );
     put(
         Action::DiscardTask,
-        Control("its row in the preserved list"),
+        Control("the work modal's discard or remove button"),
     );
     put(
         Action::ConfirmDiscard,
-        Control("the confirmation the row raises"),
+        Control("the confirm button the work modal raises"),
+    );
+    put(
+        Action::ShowSpaceWork,
+        Control("the space header's right-click menu"),
+    );
+    put(
+        Action::AdoptCheckout,
+        Control("the work modal's adopt button"),
+    );
+    put(
+        Action::JoinCheckout,
+        Control("the work modal's join button"),
+    );
+    put(
+        Action::CleanUpCheckouts,
+        Control("the work modal's clean-up button"),
     );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));

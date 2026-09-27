@@ -328,7 +328,10 @@ pub(super) fn read_diff(
             &[1],
         )
     } else {
-        host.git(root, &["diff", "HEAD", "--", &relative], &[])
+        // Literal, or a name with `*`, `?` or `[` in it is a pattern that
+        // matches its neighbours too, and their diffs arrive under its name.
+        let pathspec = format!(":(literal){relative}");
+        host.git(root, &["diff", "HEAD", "--", &pathspec], &[])
     };
     let output = match raw {
         Ok(output) => output,
@@ -402,7 +405,9 @@ pub fn change_summary(host: &dyn Host, cwd: &Path) -> Option<ChangeSummary> {
         // `git diff` leaves untracked files out, but the overlay shows
         // them against `/dev/null`: counting their lines keeps the badge
         // and the overlay agreeing that they are changes.
-        summary.additions += host.count_lines(&file.path);
+        summary.additions = summary
+            .additions
+            .saturating_add(host.count_lines(&file.path));
     }
     Some(summary)
 }
@@ -449,8 +454,11 @@ pub(super) struct ChangedFile {
 }
 
 /// Every changed path, untracked ones listed file by file — the one status
-/// both the badge and the overlay read.
-const STATUS_ARGS: &[&str] = &["status", "--porcelain=v1", "--untracked-files=all"];
+/// both the badge and the overlay read. NUL-separated, because it is the
+/// only form that gives a path back verbatim: without `-z` Git quotes and
+/// escapes unusual names, and a name containing ` -> ` reads as a rename.
+pub(super) const STATUS_ARGS: &[&str] =
+    &["status", "--porcelain=v1", "-z", "--untracked-files=all"];
 
 /// Totals Git's tab-separated `--numstat` output. Binary entries use `-`
 /// counts and intentionally contribute zero: there is no meaningful line
@@ -461,50 +469,54 @@ pub(super) fn parse_numstat(output: &str) -> (u32, u32) {
         let addition = fields.next().and_then(|value| value.parse::<u32>().ok());
         let deletion = fields.next().and_then(|value| value.parse::<u32>().ok());
         match (addition, deletion) {
-            (Some(addition), Some(deletion)) => (additions + addition, deletions + deletion),
+            (Some(addition), Some(deletion)) => (
+                additions.saturating_add(addition),
+                deletions.saturating_add(deletion),
+            ),
             _ => (additions, deletions),
         }
     })
 }
 
-/// Parses `git status --porcelain=v1 --untracked-files=all` output.
-/// Resolves each reported path (always repository-root-relative,
-/// regardless of `-C` — see `ChangedFile::path`'s doc comment) against
-/// `root` so every `ChangedFile` carries an absolute path.
+/// Parses the output of [`STATUS_ARGS`]. Resolves each reported path
+/// (always repository-root-relative, regardless of `-C` — see
+/// `ChangedFile::path`'s doc comment) against `root` so every
+/// `ChangedFile` carries an absolute path.
 pub(super) fn parse_porcelain_status(output: &str, root: &Path) -> Vec<ChangedFile> {
-    output
-        .lines()
-        .filter(|line| line.len() > 3)
-        .filter_map(|line| {
-            let (code, rest) = line.split_at(2);
-            let rest = rest.trim_start();
-            // A rename/copy line is `old -> new`; only the destination
-            // path is where the change actually lives now.
-            let relative = rest
-                .split_once(" -> ")
-                .map(|(_, to)| to)
-                .unwrap_or(rest)
-                .trim_matches('"');
-            if relative.is_empty() {
-                return None;
-            }
-            let status = if code == "??" {
-                FileStatus::Untracked
-            } else if code.contains('R') || code.contains('C') {
-                FileStatus::Renamed
-            } else if code.contains('A') {
-                FileStatus::Added
-            } else if code.contains('D') {
-                FileStatus::Deleted
-            } else {
-                FileStatus::Modified
-            };
-            Some(ChangedFile {
-                status,
-                path: root.join(relative),
-            })
-        })
-        .collect()
+    let mut files = Vec::new();
+    let mut records = output.split('\0');
+    while let Some(record) = records.next() {
+        let Some((code, relative)) = record
+            .split_at_checked(3)
+            .map(|(state, path)| (&state[..2], path))
+        else {
+            continue;
+        };
+        // A rename or copy is two records, where it went and then where it
+        // came from — and only the first is where the change lives now.
+        if code.contains(['R', 'C']) {
+            records.next();
+        }
+        if relative.is_empty() {
+            continue;
+        }
+        let status = if code == "??" {
+            FileStatus::Untracked
+        } else if code.contains(['R', 'C']) {
+            FileStatus::Renamed
+        } else if code.contains('A') {
+            FileStatus::Added
+        } else if code.contains('D') {
+            FileStatus::Deleted
+        } else {
+            FileStatus::Modified
+        };
+        files.push(ChangedFile {
+            status,
+            path: root.join(relative),
+        });
+    }
+    files
 }
 
 #[cfg(test)]
@@ -514,7 +526,7 @@ mod tests {
     #[test]
     fn parses_ordinary_status_codes() {
         let root = Path::new("/repo");
-        let output = " M modified.rs\nA  added.rs\n D deleted.rs\n?? untracked.rs\n";
+        let output = " M modified.rs\0A  added.rs\0 D deleted.rs\0?? untracked.rs\0";
         let files = parse_porcelain_status(output, root);
         assert_eq!(files.len(), 4);
         assert_eq!(files[0].status, FileStatus::Modified);
@@ -527,14 +539,41 @@ mod tests {
     #[test]
     fn parses_a_rename_using_the_destination_path() {
         let root = Path::new("/repo");
-        let files = parse_porcelain_status("R  old-name.rs -> new-name.rs\n", root);
+        let files = parse_porcelain_status("R  new-name.rs\0old-name.rs\0", root);
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].status, FileStatus::Renamed);
         assert_eq!(files[0].path, root.join("new-name.rs"));
     }
     #[test]
-    fn ignores_blank_lines() {
-        assert!(parse_porcelain_status("\n", Path::new("/repo")).is_empty());
+    fn ignores_an_empty_status() {
+        assert!(parse_porcelain_status("", Path::new("/repo")).is_empty());
+    }
+    /// Each of these is a name the line-oriented form mangles: quoted and
+    /// escaped, split at an arrow, or trimmed.
+    #[test]
+    fn a_name_is_taken_verbatim_however_unusual() {
+        let root = Path::new("/repo");
+        let output = "?? say \"hi\".rs\0 M a -> b.rs\0?? \u{e9}t\u{e9}.rs\0 M  leading.rs\0";
+        let paths: Vec<PathBuf> = parse_porcelain_status(output, root)
+            .into_iter()
+            .map(|file| file.path)
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                root.join("say \"hi\".rs"),
+                root.join("a -> b.rs"),
+                root.join("\u{e9}t\u{e9}.rs"),
+                root.join(" leading.rs"),
+            ]
+        );
+    }
+    #[test]
+    fn totals_that_would_overflow_stay_at_the_largest_count() {
+        assert_eq!(
+            parse_numstat("4294967295\t1\ta.rs\n1\t0\tb.rs\n"),
+            (u32::MAX, 1)
+        );
     }
     #[test]
     fn totals_text_numstat_and_ignores_binary_entries() {
@@ -614,6 +653,36 @@ mod repository_tests {
             Some(0),
             "and the file that was asked about is still where it was"
         );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    /// A name Git would read as a pattern is still one file: the diff of
+    /// `[ab].rs` is not also the diff of `a.rs`.
+    #[test]
+    fn a_diff_is_of_the_file_named_even_when_the_name_is_a_pattern() {
+        let repository = uze_testkit::git::Repository::new("git-diff-literal");
+        let root = repository.root().to_path_buf();
+        repository.commit_file("[ab].rs", "fn bracketed() {}\n");
+        repository.commit_file("a.rs", "fn a() {}\n");
+        std::fs::write(root.join("[ab].rs"), "fn bracketed() {}\nfn more() {}\n").unwrap();
+        std::fs::write(root.join("a.rs"), "fn a() {}\nfn neighbour() {}\n").unwrap();
+
+        let read = read_diff(
+            &TestHost,
+            &root,
+            &root.join("[ab].rs"),
+            FileStatus::Modified,
+            0,
+        );
+        let Ok(Some(cells)) = read.outcome else {
+            panic!("the diff is read");
+        };
+        let text: String = cells
+            .iter()
+            .flat_map(|cell| cell.spans.iter().map(|(_, piece)| piece.as_str()))
+            .collect();
+        assert!(text.contains("more"), "{text}");
+        assert!(!text.contains("neighbour"), "{text}");
 
         let _ = std::fs::remove_dir_all(&root);
     }

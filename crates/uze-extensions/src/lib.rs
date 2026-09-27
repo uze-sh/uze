@@ -154,7 +154,7 @@ pub trait Host {
     /// a host that can read without materialising them should say so.
     fn count_lines(&self, path: &std::path::Path) -> u32 {
         self.read_file(path)
-            .map(|contents| contents.lines().count() as u32)
+            .map(|contents| u32::try_from(contents.lines().count()).unwrap_or(u32::MAX))
             .unwrap_or(0)
     }
 

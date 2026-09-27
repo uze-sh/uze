@@ -73,10 +73,7 @@ fn read(home: &UzeHome) -> Result<DocumentMut> {
 fn write(home: &UzeHome, document: &DocumentMut) -> Result<()> {
     home.ensure_layout()?;
     let path = home.config_path();
-    // An atomic write renames over its target, which would replace a link
-    // with a regular file; writing to where the link leads keeps it one.
-    let target = fs::canonicalize(&path).unwrap_or(path);
-    crate::persistence::write_atomic(&target, document.to_string().as_bytes())
+    crate::persistence::write_atomic_preserving(&path, document.to_string().as_bytes())
 }
 
 fn malformed(home: &UzeHome, reason: String) -> UzeError {

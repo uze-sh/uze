@@ -79,7 +79,8 @@ pub use delivery::{
     state,
 };
 pub use machine::{
-    detection_cache, features, harness_runtime, home, provisioning, shell_path, subprocess,
+    detection_cache, features, harness_runtime, home, process_cwd, provisioning, shell_path,
+    subprocess,
 };
 pub use package::{acquisition, authoring, hosts, naming, store, trust};
 pub use project::{

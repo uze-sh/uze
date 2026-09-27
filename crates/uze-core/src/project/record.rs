@@ -51,9 +51,10 @@ pub fn ensure(home: &UzeHome, project_root: &Path) -> Result<PathBuf> {
         carry_across_the_move(home, &id, &directory);
     }
     let marker = home.project_marker_path(&id);
-    let recorded = uze_document::read::<ProjectMarker>(&marker)
-        .ok()
-        .and_then(uze_document::Carried::record);
+    let recorded = match uze_document::read::<ProjectMarker>(&marker) {
+        Err(error) if error.written_by_a_newer_build() => return Ok(directory),
+        read => read.ok().and_then(uze_document::Carried::record),
+    };
     if recorded.is_none_or(|recorded| recorded.root != canonical) {
         let payload = serde_json::to_vec_pretty(&ProjectMarker { root: canonical })
             .expect("a project marker serializes");
@@ -215,6 +216,23 @@ mod tests {
             vec![project.canonicalize().unwrap()],
             "the id is a one-way hash, and this is what makes it reversible"
         );
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn a_newer_builds_marker_is_left_as_it_was() {
+        let (home, scratch) = home("project-marker-newer");
+        let project = scratch.join("demo");
+        fs::create_dir_all(&project).unwrap();
+        let id = project_id_for(&project.canonicalize().unwrap());
+        let marker = home.project_marker_path(&id);
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        let newer = br#"{"schema_version":99,"somewhere":"else"}"#;
+        fs::write(&marker, newer).unwrap();
+
+        ensure(&home, &project).unwrap();
+
+        assert_eq!(fs::read(&marker).unwrap(), newer);
         fs::remove_dir_all(scratch).unwrap();
     }
 

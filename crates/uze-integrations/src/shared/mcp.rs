@@ -8,12 +8,13 @@ use std::{ffi::OsString, fs, path::Path, path::PathBuf};
 use uze_core::{
     Result, UzeError,
     capability::Resource,
-    exposure::{ExposureMechanism, ExposurePlan},
-    integration::ManagedArtifact,
+    exposure::{ExposureMechanism, ExposurePlan, McpEnvironmentReference},
+    integration::{AttachmentInspection, AttachmentState, ManagedArtifact},
     router::CompatibilityRoute,
     store::StoredPackage,
 };
 
+use crate::shared::plan::unsupported;
 use crate::shared::process::{capture, failed_message, is_cli_safe_token, succeeds};
 
 /// How a canonical `mcp.json` names the root of its own package — the token
@@ -61,27 +62,59 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
 
 /// `{"command": "...", "args": [...]}` from one server's canonical config
 /// object, as MCP resource discovery extracts it from `mcp.json`, with the
-/// package root resolved. `None` without a usable `command`; non-string
-/// arguments are skipped.
+/// package root resolved. `None` without a usable `command`, or with an
+/// argument that is not a string: an entry that runs something other than
+/// what the author declared is not a delivery of it.
 pub(crate) fn stdio_command(payload: &[u8], package_root: &Path) -> Option<(PathBuf, Vec<String>)> {
     let value = resolve_package_root(&serde_json::from_slice(payload).ok()?, package_root);
     let command = value.get("command")?.as_str()?;
-    let args = value
-        .get("args")
-        .and_then(serde_json::Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
+    let args = match value.get("args") {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(args) => args
+            .as_array()?
+            .iter()
+            .map(|arg| arg.as_str().map(str::to_owned))
+            .collect::<Option<_>>()?,
+    };
     Some((PathBuf::from(command), args))
 }
 
-/// The managed stdio entry for `resource` under `entry_name`, or `None`
-/// when its payload carries no usable command.
+/// What a server declares that the managed stdio entry has no place for.
+/// The entry carries a command and its arguments; a server that also needs
+/// an environment or a working directory would start without them.
+fn undeliverable(payload: &[u8]) -> Option<&'static str> {
+    let value = serde_json::from_slice::<serde_json::Value>(payload).ok()?;
+    let present = |key: &str| {
+        value.get(key).is_some_and(|declared| match declared {
+            serde_json::Value::Null => false,
+            serde_json::Value::Object(entries) => !entries.is_empty(),
+            _ => true,
+        })
+    };
+    if present("env") {
+        Some(
+            "mcp.json server declares `env`, which the managed entry cannot carry; delivering it would start the server without its environment.",
+        )
+    } else if present("cwd") {
+        Some(
+            "mcp.json server declares `cwd`, which the managed entry cannot carry; delivering it would start the server in the wrong directory.",
+        )
+    } else if value
+        .get("args")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|args| args.iter().any(|arg| !arg.is_string()))
+    {
+        Some(
+            "mcp.json server declares an argument that is not a string, which the managed entry cannot carry faithfully.",
+        )
+    } else {
+        None
+    }
+}
+
+/// The managed stdio entry for `resource` under `entry_name`: `None` when
+/// its payload carries no usable command, an Unsupported plan when it
+/// declares something the entry cannot carry.
 pub(crate) fn managed_stdio_plan(
     resource: &Resource,
     entry_name: String,
@@ -89,6 +122,9 @@ pub(crate) fn managed_stdio_plan(
     enabled: Option<bool>,
     evidence: &str,
 ) -> Option<ExposurePlan> {
+    if let Some(reason) = undeliverable(&resource.capability.payload) {
+        return Some(unsupported(reason));
+    }
     let (command, args) = stdio_command(&resource.capability.payload, &resource.package_root)?;
     Some(ExposurePlan {
         route,
@@ -105,15 +141,110 @@ pub(crate) fn managed_stdio_plan(
     })
 }
 
+/// The answer for a server the vendor already knows by the planned name:
+/// one that inspects as exactly the planned entry is this attach done
+/// already, and anything else is somebody else's server, which neither an
+/// add-or-update verb nor a receipt may claim.
+pub(crate) fn claim_existing(existing: AttachmentInspection, config: &Path) -> Result<()> {
+    if existing.state == AttachmentState::Matched {
+        Ok(())
+    } else {
+        Err(UzeError::ManagedEntryConflict(config.to_path_buf()))
+    }
+}
+
+/// A managed stdio server as its receipt records it — the one shape every
+/// harness's MCP inspection reads.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct McpEntry<'a> {
+    pub name: &'a str,
+    pub transport: &'a str,
+    pub command: &'a Path,
+    pub args: &'a [String],
+    pub cwd: Option<&'a Path>,
+    pub environment: &'a [McpEnvironmentReference],
+    pub enabled: Option<bool>,
+}
+
+impl<'a> McpEntry<'a> {
+    /// The entry a `VendorConfigEntry` receipt records; `None` for any
+    /// other artifact.
+    pub(crate) fn recorded(artifact: &'a ManagedArtifact) -> Option<Self> {
+        let ManagedArtifact::VendorConfigEntry {
+            entry_name,
+            transport,
+            command,
+            args,
+            cwd,
+            environment,
+            enabled,
+        } = artifact
+        else {
+            return None;
+        };
+        Some(Self {
+            name: entry_name,
+            transport,
+            command,
+            args,
+            cwd: cwd.as_deref(),
+            environment,
+            enabled: *enabled,
+        })
+    }
+
+    /// What an attach plans ([`managed_stdio_plan`]): stdio, a command and
+    /// its arguments, nothing else.
+    pub(crate) fn planned(name: &'a str, command: &'a Path, args: &'a [String]) -> Self {
+        Self {
+            name,
+            transport: "stdio",
+            command,
+            args,
+            cwd: None,
+            environment: &[],
+            enabled: None,
+        }
+    }
+
+    /// Whether the receipt asks for nothing but a stdio command and its
+    /// arguments — all a vendor entry read by command and args can prove.
+    pub(crate) fn is_plain_stdio(&self) -> bool {
+        self.transport == "stdio"
+            && self.cwd.is_none()
+            && self.environment.is_empty()
+            && self.enabled.is_none()
+    }
+
+    /// Whether a vendor's `{"command": ..., "args": [...]}` object runs
+    /// this entry's command with its arguments. Absent `args` is none.
+    pub(crate) fn runs_as(&self, server: &serde_json::Value) -> bool {
+        let command = server.get("command").and_then(serde_json::Value::as_str);
+        let args: Vec<&str> = server
+            .get("args")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .collect()
+            })
+            .unwrap_or_default();
+        command == Some(self.command.to_string_lossy().as_ref())
+            && args == self.args.iter().map(String::as_str).collect::<Vec<_>>()
+    }
+}
+
 /// Whether the vendor already knows a server by this name (`mcp get`).
 pub(crate) fn cli_exists(executable: &Path, home: &Path, entry_name: &str) -> bool {
     succeeds(executable, home, &["mcp", "get", entry_name])
 }
 
 /// Registers `entry_name` through `<add_verb> <entry_name> -- <command>
-/// [args...]`. An existing name is left alone: neither vendor's overwrite
-/// behavior for a colliding, differently-configured name was confirmed, so
-/// UZE never relies on it (ADR-007).
+/// [args...]`. The caller settles a name the vendor already knows first
+/// ([`claim_existing`]): neither vendor's overwrite behavior for a
+/// colliding, differently-configured name was confirmed, so UZE never
+/// relies on it (ADR-007).
 pub(crate) fn cli_add(
     executable: &Path,
     home: &Path,
@@ -123,9 +254,6 @@ pub(crate) fn cli_add(
     command: &Path,
     args: &[String],
 ) -> Result<()> {
-    if cli_exists(executable, home, entry_name) {
-        return Ok(());
-    }
     let arguments: Vec<OsString> = add_verb
         .iter()
         .map(OsString::from)
@@ -195,6 +323,48 @@ mod tests {
                 "env": { "HOME_OF": "/store/plugins/mk/pm" },
             })
         );
+    }
+
+    #[test]
+    fn a_server_the_entry_cannot_carry_is_unsupported_not_trimmed() {
+        for declared in [
+            r#"{"command":"server","env":{"TOKEN":"x"}}"#,
+            r#"{"command":"server","cwd":"/srv"}"#,
+            r#"{"command":"server","args":["--port",8080]}"#,
+        ] {
+            assert!(undeliverable(declared.as_bytes()).is_some(), "{declared}");
+            assert_eq!(
+                stdio_command(declared.as_bytes(), Path::new("/store/pm")).is_some(),
+                !declared.contains("8080")
+            );
+        }
+        for declared in [
+            r#"{"command":"server"}"#,
+            r#"{"command":"server","env":{},"args":["--serve"]}"#,
+        ] {
+            assert_eq!(undeliverable(declared.as_bytes()), None, "{declared}");
+        }
+    }
+
+    #[test]
+    fn only_the_planned_entry_is_claimed() {
+        let config = Path::new("/home/.vendor.json");
+        let inspection = |state| AttachmentInspection {
+            state,
+            reason: String::new(),
+        };
+        assert!(claim_existing(inspection(AttachmentState::Matched), config).is_ok());
+        for state in [
+            AttachmentState::Drifted,
+            AttachmentState::Missing,
+            AttachmentState::Conflict,
+            AttachmentState::Blocked,
+        ] {
+            assert!(matches!(
+                claim_existing(inspection(state), config),
+                Err(UzeError::ManagedEntryConflict(_))
+            ));
+        }
     }
 
     #[test]

@@ -959,7 +959,10 @@ fn a_directory_is_never_deletable() {
 
     press(&mut view, Command::Delete);
     assert!(view.confirming_delete.is_none());
-    assert_eq!(view.notice.as_deref(), Some("only files are deletable"));
+    assert_eq!(
+        view.notice.as_ref().map(|notice| notice.text.as_str()),
+        Some("only files are deletable")
+    );
 }
 
 #[test]
@@ -981,6 +984,31 @@ fn closing_with_unsaved_changes_asks_once() {
         matches!(press(&mut view, Command::Close), CodeOutcome::Close),
         "the second is the answer"
     );
+}
+
+/// The question a second Esc answers is asked on screen, with the one key
+/// that answers it — and any other gesture withdraws it.
+#[test]
+fn closing_with_unsaved_changes_says_what_the_second_press_does() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    press(&mut view, Command::Edit);
+    type_text(&mut view, "x");
+    press(&mut view, Command::Close);
+    press(&mut view, Command::Close);
+
+    let asked = super::view(&view, space());
+    assert_eq!(
+        asked.notice.map(|notice| notice.text),
+        Some("notes.txt has unsaved changes · close again to discard them".to_owned())
+    );
+    assert_eq!(asked.footer, [Command::Close]);
+
+    press(&mut view, Command::FocusNext);
+    assert_eq!(super::view(&view, space()).notice, None, "withdrawn");
 }
 
 /// A file with no trailing newline gains one on the way through
@@ -1126,6 +1154,106 @@ fn a_reread_never_overwrites_keystrokes_typed_while_it_was_out() {
         Some(vec!["one!".to_owned()]),
         "what was typed is still what is on screen"
     );
+}
+
+/// A save is answered after the write lands, and typing does not wait
+/// for it. What was typed in between is not what was written, so the
+/// answer may neither call it saved nor re-read the file over it.
+#[test]
+fn keystrokes_typed_while_a_save_is_out_survive_its_answer() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    press(&mut view, Command::Edit);
+    press(&mut view, Command::CaretLineEnd);
+    type_text(&mut view, "!");
+    press(&mut view, Command::Save);
+
+    let save = view.take_request().expect("the save is asked for");
+    type_text(&mut view, "?");
+    view.absorb(fulfill(&machine, save));
+    settle(&mut view, &machine);
+
+    assert_eq!(machine.files.borrow()[Path::new("/w/notes.txt")], "one!\n");
+    let open = view.open.as_ref().expect("still open");
+    assert_eq!(open.lines, ["one!?"], "what was typed after is still there");
+    assert!(open.modified, "and is still unsaved");
+
+    press(&mut view, Command::Save);
+    settle(&mut view, &machine);
+    assert_eq!(machine.files.borrow()[Path::new("/w/notes.txt")], "one!?\n");
+    assert!(!view.open.as_ref().expect("still open").modified);
+}
+
+/// Moving the cursor is not a request to throw away what was typed: an
+/// unsaved buffer keeps the surface on its file, by the arrows or by a
+/// click, until it is saved.
+#[test]
+fn moving_away_from_unsaved_work_keeps_it() {
+    let machine = FakeMachine::default()
+        .with_file("/w/a.txt", "aaa\n")
+        .with_file("/w/b.txt", "bbb\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    press(&mut view, Command::Edit);
+    type_text(&mut view, "x");
+    press(&mut view, Command::Close);
+    press(&mut view, Command::FocusNext);
+
+    press(&mut view, Command::SelectNext);
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(1)), space());
+    settle(&mut view, &machine);
+
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/a.txt")));
+    let open = view.open.as_ref().expect("the buffer is still open");
+    assert_eq!(open.lines, ["xaaa"]);
+    assert!(open.modified);
+    let said = super::view(&view, space()).notice;
+    assert_eq!(
+        said.as_ref()
+            .map(|notice| (notice.text.as_str(), notice.role)),
+        Some(("a.txt has unsaved changes", Role::Warning)),
+        "the refusal is said where the viewer can read it"
+    );
+
+    press(&mut view, Command::Edit);
+    press(&mut view, Command::Save);
+    settle(&mut view, &machine);
+    press(&mut view, Command::Close);
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(1)), space());
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/b.txt")),
+        "once it is saved, the cursor moves"
+    );
+}
+
+/// A caret or a diff row past what a `u16` counts is clamped to the last
+/// row a scroll can name, rather than wrapped to one near the top.
+#[test]
+fn a_position_past_the_scroll_range_is_clamped_rather_than_wrapped() {
+    let mut view = fixture();
+    let far = usize::from(u16::MAX) + 10;
+    view.changes.diff = (0..=far)
+        .map(|line| diff::DiffCell {
+            kind: DiffLineKind::Context,
+            line_no: line as u32,
+            spans: Vec::new(),
+        })
+        .collect();
+    assert_eq!(view.diff_row_of(far), Some(u16::MAX));
+
+    let mut open = OpenFile::opening(PathBuf::from("/repo/long.rs"));
+    open.editing = true;
+    open.caret.line = far;
+    view.open = Some(open);
+    view.scroll = u16::MAX - 1;
+    view.follow_caret(20);
+    assert_eq!(view.scroll, u16::MAX - 19);
 }
 
 /// Moving to another file in the tree points every mode at it: the diff

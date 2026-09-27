@@ -61,7 +61,9 @@ fn collect(directory: &Path, found: &mut Vec<Leftover>) {
     };
     for entry in entries.filter_map(std::result::Result::ok) {
         let path = entry.path();
-        if path.is_dir() {
+        // The entry's own type, never what a link leads to: a link back up
+        // the tree would otherwise be walked forever.
+        if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             collect(&path, found);
             continue;
         }
@@ -80,6 +82,19 @@ fn collect(directory: &Path, found: &mut Vec<Leftover>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_back_up_the_tree_is_not_followed() {
+        let root = uze_testkit::temp::scratch("leftovers-cycle");
+        let home = UzeHome::at(&root);
+        home.ensure_layout().unwrap();
+        std::os::unix::fs::symlink(home.state_dir(), home.state_dir().join("loop")).unwrap();
+        fs::write(home.state_dir().join("hosts.json.unreadable-7"), b"x").unwrap();
+
+        assert_eq!(set_aside(&home).len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn every_set_aside_record_is_found_wherever_it_was_kept() {

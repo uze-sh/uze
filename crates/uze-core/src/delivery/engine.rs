@@ -222,10 +222,7 @@ pub fn discover_files(root: &Path, matches: impl Fn(&Path) -> bool) -> Result<Ve
 }
 
 fn read_file(path: &Path) -> Result<Vec<u8>> {
-    fs::read(path).map_err(|source| UzeError::Read {
-        path: path.to_path_buf(),
-        source,
-    })
+    crate::store::read_package_file(path)
 }
 
 /// A package's `commands/` directory is no longer a canonical surface

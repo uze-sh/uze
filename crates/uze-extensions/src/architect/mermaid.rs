@@ -30,7 +30,11 @@ pub fn parse(source: &str) -> Result<Diagram, String> {
 }
 
 fn flowchart<'a>(header: &str, lines: impl Iterator<Item = &'a str>) -> Result<Graph, String> {
-    let flow = match header.split_whitespace().nth(1) {
+    let direction = header
+        .split_whitespace()
+        .nth(1)
+        .map(|direction| direction.trim_end_matches(';'));
+    let flow = match direction {
         Some("LR" | "RL") => Flow::LeftRight,
         _ => Flow::TopDown,
     };
@@ -517,6 +521,13 @@ mod tests {
             Diagram::Graph(graph) => graph,
             Diagram::Sequence(_) => panic!("expected a graph"),
         }
+    }
+
+    /// A statement may end in a semicolon, and the header is a statement.
+    #[test]
+    fn a_direction_ending_in_a_semicolon_is_still_the_direction() {
+        assert_eq!(graph("graph LR;\n a --> b").flow, Flow::LeftRight);
+        assert_eq!(graph("flowchart RL;\n a --> b").flow, Flow::LeftRight);
     }
 
     #[test]

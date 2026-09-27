@@ -15,7 +15,9 @@ use uze_core::{
 
 use super::ClaudeIntegration;
 use crate::shared::json_config;
-use crate::shared::mcp::{cli_add, cli_remove, managed_stdio_plan};
+use crate::shared::mcp::{
+    McpEntry, claim_existing, cli_add, cli_exists, cli_remove, managed_stdio_plan,
+};
 use crate::shared::plan::{blocked, unsupported};
 use crate::shared::process::is_cli_safe_token;
 
@@ -50,7 +52,8 @@ impl ClaudeIntegration {
 }
 
 /// Registers the server at user scope (`--scope user`), where every future
-/// session in any project reads it.
+/// session in any project reads it. A name Claude already knows, in any
+/// scope, is claimed only when it is exactly the planned user-scope entry.
 pub(super) fn attach_mcp_entry(
     executable: &Path,
     command_home: &Path,
@@ -58,6 +61,13 @@ pub(super) fn attach_mcp_entry(
     command: &Path,
     args: &[String],
 ) -> Result<()> {
+    if cli_exists(executable, command_home, entry_name) {
+        let config = command_home.join(".claude.json");
+        return claim_existing(
+            inspect_claude_mcp(&config, &McpEntry::planned(entry_name, command, args)),
+            &config,
+        );
+    }
     cli_add(
         executable,
         command_home,
@@ -72,48 +82,21 @@ pub(super) fn attach_mcp_entry(
 /// Claude has no structured `mcp get` output. This is deliberately read-only:
 /// attachment/removal still go through the official CLI, while inspection
 /// reads only the one expected `mcpServers.<name>` entry.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn inspect_claude_mcp(
-    path: &Path,
-    entry_name: &str,
-    transport: &str,
-    command: &Path,
-    args: &[String],
-    cwd: Option<&Path>,
-    environment: &[uze_core::exposure::McpEnvironmentReference],
-    enabled: Option<bool>,
-) -> AttachmentInspection {
-    if transport != "stdio" || cwd.is_some() || !environment.is_empty() || enabled.is_some() {
-        return AttachmentInspection {
-            state: AttachmentState::Blocked,
-            reason: "Claude MCP receipt requests state this integration cannot verify safely"
-                .to_owned(),
-        };
+pub(super) fn inspect_claude_mcp(path: &Path, entry: &McpEntry) -> AttachmentInspection {
+    if !entry.is_plain_stdio() {
+        return blocked("Claude MCP receipt requests state this integration cannot verify safely");
     }
     let config = match json_config::read_object(path) {
         Ok(config) => config,
         Err(reason) => return blocked(reason),
     };
-    let Some(entry) = json_config::get_path(&config, &["mcpServers", entry_name]) else {
+    let Some(server) = json_config::get_path(&config, &["mcpServers", entry.name]) else {
         return AttachmentInspection {
             state: AttachmentState::Missing,
             reason: "Claude MCP entry is missing".to_owned(),
         };
     };
-    let command_matches = entry.get("command").and_then(serde_json::Value::as_str)
-        == Some(command.to_string_lossy().as_ref());
-    let args_match = entry
-        .get("args")
-        .and_then(serde_json::Value::as_array)
-        .map(|actual| {
-            actual
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .collect::<Vec<_>>()
-                == args.iter().map(String::as_str).collect::<Vec<_>>()
-        })
-        .unwrap_or(args.is_empty());
-    if command_matches && args_match {
+    if entry.runs_as(server) {
         AttachmentInspection {
             state: AttachmentState::Matched,
             reason: "Claude MCP entry matches receipt".to_owned(),
@@ -131,4 +114,60 @@ pub(super) fn inspect_claude_mcp(
 /// contract.rs`; `command_home` is always set as `HOME`, never inherited.
 pub fn detach_mcp_entry(executable: &Path, command_home: &Path, entry_name: &str) -> Result<()> {
     cli_remove(executable, command_home, "claude", entry_name)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+
+    use uze_core::UzeError;
+
+    use super::attach_mcp_entry;
+
+    /// `claude mcp get` knows every name; the log says whether `mcp add`
+    /// ever ran.
+    fn knowing_claude(home: &Path) -> std::path::PathBuf {
+        let executable = home.join("claude");
+        fs::write(
+            &executable,
+            format!(
+                "#!/bin/sh\n[ \"$2\" = add ] && echo added >> '{}'\nexit 0\n",
+                home.join("calls").display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+        executable
+    }
+
+    #[test]
+    fn a_name_claude_already_knows_is_claimed_only_when_it_is_the_planned_entry() {
+        let home = uze_testkit::temp::scratch("claude-mcp-existing");
+        fs::create_dir_all(&home).unwrap();
+        let claude = knowing_claude(&home);
+        let args = ["--serve".to_owned()];
+        let command = Path::new("/bin/server");
+
+        fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{"uze-x":{"command":"/bin/server","args":["--serve"]}}}"#,
+        )
+        .unwrap();
+        attach_mcp_entry(&claude, &home, "uze-x", command, &args).unwrap();
+
+        fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{"uze-x":{"command":"/bin/foreign","args":[]}}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            attach_mcp_entry(&claude, &home, "uze-x", command, &args),
+            Err(UzeError::ManagedEntryConflict(_))
+        ));
+        assert!(
+            !home.join("calls").exists(),
+            "an existing name is never re-added over"
+        );
+        let _ = fs::remove_dir_all(home);
+    }
 }

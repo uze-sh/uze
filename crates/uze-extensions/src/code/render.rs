@@ -44,6 +44,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
                 role: Role::Danger,
             },
             footer,
+            notice: notice(code),
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: Layout::Sidebar,
@@ -62,6 +63,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
             navigator: None,
             content: map_content(code, space),
             footer,
+            notice: notice(code),
             modes: modes(code),
             subjects: subjects(code),
             layout: Layout::Board,
@@ -83,6 +85,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
             ContentMode::Map => unreachable!("the map took the frame above"),
         },
         footer,
+        notice: notice(code),
         modes: modes(code),
         subjects: subjects(code),
         layout: Layout::Sidebar,
@@ -224,12 +227,38 @@ fn mode_label(showing: Showing) -> String {
     }
 }
 
+/// What the footer says beside the keys: the question a second press
+/// answers while one is waiting, and otherwise the last thing that
+/// happened.
+fn notice(code: &CodeView) -> Option<Span> {
+    if let Some(path) = &code.confirming_delete {
+        return Some(Span::new(
+            format!("delete {}?", super::file_name(path)),
+            Role::Danger,
+        ));
+    }
+    if code.confirming_discard {
+        let name = code
+            .open
+            .as_ref()
+            .map_or_else(String::new, |open| super::file_name(&open.path));
+        return Some(Span::new(
+            format!("{name} has unsaved changes · close again to discard them"),
+            Role::Warning,
+        ));
+    }
+    code.notice.clone()
+}
+
 /// What this surface can be asked, in the order the footer should name
 /// them. Commands, never keys: the host prints each with whatever chord
 /// currently reaches it, so a rebound key needs no change here.
 fn footer(code: &CodeView) -> Vec<Command> {
     if code.confirming_delete.is_some() {
         return vec![Command::ConfirmDelete, Command::Close];
+    }
+    if code.confirming_discard {
+        return vec![Command::Close];
     }
     if code.editing() {
         return vec![Command::Save, Command::Close];

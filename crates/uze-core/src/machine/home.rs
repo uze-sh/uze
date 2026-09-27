@@ -232,12 +232,15 @@ impl UzeHome {
         self.state_dir().join("install.json")
     }
 
-    /// Where an update keeps the revision it is replacing, under UZE's own
-    /// state rather than beside the plugins: nothing that reads the Store
-    /// may mistake it for an installed package. Generated — removing it
-    /// costs nothing.
-    pub fn superseded_dir(&self) -> PathBuf {
-        self.state_dir().join("superseded")
+    /// Where an update keeps the revision of `id` it is replacing, under
+    /// UZE's own state rather than beside the plugins: nothing that reads
+    /// the Store may mistake it for an installed package.
+    ///
+    /// One per package, because a restore that failed leaves the only copy
+    /// of that revision here, and an update of another package must not be
+    /// what sweeps it away.
+    pub fn superseded_dir(&self, id: &PackageId) -> PathBuf {
+        self.state_dir().join("superseded").join(id.as_str())
     }
 
     /// One project's prompt history, beside its other records.

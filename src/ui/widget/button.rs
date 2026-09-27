@@ -45,6 +45,10 @@ pub(crate) struct Button {
     /// answer, the hovered offer. Filled rather than tinted.
     strong: bool,
     ground: Token,
+    /// Whether pressing it would do anything now. A disabled button keeps
+    /// its place in the row, so the row does not reshuffle as the
+    /// selection moves; its caller registers no hit for it.
+    enabled: bool,
 }
 
 impl Button {
@@ -57,7 +61,21 @@ impl Button {
             hue,
             strong: false,
             ground: Token::SurfaceBackground,
+            enabled: true,
         }
+    }
+
+    pub(crate) fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    pub(crate) fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub(crate) fn label(&self) -> &str {
+        &self.label
     }
 
     pub(crate) fn strong(mut self, strong: bool) -> Self {
@@ -95,6 +113,11 @@ impl Button {
     }
 
     fn style(&self) -> Style {
+        if !self.enabled {
+            return Style::default()
+                .fg(theme::color(Token::TextDim))
+                .bg(theme::softened(Token::TextDim, self.ground));
+        }
         let style = if self.strong {
             theme::on(Token::SurfaceBackground, self.hue)
         } else {

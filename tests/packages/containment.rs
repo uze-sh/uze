@@ -173,6 +173,51 @@ fn a_chained_symlink_escaping_the_root_is_rejected() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// `s -> .` is contained, and `s/s/../..` reads as the package root on
+/// paper while the kernel walks two levels above it.
+#[test]
+fn a_link_chain_through_a_self_link_cannot_escape_the_root() {
+    let root = temporary("self-link-chain");
+    let package = root.join("package");
+    package_at(&package);
+    symlink(".", package.join("s")).unwrap();
+    symlink("s/s/s/s/s/s/s/s/../../../../../../../..", package.join("e")).unwrap();
+
+    let (home, result) = install(&root);
+    assert_escape_rejected(result, "a `..` popping a self-link");
+    assert!(
+        !home
+            .plugins_dir()
+            .join("local/containment-fixture")
+            .exists(),
+        "a rejected package still left bytes in the store"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The manifest is package content like any other, so a link carrying it
+/// out of the package is refused before a byte is read through it.
+#[test]
+fn a_manifest_linked_outside_the_package_is_refused_before_it_is_read() {
+    let root = temporary("manifest-outside");
+    let package = root.join("package");
+    package_at(&package);
+    fs::remove_file(package.join("plugin.json")).unwrap();
+    symlink("/dev/zero", package.join("plugin.json")).unwrap();
+
+    let (_, result) = install(&root);
+    assert_escape_rejected(result, "a manifest linked to a device");
+
+    let materialized = uze_core::acquisition::acquire(&PackageSource::local(&package)).unwrap();
+    assert!(matches!(
+        uze_core::acquisition::inspect_capabilities(&materialized),
+        Err(UzeError::PackageEscapesRoot { .. })
+    ));
+
+    let _ = fs::remove_dir_all(root);
+}
+
 /// A symlink pointing into a directory that is itself an escaping symlink
 /// looks contained on its own; the escaping hop is what gets caught.
 #[test]

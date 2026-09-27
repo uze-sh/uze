@@ -501,7 +501,7 @@ impl Marketplace<'_> {
         let mut removed = Vec::new();
         let mut blocked = Vec::new();
         for id in &installed {
-            match self.0.plugins().detach_and_remove(id, false) {
+            match self.0.plugins().detach_and_remove_unpublished(id, false) {
                 Ok(RemovePluginReport::Removed { plugin, .. })
                 | Ok(RemovePluginReport::AlreadyAbsent { plugin }) => removed.push(plugin),
                 Ok(RemovePluginReport::Blocked { report, plan }) => {
@@ -518,6 +518,9 @@ impl Marketplace<'_> {
                     reason: error.to_string(),
                 }),
             }
+        }
+        if !removed.is_empty() {
+            self.0.republish_all_reporting();
         }
         // The registry entry goes last: a marketplace that could not be
         // emptied stays registered, so the leftovers it still holds are

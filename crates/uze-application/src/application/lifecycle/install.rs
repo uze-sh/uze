@@ -180,7 +180,15 @@ impl Plugins<'_> {
                 .collect();
             running
                 .into_iter()
-                .map(|delivery| delivery.join().expect("a delivery thread does not panic"))
+                .zip(&targets)
+                .map(|(delivery, (integration, _))| {
+                    delivery.join().unwrap_or_else(|_| {
+                        Err(UzeError::HarnessCommand(format!(
+                            "delivery to `{}` stopped unexpectedly",
+                            integration.id()
+                        )))
+                    })
+                })
                 .collect()
         });
         let mut attachments = Vec::new();
@@ -266,6 +274,66 @@ impl Plugins<'_> {
                     requested,
                 }),
             },
+        }
+    }
+}
+
+impl UzeApplication {
+    /// Asks the supplied authority about any capability that would introduce
+    /// process execution, and refuses to proceed without a grant.
+    ///
+    /// Returns `Ok(())` immediately when the package declares nothing
+    /// executable: a purely declarative package needs no consent beyond the
+    /// decision to install it.
+    pub(crate) fn authorize(
+        &self,
+        materialized: &uze_core::MaterializedPackage,
+        authority: &dyn TrustAuthority,
+        already_trusted: &[trust::ExecutableCapability],
+        replacing_installed: bool,
+    ) -> Result<()> {
+        let provenance = materialized.provenance();
+        if !provenance.requested.crosses_trust_boundary() {
+            return Ok(());
+        }
+        let inspected = uze_core::acquisition::inspect_capabilities(materialized)?;
+        let resources: Vec<&uze_core::Resource> = inspected.resources.iter().collect();
+        let executable = trust::executable_capabilities(&resources);
+        if executable.is_empty() || !trust::introduces_new_execution(already_trusted, &executable) {
+            return Ok(());
+        }
+        let request = TrustRequest {
+            package_id: inspected.package_id.clone(),
+            requested_source: provenance.requested.display(),
+            resolved_source: provenance.resolved.display(),
+            executable,
+            // The operator is being asked about a *change* to something they
+            // already have, not about a first install. Derived from the fact
+            // of an existing installation rather than from whether the
+            // previous revision happened to execute anything — a declarative
+            // package gaining an MCP server is exactly the case that must
+            // read as a change.
+            previously_trusted: replacing_installed,
+        };
+        match authority.authorize(&request) {
+            TrustOutcome::Granted => Ok(()),
+            TrustOutcome::Denied => Err(UzeError::TrustDenied(request.package_id)),
+            TrustOutcome::Unavailable => Err(UzeError::TrustRequired {
+                package: request.package_id.clone(),
+                detail: request
+                    .executable
+                    .iter()
+                    .map(|capability| {
+                        format!(
+                            "{} -> {} {}",
+                            capability.name,
+                            capability.command,
+                            capability.arguments.join(" ")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            }),
         }
     }
 }

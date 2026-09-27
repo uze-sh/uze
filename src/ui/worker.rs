@@ -21,6 +21,7 @@ use uze_application::{
 };
 
 use super::model::{Confirmation, Overlay, RefreshData, Status, TrustedRetry, TuiModel};
+use super::orchestrator::answered_or;
 use super::tui_application;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -180,6 +181,11 @@ pub(crate) enum WorkerResult {
         std::result::Result<ProfilePreview, String>,
     ),
     ReleaseNotesRead(String, Option<crate::self_update::ReleaseNotes>),
+    /// A link handed to a browser, and the opener that took it.
+    LinkOpened {
+        url: String,
+        opener: Option<String>,
+    },
 }
 
 pub(crate) fn dispatch(
@@ -201,27 +207,7 @@ pub(crate) fn dispatch(
     let _span = tracing::info_span!("tui.intent", intent = intent.name()).entered();
     match intent {
         Intent::None | Intent::Quit | Intent::CloseModal | Intent::CloseToTab(_) => {}
-        Intent::OpenThemePicker => {
-            // Cheap enough to read here rather than on a thread: a JSON
-            // read and a directory listing, the same work `uze config theme list`
-            // is budgeted for.
-            let themes: Vec<(String, bool)> = tui_application(home.clone())
-                .and_then(|app| app.themes().list(uze_theme::builtin_names()))
-                .map(|themes| {
-                    themes
-                        .into_iter()
-                        .map(|theme| (theme.id, theme.active))
-                        .collect()
-                })
-                .unwrap_or_else(|_| {
-                    uze_theme::builtin_names()
-                        .iter()
-                        .map(|id| ((*id).to_owned(), false))
-                        .collect()
-                });
-            let selected = themes.iter().position(|(_, active)| *active).unwrap_or(0);
-            model.overlay = crate::ui::model::Overlay::ThemePicker { themes, selected };
-        }
+        Intent::OpenThemePicker => open_theme_picker(home, model),
         Intent::SelectTheme(id) => match select_theme(home, &id) {
             Ok(()) => {
                 model.status = Status::Success(format!("Drawing in {id}"));
@@ -244,40 +230,8 @@ pub(crate) fn dispatch(
             Err(error) => model.status = Status::Error(error),
         },
         Intent::LoadSettings => load_settings(home, model),
-        Intent::PersistKeymap => {
-            let file = uze_keys::difference_from_default(&uze_keys::active());
-            let path = home.keymap_path();
-            let written = if file.is_empty() {
-                // An operator who put everything back leaves no file
-                // behind: the default is not a thing to be written down.
-                match std::fs::remove_file(&path) {
-                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
-                    _ => Ok(()),
-                }
-            } else {
-                serde_json::to_string_pretty(&file)
-                    .map_err(std::io::Error::other)
-                    .and_then(|contents| std::fs::write(&path, contents + "\n"))
-            };
-            model.status = match written {
-                Ok(()) => Status::Success("Keyboard saved".to_owned()),
-                Err(error) => Status::Error(format!("{}: {error}", path.display())),
-            };
-        }
-        Intent::ClearPromptHistory => {
-            let root = model.workspace_root();
-            match tui_application(home.clone())
-                .and_then(|app| app.workspace().clear_prompt_history(&root))
-            {
-                Ok(()) => {
-                    model.remembered.prompt_history.clear();
-                    model.remembered.overview_prompt_selected = 0;
-                    model.overview_prompt_hovered = None;
-                    model.status = Status::Success("Prompt history cleared".to_owned());
-                }
-                Err(error) => model.status = Status::Error(error.to_string()),
-            }
-        }
+        Intent::PersistKeymap => persist_keymap(home, model),
+        Intent::ClearPromptHistory => clear_prompt_history(home, model),
         Intent::Refresh => {
             if model.maintenance_in_flight {
                 return;
@@ -286,58 +240,17 @@ pub(crate) fn dispatch(
             model.maintenance_in_flight = true;
             spawn_refresh(home.clone(), sender.clone(), model.context_root.clone());
         }
-        Intent::InspectPlugin(id) => {
-            model.inspection_in_flight = Some(Intent::InspectPlugin(id.clone()));
-            model.status = Status::Working(format!("Inspecting {id}…"));
-            let (home, sender) = (home.clone(), sender.clone());
-            let parent = tracing::Span::current();
-            thread::spawn(move || {
-                let _parent = parent.enter();
-                let _span = tracing::info_span!("tui.worker").entered();
-                let result = tui_application(home)
-                    .and_then(|app| app.plugins().inspect(&id))
-                    .map_err(|error| error.to_string());
-                let _ = sender.send(WorkerResult::PluginInspected(result));
-            });
-        }
+        Intent::InspectPlugin(id) => inspect_plugin(id, home, sender, model),
         Intent::InspectMarketplacePlugin { name, marketplace } => {
-            model.inspection_in_flight = Some(Intent::InspectMarketplacePlugin {
-                name: name.clone(),
-                marketplace: marketplace.clone(),
-            });
-            model.status = Status::Working(format!("Inspecting {name}…"));
-            let (home, sender) = (home.clone(), sender.clone());
-            let parent = tracing::Span::current();
-            thread::spawn(move || {
-                let _parent = parent.enter();
-                let _span = tracing::info_span!("tui.worker").entered();
-                let result = tui_application(home)
-                    .and_then(|app| app.marketplace().inspect_plugin(&marketplace, &name))
-                    .map_err(|error| error.to_string());
-                let _ = sender.send(WorkerResult::MarketplaceInspected(result));
-            });
+            inspect_marketplace_plugin(name, marketplace, home, sender, model)
         }
         Intent::AcknowledgeRelease(version) => crate::self_update::acknowledge(home, &version),
-        Intent::ReadReleaseNotes(version) => {
-            let (home, sender) = (home.clone(), sender.clone());
-            let parent = tracing::Span::current();
-            thread::spawn(move || {
-                let _parent = parent.enter();
-                let notes = crate::self_update::release_notes(&home, &version);
-                let _ = sender.send(WorkerResult::ReleaseNotesRead(version, notes));
-            });
-        }
+        Intent::ReadReleaseNotes(version) => read_release_notes(version, home, sender),
         Intent::OpenLink(url) => {
-            model.status = match open_in_browser(&url) {
-                // Present tense on purpose: the opener took the address,
-                // which is all that can be known without waiting on it —
-                // and nothing on this thread waits for anything.
-                Some(opener) => Status::Success(format!("Opening {url} via {opener}")),
-                // The address is already on screen beside the glyph that
-                // was clicked, so a failure here costs the reader a
-                // copy-paste, not the link.
-                None => Status::Error(format!("No browser to open {url} with")),
-            };
+            let sender = sender.clone();
+            open_link(url, move |url, opener| {
+                let _ = sender.send(WorkerResult::LinkOpened { url, opener });
+            });
         }
         Intent::Remove(id) => {
             model.status = Status::Working(format!("Removing {id}…"));
@@ -365,130 +278,14 @@ pub(crate) fn dispatch(
             name,
             marketplace,
             grant,
-        } => {
-            model.status = Status::Working(format!("Installing {name}…"));
-            let retry_name = name.clone();
-            let retry_marketplace = marketplace.clone();
-            let spec = format!("{name}@{marketplace}");
-            spawn_trust_sensitive(
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
-                grant,
-                name,
-                move |app, authority| {
-                    app.marketplace()
-                        .install_plugin(&spec, authority)
-                        .map(|report| format!("Installed {}", report.plugin.id))
-                },
-                TrustedRetry::Install {
-                    name: retry_name,
-                    marketplace: retry_marketplace,
-                },
-            );
-        }
-        Intent::Setup(harness) => {
-            model.status = Status::Working(format!("Setting up {harness}…"));
-            spawn_mutation(
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
-                move |app| {
-                    app.setup(Some(&harness)).map(|results| {
-                        results
-                            .into_iter()
-                            .find(|r| r.integration == harness)
-                            .map(|r| {
-                                if r.configured {
-                                    format!("{harness} ready")
-                                } else {
-                                    format!("{harness} setup {:?}", r.provisioning.status)
-                                }
-                            })
-                            .unwrap_or_else(|| format!("{harness} setup attempted"))
-                    })
-                },
-            );
-        }
-        Intent::AddMarketplace(source) => {
-            model.status = Status::Working(format!("Adding marketplace from {source}…"));
-            spawn_mutation(
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
-                move |app| {
-                    app.marketplace().register(&source).map(|registration| {
-                        let identity = registration.identity;
-                        if registration.added {
-                            format!("Added marketplace from {identity}")
-                        } else {
-                            format!("Marketplace from {identity} is already added")
-                        }
-                    })
-                },
-            );
-        }
-        Intent::ContextAnalyze(root) => {
-            model.status = Status::Working("Analyzing project context…".to_owned());
-            let (home, sender) = (home.clone(), sender.clone());
-            let parent = tracing::Span::current();
-            thread::spawn(move || {
-                let _parent = parent.enter();
-                let _span = tracing::info_span!("tui.worker").entered();
-                let result = tui_application(home).and_then(|app| {
-                    let status = app.context().inspect(&root)?;
-                    let plan = app.context().plan(&root)?;
-                    Ok((status, plan))
-                });
-                let _ = sender.send(WorkerResult::ContextAnalyzed(
-                    result.map_err(|error| error.to_string()),
-                ));
-            });
-        }
+        } => install(name, marketplace, grant, home, sender, model),
+        Intent::Setup(harness) => set_up(harness, home, sender, model),
+        Intent::AddMarketplace(source) => add_marketplace(source, home, sender, model),
+        Intent::ContextAnalyze(root) => analyze_context(root, home, sender, model),
         Intent::InstallProjectEnvironment(root) => {
-            model.status = Status::Working("Installing project environment…".to_owned());
-            spawn_mutation(
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
-                move |app| {
-                    // Same use case and same default (no trust flag) as the
-                    // CLI's `uze install`; the TUI adds no install logic.
-                    app.project()
-                        .install(&root, &uze_application::NoTrustAuthority)
-                        .map(|report| match report {
-                            InstallReport::NoChanges => {
-                                "Project environment already up to date".to_owned()
-                            }
-                            InstallReport::Installed {
-                                plugins,
-                                reconciled,
-                                ..
-                            } => match (plugins.len(), reconciled) {
-                                (0, _) => "Project context reconciled".to_owned(),
-                                (count, _) => format!(
-                                    "Installed {count} plugin{}",
-                                    if count == 1 { "" } else { "s" }
-                                ),
-                            },
-                        })
-                },
-            );
+            install_project_environment(root, home, sender, model)
         }
-        Intent::ContextApply(root) => {
-            model.status = Status::Working("Applying context reconciliation…".to_owned());
-            let (home, sender) = (home.clone(), sender.clone());
-            let parent = tracing::Span::current();
-            thread::spawn(move || {
-                let _parent = parent.enter();
-                let _span = tracing::info_span!("tui.worker").entered();
-                let result = tui_application(home)
-                    .and_then(|app| app.context().reconcile(&root))
-                    .map(|report| ("Context reconciled".to_owned(), report))
-                    .map_err(|error| error.to_string());
-                let _ = sender.send(WorkerResult::ContextApplied(result));
-            });
-        }
+        Intent::ContextApply(root) => apply_context(root, home, sender, model),
         Intent::CreateProfile(id) => {
             model.status = Status::Working(format!("Creating profile \"{id}\"…"));
             spawn_mutation(
@@ -515,61 +312,349 @@ pub(crate) fn dispatch(
                 },
             );
         }
-        Intent::PreviewProfile(question) => {
-            model.profile_preview_asked = Some(question.clone());
-            let (home, sender) = (home.clone(), sender.clone());
-            let parent = tracing::Span::current();
-            thread::spawn(move || {
-                let _parent = parent.enter();
-                let _span = tracing::info_span!("tui.worker").entered();
-                let result = tui_application(home)
-                    .map(|app| {
-                        app.profiles()
-                            .preview(&question.preferences, &question.harness_ids)
-                    })
-                    .map_err(|error| error.to_string());
-                let _ = sender.send(WorkerResult::ProfilePreviewed(question, result));
-            });
-        }
-        Intent::UpdatePreferences { id, preferences } => {
-            let home = home.clone();
-            let parent = tracing::Span::current();
-            thread::spawn(move || {
-                let _parent = parent.enter();
-                let _span = tracing::info_span!("tui.worker").entered();
-                if let Ok(app) = tui_application(home) {
-                    let _ = app.profiles().update_preferences(&id, preferences);
-                }
-            });
-        }
+        Intent::PreviewProfile(question) => preview_profile(question, home, sender, model),
+        Intent::UpdatePreferences { id, preferences } => update_preferences(id, preferences, home),
         Intent::ApplyProfile {
             id,
             preferences,
             harness_ids,
-        } => {
-            model.status = Status::Working(format!("Applying \"{id}\"…"));
-            let (home, sender, context_root) =
-                (home.clone(), sender.clone(), model.context_root.clone());
-            let parent = tracing::Span::current();
-            thread::spawn(move || {
-                let _parent = parent.enter();
-                let _span = tracing::info_span!("tui.worker").entered();
-                let result = tui_application(home.clone())
-                    .and_then(|app| {
-                        app.profiles().update_preferences(&id, preferences)?;
-                        app.profiles().set_active(&id)?;
-                        let results = app.profiles().apply(&id, &harness_ids)?;
-                        let data = load_refresh_data(home, &context_root)?;
-                        Ok({
-                            let message = apply_message(&id, &results);
-                            (message, results, data)
-                        })
-                    })
-                    .map_err(|error| error.to_string());
-                let _ = sender.send(WorkerResult::ProfileApplied(result));
-            });
-        }
+        } => apply_profile(id, preferences, harness_ids, home, sender, model),
     }
+}
+
+fn open_theme_picker(home: &UzeHome, model: &mut TuiModel) {
+    // Cheap enough to read here rather than on a thread: a JSON
+    // read and a directory listing, the same work `uze config theme list`
+    // is budgeted for.
+    let themes: Vec<(String, bool)> = tui_application(home.clone())
+        .and_then(|app| app.themes().list(uze_theme::builtin_names()))
+        .map(|themes| {
+            themes
+                .into_iter()
+                .map(|theme| (theme.id, theme.active))
+                .collect()
+        })
+        .unwrap_or_else(|_| {
+            uze_theme::builtin_names()
+                .iter()
+                .map(|id| ((*id).to_owned(), false))
+                .collect()
+        });
+    let selected = themes.iter().position(|(_, active)| *active).unwrap_or(0);
+    model.overlay = crate::ui::model::Overlay::ThemePicker { themes, selected };
+}
+
+fn persist_keymap(home: &UzeHome, model: &mut TuiModel) {
+    let file = uze_keys::difference_from_default(&uze_keys::active());
+    let path = home.keymap_path();
+    let written = if file.is_empty() {
+        // An operator who put everything back leaves no file
+        // behind: the default is not a thing to be written down.
+        match std::fs::remove_file(&path) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+            _ => Ok(()),
+        }
+    } else {
+        serde_json::to_string_pretty(&file)
+            .map_err(std::io::Error::other)
+            .and_then(|contents| std::fs::write(&path, contents + "\n"))
+    };
+    model.status = match written {
+        Ok(()) => Status::Success("Keyboard saved".to_owned()),
+        Err(error) => Status::Error(format!("{}: {error}", path.display())),
+    };
+}
+
+fn clear_prompt_history(home: &UzeHome, model: &mut TuiModel) {
+    let root = model.workspace_root();
+    match tui_application(home.clone()).and_then(|app| app.workspace().clear_prompt_history(&root))
+    {
+        Ok(()) => {
+            model.remembered.prompt_history.clear();
+            model.remembered.overview_prompt_selected = 0;
+            model.overview_prompt_hovered = None;
+            model.status = Status::Success("Prompt history cleared".to_owned());
+        }
+        Err(error) => model.status = Status::Error(error.to_string()),
+    }
+}
+
+fn inspect_plugin(id: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
+    model.inspection_in_flight = Some(Intent::InspectPlugin(id.clone()));
+    model.status = Status::Working(format!("Inspecting {id}…"));
+    let (home, sender) = (home.clone(), sender.clone());
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.worker").entered();
+        let result = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.plugins().inspect(&id))
+                    .map_err(|error| error.to_string())
+            },
+            Err(format!("Inspecting {id} failed")),
+        );
+        let _ = sender.send(WorkerResult::PluginInspected(result));
+    });
+}
+
+fn inspect_marketplace_plugin(
+    name: String,
+    marketplace: String,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+    model: &mut TuiModel,
+) {
+    model.inspection_in_flight = Some(Intent::InspectMarketplacePlugin {
+        name: name.clone(),
+        marketplace: marketplace.clone(),
+    });
+    model.status = Status::Working(format!("Inspecting {name}…"));
+    let (home, sender) = (home.clone(), sender.clone());
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.worker").entered();
+        let result = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.marketplace().inspect_plugin(&marketplace, &name))
+                    .map_err(|error| error.to_string())
+            },
+            Err(format!("Inspecting {name} failed")),
+        );
+        let _ = sender.send(WorkerResult::MarketplaceInspected(result));
+    });
+}
+
+fn read_release_notes(version: String, home: &UzeHome, sender: &Sender<WorkerResult>) {
+    let (home, sender) = (home.clone(), sender.clone());
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let notes = answered_or(|| crate::self_update::release_notes(&home, &version), None);
+        let _ = sender.send(WorkerResult::ReleaseNotesRead(version, notes));
+    });
+}
+
+fn set_up(harness: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
+    model.status = Status::Working(format!("Setting up {harness}…"));
+    spawn_mutation(
+        home.clone(),
+        sender.clone(),
+        model.context_root.clone(),
+        move |app| {
+            app.setup(Some(&harness)).map(|results| {
+                results
+                    .into_iter()
+                    .find(|r| r.integration == harness)
+                    .map(|r| {
+                        if r.configured {
+                            format!("{harness} ready")
+                        } else {
+                            format!("{harness} setup {:?}", r.provisioning.status)
+                        }
+                    })
+                    .unwrap_or_else(|| format!("{harness} setup attempted"))
+            })
+        },
+    );
+}
+
+fn add_marketplace(
+    source: String,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+    model: &mut TuiModel,
+) {
+    model.status = Status::Working(format!("Adding marketplace from {source}…"));
+    spawn_mutation(
+        home.clone(),
+        sender.clone(),
+        model.context_root.clone(),
+        move |app| {
+            app.marketplace().register(&source).map(|registration| {
+                let identity = registration.identity;
+                if registration.added {
+                    format!("Added marketplace from {identity}")
+                } else {
+                    format!("Marketplace from {identity} is already added")
+                }
+            })
+        },
+    );
+}
+
+fn analyze_context(
+    root: PathBuf,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+    model: &mut TuiModel,
+) {
+    model.status = Status::Working("Analyzing project context…".to_owned());
+    let (home, sender) = (home.clone(), sender.clone());
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.worker").entered();
+        let result = tui_application(home).and_then(|app| {
+            let status = app.context().inspect(&root)?;
+            let plan = app.context().plan(&root)?;
+            Ok((status, plan))
+        });
+        let _ = sender.send(WorkerResult::ContextAnalyzed(
+            result.map_err(|error| error.to_string()),
+        ));
+    });
+}
+
+fn install_project_environment(
+    root: PathBuf,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+    model: &mut TuiModel,
+) {
+    model.status = Status::Working("Installing project environment…".to_owned());
+    spawn_mutation(
+        home.clone(),
+        sender.clone(),
+        model.context_root.clone(),
+        move |app| {
+            // Same use case and same default (no trust flag) as the
+            // CLI's `uze install`; the TUI adds no install logic.
+            app.project()
+                .install(&root, &uze_application::NoTrustAuthority)
+                .map(|report| match report {
+                    InstallReport::NoChanges => "Project environment already up to date".to_owned(),
+                    InstallReport::Installed {
+                        plugins,
+                        reconciled,
+                        ..
+                    } => match (plugins.len(), reconciled) {
+                        (0, _) => "Project context reconciled".to_owned(),
+                        (count, _) => format!(
+                            "Installed {count} plugin{}",
+                            if count == 1 { "" } else { "s" }
+                        ),
+                    },
+                })
+        },
+    );
+}
+
+fn apply_context(
+    root: PathBuf,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+    model: &mut TuiModel,
+) {
+    model.status = Status::Working("Applying context reconciliation…".to_owned());
+    let (home, sender) = (home.clone(), sender.clone());
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.worker").entered();
+        let result = tui_application(home)
+            .and_then(|app| app.context().reconcile(&root))
+            .map(|report| ("Context reconciled".to_owned(), report))
+            .map_err(|error| error.to_string());
+        let _ = sender.send(WorkerResult::ContextApplied(result));
+    });
+}
+
+fn preview_profile(
+    question: super::model::PreviewQuestion,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+    model: &mut TuiModel,
+) {
+    model.profile_preview_asked = Some(question.clone());
+    let (home, sender) = (home.clone(), sender.clone());
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.worker").entered();
+        let result = tui_application(home)
+            .map(|app| {
+                app.profiles()
+                    .preview(&question.preferences, &question.harness_ids)
+            })
+            .map_err(|error| error.to_string());
+        let _ = sender.send(WorkerResult::ProfilePreviewed(question, result));
+    });
+}
+
+fn update_preferences(id: String, preferences: Preferences, home: &UzeHome) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.worker").entered();
+        if let Ok(app) = tui_application(home) {
+            let _ = app.profiles().update_preferences(&id, preferences);
+        }
+    });
+}
+
+fn install(
+    name: String,
+    marketplace: String,
+    grant: TrustGrant,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+    model: &mut TuiModel,
+) {
+    model.status = Status::Working(format!("Installing {name}…"));
+    let retry_name = name.clone();
+    let retry_marketplace = marketplace.clone();
+    let spec = format!("{name}@{marketplace}");
+    spawn_trust_sensitive(
+        home.clone(),
+        sender.clone(),
+        model.context_root.clone(),
+        grant,
+        name,
+        move |app, authority| {
+            app.marketplace()
+                .install_plugin(&spec, authority)
+                .map(|report| format!("Installed {}", report.plugin.id))
+        },
+        TrustedRetry::Install {
+            name: retry_name,
+            marketplace: retry_marketplace,
+        },
+    );
+}
+
+fn apply_profile(
+    id: String,
+    preferences: Preferences,
+    harness_ids: Vec<String>,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+    model: &mut TuiModel,
+) {
+    model.status = Status::Working(format!("Applying \"{id}\"…"));
+    let (home, sender, context_root) = (home.clone(), sender.clone(), model.context_root.clone());
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.worker").entered();
+        let result = tui_application(home.clone())
+            .and_then(|app| {
+                app.profiles().update_preferences(&id, preferences)?;
+                app.profiles().set_active(&id)?;
+                let results = app.profiles().apply(&id, &harness_ids)?;
+                let data = load_refresh_data(home, &context_root)?;
+                Ok({
+                    let message = apply_message(&id, &results);
+                    (message, results, data)
+                })
+            })
+            .map_err(|error| error.to_string());
+        let _ = sender.send(WorkerResult::ProfileApplied(result));
+    });
 }
 
 pub(crate) fn spawn_refresh(home: UzeHome, sender: Sender<WorkerResult>, context_root: PathBuf) {
@@ -760,16 +845,31 @@ fn spawn_trust_sensitive(
     });
 }
 
+/// Answers whether anything arrived.
 pub(crate) fn drain_worker_results(
     model: &mut TuiModel,
     receiver: &std::sync::mpsc::Receiver<WorkerResult>,
-) {
+) -> bool {
+    let mut arrived = false;
     while let Ok(result) = receiver.try_recv() {
+        arrived = true;
         match result {
             WorkerResult::ReleaseNotesRead(version, notes) => {
                 if let Overlay::ReleaseNotes(modal) = &mut model.overlay {
                     modal.absorb(&version, notes);
                 }
+            }
+            WorkerResult::LinkOpened { url, opener } => {
+                model.status = match opener {
+                    // Present tense on purpose: the opener took the
+                    // address, which is all that can be known without
+                    // waiting on it.
+                    Some(opener) => Status::Success(format!("Opening {url} via {opener}")),
+                    // The address is already on screen beside the glyph
+                    // that was clicked, so a failure here costs the reader
+                    // a copy-paste, not the link.
+                    None => Status::Error(format!("No browser to open {url} with")),
+                };
             }
             // A pass that moved something, arriving after the screen drew.
             // Carried into the same `refreshed` path so the rows and the
@@ -885,6 +985,7 @@ pub(crate) fn drain_worker_results(
             | WorkerResult::ProfileApplied(Err(error)) => model.status = Status::Error(error),
         }
     }
+    arrived
 }
 
 /// `Applied profile "default" to 3 harnesses · 1 approximation` — the one
@@ -949,6 +1050,21 @@ fn update_message(report: UpdatePluginReport) -> String {
     }
 }
 
+/// Hands `url` to the reader's browser on a thread of its own, and tells
+/// `answered` which opener took it. Finding one spawns processes, which
+/// the thread drawing the frame never waits on.
+pub(crate) fn open_link(
+    url: String,
+    answered: impl FnOnce(String, Option<String>) + Send + 'static,
+) {
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let opener = answered_or(|| open_in_browser(&url), None);
+        answered(url, opener);
+    });
+}
+
 /// Hands `url` to whatever this machine opens links with, and answers with
 /// the name of the opener that accepted it.
 ///
@@ -967,7 +1083,13 @@ fn update_message(report: UpdatePluginReport) -> String {
 /// Every stream is closed: the alternate screen belongs to ratatui, and a
 /// browser's startup chatter written into it lands in the middle of the
 /// frame.
-pub(crate) fn open_in_browser(url: &str) -> Option<String> {
+fn open_in_browser(url: &str) -> Option<String> {
+    // A marketplace author writes the homepage, and an opener handed a
+    // `file:` path or a custom scheme would launch whatever the desktop
+    // associates with it.
+    if !is_web_address(url) {
+        return None;
+    }
     // `$BROWSER` is a colon-separated list, and an entry may carry the URL
     // in a `%s` placeholder rather than as a trailing argument.
     let configured = std::env::var("BROWSER").unwrap_or_default();
@@ -1014,6 +1136,13 @@ pub(crate) fn open_in_browser(url: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn is_web_address(url: &str) -> bool {
+    ["http://", "https://"].iter().any(|scheme| {
+        url.get(..scheme.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(scheme))
+    })
 }
 
 /// Puts a theme in force and records it, so the next frame — and the next
@@ -1301,5 +1430,50 @@ mod tests {
         assert!(receiver.try_recv().is_err());
         assert!(model.maintenance_in_flight);
         assert_eq!(model.status, Status::Idle);
+    }
+
+    #[test]
+    fn only_a_web_address_is_handed_to_an_opener() {
+        assert!(is_web_address("https://example.com"));
+        assert!(is_web_address("HTTP://example.com"));
+        for refused in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "vscode://open",
+            "/usr/bin/xterm",
+            "http:/",
+            "",
+        ] {
+            assert!(!is_web_address(refused), "{refused}");
+            assert_eq!(open_in_browser(refused), None, "{refused}");
+        }
+    }
+
+    /// Opening a link spawns processes, so the press answers when the
+    /// opener does rather than holding the frame until then.
+    #[test]
+    fn a_link_is_opened_off_the_thread_that_pressed_it() {
+        let (sender, receiver) = mpsc::channel();
+        let home = UzeHome::at(uze_testkit::temp::scratch("worker-open-link"));
+        let mut model = TuiModel::default();
+
+        dispatch(
+            Intent::OpenLink("file:///etc/passwd".to_owned()),
+            &home,
+            &sender,
+            &mut model,
+        );
+        assert_eq!(model.status, Status::Idle, "nothing waited on the opener");
+
+        let answer = receiver
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        let (replay, replayed) = mpsc::channel();
+        replay.send(answer).unwrap();
+        assert!(drain_worker_results(&mut model, &replayed));
+        assert_eq!(
+            model.status,
+            Status::Error("No browser to open file:///etc/passwd with".to_owned())
+        );
     }
 }

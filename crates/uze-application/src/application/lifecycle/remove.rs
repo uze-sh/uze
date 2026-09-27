@@ -41,6 +41,25 @@ impl Plugins<'_> {
         id: &str,
         allow_protected: bool,
     ) -> Result<RemovePluginReport> {
+        self.take_off(id, allow_protected, true)
+    }
+
+    /// `detach_and_remove` without rebuilding the derived views, for a
+    /// caller removing several packages that rebuilds them once at the end.
+    pub(crate) fn detach_and_remove_unpublished(
+        &self,
+        id: &str,
+        allow_protected: bool,
+    ) -> Result<RemovePluginReport> {
+        self.take_off(id, allow_protected, false)
+    }
+
+    fn take_off(
+        &self,
+        id: &str,
+        allow_protected: bool,
+        republish: bool,
+    ) -> Result<RemovePluginReport> {
         let package = match self.0.package_by_name(id) {
             Ok(package) => package,
             Err(UzeError::UnknownPackage(_)) => {
@@ -80,7 +99,9 @@ impl Plugins<'_> {
         self.0.store.remove_package(&package.id)?;
         // The package set changed, so every derived view is now stale. A
         // failure to rebuild one does not un-remove the package.
-        let _ = self.0.republish_all();
+        if republish {
+            self.0.republish_all_reporting();
+        }
         Ok(RemovePluginReport::Removed {
             plugin: package.id.as_str().to_owned(),
             detached_receipts,
@@ -198,15 +219,41 @@ impl UzeApplication {
                 .collect();
             running
                 .into_iter()
-                .map(|harness| harness.join().expect("a detach thread does not panic"))
+                .zip(&by_harness)
+                .map(|(harness, (integration, _))| {
+                    harness.join().unwrap_or_else(|_| {
+                        Err(UzeError::HarnessCommand(format!(
+                            "detaching from `{}` stopped unexpectedly",
+                            integration.id()
+                        )))
+                    })
+                })
                 .collect()
         });
-        for gone in detached {
-            if !gone? {
-                let report = self.reconcile(package_id);
-                let plan = plan_remove(&report);
-                return Ok(ReceiptTeardown::Incomplete { report, plan });
+        if detached.iter().any(|gone| !matches!(gone, Ok(true))) {
+            // Every harness was asked, so every answer counts: a harness
+            // that finished has nothing left for its receipts to own, and
+            // they are forgotten however the others ended.
+            let mut first_error = None;
+            for ((_, receipts), gone) in by_harness.iter().zip(detached) {
+                match gone {
+                    Ok(true) => {
+                        for receipt in receipts {
+                            state::forget_receipt(&self.home, receipt)?;
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        first_error.get_or_insert(error);
+                    }
+                }
             }
+            if let Some(error) = first_error {
+                return Err(error);
+            }
+            let report = self.reconcile(package_id);
+            let plan = plan_remove(&report);
+            return Ok(ReceiptTeardown::Incomplete { report, plan });
         }
         let final_report = self.reconcile(package_id);
         let final_plan = plan_remove(&final_report);

@@ -115,9 +115,10 @@ fn sandbox(preferences: &Preferences) -> Axis {
     axis = if effective == SandboxScope::WorkspaceWrite {
         axis.set(NETWORK_ACCESS, Value::Flag(false))
     } else {
-        // Cleared rather than written false: an absent key is Codex's own
-        // default, and a value we invented is not.
-        axis.clear(NETWORK_ACCESS)
+        // Released rather than written false: an absent key is Codex's own
+        // default, and a value we invented is not. Only UZE's own `false`
+        // goes; a value the operator set is theirs.
+        axis.release(NETWORK_ACCESS, &[Value::Flag(false)])
     };
     match override_note {
         Some(note) => axis.note(note),
@@ -308,6 +309,28 @@ mod tests {
         assert!(contents.contains("[model_providers.openai]"));
         assert!(contents.contains("approval_policy = \"never\""));
         assert!(contents.contains("sandbox_mode = \"danger-full-access\""));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn leaving_workspace_write_keeps_a_network_access_the_operator_set() {
+        let path = temp_path("network-operator");
+        std::fs::write(&path, "[sandbox_workspace_write]\nnetwork_access = true\n").unwrap();
+        let full_access = Preferences {
+            sandbox: SandboxScope::FullAccess,
+            ..Preferences::default()
+        };
+        apply(&path, &full_access).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("network_access = true"), "{contents}");
+
+        std::fs::write(&path, "[sandbox_workspace_write]\nnetwork_access = false\n").unwrap();
+        apply(&path, &full_access).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !contents.contains("network_access"),
+            "UZE's own false goes with the preference that wrote it: {contents}"
+        );
         let _ = std::fs::remove_file(&path);
     }
 

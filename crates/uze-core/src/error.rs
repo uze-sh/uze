@@ -129,6 +129,10 @@ pub enum UzeError {
     /// accepts, because a refusal is that agent's only feedback channel.
     #[error("{0}")]
     TaskNaming(String),
+    /// A subagent's checkout could not be split, joined or listed. Written
+    /// for the agent that asked, which acts on nothing else.
+    #[error("{0}")]
+    AgentWork(String),
     /// Artifacts the project declares do not draw as written. The report
     /// printed before this says which and why; this is the verdict, so a
     /// check is a gate rather than something to read.
@@ -289,6 +293,12 @@ pub enum UzeError {
     ManagedRegionDrift(PathBuf),
     #[error("{markers} at {0}", markers = crate::text_region::MALFORMED_MARKERS)]
     ManagedRegionConflict(PathBuf),
+    #[error(
+        "the instructions for `{region}` contain a line UZE uses as a region marker \
+         (`<!-- uze:begin …` / `<!-- uze:end …`); remove it from the plugin's content \
+         ({path} was left untouched)"
+    )]
+    ManagedRegionContentCarriesMarker { region: String, path: PathBuf },
     #[error(
         "managed text region identity `{0}` contains characters outside the safe marker charset"
     )]

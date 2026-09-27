@@ -155,7 +155,11 @@ pub struct AgentIdentity {
 /// than for the handle, since `workspace` is already `uze-core`'s module
 /// for resolving a project root.
 mod artifacts;
+mod checkouts;
 mod tasks;
+mod work;
 
 pub use artifacts::*;
+pub use checkouts::*;
 pub use tasks::*;
+pub use work::*;

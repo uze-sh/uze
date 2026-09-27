@@ -30,10 +30,7 @@ pub fn read_plugin_manifest(root: &Path) -> Result<PluginManifest> {
     if !path.is_file() {
         return Err(UzeError::MissingManifest(root.to_path_buf()));
     }
-    let bytes = fs::read(&path).map_err(|source| UzeError::Read {
-        path: path.clone(),
-        source,
-    })?;
+    let bytes = read_package_file(&path)?;
     let value: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|source| UzeError::Json {
             path: path.clone(),
@@ -46,6 +43,52 @@ pub fn read_plugin_manifest(root: &Path) -> Result<PluginManifest> {
         .ok_or_else(|| UzeError::MissingPackageName(path.clone()))?
         .to_owned();
     Ok(PluginManifest { name, path })
+}
+
+/// Every file UZE reads out of a package is a declaration it parses or text
+/// an agent loads into its context, and a megabyte is far past what either
+/// can use. The bound is what keeps a package from answering a read with an
+/// endless one.
+const MAX_PACKAGE_FILE_BYTES: u64 = 1024 * 1024;
+
+/// Reads a file a package supplies, refusing anything but a regular file of
+/// at most [`MAX_PACKAGE_FILE_BYTES`].
+///
+/// Opened non-blocking and judged by the descriptor it got, not by a path
+/// asked about beforehand: a FIFO would otherwise hold the open until
+/// somebody writes to it, and a device would answer forever.
+pub(crate) fn read_package_file(path: &Path) -> Result<Vec<u8>> {
+    use std::io::Read;
+
+    let failed = |source: std::io::Error| UzeError::Read {
+        path: path.to_path_buf(),
+        source,
+    };
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(failed)?;
+    if !file.metadata().map_err(failed)?.is_file() {
+        return Err(failed(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a regular file",
+        )));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_PACKAGE_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(failed)?;
+    if bytes.len() as u64 > MAX_PACKAGE_FILE_BYTES {
+        return Err(failed(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("larger than {MAX_PACKAGE_FILE_BYTES} bytes"),
+        )));
+    }
+    Ok(bytes)
 }
 
 fn validate_references(value: &serde_json::Value, manifest: &Path) -> Result<()> {
@@ -327,6 +370,11 @@ impl UzeStore {
     ) -> Result<StoredPackage> {
         let _span = tracing::info_span!("store.ingest", root = %package.root().display()).entered();
         let source = package.root();
+        // Every source passes through this one check, so a local package and
+        // a remote one are held to the same rule. It runs before any byte is
+        // read or written, so nothing is read through a link that leaves the
+        // package and a rejected package leaves nothing behind.
+        assert_self_contained(source)?;
         let PluginManifest {
             name,
             path: manifest,
@@ -342,11 +390,6 @@ impl UzeStore {
                 name: alias.to_owned(),
             });
         }
-
-        // Every source passes through this one check, so a local package and
-        // a remote one are held to the same rule. It runs before any byte is
-        // written, so a rejected package leaves nothing behind.
-        assert_self_contained(source)?;
 
         self.home.ensure_layout()?;
         let mut registry = self.load_registry()?;
@@ -439,18 +482,33 @@ impl UzeStore {
             .packages
             .get(id)
             .ok_or_else(|| UzeError::UnknownPackage(id.as_str().to_owned()))?;
+        Ok(self.stored(id, registration))
+    }
+
+    /// Every installed package, in the order [`package_ids`](Self::package_ids)
+    /// lists them, from one read of the registry.
+    pub fn packages(&self) -> Result<Vec<StoredPackage>> {
+        let registry = self.load_registry()?;
+        Ok(registry
+            .packages
+            .iter()
+            .map(|(id, registration)| self.stored(id, registration))
+            .collect())
+    }
+
+    fn stored(&self, id: &PackageId, registration: &Registration) -> StoredPackage {
         let root = self.home.plugin_dir(id);
         let active_name = registration
             .active_name
             .clone()
             .unwrap_or_else(|| id.plugin_name().to_owned());
-        Ok(StoredPackage {
+        StoredPackage {
             id: id.clone(),
             manifest: root.join("plugin.json"),
             root,
             provenance: registration.provenance.clone(),
             active_name,
-        })
+        }
     }
 
     /// The local invocation name `id` currently answers to, without paying
@@ -642,7 +700,12 @@ impl UzeStore {
 /// can only leave the root if some individual link leaves it, and that link
 /// is checked like any other. Nothing here traverses a link, so there is no
 /// cycle to guard against.
-fn assert_self_contained(root: &Path) -> Result<()> {
+///
+/// The one place a textual reading and the kernel disagree is `..` stepping
+/// back out of a link: `s -> .` makes `s/s/../..` two levels up on disk and
+/// none on paper. A target that does that is refused rather than resolved,
+/// so each link's own check stays the whole answer.
+pub(crate) fn assert_self_contained(root: &Path) -> Result<()> {
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
         let entries = fs::read_dir(&directory).map_err(|source| UzeError::Read {
@@ -692,7 +755,9 @@ fn assert_self_contained(root: &Path) -> Result<()> {
                 if target.is_absolute() {
                     return Err(UzeError::PackageEscapesRoot { link: path, target });
                 }
-                let resolved = resolve_lexically(&path, &target);
+                let Some(resolved) = resolve_lexically(&path, &target) else {
+                    return Err(UzeError::PackageEscapesRoot { link: path, target });
+                };
                 if !resolved.starts_with(root) {
                     return Err(UzeError::PackageEscapesRoot {
                         link: path,
@@ -710,12 +775,16 @@ fn assert_self_contained(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Resolves a symlink target against its own location **without touching the
-/// filesystem**, so `..` is normalized textually rather than by following
-/// whatever it currently points at. Only relative targets reach here — an
-/// absolute one is refused before the call, because no copy of the package
-/// can keep it inside the root.
-fn resolve_lexically(link: &Path, target: &Path) -> PathBuf {
+/// Resolves a symlink target against its own location **without following
+/// it**, so `..` is normalized textually rather than by following whatever
+/// it currently points at. Only relative targets reach here — an absolute
+/// one is refused before the call, because no copy of the package can keep
+/// it inside the root.
+///
+/// `None` when a `..` would pop a component that is itself a symlink: that
+/// is the only case where the textual answer differs from the kernel's, and
+/// the kernel's is the one a harness gets.
+fn resolve_lexically(link: &Path, target: &Path) -> Option<PathBuf> {
     let base = if target.is_absolute() {
         PathBuf::new()
     } else {
@@ -725,13 +794,18 @@ fn resolve_lexically(link: &Path, target: &Path) -> PathBuf {
     for component in target.components() {
         match component {
             std::path::Component::ParentDir => {
+                if fs::symlink_metadata(&resolved)
+                    .is_ok_and(|metadata| metadata.file_type().is_symlink())
+                {
+                    return None;
+                }
                 resolved.pop();
             }
             std::path::Component::CurDir => {}
             other => resolved.push(other.as_os_str()),
         }
     }
-    resolved
+    Some(resolved)
 }
 
 fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
@@ -771,18 +845,10 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
+/// `fs::copy` carries the permission bits itself, set on the open descriptor
+/// rather than through the umask, so an executable stays executable.
 fn copy_file(source: &Path, destination: &Path) -> Result<()> {
     fs::copy(source, destination).map_err(|source_error| UzeError::Write {
-        path: destination.to_path_buf(),
-        source: source_error,
-    })?;
-    let permissions = fs::metadata(source)
-        .map_err(|source_error| UzeError::Read {
-            path: source.to_path_buf(),
-            source: source_error,
-        })?
-        .permissions();
-    fs::set_permissions(destination, permissions).map_err(|source_error| UzeError::Write {
         path: destination.to_path_buf(),
         source: source_error,
     })?;
@@ -810,6 +876,35 @@ mod tests {
         let manifest = read_plugin_manifest(&root).unwrap();
         assert_eq!(manifest.name, "demo");
         assert_eq!(manifest.path, root.join("plugin.json"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_package_file_past_the_bound_is_refused_rather_than_read_whole() {
+        let root = uze_testkit::temp::scratch("package-file-bound");
+        fs::create_dir_all(&root).unwrap();
+        let manifest = root.join("plugin.json");
+        fs::write(&manifest, vec![b' '; MAX_PACKAGE_FILE_BYTES as usize + 1]).unwrap();
+        assert!(matches!(
+            read_plugin_manifest(&root),
+            Err(UzeError::Read { .. })
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_package_file_that_is_a_fifo_is_refused_without_waiting_for_a_writer() {
+        let root = uze_testkit::temp::scratch("package-file-fifo");
+        fs::create_dir_all(&root).unwrap();
+        let fifo = root.join("SKILL.md");
+        let spelled = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        // SAFETY: a valid NUL-terminated path; mkfifo touches nothing else.
+        assert_eq!(unsafe { libc::mkfifo(spelled.as_ptr(), 0o600) }, 0);
+        assert!(matches!(
+            read_package_file(&fifo),
+            Err(UzeError::Read { .. })
+        ));
         fs::remove_dir_all(root).unwrap();
     }
 

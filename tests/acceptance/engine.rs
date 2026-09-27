@@ -485,6 +485,88 @@ fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
     assert_ne!(fresh, kept, "a parked slot is never handed to a new agent");
 }
 
+/// An agent gives its subagent a checkout through the real binary, from
+/// inside its pane, beside a checkout somebody added by hand. A new agent
+/// launched next to both takes neither; the agent's branch moves onto the
+/// target; joining brings exactly the subagent's commit over with no merge
+/// commit; and the subagent's checkout is what the next agent gets.
+#[test]
+fn a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand() {
+    let mut engine = Engine::start("  completion: merge\n");
+    let project = engine.project().to_path_buf();
+    engine.git(
+        &project,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "by-hand",
+            ".worktrees/by-hand",
+            "HEAD",
+        ],
+    );
+    let by_hand = project.join(".worktrees/by-hand");
+    let split_path = engine.scripts.join("parser.path");
+    let uze = uze_bin();
+    let (agent, slot) = engine.launch(&format!(
+        "{uze} agent work split parser > {split}\n\
+         cd \"$(cat {split})\"\n{child}cd - >/dev/null\n{own}",
+        uze = uze.display(),
+        split = split_path.display(),
+        child = commit_script("parser.rs", "fn parse() {}\\n"),
+        own = commit_script("own.rs", "fn own() {}\\n"),
+    ));
+    let child = PathBuf::from(fs::read_to_string(&split_path).unwrap().trim());
+    assert!(
+        child.join("parser.rs").is_file(),
+        "the subagent worked in its own checkout"
+    );
+
+    let (_, beside) = engine.launch("true\n");
+    assert_ne!(beside, by_hand, "a checkout made by hand is never taken");
+    assert_ne!(beside, child, "a subagent's checkout is held for its agent");
+    assert_eq!(
+        engine.git(&by_hand, &["branch", "--show-current"]),
+        "by-hand"
+    );
+
+    fs::write(project.join("NEWS.md"), "moved\n").unwrap();
+    engine.git(&project, &["add", "NEWS.md"]);
+    engine.git(&project, &["commit", "--quiet", "-m", "target moved"]);
+    engine.git(&slot, &["rebase", "--quiet", "main"]);
+
+    let joined = engine
+        .env
+        .command(uze_bin())
+        .args(["agent", "work", "join", "parser"])
+        .current_dir(&slot)
+        .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, &agent)
+        .output()
+        .unwrap();
+    assert!(
+        joined.status.success(),
+        "{}",
+        String::from_utf8_lossy(&joined.stderr)
+    );
+    let subjects = engine.git(&slot, &["log", "--format=%s", "main.."]);
+    assert_eq!(
+        subjects.lines().collect::<Vec<_>>(),
+        ["parser.rs", "own.rs"]
+    );
+    assert!(
+        engine
+            .git(&slot, &["log", "--merges", "--oneline"])
+            .is_empty()
+    );
+
+    let (_, next) = engine.launch("true\n");
+    assert_eq!(
+        next, child,
+        "the joined subagent's checkout went back to the pool"
+    );
+}
+
 /// The pass a workspace client actually runs: it names every path it has
 /// reason to doubt and gets back the repositories that changed, once
 /// each.

@@ -280,7 +280,7 @@ impl Document {
         for line in text.lines() {
             let mut spans = vec![Span::new("  ".to_owned(), Role::Default)];
             spans.extend(
-                highlight::line(&mut highlighter, line)
+                highlight::line(&mut highlighter, line, &self.theme)
                     .into_iter()
                     .map(|(colour, piece)| Span::new(piece, Role::Default).coloured(colour)),
             );

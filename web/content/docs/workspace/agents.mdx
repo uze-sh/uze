@@ -23,7 +23,19 @@ other's files, or yours.
   ```
 
 Checkouts are reused, so a second agent does not pay for a fresh
-`node_modules/` or a cold build.
+`node_modules/` or a cold build. uze keeps two free checkouts warm for the
+next agents and gives the disk of any other one back, and a free checkout
+unused for three days goes too. Both numbers are yours to change:
+
+```yaml
+worktrees:
+  spare: 2       # free checkouts kept warm
+  idle_days: 3   # after this long unused, even a spare goes
+```
+
+uze only ever reuses or removes a checkout it made itself, and never one
+something is still working in. A worktree you or a tool added by hand is
+shown, never touched.
 
 ## Its work gets a name
 
@@ -62,10 +74,50 @@ worktrees:
 If the checks fail or the rebase conflicts, nothing reaches the target and the
 agent gets the problem back.
 
+## Subagents
+
+An agent that splits its work across subagents asks uze for a checkout for
+each one, the same way it names its work:
+
+```bash
+uze agent work split parser   # a checkout cut from the agent's commit, printed as a path
+uze agent work join parser    # the subagent's commits land on the agent's branch
+```
+
+The subagent's checkout comes from the same pool, so it starts warm. Joining
+replays its commits onto the agent's branch with no merge commit. uze keeps
+the checkout until it is joined or the agent ends, and does not deliver the
+agent while a subagent still holds work.
+
 ## Work nobody finished
 
 Close an agent with commits still on its branch and the work is kept, not lost.
-`Alt+P` lists it: resume it with a new agent, deliver it, or discard it.
+`Alt+P` opens **Work**, which lists every project with kept work or a space
+open on it, each with how many of its items need you and how much disk its
+checkouts take.
+
+Choose a project to see one list of everything it holds: the work uze kept and
+every checkout of the project, whoever made it. Each row is named by its branch
+and grouped by what it asks of you:
+
+- **Needs you**: kept work nobody is working on. A task that stopped with
+  uncommitted changes, a conflict or failed checks, a checkout of uze's still
+  holding work, a subagent waiting to be joined, or a task whose checkout is
+  gone and whose branch still holds the work.
+- **In progress**: a checkout with something running inside it, or one a live
+  agent is working in.
+- **Ready for the next agent**: checkouts uze keeps clean and ready, so the
+  next agent starts at once.
+- **Others**: your own checkouts and the ones a harness keeps for itself, with
+  their facts. What they hold is yours to decide.
+
+The buttons change with the row you select. Resume a kept task with a new
+agent, deliver it, or mark it done. Open a space in any row with a directory,
+join a subagent into its agent, or adopt a checkout you made under
+`.worktrees/` so uze can reuse it. `D` discards a task, deleting its checkout
+and its branch, or removes a checkout that holds no task, keeping its branch.
+Both ask first. Clean up removes, in one step, every checkout of yours that is
+clean, unused and already in the target.
 
 <Cards>
   <Card title="Extensions" href="/docs/workspace/extensions" />

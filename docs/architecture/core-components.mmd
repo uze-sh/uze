@@ -8,8 +8,8 @@ C4Component
     Component(package, "package", "Rust module", "Where a package's bytes come from and where they live", $link="crates/uze-core/src/package")
     Component(capability, "capability", "Rust module", "What a plugin declares, portably: skill, hook", $link="crates/uze-core/src/capability")
     Component(delivery, "delivery", "Rust module", "How a capability reaches a harness: router, engine, receipts", $link="crates/uze-core/src/delivery")
-    Component(project, "project", "Rust module", "What a project declares and what UZE writes into it", $link="crates/uze-core/src/project/manifest.rs")
-    Component(machine, "machine", "Rust module", "The local environment outside UZE's own state", $link="crates/uze-core/src/machine")
+    Component(project, "project", "Rust module", "What a project declares, what UZE writes into it, and which checkouts are its own", $link="crates/uze-core/src/project/manifest.rs")
+    Component(machine, "machine", "Rust module", "The local environment outside UZE's own state, the process table included", $link="crates/uze-core/src/machine")
   }
   ContainerDb(store, "Store", "Filesystem", "Installed package bytes and typed receipts")
   System_Ext(git, "Git", "Marketplaces and the project's own history")

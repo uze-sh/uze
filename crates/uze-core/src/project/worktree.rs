@@ -36,6 +36,11 @@ pub const POLICY_REGION_PREFIX: &str = "project:worktree-policy";
 /// project-level default to configure.
 pub const WORKTREES_DIRECTORY: &str = ".worktrees";
 
+/// The file, in a linked worktree's Git administrative directory, saying
+/// UZE made that checkout (`checkout::record`). A path UZE writes outside
+/// `$UZE_HOME`, beside the line it adds to `.git/info/exclude`.
+pub const CHECKOUT_RECORD_FILE: &str = "uze-checkout.json";
+
 /// The branch prefix isolated work is created under. Fixed for the same
 /// reason. Generic on purpose: a branch name travels to remotes and
 /// reviewers, and says what it is, not what made it.
@@ -239,6 +244,19 @@ pub fn label_of(branch: &str) -> String {
         .replace('-', " ")
 }
 
+/// `slug` cut to at most `limit` characters at its last hyphen, so a long
+/// one reads as a name rather than as a truncation.
+pub(crate) fn cut_at_word_boundary(slug: &str, limit: usize) -> String {
+    if slug.chars().count() <= limit {
+        return slug.to_owned();
+    }
+    let cut: String = slug.chars().take(limit).collect();
+    match cut.rfind('-') {
+        Some(boundary) if boundary > 0 => cut[..boundary].to_owned(),
+        _ => cut,
+    }
+}
+
 /// Where an agent starts: in the project's own root, or in a checkout of
 /// its own.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -360,6 +378,14 @@ pub struct WorktreePolicy {
     /// concurrency is the only bound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slots: Option<usize>,
+    /// How many free checkouts are kept warm for the next agents.
+    /// Undeclared, two.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spare: Option<usize>,
+    /// After how many days unused a free checkout gives its disk back.
+    /// Undeclared, three.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_days: Option<u64>,
 }
 
 /// One command, or an ordered list of them. A single command is the
@@ -496,8 +522,9 @@ impl WorktreePolicy {
     /// The rendered statement projected into the project's shared
     /// instruction file — the exact bytes the managed region carries.
     ///
-    /// Written for a writer UZE did not place. It states the layout so a
-    /// subagent can reproduce it, and it states where the reader already is
+    /// Written for a writer UZE did not place. It names the verbs a
+    /// subagent's checkout is asked for through, and it states where the
+    /// reader already is
     /// — isolated in a slot, or running in the operator's own checkout —
     /// so an agent UZE isolated does not isolate itself again and an agent
     /// UZE placed on the operator's branch does not go looking for a slot.
@@ -526,16 +553,15 @@ impl WorktreePolicy {
              - If UZE tells you a rebase is paused in your checkout, resolve the conflicts \
              preserving the intent of your change, run `git rebase --continue`, run the \
              project's checks, and end your turn.\n\
-             - Before spawning parallel subagents that write files, give each its own checkout \
-             so they cannot collide:\n\
-             \n\
-             ```bash\n\
-             git worktree add -b {prefix}<topic> \"$(git rev-parse --path-format=absolute \
-             --git-common-dir)/../{directory}/<topic>\" HEAD\n\
-             ```\n\
-             \n\
-             - The path above is resolved against the *primary* checkout on purpose — a path \
-             relative to your own would nest one worktree inside another.\n",
+             - Before spawning parallel subagents that write files, give each its own \
+             checkout: `uze agent work split <topic>` prints the path of one cut from your \
+             current commit — hand that path to the subagent. When it is done, commit in both \
+             checkouts and run `uze agent work join <topic>` to bring its commits onto your \
+             branch; on a conflict, resolve it in the subagent's checkout, run `git rebase \
+             --continue` there, and join again. `uze agent work list` shows them. Never make \
+             a worktree with Git for this: UZE only knows the checkouts it made. An agent in \
+             the operator's checkout has no branch of its own to join into, and runs its \
+             subagents one after another instead.\n",
             directory = WORKTREES_DIRECTORY,
             prefix = BRANCH_PREFIX,
             naming = self.naming_clause(),
@@ -644,9 +670,15 @@ mod tests {
         assert!(text.contains(WORKTREES_DIRECTORY));
         assert!(text.contains(BRANCH_PREFIX));
         assert!(text.contains(CompletionBehavior::Handoff.instruction_clause()));
+        for verb in ["split", "join", "list"] {
+            assert!(
+                text.contains(&format!("uze agent work {verb}")),
+                "a subagent's checkout is asked for through `work {verb}`: {text}"
+            );
+        }
         assert!(
-            text.contains("git rev-parse"),
-            "a subagent's worktree must resolve against the primary, not its own checkout"
+            !text.contains("git worktree add"),
+            "no Git command makes a subagent's worktree: {text}"
         );
 
         let merging = WorktreePolicy {

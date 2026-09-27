@@ -184,43 +184,76 @@ pub(crate) fn verify_reused_wrapper(
 /// Splits a canonical SKILL.md into `(description, body)`:
 ///
 /// - A leading `---` line, then key-value lines, then a closing `---` line
-///   is frontmatter; only the `description` key is consumed, everything
-///   else in the block is deliberately ignored (never reinterpreted, never
-///   dropped from the canonical bytes — this function only *reads*).
-///   Frontmatter that is malformed falls through to "body-only".
+///   is frontmatter; only the top-level `description` key is consumed,
+///   everything else in the block is deliberately ignored (never
+///   reinterpreted, never dropped from the canonical bytes — this function
+///   only *reads*). Frontmatter that is malformed falls through to
+///   "body-only". A quoted description is read as the text inside the
+///   quotes, since the wrapper quotes it again; a block scalar (`>`, `|`)
+///   is not followed onto its continuation lines.
 /// - Everything after the closing marker is the body, with surrounding
-///   whitespace preserved exactly as shipped (no trim, no rewrite).
+///   whitespace preserved exactly as shipped (no trim, no rewrite). Bytes
+///   that are not UTF-8 are carried as replacement characters rather than
+///   dropping the body.
 pub fn parse_skill_body(bytes: &[u8]) -> (Option<String>, String) {
-    let Some(text) = is_utf8(bytes) else {
-        return (None, String::new());
-    };
-    let Some((head, body)) = split_frontmatter(text.strip_prefix('\u{feff}').unwrap_or(text))
+    let text = String::from_utf8_lossy(bytes);
+    let Some((head, body)) = split_frontmatter(text.strip_prefix('\u{feff}').unwrap_or(&text))
     else {
-        return (None, text.to_owned());
+        return (None, text.into_owned());
     };
     let description = head
         .lines()
         .rev()
         .find_map(|line| key_value(line, "description"));
-    (description.map(str::to_owned), body.to_owned())
+    (description.map(unquoted), body.to_owned())
 }
 
-/// Splits a document into its `---` frontmatter block and the body after
-/// it; `None` when the document does not open with a closed block.
-pub fn split_frontmatter(text: &str) -> Option<(&str, &str)> {
-    let rest = text.strip_prefix("---\n")?;
-    let end = rest.find("\n---\n")?;
-    Some((&rest[..end], &rest[end + "\n---\n".len()..]))
-}
+pub use uze_core::skill::split_frontmatter;
 
-/// The first value `key` holds in a frontmatter block, trimmed.
+/// The first value a top-level `key` holds in a frontmatter block, trimmed.
 pub fn head_value<'a>(head: &'a str, key: &str) -> Option<&'a str> {
     head.lines().find_map(|line| key_value(line, key))
 }
 
+/// An indented line belongs to the mapping above it, so only an unindented
+/// key is the top-level one — `metadata:` nesting a `description:` must not
+/// stand in for the Skill's own.
 fn key_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     let (candidate, value) = line.split_once(':')?;
-    (candidate.trim() == key).then(|| value.trim())
+    (candidate.trim_end() == key).then(|| value.trim())
+}
+
+/// The text a YAML flow scalar holds: the inside of a single- or
+/// double-quoted value with its quote escapes undone, anything else as is.
+fn unquoted(value: &str) -> String {
+    if let Some(inner) = value
+        .strip_prefix('\'')
+        .and_then(|rest| rest.strip_suffix('\''))
+    {
+        return inner.replace("''", "'");
+    }
+    let Some(inner) = value
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+    else {
+        return value.to_owned();
+    };
+    let mut text = String::with_capacity(inner.len());
+    let mut characters = inner.chars();
+    while let Some(character) = characters.next() {
+        if character != '\\' {
+            text.push(character);
+            continue;
+        }
+        match characters.next() {
+            Some('n') => text.push('\n'),
+            Some('t') => text.push('\t'),
+            Some('r') => text.push('\r'),
+            Some(escaped) => text.push(escaped),
+            None => text.push('\\'),
+        }
+    }
+    text
 }
 
 /// Escapes `value` as the contents of a YAML double-quoted scalar, so it can
@@ -281,25 +314,24 @@ pub fn frontmatter_value(bytes: &[u8], key: &str) -> Option<String> {
 
 /// Whether the payload declares OpenCode's user-only control —
 /// `metadata` containing `opencode/autoinvoke: false` (the documented V2
-/// syntax; real-world SKILL.md files use this exact shape). Line
-/// substring-based: UZE only ever inspects its own generated wrappers or
-/// author bytes, and a false positive here would only tighten reuse
-/// verification.
+/// syntax; real-world SKILL.md files use this exact shape). Read from the
+/// frontmatter lines alone: a body line that happens to say the same thing
+/// declares nothing, and counting it would accept a reused wrapper that
+/// does not carry the control.
 pub fn has_opencode_autoinvoke_false(bytes: &[u8]) -> bool {
-    let Some(text) = is_utf8(bytes) else {
-        return false;
-    };
-    text.lines()
-        .any(|line| line.trim() == "opencode/autoinvoke: false")
+    frontmatter_has_line(bytes, "opencode/autoinvoke: false")
 }
 
 /// Whether the payload declares OpenCode's user-invocation suppression —
 /// a trimmed `slash: false` line in frontmatter.
 pub fn has_slash_false(bytes: &[u8]) -> bool {
-    let Some(text) = is_utf8(bytes) else {
-        return false;
-    };
-    text.lines().any(|line| line.trim() == "slash: false")
+    frontmatter_has_line(bytes, "slash: false")
+}
+
+fn frontmatter_has_line(bytes: &[u8], declaration: &str) -> bool {
+    is_utf8(bytes)
+        .and_then(|text| split_frontmatter(text.strip_prefix('\u{feff}').unwrap_or(text)))
+        .is_some_and(|(head, _)| head.lines().any(|line| line.trim() == declaration))
 }
 
 /// Whether `skill_dir` carries Codex's explicit-only policy sidecar:
@@ -505,11 +537,58 @@ mod tests {
     }
 
     #[test]
-    fn non_utf8_payload_degrades_to_empty_body() {
-        let bytes = b"\xff\xfe\x00";
+    fn a_body_that_is_not_utf8_is_carried_not_dropped() {
+        let bytes = b"---\ndescription: d\n---\nBody \xff here.\n";
         let (description, body) = parse_skill_body(bytes);
-        assert_eq!(description, None);
-        assert_eq!(body, "");
+        assert_eq!(description.as_deref(), Some("d"));
+        assert_eq!(body, "Body \u{fffd} here.\n");
+    }
+
+    #[test]
+    fn a_quoted_description_is_read_without_its_quotes() {
+        for (declared, read) in [
+            (r#""Review: code""#, "Review: code"),
+            (r#""Say \"hi\"""#, r#"Say "hi""#),
+            ("'It''s here'", "It's here"),
+            ("plain text", "plain text"),
+        ] {
+            let bytes = format!("---\ndescription: {declared}\n---\nbody\n");
+            assert_eq!(
+                parse_skill_body(bytes.as_bytes()).0.as_deref(),
+                Some(read),
+                "{declared}"
+            );
+        }
+        let rendered = render_skill_wrapper("n", b"---\ndescription: \"quoted\"\n---\nbody\n", &[]);
+        assert!(rendered.contains("description: \"quoted\"\n"), "{rendered}");
+    }
+
+    #[test]
+    fn a_nested_key_never_stands_in_for_the_top_level_one() {
+        let bytes =
+            b"---\ndescription: top\nmetadata:\n  description: nested\n  name: inner\n---\nbody\n";
+        assert_eq!(parse_skill_body(bytes).0.as_deref(), Some("top"));
+        assert_eq!(frontmatter_value(bytes, "name"), None);
+    }
+
+    #[test]
+    fn crlf_frontmatter_is_frontmatter() {
+        let bytes = b"---\r\ndescription: Review code\r\nuser-invocable: false\r\n---\r\nBody.\r\n";
+        let (description, body) = parse_skill_body(bytes);
+        assert_eq!(description.as_deref(), Some("Review code"));
+        assert_eq!(body, "Body.\r\n");
+        assert!(has_user_invocable_false(bytes));
+    }
+
+    #[test]
+    fn an_opencode_control_counts_only_in_the_frontmatter() {
+        let in_body = b"---\nname: n\n---\nslash: false\nopencode/autoinvoke: false\n";
+        assert!(!has_slash_false(in_body));
+        assert!(!has_opencode_autoinvoke_false(in_body));
+        let declared =
+            b"---\nname: n\nslash: false\nmetadata:\n  opencode/autoinvoke: false\n---\nbody\n";
+        assert!(has_slash_false(declared));
+        assert!(has_opencode_autoinvoke_false(declared));
     }
 
     #[test]

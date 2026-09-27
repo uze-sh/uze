@@ -16,7 +16,7 @@ use uze_core::{
 
 use super::OpenCodeIntegration;
 use crate::shared::json_config;
-use crate::shared::mcp::managed_stdio_plan;
+use crate::shared::mcp::{McpEntry, managed_stdio_plan};
 use crate::shared::plan::unsupported;
 
 impl OpenCodeIntegration {
@@ -84,21 +84,12 @@ pub(super) fn attach_mcp_config(
 }
 
 /// The managed entry's state in a read `opencode.json`.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn inspect_mcp_entry(
     config: &serde_json::Value,
-    entry_name: &str,
-    transport: &str,
-    command: &Path,
-    args: &[String],
-    cwd: Option<&Path>,
-    environment: &[uze_core::exposure::McpEnvironmentReference],
-    enabled: Option<bool>,
+    entry: &McpEntry,
 ) -> AttachmentInspection {
-    match json_config::get_path(config, &entry_path(entry_name)) {
-        Some(current) => {
-            inspect_opencode_mcp_value(current, transport, command, args, cwd, environment, enabled)
-        }
+    match json_config::get_path(config, &entry_path(entry.name)) {
+        Some(current) => inspect_opencode_mcp_value(current, entry),
         None => AttachmentInspection {
             state: AttachmentState::Missing,
             reason: "OpenCode MCP entry is missing".to_owned(),
@@ -108,32 +99,16 @@ pub(super) fn inspect_mcp_entry(
 
 /// Removes exactly the managed entry once the file it is read from still
 /// matches the receipt.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn detach_mcp_config(
     config_path: &Path,
-    entry_name: &str,
-    transport: &str,
-    command: &Path,
-    args: &[String],
-    cwd: Option<&Path>,
-    environment: &[uze_core::exposure::McpEnvironmentReference],
-    enabled: Option<bool>,
+    entry: &McpEntry,
 ) -> Result<AttachmentInspection> {
     let mut config = json_config::read_object(config_path).map_err(UzeError::HarnessConfig)?;
-    let inspection = inspect_mcp_entry(
-        &config,
-        entry_name,
-        transport,
-        command,
-        args,
-        cwd,
-        environment,
-        enabled,
-    );
+    let inspection = inspect_mcp_entry(&config, entry);
     if inspection.state != AttachmentState::Matched {
         return Ok(inspection);
     }
-    json_config::remove_path(&mut config, &entry_path(entry_name));
+    json_config::remove_path(&mut config, &entry_path(entry.name));
     json_config::write_object(config_path, &config)?;
     Ok(AttachmentInspection {
         state: AttachmentState::Missing,
@@ -143,13 +118,17 @@ pub(super) fn detach_mcp_config(
 
 fn inspect_opencode_mcp_value(
     current: &serde_json::Value,
-    transport: &str,
-    command: &Path,
-    args: &[String],
-    cwd: Option<&Path>,
-    environment: &[uze_core::exposure::McpEnvironmentReference],
-    enabled: Option<bool>,
+    entry: &McpEntry,
 ) -> AttachmentInspection {
+    let McpEntry {
+        transport,
+        command,
+        args,
+        cwd,
+        environment,
+        enabled,
+        ..
+    } = *entry;
     let expected_command = std::iter::once(command.to_string_lossy().into_owned())
         .chain(args.iter().cloned())
         .collect::<Vec<_>>();
@@ -204,7 +183,7 @@ mod mcp_tests {
 
     use uze_core::integration::AttachmentState;
 
-    use super::inspect_opencode_mcp_value;
+    use super::{McpEntry, inspect_opencode_mcp_value};
 
     #[test]
     fn managed_cwd_and_environment_reference_drift_are_detected() {
@@ -220,14 +199,14 @@ mod mcp_tests {
         assert_eq!(
             inspect_opencode_mcp_value(
                 &current,
-                "stdio",
-                &expected,
-                &args,
-                Some(Path::new("/expected")),
-                &[uze_core::exposure::McpEnvironmentReference {
-                    name: "TOKEN".to_owned()
-                }],
-                Some(true),
+                &McpEntry {
+                    cwd: Some(Path::new("/expected")),
+                    environment: &[uze_core::exposure::McpEnvironmentReference {
+                        name: "TOKEN".to_owned()
+                    }],
+                    enabled: Some(true),
+                    ..McpEntry::planned("uze-example", &expected, &args)
+                },
             )
             .state,
             AttachmentState::Drifted

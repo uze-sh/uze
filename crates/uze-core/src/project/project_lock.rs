@@ -142,13 +142,24 @@ impl LockedPlugin {
     /// The entry for a plugin just resolved. `reproducible` says whether
     /// the bytes came from an immutable source and may therefore be
     /// pinned; `root` is where they landed.
-    pub fn resolved(marketplace: &str, root: &Path, reproducible: bool) -> Self {
-        Self {
+    ///
+    /// Fails when pinnable bytes cannot be read: a lock written without the
+    /// digest they were owed would reproduce anything a teammate fetched.
+    pub fn resolved(marketplace: &str, root: &Path, reproducible: bool) -> Result<Self> {
+        let integrity = if reproducible {
+            Some(
+                crate::digest::tree_sha256(root).map_err(|source| UzeError::Read {
+                    path: root.to_path_buf(),
+                    source,
+                })?,
+            )
+        } else {
+            None
+        };
+        Ok(Self {
             marketplace: marketplace.to_owned(),
-            integrity: reproducible
-                .then(|| crate::digest::tree_sha256(root).ok())
-                .flatten(),
-        }
+            integrity,
+        })
     }
 }
 
@@ -258,7 +269,7 @@ pub fn load_lock(root: &Path) -> Result<Option<ProjectLock>> {
     parse_lock_str(&text, &path).map(Some)
 }
 
-fn parse_lock_str(text: &str, path: &Path) -> Result<ProjectLock> {
+pub(crate) fn parse_lock_str(text: &str, path: &Path) -> Result<ProjectLock> {
     // A key written twice is a mistake, not a precedence question — the
     // same rule the manifest holds. YAML's default is to keep the last,
     // which would let a second `integrity:` quietly replace the pin.

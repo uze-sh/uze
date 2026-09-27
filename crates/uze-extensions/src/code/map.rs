@@ -100,7 +100,9 @@ pub fn measure(host: &dyn Host, within: &Path) -> Result<Measure, String> {
         ],
         &[128],
     )?;
-    let status = host.git(&root, &["status", "--porcelain", "-z"], &[])?;
+    // The changes half's own status, word for word, so the host can answer
+    // both with one walk of the tree.
+    let status = host.git(&root, super::changes::STATUS_ARGS, &[])?;
 
     let mut commits: HashMap<&str, u32> = HashMap::new();
     for path in touched.split('\0').map(|path| path.trim_matches('\n')) {
@@ -511,22 +513,12 @@ impl Map {
             .iter()
             .find(|tile| self.picked.as_deref() == Some(tile.path.as_str()));
         let from = picked.map_or((space.0 / 2, space.1 / 2), stands_at);
-        let nearest = tiles
+        let candidates = tiles
             .iter()
             .filter(|tile| Some(*tile) != picked)
-            .filter_map(|tile| {
-                let at = stands_at(tile);
-                let (dx, dy) = (at.0 - from.0, (at.1 - from.1) * 2);
-                let (along, across) = match direction {
-                    PanDirection::Left => (-dx, dy),
-                    PanDirection::Right => (dx, dy),
-                    PanDirection::Up => (-dy, dx),
-                    PanDirection::Down => (dy, dx),
-                };
-                (picked.is_none() || along > 0).then(|| (along.abs() + across.abs() * 2, tile))
-            })
-            .min_by_key(|&(distance, _)| distance)
-            .map(|(_, tile)| tile.path.clone());
+            .map(|tile| (tile, stands_at(tile)));
+        let nearest = crate::shared::nearest::toward(from, direction, picked.is_some(), candidates)
+            .map(|tile| tile.path.clone());
         if nearest.is_some() {
             self.picked = nearest;
         }
@@ -1296,5 +1288,31 @@ mod tests {
             ],
             "a rename's origin is not a changed path"
         );
+    }
+
+    /// Git collapses a directory nothing in it is tracked into one entry
+    /// unless asked for every file — and a directory is no tile, so the
+    /// files in a new one would be measured and never marked.
+    #[test]
+    fn a_file_in_a_directory_git_has_never_seen_is_marked_changed() {
+        let repository = uze_testkit::git::Repository::new("map-untracked-directory");
+        let root = repository.root().to_path_buf();
+        repository.commit_file("kept.rs", "fn kept() {}\n");
+        std::fs::create_dir_all(root.join("fresh/deeper")).unwrap();
+        std::fs::write(root.join("fresh/deeper/new.rs"), "fn new() {}\n").unwrap();
+
+        let measure = measure(&crate::code::tests::RepositoryHost, &root).expect("a repository");
+        let changed: Vec<(&str, bool)> = measure
+            .files
+            .iter()
+            .map(|file| (file.path.as_str(), file.changed))
+            .collect();
+        assert!(
+            changed.contains(&("fresh/deeper/new.rs", true)),
+            "{changed:?}"
+        );
+        assert!(changed.contains(&("kept.rs", false)), "{changed:?}");
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

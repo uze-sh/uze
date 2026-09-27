@@ -16,6 +16,7 @@ use uze_core::{
 };
 
 use crate::shared::process::{VersionToken, detect_version};
+use crate::shared::provision::official_installer;
 
 /// Resolves the OpenCode V2 executable. V2 is the standard channel
 /// (`opencode`); the legacy `opencode2` alias is still accepted for
@@ -74,11 +75,7 @@ pub(super) fn provision_opencode(
         // project path rather than the stable CLI's `upgrade` command, so
         // passing `upgrade` makes it try to `chdir` into that name. The V2
         // installer is its documented install/update route.
-        _ => ProcessSpec::new(
-            "sh",
-            ["-c", "curl -fsSL https://opencode.ai/v2/install | bash"],
-        )
-        .with_inherited_output(),
+        _ => official_installer("https://opencode.ai/v2/install", "bash"),
     };
     let outcome = match runner.run(&command) {
         Ok(o) => o,

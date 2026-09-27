@@ -451,7 +451,13 @@ pub(crate) fn render(
             );
         }
     }
-    render_footer(frame, footer, &view.footer, scope);
+    render_footer_row(
+        frame,
+        footer,
+        &view.footer,
+        scope,
+        view.notice.as_ref().map(styled),
+    );
     rendered.content_space = uze_extensions::view::Size {
         width: content_area.width,
         height: content_area.height,
@@ -526,34 +532,17 @@ fn render_board(
             );
         }
     }
-    // The caption is right-aligned on the footer's own row, so the hints
-    // are given what is left of it rather than the whole width: drawn over
-    // each other, a narrow board reads `g ren3 boxes · 2 edges`, which is
-    // two truths written into one run of cells and no truth at all.
-    let caption = match &view.content {
-        Content::Lines { heading, .. } if !heading.is_empty() => {
-            Some((TextSpan::raw(heading.as_str()).width() as u16).min(footer.width / 2))
-        }
+    // A notice is about what was just done and the caption is there all
+    // along, so while there is one it has the caption's place.
+    let trailing = match (&view.notice, &view.content) {
+        (Some(notice), _) => Some(styled(notice)),
+        (None, Content::Lines { heading, .. }) if !heading.is_empty() => Some(TextSpan::styled(
+            heading.clone(),
+            theme::fg(Token::TextMuted),
+        )),
         _ => None,
     };
-    let hints = match caption {
-        Some(width) => Rect {
-            width: footer.width.saturating_sub(width + FOOTER_GAP),
-            ..footer
-        },
-        None => footer,
-    };
-    render_footer(frame, hints, &view.footer, scope);
-    if let (Some(width), Content::Lines { heading, .. }) = (caption, &view.content) {
-        frame.render_widget(
-            Paragraph::new(TextSpan::styled(
-                heading.clone(),
-                theme::fg(Token::TextMuted),
-            ))
-            .alignment(ratatui::layout::Alignment::Right),
-            Rect::new(footer.right() - width, footer.y, width, 1),
-        );
-    }
+    render_footer_row(frame, footer, &view.footer, scope, trailing);
     // Last, because its list of groups opens over the board — and its
     // hits first, because a click on that list must not reach the row of
     // board lying under it.
@@ -921,7 +910,10 @@ fn render_choice_list(
         .map(|row| TextSpan::raw(row.name).width() + row.trailing.len())
         .max()
         .unwrap_or(0) as u16;
-    let width = (widest + 6).max(selector.width).min(board.width);
+    let width = widest
+        .saturating_add(6)
+        .max(selector.width)
+        .min(board.width);
     let visible = (rows.len() as u16)
         .min(board.height.saturating_sub(2))
         .max(1);
@@ -948,7 +940,12 @@ fn render_choice_list(
     }
     frame_surface.render(frame, area);
     for (line, row) in rows.iter().skip(first).take(visible.into()).enumerate() {
-        let rect = Rect::new(area.x + 1, area.y + 1 + line as u16, area.width - 2, 1);
+        let rect = Rect::new(
+            area.x + 1,
+            area.y + 1 + line as u16,
+            area.width.saturating_sub(2),
+            1,
+        );
         // A filled bar for the highlighted row, not just bold text: the
         // same narrowly-scoped exception the agent picker makes, for the
         // same reason — a menu the pointer and the arrows share needs the
@@ -1655,6 +1652,38 @@ fn render_line(
 
 /// A hairline top border plus the hint text directly under it — the same
 /// shape `management::render_footer` uses.
+/// A footer row: the keys on the left, and what the surface has to say
+/// right-aligned at the other end.
+///
+/// The hints are given what is left of the row rather than the whole
+/// width: drawn over each other, a narrow board reads `g ren3 boxes · 2
+/// edges`, which is two truths written into one run of cells and no truth
+/// at all.
+fn render_footer_row(
+    frame: &mut ratatui::Frame<'_>,
+    footer: Rect,
+    commands: &[Command],
+    scope: uze_keys::Scope,
+    trailing: Option<TextSpan<'static>>,
+) {
+    let Some(trailing) = trailing else {
+        render_footer(frame, footer, commands, scope);
+        return;
+    };
+    let width = (trailing.width() as u16).min(footer.width / 2);
+    let hints = Rect {
+        width: footer.width.saturating_sub(width + FOOTER_GAP),
+        ..footer
+    };
+    render_footer(frame, hints, commands, scope);
+    let mut line = Line::from(trailing);
+    text::clip(&mut line, usize::from(width));
+    frame.render_widget(
+        Paragraph::new(line).alignment(ratatui::layout::Alignment::Right),
+        Rect::new(footer.right() - width, footer.y, width, 1),
+    );
+}
+
 fn render_footer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -1913,6 +1942,32 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
     use uze_extensions::view::{ContentLine, LineTone, Rgb};
 
+    #[test]
+    fn a_choice_list_on_a_board_too_narrow_for_it_draws_without_panicking() {
+        let mut terminal = Terminal::new(TestBackend::new(8, 8)).unwrap();
+        let rows = [ChoiceRow {
+            hit: ViewHit::GrabNavigatorEdge,
+            name: "overview",
+            trailing: String::new(),
+            highlighted: true,
+        }];
+        for width in [0, 1, 2] {
+            let mut hits = Vec::new();
+            terminal
+                .draw(|frame| {
+                    render_choice_list(
+                        frame,
+                        Rect::new(0, 0, width, 1),
+                        Rect::new(0, 0, width, 6),
+                        &rows,
+                        ViewHit::GrabNavigatorEdge,
+                        &mut hits,
+                    );
+                })
+                .unwrap();
+        }
+    }
+
     /// A caption that fits is drawn where it always was; one that does
     /// not passes through the room it has, a column at a time, and comes
     /// round again — and says so, which is what keeps the clock turning
@@ -2073,6 +2128,7 @@ mod tests {
                 }],
             },
             footer: vec![Command::Close],
+            notice: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Sidebar,
@@ -2105,6 +2161,48 @@ mod tests {
             })
             .collect();
         (rows, hits)
+    }
+
+    /// A refused gesture says so on the footer's row, in the ink its role
+    /// names, beside the keys rather than over them: otherwise a key that
+    /// was refused is a key that seemed to do nothing.
+    #[test]
+    fn a_notice_is_said_at_the_end_of_the_footer() {
+        let view = View {
+            notice: Some(Span::new("a.txt has unsaved changes", Role::Warning)),
+            ..sample()
+        };
+        let mut terminal = Terminal::new(TestBackend::new(90, 14)).unwrap();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    Some(24),
+                    NavigatorScroll::default(),
+                    uze_keys::Scope::Code,
+                    &mut Vec::new(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let footer = buffer.area.height - 1;
+        let row: String = (0..buffer.area.width)
+            .map(|column| buffer[(column, footer)].symbol())
+            .collect();
+        assert!(
+            row.trim_end().ends_with("a.txt has unsaved changes"),
+            "{row:?}"
+        );
+        let at = row.find("a.txt").expect("the notice is on the row") as u16;
+        assert_eq!(buffer[(at, footer)].fg, theme::color(Token::StateWarning));
+        let (without, _) = draw(&sample());
+        let hints = without[usize::from(footer)].trim_end();
+        assert!(
+            row.starts_with(hints),
+            "the keys stay where they were: {row:?} against {hints:?}"
+        );
     }
 
     /// The control that says where you are wears the same neutral lift
@@ -2196,6 +2294,7 @@ mod tests {
                 caret: None,
             },
             footer: Vec::new(),
+            notice: None,
             modes: vec![
                 Mode {
                     label: "Preview".to_owned(),
@@ -2299,6 +2398,7 @@ mod tests {
                 Command::NextView,
                 Command::NextMode,
             ],
+            notice: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,
@@ -2400,6 +2500,7 @@ mod tests {
                     caret: None,
                 },
                 footer: vec![Command::Close],
+                notice: None,
                 modes: Vec::new(),
                 subjects: Vec::new(),
                 layout: ViewLayout::Board,
@@ -2506,6 +2607,7 @@ mod tests {
                 caret: None,
             },
             footer: vec![Command::Close],
+            notice: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,
@@ -2657,6 +2759,7 @@ mod tests {
                 caret: None,
             },
             footer: vec![Command::Close],
+            notice: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,

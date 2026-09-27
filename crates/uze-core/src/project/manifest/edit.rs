@@ -20,7 +20,7 @@ use noyalib::{
     cst::{Document, parse_document},
 };
 
-use crate::{Result, UzeError, persistence::write_atomic};
+use crate::{Result, UzeError, persistence::write_atomic_preserving};
 
 /// A manifest open for editing: the authored bytes plus the tree that
 /// knows where each declaration sits in them.
@@ -238,7 +238,7 @@ impl ManifestDocument {
     }
 
     pub fn save(&self) -> Result<()> {
-        write_atomic(&self.path, self.document.source().as_bytes())
+        write_atomic_preserving(&self.path, self.document.source().as_bytes())
     }
 
     fn refusal(&self, path: &str, reason: String) -> UzeError {

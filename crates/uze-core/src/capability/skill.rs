@@ -110,10 +110,7 @@ impl Default for SkillInvocationPolicy {
 /// default — and unknown sub-keys are ignored.
 pub fn parse_skill_invocation(bytes: &[u8]) -> Option<SkillInvocationPolicy> {
     let text = std::str::from_utf8(bytes).ok()?;
-    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let rest = text.strip_prefix("---\n")?;
-    let end = rest.find("\n---\n")?;
-    let head = &rest[..end];
+    let (head, _) = split_frontmatter(text.strip_prefix('\u{feff}').unwrap_or(text))?;
 
     let mut model = true;
     let mut user = true;
@@ -121,13 +118,21 @@ pub fn parse_skill_invocation(bytes: &[u8]) -> Option<SkillInvocationPolicy> {
     let mut saw_invoke = false;
     let mut lines = head.lines();
     while let Some(line) = lines.next() {
-        let Some((key, _value)) = line.split_once(':') else {
+        let Some((key, value)) = line.split_once(':') else {
             continue;
         };
         if key.trim() != "invoke" {
             continue;
         }
         saw_invoke = true;
+        // Only the block form is read. An inline `{model: false, …}` is a
+        // policy the author did write, so reading the block beneath it —
+        // absent, hence the default — would grant what they withheld.
+        let inline = value.trim();
+        if !inline.is_empty() && !inline.starts_with('#') {
+            invalid = true;
+            break;
+        }
         // An unindented line ends the block (it is a top-level key).
         for nested in lines.by_ref() {
             if !nested.starts_with(char::is_whitespace) {
@@ -157,6 +162,27 @@ pub fn parse_skill_invocation(bytes: &[u8]) -> Option<SkillInvocationPolicy> {
         return Some(SkillInvocationPolicy::INVALID);
     }
     Some(SkillInvocationPolicy { model, user })
+}
+
+/// Splits a document into its `---` frontmatter block and the body after
+/// it; `None` when the document does not open with a closed block. Either
+/// line ending closes it: a SKILL.md saved on Windows is still a Skill.
+pub fn split_frontmatter(text: &str) -> Option<(&str, &str)> {
+    let rest = text
+        .strip_prefix("---\n")
+        .or_else(|| text.strip_prefix("---\r\n"))?;
+    let mut offset = 0;
+    for line in rest.split_inclusive('\n') {
+        if offset > 0 && line.ends_with('\n') && line.trim_end_matches(['\r', '\n']) == "---" {
+            let head = &rest[..offset - 1];
+            return Some((
+                head.strip_suffix('\r').unwrap_or(head),
+                &rest[offset + line.len()..],
+            ));
+        }
+        offset += line.len();
+    }
+    None
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -256,6 +282,31 @@ mod tests {
     #[test]
     fn a_top_level_key_ends_the_invoke_block() {
         let bytes = b"---\ninvoke:\n  model: false\nname: review\n---\n";
+        assert_eq!(
+            parse_skill_invocation(bytes),
+            Some(SkillInvocationPolicy::USER_ONLY)
+        );
+    }
+
+    /// An inline map is a policy the author wrote; defaulting it would grant
+    /// the model an invocation they withheld.
+    #[test]
+    fn an_inline_invoke_value_is_refused_rather_than_defaulted() {
+        let bytes = b"---\ninvoke: {model: false, user: true}\n---\n";
+        assert_eq!(
+            parse_skill_invocation(bytes),
+            Some(SkillInvocationPolicy::INVALID)
+        );
+        let commented = b"---\ninvoke: # who may call it\n  model: false\n---\n";
+        assert_eq!(
+            parse_skill_invocation(commented),
+            Some(SkillInvocationPolicy::USER_ONLY)
+        );
+    }
+
+    #[test]
+    fn crlf_frontmatter_is_read_like_lf() {
+        let bytes = b"---\r\ninvoke:\r\n  model: false\r\n  user: true\r\n---\r\nbody\r\n";
         assert_eq!(
             parse_skill_invocation(bytes),
             Some(SkillInvocationPolicy::USER_ONLY)

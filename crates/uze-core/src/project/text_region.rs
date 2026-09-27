@@ -27,7 +27,7 @@ use std::{fs, path::Path};
 use crate::{
     error::{Result, UzeError},
     integration::{AttachmentInspection, AttachmentState},
-    persistence::write_atomic,
+    persistence::write_atomic_preserving,
 };
 
 /// Why a region whose markers are duplicated, out of order, or only half
@@ -118,8 +118,14 @@ fn read_lines(path: &Path) -> Result<Option<(Vec<Line>, Newline)>> {
     };
     let content =
         String::from_utf8(bytes).map_err(|_| UzeError::InvalidTextEncoding(path.to_path_buf()))?;
+    let lines = lines_of(&content);
+    let style = majority_newline(&lines);
+    Ok(Some((lines, style)))
+}
+
+fn lines_of(content: &str) -> Vec<Line> {
     let mut lines = Vec::new();
-    let mut rest = content.as_str();
+    let mut rest = content;
     while !rest.is_empty() {
         match rest.find('\n') {
             Some(index) => {
@@ -140,16 +146,21 @@ fn read_lines(path: &Path) -> Result<Option<(Vec<Line>, Newline)>> {
             }
         }
     }
+    lines
+}
+
+/// The style to give lines UZE inserts: whichever `lines` use most, LF on a
+/// tie.
+fn majority_newline(lines: &[Line]) -> Newline {
     let crlf = lines
         .iter()
         .filter(|line| line.ending == Some(Newline::Crlf))
         .count();
-    let style = if crlf * 2 > lines.len() {
+    if crlf * 2 > lines.len() {
         Newline::Crlf
     } else {
         Newline::Lf
-    };
-    Ok(Some((lines, style)))
+    }
 }
 
 /// Writes the lines back exactly as they stand: every line UZE did not
@@ -162,7 +173,7 @@ fn write_lines(path: &Path, lines: &[Line]) -> Result<()> {
             out.push_str(ending.separator());
         }
     }
-    write_atomic(path, out.as_bytes())
+    write_atomic_preserving(path, out.as_bytes())
 }
 
 /// Normalizes caller-supplied content into the exact physical lines that
@@ -206,6 +217,14 @@ fn scan(lines: &[Line], begin_marker: &str, end_marker: &str) -> Scan {
     }
 }
 
+/// Whether `line` would be read as a region's marker. Content carrying one
+/// would open or close a region the moment it is written, and every later
+/// scan of the file would disagree with what was attached.
+fn is_marker_line(line: &str) -> bool {
+    (line.starts_with("<!-- uze:begin ") || line.starts_with("<!-- uze:end "))
+        && line.ends_with(" -->")
+}
+
 fn blocked(reason: impl Into<String>) -> AttachmentInspection {
     AttachmentInspection {
         state: AttachmentState::Blocked,
@@ -233,9 +252,7 @@ fn read_region(
     region_identity: &str,
 ) -> std::result::Result<(Vec<Line>, Scan), AttachmentInspection> {
     if !identity_is_valid(region_identity) {
-        return Err(blocked(format!(
-            "invalid managed-region identity `{region_identity}`"
-        )));
+        return Err(invalid_identity(region_identity));
     }
     let (begin_marker, end_marker) = markers(region_identity);
     match read_lines(target_file) {
@@ -243,11 +260,21 @@ fn read_region(
             let scan = scan(&lines, &begin_marker, &end_marker);
             Ok((lines, scan))
         }
-        Ok(None) => Err(AttachmentInspection {
-            state: AttachmentState::Missing,
-            reason: "managed text region's target file does not exist".to_owned(),
-        }),
+        Ok(None) => Err(target_absent()),
         Err(error) => Err(blocked(error.to_string())),
+    }
+}
+
+fn invalid_identity(region_identity: &str) -> AttachmentInspection {
+    blocked(format!(
+        "invalid managed-region identity `{region_identity}`"
+    ))
+}
+
+fn target_absent() -> AttachmentInspection {
+    AttachmentInspection {
+        state: AttachmentState::Missing,
+        reason: "managed text region's target file does not exist".to_owned(),
     }
 }
 
@@ -285,20 +312,43 @@ pub fn attach(target_file: &Path, region_identity: &str, expected_content: &str)
     if !identity_is_valid(region_identity) {
         return Err(UzeError::InvalidRegionIdentity(region_identity.to_owned()));
     }
+    let (mut lines, _style) = read_lines(target_file)?.unwrap_or((Vec::new(), Newline::Lf));
+    if attach_lines(&mut lines, target_file, region_identity, expected_content)? {
+        write_lines(target_file, &lines)?;
+    }
+    Ok(())
+}
+
+/// [`attach`] applied to lines already read: answers whether it added the
+/// region, which is the only case the file needs writing.
+fn attach_lines(
+    lines: &mut Vec<Line>,
+    target_file: &Path,
+    region_identity: &str,
+    expected_content: &str,
+) -> Result<bool> {
+    if !identity_is_valid(region_identity) {
+        return Err(UzeError::InvalidRegionIdentity(region_identity.to_owned()));
+    }
+    let content = content_lines(expected_content);
+    if content.iter().any(|line| is_marker_line(line)) {
+        return Err(UzeError::ManagedRegionContentCarriesMarker {
+            region: region_identity.to_owned(),
+            path: target_file.to_path_buf(),
+        });
+    }
     let (begin_marker, end_marker) = markers(region_identity);
-    let (mut lines, style) = read_lines(target_file)?.unwrap_or((Vec::new(), Newline::Lf));
-    match scan(&lines, &begin_marker, &end_marker) {
+    match scan(lines, &begin_marker, &end_marker) {
         Scan::WellFormed { begin, end } => {
-            let current = joined_text(&lines[begin + 1..end]);
-            let expected = content_lines(expected_content).join("\n");
-            if current == expected {
-                Ok(())
+            if joined_text(&lines[begin + 1..end]) == content.join("\n") {
+                Ok(false)
             } else {
                 Err(UzeError::ManagedRegionDrift(target_file.to_path_buf()))
             }
         }
         Scan::Malformed => Err(UzeError::ManagedRegionConflict(target_file.to_path_buf())),
         Scan::Missing => {
+            let style = majority_newline(lines);
             // A file that did not end in a newline gets one, or the begin
             // marker would land on the end of the user's last line.
             if let Some(last) = lines.last_mut()
@@ -308,12 +358,12 @@ pub fn attach(target_file: &Path, region_identity: &str, expected_content: &str)
             }
             lines.push(Line::terminated(begin_marker, style));
             lines.extend(
-                content_lines(expected_content)
+                content
                     .into_iter()
                     .map(|text| Line::terminated(text, style)),
             );
             lines.push(Line::terminated(end_marker, style));
-            write_lines(target_file, &lines)
+            Ok(true)
         }
     }
 }
@@ -439,20 +489,40 @@ pub fn remove_unconditionally(
     if !identity_is_valid(region_identity) {
         return Ok(blocked(MALFORMED_MARKERS));
     }
-    let (begin_marker, end_marker) = markers(region_identity);
-    let absent = AttachmentInspection {
+    let Some((mut lines, _style)) = read_lines(target_file)? else {
+        return Ok(markers_absent());
+    };
+    match remove_lines(&mut lines, region_identity) {
+        Ok(removed) => {
+            write_lines(target_file, &lines)?;
+            Ok(removed)
+        }
+        Err(untouched) => Ok(untouched),
+    }
+}
+
+fn markers_absent() -> AttachmentInspection {
+    AttachmentInspection {
         state: AttachmentState::Missing,
         reason: "managed text region markers are absent".to_owned(),
-    };
-    let Some((mut lines, _style)) = read_lines(target_file)? else {
-        return Ok(absent);
-    };
-    match scan(&lines, &begin_marker, &end_marker) {
-        Scan::Missing => Ok(absent),
-        Scan::Malformed => Ok(blocked(MALFORMED_MARKERS)),
+    }
+}
+
+/// [`remove_unconditionally`] applied to lines already read: `Ok` when the
+/// region was taken out of `lines`, `Err` with why they were left alone.
+fn remove_lines(
+    lines: &mut Vec<Line>,
+    region_identity: &str,
+) -> std::result::Result<AttachmentInspection, AttachmentInspection> {
+    if !identity_is_valid(region_identity) {
+        return Err(blocked(MALFORMED_MARKERS));
+    }
+    let (begin_marker, end_marker) = markers(region_identity);
+    match scan(lines, &begin_marker, &end_marker) {
+        Scan::Missing => Err(markers_absent()),
+        Scan::Malformed => Err(blocked(MALFORMED_MARKERS)),
         Scan::WellFormed { begin, end } => {
             lines.drain(begin..=end);
-            write_lines(target_file, &lines)?;
             Ok(AttachmentInspection {
                 state: AttachmentState::Missing,
                 reason: "orphaned managed text region removed (no current source owns it)"
@@ -493,8 +563,19 @@ pub fn stale_regions<'a>(
     owns: impl Fn(&str) -> bool,
     desired_identities: impl IntoIterator<Item = &'a str>,
 ) -> Vec<String> {
+    let Ok(Some((lines, _style))) = read_lines(target_file) else {
+        return Vec::new();
+    };
+    stale_in(&lines, owns, desired_identities)
+}
+
+fn stale_in<'a>(
+    lines: &[Line],
+    owns: impl Fn(&str) -> bool,
+    desired_identities: impl IntoIterator<Item = &'a str>,
+) -> Vec<String> {
     let desired: std::collections::BTreeSet<&str> = desired_identities.into_iter().collect();
-    region_identities_present(target_file)
+    identities_in(lines)
         .into_iter()
         .filter(|identity| owns(identity) && !desired.contains(identity.as_str()))
         .collect::<std::collections::BTreeSet<_>>()
@@ -508,49 +589,148 @@ pub fn stale_regions<'a>(
 /// statement together, then each desired region is created when missing.
 /// Drift and malformed markers are reported, never overwritten or guessed
 /// at. Removal is structural (see [`remove_unconditionally`]).
+///
+/// The file is read once and written at most once, however many regions
+/// change.
 pub fn converge(
     target_file: &Path,
     owns: impl Fn(&str) -> bool,
     desired: &[(String, String)],
 ) -> RegionConvergence {
+    let (read, existed) = match read_lines(target_file) {
+        Ok(Some((lines, _style))) => (lines, true),
+        Ok(None) => (Vec::new(), false),
+        Err(error) => return unreadable_convergence(desired, &error),
+    };
+    let mut lines = read.clone();
     let mut convergence = RegionConvergence::default();
-    let stale = stale_regions(
-        target_file,
+    let stale = stale_in(
+        &lines,
         owns,
         desired.iter().map(|(identity, _)| identity.as_str()),
     );
     for identity in stale {
-        match remove_unconditionally(target_file, &identity) {
-            Ok(inspection) if inspection.state == AttachmentState::Missing => {
-                convergence.removed.push(identity);
-            }
-            Ok(inspection) => convergence.blocked.push((identity, inspection.reason)),
-            Err(error) => convergence.blocked.push((identity, error.to_string())),
+        match remove_lines(&mut lines, &identity) {
+            Ok(_removed) => convergence.removed.push(identity),
+            Err(inspection) => convergence.blocked.push((identity, inspection.reason)),
         }
     }
+    let mut attached = Vec::new();
+    let mut refusals = Vec::new();
     for (identity, content) in desired {
-        let write_failure = match attach(target_file, identity, content) {
-            Ok(()) | Err(UzeError::ManagedRegionDrift(_) | UzeError::ManagedRegionConflict(_)) => {
+        match attach_lines(&mut lines, target_file, identity, content) {
+            Ok(added) => {
+                attached.push(added);
+                refusals.push(None);
+            }
+            Err(error) => {
+                attached.push(false);
+                refusals.push(Some(error));
+            }
+        }
+    }
+    let changed = !convergence.removed.is_empty() || attached.contains(&true);
+    let written = if changed {
+        write_lines(target_file, &lines).map_err(|error| error.to_string())
+    } else {
+        Ok(())
+    };
+    let on_disk = match (&written, changed || existed) {
+        (Ok(()), true) => Some(lines.as_slice()),
+        (Err(_), _) if existed => Some(read.as_slice()),
+        _ => None,
+    };
+    if let Err(failure) = &written {
+        for identity in std::mem::take(&mut convergence.removed) {
+            convergence.blocked.push((identity, failure.clone()));
+        }
+    }
+    for (((identity, content), added), refusal) in desired.iter().zip(attached).zip(refusals) {
+        let inspection = inspect_lines(on_disk, identity, content);
+        let write_failure = match (refusal, &written) {
+            (None, Err(failure)) if added => Some(failure.clone()),
+            (None, _) => None,
+            (Some(UzeError::ManagedRegionDrift(_) | UzeError::ManagedRegionConflict(_)), _)
+                if matches!(
+                    inspection.state,
+                    AttachmentState::Blocked | AttachmentState::Drifted
+                ) =>
+            {
                 None
             }
-            Err(error) => Some(error.to_string()),
+            (Some(error), _) => Some(error.to_string()),
         };
         convergence.desired.push(DesiredRegion {
             identity: identity.clone(),
-            inspection: inspect(target_file, identity, content),
+            inspection,
             write_failure,
         });
     }
     convergence
 }
 
-/// The `region_identity` of every well-formed managed region currently in
-/// `target_file`, in file order. A missing or unreadable file yields an
-/// empty list.
+/// What [`converge`] reports for a file it could not read: nothing is
+/// claimed as stale, and every desired region carries the reason.
+fn unreadable_convergence(desired: &[(String, String)], error: &UzeError) -> RegionConvergence {
+    let desired = desired
+        .iter()
+        .map(|(identity, _)| {
+            let (inspection, write_failure) = if identity_is_valid(identity) {
+                (blocked(error.to_string()), error.to_string())
+            } else {
+                (
+                    invalid_identity(identity),
+                    UzeError::InvalidRegionIdentity(identity.clone()).to_string(),
+                )
+            };
+            DesiredRegion {
+                identity: identity.clone(),
+                inspection,
+                write_failure: Some(write_failure),
+            }
+        })
+        .collect();
+    RegionConvergence {
+        desired,
+        ..RegionConvergence::default()
+    }
+}
+
+/// [`inspect`] of lines already read; `None` is a file that does not exist.
+fn inspect_lines(
+    lines: Option<&[Line]>,
+    region_identity: &str,
+    expected_content: &str,
+) -> AttachmentInspection {
+    if !identity_is_valid(region_identity) {
+        return invalid_identity(region_identity);
+    }
+    let Some(lines) = lines else {
+        return target_absent();
+    };
+    let (begin_marker, end_marker) = markers(region_identity);
+    region_state(
+        lines,
+        &scan(lines, &begin_marker, &end_marker),
+        expected_content,
+    )
+}
+
+/// The `region_identity` named by every begin marker line in
+/// `target_file`, in file order — one entry per line, so an identity whose
+/// markers are duplicated or half present appears too, as often as its
+/// begin marker does. Well-formedness is deliberately not judged here:
+/// callers hand each identity to a function that proves it, and one that
+/// filtered malformed regions out would hide exactly the regions they must
+/// report as blocked. A missing or unreadable file yields an empty list.
 pub fn region_identities_present(target_file: &Path) -> Vec<String> {
     let Ok(Some((lines, _style))) = read_lines(target_file) else {
         return Vec::new();
     };
+    identities_in(&lines)
+}
+
+fn identities_in(lines: &[Line]) -> Vec<String> {
     lines
         .iter()
         .filter_map(|line| {
@@ -560,6 +740,29 @@ pub fn region_identities_present(target_file: &Path) -> Vec<String> {
         })
         .map(str::to_owned)
         .collect()
+}
+
+/// Whether two versions of a file say the same thing outside the regions
+/// UZE manages in them: the same non-blank lines, in the same order, once
+/// every well-formed region is set aside. Blank lines are not compared,
+/// because attaching a region is what adds the one that separates it.
+pub fn same_outside_managed_regions(left: &str, right: &str) -> bool {
+    authored_lines(&lines_of(left)).eq(authored_lines(&lines_of(right)))
+}
+
+fn authored_lines(lines: &[Line]) -> impl Iterator<Item = &str> {
+    let mut owned = std::collections::BTreeSet::new();
+    for identity in identities_in(lines) {
+        let (begin_marker, end_marker) = markers(&identity);
+        if let Scan::WellFormed { begin, end } = scan(lines, &begin_marker, &end_marker) {
+            owned.extend(begin..=end);
+        }
+    }
+    lines
+        .iter()
+        .enumerate()
+        .filter(move |(index, line)| !owned.contains(index) && !line.text.trim().is_empty())
+        .map(|(_, line)| line.text.as_str())
 }
 
 /// Whether `target_file` holds any content that is not part of a
@@ -573,17 +776,7 @@ pub fn has_content_outside_managed_regions(target_file: &Path) -> bool {
     let Ok(Some((lines, _style))) = read_lines(target_file) else {
         return false;
     };
-    let mut owned = std::collections::BTreeSet::new();
-    for identity in region_identities_present(target_file) {
-        let (begin_marker, end_marker) = markers(&identity);
-        if let Scan::WellFormed { begin, end } = scan(&lines, &begin_marker, &end_marker) {
-            owned.extend(begin..=end);
-        }
-    }
-    lines
-        .iter()
-        .enumerate()
-        .any(|(index, line)| !owned.contains(&index) && !line.text.trim().is_empty())
+    authored_lines(&lines).next().is_some()
 }
 
 #[cfg(test)]
@@ -1070,6 +1263,100 @@ mod tests {
             AttachmentState::Blocked
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn content_carrying_a_marker_line_is_refused_and_the_file_is_untouched() {
+        let root = uze_testkit::temp::scratch("marker-content");
+        let file = root.join("NOTES.md");
+        fs::create_dir_all(&root).unwrap();
+        attach(&file, "package:b:instructions", "B").unwrap();
+        let before = fs::read_to_string(&file).unwrap();
+
+        let smuggled = "intro\n<!-- uze:end package:b:instructions -->\ntail";
+        let refusal = attach(&file, "package:a:instructions", smuggled).unwrap_err();
+
+        assert!(matches!(
+            refusal,
+            UzeError::ManagedRegionContentCarriesMarker { .. }
+        ));
+        assert!(refusal.to_string().starts_with(
+            "the instructions for `package:a:instructions` contain a line UZE uses as a region \
+             marker (`<!-- uze:begin …` / `<!-- uze:end …`); remove it from the plugin's content"
+        ));
+
+        assert_eq!(fs::read_to_string(&file).unwrap(), before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn converge_removes_the_stale_and_creates_the_desired_around_user_text() {
+        let root = uze_testkit::temp::scratch("converge");
+        let file = root.join("NOTES.md");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&file, "user text\n").unwrap();
+        attach(&file, "package:gone:instructions", "old").unwrap();
+        attach(&file, "package:kept:instructions", "kept").unwrap();
+        let owns = |identity: &str| identity.starts_with("package:");
+
+        let convergence = converge(
+            &file,
+            owns,
+            &[
+                ("package:kept:instructions".to_owned(), "kept".to_owned()),
+                ("package:new:instructions".to_owned(), "new".to_owned()),
+                (
+                    "package:bad:instructions".to_owned(),
+                    "<!-- uze:begin package:x:instructions -->".to_owned(),
+                ),
+            ],
+        );
+
+        assert_eq!(convergence.removed, vec!["package:gone:instructions"]);
+        assert!(convergence.blocked.is_empty());
+        let states: Vec<_> = convergence
+            .desired
+            .iter()
+            .map(|region| (region.inspection.state, region.write_failure.is_some()))
+            .collect();
+        assert_eq!(
+            states,
+            vec![
+                (AttachmentState::Matched, false),
+                (AttachmentState::Matched, false),
+                (AttachmentState::Missing, true),
+            ]
+        );
+        assert!(
+            convergence.desired[2]
+                .write_failure
+                .as_deref()
+                .is_some_and(|failure| failure.contains("region marker"))
+        );
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "user text\n\
+             <!-- uze:begin package:kept:instructions -->\nkept\n<!-- uze:end package:kept:instructions -->\n\
+             <!-- uze:begin package:new:instructions -->\nnew\n<!-- uze:end package:new:instructions -->\n"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn converge_on_a_missing_file_with_nothing_to_create_leaves_it_missing() {
+        let root = uze_testkit::temp::scratch("converge-absent");
+        let file = root.join("NOTES.md");
+        let convergence = converge(
+            &file,
+            |_| true,
+            &[("has spaces".to_owned(), "x".to_owned())],
+        );
+        assert!(!file.exists());
+        assert_eq!(
+            convergence.desired[0].inspection.state,
+            AttachmentState::Blocked
+        );
+        assert!(convergence.desired[0].write_failure.is_some());
     }
 
     #[test]

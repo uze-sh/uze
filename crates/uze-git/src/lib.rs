@@ -69,6 +69,16 @@ pub mod repository;
 /// is reported rather than waited on forever.
 pub const DEFAULT_WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long a command that talks to a remote may run. A stalled connection
+/// otherwise holds the write lock — and every write queued behind it —
+/// for as long as the network cares to stay silent; this is generous
+/// enough that a large push over a slow link is never the one cut off.
+pub const NETWORK_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// The subcommands that reach a remote, and with it an SSH that may want a
+/// passphrase or a host-key answer.
+const NETWORK_SUBCOMMANDS: &[&str] = &["fetch", "pull", "push", "clone", "ls-remote"];
+
 /// Git could not be run at all. A Git that ran and disagreed with the
 /// caller is an [`Output`], not this.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -128,7 +138,7 @@ impl Output {
 pub fn read(root: &Path, args: &[&str]) -> Result<Output, SpawnError> {
     let mut command = base_command(root, args);
     command.env("GIT_OPTIONAL_LOCKS", "0");
-    run(command)
+    run(command, args)
 }
 
 /// Runs a Git command that changes the repository, under the repository
@@ -142,7 +152,7 @@ pub fn write(root: &Path, args: &[&str]) -> Result<Output, SpawnError> {
 /// ran.
 pub fn write_within(root: &Path, args: &[&str], timeout: Duration) -> Result<Output, SpawnError> {
     let _held = lock::acquire(root, timeout)?;
-    run(base_command(root, args))
+    run(base_command(root, args), args)
 }
 
 /// [`write`] for a command that reads its input rather than its
@@ -162,15 +172,18 @@ pub fn write_with_stdin(root: &Path, args: &[&str], input: &str) -> Result<Outpu
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     let mut child = command.spawn().map_err(describe_spawn_failure)?;
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(input.as_bytes())
-            .map_err(describe_spawn_failure)?;
-    }
-    // Dropped before waiting: a `git apply` reads until end of input, and
-    // a pipe still open is an input that has not ended.
-    drop(child.stdin.take());
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let input = input.to_owned();
+    // Fed from its own thread while this one drains stdout and stderr: a
+    // Git that answers before it has read everything would otherwise fill
+    // its output pipe and wait on us while we wait on it. The pipe closes
+    // when the thread ends, and a `git apply` reads until end of input.
+    let feeder = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
     let output = child.wait_with_output().map_err(describe_spawn_failure)?;
+    feeder
+        .join()
+        .unwrap_or_else(|_| Err(io::Error::other("the input writer panicked")))
+        .map_err(describe_spawn_failure)?;
     Ok(Output {
         code: output.status.code(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -189,7 +202,7 @@ pub fn write_with_env(
     let _held = lock::acquire(root, DEFAULT_WRITE_TIMEOUT)?;
     let mut command = base_command(root, args);
     command.envs(env.iter().copied());
-    run(command)
+    run(command, args)
 }
 
 /// Runs `body` with the repository write lock held throughout, so the
@@ -212,20 +225,67 @@ fn base_command(root: &Path, args: &[&str]) -> Command {
     // answer: nothing here is attached to a terminal the operator can see.
     command.env("GIT_TERMINAL_PROMPT", "0");
     command.stdin(Stdio::null());
+    if reaches_a_remote(args) {
+        detach_from_terminal(&mut command);
+    }
     command
 }
 
-fn run(mut command: Command) -> Result<Output, SpawnError> {
-    let arguments = command
-        .get_args()
-        .map(|argument| argument.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(" ");
+/// Whether `args` run one of [`NETWORK_SUBCOMMANDS`], skipping the global
+/// options Git accepts before its subcommand.
+fn reaches_a_remote(args: &[&str]) -> bool {
+    let mut remaining = args.iter();
+    while let Some(argument) = remaining.next() {
+        match *argument {
+            "-c" | "-C" | "--git-dir" | "--work-tree" | "--namespace" => {
+                remaining.next();
+            }
+            option if option.starts_with('-') => {}
+            subcommand => return NETWORK_SUBCOMMANDS.contains(&subcommand),
+        }
+    }
+    false
+}
+
+/// Starts the command in a session of its own, with no controlling
+/// terminal. `GIT_TERMINAL_PROMPT` silences Git, not the SSH it runs, and
+/// an SSH wanting a passphrase or a host-key answer opens `/dev/tty`
+/// directly — which, under the workspace client, is the raw-mode terminal
+/// the operator is typing into. Without one to open, it fails and says so.
+#[cfg(unix)]
+fn detach_from_terminal(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: `setsid` is async-signal-safe and touches no memory of the
+    // parent, which is all a `pre_exec` hook may do between fork and exec.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn detach_from_terminal(_command: &mut Command) {}
+
+fn run(command: Command, args: &[&str]) -> Result<Output, SpawnError> {
+    if reaches_a_remote(args) {
+        run_within(command, NETWORK_TIMEOUT)
+    } else {
+        run_to_completion(command)
+    }
+}
+
+fn run_to_completion(mut command: Command) -> Result<Output, SpawnError> {
+    let arguments = arguments_of(&command);
     // Debug, not info: this is *how* an operation was carried out, and at
     // the TUI's refresh cadences it is carried out tens of thousands of
     // times an hour. A journal recording each one buries the thing that
     // asked — which is what the journal is for — under its own machinery.
-    // The operation's own span still carries what it cost; `UZE_LOG=    // uze_git=debug` brings every invocation back.
+    // The operation's own span still carries what it cost;
+    // `UZE_LOG=uze_git=debug` brings every invocation back.
     let span = tracing::debug_span!("git", args = %arguments, exit = tracing::field::Empty);
     let _entered = span.enter();
     let output = command.output().map_err(|error| {
@@ -239,6 +299,82 @@ fn run(mut command: Command) -> Result<Output, SpawnError> {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     })
+}
+
+/// [`run_to_completion`] for a command that may never end on its own: past
+/// `limit` its whole process group — Git and the SSH it started, which
+/// [`detach_from_terminal`] put in a session of their own — is killed and
+/// reaped, and the wait is reported rather than continued.
+#[cfg(unix)]
+fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnError> {
+    use std::time::Instant;
+
+    let span =
+        tracing::debug_span!("git", args = %arguments_of(&command), exit = tracing::field::Empty);
+    let _entered = span.enter();
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(describe_spawn_failure)?;
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+    let deadline = Instant::now() + limit;
+    let mut pause = Duration::from_millis(5);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(pause);
+                pause = (pause * 2).min(Duration::from_millis(100));
+            }
+            outcome => {
+                // Still unreaped here, so the group id cannot yet belong to
+                // anybody else.
+                let group = child.id() as libc::pid_t;
+                // SAFETY: `kill` takes no pointers; a negative pid names the
+                // process group `setsid` made this child the leader of.
+                unsafe { libc::kill(-group, libc::SIGKILL) };
+                let _ = child.wait();
+                return Err(match outcome {
+                    Err(error) => describe_spawn_failure(error),
+                    Ok(_) => SpawnError(format!(
+                        "git did not finish within {}s and was stopped",
+                        limit.as_secs()
+                    )),
+                });
+            }
+        }
+    };
+    span.record("exit", status.code().unwrap_or(-1));
+    Ok(Output {
+        code: status.code(),
+        stdout: String::from_utf8_lossy(&stdout.join().unwrap_or_default()).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr.join().unwrap_or_default()).into_owned(),
+    })
+}
+
+/// Reads a child's pipe to its end on a thread of its own, so neither
+/// pipe can fill while the other is being read.
+#[cfg(unix)]
+fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_end(&mut bytes);
+        }
+        bytes
+    })
+}
+
+#[cfg(not(unix))]
+fn run_within(command: Command, _limit: Duration) -> Result<Output, SpawnError> {
+    run_to_completion(command)
+}
+
+fn arguments_of(command: &Command) -> String {
+    command
+        .get_args()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn describe_spawn_failure(error: io::Error) -> SpawnError {
@@ -347,6 +483,71 @@ mod tests {
             .successful()
             .unwrap();
         root
+    }
+
+    #[test]
+    fn a_subcommand_that_reaches_a_remote_is_found_past_the_global_options() {
+        assert!(reaches_a_remote(&["fetch", "--quiet", "origin"]));
+        assert!(reaches_a_remote(&["-c", "http.proxy=x", "push", "origin"]));
+        assert!(reaches_a_remote(&["--no-pager", "-C", "push", "ls-remote"]));
+        assert!(!reaches_a_remote(&["-c", "fetch.prune=true", "status"]));
+        assert!(!reaches_a_remote(&["log", "push"]));
+        assert!(!reaches_a_remote(&[]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_command_past_its_limit_is_stopped_and_reported() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30 & sleep 30"]);
+        detach_from_terminal(&mut command);
+        let started = Instant::now();
+
+        let outcome = run_within(command, Duration::from_millis(200));
+
+        assert!(
+            outcome.is_err_and(|error| error.0.contains("did not finish")),
+            "a stalled remote is reported, not waited on"
+        );
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_push_to_a_local_remote_still_runs_to_completion() {
+        let _environment = uze_testkit::env::scope();
+        let root = repository("git-network-push");
+        let remote = uze_testkit::temp::scratch("git-network-remote");
+        write(&remote, &["init", "-q", "--bare", "."])
+            .unwrap()
+            .successful()
+            .unwrap();
+        let remote_path = remote.to_str().unwrap();
+
+        write(&root, &["push", "--quiet", remote_path, "main"])
+            .unwrap()
+            .successful()
+            .unwrap();
+
+        assert!(
+            read(
+                &remote,
+                &["rev-parse", "--verify", "--quiet", "refs/heads/main"]
+            )
+            .unwrap()
+            .is_success()
+        );
+    }
+
+    #[test]
+    fn input_larger_than_a_pipe_is_fed_while_the_output_is_read() {
+        let _environment = uze_testkit::env::scope();
+        let root = repository("git-stdin-large");
+        let input = "x".repeat(1 << 20);
+
+        let output = write_with_stdin(&root, &["hash-object", "--stdin"], &input).unwrap();
+
+        assert!(output.is_success());
+        assert_eq!(output.stdout.trim().len(), 40);
     }
 
     /// The whole reason this layer exists: the same exit code means

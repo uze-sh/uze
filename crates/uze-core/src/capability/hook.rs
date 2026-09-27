@@ -390,7 +390,6 @@ pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
                     &format!("hook `{id}` transforms input but is not PreToolUse"),
                 );
             }
-            let has_matcher = group.matcher.is_some();
             let matchers = match group.matcher {
                 Some(matcher) => matcher
                     .split('|')
@@ -402,9 +401,6 @@ pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
                     })?,
                 None => Vec::new(),
             };
-            if has_matcher && matchers.is_empty() {
-                return invalid(path, &format!("hook `{id}` has an empty matcher"));
-            }
             for handler in &group.hooks {
                 if handler.command.trim().is_empty() {
                     return invalid(path, &format!("hook `{id}` has an empty command"));

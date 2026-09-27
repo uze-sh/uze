@@ -273,7 +273,7 @@ impl Attach<'_> {
             return Flow::Continue;
         }
         let surface = chrome.map_or(
-            crate::ui::management::modal_area(Rect::new(
+            crate::ui::widget::modal::area(Rect::new(
                 0,
                 0,
                 viewport.size.width,
@@ -283,7 +283,7 @@ impl Attach<'_> {
         );
         // A width dragged inside the modal is measured against the
         // rectangle its contents were drawn in.
-        let inner = crate::ui::management::modal_surface(surface);
+        let inner = crate::ui::widget::modal::inside(surface);
         let intent = self
             .model
             .manage
@@ -366,8 +366,8 @@ impl Attach<'_> {
             Scope::Rename
         } else if self.model.agent_picker.is_some() {
             Scope::AgentPicker
-        } else if self.model.preserved.is_some() {
-            Scope::PreservedWork
+        } else if self.model.work.is_some() {
+            Scope::Work
         } else if self.model.context_menu.is_some() {
             Scope::ContextMenu
         } else if self
@@ -448,9 +448,9 @@ impl Attach<'_> {
         } else if self.model.context_menu.is_some() {
             self.model.context_menu = None;
             self.model.dirty = true;
-        } else if let Some(overlay) = self.model.preserved.as_mut() {
+        } else if let Some(work) = self.model.work.as_mut() {
             // A key that is not the confirmation withdraws the question.
-            overlay.confirm_discard = false;
+            work.withdraw();
             self.model.dirty = true;
         } else if self.model.no_modal_open() {
             self.pane_key(key, chord);
@@ -509,7 +509,7 @@ impl Attach<'_> {
             Action::NewAgent => self.model.agent_picker.is_some() || self.model.placement_pending,
             Action::NextAgent => self.asked_for_a_tab,
             Action::ToggleChanges | Action::ToggleFiles => self.model.code.is_some(),
-            Action::TogglePreservedWork => self.model.preserved.is_some(),
+            Action::ToggleWork => self.model.work.is_some(),
             Action::OpenActionIndex => self.model.action_index.is_some(),
             _ => false,
         }
@@ -548,7 +548,7 @@ impl Attach<'_> {
             match modal.act(action) {
                 Outcome::None => {}
                 Outcome::Close => self.model.release_notes = None,
-                Outcome::OpenLink(url) => open_link(url),
+                Outcome::OpenLink(url) => crate::ui::worker::open_link(url, |_, _| {}),
             }
             self.model.dirty = true;
             return Flow::Continue;
@@ -565,8 +565,8 @@ impl Attach<'_> {
             self.agent_picker_action(action);
             return Flow::Continue;
         }
-        if self.model.preserved.is_some() {
-            self.preserved_action(action);
+        if self.model.work.is_some() {
+            self.work_action(action, viewport);
             return Flow::Continue;
         }
         if self.model.context_menu.is_some() {
@@ -659,22 +659,13 @@ impl Attach<'_> {
                     self.model.set_busy_notice("delivering all".to_owned());
                 }
             }
-            Action::TogglePreservedWork => {
-                self.model.preserved = match self.model.preserved {
-                    Some(_) => None,
-                    None => {
-                        // Asked for on opening, and drawn from the last
-                        // answer while this one is out: an empty list that
-                        // fills a moment later reads as work having been
-                        // lost, which is the opposite of what this says.
-                        self.sweep_preserved_work();
-                        Some(PreservedOverlay {
-                            selected: 0,
-                            confirm_discard: false,
-                        })
-                    }
-                };
-                self.model.dirty = true;
+            Action::ToggleWork => {
+                let project = self
+                    .model
+                    .session
+                    .as_ref()
+                    .map(|session| uze_application::slot_key(&session.selected_space().root));
+                self.open_work(project);
             }
             _ => {}
         }
@@ -938,80 +929,384 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// The preserved-work list: tasks holding work no live tab is in
-    /// front of, with resume and a confirmed discard.
-    fn preserved_action(&mut self, action: Action) {
-        let preserved = self.model.preserved_tasks();
-        let overlay = self.model.preserved.as_mut().expect("guarded");
+    /// The work modal: moving between its projects and its rows, closing
+    /// it, and everything asked of the row in front.
+    pub(super) fn work_action(&mut self, action: Action, viewport: &Viewport) {
+        let Some(work) = self.model.work.as_mut() else {
+            return;
+        };
         match action {
-            Action::Dismiss => self.model.preserved = None,
-            Action::SelectPrevious => {
-                overlay.selected = overlay.selected.saturating_sub(1);
-                overlay.confirm_discard = false;
+            Action::ToggleWork => self.model.work = None,
+            Action::NextProject | Action::PreviousProject => {
+                self.step_project(action == Action::NextProject);
             }
+            Action::Dismiss => {
+                if !work.withdraw() {
+                    self.model.work = None;
+                }
+            }
+            _ => self.row_action(action, viewport),
+        }
+        self.model.dirty = true;
+    }
+
+    /// Opens the work modal on the project `key` names or, with none, on
+    /// the first that needs the operator. Preserved work is swept again and
+    /// the project in front is read; each is drawn from its last answer
+    /// while the new one is out, since an empty list that fills a moment
+    /// later reads as work having been lost.
+    pub(super) fn open_work(&mut self, key: Option<PathBuf>) {
+        self.sweep_preserved_work();
+        self.model.work = Some(WorkOverlay::open(key));
+        self.read_front_project();
+        self.model.dirty = true;
+    }
+
+    /// The project in front and its rows, as the modal draws them.
+    fn work_in_front(&self) -> Option<(Project, Vec<WorkRow>)> {
+        let overlay = self.model.work.as_ref()?;
+        let (_, project) = front(&self.model, overlay)?;
+        let rows = rows_of(&self.model, overlay, &project);
+        Some((project, rows))
+    }
+
+    /// Reads the checkouts of the project in front, the first time it is.
+    fn read_front_project(&mut self) {
+        let Some((project, _)) = self.work_in_front() else {
+            return;
+        };
+        let read = self
+            .model
+            .work
+            .as_ref()
+            .is_some_and(|work| work.reads.contains_key(&project.key));
+        if !read {
+            self.read_project(project.key);
+        }
+    }
+
+    /// Asks for `key`'s checkouts again, whether or not a read of it is
+    /// out: the answer to the earlier one is dropped when it lands.
+    fn read_project(&mut self, key: PathBuf) {
+        let occupied: Vec<PathBuf> = self
+            .model
+            .remembered
+            .occupied_checkouts
+            .iter()
+            .cloned()
+            .collect();
+        let Some(work) = self.model.work.as_mut() else {
+            return;
+        };
+        self.model.remembered.checkouts_asked += 1;
+        let asked = self.model.remembered.checkouts_asked;
+        work.reads
+            .entry(key.clone())
+            .and_modify(|read| {
+                read.asked = asked;
+                read.pending = true;
+            })
+            .or_insert(ProjectRead {
+                asked,
+                pending: true,
+                answer: None,
+            });
+        spawn_checkouts(
+            self.home,
+            key,
+            asked,
+            occupied,
+            self.channels.checkouts.sender.clone(),
+        );
+    }
+
+    /// Reads again every project the modal has read that `path` names,
+    /// after something changed what it holds.
+    fn read_again(&mut self, path: &Path) {
+        let keys: Vec<PathBuf> = self
+            .model
+            .work
+            .as_ref()
+            .map(|work| {
+                work.reads
+                    .keys()
+                    .filter(|key| {
+                        key.as_path() == path
+                            || work.view(key).is_some_and(|view| view.primary == path)
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        for key in keys {
+            self.read_project(key);
+        }
+    }
+
+    fn step_project(&mut self, forward: bool) {
+        let Some(work) = self.model.work.as_ref() else {
+            return;
+        };
+        let projects = projects(&self.model, work);
+        let count = projects.len();
+        if count == 0 {
+            return;
+        }
+        let current = front(&self.model, work).map_or(0, |(index, _)| index);
+        let next = if forward {
+            (current + 1) % count
+        } else {
+            (current + count - 1) % count
+        };
+        self.select_project(projects[next].key.clone());
+    }
+
+    pub(super) fn select_project(&mut self, key: PathBuf) {
+        if let Some(work) = self.model.work.as_mut() {
+            work.withdraw();
+            if work.project.as_ref() != Some(&key) {
+                work.selected = 0;
+            }
+            work.project = Some(key);
+        }
+        self.read_front_project();
+    }
+
+    /// Keeps the selection on a row after the list changed under it.
+    fn keep_work_selection(&mut self) {
+        let count = self.work_in_front().map_or(0, |(_, rows)| rows.len());
+        if let Some(work) = self.model.work.as_mut() {
+            work.selected = work.selected.min(count.saturating_sub(1));
+        }
+    }
+
+    fn ask_about_work(&mut self, question: WorkQuestion) {
+        if let Some(work) = self.model.work.as_mut() {
+            work.asking = Some(question);
+        }
+    }
+
+    /// Anything asked of the list: walking it, answering its question,
+    /// cleaning up, or acting on the row in front. A key moves on from a
+    /// question it does not answer.
+    fn row_action(&mut self, action: Action, viewport: &Viewport) {
+        let Some((project, rows)) = self.work_in_front() else {
+            return;
+        };
+        let Some(work) = self.model.work.as_mut() else {
+            return;
+        };
+        let asking = work.asking.take();
+        let row = rows.get(work.selected).cloned();
+        let answered = work.view(&project.key).is_some();
+        match action {
             Action::SelectNext => {
-                overlay.selected = (overlay.selected + 1).min(preserved.len().saturating_sub(1));
-                overlay.confirm_discard = false;
+                work.selected = (work.selected + 1).min(rows.len().saturating_sub(1));
             }
-            Action::DeliverTask => {
-                if let Some(work) = preserved.get(overlay.selected) {
-                    self.model
-                        .remembered
-                        .delivery_pending
-                        .insert(work.id.clone());
-                    spawn_delivery(
-                        self.home,
-                        work.project.clone(),
-                        Some(work.id.clone()),
-                        self.channels.deliveries.sender.clone(),
+            Action::SelectPrevious => work.selected = work.selected.saturating_sub(1),
+            Action::ConfirmDiscard => {
+                if let Some(question) = asking {
+                    self.go_ahead(question, &project, row.as_ref());
+                }
+            }
+            Action::CleanUpCheckouts => {
+                if rows
+                    .iter()
+                    .filter_map(|row| row.checkout.as_ref())
+                    .any(cleaned_up)
+                {
+                    self.ask_about_work(WorkQuestion::CleanUp);
+                } else if answered {
+                    self.model.raise_toast(
+                        ToastKind::Told,
+                        "nothing to clean up",
+                        "no checkout of yours is clean, unused and in the target",
+                        None,
                     );
                 }
             }
-            Action::FinishTask => {
-                if let Some(work) = preserved.get(overlay.selected) {
-                    self.mutate_preserved(work, WorkMutation::Finish);
+            _ => {
+                if let Some(row) = row {
+                    self.act_on_row(action, row, viewport);
+                }
+            }
+        }
+    }
+
+    /// One action on the row in front. A row it does not apply to says
+    /// why at once, rather than leaving the key to look broken.
+    fn act_on_row(&mut self, action: Action, row: WorkRow, viewport: &Viewport) {
+        let title = row.title().to_owned();
+        let refuse = |model: &mut WorkspaceModel, heading: &str, why: String| {
+            model.raise_toast(ToastKind::Failed, heading, format!("{title}: {why}"), None);
+        };
+        let not_a_task = "it holds no task of UZE's, only a checkout".to_owned();
+        match (action, &row.task, &row.checkout) {
+            (Action::Activate, ..) => {
+                if let Some(directory) = row.directory() {
+                    let directory = directory.to_path_buf();
+                    self.model.work = None;
+                    self.open_space_at(directory, viewport.columns, viewport.rows);
                 }
             }
             // Placement answers with the task's own slot when it still has
             // one, and otherwise gives it a slot again on its own branch — a
             // checkout removed by hand took only the uncommitted work.
             // Either way the launch carries the task's identity.
-            Action::ResumeTask => {
-                if let Some(work) = preserved.get(overlay.selected) {
-                    let resume = ResumeTarget {
-                        primary: work.project.clone(),
-                        task: work.id.clone(),
-                        // Asked for from the list, not from a row: there is
-                        // no dead tab behind it.
-                        replacing: None,
-                    };
-                    self.model.preserved = None;
-                    self.offer_agents(Rect::default(), Some(resume));
-                }
+            (Action::ResumeTask, Some(task), _) => {
+                let resume = ResumeTarget {
+                    primary: task.project.clone(),
+                    task: task.id.clone(),
+                    // Asked for from the list, not from a row: there is no
+                    // dead tab behind it.
+                    replacing: None,
+                };
+                self.model.work = None;
+                self.offer_agents(Rect::default(), Some(resume));
             }
-            // Discard is the one action that deletes work, so
-            // it is the one that asks twice.
-            Action::DiscardTask => overlay.confirm_discard = true,
-            Action::ConfirmDiscard if overlay.confirm_discard => {
-                overlay.confirm_discard = false;
-                let selected = overlay.selected;
-                if let Some(work) = preserved.get(selected) {
-                    self.mutate_preserved(work, WorkMutation::Discard);
-                }
+            (Action::DeliverTask, Some(task), _) => {
+                self.model
+                    .remembered
+                    .delivery_pending
+                    .insert(task.id.clone());
+                spawn_delivery(
+                    self.home,
+                    task.project.clone(),
+                    Some(task.id.clone()),
+                    self.channels.deliveries.sender.clone(),
+                );
             }
-            _ => overlay.confirm_discard = false,
+            (Action::FinishTask, Some(task), _) => {
+                let task = task.clone();
+                self.mutate_preserved(&task, WorkMutation::Finish);
+            }
+            (Action::ResumeTask, None, _) => refuse(&mut self.model, "not resumed", not_a_task),
+            (Action::DeliverTask, None, _) => refuse(&mut self.model, "not delivered", not_a_task),
+            (Action::FinishTask, None, _) => refuse(&mut self.model, "not marked done", not_a_task),
+            (Action::JoinCheckout, _, Some(checkout)) if join_of(checkout).is_some() => {
+                self.ask_about_work(WorkQuestion::Join);
+            }
+            (Action::JoinCheckout, _, checkout) => refuse(
+                &mut self.model,
+                "not joined",
+                checkout.as_ref().map_or_else(
+                    || "only a subagent's checkout joins into its agent".to_owned(),
+                    join_refusal,
+                ),
+            ),
+            (Action::AdoptCheckout, None, Some(checkout)) if checkout.adoptable => {
+                self.ask_about_work(WorkQuestion::Adopt);
+            }
+            (Action::AdoptCheckout, ..) => refuse(
+                &mut self.model,
+                "not adopted",
+                "only a checkout of yours directly under .worktrees/ can be adopted".to_owned(),
+            ),
+            (Action::DiscardTask, Some(_), _) => self.ask_about_work(WorkQuestion::Discard),
+            (Action::DiscardTask, None, Some(checkout)) => match &checkout.removal_refusal {
+                Some(reason) => refuse(&mut self.model, "not removed", reason.clone()),
+                None => self.ask_about_work(WorkQuestion::Remove),
+            },
+            _ => {}
         }
-        self.model.dirty = true;
     }
 
-    /// Finishes or discards one preserved task, off this thread.
-    ///
-    /// Reserved under the task's own id, because a discard removes a
-    /// whole checkout and a second Enter arriving while the first removal
-    /// is still walking it must not start another. The busy notice is the
-    /// only thing said until the answer lands: unlike a delivery there is
-    /// no button drawn for this, so silence would read as the key doing
-    /// nothing.
+    /// Makes the change the modal asked about, now that it is confirmed.
+    fn go_ahead(&mut self, question: WorkQuestion, project: &Project, row: Option<&WorkRow>) {
+        let checkout = row.and_then(|row| row.checkout.as_ref());
+        let change = match question {
+            WorkQuestion::Discard => {
+                if let Some(task) = row.and_then(|row| row.task.clone()) {
+                    self.mutate_preserved(&task, WorkMutation::Discard);
+                }
+                None
+            }
+            WorkQuestion::Remove => checkout.map(|checkout| CheckoutChange::Remove {
+                path: checkout.path.clone(),
+                name: checkout.name.clone(),
+            }),
+            WorkQuestion::Adopt => checkout.map(|checkout| CheckoutChange::Adopt {
+                path: checkout.path.clone(),
+                name: checkout.name.clone(),
+            }),
+            WorkQuestion::Join => checkout.and_then(join_of),
+            WorkQuestion::CleanUp => Some(CheckoutChange::CleanUp),
+        };
+        if let Some(change) = change {
+            self.change_checkouts(project.key.clone(), change);
+        }
+    }
+
+    /// Makes one change to `project`'s checkouts, off this thread. One at
+    /// a time: a second started while the first is still removing
+    /// directories would inspect what the first is taking away.
+    fn change_checkouts(&mut self, project: PathBuf, change: CheckoutChange) {
+        if std::mem::replace(&mut self.model.remembered.checkout_change_pending, true) {
+            return;
+        }
+        self.model.set_busy_notice(match &change {
+            CheckoutChange::Adopt { name, .. } => format!("adopting {name}"),
+            CheckoutChange::Remove { name, .. } => format!("removing {name}"),
+            CheckoutChange::Join { topic, parent, .. } => format!("joining {topic} into {parent}"),
+            CheckoutChange::CleanUp => "cleaning up checkouts".to_owned(),
+        });
+        spawn_checkout_change(
+            self.home,
+            project,
+            change,
+            self.model
+                .remembered
+                .occupied_checkouts
+                .iter()
+                .cloned()
+                .collect(),
+            self.channels.checkout_changes.sender.clone(),
+        );
+    }
+
+    /// A read of a project's checkouts, kept only while it answers the
+    /// last question asked about that project in the open modal.
+    fn absorb_checkouts(&mut self) {
+        while let Ok(resolution) = self.channels.checkouts.receiver.try_recv() {
+            let Some(read) = self
+                .model
+                .work
+                .as_mut()
+                .and_then(|work| work.reads.get_mut(&resolution.project))
+                .filter(|read| read.asked == resolution.asked)
+            else {
+                continue;
+            };
+            read.pending = false;
+            read.answer = Some(resolution.view);
+            self.keep_work_selection();
+            self.model.dirty = true;
+        }
+    }
+
+    /// Changes to the checkouts that ended, each said either way; the
+    /// project, the preserved work and the project's tasks are read again,
+    /// since a slot may have come or gone and a join changes what an agent
+    /// holds.
+    fn absorb_checkout_changes(&mut self) {
+        while let Ok(resolution) = self.channels.checkout_changes.receiver.try_recv() {
+            self.model.remembered.checkout_change_pending = false;
+            self.model.clear_busy_notice();
+            let (kind, title, detail) = describe_change(&resolution.outcome);
+            self.model.raise_toast(kind, title, detail, None);
+            self.read_again(&resolution.project);
+            if matches!(resolution.outcome, CheckoutOutcome::Joined { .. }) {
+                self.sweep_preserved_work();
+            }
+            self.model.schedule_evaluation(
+                self.home,
+                resolution.project,
+                &self.channels.tasks.sender,
+            );
+            self.model.dirty = true;
+        }
+    }
+
     /// Re-reads every project's preserved work, off the UI thread.
     ///
     /// Asked once at a time: the sweep opens `$UZE_HOME` and walks every
@@ -1613,6 +1908,33 @@ impl Attach<'_> {
                 self.model.status_catalog = None;
                 self.model.dirty = true;
             }
+            _ if self.model.work.is_some() => {
+                match self.model.hit_at(mouse.column, mouse.row) {
+                    Some(WorkspaceHit::WorkRow(index)) => {
+                        if let Some(work) = self.model.work.as_mut() {
+                            work.withdraw();
+                            work.selected = index;
+                        }
+                    }
+                    Some(WorkspaceHit::WorkProject(index)) => {
+                        let key = self.model.work.as_ref().and_then(|work| {
+                            projects(&self.model, work)
+                                .into_iter()
+                                .nth(index)
+                                .map(|project| project.key)
+                        });
+                        if let Some(key) = key {
+                            self.select_project(key);
+                        }
+                    }
+                    Some(WorkspaceHit::WorkAction(action)) => self.work_action(action, viewport),
+                    Some(WorkspaceHit::WorkBody) => {}
+                    // The close mark, and a click outside the modal, close
+                    // it the way they close every other dialog here.
+                    _ => self.model.work = None,
+                }
+                self.model.dirty = true;
+            }
             _ if self.model.context_menu.is_some() => {
                 // `.rev()`: the popup renders last, so its own rows sit
                 // at the tail of `hits` — searching forward could match
@@ -1622,18 +1944,7 @@ impl Attach<'_> {
                 // which is what made the popup's own click feel
                 // intermittent — it depended on which row was
                 // right-clicked, not on timing).
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .rev()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(_, hit)| *hit);
+                let hit = hit_at(&self.model, mouse.column, mouse.row);
                 let action = match hit {
                     Some(WorkspaceHit::ContextMenuAction(index)) => self
                         .model
@@ -1658,17 +1969,7 @@ impl Attach<'_> {
                 self.architect_press(mouse.column, mouse.row);
             }
             _ if self.model.code.is_some() && in_pane => {
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(rect, hit)| (*rect, *hit));
+                let hit = self.model.hit_rect_at(mouse.column, mouse.row);
                 // Mirrors `WorkspaceHit::ResizeSidebar` below: arms
                 // dragging instead of reaching the extension, which only
                 // knows about `ExtensionHit`s that are its own — the
@@ -2027,17 +2328,7 @@ impl Attach<'_> {
                 // already are) so right-clicking a different row while
                 // a menu is open can't silently swap its target instead
                 // of requiring the open menu be dismissed first.
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(_, hit)| *hit);
+                let hit = self.model.hit_at(mouse.column, mouse.row);
                 // Anchored to the cursor itself, not the clicked row's
                 // rect — a row spans the sidebar's full width, so
                 // anchoring to `rect.x` always opened the menu at the
@@ -2057,7 +2348,11 @@ impl Attach<'_> {
                     WorkspaceHit::SelectSpace(space) | WorkspaceHit::ToggleSpaceCollapsed(space),
                 ) = hit
                 {
-                    let items = vec![Action::RenameSelection, Action::CloseTab];
+                    let items = vec![
+                        Action::RenameSelection,
+                        Action::ShowSpaceWork,
+                        Action::CloseTab,
+                    ];
                     self.model.context_menu = Some(ContextMenu {
                         target: MenuTarget::Space(space),
                         items,
@@ -2132,18 +2427,7 @@ impl Attach<'_> {
                 // Keep this dropdown's pointer behavior aligned with the
                 // sidebar context menu: the highlighted option follows
                 // the cursor, while keyboard navigation remains intact.
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .rev()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(_, hit)| *hit);
+                let hit = hit_at(&self.model, mouse.column, mouse.row);
                 if let Some(WorkspaceHit::PickAgent(index)) = hit
                     && let Some(picker) = self.model.agent_picker.as_mut()
                     && picker.selected != index
@@ -2159,18 +2443,7 @@ impl Attach<'_> {
                 // marks the frame dirty when the hover actually moved
                 // onto a different row, so waving the mouse across the
                 // rest of the screen doesn't force a redraw every tick.
-                let hit = self
-                    .model
-                    .hits
-                    .iter()
-                    .rev()
-                    .find(|(rect, _)| {
-                        rect.x <= mouse.column
-                            && mouse.column < rect.x + rect.width
-                            && rect.y <= mouse.row
-                            && mouse.row < rect.y + rect.height
-                    })
-                    .map(|(_, hit)| *hit);
+                let hit = hit_at(&self.model, mouse.column, mouse.row);
                 if let Some(WorkspaceHit::ContextMenuAction(index)) = hit
                     && let Some(menu) = self.model.context_menu.as_mut()
                     && menu.selected != index
@@ -2240,6 +2513,16 @@ impl Attach<'_> {
                     Action::SelectNext
                 };
                 return self.action_index_action(action, viewport);
+            }
+            // A list in front of everything: the wheel walks it, and
+            // nothing behind the modal scrolls.
+            _ if self.model.work.is_some() => {
+                let action = if mouse.kind == MouseEventKind::ScrollUp {
+                    Action::SelectPrevious
+                } else {
+                    Action::SelectNext
+                };
+                self.work_action(action, viewport);
             }
             _ if self.model.architect.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
@@ -2562,6 +2845,13 @@ impl Attach<'_> {
                 // `DraggingSpace`).
                 self.model.dragging_space = Some(DraggingSpace::armed_at(space, mouse.row));
             }
+            // Only reachable while the work modal is open, which the
+            // guarded arm in `press` answers first.
+            WorkspaceHit::WorkProject(_)
+            | WorkspaceHit::WorkRow(_)
+            | WorkspaceHit::WorkAction(_)
+            | WorkspaceHit::WorkClose
+            | WorkspaceHit::WorkBody => {}
             WorkspaceHit::ContextMenuAction(_) => {
                 // Only reachable while the context menu is
                 // open, which the guarded arm above already
@@ -2811,13 +3101,20 @@ impl Attach<'_> {
     /// the one it took over from — because that is what moving an agent
     /// between directories is: a process cannot be told to stand
     /// somewhere else.
-    fn perform_menu_action(&mut self, target: MenuTarget, action: Action) {
+    pub(super) fn perform_menu_action(&mut self, target: MenuTarget, action: Action) {
         match action {
             Action::IsolateAgent => {
                 self.isolate_agent(target, uze_application::Carry::CopyOfChanges)
             }
             Action::IsolateAgentAtCommit => {
                 self.isolate_agent(target, uze_application::Carry::Nothing)
+            }
+            Action::ShowSpaceWork => {
+                if let MenuTarget::Space(space) = target
+                    && let Some(root) = self.model.space_root(space)
+                {
+                    self.open_work(Some(uze_application::slot_key(&root)));
+                }
             }
             _ => dispatch_menu_action(
                 &mut self.stream,
@@ -3129,11 +3426,11 @@ impl Attach<'_> {
         }
         // The modal has a clock of its own — a spinner, a status that
         // expires, answers to absorb — turned here, before the frame, for
-        // as long as it is open. Every tick redraws: the workspace behind
-        // it is still live, and the modal's own animation has no other
-        // way to advance.
-        if let Some(manage) = self.model.manage.as_mut() {
-            self.manage_memory.tick(manage, self.home);
+        // as long as it is open. It redraws when that clock moved
+        // something; the workspace behind it marks its own changes.
+        if let Some(manage) = self.model.manage.as_mut()
+            && self.manage_memory.tick(manage, self.home)
+        {
             self.model.dirty = true;
         }
         for request in adopt_task_names(&mut self.model) {
@@ -3171,8 +3468,56 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.preserved.receiver.try_recv() {
             self.model.remembered.preserved_pending = false;
             self.model.remembered.preserved_work = resolution.work;
+            // The project in front may be one only this answer names.
+            self.read_front_project();
+            self.keep_work_selection();
             self.model.dirty = true;
         }
+        self.absorb_checkouts();
+        self.absorb_checkout_changes();
+        self.absorb_task_evaluations();
+        self.absorb_deliveries();
+        self.absorb_task_mutations();
+        self.schedule_task_evaluations();
+        // Outcomes leave on their own clock, and the clock is drawn, so
+        // this pass has to run while any of them is counting — not only
+        // when one expires.
+        if self.model.retire_toasts() || self.model.toasts_are_counting() {
+            self.model.dirty = true;
+        }
+        // Contextual resolution: whatever the selection currently is, that
+        // is what must be resolved. Keyed on `(harness, cwd)`, so this
+        // fires exactly when the answer could have changed — a different
+        // agent tab selected, or the server's live probe reporting the
+        // pane moved — and never repeats for an answer already held.
+        if let Some(key) = selected_agent_context(&self.model, &self.identities)
+            && self.model.remembered.agent_support_pending.as_ref() != Some(&key)
+            && self
+                .model
+                .remembered
+                .agent_support
+                .as_ref()
+                .is_none_or(|resolution| resolution.key != key)
+        {
+            self.model.remembered.agent_support_pending = Some(key.clone());
+            spawn_support_refresh(self.home, key, self.channels.support.sender.clone());
+        }
+        self.absorb_surface_answers();
+        self.schedule_surface_reads();
+        if self.model.expire_agent_activity(Instant::now()) {
+            self.model.dirty = true;
+        }
+        if self.model.expire_press(Instant::now()) {
+            self.model.dirty = true;
+        }
+        self.turn_activity_clock();
+        Flow::Continue
+    }
+
+    /// What the task evaluations answered: branches, targets, syncs and
+    /// the tasks themselves, and any evaluation asked for again while
+    /// one was out.
+    fn absorb_task_evaluations(&mut self) {
         let mut asked_again = Vec::new();
         while let Ok(resolution) = self.channels.tasks.receiver.try_recv() {
             self.model
@@ -3266,6 +3611,11 @@ impl Attach<'_> {
             self.model
                 .schedule_evaluation(self.home, cwd, &self.channels.tasks.sender);
         }
+    }
+
+    /// Deliveries that ended, each said as an outcome, and what the owning
+    /// agent has to act on handed to its pane.
+    fn absorb_deliveries(&mut self) {
         while let Ok(resolution) = self.channels.deliveries.receiver.try_recv() {
             // Released before anything is read out of the answer: an
             // empty one is exactly the case that used to leave the task
@@ -3335,6 +3685,10 @@ impl Attach<'_> {
                 .schedule_evaluation(self.home, resolution.cwd, &self.channels.tasks.sender);
             self.model.dirty = true;
         }
+    }
+
+    /// Finishes and discards that ended, each said either way.
+    fn absorb_task_mutations(&mut self) {
         while let Ok(resolution) = self.channels.mutations.receiver.try_recv() {
             self.model
                 .remembered
@@ -3357,13 +3711,19 @@ impl Attach<'_> {
                         .raise_toast(ToastKind::Failed, error, resolution.label.clone(), None)
                 }
             }
-            self.model
-                .schedule_evaluation(self.home, resolution.cwd, &self.channels.tasks.sender);
             // A finish or a discard changes what is preserved, and the
             // list may well be the surface the operator is looking at.
             self.sweep_preserved_work();
+            self.read_again(&resolution.cwd);
+            self.model
+                .schedule_evaluation(self.home, resolution.cwd, &self.channels.tasks.sender);
             self.model.dirty = true;
         }
+    }
+
+    /// Asks the task questions that have gone stale: a pane that went
+    /// quiet, a directory named but never read, and the refresh clock.
+    fn schedule_task_evaluations(&mut self) {
         // Readiness is a Git fact, read when a pane goes quiet and, less
         // often, on a clock — never told by the agent.
         let quiet_panes = std::mem::take(&mut self.model.recently_quiet);
@@ -3419,29 +3779,11 @@ impl Attach<'_> {
             // a relaunch needs the answer.
             spawn_conversation_refresh(self.home, agent_contexts(&self.model, &self.identities));
         }
-        // Outcomes leave on their own clock, and the clock is drawn, so
-        // this pass has to run while any of them is counting — not only
-        // when one expires.
-        if self.model.retire_toasts() || self.model.toasts_are_counting() {
-            self.model.dirty = true;
-        }
-        // Contextual resolution: whatever the selection currently is, that
-        // is what must be resolved. Keyed on `(harness, cwd)`, so this
-        // fires exactly when the answer could have changed — a different
-        // agent tab selected, or the server's live probe reporting the
-        // pane moved — and never repeats for an answer already held.
-        if let Some(key) = selected_agent_context(&self.model, &self.identities)
-            && self.model.remembered.agent_support_pending.as_ref() != Some(&key)
-            && self
-                .model
-                .remembered
-                .agent_support
-                .as_ref()
-                .is_none_or(|resolution| resolution.key != key)
-        {
-            self.model.remembered.agent_support_pending = Some(key.clone());
-            spawn_support_refresh(self.home, key, self.channels.support.sender.clone());
-        }
+    }
+
+    /// What the Git badge, the release notes, the commit detail and the
+    /// code and architect surfaces' reads answered.
+    fn absorb_surface_answers(&mut self) {
         while let Ok(resolution) = self.channels.git.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_git_read(resolution);
         }
@@ -3468,6 +3810,10 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.artifacts.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_artifacts(resolution);
         }
+    }
+
+    /// Asks whatever those same surfaces now show and have not read.
+    fn schedule_surface_reads(&mut self) {
         self.model.schedule_git_read(&self.channels.git.sender);
         self.model
             .schedule_diff_read(&self.channels.code_diffs.sender);
@@ -3479,12 +3825,11 @@ impl Attach<'_> {
             .schedule_code_measure(&self.channels.code_measures.sender);
         self.model
             .schedule_artifacts_read(&self.channels.artifacts.sender);
-        if self.model.expire_agent_activity(Instant::now()) {
-            self.model.dirty = true;
-        }
-        if self.model.expire_press(Instant::now()) {
-            self.model.dirty = true;
-        }
+    }
+
+    /// Advances the activity spinner while anything it animates is on
+    /// screen.
+    fn turn_activity_clock(&mut self) {
         // The same clock drives the notice chip's spinner, the delivering
         // button's, and a caption sliding under the pointer, so it has to
         // turn for any of them even with every agent idle.
@@ -3501,16 +3846,5 @@ impl Attach<'_> {
                 self.model.dirty = true;
             }
         }
-        Flow::Continue
     }
-}
-
-/// Hands a URL to the reader's browser. That spawns a process, which is not
-/// something the thread drawing the frame should wait on.
-fn open_link(url: String) {
-    let parent = tracing::Span::current();
-    std::thread::spawn(move || {
-        let _parent = parent.enter();
-        crate::ui::worker::open_in_browser(&url);
-    });
 }

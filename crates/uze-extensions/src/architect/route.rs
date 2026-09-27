@@ -314,6 +314,7 @@ pub fn route(graph: &Graph, placement: &Placement) -> Routes {
         width: placement.width,
         usage: vec![0; grid.blocked.len()],
     };
+    let mut search = Search::new(grid.blocked.len() * 4);
     for edge in order {
         let ends = (graph.edges[edge].from, graph.edges[edge].to);
         let passage = Passage {
@@ -322,7 +323,7 @@ pub fn route(graph: &Graph, placement: &Placement) -> Routes {
         };
         let from = placement.nodes[ends.0];
         let to = placement.nodes[ends.1];
-        match shortest(&grid, graph.flow, from, to, passage) {
+        match shortest(&grid, &mut search, graph.flow, from, to, passage) {
             Some(cells) => {
                 for (position, &(x, y, heading)) in cells.iter().enumerate() {
                     let index = grid.index(x, y).expect("a routed cell is on the grid");
@@ -397,26 +398,78 @@ fn side_cost(side: usize, preferred: usize) -> i32 {
     }
 }
 
+/// A frontier entry: the estimate first, so the heap pops the most
+/// promising state, then the cost so far and the state itself.
+type Frontier = Reverse<(i32, i32, i32, i32, usize)>;
+
+/// The search's working state, one slot per cell and heading, kept across
+/// every edge of a diagram.
+///
+/// Four slots a cell, three arrays, one search per edge: allocating them
+/// afresh was most of what routing a large board cost. Only the slots a
+/// search wrote are put back, because an edge's search reaches a
+/// neighbourhood of its two ends and not the whole board.
+struct Search {
+    best: Vec<i32>,
+    came_from: Vec<usize>,
+    arrival: Vec<i32>,
+    touched: Vec<usize>,
+    open: BinaryHeap<Frontier>,
+}
+
+impl Search {
+    fn new(states: usize) -> Self {
+        Self {
+            best: vec![i32::MAX; states],
+            came_from: vec![usize::MAX; states],
+            arrival: vec![-1; states],
+            touched: Vec::new(),
+            open: BinaryHeap::new(),
+        }
+    }
+
+    fn reset(&mut self) {
+        for &state in &self.touched {
+            self.best[state] = i32::MAX;
+            self.came_from[state] = usize::MAX;
+            self.arrival[state] = -1;
+        }
+        self.touched.clear();
+        self.open.clear();
+    }
+
+    fn arrive(&mut self, state: usize, cost: i32) {
+        self.arrival[state] = cost;
+        self.touched.push(state);
+    }
+
+    fn reach(&mut self, state: usize, cost: i32, from: usize) {
+        self.best[state] = cost;
+        self.came_from[state] = from;
+        self.touched.push(state);
+    }
+}
+
 fn shortest(
     grid: &Grid,
+    search: &mut Search,
     flow: Flow,
     from: Frame,
     to: Frame,
     passage: Passage,
 ) -> Option<Vec<(i32, i32, usize)>> {
-    let states = grid.blocked.len() * 4;
+    search.reset();
     let state = |x: i32, y: i32, heading: usize| (y * grid.width + x) as usize * 4 + heading;
-    let mut best = vec![i32::MAX; states];
-    let mut came_from = vec![usize::MAX; states];
-    let mut arrival = vec![-1; states];
-    let mut open = BinaryHeap::new();
 
     let exit = facing(flow, from, to);
     let entry = opposite(facing(flow, from, to));
     for (x, y, side, off_centre) in ports(to) {
         if grid.index(x, y).is_some() {
             // Arriving by a side means travelling *into* it.
-            arrival[state(x, y, opposite(side))] = side_cost(side, entry) + off_centre;
+            search.arrive(
+                state(x, y, opposite(side)),
+                side_cost(side, entry) + off_centre,
+            );
         }
     }
     let remaining = |x: i32, y: i32| {
@@ -430,23 +483,25 @@ fn shortest(
         };
         let cost = cost + side_cost(side, exit) + off_centre;
         let start = state(x, y, side);
-        if cost < best[start] {
-            best[start] = cost;
-            open.push(Reverse((cost + remaining(x, y), cost, x, y, side)));
+        if cost < search.best[start] {
+            search.reach(start, cost, usize::MAX);
+            search
+                .open
+                .push(Reverse((cost + remaining(x, y), cost, x, y, side)));
         }
     }
 
     let mut finish: Option<(i32, usize)> = None;
-    while let Some(Reverse((estimate, cost, x, y, heading))) = open.pop() {
+    while let Some(Reverse((estimate, cost, x, y, heading))) = search.open.pop() {
         if finish.is_some_and(|(total, _)| estimate >= total) {
             break;
         }
         let here = state(x, y, heading);
-        if cost > best[here] {
+        if cost > search.best[here] {
             continue;
         }
-        if arrival[here] >= 0 {
-            let total = cost + arrival[here];
+        if search.arrival[here] >= 0 {
+            let total = cost + search.arrival[here];
             if finish.is_none_or(|(known, _)| total < known) {
                 finish = Some((total, here));
             }
@@ -454,7 +509,7 @@ fn shortest(
         let index = here / 4;
         // The cell beside the source is a stub, never a corner: a line
         // that bends the moment it leaves a box reads as part of its border.
-        let may_turn = came_from[here] != usize::MAX && grid.may_turn(index, passage);
+        let may_turn = search.came_from[here] != usize::MAX && grid.may_turn(index, passage);
         for (next, (dx, dy)) in HEADINGS.iter().enumerate() {
             if next == opposite(heading) || (next != heading && !may_turn) {
                 continue;
@@ -465,10 +520,11 @@ fn shortest(
             };
             let total = cost + step + if next == heading { 0 } else { TURN };
             let there = state(nx, ny, next);
-            if total < best[there] {
-                best[there] = total;
-                came_from[there] = here;
-                open.push(Reverse((total + remaining(nx, ny), total, nx, ny, next)));
+            if total < search.best[there] {
+                search.reach(there, total, here);
+                search
+                    .open
+                    .push(Reverse((total + remaining(nx, ny), total, nx, ny, next)));
             }
         }
     }
@@ -478,7 +534,7 @@ fn shortest(
     while at != usize::MAX {
         let index = (at / 4) as i32;
         cells.push((index % grid.width, index / grid.width, at % 4));
-        at = came_from[at];
+        at = search.came_from[at];
     }
     cells.reverse();
     Some(cells)

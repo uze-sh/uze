@@ -5,7 +5,7 @@
 //! is the text and what happens to the text, which is also why it is the
 //! part of this extension with the most tests per line.
 
-use std::{cell::RefCell, path::PathBuf};
+use std::{cell::RefCell, collections::VecDeque, path::PathBuf};
 
 use super::request::LoadedFile;
 use crate::view::Command;
@@ -99,6 +99,10 @@ pub(super) struct OpenFile {
     /// because comparing a document to decide whether to re-render it
     /// costs what rendering it was supposed to save.
     revision: u64,
+    /// The revision each save still out was taken from, oldest first —
+    /// what tells a save's answer whether the buffer is still the text it
+    /// wrote, or has been typed into since.
+    pub(super) saving: VecDeque<u64>,
     /// The last rendering of this buffer as the document it describes,
     /// and the revision and theme it was rendered from.
     ///
@@ -128,6 +132,7 @@ impl OpenFile {
             loading: true,
             error: None,
             revision: 0,
+            saving: VecDeque::new(),
             preview: RefCell::new(None),
         }
     }
@@ -197,6 +202,10 @@ impl OpenFile {
         self.changed();
     }
 
+    pub(super) fn revision(&self) -> u64 {
+        self.revision
+    }
+
     /// Records that the text is not what it was, so anything kept from
     /// the old one is known to be stale.
     fn changed(&mut self) {
@@ -259,7 +268,7 @@ impl OpenFile {
             return;
         };
         let mut highlighter = crate::code::highlight::highlighter(&self.path, &self.theme);
-        let spans = crate::code::highlight::line(&mut highlighter, text);
+        let spans = crate::code::highlight::line(&mut highlighter, text, &self.theme);
         if let Some(slot) = self.highlighted.get_mut(self.caret.line) {
             *slot = spans;
         }

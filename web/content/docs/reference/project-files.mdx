@@ -59,6 +59,8 @@ is deliberately *not* declared here.
 | `setup` | none | Prepares a checkout, run in it after linking. A failure warns; it never blocks a launch |
 | `gate` | none | Run in the task's checkout on the rebased commits. A non-zero exit refuses delivery |
 | `slots` | peak concurrency | The most checkouts that may exist at once |
+| `spare` | `2` | Free checkouts kept warm for the next agents, the most recently used first. Every other free one is removed, its branch kept |
+| `idle_days` | `3` | Days a free checkout may sit unused before it is removed too |
 
 `setup` and `gate` each take one command or a list run in order. Use the list
 when a failure should say *which* step failed:
@@ -75,6 +77,8 @@ worktrees:
     - pnpm test
     - pnpm lint
   slots: 3
+  spare: 2
+  idle_days: 3
 ```
 
 <Callout type="warn">

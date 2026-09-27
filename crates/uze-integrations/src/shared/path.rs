@@ -105,7 +105,12 @@ pub(crate) fn cleanup_unused_wrapper(
     prune_root: &Path,
     is_uze_wrapper: &dyn Fn(&Path) -> bool,
 ) -> Result<()> {
-    if !target.starts_with(managed_root) || !target.is_dir() {
+    // `starts_with` compares components, not resolved paths: a `..` after
+    // the root would pass it and point `remove_dir_all` outside.
+    let escapes = target
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir));
+    if escapes || !target.starts_with(managed_root) || !target.is_dir() {
         return Ok(());
     }
     let referenced = std::fs::read_dir(skills_dir)
@@ -246,5 +251,38 @@ mod normalize_declared_relative_path_tests {
             "but as a Path, component-wise equal (Codex's matcher) — a `.` component is \
              normalized away, not preserved, except as the very first component of a path"
         );
+    }
+}
+
+#[cfg(test)]
+mod cleanup_unused_wrapper_tests {
+    use super::*;
+
+    #[test]
+    fn a_target_that_climbs_out_of_the_managed_root_is_never_removed() {
+        let root = uze_testkit::temp::scratch("cleanup-escape");
+        let managed = root.join("managed");
+        let outside = root.join("outside");
+        let skills = root.join("skills");
+        for dir in [&managed, &outside, &skills] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let climbing = managed.join("..").join("outside");
+        assert!(
+            climbing.starts_with(&managed),
+            "the lexical check alone lets it through"
+        );
+
+        cleanup_unused_wrapper(&climbing, &managed, &skills, &managed, &|_| true).unwrap();
+        assert!(outside.is_dir());
+
+        let owned = managed.join("wrapper");
+        std::fs::create_dir_all(&owned).unwrap();
+        cleanup_unused_wrapper(&owned, &managed, &skills, &managed, &|_| true).unwrap();
+        assert!(
+            !owned.exists(),
+            "an unreferenced wrapper inside the root still goes"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -251,12 +251,20 @@ impl uze_document::Shaped for ConversationRecord {
     const KIND: &'static str = "conversation";
 }
 
-/// Replaces the document atomically.
+/// Replaces the document atomically, unless a newer build wrote it: [`load`]
+/// answers such a record with an empty one, which must not then be saved
+/// over it.
 pub fn save(home: &UzeHome, project_root: &Path, record: &ConversationRecord) -> Result<()> {
     crate::record::ensure(home, project_root)?;
+    let path = store_path(home, project_root, &record.agent);
+    if let Err(error) = uze_document::read::<ConversationRecord>(&path)
+        && error.written_by_a_newer_build()
+    {
+        return Err(error.into());
+    }
     let payload =
         serde_json::to_vec_pretty(record).expect("conversation record serialization is infallible");
-    write_atomic(&store_path(home, project_root, &record.agent), &payload)
+    write_atomic(&path, &payload)
 }
 
 /// Forgets an agent's conversations. Best-effort by construction: a record
@@ -298,6 +306,16 @@ pub struct Claim<'a> {
 /// does not allow — which is what keeps an ordinary invocation ordinary
 /// and keeps a process that edits its own environment inside the directory
 /// its record already gave it.
+/// The project whose task store the directory falls under: the nearest
+/// ancestor one is kept for. The same walk [`owner_of`] makes, for a claim
+/// it did not recognize.
+pub fn project_of(home: &UzeHome, cwd: &Path) -> Option<PathBuf> {
+    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    cwd.ancestors()
+        .find(|root| task::store_path(home, root).exists())
+        .map(Path::to_path_buf)
+}
+
 pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
     let cwd = claim
         .cwd
@@ -415,6 +433,23 @@ mod tests {
         .unwrap();
 
         assert!(load(&home, &root, &task).harnesses.is_empty());
+    }
+
+    #[test]
+    fn a_newer_builds_record_is_never_saved_over() {
+        let home = home("conversation-newer-schema");
+        let root = project("conversation-newer-schema-project");
+        let task = AgentId::generate();
+        let path = store_path(&home, &root, &task);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let newer = br#"{"schema_version":99,"agent":"x","harnesses":{}}"#;
+        fs::write(&path, newer).unwrap();
+
+        let mut record = load(&home, &root, &task);
+        record.launched("claude-code", ConversationOrigin::Assigned, None, None);
+
+        assert!(save(&home, &root, &record).is_err());
+        assert_eq!(fs::read(&path).unwrap(), newer);
     }
 
     #[test]

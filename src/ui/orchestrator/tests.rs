@@ -8,6 +8,7 @@ use super::*;
 
 #[cfg(test)]
 mod perf;
+mod work;
 
 mod workspace_tests {
     use crate::ui::theme::{self, Token};
@@ -40,16 +41,15 @@ mod workspace_tests {
         AgentIdentity, AgentTabStatus, AgentView, Attach, CHIME_COOLDOWN, CHIME_SETTLE,
         CommitDetailPopup, CommitDetailResolution, CompletionBehavior, DeliveryResolution,
         DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution, PendingDrop,
-        PlacementResolution, PreservedOverlay, RootPicker, ScrollDirection, TabDragGroup,
-        UpstreamSync, Viewport, WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels,
+        PlacementResolution, RootPicker, ScrollDirection, TabDragGroup, UpstreamSync, Viewport,
+        WorkOverlay, WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels,
         agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
         can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
         forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
         open_commit_detail, pane_relative, pending_tab_drop,
         render::{
             self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
-            render_preserved, render_sidebar, render_status_catalog, render_tab_strip, task_mark,
-            timeline_height,
+            render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
         },
         scroll_timeline, scroll_tree, selected_pane_cwd, space_context_agent, space_cwd,
         space_own_tab, strip_tabs, sync_slot_occupancy, tab_drag_group, tab_drag_group_members,
@@ -226,6 +226,7 @@ mod workspace_tests {
             state,
             completion: CompletionBehavior::Merge,
             isolated: true,
+            parent: None,
             ahead,
             published_as: None,
             published_request: None,
@@ -2185,14 +2186,11 @@ mod workspace_tests {
         let mut model = agent_with_task(WorkStateView::Ready, 1);
         model.remembered.preserved_work =
             vec![preserved("/repo", "t2", "yesterday", WorkStateView::Parked)];
-        model.preserved = Some(PreservedOverlay {
-            selected: 0,
-            confirm_discard: false,
-        });
+        model.work = Some(WorkOverlay::open(None));
         let mut driven = driven(model, &home);
 
         let keymap = uze_keys::active();
-        let scopes = [uze_keys::Scope::PreservedWork];
+        let scopes = [uze_keys::Scope::Work];
         let ask = keymap
             .chord_for(uze_keys::Action::DiscardTask, &scopes)
             .expect("discard is bound here");
@@ -2505,6 +2503,63 @@ mod workspace_tests {
     /// two tasks at once. The row belongs to whoever is in it now; reading
     /// the first match handed the new agent the previous one's delivered
     /// arrow, which is the mark this reads for.
+    /// A subagent's checkout is its agent's work: it hangs under that
+    /// agent's item by its topic, and a joined one is gone from it.
+    #[test]
+    fn a_subagent_is_drawn_under_the_agent_it_belongs_to() {
+        let mut model = agent_with_task(WorkStateView::Running, 0);
+        let child = |id: &str, topic: &str, state, ahead| AgentView {
+            id: id.into(),
+            parent: Some("t1".into()),
+            ..task_in("/repo/.worktrees/sub", topic, state, ahead)
+        };
+        model
+            .remembered
+            .tasks
+            .get_mut(Path::new("/repo"))
+            .unwrap()
+            .extend([
+                child("c1", "lexer", WorkStateView::Running, 2),
+                child("c2", "parser", WorkStateView::Parked, 0),
+                child("c3", "joined", WorkStateView::Closed, 0),
+            ]);
+
+        let drawn = sidebar(&model, &identities_fixture());
+        let row = |text: &str| {
+            drawn
+                .rows
+                .iter()
+                .position(|row| row.contains(text))
+                .unwrap_or_else(|| panic!("{text:?} in:\n{}", drawn.rows.join("\n")))
+        };
+        let agent = row("Agent");
+        let lexer = row("lexer");
+        let parser = row("parser");
+        assert!(agent < lexer && lexer < parser, "{}", drawn.rows.join("\n"));
+        assert!(
+            drawn.rows[lexer].contains("2 ahead"),
+            "{}",
+            drawn.rows[lexer]
+        );
+        assert!(
+            drawn.rows[parser].contains("parked"),
+            "{}",
+            drawn.rows[parser]
+        );
+        assert!(
+            !drawn.rows.iter().any(|row| row.contains("joined")),
+            "a subagent that gave its checkout back is not drawn"
+        );
+        let tab = first_tab(&model).id;
+        assert!(
+            drawn
+                .hits
+                .iter()
+                .any(|(rect, hit)| rect.y == lexer as u16 && *hit == WorkspaceHit::SelectTab(tab)),
+            "a click on it lands on its agent"
+        );
+    }
+
     #[test]
     fn a_reused_slot_reads_the_task_in_it_now_not_the_one_before() {
         let mut model = agent_session_in("/repo/.worktrees/ai");
@@ -3813,7 +3868,7 @@ mod workspace_tests {
         );
     }
 
-    fn preserved(
+    pub(super) fn preserved(
         project: &str,
         id: &str,
         label: &str,
@@ -3828,66 +3883,6 @@ mod workspace_tests {
             state,
             created_at_unix: 1,
         }
-    }
-
-    /// The list answers from the machine's records and subtracts the tabs
-    /// this client is in front of. A tab standing in front of an agent is
-    /// not preserved work; delivered work is not either.
-    #[test]
-    fn preserved_work_lists_work_without_a_live_tab_and_nothing_else() {
-        let mut model = agent_with_task(WorkStateView::Ready, 1);
-        model.remembered.preserved_work = vec![
-            preserved("/repo", "t2", "yesterday", WorkStateView::Uncommitted),
-            preserved("/other", "t3", "elsewhere", WorkStateView::Parked),
-        ];
-
-        let preserved = model.preserved_tasks();
-        assert_eq!(preserved.len(), 2, "{preserved:?}");
-        assert_eq!(preserved[0].label, "yesterday");
-
-        model.preserved = Some(PreservedOverlay {
-            selected: 0,
-            confirm_discard: false,
-        });
-        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
-        terminal
-            .draw(|frame| {
-                render_preserved(
-                    frame,
-                    frame.area(),
-                    &model,
-                    model.preserved.as_ref().unwrap(),
-                )
-            })
-            .unwrap();
-        let text: String = terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .map(|cell| cell.symbol().to_owned())
-            .collect();
-        assert!(
-            text.contains("yesterday") && text.contains("uncommitted changes"),
-            "{text}"
-        );
-        assert!(
-            text.contains("repo") && text.contains("other"),
-            "a list that crosses projects names each row's own: {text}"
-        );
-        let discard = uze_keys::active()
-            .chord_for(
-                uze_keys::Action::DiscardTask,
-                &[uze_keys::Scope::Global, uze_keys::Scope::PreservedWork],
-            )
-            .expect("discard is bound here");
-        assert!(
-            text.contains(&format!(
-                "{discard} {}",
-                uze_keys::Action::DiscardTask.label().to_lowercase()
-            )),
-            "the key it names is the one the keymap binds: {text}"
-        );
     }
 
     /// The first tab of the first space — the one tab most fixtures have.
@@ -4649,86 +4644,6 @@ mod workspace_tests {
         assert!(model.first_steps_collapsed);
     }
 
-    /// A dialog is held to a reading width, and its own selection does not
-    /// decide that width. Filling the selected row to the frame's edge
-    /// before anything had measured the popup made the popup the width of
-    /// the terminal.
-    #[test]
-    fn the_preserved_dialog_keeps_a_reading_width() {
-        let model = WorkspaceModel {
-            preserved: Some(PreservedOverlay {
-                selected: 0,
-                confirm_discard: false,
-            }),
-            ..WorkspaceModel::default()
-        };
-        let overlay = model.preserved.as_ref().expect("open");
-        let mut terminal = Terminal::new(TestBackend::new(200, 20)).unwrap();
-        terminal
-            .draw(|frame| render_preserved(frame, frame.area(), &model, overlay))
-            .unwrap();
-        let buffer = terminal.backend().buffer();
-        let drawn: Vec<String> = (0..buffer.area.height)
-            .map(|row| {
-                (0..buffer.area.width)
-                    .map(|column| buffer[(column, row)].symbol())
-                    .collect()
-            })
-            .collect();
-        let top = drawn
-            .iter()
-            .find(|row| row.contains('┌'))
-            .expect("the dialog drew a border");
-        let width = top.trim_end().chars().count()
-            - top.find('┌').map_or(0, |byte| top[..byte].chars().count());
-        assert!(
-            (30..=72).contains(&width),
-            "held to a reading width, not the terminal's: {width}"
-        );
-    }
-
-    /// Every key this dialog names comes from the keymap. Five of them
-    /// were written into the string by hand — the last place in the client
-    /// that claimed a key nothing had resolved.
-    #[test]
-    fn the_preserved_dialog_reads_its_keys_off_the_keymap() {
-        let model = WorkspaceModel {
-            preserved: Some(PreservedOverlay {
-                selected: 0,
-                confirm_discard: false,
-            }),
-            ..WorkspaceModel::default()
-        };
-        let overlay = model.preserved.as_ref().expect("open");
-        let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();
-        terminal
-            .draw(|frame| render_preserved(frame, frame.area(), &model, overlay))
-            .unwrap();
-        let buffer = terminal.backend().buffer();
-        let drawn: String = (0..buffer.area.height)
-            .flat_map(|row| (0..buffer.area.width).map(move |column| (column, row)))
-            .map(|position| buffer[position].symbol().to_owned())
-            .collect();
-
-        let keymap = uze_keys::active();
-        let scopes = [uze_keys::Scope::Global, uze_keys::Scope::PreservedWork];
-        for action in [
-            uze_keys::Action::ResumeTask,
-            uze_keys::Action::DeliverTask,
-            uze_keys::Action::FinishTask,
-            uze_keys::Action::DiscardTask,
-            uze_keys::Action::Dismiss,
-        ] {
-            let chord = keymap
-                .chord_for(action, &scopes)
-                .unwrap_or_else(|| panic!("{action} is bound here"));
-            assert!(
-                drawn.contains(&format!("{chord} {}", action.label().to_lowercase())),
-                "{action} is named with the key the keymap binds: {drawn}"
-            );
-        }
-    }
-
     /// The release notice sits on the sections holding the foot, not under
     /// them, and every part of it is whole at a real version's length.
     #[test]
@@ -5476,7 +5391,7 @@ mod workspace_tests {
 
     /// The keystroke a chord is: the inverse of `keys::chord_of`, so a test
     /// can press what the keymap says rather than a key typed by hand.
-    fn key_event(chord: uze_keys::Chord) -> crossterm::event::KeyEvent {
+    pub(super) fn key_event(chord: uze_keys::Chord) -> crossterm::event::KeyEvent {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         use uze_keys::Key;
         let code = match chord.key {
@@ -7723,7 +7638,7 @@ mod workspace_tests {
             full_frame_at(&mut self.attach.model, self.area);
         }
 
-        fn press(&mut self, column: u16, row: u16) {
+        pub(super) fn press(&mut self, column: u16, row: u16) {
             self.mouse(column, row, MouseEventKind::Down(MouseButton::Left));
         }
 
@@ -7804,7 +7719,7 @@ mod workspace_tests {
         }
 
         /// The rect of the one hit of its kind the last frame drew.
-        fn hit(&self, wanted: impl Fn(&WorkspaceHit) -> bool) -> Rect {
+        pub(super) fn hit(&self, wanted: impl Fn(&WorkspaceHit) -> bool) -> Rect {
             let found: Vec<Rect> = self
                 .attach
                 .model
@@ -9132,7 +9047,8 @@ mod workspace_tests {
         assert_eq!(selected(&driven), Some(0), "it stops at the first item");
         press(&mut driven, uze_keys::Action::SelectNext);
         press(&mut driven, uze_keys::Action::SelectNext);
-        assert_eq!(selected(&driven), Some(1), "and at the last");
+        press(&mut driven, uze_keys::Action::SelectNext);
+        assert_eq!(selected(&driven), Some(2), "and at the last");
 
         let _ = driven.sent();
         press(&mut driven, uze_keys::Action::Activate);
@@ -9213,6 +9129,7 @@ mod workspace_tests {
             vec![AgentView {
                 id: "a1".into(),
                 isolated: false,
+                parent: None,
                 checkout: Some(PathBuf::from("/repo")),
                 state: WorkStateView::Uncommitted,
                 ..task_in("/repo", "agent 1", WorkStateView::Uncommitted, 0)
@@ -9269,6 +9186,7 @@ mod workspace_tests {
             menu.items,
             vec![
                 uze_keys::Action::RenameSelection,
+                uze_keys::Action::ShowSpaceWork,
                 uze_keys::Action::CloseTab
             ]
         );
@@ -9892,18 +9810,12 @@ mod workspace_tests {
         // takes its project from the row rather than from wherever the
         // client happens to be looking.
         model.remembered.preserved_work = app.workspace().preserved_work();
-        model.preserved = Some(PreservedOverlay {
-            selected: 0,
-            confirm_discard: false,
-        });
+        model.work = Some(WorkOverlay::open(None));
         let mut driven = driven(model, &home);
 
         let keymap = uze_keys::active();
         let resume = keymap
-            .chord_for(
-                uze_keys::Action::ResumeTask,
-                &[uze_keys::Scope::PreservedWork],
-            )
+            .chord_for(uze_keys::Action::ResumeTask, &[uze_keys::Scope::Work])
             .expect("resume is bound here");
         let pick = keymap
             .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::AgentPicker])
@@ -10358,6 +10270,62 @@ fn an_outcome_with_an_offer_has_no_clock_and_the_rest_do() {
         model.toast_offer(0),
         Some(WorkspaceHit::OpenChanges),
         "and the one that stayed still carries what answering means"
+    );
+}
+
+/// A write that failed after the code surface closed has nowhere else to
+/// be said, so it is said as an outcome; one that landed stays quiet.
+#[test]
+fn a_failed_write_whose_surface_moved_on_is_still_reported() {
+    let mut model = WorkspaceModel::default();
+    let answered = model.absorb_file_answer(FileResolution {
+        root: PathBuf::from("/gone"),
+        answer: code::FileAnswer::Saved {
+            path: PathBuf::from("/gone/a.txt"),
+            outcome: Err("permission denied".to_owned()),
+        },
+    });
+    assert!(answered);
+    assert_eq!(model.toast_stack().len(), 1);
+    assert_eq!(model.remembered.toasts[0].text, "save failed");
+
+    let answered = model.absorb_file_answer(FileResolution {
+        root: PathBuf::from("/gone"),
+        answer: code::FileAnswer::Deleted {
+            path: PathBuf::from("/gone/b.txt"),
+            outcome: Err("busy".to_owned()),
+        },
+    });
+    assert!(answered);
+    assert_eq!(model.toast_stack().len(), 2);
+
+    let answered = model.absorb_file_answer(FileResolution {
+        root: PathBuf::from("/gone"),
+        answer: code::FileAnswer::Saved {
+            path: PathBuf::from("/gone/a.txt"),
+            outcome: Ok(()),
+        },
+    });
+    assert!(!answered);
+    assert_eq!(model.toast_stack().len(), 2);
+}
+
+#[test]
+fn a_burst_of_input_waits_for_the_frame_only_where_geometry_matters() {
+    let paste = Event::Paste("a".to_owned());
+    let click = Event::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 3,
+        row: 4,
+        modifiers: KeyModifiers::NONE,
+    });
+    assert_eq!(super::burst_admits(1, &paste, true), super::Admit::Handle);
+    assert_eq!(super::burst_admits(0, &click, true), super::Admit::Handle);
+    assert_eq!(super::burst_admits(1, &click, false), super::Admit::Handle);
+    assert_eq!(super::burst_admits(1, &click, true), super::Admit::Hold);
+    assert_eq!(
+        super::burst_admits(1, &Event::Resize(80, 24), false),
+        super::Admit::HandleAndDraw
     );
 }
 

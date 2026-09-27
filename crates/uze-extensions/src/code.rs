@@ -68,7 +68,7 @@ use std::{
 use crate::{
     Host,
     shared::checkout,
-    view::{Caret, Command, ScrollDirection, Size, ViewHit},
+    view::{Caret, Command, Role, ScrollDirection, Size, Span, ViewHit},
 };
 
 mod changes;
@@ -245,9 +245,9 @@ pub struct CodeView {
     queue: VecDeque<FileRequest>,
     /// A failure about the surface rather than about one file.
     error: Option<String>,
-    /// The last thing that happened, shown in the footer until the next
-    /// thing does.
-    notice: Option<String>,
+    /// The last thing that happened, shown at the end of the footer until
+    /// the viewer does something else.
+    notice: Option<Span>,
     /// A delete waiting for its second keystroke. Deleting is the one
     /// gesture here that cannot be undone, so it is the one that asks.
     confirming_delete: Option<PathBuf>,
@@ -631,7 +631,7 @@ impl CodeView {
                     // folds shut again and says why, and everything else
                     // stays navigable.
                     self.files.expanded.remove(&path);
-                    self.notice = Some(message);
+                    self.notice = Some(Span::new(message, Role::Danger));
                 }
             },
             FileAnswer::Read { path, file } => {
@@ -674,22 +674,41 @@ impl CodeView {
                 open.install(loaded);
                 open.place_caret(wanted);
             }
-            FileAnswer::Saved { path, outcome } => match outcome {
-                Ok(()) => {
-                    if let Some(open) = self.open.as_mut().filter(|open| open.path == path) {
-                        open.modified = false;
+            FileAnswer::Saved { path, outcome } => {
+                let open = self.open.as_mut().filter(|open| open.path == path);
+                let written = open.and_then(|open| {
+                    let revision = open.saving.pop_front()?;
+                    Some((open, revision))
+                });
+                match outcome {
+                    Ok(()) => {
+                        self.notice = Some(Span::new(
+                            format!("saved {}", file_name(&path)),
+                            Role::Success,
+                        ));
+                        // Only a buffer still holding what was written is
+                        // saved: keystrokes that landed while the write was
+                        // out are unsaved, and the re-read would undo them.
+                        if let Some((open, revision)) = written
+                            && open.revision() == revision
+                        {
+                            open.modified = false;
+                            // Re-read what was written: every line typed
+                            // since the last read was highlighted
+                            // approximately, and this is where that debt
+                            // is paid off.
+                            self.queue.push_back(FileRequest::Read(path));
+                        }
                     }
-                    self.notice = Some(format!("saved {}", file_name(&path)));
-                    // Re-read what was written: every line typed since the
-                    // last read was highlighted approximately, and this is
-                    // where that debt is paid off.
-                    self.queue.push_back(FileRequest::Read(path));
+                    Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
                 }
-                Err(message) => self.notice = Some(message),
-            },
+            }
             FileAnswer::Deleted { path, outcome } => match outcome {
                 Ok(()) => {
-                    self.notice = Some(format!("deleted {}", file_name(&path)));
+                    self.notice = Some(Span::new(
+                        format!("deleted {}", file_name(&path)),
+                        Role::Success,
+                    ));
                     if self.open.as_ref().is_some_and(|open| open.path == path) {
                         self.open = None;
                     }
@@ -701,7 +720,7 @@ impl CodeView {
                             .push_back(FileRequest::List(parent.to_path_buf()));
                     }
                 }
-                Err(message) => self.notice = Some(message),
+                Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
             },
         }
     }
@@ -712,15 +731,33 @@ impl CodeView {
     }
 
     /// Points the surface at `path`: every mode follows.
+    ///
+    /// Except away from unsaved work. The buffer is the one thing here a
+    /// person authored, and moving the cursor is not a request to throw
+    /// it away — so the move is refused and the file stays open until it
+    /// is saved, or the surface is closed on the question that asks.
     fn select(&mut self, path: PathBuf) {
         if self.selected.as_deref() == Some(path.as_path()) {
             return;
+        }
+        if let Some(open) = self
+            .open
+            .as_ref()
+            .filter(|open| open.modified && open.path != path)
+        {
+            self.notice = Some(Span::new(
+                format!("{} has unsaved changes", file_name(&open.path)),
+                Role::Warning,
+            ));
+            return;
+        }
+        if self.open.as_ref().is_some_and(|open| open.path != path) {
+            self.open = None;
         }
         self.selected = Some(path);
         self.scroll = 0;
         self.changes.diff = Vec::new();
         self.changes.diff_pending = true;
-        self.open = None;
         self.read_selection_as_what_it_is();
     }
 
@@ -955,7 +992,7 @@ impl CodeView {
             .diff
             .iter()
             .position(|cell| cell.kind != DiffLineKind::Removed && cell.line_no as usize == line)
-            .map(|row| row as u16)
+            .map(|row| u16::try_from(row).unwrap_or(u16::MAX))
     }
 
     /// Opens the directories containing the selection, so the tree can
@@ -1103,13 +1140,14 @@ impl CodeView {
     }
 
     fn save(&mut self) {
-        let Some(open) = self.open.as_ref().filter(|open| open.error.is_none()) else {
+        let Some(open) = self.open.as_mut().filter(|open| open.error.is_none()) else {
             return;
         };
         if !open.modified {
-            self.notice = Some("no changes to save".to_owned());
+            self.notice = Some(Span::new("no changes to save", Role::Muted));
             return;
         }
+        open.saving.push_back(open.revision());
         self.queue.push_back(FileRequest::Save {
             path: open.path.clone(),
             contents: open.contents(),
@@ -1122,11 +1160,11 @@ impl CodeView {
         let Some(open) = self.open.as_ref().filter(|open| open.editing) else {
             return;
         };
-        let line = open.caret.line as u16;
+        let line = u16::try_from(open.caret.line).unwrap_or(u16::MAX);
         let visible = visible.max(1);
         if line < self.scroll {
             self.scroll = line;
-        } else if line >= self.scroll + visible {
+        } else if line >= self.scroll.saturating_add(visible) {
             self.scroll = line.saturating_sub(visible - 1);
         }
     }
@@ -1255,6 +1293,7 @@ fn map_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcom
 /// content column has, which the host knows and this does not — used for
 /// nothing but keeping the caret and the page keys inside the file.
 pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcome {
+    view.notice = None;
     // Typing is modal, and the host says so by asking in the editing
     // scope. What is left here is the same command set the reading modes
     // answer, plus the two that leave typing.
@@ -1276,7 +1315,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         if command == Command::ConfirmDelete {
             view.queue.push_back(FileRequest::Delete(path));
         } else {
-            view.notice = Some("delete cancelled".to_owned());
+            view.notice = Some(Span::new("delete cancelled", Role::Muted));
         }
         return CodeOutcome::Stay;
     }
@@ -1370,7 +1409,9 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
                     .is_some_and(|row| row.directory)
             }) {
                 Some(path) => view.confirming_delete = Some(path),
-                None => view.notice = Some("only files are deletable".to_owned()),
+                None => {
+                    view.notice = Some(Span::new("only files are deletable", Role::Warning));
+                }
             }
         }
         _ => {}
@@ -1458,6 +1499,7 @@ fn activate_selection(view: &mut CodeView) {
 }
 
 pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> CodeOutcome {
+    view.notice = None;
     if view.content == ContentMode::Map {
         return map_mouse(view, hit, space);
     }

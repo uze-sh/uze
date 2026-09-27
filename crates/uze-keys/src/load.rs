@@ -332,7 +332,7 @@ fn default_bindings() -> Vec<Binding> {
         // --- Workspace, the work ----------------------------------------
         bind(Scope::Workspace, "alt+i", Action::DeliverTask),
         bind(Scope::Workspace, "alt+shift+i", Action::DeliverAllTasks),
-        bind(Scope::Workspace, "alt+p", Action::TogglePreservedWork),
+        bind(Scope::Workspace, "alt+p", Action::ToggleWork),
         // --- Workspace, the surfaces that seal --------------------------
         bind(Scope::Code, "esc", Action::Dismiss),
         // The doors stay doors: the one already showing closes, the other
@@ -400,14 +400,26 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "enter", Action::InsertNewline),
         bind(Scope::CodeEditing, "backspace", Action::EraseBack),
         bind(Scope::CodeEditing, "delete", Action::EraseForward),
-        bind(Scope::PreservedWork, "esc", Action::Dismiss),
-        bind(Scope::PreservedWork, "down", Action::SelectNext),
-        bind(Scope::PreservedWork, "up", Action::SelectPrevious),
-        bind(Scope::PreservedWork, "i", Action::DeliverTask),
-        bind(Scope::PreservedWork, "f", Action::FinishTask),
-        bind(Scope::PreservedWork, "r", Action::ResumeTask),
-        bind(Scope::PreservedWork, "d", Action::DiscardTask),
-        bind(Scope::PreservedWork, "y", Action::ConfirmDiscard),
+        // The work modal: one keyboard for every row, since each key
+        // means one thing whichever row is selected, and a row it does
+        // not apply to says why.
+        bind(Scope::Work, "esc", Action::Dismiss),
+        bind(Scope::Work, "alt+p", Action::ToggleWork),
+        bind(Scope::Work, "tab", Action::NextProject),
+        bind(Scope::Work, "right", Action::NextProject),
+        bind(Scope::Work, "shift+tab", Action::PreviousProject),
+        bind(Scope::Work, "left", Action::PreviousProject),
+        bind(Scope::Work, "down", Action::SelectNext),
+        bind(Scope::Work, "up", Action::SelectPrevious),
+        bind(Scope::Work, "enter", Action::Activate),
+        bind(Scope::Work, "r", Action::ResumeTask),
+        bind(Scope::Work, "i", Action::DeliverTask),
+        bind(Scope::Work, "f", Action::FinishTask),
+        bind(Scope::Work, "j", Action::JoinCheckout),
+        bind(Scope::Work, "a", Action::AdoptCheckout),
+        bind(Scope::Work, "d", Action::DiscardTask),
+        bind(Scope::Work, "c", Action::CleanUpCheckouts),
+        bind(Scope::Work, "y", Action::ConfirmDiscard),
         bind(Scope::AgentPicker, "down", Action::SelectNext),
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
@@ -499,7 +511,10 @@ mod tests {
                 // artifacts, which has the key: `o`, then the arrow. A
                 // letter of its own would be one of the four nobody could
                 // guess.
-                "choose-area"
+                "choose-area",
+                // The work modal's own key opens it; this is the space
+                // menu's way straight to that space's project.
+                "show-space-work",
             ],
             "an action gained or lost a chord; say so here on purpose"
         );
@@ -542,6 +557,7 @@ mod tests {
                 "code.delete-file=d",
                 "code.confirm-delete=y",
                 "preserved-work.discard-task=d",
+                "preserved-work.clean-up-checkouts=c",
                 "preserved-work.confirm-discard=y",
             ]
         );

@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use uze_core::{
     Result, UzeError,
     integration::HarnessDetection,
-    subprocess::{kill_process_group, read_bounded, wait_with_timeout, with_process_group},
+    subprocess::{kill_reaped_process_group, read_bounded, wait_with_timeout, with_process_group},
 };
 
 /// Wall-clock budget for any single vendor CLI invocation. A vendor binary
@@ -139,6 +139,24 @@ fn capture_with_timeout<S: AsRef<OsStr>>(
     run_captured(program, Some(home), args, timeout)
 }
 
+/// The subcommand a vendor CLI was asked to run (`mcp add`, `plugin
+/// install`), for the span. The rest of the argv is not recorded: it is
+/// what the operator's server is started with, tokens included, and the
+/// span leaves the machine once an OTLP exporter is set.
+fn verb<S: AsRef<OsStr>>(args: &[S]) -> String {
+    args.iter()
+        .map(|arg| arg.as_ref().to_string_lossy())
+        .take_while(|arg| {
+            !arg.is_empty()
+                && arg
+                    .chars()
+                    .all(|character| character.is_ascii_lowercase() || character == '-')
+        })
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn run_captured<S: AsRef<OsStr>>(
     program: &Path,
     home: Option<&Path>,
@@ -148,7 +166,7 @@ fn run_captured<S: AsRef<OsStr>>(
     let span = tracing::info_span!(
         "vendor.cli",
         program = %program.display(),
-        args = %args.iter().map(|arg| arg.as_ref().to_string_lossy().into_owned()).collect::<Vec<_>>().join(" "),
+        verb = %verb(args),
         exit = tracing::field::Empty
     );
     let _entered = span.enter();
@@ -208,7 +226,7 @@ fn run_captured<S: AsRef<OsStr>>(
             // holding the stdout pipe open. Sweep the group again (already
             // killed once inside `wait_with_timeout` if it timed out, but
             // that branch was not taken here) before giving up.
-            kill_process_group(child.id());
+            kill_reaped_process_group(child.id());
             return Err(timeout_error());
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -218,7 +236,7 @@ fn run_captured<S: AsRef<OsStr>>(
     let stderr_bytes = match stderr_rx.recv_timeout(remaining) {
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            kill_process_group(child.id());
+            kill_reaped_process_group(child.id());
             return Err(timeout_error());
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -308,6 +326,26 @@ fn output_tail(output: &Output) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_span_records_the_verb_and_never_what_the_server_runs_with() {
+        assert_eq!(
+            verb(&[
+                "mcp",
+                "add",
+                "--scope",
+                "user",
+                "uze-x",
+                "--",
+                "server",
+                "--token=s3cret"
+            ]),
+            "mcp add"
+        );
+        assert_eq!(verb(&["mcp", "get", "uze-x", "--json"]), "mcp get");
+        assert_eq!(verb(&["--version"]), "--version");
+        assert_eq!(verb(&["/opt/bin/server", "update"]), "");
+    }
 
     #[test]
     fn a_leading_dash_is_never_a_safe_cli_token() {

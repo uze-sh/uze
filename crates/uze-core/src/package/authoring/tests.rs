@@ -433,3 +433,49 @@ fn check_reports_a_reference_outside_the_plugin() -> Result<()> {
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn check_reports_a_link_install_would_refuse() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-check-link");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    let plugin = scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
+    std::os::unix::fs::symlink("/etc", plugin.join("escape")).unwrap();
+
+    let report = check_plugin(&plugin)?;
+
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|finding| finding.contains("not self-contained")),
+        "{:?}",
+        report.findings
+    );
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+#[test]
+fn a_manifest_of_the_wrong_shape_is_refused_before_any_write() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-shape");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    for manifest in ["[]", r#"{ "name": "tools", "plugins": {} }"#] {
+        fs::write(market.join("marketplace.json"), manifest).unwrap();
+
+        let refused = scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default());
+
+        assert!(
+            matches!(refused, Err(UzeError::MarketplaceScaffold(_))),
+            "{manifest}: {refused:?}"
+        );
+        assert!(
+            !market.join("plugins/greet").exists(),
+            "the refusal wrote nothing"
+        );
+    }
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}

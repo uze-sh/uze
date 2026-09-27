@@ -305,6 +305,24 @@ enum AgentWorkAction {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Give a subagent a checkout of its own, cut from this agent's commit;
+    /// prints its path alone
+    Split {
+        /// One word naming what the subagent works on
+        topic: String,
+    },
+    /// Bring a subagent's commits onto this agent's branch, and give its
+    /// checkout back
+    Join {
+        /// The topic the subagent's checkout was split for
+        topic: String,
+    },
+    /// This agent's subagents' checkouts: topic, path, branch, state, and
+    /// commits this agent's branch lacks
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -2178,9 +2196,15 @@ impl uze_application::ProcessRunner for CapturingRunner {
     ) -> uze_application::Result<uze_application::ProcessResult> {
         use std::fs::OpenOptions;
         use std::process::{Command, Stdio};
-        use std::thread;
-        use std::time::{Duration, Instant};
 
+        let span = tracing::info_span!(
+            "process.run",
+            program = %spec.program,
+            args = %spec.arguments.join(" "),
+            success = tracing::field::Empty,
+            timed_out = tracing::field::Empty
+        );
+        let _entered = span.enter();
         let mut command = Command::new(&spec.program);
         command.args(&spec.arguments).stdin(Stdio::null());
         match spec.output {
@@ -2225,37 +2249,67 @@ impl uze_application::ProcessRunner for CapturingRunner {
                 }
             }
         }
-        let mut child = command
-            .spawn()
-            .map_err(|source| uze_application::UzeError::Process {
-                program: spec.program.clone(),
-                source,
-            })?;
+        // The same grouping `SystemProcessRunner` makes, for the same
+        // reason: a quiet child is killed as a tree on timeout, and one
+        // whose output an operator asked for stays in the terminal's
+        // foreground group so Ctrl-C still reaches it.
+        let mut command = match spec.output {
+            uze_application::ProcessOutput::Quiet => uze_application::with_process_group(command),
+            uze_application::ProcessOutput::Inherit => command,
+        };
+        let process_error = |source| uze_application::UzeError::Process {
+            program: spec.program.clone(),
+            source,
+        };
+        let mut child = command.spawn().map_err(process_error)?;
+        let (status, timed_out) =
+            uze_application::wait_with_timeout(&mut child, spec.timeout).map_err(process_error)?;
+        span.record("success", status.success() && !timed_out);
+        span.record("timed_out", timed_out);
+        Ok(uze_application::ProcessResult {
+            success: status.success() && !timed_out,
+            timed_out,
+        })
+    }
+}
+
+#[cfg(all(test, unix))]
+mod capturing_runner_tests {
+    use std::time::{Duration, Instant};
+
+    use uze_application::{ProcessRunner, ProcessSpec};
+
+    use super::CapturingRunner;
+
+    #[test]
+    fn a_child_past_its_deadline_is_reported_timed_out() {
+        let log = std::env::temp_dir().join(format!("uze-capturing-{}.log", std::process::id()));
+        let runner = CapturingRunner::new(log.clone(), false);
+        let mut spec = ProcessSpec::new("sh", ["-c", "sleep 30 & sleep 30"]);
+        spec.timeout = Duration::from_millis(200);
+
         let started = Instant::now();
-        loop {
-            if let Some(status) =
-                child
-                    .try_wait()
-                    .map_err(|source| uze_application::UzeError::Process {
-                        program: spec.program.clone(),
-                        source,
-                    })?
-            {
-                return Ok(uze_application::ProcessResult {
-                    success: status.success(),
-                    timed_out: false,
-                });
-            }
-            if started.elapsed() >= spec.timeout {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(uze_application::ProcessResult {
-                    success: false,
-                    timed_out: true,
-                });
-            }
-            thread::sleep(Duration::from_millis(25));
-        }
+        let result = runner.run(&spec).unwrap();
+
+        assert!(result.timed_out);
+        assert!(!result.success);
+        assert!(started.elapsed() < Duration::from_secs(10));
+        let _ = std::fs::remove_file(log);
+    }
+
+    #[test]
+    fn a_child_that_exits_reports_its_own_status() {
+        let log = std::env::temp_dir().join(format!("uze-capturing-ok-{}.log", std::process::id()));
+        let runner = CapturingRunner::new(log.clone(), false);
+        let result = runner
+            .run(&ProcessSpec::new("sh", ["-c", "exit 0"]))
+            .unwrap();
+        assert!(result.success && !result.timed_out);
+        let failed = runner
+            .run(&ProcessSpec::new("sh", ["-c", "exit 3"]))
+            .unwrap();
+        assert!(!failed.success && !failed.timed_out);
+        let _ = std::fs::remove_file(log);
     }
 }
 
@@ -2535,6 +2589,12 @@ fn trust_evidence(request: &uze_application::TrustRequest) -> String {
             capability.command,
             capability.arguments.join(" ")
         ));
+        if let Some(directory) = &capability.working_directory {
+            text.push_str(&format!("    cwd {directory}\n"));
+        }
+        for (key, value) in &capability.environment {
+            text.push_str(&format!("    env {key}={value}\n"));
+        }
     }
     text
 }
@@ -3151,22 +3211,22 @@ fn render_check(report: &uze_application::ValidationReport, as_marketplace: bool
     text
 }
 
+/// The identity the agent's launch carried, inherited by every process the
+/// harness starts — this one included. Without it there is no agent to
+/// answer: a person's shell, or a harness started by hand, is not an agent
+/// UZE launched.
+fn launched_agent(refusal: fn(String) -> uze_application::UzeError) -> Result<String> {
+    std::env::var(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
+        .ok()
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| refusal("this process is not an agent UZE launched".to_owned()))
+}
+
 fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> Result<()> {
+    let cwd = cwd()?;
     match action {
         AgentWorkAction::Name { name, format } => {
-            let cwd = cwd()?;
-            // The identity the agent's launch carried, inherited by every
-            // process the harness starts — this one included. Without it
-            // there is no agent to name: a person's shell, or a harness
-            // started by hand, is not an agent UZE launched.
-            let id = std::env::var(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
-                .ok()
-                .filter(|id| !id.is_empty())
-                .ok_or_else(|| {
-                    uze_application::UzeError::TaskNaming(
-                        "this process is not an agent UZE launched".to_owned(),
-                    )
-                })?;
+            let id = launched_agent(uze_application::UzeError::TaskNaming)?;
             let named = app
                 .workspace()
                 .name_task(uze_application::Claim { id: &id, cwd: &cwd }, &name)?;
@@ -3185,8 +3245,89 @@ fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> Result<()> {
                 }
             });
         }
+        AgentWorkAction::Split { topic } => {
+            let id = launched_agent(uze_application::UzeError::AgentWork)?;
+            let split = app.workspace().split_work(
+                uze_application::Claim { id: &id, cwd: &cwd },
+                &topic,
+                &[],
+            )?;
+            for warning in &split.warnings {
+                eprintln!("{} {warning}", progress::warning_icon());
+            }
+            // The path alone, so `cd "$(uze agent work split <topic>)"` works.
+            println!("{}", split.path.display());
+        }
+        AgentWorkAction::Join { topic } => {
+            let id = launched_agent(uze_application::UzeError::AgentWork)?;
+            match app
+                .workspace()
+                .join_work(uze_application::Claim { id: &id, cwd: &cwd }, &topic)?
+            {
+                uze_application::JoinedWork::Joined { commits } => println!(
+                    "{} joined {commits} commit{} from `{topic}`",
+                    progress::success_icon(),
+                    if commits == 1 { "" } else { "s" }
+                ),
+                uze_application::JoinedWork::Conflicted { checkout, paths } => {
+                    let listed: Vec<String> = paths
+                        .iter()
+                        .map(|path| format!("  {}", path.display()))
+                        .collect();
+                    return Err(uze_application::UzeError::AgentWork(format!(
+                        "replaying `{topic}` onto this branch stopped on conflicts in {}:\n{}\n\
+                         resolve them there, run `git rebase --continue`, and join again",
+                        checkout.display(),
+                        listed.join("\n")
+                    )));
+                }
+            }
+        }
+        AgentWorkAction::List { format } => {
+            let id = launched_agent(uze_application::UzeError::AgentWork)?;
+            let children = app
+                .workspace()
+                .list_work(uze_application::Claim { id: &id, cwd: &cwd })?;
+            let report: Vec<SubagentReport> = children.iter().map(SubagentReport::from).collect();
+            emit(format, &report, |_| {
+                children
+                    .iter()
+                    .map(|child| {
+                        format!(
+                            "{}\t{}\t{}\t{}\t{}\n",
+                            child.topic,
+                            child.path.display(),
+                            child.branch,
+                            if child.dirty { "dirty" } else { "clean" },
+                            child.ahead
+                        )
+                    })
+                    .collect()
+            });
+        }
     }
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct SubagentReport<'a> {
+    topic: &'a str,
+    path: &'a Path,
+    branch: &'a str,
+    dirty: bool,
+    ahead: usize,
+}
+
+impl<'a> From<&'a uze_application::SubagentCheckout> for SubagentReport<'a> {
+    fn from(child: &'a uze_application::SubagentCheckout) -> Self {
+        Self {
+            topic: &child.topic,
+            path: &child.path,
+            branch: &child.branch,
+            dirty: child.dirty,
+            ahead: child.ahead,
+        }
+    }
 }
 
 #[derive(serde::Serialize)]

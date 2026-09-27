@@ -1,0 +1,24 @@
+---
+title: Checkout ownership
+---
+flowchart TD
+  worktree([A worktree Git registers]) --> harness{Under a directory a harness<br/>keeps worktrees in?}
+  harness -->|yes| theirs[A harness's own isolation<br/>shown, left to its harness]
+  harness -->|no| recorded{Carries UZE's record,<br/>directly under .worktrees?}
+  recorded -->|no| operator[The operator's<br/>shown; only the operator adopts or removes it]
+  recorded -->|a newer build's| unreadable[UZE's, unreadable<br/>never reused or removed]
+  recorded -->|yes| slot{A subagent's?}
+  slot -->|yes| child[Held for its agent<br/>until joined or its agent ends]
+  slot -->|no| inuse{A process working inside?}
+  inuse -->|yes| occupied[Occupied]
+  inuse -->|no| work{Uncommitted work,<br/>or commits the target lacks?}
+  work -->|yes| parked[Parked<br/>only the operator discards it]
+  work -->|only a lock that moved no pin,<br/>or managed regions| free
+  work -->|no| free[Free]
+  free --> spare{Among the spare slots,<br/>and used within the idle age?}
+  spare -->|yes| kept[Kept warm for the next agent]
+  spare -->|no| removed[Directory removed, branch kept]
+  click recorded href "crates/uze-core/src/project/checkout/record.rs"
+  click inuse href "crates/uze-core/src/machine/process_cwd.rs"
+  click spare href "crates/uze-core/src/project/checkout.rs"
+  click child href "crates/uze-core/src/project/checkout/subagent.rs"

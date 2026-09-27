@@ -22,6 +22,34 @@ pub(crate) fn color(token: Token) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)
 }
 
+/// The active theme held for one stretch of drawing that asks it per cell.
+///
+/// The exception to the rule above, for the one loop where it costs: a
+/// pane resolves two colours for every cell it draws, and each lookup
+/// through [`color`] takes the theme's lock and clones its handle. Taken
+/// once per pane, it cannot disagree with itself any more than the frame
+/// can.
+pub(crate) struct Palette(std::sync::Arc<uze_theme::Theme>);
+
+impl Palette {
+    pub(crate) fn active() -> Self {
+        Self(uze_theme::active())
+    }
+
+    pub(crate) fn color(&self, token: Token) -> Color {
+        let rgb = self.0.color(token);
+        Color::Rgb(rgb.0, rgb.1, rgb.2)
+    }
+
+    /// One of the sixteen colours a program names by index, or `None`
+    /// above them, where no theme defines one.
+    pub(crate) fn ansi(&self, index: u8) -> Option<Color> {
+        self.0
+            .ansi(index)
+            .map(|rgb| Color::Rgb(rgb.0, rgb.1, rgb.2))
+    }
+}
+
 /// A colour that came from content rather than from the design system.
 ///
 /// The one legitimate way anything outside this module puts a specific

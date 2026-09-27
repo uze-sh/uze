@@ -16,14 +16,11 @@
 
 use std::{collections::BTreeSet, fs, path::PathBuf};
 
-use uze_core::{
-    Result, UzeError,
-    capability::Resource,
-    home::UzeHome,
-    store::{StoredPackage, is_valid_qualified_id},
-};
+use uze_core::{Result, UzeError, capability::Resource, home::UzeHome, store::StoredPackage};
 
+use crate::shared::marketplace::remove_generated_dir;
 use crate::shared::mcp::delivered_mcp_servers;
+use crate::shared::skill::recreate_dir;
 
 /// Root of every package's generated plugin directory. Lives under
 /// `$UZE_HOME/runtime/attachments/antigravity/plugins/` — the same convention
@@ -168,16 +165,7 @@ pub(super) fn materialize_generated_plugin(
     package: &StoredPackage,
 ) -> Result<PathBuf> {
     let dir = generated_package_dir_for_id(uze_home, package.id.as_str());
-    if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|source| UzeError::Write {
-            path: dir.clone(),
-            source,
-        })?;
-    }
-    fs::create_dir_all(&dir).map_err(|source| UzeError::Write {
-        path: dir.clone(),
-        source,
-    })?;
+    recreate_dir(&dir)?;
     let manifest = generated_plugin_document(package);
     fs::write(
         dir.join("plugin.json"),
@@ -219,19 +207,7 @@ pub(super) fn materialize_generated_plugin(
 /// `StoredPackage`) is available. Safe unconditionally: this directory is
 /// never anything but a Derived Artifact (ADR-013 §5).
 pub(super) fn remove_generated_plugin_by_id(uze_home: &UzeHome, package_id: &str) -> Result<()> {
-    // The id comes from the receipt ledger, not a constructor: refuse one
-    // that could not have been a real package id instead of joining it into
-    // a path and removing whatever the traversal lands on.
-    if !is_valid_qualified_id(package_id) {
-        return Err(UzeError::ExposureUnavailable(format!(
-            "refusing to remove generated envelope for malformed package id `{package_id}`"
-        )));
-    }
-    let dir = generated_package_dir_for_id(uze_home, package_id);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|source| UzeError::Write { path: dir, source })?;
-    }
-    Ok(())
+    remove_generated_dir(package_id, |id| generated_package_dir_for_id(uze_home, id))
 }
 
 #[cfg(test)]

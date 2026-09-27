@@ -3,12 +3,13 @@
 //! Read whole as a generic `Value`; a missing file is an empty object; a
 //! non-object shape is refused rather than overwritten. Every JSON vendor
 //! config UZE reads or writes — preferences, merged hooks, MCP entries —
-//! goes through here, and every write through `persistence::write_atomic`,
-//! so a crash mid-merge can never corrupt a user config file.
+//! goes through here, and every write through
+//! `persistence::write_atomic_preserving`, so a crash mid-merge can never
+//! corrupt a user config file nor replace the link a dotfile manager keeps.
 
 use std::{fs, path::Path};
 
-use uze_core::{Result, UzeError, persistence::write_atomic};
+use uze_core::{Result, UzeError, persistence::write_atomic_preserving};
 
 /// Reads `path` as a JSON object. A missing file is an empty object; a
 /// non-object root is refused rather than silently discarded.
@@ -114,7 +115,7 @@ pub(crate) fn remove_path(config: &mut serde_json::Value, path: &[&str]) {
 pub(crate) fn write_object(path: &Path, config: &serde_json::Value) -> Result<()> {
     let mut bytes = serde_json::to_vec_pretty(config).expect("a JSON value serializes");
     bytes.push(b'\n');
-    write_atomic(path, &bytes)
+    write_atomic_preserving(path, &bytes)
 }
 
 /// Convenience for a `PreferencePort::apply` implementation: read, apply one

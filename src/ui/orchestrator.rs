@@ -53,6 +53,9 @@ use uze_terminal::{
 /// what made typing feel like it hung under any real system load) — this
 /// timeout only bounds keyboard/mouse latency.
 const POLL: Duration = Duration::from_millis(16);
+/// The most input events handled between two frames, so a flood of input
+/// cannot hold the frame back indefinitely.
+const EVENTS_PER_FRAME: usize = 64;
 
 /// Git inspection runs locally but still launches a process. Refresh often
 /// enough to follow commands typed in the active pane without attaching that
@@ -184,13 +187,19 @@ const AGENT_REDRAW_GRACE: Duration = Duration::from_millis(1000);
 const AGENT_SETTLE_QUIET: Duration = Duration::from_millis(400);
 const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
+mod checkouts;
 mod input;
 mod render;
 mod selection;
 mod session;
+mod work;
+mod work_list;
+use checkouts::*;
 use input::*;
 use render::*;
 use session::*;
+use work::*;
+use work_list::*;
 
 /// Why an attach ended.
 pub(crate) enum WorkspaceExit {
@@ -233,15 +242,14 @@ struct SupportResolution {
 /// it when the answer lands, so a thread that unwinds without answering
 /// leaves that feature dead for the rest of the session — the surface
 /// still believes a read is out, and asks for nothing more. The panic
-/// itself is reported: `ui::run` installs a hook that restores the
-/// terminal first, so the message survives instead of being drawn into
-/// the alternate screen and wiped. What this adds is that the *client*
-/// carries on, which matters because several of these run code over
-/// whatever a repository happens to contain.
+/// itself goes to the log: the hook `ui::run` installs leaves the terminal
+/// alone for any thread but the one that draws. What this adds is that
+/// the *client* carries on, which matters because several of these run
+/// code over whatever a repository happens to contain.
 ///
 /// `silence` is what the read would have said had it found nothing —
 /// every absorber already draws it.
-fn answered_or<T>(read: impl FnOnce() -> T, silence: T) -> T {
+pub(super) fn answered_or<T>(read: impl FnOnce() -> T, silence: T) -> T {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(read)).unwrap_or(silence)
 }
 
@@ -394,8 +402,6 @@ struct PendingAgentTab {
     size: (u16, u16),
 }
 
-/// Open state of the preserved-work list: tasks holding work that no live
-/// tab is in front of.
 /// Everything reachable with `scopes` open, each with the key that
 /// reaches it. The workspace's counterpart to the management model's own
 /// `action_index_rows` — the same question, read from the same keymap, so
@@ -415,12 +421,6 @@ struct ActionIndexOverlay {
     scopes: Vec<uze_keys::Scope>,
     filter: String,
     selected: usize,
-}
-
-struct PreservedOverlay {
-    selected: usize,
-    /// A discard was asked for and waits for its confirmation.
-    confirm_discard: bool,
 }
 
 /// What an evaluation of `cwd` is reserved under.
@@ -631,6 +631,119 @@ fn spawn_task_mutation(
             mutation,
             outcome,
         });
+    });
+}
+
+/// Reads every checkout of the repository `project` belongs to, measuring
+/// each — a walk of every directory, which no frame may wait on.
+///
+/// Answers even when it found nothing: the pending flag is released on
+/// arrival, and a read that returned in silence would never be asked again.
+fn spawn_checkouts(
+    home: &UzeHome,
+    project: PathBuf,
+    asked: u64,
+    occupied: Vec<PathBuf>,
+    sender: mpsc::Sender<CheckoutsResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::debug_span!("tui.checkouts_read").entered();
+        let view = answered_or(
+            || {
+                tui_application(home)
+                    .ok()
+                    .and_then(|app| app.workspace().checkouts(&project, &occupied))
+            },
+            None,
+        );
+        let _ = sender.send(CheckoutsResolution {
+            project,
+            asked,
+            view,
+        });
+    });
+}
+
+/// Adopts, removes, joins or cleans up checkouts, off the UI thread: a removal is
+/// `git worktree remove` over a directory that may hold a build's worth of
+/// files, and a clean-up is several of them.
+fn spawn_checkout_change(
+    home: &UzeHome,
+    project: PathBuf,
+    change: CheckoutChange,
+    occupied: Vec<PathBuf>,
+    sender: mpsc::Sender<CheckoutChangeResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::info_span!("tui.checkout_change").entered();
+        let failed = |name: &str| format!("changing {name} failed");
+        let outcome = answered_or(
+            || {
+                let app = tui_application(home).map_err(|error| error.to_string());
+                let workspace = app.as_ref().map(|app| app.workspace());
+                match &change {
+                    CheckoutChange::Adopt { path, name } => CheckoutOutcome::Adopted {
+                        name: name.clone(),
+                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
+                            workspace
+                                .adopt_checkout(&project, path)
+                                .map_err(|refusal| refusal.to_string())
+                        }),
+                    },
+                    CheckoutChange::Remove { path, name } => CheckoutOutcome::Removed {
+                        name: name.clone(),
+                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
+                            workspace
+                                .remove_checkout(&project, path, &occupied)
+                                .map_err(|refusal| refusal.to_string())
+                        }),
+                    },
+                    CheckoutChange::Join {
+                        parent_id,
+                        parent,
+                        topic,
+                    } => CheckoutOutcome::Joined {
+                        topic: topic.clone(),
+                        parent: parent.clone(),
+                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
+                            workspace
+                                .join_parked_work(&project, parent_id, topic)
+                                .map_err(|refusal| refusal.to_string())
+                        }),
+                    },
+                    CheckoutChange::CleanUp => CheckoutOutcome::CleanedUp(
+                        workspace
+                            .map(|workspace| workspace.clean_up_checkouts(&project, &occupied))
+                            .unwrap_or_default(),
+                    ),
+                }
+            },
+            match &change {
+                CheckoutChange::Adopt { name, .. } => CheckoutOutcome::Adopted {
+                    name: name.clone(),
+                    answer: Err(failed(name)),
+                },
+                CheckoutChange::Remove { name, .. } => CheckoutOutcome::Removed {
+                    name: name.clone(),
+                    answer: Err(failed(name)),
+                },
+                CheckoutChange::Join { parent, topic, .. } => CheckoutOutcome::Joined {
+                    topic: topic.clone(),
+                    parent: parent.clone(),
+                    answer: Err(failed(topic)),
+                },
+                CheckoutChange::CleanUp => {
+                    CheckoutOutcome::CleanedUp(uze_application::CleanUp::default())
+                }
+            },
+        );
+        let _ = sender.send(CheckoutChangeResolution { project, outcome });
     });
 }
 
@@ -1262,7 +1375,7 @@ pub(crate) fn attach_workspace(
     // in the shape, so the copy is exact.
     let (layout_recorder, remembered_layouts) = mpsc::channel::<WorkspaceShape>();
     let parent = tracing::Span::current();
-    thread::spawn({
+    let layout_writer = thread::spawn({
         let home = home.clone();
         let mut layout = layout.clone();
         move || {
@@ -1345,6 +1458,9 @@ pub(crate) fn attach_workspace(
     // Every way out of the loop — a quit, a runtime gone, an error — must
     // hand the model's memory back, so the loop runs inside one call whose
     // result is read only after that handover.
+    // An event read while draining a burst and put back for after the
+    // frame (see the drain at the end of the loop).
+    let mut held: Option<Event> = None;
     let outcome: Result<WorkspaceExit> = (|| loop {
         if let Flow::Exit(exit) = attach.pump(&receiver) {
             return Ok(exit);
@@ -1403,10 +1519,33 @@ pub(crate) fn attach_workspace(
         if let Some(text) = attach.model.clipboard.take() {
             terminal.emit(&selection::osc52(&text));
         }
-        if event::poll(POLL).map_err(io_error)?
-            && let Flow::Exit(exit) = attach.handle(event::read().map_err(io_error)?, &viewport)
-        {
-            return Ok(exit);
+        // Everything already waiting is handled before the next frame: a
+        // burst of keys or wheel ticks is one frame, not one per event.
+        let mut timeout = POLL;
+        let mut handled = 0;
+        while handled < EVENTS_PER_FRAME {
+            let event = match held.take() {
+                Some(event) => event,
+                None => {
+                    if !event::poll(timeout).map_err(io_error)? {
+                        break;
+                    }
+                    event::read().map_err(io_error)?
+                }
+            };
+            timeout = Duration::ZERO;
+            let admitted = burst_admits(handled, &event, attach.model.dirty);
+            if admitted == Admit::Hold {
+                held = Some(event);
+                break;
+            }
+            handled += 1;
+            if let Flow::Exit(exit) = attach.handle(event, &viewport) {
+                return Ok(exit);
+            }
+            if admitted == Admit::HandleAndDraw {
+                break;
+            }
         }
     })();
     // The modal is closed on the way out so what it arranged is in the
@@ -1414,8 +1553,36 @@ pub(crate) fn attach_workspace(
     // next run — opens on it.
     attach.close_manage();
     attach.model.shape().apply_to(layout);
+    // The recorder may still be writing an older shape, and `super::run`
+    // writes the final one as soon as this returns: the older write must
+    // not land after it.
+    drop(attach.model.layout_recorder.take());
+    let _ = layout_writer.join();
     memory.remembered = attach.model.remembered;
     outcome
+}
+
+/// What a burst of input does with the next event it reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Admit {
+    Handle,
+    /// Handled, and then the frame is drawn before anything else is.
+    HandleAndDraw,
+    /// Put back for after the frame.
+    Hold,
+}
+
+/// A resize ends a burst, since what follows it is measured against a
+/// viewport only the next turn computes; a pointer event arriving after
+/// something already changed the screen waits for it, since it is aimed
+/// at what the next frame draws and would be resolved against the hits of
+/// the last one.
+fn burst_admits(handled: usize, event: &Event, dirty: bool) -> Admit {
+    match event {
+        Event::Mouse(_) if handled > 0 && dirty => Admit::Hold,
+        Event::Resize(..) => Admit::HandleAndDraw,
+        _ => Admit::Handle,
+    }
 }
 
 /// The client's layout as it stands: the sidebar column, the workspace's
@@ -1447,6 +1614,17 @@ impl WorkspaceShape {
 /// hit-testing vec just for one extension.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum WorkspaceHit {
+    /// One of the work modal's projects, by its place in the sidebar.
+    WorkProject(usize),
+    /// One row of the project in front, by its index there.
+    WorkRow(usize),
+    /// One of the work modal's buttons, by the action it performs.
+    WorkAction(Action),
+    /// The mark on the work modal's title that closes it.
+    WorkClose,
+    /// Anywhere else on the work modal: answers nothing, and is not a
+    /// click outside it.
+    WorkBody,
     SelectTab(TabId),
     CloseTab(TabId),
     NewTab,
@@ -2361,6 +2539,10 @@ struct Channels {
     /// read: it opens `$UZE_HOME` and walks every project UZE has
     /// recorded, which is not something a frame may wait on.
     preserved: Answers<PreservedResolution>,
+    /// Every checkout of a project, measured: a walk of every directory.
+    checkouts: Answers<CheckoutsResolution>,
+    /// Adopting, removing and cleaning up checkouts.
+    checkout_changes: Answers<CheckoutChangeResolution>,
     occupancy: Answers<OccupancyResolution>,
     placements: Answers<PlacementResolution>,
     artifacts: Answers<ArtifactsResolution>,
@@ -2426,6 +2608,14 @@ struct Remembered {
     /// Whether a sweep is out, so the list asks once rather than once per
     /// frame.
     preserved_pending: bool,
+    /// How many checkouts reads were asked for: only the answer to a
+    /// project's last one is drawn, so a read that began before a change
+    /// landed never replaces the one that began after it.
+    checkouts_asked: u64,
+    /// Whether a change to the checkouts is out: a clean-up walks and
+    /// removes several directories, and a second one started beside it
+    /// would inspect what the first is removing.
+    checkout_change_pending: bool,
     /// Every repository's tasks as last evaluated, keyed by its primary
     /// checkout. Display state: the truth is Git and the task store.
     tasks: BTreeMap<PathBuf, Vec<AgentView>>,
@@ -2708,8 +2898,8 @@ struct WorkspaceModel {
     /// sent before that lands in whichever space is selected — which is
     /// the bug this whole path exists to fix, reintroduced by racing it.
     pending_agent_tab: Option<PendingAgentTab>,
-    /// Open state of the preserved-work list; `None` when closed.
-    preserved: Option<PreservedOverlay>,
+    /// Open state of the work modal; `None` when closed.
+    work: Option<WorkOverlay>,
     /// Everything that can be done here, each with the key that reaches
     /// it. The workspace had no help surface at all — `alt+shift+i`
     /// delivers every task in a space, and there was no way to find that
@@ -2767,7 +2957,7 @@ struct WorkspaceModel {
     /// Where the last frame drew the modal, for the click that lands
     /// beside it — or on its close mark — to be told apart from one
     /// inside.
-    manage_chrome: Option<super::management::ModalChrome>,
+    manage_chrome: Option<super::widget::modal::Chrome>,
     /// The modal's shape as it was last closed, kept here so the layout
     /// file is written from this model alone (see `shape`).
     management_layout: uze_application::ManagementLayout,
@@ -3071,7 +3261,7 @@ impl WorkspaceModel {
             && self.agent_picker.is_none()
             && self.support_dropdown.is_none()
             && self.status_catalog.is_none()
-            && self.preserved.is_none()
+            && self.work.is_none()
             && self.context_menu.is_none()
             && self.action_index.is_none()
             && self.release_notes.is_none()
@@ -3541,6 +3731,27 @@ impl WorkspaceModel {
     /// The agent a tab was launched for, by the identity the session echoes.
     pub(super) fn tab_agent_id(&self, tab: TabId) -> Option<&str> {
         self.tab(tab).and_then(launched_agent_id)
+    }
+
+    /// The subagents of the agent on `tab` that still hold a checkout of
+    /// their own, as the last evaluation listed them: what the column
+    /// draws under that agent.
+    pub(super) fn subagents_of(&self, tab: TabId) -> Vec<&AgentView> {
+        let Some(id) = self.tab_agent_id(tab) else {
+            return Vec::new();
+        };
+        self.remembered
+            .tasks
+            .values()
+            .flatten()
+            .filter(|task| {
+                task.parent.as_deref() == Some(id)
+                    && !matches!(
+                        task.state,
+                        WorkStateView::Integrated | WorkStateView::Closed
+                    )
+            })
+            .collect()
     }
 
     /// The task listed for an identity, whichever repository listed it.
@@ -4083,9 +4294,33 @@ impl WorkspaceModel {
             .as_mut()
             .filter(|view| view.root() == resolution.root)
         else {
-            return false;
+            // A surface that moved on no longer has anywhere to say a
+            // write failed, and a failed write must not pass unsaid: the
+            // reader believes it landed.
+            return self.report_unheard_write_failure(resolution.answer);
         };
         view.absorb(resolution.answer);
+        true
+    }
+
+    fn report_unheard_write_failure(&mut self, answer: code::FileAnswer) -> bool {
+        let (title, path, message) = match answer {
+            code::FileAnswer::Saved {
+                path,
+                outcome: Err(message),
+            } => ("save failed", path, message),
+            code::FileAnswer::Deleted {
+                path,
+                outcome: Err(message),
+            } => ("delete failed", path, message),
+            _ => return false,
+        };
+        self.raise_toast(
+            ToastKind::Failed,
+            title,
+            format!("{}: {message}", path.display()),
+            None,
+        );
         true
     }
 

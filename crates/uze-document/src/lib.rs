@@ -88,6 +88,15 @@ pub enum DocumentError {
 
 pub type Result<T> = std::result::Result<T, DocumentError>;
 
+impl DocumentError {
+    /// Whether the record is a newer build's: never this build's to take,
+    /// and so never its to replace either — writing over it would hand the
+    /// newer build a record in a shape it has already left behind.
+    pub fn written_by_a_newer_build(&self) -> bool {
+        matches!(self, Self::UnsupportedShape { found, expected, .. } if found > expected)
+    }
+}
+
 /// The shape a record with no version field declares by having none.
 pub const FIRST_SHAPE: u32 = 1;
 

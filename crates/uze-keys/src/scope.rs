@@ -163,9 +163,9 @@ scopes! {
     Rename => "rename", "While renaming", Workspace, seals: true, text: true;
     /// The harness picker a new agent is born from.
     AgentPicker => "agent-picker", "Choosing an agent", Workspace, seals: true, text: false;
-    /// The list of work no live tab is in front of.
-    PreservedWork => "preserved-work", "Preserved work", Workspace,
-        seals: true, text: false;
+    /// The work modal: each project's kept work and checkouts. Named for
+    /// the surface it was when released, since keys.json binds by name.
+    Work => "preserved-work", "Work", Workspace, seals: true, text: false;
     /// The tab/space context menu.
     ContextMenu => "context-menu", "A tab's actions", Workspace, seals: true, text: false;
 

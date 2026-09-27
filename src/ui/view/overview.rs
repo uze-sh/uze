@@ -5,7 +5,7 @@
 //! the dedicated project and harness views, not this machine-scoped overview.
 
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -16,7 +16,11 @@ use super::super::model::{Focus, Route, TuiModel};
 use super::super::{content_area, render_screen_header};
 use super::health::Severity;
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{self, Edge, Rule, text};
+use crate::ui::widget::{
+    self,
+    stat::{self, Stat},
+    text,
+};
 use uze_application::{PromptAge, PromptClock};
 
 pub(crate) fn render_overview(
@@ -74,57 +78,32 @@ pub(crate) fn render_overview(
     // 3-column stat grid, each cell divided from its neighbor by a left
     // hairline border — the design's `border-left:1px solid rgba(...)`.
     let stats = [
-        (
-            "Harnesses detected",
-            format!("{harness_detected}/{harness_total}"),
-            theme::color(Token::TextBright),
-        ),
-        (
-            "Plugins installed",
-            model.remembered.plugins.len().to_string(),
-            theme::color(Token::TextBright),
-        ),
-        (
-            "Active profile",
-            model
+        Stat {
+            label: "Harnesses detected".to_owned(),
+            value: format!("{harness_detected}/{harness_total}"),
+            hue: Token::TextBright,
+            mark: None,
+        },
+        Stat {
+            label: "Plugins installed".to_owned(),
+            value: model.remembered.plugins.len().to_string(),
+            hue: Token::TextBright,
+            mark: None,
+        },
+        Stat {
+            label: "Active profile".to_owned(),
+            value: model
                 .remembered
                 .profiles
                 .iter()
                 .find(|profile| profile.active)
                 .map_or_else(|| "none".to_owned(), |profile| profile.id.clone()),
-            theme::color(Token::StateSuccess),
-        ),
+            hue: Token::StateSuccess,
+            mark: None,
+        },
     ];
     if y + 1 < content.y + content.height {
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(33),
-                Constraint::Percentage(33),
-                Constraint::Percentage(34),
-            ])
-            .split(Rect::new(content.x, y, content.width, 2));
-        for (cell, (label, value, color)) in columns.iter().zip(stats) {
-            let inner = Rule::new(Edge::Left).render(frame, *cell);
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(1), Constraint::Length(1)])
-                .split(inner);
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    format!(" {label}"),
-                    theme::fg(Token::TextMuted),
-                )),
-                rows[0],
-            );
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    format!(" {value}"),
-                    Style::default().fg(color).add_modifier(Modifier::BOLD),
-                )),
-                rows[1],
-            );
-        }
+        stat::cards(frame, Rect::new(content.x, y, content.width, 2), &stats);
     }
     // Keep the activity stream visually separate from the compact stat cards.
     y += 5;

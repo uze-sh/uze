@@ -45,8 +45,9 @@ pub use mcp::detach_mcp_entry;
 use crate::hooks::{HookEntry, HookTarget};
 use crate::shared::agent::agent_name;
 use crate::shared::marketplace;
+use crate::shared::mcp::McpEntry;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
-use crate::shared::provision::provision_cli;
+use crate::shared::provision::{official_installer, provision_cli};
 use crate::shared::skill::{head_value, split_frontmatter};
 use mcp::attach_mcp_entry;
 use plugin::CodexMarketplace;
@@ -255,11 +256,7 @@ impl IntegrationPort for CodexIntegration {
             &executable,
             "Codex",
             self.detect(),
-            ProcessSpec::new(
-                "sh",
-                ["-c", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"],
-            )
-            .with_inherited_output(),
+            official_installer("https://chatgpt.com/codex/install.sh", "sh"),
             // Real-CLI dogfood against codex-cli 0.148.0 found `--upgrade` is not
             // a recognized flag — `codex --help` lists `update` as a
             // subcommand instead.
@@ -405,26 +402,12 @@ impl IntegrationPort for CodexIntegration {
 
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
         match &receipt.artifact {
-            ManagedArtifact::VendorConfigEntry {
-                entry_name,
-                command,
-                args,
-                transport,
-                cwd,
-                environment,
-                enabled,
-            } => {
+            artifact @ ManagedArtifact::VendorConfigEntry { .. } => {
                 let executable = self.provisioning_executable();
                 mcp::inspect_codex_mcp(
                     Path::new(&executable),
                     &self.command_home,
-                    entry_name,
-                    transport,
-                    command,
-                    args,
-                    cwd.as_deref(),
-                    environment,
-                    *enabled,
+                    &McpEntry::recorded(artifact).expect("a vendor config entry"),
                 )
             }
             ManagedArtifact::HookConfigEntry {
@@ -574,6 +557,40 @@ fn codex_agent_toml(resource: &Resource, fallback_name: &str) -> String {
     )
 }
 
+/// A TOML basic string. JSON's escaping is TOML's for every character but
+/// DEL, which JSON leaves raw and TOML refuses to parse; keeping the JSON
+/// spelling for the rest keeps an agent file already on disk byte-identical,
+/// which is what its drift check compares.
 fn toml_string(value: &str) -> String {
-    serde_json::to_string(value).expect("strings are JSON serializable")
+    serde_json::to_string(value)
+        .expect("strings are JSON serializable")
+        .replace('\u{7f}', "\\u007F")
+}
+
+#[cfg(test)]
+mod agent_toml_tests {
+    use super::toml_string;
+
+    #[test]
+    fn every_string_the_agent_file_carries_parses_back_as_toml() {
+        for text in [
+            "plain",
+            "quote \" and \\ back",
+            "line\nbreak\ttab",
+            "del \u{7f} bell \u{7}",
+        ] {
+            let document: toml_edit::DocumentMut = format!("value = {}\n", toml_string(text))
+                .parse()
+                .unwrap_or_else(|error| panic!("{text:?}: {error}"));
+            assert_eq!(document["value"].as_str(), Some(text));
+        }
+    }
+
+    #[test]
+    fn an_ordinary_string_keeps_the_spelling_already_on_disk() {
+        assert_eq!(
+            toml_string("say \"hi\"\nthen go"),
+            r#""say \"hi\"\nthen go""#
+        );
+    }
 }

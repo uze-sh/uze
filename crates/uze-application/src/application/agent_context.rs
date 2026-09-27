@@ -29,8 +29,9 @@ use uze_core::{
 };
 
 use super::{
-    ContextMechanism, INSTRUCTION_BRIDGE_CONTENT, INSTRUCTION_BRIDGE_IDENTITY, RuntimeProjection,
-    UzeApplication, services::Workspace,
+    ContextMechanism, RuntimeProjection, UzeApplication,
+    context::{INSTRUCTION_BRIDGE_CONTENT, INSTRUCTION_BRIDGE_IDENTITY},
+    services::Workspace,
 };
 
 /// The mechanism actually carrying one portable resource into one harness.

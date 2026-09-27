@@ -16,6 +16,12 @@
 //! about a checkout — its branch, and the three weights that sentence is
 //! told in — because the reader compares those sentences across
 //! surfaces, and two copies of one sentence stop being one sentence.
+//!
+//! [`nearest`] joined it when the code map's arrows turned out to be the
+//! architect board's arrows written a second time: which thing on a
+//! picture lies in a direction is a question about cells, and the two
+//! copies had already begun to differ in how they said it.
 
 pub mod canvas;
 pub mod checkout;
+pub mod nearest;
