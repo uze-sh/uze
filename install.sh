@@ -8,7 +8,7 @@
 # binary directory. Pure POSIX sh; Linux and macOS, x86_64 and aarch64.
 #
 # Environment overrides:
-#   UZE_VERSION   Pin a release (e.g. 0.0.0-alpha.1); default: latest.
+#   UZE_VERSION   Pin a release (e.g. 1.0.0-beta.1); default: latest.
 #   UZE_BASE_URL  Alternate download root (mirror or local test fixture).
 #   UZE_BIN_DIR   Installation directory (default: $XDG_BIN_HOME or
 #                 $HOME/.local/bin).

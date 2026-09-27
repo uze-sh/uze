@@ -7,8 +7,9 @@
 # `docs/versioning.md` already documents.
 #
 # Usage:
-#   cargo release alpha            # dry run: 0.1.0-alpha.N -> 0.1.0-alpha.N+1
-#   cargo release alpha --execute  # actually commit + tag
+#   cargo release beta             # dry run: 1.0.0-beta.N -> 1.0.0-beta.N+1
+#   cargo release beta --execute   # actually commit + tag
+#   cargo release rc --execute     # 1.0.0-beta.N -> 1.0.0-rc.1
 #   cargo release patch|minor|major --execute   # for a real SemVer bump
 #
 # `push = false` and `publish = false`: this only commits and tags locally.
