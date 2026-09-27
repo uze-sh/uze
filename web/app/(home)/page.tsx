@@ -3,6 +3,7 @@ import { Check } from 'lucide-react';
 import { InstallCommand } from '@/components/install-command';
 import { TrademarkNotice } from '@/components/trademark-notice';
 import matrix from '@/lib/harness-matrix.json';
+import { UzeMark } from '@/components/uze-mark';
 
 type Capability = 'context' | 'skills' | 'mcp' | 'agents' | 'hooks' | 'session' | 'package';
 
@@ -316,18 +317,7 @@ export default function HomePage() {
 
       <footer className="w-full max-w-5xl border-t border-line py-14 text-center">
         <p className="text-[11px] font-mono text-muted">
-          <svg
-            viewBox="0 0 32 32"
-            className="mr-2 inline-block size-[0.85em] align-middle text-accent"
-            aria-hidden
-          >
-            <path d="M16 2 L30 16 L16 30 L2 16 Z" fill="currentColor" />
-            <path
-              d="M3 3 L29 29 M29 3 L3 29"
-              stroke="var(--color-paper)"
-              strokeWidth="2.6"
-            />
-          </svg>
+          <UzeMark className="mr-2 inline-block size-[0.85em] align-middle text-accent" />
           Built with 🖤 by{' '}
           <a href="https://hiukky.com" className="text-ink hover:text-accent transition-colors">
             Romullo (@hiukky)
