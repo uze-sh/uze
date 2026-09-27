@@ -26,6 +26,9 @@ video:
   cols: 152
   rows: 36
   speed: 1.2
+  # Above the longest pause: the renderer caps a still screen at its idle
+  # limit (1.5s by default), which halved every look the beats ask for.
+  idle_limit: 3.5
   background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
   font_size: 20
   font_family: FiraCode Nerd Font Mono,DejaVu Sans Mono
@@ -55,6 +58,16 @@ sandbox:
     PS1: '\[\e[38;5;114m\]my-app\[\e[0m\] $ '
   author: Ada Lovelace
   author_email: ada@demo.dev
+  # The installed uze's terminal server outlives a take, and a failed one
+  # leaves its agents in it: the next take's workspace would open on them.
+  # By pid, verified through /proc — never a pattern kill, which would
+  # match the shell running it.
+  reset:
+    - |
+      for pid in $(pgrep -x uze 2>/dev/null); do
+        cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
+        case "$cmd" in *"terminal serve --root /tmp/uzeinstall/"*) kill -TERM "$pid" 2>/dev/null ;; esac
+      done
   # Every take is a machine that has never seen uze or Claude Code: the
   # install and the setup are what the video shows, so neither may be done.
   clear:
@@ -112,12 +125,15 @@ beats:
     expect: first steps
     expect_timeout: 20
     pause: 2.0
-  - say: a new agent — Claude Code is ready to start
+  # With one harness set up there is nothing to choose, so the new-agent
+  # chord places the agent straight away rather than opening a picker. The
+  # proof is its row in the sidebar; what Claude Code draws on its first
+  # run is its own onboarding, which is the honest first frame here.
+  - say: a new agent — Claude Code starts, in a checkout of its own
     key: M-n
-    expect: new a
-    expect_timeout: 8
-    pause: 2.4
-  - key: Escape
-    pause: 0.8
+    expect: agent 1
+    expect_in: sidebar
+    expect_timeout: 20
+    pause: 3.0
   - say: and out
     end: C-q
