@@ -230,7 +230,7 @@ impl OpenFile {
             *cached = Some((
                 self.revision,
                 self.theme.clone(),
-                super::markdown::render(&self.contents(), &self.theme),
+                crate::shared::markdown::render(&self.contents(), &self.theme),
             ));
         }
         let (_, _, lines) = cached.as_ref().expect("rendered just above");
@@ -366,13 +366,13 @@ impl OpenFile {
         self.changed();
         let first_line = self.lines.first().map(String::as_str);
         let mut highlighter =
-            crate::code::highlight::highlighter(&self.path, first_line, &self.theme);
+            crate::shared::highlight::highlighter(&self.path, first_line, &self.theme);
         for index in lines {
             let (Some(text), Some(slot)) = (self.lines.get(index), self.highlighted.get_mut(index))
             else {
                 break;
             };
-            *slot = crate::code::highlight::line(&mut highlighter, text, &self.theme);
+            *slot = crate::shared::highlight::line(&mut highlighter, text, &self.theme);
         }
     }
 

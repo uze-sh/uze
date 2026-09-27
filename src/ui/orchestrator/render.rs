@@ -272,6 +272,15 @@ fn render_extension(
                 uze_keys::Scope::Architect,
                 ExtensionHit::Architect,
             )
+        } else if let Some(spec) = &model.spec {
+            (
+                uze_extensions::spec::view(
+                    spec,
+                    crate::ui::extension_view::code_space(area, model.code_tree_width, None),
+                ),
+                uze_keys::Scope::Spec,
+                ExtensionHit::Spec,
+            )
         } else if let Some(code) = &model.code {
             (
                 uze_extensions::code::view(
@@ -2761,16 +2770,17 @@ pub(super) fn render_tab_strip(
     }
 
     // ── actions ────────────────────────────────────────────────────────
-    // The two extensions are one group of buttons, not two chips with air
+    // The extensions are one group of buttons, not chips with air
     // between them: each puts its surface where the pane is — the
     // same kind of errand — and one continuous ground says that, where
-    // two detached chips read as two unrelated controls.
+    // detached chips read as unrelated controls.
     //
-    // Both are always there — a checkout always has a shape and files —
-    // which is what lets them be the fixed pair the eye learns, with
+    // All are always there — a checkout always has a shape, files and
+    // an answer to what it intends, even when that answer is "no layout"
+    // — which is what lets them be the fixed set the eye learns, with
     // every zone that comes and goes sitting to the left of them.
     //
-    // No bold: two words side by side at the same weight read as one
+    // No bold: words side by side at the same weight read as one
     // strip of controls, and bold made each of them claim the row on its
     // own. The pair of glyphs at the tab side's end is the other way
     // round, and says why in its own place.
@@ -2779,11 +2789,22 @@ pub(super) fn render_tab_strip(
         // the pane shows one thing, so the strip lights one thing, and
         // while a surface is up that is its button, not the tab it
         // covers. Said by the ground, not by the word's hue or weight.
+        // In the order a change is read: what it intends, what it was
+        // described as, and what it is.
         let buttons = [
+            (
+                WorkspaceHit::OpenSpec,
+                Symbol::Spec,
+                "spec",
+                model.spec.is_some(),
+            ),
             (
                 WorkspaceHit::OpenArchitect,
                 Symbol::Architect,
-                "architect",
+                // Short, as the other two are: three errands in one group,
+                // and the strip's room is the tabs' before it is the
+                // buttons'.
+                "arch",
                 model.architect.is_some(),
             ),
             (
@@ -2927,7 +2948,8 @@ pub(super) fn render_tab_strip(
     // loses a tab's tail, which the strip can scroll back to, rather than
     // the button that makes the next tab, which nothing else offers.
     let limit = trailing_right;
-    let extension_in_front = model.code.is_some() || model.architect.is_some();
+    let extension_in_front =
+        model.code.is_some() || model.architect.is_some() || model.spec.is_some();
     let mut spans = Vec::new();
     let mut x = inner.x;
     let strip_len = strip.len();

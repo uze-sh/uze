@@ -282,6 +282,9 @@ vocabulary! {
         Code = "code",
         /// The shape of a project — what the architect surface opens onto.
         Architect = "architect",
+        /// What a project intends — the changes, designs and tasks the
+        /// spec surface opens onto.
+        Spec = "spec",
         /// A checkout drawn as where its lines are — one of the code
         /// surface's halves, beside its files and its changes.
         Map = "map",

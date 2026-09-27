@@ -381,6 +381,8 @@ impl Attach<'_> {
             Scope::CodeEditing
         } else if self.model.architect.is_some() {
             Scope::Architect
+        } else if self.model.spec.is_some() {
+            Scope::Spec
         } else if self.model.code.is_some() {
             Scope::Code
         } else {
@@ -577,6 +579,10 @@ impl Attach<'_> {
             self.architect_action(action);
             return Flow::Continue;
         }
+        if self.model.spec.is_some() {
+            self.spec_action(action);
+            return Flow::Continue;
+        }
         if self.model.code.is_some() {
             self.code_action(action);
             return Flow::Continue;
@@ -622,6 +628,7 @@ impl Attach<'_> {
             Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
             Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
             Action::ToggleArchitect => open_architect(&mut self.model),
+            Action::ToggleSpec => open_spec(&mut self.model),
             Action::NextSpace => self.step_space(1, columns, rows),
             Action::PreviousSpace => self.step_space(-1, columns, rows),
             Action::NextAgent => self.step_agent(1, columns, rows),
@@ -1552,9 +1559,13 @@ impl Attach<'_> {
 
     /// The same for the content, whose scroll is the extension's own.
     fn scroll_code_content_to(&mut self, row: u16) {
-        if let Some(bar) = self.model.code_scrollbars.content_bar
-            && let Some(view) = self.model.code.as_mut()
-        {
+        let Some(bar) = self.model.code_scrollbars.content_bar else {
+            return;
+        };
+        if let Some(view) = self.model.spec.as_mut() {
+            spec::scroll_to(view, bar.first_at(row));
+            self.model.dirty = true;
+        } else if let Some(view) = self.model.code.as_mut() {
             code::scroll_to(view, bar.first_at(row));
             self.model.dirty = true;
         }
@@ -1571,6 +1582,10 @@ impl Attach<'_> {
         match action {
             Action::ToggleArchitect => {
                 open_architect(&mut self.model);
+                return;
+            }
+            Action::ToggleSpec => {
+                open_spec(&mut self.model);
                 return;
             }
             // A *toggle*, which is what the action is called and what the
@@ -1611,6 +1626,7 @@ impl Attach<'_> {
             Action::ToggleArchitect => self.model.close_architect(),
             Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
             Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
+            Action::ToggleSpec => open_spec(&mut self.model),
             _ => {
                 let space = self.architect_space();
                 let outcome = crate::ui::extension_view::command_for(action).and_then(|command| {
@@ -1623,6 +1639,40 @@ impl Attach<'_> {
             }
         }
         self.model.dirty = true;
+    }
+
+    /// The spec surface: its own door closes it, the other surfaces'
+    /// doors lead there, and everything else is a command it answers.
+    fn spec_action(&mut self, action: Action) {
+        match action {
+            Action::ToggleSpec => self.model.close_spec(),
+            Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
+            Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
+            Action::ToggleArchitect => open_architect(&mut self.model),
+            _ => {
+                let space = self.code_space();
+                let outcome = crate::ui::extension_view::command_for(action).and_then(|command| {
+                    self.model
+                        .spec
+                        .as_mut()
+                        .map(|view| spec::handle_command(view, command, space))
+                });
+                self.follow_spec(outcome);
+            }
+        }
+        self.model.dirty = true;
+    }
+
+    /// What the spec surface asked for by answering: to stay, to be
+    /// closed, or to hand a document to the code surface.
+    fn follow_spec(&mut self, outcome: Option<spec::SpecOutcome>) {
+        match outcome {
+            Some(spec::SpecOutcome::Close) => self.model.close_spec(),
+            Some(spec::SpecOutcome::OpenPath { project, target }) => {
+                open_code_at(&mut self.model, &project, &target);
+            }
+            Some(spec::SpecOutcome::Stay) | None => {}
+        }
     }
 
     /// Hands one command down, and does what the surface asks back.
@@ -1995,6 +2045,31 @@ impl Attach<'_> {
             }
             _ if self.model.architect.is_some() && in_pane => {
                 self.architect_press(mouse.column, mouse.row);
+            }
+            _ if self.model.spec.is_some() && in_pane => {
+                let view_hit = match self.model.hit_rect_at(mouse.column, mouse.row) {
+                    Some((_, WorkspaceHit::Extension(ExtensionHit::Spec(hit)))) => Some(hit),
+                    _ => None,
+                };
+                // The frame is the code surface's, and so are the three
+                // gestures that are about its geometry rather than its rows.
+                if view_hit == Some(ViewHit::GrabNavigatorEdge) {
+                    self.model.code_edge_drag = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
+                } else if view_hit == Some(ViewHit::DragContentScrollbar)
+                    && self.model.code_scrollbars.content_bar.is_some()
+                {
+                    self.model.dragging_code_content = true;
+                    self.scroll_code_content_to(mouse.row);
+                } else {
+                    let space = self.code_space();
+                    let outcome = self
+                        .model
+                        .spec
+                        .as_mut()
+                        .map(|view| spec::handle_mouse(view, view_hit, space));
+                    self.follow_spec(outcome);
+                }
+                self.model.dirty = true;
             }
             _ if self.model.code.is_some() && in_pane => {
                 let hit = self.model.hit_rect_at(mouse.column, mouse.row);
@@ -2594,6 +2669,31 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
+            _ if self.model.spec.is_some() && in_pane => {
+                let direction = if mouse.kind == MouseEventKind::ScrollUp {
+                    ScrollDirection::Up
+                } else {
+                    ScrollDirection::Down
+                };
+                match crate::ui::extension_view::scroll_target(
+                    layout.pane,
+                    self.model.code_tree_width,
+                    mouse.column,
+                    mouse.row,
+                ) {
+                    Some(uze_extensions::view::ScrollTarget::Navigator) => {
+                        self.model.code_tree_scroll =
+                            self.model.code_tree_scroll.scrolled(direction);
+                    }
+                    Some(uze_extensions::view::ScrollTarget::Content) => {
+                        if let Some(view) = self.model.spec.as_mut() {
+                            spec::handle_scroll(view, direction);
+                        }
+                    }
+                    None => {}
+                }
+                self.model.dirty = true;
+            }
             _ if self.model.code.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
                     ScrollDirection::Up
@@ -2930,11 +3030,13 @@ impl Attach<'_> {
             WorkspaceHit::OpenArchitect if self.model.architect.is_some() => {
                 self.model.close_architect();
             }
+            WorkspaceHit::OpenSpec if self.model.spec.is_some() => self.model.close_spec(),
             // The counts are the changes' door, not the surface's, and
             // keep the keys' toggle.
             WorkspaceHit::OpenChanges => return self.act(Action::ToggleChanges, viewport),
             WorkspaceHit::OpenFiles => return self.act(Action::ToggleFiles, viewport),
             WorkspaceHit::OpenArchitect => return self.act(Action::ToggleArchitect, viewport),
+            WorkspaceHit::OpenSpec => return self.act(Action::ToggleSpec, viewport),
             WorkspaceHit::Deliver(_) => {
                 deliver_selected_tab(&mut self.model, self.home, &self.channels.deliveries.sender);
             }
@@ -2992,7 +3094,9 @@ impl Attach<'_> {
             // other two overlays; the sidebar section's are answered
             // here, since it is drawn as part of the sidebar rather than
             // over it.
-            WorkspaceHit::Extension(ExtensionHit::Code(_) | ExtensionHit::Architect(_)) => {}
+            WorkspaceHit::Extension(
+                ExtensionHit::Code(_) | ExtensionHit::Architect(_) | ExtensionHit::Spec(_),
+            ) => {}
             WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)) => match hit {
                 ViewHit::ToggleSection => toggle_timeline(&mut self.model),
                 ViewHit::ResizeSection => self.model.dragging_timeline = true,
@@ -3871,6 +3975,9 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.artifacts.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_artifacts(resolution);
         }
+        while let Ok(resolution) = self.channels.spec.receiver.try_recv() {
+            self.model.dirty |= self.model.absorb_spec(resolution);
+        }
     }
 
     /// Asks whatever those same surfaces now show and have not read.
@@ -3886,6 +3993,8 @@ impl Attach<'_> {
             .schedule_code_measure(&self.channels.code_measures.sender);
         self.model
             .schedule_artifacts_read(&self.channels.artifacts.sender);
+        self.model
+            .schedule_spec_read(self.home, &self.channels.spec.sender);
     }
 
     /// Advances the activity spinner while anything it animates is on

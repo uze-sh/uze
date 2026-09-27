@@ -233,6 +233,8 @@ actions! {
         "Files", "Open or close the files of the selected tab's checkout";
     ToggleArchitect => "toggle-architect", false,
         "Architect", "Open or close the project's architecture diagrams";
+    ToggleSpec => "toggle-spec", false,
+        "Spec", "Open or close what the selected tab's checkout intends: its changes, designs and tasks";
 
     // --- The architect surface -------------------------------------------
     PanLeft => "pan-left", false,

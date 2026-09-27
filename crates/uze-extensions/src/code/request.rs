@@ -168,7 +168,7 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
             // colours its own fenced blocks — so colouring its markup
             // here is work for a screen nobody asked for. Asking to read
             // it as source is what pays for that, through `Colour`.
-            let glance = match crate::code::markdown::is_markdown(&path) {
+            let glance = match crate::shared::markdown::is_markdown(&path) {
                 true => 0,
                 false => GLANCE,
             };
@@ -203,7 +203,7 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
 fn read_and_colour(host: &dyn Host, path: &Path, lines: usize) -> Result<LoadedFile, String> {
     let theme = host.syntax_theme();
     host.read_file(path).map(|text| {
-        let highlighted = crate::code::highlight::lines(&text, path, &theme, lines);
+        let highlighted = crate::shared::highlight::lines(&text, path, &theme, lines);
         LoadedFile {
             complete: highlighted.len() >= text.lines().count(),
             text,

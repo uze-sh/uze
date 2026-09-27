@@ -36,7 +36,7 @@ use uze_application::{
 };
 use uze_application::{Result, UzeError, UzeHome};
 use uze_extensions::{
-    ExtensionHit, architect, code,
+    ExtensionHit, architect, code, spec,
     view::{ScrollDirection, ViewHit},
 };
 use uze_keys::{Action, Chord, Key};
@@ -1173,6 +1173,12 @@ struct ArtifactsResolution {
     answer: architect::ArtifactsAnswer,
 }
 
+/// A checkout's specs, read for the checkout they were asked about.
+struct SpecResolution {
+    root: PathBuf,
+    answer: spec::SpecAnswer,
+}
+
 /// The checkout measured for the code surface's map, tagged with the
 /// checkout it was measured from — an answer landing after the viewer
 /// moved to another tab describes a repository nobody is looking at.
@@ -1205,6 +1211,37 @@ fn spawn_artifacts_read(root: PathBuf, sender: mpsc::Sender<ArtifactsResolution>
             silence,
         );
         let _ = sender.send(ArtifactsResolution { root, answer });
+    });
+}
+
+/// Walking the dialect's directories, reading every document in them and
+/// asking Git which of them the checkout touched — none of it the render
+/// thread's to wait on. The branch the checkout delivers to comes from
+/// the application, the one question here that is not the checkout's own.
+fn spawn_spec_read(home: &UzeHome, root: PathBuf, sender: mpsc::Sender<SpecResolution>) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::debug_span!("tui.spec_read").entered();
+        let silence = spec::SpecAnswer {
+            root: root.clone(),
+            branch: String::new(),
+            theme: String::new(),
+            found: spec::Found::NoLayout,
+            subjects: Vec::new(),
+        };
+        let answer = answered_or(
+            || {
+                let target = tui_application(home.clone())
+                    .ok()
+                    .and_then(|app| app.workspace().delivery_policy(&root))
+                    .and_then(|policy| policy.target);
+                spec::read_spec(&WorkspaceHost, &root, target.as_deref())
+            },
+            silence,
+        );
+        let _ = sender.send(SpecResolution { root, answer });
     });
 }
 
@@ -1673,6 +1710,8 @@ pub(super) enum WorkspaceHit {
     OpenFiles,
     /// The tab strip's architect button, beside the code one.
     OpenArchitect,
+    /// The tab strip's spec button, first of the three.
+    OpenSpec,
     /// Opens contextual support details for the selected agent tab.
     OpenAgentSupport(Rect),
     /// The task mark on a sidebar agent row — opens the catalog of what
@@ -2546,6 +2585,7 @@ struct Channels {
     occupancy: Answers<OccupancyResolution>,
     placements: Answers<PlacementResolution>,
     artifacts: Answers<ArtifactsResolution>,
+    spec: Answers<SpecResolution>,
     /// The code surface's map, measured once per checkout it is opened on.
     code_measures: Answers<MeasureResolution>,
 }
@@ -2601,6 +2641,9 @@ struct Remembered {
     /// surface that forgets all of that on the way out is one nobody
     /// leaves to check something.
     architect_places: BTreeMap<PathBuf, architect::ArchitectPlace>,
+    /// The same for the spec surface: which change, and which of its
+    /// documents.
+    spec_places: BTreeMap<PathBuf, spec::SpecPlace>,
     /// Preserved work across the machine, as last swept. The last good
     /// answer stays drawn while a new one is in flight, so opening the
     /// list never shows an empty one it is about to fill.
@@ -2800,6 +2843,12 @@ struct WorkspaceModel {
     /// the two are never open together and the frame is the host's, not
     /// either extension's.
     architect: Option<architect::ArchitectView>,
+    /// Open state of the spec surface, on the same borrowed frame.
+    spec: Option<spec::SpecView>,
+    /// The checkout it belongs to, and whether it has been read yet — as
+    /// `architect_root` and `architect_asked` are for the architect.
+    spec_root: Option<PathBuf>,
+    spec_asked: bool,
     /// The tab the open surface stands in for. It is drawn where that
     /// tab's pane is, about that tab's checkout, so a different tab coming
     /// to the front — however it got there — puts it away rather than
@@ -3253,7 +3302,10 @@ impl WorkspaceModel {
     /// that isn't already claimed by one of them straight into the focused
     /// pane's PTY instead of dropping it.
     fn no_modal_open(&self) -> bool {
-        self.chrome_answers() && self.code.is_none() && self.architect.is_none()
+        self.chrome_answers()
+            && self.code.is_none()
+            && self.architect.is_none()
+            && self.spec.is_none()
     }
 
     /// Whether the sidebar and the strip answer the pointer: nothing is
@@ -4268,6 +4320,26 @@ impl WorkspaceModel {
         if let Some(root) = self.architect_root.clone() {
             self.architect_asked = true;
             spawn_artifacts_read(root, sender.clone());
+        }
+    }
+
+    fn schedule_spec_read(&mut self, home: &UzeHome, sender: &mpsc::Sender<SpecResolution>) {
+        if self.spec.is_none() || self.spec_asked {
+            return;
+        }
+        if let Some(root) = self.spec_root.clone() {
+            self.spec_asked = true;
+            spawn_spec_read(home, root, sender.clone());
+        }
+    }
+
+    fn absorb_spec(&mut self, resolution: SpecResolution) -> bool {
+        match self.spec.as_mut() {
+            Some(view) if self.spec_root.as_ref() == Some(&resolution.root) => {
+                view.absorb(resolution.answer);
+                true
+            }
+            _ => false,
         }
     }
 
@@ -5419,10 +5491,22 @@ impl WorkspaceModel {
         self.remembered.architect_places.insert(root, view.place());
     }
 
+    /// Closes the spec surface, keeping where the viewer was on this
+    /// checkout, for the reason [`Self::close_code`] does.
+    fn close_spec(&mut self) {
+        let (Some(view), Some(root)) = (self.spec.take(), self.spec_root.clone()) else {
+            return;
+        };
+        if let Some(place) = view.place() {
+            self.remembered.spec_places.insert(root, place);
+        }
+    }
+
     /// Closes whichever surface is standing in the pane.
     fn close_extension(&mut self) {
         self.close_code();
         self.close_architect();
+        self.close_spec();
     }
 
     /// Closes the open surface once its tab is no longer the one in front.
@@ -5452,6 +5536,7 @@ fn open_architect(model: &mut WorkspaceModel) {
     };
     let root = session.selected_tab().pane.cwd.clone();
     model.close_code();
+    model.close_spec();
     let place = model.remembered.architect_places.get(&root).cloned();
     let display_root = crate::ui::display_project_path(&root);
     model.stand_extension_in_front();
@@ -5459,6 +5544,27 @@ fn open_architect(model: &mut WorkspaceModel) {
     model.architect_asked = false;
     let view = architect::ArchitectView::opening(display_root);
     model.architect = Some(match place {
+        Some(place) => view.resuming(place),
+        None => view,
+    });
+    model.code_tree_scroll = extension_view::NavigatorScroll::default();
+    model.dirty = true;
+}
+
+fn open_spec(model: &mut WorkspaceModel) {
+    let Some(session) = model.session.as_ref() else {
+        return;
+    };
+    let root = session.selected_tab().pane.cwd.clone();
+    model.close_code();
+    model.close_architect();
+    let place = model.remembered.spec_places.get(&root).cloned();
+    let display_root = crate::ui::display_project_path(&root);
+    model.stand_extension_in_front();
+    model.spec_root = Some(root);
+    model.spec_asked = false;
+    let view = spec::SpecView::opening(display_root);
+    model.spec = Some(match place {
         Some(place) => view.resuming(place),
         None => view,
     });
@@ -5481,6 +5587,7 @@ fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &Path) {
         code::ContentMode::Contents,
     );
     model.close_architect();
+    model.close_spec();
     model.stand_extension_in_front();
     model.code = Some(view.resuming(place));
     model.code_tree_scroll = extension_view::NavigatorScroll::default();
@@ -5499,6 +5606,7 @@ fn open_code(model: &mut WorkspaceModel, mode: code::ContentMode) {
     let place = model.remembered.code_places.get(&cwd).cloned();
     let view = code::CodeView::opening(cwd, display_root, mode);
     model.close_architect();
+    model.close_spec();
     model.stand_extension_in_front();
     model.code = Some(match place {
         Some(place) => view.resuming(place),

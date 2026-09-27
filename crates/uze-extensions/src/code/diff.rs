@@ -29,7 +29,7 @@ pub(super) struct DiffLine {
 pub(super) struct DiffCell {
     pub(super) line_no: u32,
     pub(super) kind: DiffLineKind,
-    /// Pre-highlighted (see [`highlight`]) — no syntect types beyond this
+    /// Pre-highlighted (see `shared::highlight`) — no syntect types beyond this
     /// module's boundary, and the colour travels as data because it comes
     /// from the syntax theme rather than from the host's palette (see
     /// [`crate::view::Rgb`]).
@@ -133,8 +133,8 @@ pub(super) fn highlight(lines: Vec<DiffLine>, path: &Path, theme_name: &str) -> 
         .iter()
         .find(|line| line.kind != DiffLineKind::Removed && line.line_no == 1)
         .map(|line| line.text.clone());
-    let mut old = super::highlight::highlighter(path, first_line.as_deref(), theme_name);
-    let mut new = super::highlight::highlighter(path, first_line.as_deref(), theme_name);
+    let mut old = crate::shared::highlight::highlighter(path, first_line.as_deref(), theme_name);
+    let mut new = crate::shared::highlight::highlighter(path, first_line.as_deref(), theme_name);
     lines
         .into_iter()
         .enumerate()
@@ -151,15 +151,19 @@ pub(super) fn highlight(lines: Vec<DiffLine>, path: &Path, theme_name: &str) -> 
                     return DiffCell {
                         line_no,
                         kind,
-                        spans: super::highlight::plain(theme_name, &text),
+                        spans: crate::shared::highlight::plain(theme_name, &text),
                     };
                 }
                 let spans = match kind {
-                    DiffLineKind::Removed => super::highlight::line(&mut old, &text, theme_name),
-                    DiffLineKind::Added => super::highlight::line(&mut new, &text, theme_name),
+                    DiffLineKind::Removed => {
+                        crate::shared::highlight::line(&mut old, &text, theme_name)
+                    }
+                    DiffLineKind::Added => {
+                        crate::shared::highlight::line(&mut new, &text, theme_name)
+                    }
                     DiffLineKind::Context => {
-                        super::highlight::line(&mut old, &text, theme_name);
-                        super::highlight::line(&mut new, &text, theme_name)
+                        crate::shared::highlight::line(&mut old, &text, theme_name);
+                        crate::shared::highlight::line(&mut new, &text, theme_name)
                     }
                 };
                 DiffCell {
@@ -200,7 +204,7 @@ pub(super) fn content_line(cell: &DiffCell) -> ContentLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code::highlight::FALLBACK_SYNTAX_THEME;
+    use crate::shared::highlight::FALLBACK_SYNTAX_THEME;
 
     /// The line numbers come from Git's own header, and a number at the
     /// top of the range stays there rather than wrapping or panicking.

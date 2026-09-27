@@ -21,7 +21,14 @@
 //! architect board's arrows written a second time: which thing on a
 //! picture lies in a direction is a question about cells, and the two
 //! copies had already begun to differ in how they said it.
+//!
+//! [`markdown`] and [`highlight`] joined it when the spec surface came to
+//! render the documents the code surface already previews: a proposal is
+//! read the same way wherever it is opened, and the syntax sets behind a
+//! fenced block are loaded once per process, not once per surface.
 
 pub mod canvas;
 pub mod checkout;
+pub mod highlight;
+pub mod markdown;
 pub mod nearest;

@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     DirEntry,
-    code::highlight::FALLBACK_SYNTAX_THEME,
+    shared::highlight::FALLBACK_SYNTAX_THEME,
     view::{
         Command, Content, LineTone, MarkerSide, NavigatorRow, Role, RowIcon, RowMark, Size, Span,
         ViewHit,
@@ -1161,7 +1161,7 @@ macro_rules! highlight_fixtures {
 /// that is how `.fs` passed as a GLSL shader while an F# file drew plain.
 #[test]
 fn every_language_fixture_is_read_as_its_own_language() {
-    use crate::code::highlight;
+    use crate::shared::highlight;
     let wrong: Vec<String> = highlight_fixtures![
         ("batch.bat", "Batch File"),
         ("c.c", "C"),

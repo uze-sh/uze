@@ -71,16 +71,18 @@ struct Dialect {
 struct Collection {
     subject: Subject,                    // Changes | Specs | Archive
     path: &'static str,                  // "openspec/changes"
-    unit: Unit,                          // Directory { skip: &["archive"] } | File
-    order: Order,                        // ByName | NewestFirst
+    skip: &'static [&'static str],       // &["archive"]
+    order: Order,                        // Ascending | Descending (dated names)
 }
 
 enum Role { Why, How, Steps, Contract, Other }
 ```
 
-A `Pattern` is a path relative to the unit, with one wildcard segment
-(`specs/*/spec.md`, `specs/**/spec.md`). That is all globbing the current
-and planned entries need, so there is no glob crate.
+Every directory directly inside a collection's path is one unit. A role
+pattern is a path relative to the unit where `*` stands for one segment and
+`**` for one or more (`specs/**/spec.md`), and what the wildcards stood for
+names the file: a contract is called by its capability path. That is all
+globbing the current and planned entries need, so there is no glob crate.
 
 *Alternative considered:* one extension per tool. Rejected for the reason
 above, and because the code extension already set the precedent: when
@@ -103,7 +105,7 @@ Data keeps a new tool to a table entry and a fixture.
 Three of the four fit the shape as written. Superpowers does not quite:
 its design and its plan for one piece of work are two files in two
 directories, joined only by a shared date-and-topic stem. The shape
-would need `Unit::File { join_by_stem }`. That is the one stretch known
+would need units that are files, joined by stem. That is the one stretch known
 today. It is recorded here and not built, and Superpowers' current paths
 are confirmed against the release in use when its entry is written, since
 they have moved between versions.
@@ -183,13 +185,16 @@ to understand more would be the first thing to disagree with the tool.
 
 ### Place in the tab strip and on the keyboard
 
-The button joins the tab strip's extension group, in the order the lenses
-were named: architect, code, spec. `toggle-spec` is bound in the
-workspace, code and architect scopes, and a new `spec` scope seals the
-keyboard the way `architect` does. `alt+s` and `alt+p` are taken
-(`new-space`, `toggle-work`); the default chord is chosen from the free
-ones during implementation and checked against every scope by the
-keymap's own conflict test.
+The button leads the tab strip's extension group, in the order a change is
+read: spec, arch, code (what it intends, how it was described, what it
+is). The architect button's label shortens to `arch` to pay for the third
+button's room: at 80 columns the strip gives the tabs' room up first.
+`toggle-spec` is bound to `alt+r` (`r` for requirements) in the workspace,
+code, architect and spec scopes, and a new `spec` scope seals the keyboard
+the way `architect` does and borrows the code surface's keys for the moves
+the two share. `alt+d`, `alt+f` and `alt+b` were passed over on purpose: a
+shell in the pane deletes and moves by word on them, and the workspace
+scope takes a chord before the pane sees it.
 
 The remembered place is by checkout, like `architect_places`, and names
 the unit and the artifact (never indexes), so a change that was archived
@@ -212,9 +217,12 @@ since is simply not restored.
   layouts, which is a visible and cheap failure; the entry is one table.
 - [The merge base read costs a Git call per opening] → it runs on the
   read thread with the rest, and only when the host reports a target.
-- [A large archive (this repository has 80+ archived changes) makes the
-  read slow] → the archive's artifacts are listed on the walk but read
-  only when opened, and progress is counted only for changes in flight.
+- [A large archive makes the read slow] → everything is read once per
+  opening on the read thread, which this repository (333 documents, about
+  2.6 MB on disk) does in well under a second; nothing is fetched while
+  somebody moves through the list, and progress is counted only for
+  changes in flight. Reading an archived unit only when it is opened is the
+  step to take if a repository outgrows that.
 - [Two dialects in one checkout (a project migrating tools)] → both are
   read and shown; nothing is merged across them.
 

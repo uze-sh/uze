@@ -1,10 +1,35 @@
 ---
 title: Extensions
-description: Code, to read what an agent changed, and Architect, to see your project's diagrams
+description: Spec, to read what a change intends, Architect, to see your project's diagrams, and Code, to read what an agent changed
 ---
 
-Two tools are built into the workspace. Both open over the selected tab and
-close with the same key.
+Three tools are built into the workspace, in the order you read a change:
+what it intends, how the project is shaped, and what the code now is. Each
+opens where the selected tab is and closes with the same key.
+
+## Spec
+
+`Alt+R` opens the plans a spec-driven tool keeps in the checkout: each
+change's proposal, design and tasks, and the specs that outlive them. uze
+finds them on its own; there is nothing to declare.
+
+| Subject | Lists |
+| --- | --- |
+| Changes | What is in flight, with how many of its tasks are done |
+| Specs | The requirements that outlive the changes |
+| Archive | Finished changes, newest first |
+
+Changes are grouped by where they stand. **This checkout** is the change the
+agent in the selected tab is working on, found from the files its branch
+touched, and it opens first. **In progress** comes next, and **ready to
+archive** holds changes whose tasks are all done but that were never
+archived.
+
+`p` switches a document between preview and source. `Enter` opens it in Code,
+where you can edit it. `Tab` moves between the subjects.
+
+Today it reads [OpenSpec](https://github.com/Fission-AI/OpenSpec) (an
+`openspec/` directory at the root of the checkout).
 
 ## Code
 

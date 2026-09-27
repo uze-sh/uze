@@ -158,6 +158,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::ToggleArchitect,
         Control("the tab strip's architect chip, beside the code one"),
     );
+    put(
+        Action::ToggleSpec,
+        Control("the tab strip's spec chip, before the architect one"),
+    );
     for pan in [
         Action::PanLeft,
         Action::PanRight,
