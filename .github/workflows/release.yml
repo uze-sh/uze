@@ -28,10 +28,11 @@ on:
       bump:
         description: Version bump to apply
         required: false
-        default: alpha
+        default: beta
         type: choice
         options:
-          - alpha
+          - beta
+          - rc
           - patch
           - minor
           - major
@@ -432,7 +433,7 @@ jobs:
             # as a different identifier from the `v0.0.0-alpha.1` that
             # install.sh, the changelog and the tag ruleset all speak.
             # No `--prerelease`, deliberately, even though every version until
-            # v1 is an alpha: GitHub excludes pre-releases from
+            # 1.0.0 is a pre-release: GitHub excludes pre-releases from
             # `releases/latest`, which is the URL `install.sh` downloads from
             # when `UZE_VERSION` is unset. Flagging them would leave the
             # documented one-line install with nothing to fetch.

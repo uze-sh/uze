@@ -1,10 +1,12 @@
 # Versioning
 
 UZE uses [Semantic Versioning 2.0.0](https://semver.org/) from its first
-distributable build. Until v1, every release remains an explicit pre-release:
+distributable build. Until 1.0.0 itself, every release remains an explicit
+pre-release. The alphas ran as `0.0.0-alpha.N`; the series now leading to
+1.0.0 is:
 
 ```text
-0.y.z-alpha.N
+1.0.0-beta.N
 ```
 
 `[workspace.package].version` in the root `Cargo.toml` is the sole version
@@ -13,10 +15,9 @@ conformance workspace members. Do not version a member independently.
 
 Before producing a binary intended for installation, increment that value:
 
-- `alpha.N + 1` for a compatible development delivery;
-- `y` for a v0 API/product milestone that intentionally breaks compatibility;
-- `z` for a v0 compatible bug-fix milestone, retaining the appropriate
-  pre-release identifier until the project deliberately promotes it.
+- `beta.N + 1` for the next delivery on the way to 1.0.0;
+- `rc` once 1.0.0 is a candidate (`1.0.0-rc.1`), and `patch`/`minor`/`major`
+  only when the project deliberately promotes it to a stable release.
 
 Development builds may be rebuilt freely without a version change. A binary
 that is copied, installed, attached to a release, or shared for testing must
@@ -37,8 +38,8 @@ request. No local cargo-release, no manual push, and nothing that a branch
 ruleset has to make an exception for.
 
 **1. Propose it.** Run the **Release** workflow (Actions → Release → Run
-workflow). The `bump` input defaults to `alpha`; use `patch`/`minor`/`major`
-for deliberate milestones. The workflow, on a branch of its own:
+workflow). The `bump` input defaults to `beta`; use `rc` for a release
+candidate and `patch`/`minor`/`major` for deliberate stable milestones. The workflow, on a branch of its own:
 
    - `cargo release … --execute --no-tag` runs the `make check`
      pre-release-hook (fmt, clippy, cargo-deny, tests, ruff — the gate;
@@ -112,7 +113,7 @@ same heading wherever a reader meets it. Merge commits and the release bump
 itself are skipped; dependency bumps have a group of their own.
 
 A release is deliberately *not* published with `--prerelease`, even though
-every version until v1 is an alpha: GitHub keeps pre-releases out of
+every version until 1.0.0 is a pre-release: GitHub keeps pre-releases out of
 `releases/latest`, which is the URL `install.sh` downloads from when
 `UZE_VERSION` is unset.
 

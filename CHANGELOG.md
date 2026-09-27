@@ -4,6 +4,17 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.1](https://github.com/uze-sh/uze/compare/v0.0.0-alpha.10...v1.0.0-beta.1) - 2026-09-27
+
+### Features
+
+- **worktree:** Account for checkouts by recorded ownership ([#128](https://github.com/uze-sh/uze/pull/128)) ([8a32af3](https://github.com/uze-sh/uze/commit/8a32af396e4f9c418745a555ab8dd292a2e2f605))
+
+### Fixes
+
+- **ui:** Move the pull/push counts to the header and fix the changes tree indent ([#129](https://github.com/uze-sh/uze/pull/129)) ([a363801](https://github.com/uze-sh/uze/commit/a363801dd8d35cde4901b946dfd39366e25fc82a))
+- **agent:** Label an agent in the operator's checkout on `agent work name` ([#130](https://github.com/uze-sh/uze/pull/130)) ([8476a17](https://github.com/uze-sh/uze/commit/8476a17bb5c03334be5ea143050e091b64be75d6))
+
 ## [0.0.0-alpha.10](https://github.com/uze-sh/uze/compare/v0.0.0-alpha.9...v0.0.0-alpha.10) - 2026-09-26
 
 ### Features
