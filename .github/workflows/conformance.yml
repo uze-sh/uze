@@ -54,8 +54,14 @@ jobs:
     name: Image
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      # Listing artifacts by name is how a proof is found; see
+      # `.github/scripts/proof.py` for why a proof is an artifact.
+      actions: read
     outputs:
-      versions: ${{ steps.versions.outputs.versions }}
+      plan: ${{ steps.plan.outputs.plan }}
+      pending: ${{ steps.plan.outputs.pending }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # The Lab image bakes the real harness binaries (channel-latest),
@@ -64,22 +70,38 @@ jobs:
       # zero tokens.
       - name: Build the Lab harness image
         run: docker build -f conformance/Dockerfile -t conformance-harness:latest .
+      - name: Install Lab runner dependency
+        run: python3 -m pip install --user pexpect
       # Channel-latest is only known once it is installed, so the versions
       # a leg keys its proof on are read here, from this image, with the
       # same probes the run itself records — never resolved a second time
       # against the vendors, which could answer differently a minute later.
-      - name: Install Lab runner dependency
-        run: python3 -m pip install --user pexpect
-      - id: versions
-        name: Read the harness versions it installed
-        run: echo "versions=$(python3 conformance/proof.py versions)" >> "$GITHUB_OUTPUT"
+      #
+      # Every leg's key and prior proof is settled here rather than in the
+      # leg, so an image nobody will load is never saved or uploaded. The
+      # nightly and a hand-started run always run: they are the record that
+      # a verdict still holds.
+      - id: plan
+        name: Plan which legs still need to run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FRESH: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          versions="$(python3 .github/scripts/proof.py versions)"
+          echo "versions: ${versions}"
+          fresh=()
+          if [ "${FRESH}" = true ]; then fresh=(--fresh); fi
+          python3 .github/scripts/proof.py conformance --versions "${versions}" "${fresh[@]}" >> "${GITHUB_OUTPUT}"
+          grep '^pending=' "${GITHUB_OUTPUT}"
       # zstd, not the artifact action's own gzip: the image is measured in
       # gigabytes, `-T0 -3` saturates the runner's cores for a ratio gzip
       # reaches at several times the wall clock, and `compression-level: 0`
       # below stops the upload from trying to compress it a second time.
       - name: Hand it to the verticals
+        if: steps.plan.outputs.pending != '0'
         run: docker save conformance-harness:latest | zstd -T0 -3 -o /tmp/lab-image.tar.zst
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - if: steps.plan.outputs.pending != '0'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: lab-image
           path: /tmp/lab-image.tar.zst
@@ -112,36 +134,24 @@ jobs:
             label: Codex
           - harness: opencode
             label: OpenCode
+    env:
+      KEY: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].key }}
+      VERSION: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].version }}
+      PROVEN: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].proven }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # A vertical that already passed against this harness version and
-      # these inputs is not run again: see `conformance/proof.py` for what
-      # the key covers and what it deliberately does not. Looked up before
-      # the image is downloaded, because that download is most of what a
-      # reused leg would otherwise still cost.
-      - id: proof
-        name: Name what this leg would prove
-        env:
-          VERSIONS: ${{ needs.image.outputs.versions }}
-        run: python3 conformance/proof.py key --harness ${{ matrix.harness }} --part ${{ matrix.part }} --versions "${VERSIONS}" >> "${GITHUB_OUTPUT}"
-      # The nightly and a hand-started run always run: they are the record
-      # that a verdict still holds, and what refreshes the proof on `main`
-      # for every pull request to read. A proof saved by a pull request is
-      # visible to that pull request only; one saved on `main`, to all.
-      - id: reuse
-        name: Look for a run that already proved it
-        if: steps.proof.outputs.key != '' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /tmp/conformance-proof
-          key: ${{ steps.proof.outputs.key }}
       - name: Already proven
-        if: steps.reuse.outputs.cache-hit == 'true'
+        if: env.PROVEN != ''
         run: |
-          echo "::notice title=${{ matrix.label }} (${{ matrix.part }}) already proven::$(head -n1 /tmp/conformance-proof/proof.md)"
-          cat /tmp/conformance-proof/proof.md >> "${GITHUB_STEP_SUMMARY}"
+          echo "::notice title=${{ matrix.label }} (${{ matrix.part }}) already proven::${VERSION} passed in ${PROVEN}"
+          {
+            echo "Passed against ${VERSION} in ${PROVEN}"
+            echo
+            echo "Reused: neither the harness version nor anything this leg reads changed since that run."
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.PROVEN == ''
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: steps.reuse.outputs.cache-hit != 'true'
+        if: env.PROVEN == ''
         with:
           name: lab-image
           path: /tmp
@@ -149,20 +159,20 @@ jobs:
       # it restored; keep it in the log, because "which image did this leg
       # actually run" is the first question a divergent result raises.
       - name: Load the Lab image
-        if: steps.reuse.outputs.cache-hit != 'true'
+        if: env.PROVEN == ''
         run: zstd -d -c /tmp/lab-image.tar.zst | docker load
       - name: Install Lab runner dependency
-        if: steps.reuse.outputs.cache-hit != 'true'
+        if: env.PROVEN == ''
         run: python3 -m pip install --user pexpect
       - name: Run the ${{ matrix.harness }} ${{ matrix.part }} half
-        if: steps.reuse.outputs.cache-hit != 'true'
+        if: env.PROVEN == ''
         run: |
           python3 conformance/lab.py --harness ${{ matrix.harness }} --part ${{ matrix.part }} --write-summary --retry-once
         env:
           AGY_OUTDIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1
           UZE_EVIDENCE_DIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1/evidence
       - name: Upload evidence
-        if: always() && steps.reuse.outputs.cache-hit != 'true'
+        if: always() && env.PROVEN == ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: conformance-evidence-${{ matrix.harness }}-${{ matrix.part }}
@@ -175,23 +185,18 @@ jobs:
       # pushes, and artifact storage carries the same audit trail without
       # the commit churn (ADR-035 revised).
       #
-      # Only a pass is recorded, and the record points at the run that holds
-      # its evidence: a reused verdict has to be traceable to the one that
-      # earned it, which outlives the proof by the artifact's 90 days.
+      # Only a pass is recorded. The proof is an artifact named by its key,
+      # in the run that holds the evidence it points at, and lives exactly
+      # as long as that evidence does.
       - name: Record the proof
-        if: success() && steps.proof.outputs.key != '' && steps.reuse.outputs.cache-hit != 'true'
-        env:
-          VERSION: ${{ steps.proof.outputs.version }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        if: success() && env.PROVEN == '' && env.KEY != ''
         run: |
-          mkdir -p /tmp/conformance-proof
-          {
-            echo "Passed against ${VERSION} at ${GITHUB_SHA} in ${RUN_URL}"
-            echo
-            echo "Reused: neither the harness version nor anything this vertical reads changed since that run."
-          } > /tmp/conformance-proof/proof.md
-      - if: success() && steps.proof.outputs.key != '' && steps.reuse.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          mkdir -p /tmp/proof
+          echo "${VERSION} at ${GITHUB_SHA}" > /tmp/proof/proof.txt
+      - if: success() && env.PROVEN == '' && env.KEY != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          path: /tmp/conformance-proof
-          key: ${{ steps.proof.outputs.key }}
+          name: ${{ env.KEY }}
+          path: /tmp/proof/proof.txt
+          retention-days: 90
+          if-no-files-found: error

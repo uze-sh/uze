@@ -34,20 +34,22 @@ env:
 #
 # ── The shape of this file ────────────────────────────────────────────
 #
-# Three stages, and only two edges that earn their keep.
+# Three stages, and one edge that earns its keep.
 #
 #   1 · Verify   everything below, in parallel, at t=0
-#   2 · Prove    the E2E tiers, behind `lint` — 56 of the run's 62
-#                runner-minutes, all of which need the tree to compile
+#   2 · Prove    the E2E tiers, also at t=0 — most of the run's
+#                runner-minutes, each one its own compile gate, and a leg
+#                a previous run already proved is not run again
 #   3 · Close    `gate`, the one check branch protection has to know
 #
 # The temptation is six stages. It does not pay: under about ninety seconds
 # a gate costs more information than it saves time, and every job in stage 1
 # finishes inside two minutes. So stage 1 has no internal ordering at all —
 # a formatting slip and a failing test arrive together, which is what you
-# want from them. The edges that pay are the one before the expensive tier
-# and the one inside the Lab (`Image` → four verticals), and there are no
-# others.
+# want from them. The one edge that pays is inside the Lab (`Image` → its
+# legs), and there are no others. Clippy used to gate stage 2 as well; it
+# sat on the critical path of every green run to save a minute on a red one
+# that the tiers' own first build already stops.
 #
 # Journeys and Conformance are called from here rather than triggered beside
 # it, because `needs:` does not cross a workflow boundary and a tier that
@@ -116,9 +118,9 @@ jobs:
           # runner is the most expensive minute this repository can spend.
           platform_surface='^(crates/uze-core/src/machine/|crates/uze-terminal/|crates/uze-git/|journeys/|src/shim\.rs$|Cargo\.lock$|\.cargo/config\.toml$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/))|(^|/)Cargo\.toml$'
           # What is baked into the Lab image, or read by a vertical.
-          lab_surface='^(src/|crates/|tests/_fixtures/|plugins/|conformance/|marketplace\.json$|Cargo\.lock$|\.github/workflows/(ci|conformance)\.yml$)|(^|/)Cargo\.toml$'
+          lab_surface='^(src/|crates/|tests/_fixtures/|plugins/|conformance/|marketplace\.json$|Cargo\.lock$|\.github/(workflows/(ci|conformance)\.yml$|scripts/))|(^|/)Cargo\.toml$'
           # What a journey drives, or what it drives it with.
-          journeys_surface='^(src/|crates/|journeys/|Cargo\.lock$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/))|(^|/)Cargo\.toml$'
+          journeys_surface='^(src/|crates/|journeys/|Cargo\.lock$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/|scripts/))|(^|/)Cargo\.toml$'
 
           platforms="[${linux}]"
           if reaches "${platform_surface}"; then platforms="[${linux},${macos}]"; fi
@@ -156,10 +158,6 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
 
-  # The gate for stage 2. Not because linting is the important question, but
-  # because `clippy --all-targets` is the cheapest thing in this file that
-  # cannot pass on a tree that does not compile — and stage 2 spends 56
-  # runner-minutes on the assumption that it does.
   lint:
     name: Clippy
     runs-on: ubuntu-24.04
@@ -460,36 +458,46 @@ jobs:
         uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2
         with:
           tool: ruff
-      - run: ruff format --check conformance/
-      - run: ruff check conformance/
+      - run: ruff format --check conformance/ .github/scripts/
+      - run: ruff check conformance/ .github/scripts/
       - run: python3 -m pip install --user pexpect
       - name: Conformance unit tests (no Docker, no harness)
         run: for t in conformance/tests/test_*.py; do python3 "$t" || exit 1; done
+      # What decides whether an end-to-end leg runs at all.
+      - name: Proof unit tests
+        run: python3 .github/scripts/test_proof.py
+      # Here rather than in each journeys leg: it is seconds, it has to hold
+      # on every change — including one whose legs are all reused — and the
+      # `proves:` pages it resolves are not part of any leg's proof.
+      - name: Validate the journeys
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq tmux python3-yaml
+          python3 journeys/journey.py validate journeys/suites
 
   # ── Stage 2 · Prove it against the real thing ───────────────────────
   #
-  # Together these are 56 of this run's 62 runner-minutes, and every one of
-  # them assumes the tree compiles. `lint` answers that in about half a
-  # minute, so a pull request that does not compile now costs half a minute
-  # of the expensive tier instead of all of it.
+  # Neither waits on stage 1. Each one's first step builds `uze` and fails a
+  # tree that does not compile in under a minute — the journeys' `cargo
+  # build` from a warm cache, the Lab's `Image` — so a gate in front of them
+  # only delays every green run by the length of Clippy to save a minute on
+  # the rare red one. And a leg whose inputs a previous run already proved
+  # is not run at all: see `.github/scripts/proof.py`.
   #
   # The nightly runs both on their own schedules, in their own files, so a
   # scheduled run here would perform each of them twice.
 
   journeys:
     name: Journeys
-    needs: [changes, lint]
+    needs: changes
     if: github.event_name != 'schedule' && needs.changes.outputs.journeys == 'true'
     uses: ./.github/workflows/journeys.yml
     with:
       platforms: ${{ needs.changes.outputs.platforms }}
     permissions:
       contents: read
+      # To find a proof, which is an artifact of an earlier run.
+      actions: read
 
-  # Not behind `lint`, unlike the journeys: the Lab's own `Image` job builds
-  # `uze` from source, so it is already the compile gate for the four
-  # verticals it feeds, and putting a second one in front of it would only
-  # delay the longest job in the pipeline by the length of the shortest.
   conformance:
     name: Conformance
     needs: changes
@@ -497,6 +505,7 @@ jobs:
     uses: ./.github/workflows/conformance.yml
     permissions:
       contents: read
+      actions: read
 
   # ── Stage 3 · Close the run ─────────────────────────────────────────
 
