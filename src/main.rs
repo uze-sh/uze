@@ -3171,12 +3171,18 @@ fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> Result<()> {
                 .workspace()
                 .name_task(uze_application::Claim { id: &id, cwd: &cwd }, &name)?;
             emit(format, &NamedTaskReport::from(&named), |_| {
-                format!(
-                    "{} named `{}` on branch `{}`\n",
-                    progress::success_icon(),
-                    named.label,
-                    named.branch
-                )
+                match &named.branch {
+                    Some(branch) => format!(
+                        "{} named `{}` on branch `{branch}`\n",
+                        progress::success_icon(),
+                        named.label,
+                    ),
+                    None => format!(
+                        "{} named `{}` in the operator's checkout, branch unchanged\n",
+                        progress::success_icon(),
+                        named.label,
+                    ),
+                }
             });
         }
     }
@@ -3186,7 +3192,7 @@ fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> Result<()> {
 #[derive(serde::Serialize)]
 struct NamedTaskReport<'a> {
     task: &'a str,
-    branch: &'a str,
+    branch: Option<&'a str>,
     label: &'a str,
 }
 
@@ -3194,7 +3200,7 @@ impl<'a> From<&'a uze_application::NamedTask> for NamedTaskReport<'a> {
     fn from(named: &'a uze_application::NamedTask) -> Self {
         Self {
             task: &named.task,
-            branch: &named.branch,
+            branch: named.branch.as_deref(),
             label: &named.label,
         }
     }

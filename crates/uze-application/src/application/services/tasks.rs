@@ -526,10 +526,10 @@ impl Workspace<'_> {
     /// names its identifier and the directory is the record's own. The
     /// stamp says which agent and the directory says where, so a process
     /// editing its own environment cannot reach another agent's branch.
-    /// An agent that is not isolated is refused before anything else is
-    /// resolved — it works on the operator's branch, which already has
-    /// the name it will keep, and may stand in a directory that is no
-    /// repository at all.
+    /// An agent that is not isolated takes the name as its label alone:
+    /// it works on the operator's branch, which already has the name it
+    /// will keep, so there is nothing in Git to rename — but the operator
+    /// still reads a tab for it, and "agent 3" says nothing about the work.
     ///
     /// Asking renames, however often it is asked. A branch is an address,
     /// and the work it holds turns out to be something else often enough
@@ -547,9 +547,7 @@ impl Workspace<'_> {
             || UzeError::TaskNaming("this process is not an agent UZE launched".to_owned());
         let owner = conversation::owner_of(&self.0.home, claim).ok_or_else(not_an_agent)?;
         if !owner.isolated {
-            return Err(UzeError::TaskNaming(
-                "this agent works in the operator's checkout; its work is not named".to_owned(),
-            ));
+            return self.label_in_place(&owner, proposed);
         }
         let (primary, policy) = self
             .repository_context(claim.cwd)
@@ -580,7 +578,30 @@ impl Workspace<'_> {
             agent.take_name(branch.clone());
             Ok(NamedTask {
                 task: agent.id.as_str().to_owned(),
-                branch,
+                branch: Some(branch),
+                label: agent.label.clone(),
+            })
+        })
+    }
+
+    /// Names an agent in the operator's checkout: judged by the same
+    /// vocabulary as a branch, so the label reads the same wherever the
+    /// agent was placed, and recorded without touching Git — the branch
+    /// is the operator's. The policy is read from the root the record is
+    /// keyed on, which needs no repository.
+    fn label_in_place(&self, owner: &conversation::Owner, proposed: &str) -> Result<NamedTask> {
+        let vocabulary = self.policy(&owner.project_root)?.branch;
+        let name = vocabulary
+            .accept(proposed)
+            .map_err(|refusal| UzeError::TaskNaming(refusal_words(&refusal, &vocabulary)))?;
+        task::locked(&self.0.home, &owner.project_root, |store| {
+            let agent = store.get_mut(&owner.agent).ok_or_else(|| {
+                UzeError::TaskNaming("this process is not an agent UZE launched".to_owned())
+            })?;
+            agent.take_label(&name);
+            Ok(NamedTask {
+                task: agent.id.as_str().to_owned(),
+                branch: None,
                 label: agent.label.clone(),
             })
         })
@@ -1663,7 +1684,9 @@ pub enum Carry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NamedTask {
     pub task: String,
-    pub branch: String,
+    /// The branch the work now lives on; `None` for an agent in the
+    /// operator's checkout, whose naming renames nothing.
+    pub branch: Option<String>,
     pub label: String,
 }
 
@@ -4416,7 +4439,7 @@ mod naming_tests {
             .name_task(placed.claim(), "fix/branch-naming")
             .unwrap();
 
-        assert_eq!(named.branch, "fix/branch-naming");
+        assert_eq!(named.branch.as_deref(), Some("fix/branch-naming"));
         assert_eq!(named.label, "branch naming");
         assert_eq!(
             branch_of(&checkout),
@@ -4484,11 +4507,45 @@ mod naming_tests {
         assert_eq!(branch_of(&root), "main", "and never the operator's branch");
     }
 
-    /// An agent in the root has no work of its own to name, and that is
-    /// the refusal it hears — even where its directory is no repository,
-    /// which is a question it never needed answered.
+    /// An agent in the operator's checkout takes the name as its label,
+    /// and the operator's branch is left exactly where it was.
     #[test]
-    fn an_agent_in_the_root_is_refused_as_work_that_is_not_named() {
+    fn an_agent_in_the_root_takes_the_name_as_its_label_alone() {
+        let (app, repository) = naming_project("naming-in-the-root");
+        let root = repository.root().to_path_buf();
+        let placed = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::InPlace), "claude-code", &[])
+            .unwrap();
+        let id = placed.placement.agent().as_str().to_owned();
+
+        let named = app
+            .workspace()
+            .name_task(
+                Claim {
+                    id: &id,
+                    cwd: &placed.cwd,
+                },
+                "fix/in-place",
+            )
+            .unwrap();
+
+        assert_eq!(named.branch, None);
+        assert_eq!(named.label, "in place");
+        assert_eq!(branch_of(&root), "main", "the operator's branch is theirs");
+        let task = app
+            .workspace()
+            .tasks(&root)
+            .into_iter()
+            .find(|task| task.id == id)
+            .unwrap();
+        assert_eq!(task.label, "in place");
+    }
+
+    /// The label is judged by the same vocabulary as a branch, so a
+    /// directory that declares none names nothing — repository or not.
+    #[test]
+    fn an_agent_in_the_root_of_a_project_that_names_nothing_is_refused() {
         let plain = uze_testkit::temp::scratch("naming-in-the-root-directory");
         let app = application("naming-in-the-root-home");
         let placed = app
@@ -4509,7 +4566,7 @@ mod naming_tests {
             .unwrap_err()
             .to_string();
 
-        assert!(error.contains("its work is not named"), "{error}");
+        assert!(error.contains("does not name agent work"), "{error}");
         std::fs::remove_dir_all(plain).unwrap();
     }
 
@@ -4529,7 +4586,7 @@ mod naming_tests {
             .name_task(placed.claim(), "fix/second-name")
             .unwrap();
 
-        assert_eq!(named.branch, "fix/second-name");
+        assert_eq!(named.branch.as_deref(), Some("fix/second-name"));
         assert_eq!(named.label, "second name", "the label follows the branch");
         assert_eq!(branch_of(&placed.checkout), "fix/second-name");
     }
@@ -4550,7 +4607,7 @@ mod naming_tests {
             .name_task(placed.claim(), "fix/same-name")
             .unwrap();
 
-        assert_eq!(named.branch, "fix/same-name");
+        assert_eq!(named.branch.as_deref(), Some("fix/same-name"));
         assert_eq!(branch_of(&placed.checkout), "fix/same-name");
     }
 
