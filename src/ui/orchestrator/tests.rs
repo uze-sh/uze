@@ -823,6 +823,63 @@ mod workspace_tests {
         );
     }
 
+    /// The content's groove hugs the frame's edge, in the column the pane
+    /// keeps from it (see `extension_view`'s own test of where it is
+    /// drawn) — and a press and the wheel there are still the surface's.
+    /// Routed by the pane alone, both fell through to the chrome and the
+    /// groove drawn to be dragged did nothing.
+    #[test]
+    fn the_content_scrollbar_answers_in_the_panes_margin() {
+        use uze_extensions::{ExtensionHit, code, view::ViewHit};
+
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-content-groove"));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        let mut view = code::CodeView::opening(
+            PathBuf::from("/repo"),
+            "/repo".to_owned(),
+            code::ContentMode::Contents,
+        );
+        view.take_request();
+        model.code = Some(view);
+
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+        let track = Rect::new(pane.right(), pane.y + 1, 1, pane.height - 1);
+        let bar = crate::ui::widget::Scrollbar::measure(track, usize::from(track.height), 500)
+            .expect("five hundred lines in a pane is a scrollbar");
+        driven.attach.model.code_scrollbars.content_bar = Some(bar);
+        driven.attach.model.hits.insert(
+            0,
+            (
+                track,
+                WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::DragContentScrollbar)),
+            ),
+        );
+        let place = |driven: &Driven<'_>| {
+            driven
+                .attach
+                .model
+                .code
+                .as_ref()
+                .expect("still open")
+                .place()
+        };
+        let top = place(&driven);
+
+        driven.press(track.x, track.bottom() - 1);
+        assert_ne!(place(&driven), top, "a press low on the groove scrolls");
+
+        driven.mouse(track.x, track.y, MouseEventKind::Up(MouseButton::Left));
+        driven.press(track.x, track.y);
+        assert_eq!(place(&driven), top, "and one at its top goes back");
+
+        driven.mouse(track.x, track.y, MouseEventKind::Up(MouseButton::Left));
+        driven.mouse(track.x, track.y, MouseEventKind::ScrollDown);
+        assert_ne!(place(&driven), top, "the wheel over it scrolls the content");
+    }
+
     /// The header row is the pane's first row, and the control that says
     /// which half you are in stands where the heading did — the list's
     /// heading named the half it was already the only thing showing.
@@ -8063,7 +8120,7 @@ mod workspace_tests {
 
         /// Any other mouse event at the same viewport the click helpers
         /// use — the rest of a drag, which `press` alone cannot say.
-        fn mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
+        pub(super) fn mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
             let area = self.area;
             let layout = compute_layout(area, self.attach.model.sidebar_width);
             let viewport = Viewport {

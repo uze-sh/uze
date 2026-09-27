@@ -1563,6 +1563,19 @@ impl Attach<'_> {
         }
     }
 
+    /// Whether a point is on the groove an open surface drew for its
+    /// content.
+    fn on_content_scrollbar(&self, column: u16, row: u16) -> bool {
+        matches!(
+            self.model.hit_at(column, row),
+            Some(WorkspaceHit::Extension(
+                ExtensionHit::Code(ViewHit::DragContentScrollbar)
+                    | ExtensionHit::Spec(ViewHit::DragContentScrollbar)
+                    | ExtensionHit::Architect(ViewHit::DragContentScrollbar)
+            ))
+        )
+    }
+
     /// Shows the part of the list a point on its scrollbar names. The
     /// navigator's scroll is the host's — only it knows how many rows
     /// fit.
@@ -1901,10 +1914,13 @@ impl Attach<'_> {
             self.model.dirty = true;
         }
         // An open extension answers only for the place it is drawn in: the
-        // sidebar and the strip around it are still the chrome's.
+        // sidebar and the strip around it are still the chrome's. That
+        // place is the pane and one column more — the content's groove
+        // hugs the frame's edge, in the margin the pane keeps from it.
         let in_pane = layout
             .pane
-            .contains(ratatui::layout::Position::new(mouse.column, mouse.row));
+            .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+            || self.on_content_scrollbar(mouse.column, mouse.row);
         match mouse {
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(
@@ -2646,9 +2662,11 @@ impl Attach<'_> {
         let Viewport {
             size, ref layout, ..
         } = *viewport;
+        let on_content_scrollbar = self.on_content_scrollbar(mouse.column, mouse.row);
         let in_pane = layout
             .pane
-            .contains(ratatui::layout::Position::new(mouse.column, mouse.row));
+            .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+            || on_content_scrollbar;
         match mouse {
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if let Some(modal) = &mut self.model.release_notes {
@@ -2695,12 +2713,16 @@ impl Attach<'_> {
                 } else {
                     ScrollDirection::Down
                 };
-                match crate::ui::extension_view::scroll_target(
-                    layout.pane,
-                    self.model.code_tree_width,
-                    mouse.column,
-                    mouse.row,
-                ) {
+                let target = match on_content_scrollbar {
+                    true => Some(uze_extensions::view::ScrollTarget::Content),
+                    false => crate::ui::extension_view::scroll_target(
+                        layout.pane,
+                        self.model.code_tree_width,
+                        mouse.column,
+                        mouse.row,
+                    ),
+                };
+                match target {
                     Some(uze_extensions::view::ScrollTarget::Navigator) => {
                         self.model.code_tree_scroll =
                             self.model.code_tree_scroll.scrolled(direction);
@@ -2720,12 +2742,16 @@ impl Attach<'_> {
                 } else {
                     ScrollDirection::Down
                 };
-                match crate::ui::extension_view::scroll_target(
-                    layout.pane,
-                    self.model.code_tree_width,
-                    mouse.column,
-                    mouse.row,
-                ) {
+                let target = match on_content_scrollbar {
+                    true => Some(uze_extensions::view::ScrollTarget::Content),
+                    false => crate::ui::extension_view::scroll_target(
+                        layout.pane,
+                        self.model.code_tree_width,
+                        mouse.column,
+                        mouse.row,
+                    ),
+                };
+                match target {
                     // The list is the host's to scroll (see
                     // `WorkspaceModel::code_tree_scroll`); the diff is the
                     // extension's own content.
@@ -2734,8 +2760,9 @@ impl Attach<'_> {
                             self.model.code_tree_scroll.scrolled(direction);
                     }
                     Some(uze_extensions::view::ScrollTarget::Content) => {
+                        let at_end = self.model.code_scrollbars.content_at_end;
                         if let Some(view) = self.model.code.as_mut() {
-                            code::handle_scroll(view, direction);
+                            code::handle_scroll(view, direction, at_end);
                         }
                     }
                     None => {}

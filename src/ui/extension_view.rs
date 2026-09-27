@@ -576,6 +576,10 @@ pub(crate) struct Rendered {
     /// the map is a tile or two over, and near an edge is nothing at
     /// all.
     pub(crate) content_gutter: u16,
+    /// Whether the content's last line is on screen, so the wheel knows
+    /// to stop. Only the drawing can say: lines wrap, and how many rows
+    /// the last ones took is settled here and nowhere else.
+    pub(crate) content_at_end: bool,
     /// The room the extension was given to lay this frame out in, so a
     /// click resolves against the geometry that produced what is on
     /// screen.
@@ -693,7 +697,7 @@ pub(crate) fn render(
             caret,
         } => {
             rendered.content_gutter = gutter_width(lines);
-            rendered.content_bar = render_lines(
+            (rendered.content_bar, rendered.content_at_end) = render_lines(
                 frame,
                 content_area,
                 Lines {
@@ -861,6 +865,7 @@ fn render_board(
                 usize::from(board.height),
                 *total,
             );
+            rendered.content_at_end = usize::from(*scroll) + usize::from(board.height) >= *total;
             rendered.content_bar = render_scrollbar(
                 frame,
                 bar,
@@ -1620,7 +1625,7 @@ fn render_lines(
     area: Rect,
     content_lines: Lines<'_>,
     hits: &mut Vec<(Rect, ViewHit)>,
-) -> Option<Scrollbar> {
+) -> (Option<Scrollbar>, bool) {
     let Lines {
         heading,
         scroll,
@@ -1674,6 +1679,7 @@ fn render_lines(
     };
     let text_width = text_width(content.width, gutter);
     let mut y = content.y;
+    let mut at_end = true;
     for (offset, line) in lines
         .iter()
         .enumerate()
@@ -1682,6 +1688,7 @@ fn render_lines(
     {
         let height = line_height(line, content.width, gutter);
         if y.saturating_add(height) > content.bottom() {
+            at_end = false;
             break;
         }
         let row = Rect::new(content.x, y, content.width, height);
@@ -1705,13 +1712,17 @@ fn render_lines(
         }
         y = y.saturating_add(height);
     }
-    render_scrollbar(
+    // The window handed over may stop short of the content: what it left
+    // out is below the last row drawn, so the end is not on screen.
+    let at_end = at_end && first + lines.len() >= total;
+    let bar = render_scrollbar(
         frame,
         bar,
         scroll as usize,
         hits,
         ViewHit::DragContentScrollbar,
-    )
+    );
+    (bar, at_end)
 }
 
 /// An empty surface, or one that failed: what is the matter, and — when
