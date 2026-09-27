@@ -20,8 +20,8 @@ use ratatui::{
 };
 use uze_extensions::view::{
     Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
-    Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section,
-    Size, Span, TrailStep, View, ViewHit,
+    Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, RowMenu, ScrollTarget,
+    Section, Size, Span, TrailStep, View, ViewHit,
 };
 
 use crate::ui::theme::{self, Symbol, Token};
@@ -462,7 +462,45 @@ pub(crate) fn render(
         width: content_area.width,
         height: content_area.height,
     };
+    if let Some(menu) = view
+        .navigator
+        .as_ref()
+        .and_then(|navigator| navigator.menu.as_ref())
+    {
+        render_row_menu(frame, area, menu, hits);
+    }
     rendered
+}
+
+/// A [`RowMenu`], drawn last so it lies over whatever it overlaps, just
+/// under the row it was opened on — and not at all while that row is
+/// scrolled out of sight, since a menu pointing at nothing is a menu
+/// about nothing.
+///
+/// Its entries go to the front of `hits`, because the first rect holding
+/// a point is the one a click lands on, and under the menu there are rows
+/// the click was not meant for.
+fn render_row_menu(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    menu: &RowMenu,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) {
+    let Some(row) = hits
+        .iter()
+        .find(|(_, hit)| *hit == ViewHit::SelectItem(menu.row))
+        .map(|(rect, _)| *rect)
+    else {
+        return;
+    };
+    // Under the name rather than at the row's edge, where the accent bar
+    // and the indent are: the menu belongs to the file, not to the column.
+    let anchor = Rect::new(row.x.saturating_add(2), row.y, 1, 1);
+    let entries: Vec<&str> = menu.entries.iter().map(String::as_str).collect();
+    let rows = widget::menu::render(frame, area, anchor, &entries, menu.highlighted);
+    for (index, rect) in rows.into_iter().enumerate().rev() {
+        hits.insert(0, (rect, ViewHit::MenuEntry(index)));
+    }
 }
 
 /// A [`ViewLayout::Board`]: the list as a row of tabs, and under it the
@@ -1752,7 +1790,7 @@ fn render_footer(
 /// is bound to. Kept here, beside the render that needs it, rather than in
 /// the extension, which knows nothing of either. Where two actions reach
 /// one command, the first row is the one a footer names.
-const COMMAND_ACTIONS: [(Command, uze_keys::Action); 37] = [
+const COMMAND_ACTIONS: [(Command, uze_keys::Action); 38] = [
     (Command::Close, uze_keys::Action::Dismiss),
     (Command::FocusNext, uze_keys::Action::FocusNext),
     (Command::FocusNext, uze_keys::Action::FocusPrevious),
@@ -1761,6 +1799,7 @@ const COMMAND_ACTIONS: [(Command, uze_keys::Action); 37] = [
     (Command::Collapse, uze_keys::Action::Collapse),
     (Command::Expand, uze_keys::Action::Expand),
     (Command::Activate, uze_keys::Action::Activate),
+    (Command::OpenMenu, uze_keys::Action::OpenMenu),
     (Command::ScrollPageUp, uze_keys::Action::ScrollPageUp),
     (Command::ScrollPageDown, uze_keys::Action::ScrollPageDown),
     (Command::Edit, uze_keys::Action::EditFile),
@@ -2135,6 +2174,7 @@ mod tests {
                 focused: true,
                 anchor: Some(1),
                 choosing: None,
+                menu: None,
                 rows: vec![
                     NavigatorRow::Group {
                         id: 0,
@@ -2368,6 +2408,7 @@ mod tests {
                 }],
                 anchor: None,
                 choosing: None,
+                menu: None,
             }),
             content: Content::Lines {
                 heading: "main.rs".to_owned(),
@@ -2461,6 +2502,70 @@ mod tests {
         let (rows, hits) = draw_sized(&board, 80, 12);
         assert!(rows[0].contains("Files"), "the same row: {:?}", rows[0]);
         assert_eq!(nav_at(&hits), sidebar_at, "at the same cell");
+    }
+
+    /// A row's menu is drawn under that row, over whatever it covers, and
+    /// its entries are the first thing a click there lands on.
+    #[test]
+    fn a_row_menu_lies_under_its_row_and_takes_the_click() {
+        let row = |id: usize, name: &str| NavigatorRow::Item {
+            id,
+            name: name.to_owned(),
+            depth: 0,
+            marker: Span::new("M", Role::Warning),
+            marker_side: MarkerSide::Trailing,
+            detail: String::new(),
+            selected: id == 1,
+            icon: RowIcon::None,
+        };
+        let view = View {
+            title: vec![Span::new("code", Role::Muted)],
+            caption: Vec::new(),
+            navigator: Some(Navigator {
+                heading: "CHANGES".to_owned(),
+                badge: "3".to_owned(),
+                focused: true,
+                rows: vec![row(0, "a.rs"), row(1, "b.rs"), row(2, "c.rs")],
+                anchor: None,
+                choosing: None,
+                menu: Some(RowMenu {
+                    row: 1,
+                    entries: vec!["Open file".to_owned(), "Copy path".to_owned()],
+                    highlighted: 0,
+                }),
+            }),
+            content: Content::Message {
+                text: String::new(),
+                hint: None,
+                role: Role::Muted,
+            },
+            footer: Vec::new(),
+            notice: None,
+            modes: Vec::new(),
+            subjects: Vec::new(),
+            layout: ViewLayout::Sidebar,
+            trail: Vec::new(),
+        };
+        let (rows, hits) = draw_sized(&view, 80, 16);
+
+        let at = |wanted: ViewHit| {
+            hits.iter()
+                .find(|(_, hit)| *hit == wanted)
+                .map(|(rect, _)| *rect)
+                .expect("drawn")
+        };
+        let (opened_on, first) = (at(ViewHit::SelectItem(1)), at(ViewHit::MenuEntry(0)));
+        assert!(first.y > opened_on.y, "under the row it was opened on");
+        assert!(rows[first.y as usize].contains("Open file"), "{rows:?}");
+        let over = hits
+            .iter()
+            .find(|(rect, _)| rect.contains(ratatui::layout::Position::new(first.x, first.y)))
+            .map(|(_, hit)| *hit);
+        assert_eq!(
+            over,
+            Some(ViewHit::MenuEntry(0)),
+            "the entry, not the row under it"
+        );
     }
 
     /// A board's footer carries two things — the keys on its left and
@@ -2687,6 +2792,7 @@ mod tests {
                 focused: false,
                 anchor: None,
                 choosing: None,
+                menu: None,
                 rows,
             }),
             content: Content::Lines {
@@ -2841,6 +2947,7 @@ mod tests {
                 focused: false,
                 anchor: None,
                 choosing: Some(Choosing::Item(20)),
+                menu: None,
                 rows,
             }),
             content: Content::Lines {
@@ -3645,6 +3752,7 @@ mod tests {
                 focused: true,
                 anchor: None,
                 choosing: None,
+                menu: None,
                 rows: vec![
                     NavigatorRow::Group {
                         id: 0,

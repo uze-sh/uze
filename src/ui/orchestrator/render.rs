@@ -381,48 +381,10 @@ pub(super) fn render_context_menu(
     menu: &ContextMenu,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    const MIN_WIDTH: u16 = 14;
-    let content_width = menu
-        .items
-        .iter()
-        .map(|action| action.label().len())
-        .max()
-        .unwrap_or(0) as u16;
-    let width = (content_width + 2 * POPUP_H_PAD + 2)
-        .max(MIN_WIDTH)
-        .min(area.width);
-    let height = (menu.items.len() as u16 + 2).min(area.height);
-    let popup = Rect::new(
-        menu.anchor
-            .x
-            .min((area.x + area.width).saturating_sub(width)),
-        (menu.anchor.y + menu.anchor.height).min((area.y + area.height).saturating_sub(height)),
-        width,
-        height,
-    );
-    frame.render_widget(Clear, popup);
-    let inner = Surface::card().render(frame, popup);
-
-    for (index, action) in menu.items.iter().enumerate() {
-        if index as u16 >= inner.height {
-            break;
-        }
-        let row = Rect::new(inner.x, inner.y + index as u16, inner.width, 1);
-        let selected = index == menu.selected;
-        // A filled bar for the selected row, same affordance
-        // `render_agent_picker` uses — always in `theme::color(Token::Accent)`, never a red
-        // fill; every row shares the same neutral color otherwise.
-        let style = if selected {
-            Style::default()
-                .bg(theme::color(Token::Accent))
-                .fg(theme::color(Token::SurfaceBackground))
-                .add_modifier(Modifier::BOLD)
-        } else {
-            theme::fg(Token::TextInactive)
-        };
-        let label = format!("{:pad$}{}", "", action.label(), pad = POPUP_H_PAD as usize);
-        let text = format!("{label:<width$}", width = inner.width as usize);
-        frame.render_widget(Paragraph::new(Span::styled(text, style)), row);
+    let labels: Vec<String> = menu.items.iter().map(|action| action.label()).collect();
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let rows = widget::menu::render(frame, area, menu.anchor, &labels, menu.selected);
+    for (index, row) in rows.into_iter().enumerate() {
         hits.push((row, WorkspaceHit::ContextMenuAction(index)));
     }
 }

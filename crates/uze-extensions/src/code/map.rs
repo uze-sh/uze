@@ -1255,6 +1255,9 @@ mod tests {
         fn delete_file(&self, _: &Path) -> Result<(), String> {
             Err("not asked".to_owned())
         }
+        fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
+            Err("not asked".to_owned())
+        }
         fn syntax_theme(&self) -> String {
             String::new()
         }

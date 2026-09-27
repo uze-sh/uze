@@ -71,6 +71,7 @@ use crate::{
     view::{Caret, Command, Role, ScrollDirection, Size, Span, ViewHit},
 };
 
+mod change_menu;
 mod changes;
 mod diff;
 mod editor;
@@ -117,11 +118,15 @@ const REFRESH_INTERVAL: Duration = Duration::from_millis(750);
 /// paces its own reads by the same factor.
 pub const PACE: u32 = 5;
 
-/// What to do after an event reaches an open [`CodeView`] — the host only
-/// needs to know whether to keep the surface open.
+/// What to do after an event reaches an open [`CodeView`]: whether to keep
+/// the surface open, and anything it asked of the host on the way.
+#[derive(Debug, Eq, PartialEq)]
 pub enum CodeOutcome {
     Stay,
     Close,
+    /// Put this text on the clipboard. The host's, because the clipboard
+    /// is the terminal's and reaching it is a sequence written to it.
+    Copy(String),
 }
 
 /// Which list the navigator is showing — always the one the content mode
@@ -251,6 +256,8 @@ pub struct CodeView {
     confirming_delete: Option<PathBuf>,
     /// Closing with unsaved changes, waiting for its second Esc.
     confirming_discard: bool,
+    /// The actions open on a changed file, if any.
+    menu: Option<change_menu::ChangeMenu>,
 }
 
 /// Where a viewer was on a checkout's code surface, so that opening it
@@ -353,6 +360,7 @@ impl CodeView {
             notice: None,
             confirming_delete: None,
             confirming_discard: false,
+            menu: None,
         };
         if view.navigator() == NavigatorMode::Files {
             view.expand(view.root.clone());
@@ -692,6 +700,34 @@ impl CodeView {
                     Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
                 }
             }
+            FileAnswer::Restored { paths, outcome } => match outcome {
+                Ok(()) => {
+                    if let Some(path) = paths.first() {
+                        self.notice = Some(Span::new(
+                            format!("discarded changes to {}", file_name(path)),
+                            Role::Success,
+                        ));
+                    }
+                    if self
+                        .open
+                        .as_ref()
+                        .is_some_and(|open| paths.contains(&open.path))
+                    {
+                        self.open = None;
+                    }
+                    for parent in paths.iter().filter_map(|path| path.parent()) {
+                        if self.files.listings.contains_key(parent) {
+                            self.queue
+                                .push_back(FileRequest::List(parent.to_path_buf()));
+                        }
+                    }
+                    // The list and the diff on screen are both of a change
+                    // that is gone: read again now rather than on the clock.
+                    self.changes.refreshed_at = None;
+                    self.changes.diff_pending = true;
+                }
+                Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
+            },
             FileAnswer::Deleted { path, outcome } => match outcome {
                 Ok(()) => {
                     self.notice = Some(Span::new(
@@ -782,6 +818,8 @@ impl CodeView {
         if self.content == mode {
             return;
         }
+        // The menu was opened on the list this leaves.
+        self.menu = None;
         let line = self.line_in_view();
         self.content = mode;
         match mode {
@@ -1299,6 +1337,10 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         return map_command(view, command, space);
     }
 
+    if view.menu.is_some() {
+        return change_menu::command(view, command);
+    }
+
     if let Some(path) = view.confirming_delete.clone() {
         view.confirming_delete = None;
         if command == Command::ConfirmDelete {
@@ -1362,6 +1404,16 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         Command::ScrollPageDown => view.scroll = view.scroll.saturating_add(space.height.max(1)),
         // The move the whole surface is for: from a line of the diff into
         // that line of the file, ready to change it.
+        Command::OpenMenu => {
+            if view.navigator() == NavigatorMode::Changes
+                && let Some(index) = view.selected_change()
+            {
+                change_menu::open(view, index);
+            }
+        }
+        // A change is reviewed, kept or thrown away here; the file itself
+        // is edited and deleted in the files half, where it is the subject.
+        Command::Edit | Command::Delete if view.navigator() == NavigatorMode::Changes => {}
         Command::Edit => {
             view.show(ContentMode::Contents);
             if let Some(open) = view
@@ -1484,7 +1536,13 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
     if view.content == ContentMode::Map {
         return map_mouse(view, hit, space);
     }
+    if view.menu.is_some() {
+        return change_menu::mouse(view, hit);
+    }
     match hit {
+        Some(ViewHit::OpenMenu(index)) if view.navigator() == NavigatorMode::Changes => {
+            change_menu::open(view, index);
+        }
         Some(ViewHit::SelectItem(index)) => match view.navigator() {
             NavigatorMode::Changes => {
                 if let Some(file) = view.changes.files.get(index) {

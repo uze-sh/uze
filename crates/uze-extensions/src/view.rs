@@ -256,6 +256,22 @@ pub struct Navigator {
     /// The extension's to say, like what a fold hides: opening a list is
     /// a state of the surface, and what is highlighted in it a selection.
     pub choosing: Option<Choosing>,
+    /// The actions open on one row, or `None`. The extension's state, like
+    /// [`Navigator::choosing`]: the host draws it beside the row and hands
+    /// a pick back as [`ViewHit::MenuEntry`].
+    pub menu: Option<RowMenu>,
+}
+
+/// A short list of what can be done to one navigator row, opened on it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RowMenu {
+    /// The `id` of the [`NavigatorRow::Item`] it was opened on — what the
+    /// host draws it beside.
+    pub row: usize,
+    /// Each entry's words, in the order offered.
+    pub entries: Vec<String>,
+    /// The entry the keyboard is on.
+    pub highlighted: usize,
 }
 
 /// An open list on a board's menu, by the `id` highlighted in it.
@@ -500,6 +516,11 @@ pub enum ViewHit {
     SelectItem(usize),
     /// The `id` of a [`NavigatorRow::Group`], clicked to fold or unfold it.
     ToggleGroup(usize),
+    /// The `id` of a [`NavigatorRow::Item`], asked for its actions — the
+    /// secondary button, where a pointer has one.
+    OpenMenu(usize),
+    /// An entry of the open [`RowMenu`], by its index.
+    MenuEntry(usize),
     /// The selector that offers the groups, pressed: open the list of
     /// them, or shut it.
     ChooseGroup,
@@ -594,6 +615,8 @@ pub enum Command {
     Expand,
     /// Act on the selection.
     Activate,
+    /// Open what can be done to the selection, as a [`RowMenu`].
+    OpenMenu,
     ScrollPageUp,
     ScrollPageDown,
 

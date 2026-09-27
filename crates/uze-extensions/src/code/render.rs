@@ -261,6 +261,9 @@ fn footer(code: &CodeView) -> Vec<Command> {
     if code.editing() {
         return vec![Command::Save, Command::Close];
     }
+    if code.menu.is_some() {
+        return vec![Command::SelectNext, Command::Activate, Command::Close];
+    }
     // The map is the same checkout seen another way, so it is offered
     // wherever the checkout is — and from inside it, the way back out is
     // the same key.
@@ -280,9 +283,16 @@ fn footer(code: &CodeView) -> Vec<Command> {
     if code.selected_is_markdown() {
         commands.push(Command::TogglePreview);
     }
-    if code.selected_is_a_file() {
-        commands.push(Command::Edit);
-        commands.push(Command::Delete);
+    match code.navigator() {
+        NavigatorMode::Changes if code.selected_change().is_some() => {
+            commands.push(Command::OpenMenu);
+        }
+        NavigatorMode::Changes => {}
+        NavigatorMode::Files if code.selected_is_a_file() => {
+            commands.push(Command::Edit);
+            commands.push(Command::Delete);
+        }
+        NavigatorMode::Files => {}
     }
     commands.push(Command::ToggleMap);
     commands.push(Command::FocusNext);
@@ -301,6 +311,11 @@ pub(super) fn changes_navigator(code: &CodeView) -> Navigator {
         focused: code.focus == Focus::Navigator,
         anchor: selected,
         choosing: None,
+        menu: code.menu.as_ref().and_then(|menu| {
+            code.changes
+                .position_of(Some(menu.path()))
+                .map(|row| menu.describe(row))
+        }),
         rows: code
             .changes
             .files
@@ -344,6 +359,7 @@ fn files_navigator(code: &CodeView) -> Navigator {
         focused: code.focus == Focus::Navigator,
         anchor,
         choosing: None,
+        menu: None,
         rows: rows
             .iter()
             .enumerate()

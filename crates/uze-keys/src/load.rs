@@ -386,6 +386,9 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Code, "p", Action::TogglePreview),
         bind(Scope::Code, "m", Action::ToggleMap),
         bind(Scope::Code, "d", Action::DeleteFile),
+        // Not a letter: it opens a list of actions rather than naming one,
+        // and a letter names one action everywhere.
+        bind(Scope::Code, ".", Action::OpenMenu),
         bind(Scope::Code, "y", Action::ConfirmDelete),
         // Typing has a scope of its own so nothing behind it answers a
         // letter — the same reason the action index has one.

@@ -1130,6 +1130,7 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
             rows,
             anchor: None,
             choosing: state.choosing,
+            menu: None,
         }),
         content: content(state, space),
         footer: footer(state),

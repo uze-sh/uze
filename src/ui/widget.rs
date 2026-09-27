@@ -90,6 +90,7 @@ pub(crate) mod field;
 pub(crate) mod footer;
 pub(crate) mod hint;
 pub(crate) mod mark;
+pub(crate) mod menu;
 pub(crate) mod modal;
 pub(crate) mod nav;
 pub(crate) mod row;

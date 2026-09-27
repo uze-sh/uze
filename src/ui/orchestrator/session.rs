@@ -1625,18 +1625,31 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// Hands one command down, and closes the surface if it says so.
+    /// Hands one command down, and does what the surface asks back.
     fn tell_the_code_surface(&mut self, command: Command) {
         let space = self.code_space();
-        if let Some(view) = self.model.code.as_mut()
-            && matches!(
-                code::handle_command(view, command, space),
-                code::CodeOutcome::Close
-            )
+        if let Some(outcome) = self
+            .model
+            .code
+            .as_mut()
+            .map(|view| code::handle_command(view, command, space))
         {
-            self.model.close_code();
+            self.follow_code(outcome);
         }
         self.model.dirty = true;
+    }
+
+    /// What the code surface asked of the host on its way back.
+    fn follow_code(&mut self, outcome: code::CodeOutcome) {
+        match outcome {
+            code::CodeOutcome::Stay => {}
+            code::CodeOutcome::Close => self.model.close_code(),
+            code::CodeOutcome::Copy(text) => {
+                self.model
+                    .raise_toast(ToastKind::Done, "copied", text.clone(), None);
+                self.model.clipboard = Some(text);
+            }
+        }
     }
 
     /// Nothing of uze's is open, so the key belongs to the pane: encode
@@ -2013,13 +2026,13 @@ impl Attach<'_> {
                     self.scroll_code_content_to(mouse.row);
                 } else {
                     let space = self.code_space();
-                    if let Some(view) = self.model.code.as_mut()
-                        && matches!(
-                            code::handle_mouse(view, view_hit, space),
-                            code::CodeOutcome::Close
-                        )
+                    if let Some(outcome) = self
+                        .model
+                        .code
+                        .as_mut()
+                        .map(|view| code::handle_mouse(view, view_hit, space))
                     {
-                        self.model.close_code();
+                        self.follow_code(outcome);
                     }
                 }
                 self.model.dirty = true;
@@ -2313,6 +2326,23 @@ impl Attach<'_> {
     /// The right button: the tab/space context menu, anchored where it
     /// was asked for.
     fn open_context_menu(&mut self, mouse: MouseEvent) -> Flow {
+        // A row of the code surface asks the surface for its actions: the
+        // menu is the extension's, and only the gesture is the host's.
+        if let Some(WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::SelectItem(row)))) =
+            self.model.hit_at(mouse.column, mouse.row)
+        {
+            let space = self.code_space();
+            if let Some(outcome) = self
+                .model
+                .code
+                .as_mut()
+                .map(|view| code::handle_mouse(view, Some(ViewHit::OpenMenu(row)), space))
+            {
+                self.follow_code(outcome);
+            }
+            self.model.dirty = true;
+            return Flow::Continue;
+        }
         match mouse {
             _ if self.model.renaming.is_none()
                 && self.model.root_picker.is_none()
@@ -2946,6 +2976,8 @@ impl Attach<'_> {
                 ),
                 ViewHit::GrabNavigatorEdge
                 | ViewHit::ToggleGroup(_)
+                | ViewHit::OpenMenu(_)
+                | ViewHit::MenuEntry(_)
                 | ViewHit::ChooseGroup
                 | ViewHit::ChooseItem
                 | ViewHit::SelectTrail(_)

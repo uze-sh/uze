@@ -32,6 +32,13 @@ fn space() -> Size {
     }
 }
 
+/// A changed file read whole, the way the changes list offers it: its
+/// menu, then the first entry.
+fn open_the_file_from_its_menu(view: &mut CodeView) {
+    press(view, Command::OpenMenu);
+    press(view, Command::Activate);
+}
+
 /// One command, the way the host hands one down.
 fn press(view: &mut CodeView, command: Command) -> CodeOutcome {
     handle_command(view, command, space())
@@ -73,10 +80,12 @@ fn fixture() -> CodeView {
             ChangedFile {
                 status: FileStatus::Modified,
                 path: root.join("src/ui/git_diff.rs"),
+                renamed_from: None,
             },
             ChangedFile {
                 status: FileStatus::Added,
                 path: root.join("src/ui.rs"),
+                renamed_from: None,
             },
         ],
         1,
@@ -176,6 +185,176 @@ fn a_flat_list_offers_no_folding() {
             .footer
             .iter()
             .any(|command| matches!(command, Command::Collapse | Command::Expand))
+    );
+}
+
+/// The entries of the menu the view describes, and the row it is on.
+fn menu_of(view: &CodeView) -> Option<(usize, Vec<String>, usize)> {
+    navigator(view)
+        .menu
+        .map(|menu| (menu.row, menu.entries, menu.highlighted))
+}
+
+/// The secondary button on a row opens that file's actions and selects
+/// it; while the menu is open the footer speaks only for the menu.
+#[test]
+fn a_changed_file_offers_its_actions_on_its_row() {
+    let mut view = flat_fixture();
+
+    handle_mouse(&mut view, Some(ViewHit::OpenMenu(1)), space());
+
+    assert_eq!(view.selected_change(), Some(1), "the row it was opened on");
+    assert_eq!(
+        menu_of(&view),
+        Some((
+            1,
+            vec![
+                "Open file".to_owned(),
+                "Copy path".to_owned(),
+                "Discard changes…".to_owned()
+            ],
+            0
+        ))
+    );
+    assert_eq!(
+        super::view(&view, space()).footer,
+        [Command::SelectNext, Command::Activate, Command::Close]
+    );
+}
+
+/// The keyboard reaches the same menu, and the changes list offers it in
+/// place of editing and deleting, which belong to the files half.
+#[test]
+fn the_changes_list_offers_the_menu_rather_than_edit_and_delete() {
+    let mut view = flat_fixture();
+    let footer = super::view(&view, space()).footer;
+    assert!(footer.contains(&Command::OpenMenu));
+    assert!(!footer.contains(&Command::Edit) && !footer.contains(&Command::Delete));
+
+    press(&mut view, Command::Delete);
+    assert!(
+        view.confirming_delete.is_none(),
+        "nothing is deleted from here"
+    );
+
+    press(&mut view, Command::OpenMenu);
+    assert_eq!(menu_of(&view).map(|(row, ..)| row), Some(3));
+}
+
+/// Anything that is not a move or a pick shuts the menu and does nothing
+/// else — a key or a click elsewhere alike.
+#[test]
+fn the_menu_shuts_on_anything_that_is_not_meant_for_it() {
+    let mut view = flat_fixture();
+    press(&mut view, Command::OpenMenu);
+    press(&mut view, Command::Close);
+    assert!(menu_of(&view).is_none());
+    assert!(matches!(
+        press(&mut view, Command::Close),
+        CodeOutcome::Close
+    ));
+
+    let mut view = flat_fixture();
+    press(&mut view, Command::OpenMenu);
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
+    assert!(menu_of(&view).is_none());
+    assert_eq!(view.selected_change(), Some(3), "the click only shut it");
+}
+
+/// A deleted file has nothing on disk to open.
+#[test]
+fn a_deleted_file_is_not_offered_to_open() {
+    let root = PathBuf::from("/repo");
+    let mut view = surface(
+        &root,
+        changes::parse_porcelain_status(" D gone.rs\0", &root),
+        0,
+    );
+    press(&mut view, Command::OpenMenu);
+    let (_, entries, _) = menu_of(&view).expect("the menu opened");
+    assert_eq!(entries, ["Copy path", "Discard changes…"]);
+}
+
+/// The path goes to the host's clipboard, relative to the checkout, the
+/// way a reviewer pastes it anywhere else.
+#[test]
+fn copying_a_path_hands_the_host_the_checkouts_own_spelling() {
+    let mut view = flat_fixture();
+    press(&mut view, Command::OpenMenu);
+    press(&mut view, Command::SelectNext);
+    assert_eq!(
+        press(&mut view, Command::Activate),
+        CodeOutcome::Copy("src/ui/git_diff.rs".to_owned())
+    );
+    assert!(menu_of(&view).is_none());
+}
+
+/// Throwing a change away cannot be undone, so it asks in the menu it was
+/// chosen from, with the harmless answer under the keyboard; only the
+/// second pick reaches the machine, and the list is read again at once.
+#[test]
+fn discarding_a_change_asks_once_and_then_restores_it() {
+    let machine = FakeMachine::default();
+    let mut view = flat_fixture();
+    let discard = |view: &mut CodeView| {
+        press(view, Command::OpenMenu);
+        press(view, Command::SelectNext);
+        press(view, Command::SelectNext);
+        press(view, Command::Activate);
+    };
+
+    discard(&mut view);
+    assert_eq!(
+        menu_of(&view),
+        Some((
+            3,
+            vec![
+                "Discard changes to git_diff.rs".to_owned(),
+                "Cancel".to_owned()
+            ],
+            1
+        ))
+    );
+    press(&mut view, Command::Activate);
+    assert!(view.peek_request().is_none(), "cancel restores nothing");
+
+    discard(&mut view);
+    press(&mut view, Command::SelectPrevious);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+
+    assert_eq!(
+        *machine.restored.borrow(),
+        [PathBuf::from("/repo/src/ui/git_diff.rs")]
+    );
+    assert!(view.refresh_due(), "the list is read again now");
+    assert!(
+        view.diff_pending(),
+        "and the diff of a change that is gone with it"
+    );
+}
+
+/// A rename is two paths, and throwing it away puts the old one back.
+#[test]
+fn discarding_a_rename_restores_both_of_its_paths() {
+    let machine = FakeMachine::default();
+    let root = PathBuf::from("/repo");
+    let mut view = surface(
+        &root,
+        changes::parse_porcelain_status("R  new.rs\0old.rs\0", &root),
+        0,
+    );
+    press(&mut view, Command::OpenMenu);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::Activate);
+    press(&mut view, Command::SelectPrevious);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+
+    assert_eq!(
+        *machine.restored.borrow(),
+        [root.join("new.rs"), root.join("old.rs")]
     );
 }
 
@@ -365,6 +544,10 @@ impl Host for RepositoryHost {
     fn delete_file(&self, _path: &Path) -> Result<(), String> {
         unreachable!("reading a repository deletes nothing")
     }
+
+    fn restore_to_head(&self, _root: &Path, _paths: &[PathBuf]) -> Result<(), String> {
+        unreachable!("reading a repository restores nothing")
+    }
 }
 
 /// A repository that answers the same thing every time, and counts how
@@ -403,6 +586,10 @@ impl Host for StillRepository {
 
     fn delete_file(&self, _path: &Path) -> Result<(), String> {
         unreachable!("reading a repository deletes nothing")
+    }
+
+    fn restore_to_head(&self, _root: &Path, _paths: &[PathBuf]) -> Result<(), String> {
+        unreachable!("reading a repository restores nothing")
     }
 
     fn syntax_theme(&self) -> String {
@@ -517,6 +704,7 @@ fn a_refresh_from_before_the_selection_moved_keeps_the_new_diff() {
 struct FakeMachine {
     directories: BTreeMap<PathBuf, Vec<DirEntry>>,
     files: RefCell<BTreeMap<PathBuf, String>>,
+    restored: RefCell<Vec<PathBuf>>,
 }
 
 impl FakeMachine {
@@ -578,6 +766,11 @@ impl Host for FakeMachine {
 
     fn delete_file(&self, path: &Path) -> Result<(), String> {
         self.files.borrow_mut().remove(path);
+        Ok(())
+    }
+
+    fn restore_to_head(&self, _root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+        self.restored.borrow_mut().extend_from_slice(paths);
         Ok(())
     }
 
@@ -1229,6 +1422,7 @@ fn switching_from_a_diff_to_the_contents_keeps_the_file_and_the_line() {
     view.changes.files = vec![ChangedFile {
         status: FileStatus::Modified,
         path: PathBuf::from("/w/a.rs"),
+        renamed_from: None,
     }];
     view.changes.diff = diff::read(
         "@@ -1,4 +1,4 @@\n one\n two\n-old\n+three\n four\n",
@@ -1239,7 +1433,7 @@ fn switching_from_a_diff_to_the_contents_keeps_the_file_and_the_line() {
     // Scrolled to the replacement, which is line three of the new file.
     view.scroll = 3;
 
-    press(&mut view, Command::Edit);
+    open_the_file_from_its_menu(&mut view);
     settle(&mut view, &machine);
 
     let open = view.open.as_ref().expect("the file opened");
@@ -1268,6 +1462,7 @@ fn a_multi_line_replacement_carries_the_line_both_ways() {
     view.changes.files = vec![ChangedFile {
         status: FileStatus::Modified,
         path: PathBuf::from("/w/a.rs"),
+        renamed_from: None,
     }];
     view.changes.diff = diff::read(
         "@@ -1,4 +1,4 @@\n one\n-a\n-b\n+c\n+d\n four\n",
@@ -1295,7 +1490,7 @@ fn a_multi_line_replacement_carries_the_line_both_ways() {
     // On `+d`, line three of the new file.
     view.scroll = 4;
 
-    press(&mut view, Command::Edit);
+    open_the_file_from_its_menu(&mut view);
     settle(&mut view, &machine);
     let open = view.open.as_ref().expect("the file opened");
     assert_eq!(open.lines[open.caret.line], "d");
@@ -1318,8 +1513,13 @@ fn switching_to_a_file_the_tree_has_not_listed_opens_its_ancestors() {
         .with_file("/w/src/ui/deep.rs", "fn deep() {}\n");
     let mut view = CodeView::opening(PathBuf::from("/w"), "/w".to_owned(), ContentMode::Diff);
     view.selected = Some(PathBuf::from("/w/src/ui/deep.rs"));
+    view.changes.files = vec![ChangedFile {
+        status: FileStatus::Modified,
+        path: PathBuf::from("/w/src/ui/deep.rs"),
+        renamed_from: None,
+    }];
 
-    press(&mut view, Command::Edit);
+    open_the_file_from_its_menu(&mut view);
     settle(&mut view, &machine);
 
     assert!(
@@ -1575,10 +1775,12 @@ fn a_documents_diff_is_still_a_diff() {
         ChangedFile {
             status: FileStatus::Modified,
             path: PathBuf::from("/w/a.rs"),
+            renamed_from: None,
         },
         ChangedFile {
             status: FileStatus::Modified,
             path: PathBuf::from("/w/README.md"),
+            renamed_from: None,
         },
     ];
     view.selected = Some(PathBuf::from("/w/a.rs"));
@@ -1615,6 +1817,7 @@ fn a_changes_refresh_leaves_an_unsaved_buffer_alone() {
             files: vec![ChangedFile {
                 status: FileStatus::Modified,
                 path: PathBuf::from("/w/notes.txt"),
+                renamed_from: None,
             }],
             ..Changes::default()
         },

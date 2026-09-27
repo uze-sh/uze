@@ -46,6 +46,12 @@ pub enum FileRequest {
         contents: String,
     },
     Delete(PathBuf),
+    /// Throw away what changed at `paths`, putting each back as `root`'s
+    /// last commit has it.
+    Restore {
+        root: PathBuf,
+        paths: Vec<PathBuf>,
+    },
 }
 
 /// What the host did about a [`FileRequest`].
@@ -80,6 +86,10 @@ pub enum FileAnswer {
     },
     Deleted {
         path: PathBuf,
+        outcome: Result<(), String>,
+    },
+    Restored {
+        paths: Vec<PathBuf>,
         outcome: Result<(), String>,
     },
 }
@@ -134,6 +144,10 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
             path: path.clone(),
             outcome: Err(reason.to_owned()),
         },
+        FileRequest::Restore { paths, .. } => FileAnswer::Restored {
+            paths: paths.clone(),
+            outcome: Err(reason.to_owned()),
+        },
     }
 }
 
@@ -172,6 +186,10 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
         FileRequest::Delete(path) => FileAnswer::Deleted {
             outcome: host.delete_file(&path),
             path,
+        },
+        FileRequest::Restore { root, paths } => FileAnswer::Restored {
+            outcome: host.restore_to_head(&root, &paths),
+            paths,
         },
     }
 }

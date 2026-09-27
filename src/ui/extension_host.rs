@@ -168,6 +168,58 @@ impl uze_extensions::Host for WorkspaceHost {
         std::fs::remove_file(path).map_err(|error| error.to_string())
     }
 
+    /// Through `uze-git`'s write path, under the repository lock, one path
+    /// at a time: a path the last commit has is restored in the index and
+    /// the tree together, and one it lacks — added, untracked, a rename's
+    /// new name — leaves the index and then the disk. Asked of the commit
+    /// rather than of the status, because the status is what just changed.
+    fn restore_to_head(&self, root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+        let write = |args: &[&str]| {
+            uze_git::write(root, args)
+                .map_err(|error| error.to_string())?
+                .successful()
+        };
+        // Refused before anything runs, so a list with one stray path in
+        // it restores none rather than some.
+        if let Some(outside) = paths.iter().find(|path| !path.starts_with(root)) {
+            return Err(format!(
+                "{} is outside {}",
+                outside.display(),
+                root.display()
+            ));
+        }
+        for path in paths {
+            let relative = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+            let committed = uze_git::read(root, &["cat-file", "-e", &format!("HEAD:{relative}")])
+                .is_ok_and(|output| output.is_success());
+            let pathspec = format!(":(literal){relative}");
+            if committed {
+                write(&[
+                    "restore",
+                    "--source=HEAD",
+                    "--staged",
+                    "--worktree",
+                    "--",
+                    &pathspec,
+                ])?;
+            } else {
+                write(&[
+                    "rm",
+                    "--cached",
+                    "--quiet",
+                    "--ignore-unmatch",
+                    "--",
+                    &pathspec,
+                ])?;
+                if path.is_file() {
+                    std::fs::remove_file(path).map_err(|error| error.to_string())?;
+                }
+            }
+            forget_statuses_around(path);
+        }
+        Ok(())
+    }
+
     /// Counted off a buffered read rather than the whole file: the change
     /// badge asks this of every untracked file every refresh, and an
     /// untracked directory a project never gitignored is megabytes read
@@ -490,6 +542,55 @@ mod tests {
             answer == Ok("fresh".to_owned()) || answer.is_err(),
             "answered, never waiting: {answer:?}"
         );
+    }
+
+    /// Every kind of change a reviewer throws away comes back as the last
+    /// commit has it: an edit undone in the tree and the index, a deleted
+    /// file back, and a staged or untracked new one gone from both.
+    #[test]
+    fn restoring_to_head_leaves_nothing_changed() {
+        let repository = uze_testkit::git::Repository::new("restore-to-head");
+        let root = repository.root().to_path_buf();
+        repository.commit_file("edited.rs", "fn one() {}\n");
+        repository.commit_file("removed.rs", "fn two() {}\n");
+        repository.commit_file("[literal].rs", "fn three() {}\n");
+
+        std::fs::write(root.join("edited.rs"), "fn changed() {}\n").unwrap();
+        repository.git(&["add", "edited.rs"]);
+        std::fs::write(root.join("edited.rs"), "fn changed_again() {}\n").unwrap();
+        std::fs::remove_file(root.join("removed.rs")).unwrap();
+        std::fs::write(root.join("[literal].rs"), "fn other() {}\n").unwrap();
+        std::fs::write(root.join("staged.rs"), "fn staged() {}\n").unwrap();
+        repository.git(&["add", "staged.rs"]);
+        std::fs::write(root.join("untracked.rs"), "fn loose() {}\n").unwrap();
+
+        let paths: Vec<_> = [
+            "edited.rs",
+            "removed.rs",
+            "[literal].rs",
+            "staged.rs",
+            "untracked.rs",
+        ]
+        .map(|name| root.join(name))
+        .into();
+        WorkspaceHost.restore_to_head(&root, &paths).unwrap();
+
+        assert_eq!(repository.git(&["status", "--porcelain"]), "");
+        assert_eq!(
+            std::fs::read_to_string(root.join("edited.rs")).unwrap(),
+            "fn one() {}\n"
+        );
+        assert!(!root.join("untracked.rs").exists());
+    }
+
+    /// The grant is the checkout's own paths and no others.
+    #[test]
+    fn restoring_to_head_refuses_a_path_outside_the_checkout() {
+        let repository = uze_testkit::git::Repository::new("restore-outside");
+        let root = repository.root().to_path_buf();
+        let outside = root.parent().unwrap().join("elsewhere.rs");
+
+        assert!(WorkspaceHost.restore_to_head(&root, &[outside]).is_err());
     }
 
     /// Changing a file is changing what `status` says, so the shared

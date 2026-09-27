@@ -328,6 +328,9 @@ pub(super) struct ChangedFile {
     /// tab whose `cwd` is a subdirectory; resolving to an absolute path
     /// once here means nothing downstream has to re-derive that.
     pub(super) path: PathBuf,
+    /// Where a rename came from — the other path throwing it away puts
+    /// back. `None` for everything else.
+    pub(super) renamed_from: Option<PathBuf>,
 }
 
 /// Every changed path, untracked ones listed file by file — the one status
@@ -376,9 +379,10 @@ pub(super) fn parse_porcelain_status(output: &str, root: &Path) -> Vec<ChangedFi
         };
         // A rename or copy is two records, where it went and then where it
         // came from — and only the first is where the change lives now.
-        if code.contains(['R', 'C']) {
-            records.next();
-        }
+        let source = match code.contains(['R', 'C']) {
+            true => records.next(),
+            false => None,
+        };
         if relative.is_empty() {
             continue;
         }
@@ -396,6 +400,10 @@ pub(super) fn parse_porcelain_status(output: &str, root: &Path) -> Vec<ChangedFi
         files.push(ChangedFile {
             status,
             path: root.join(relative),
+            // A copy leaves its source where it was.
+            renamed_from: source
+                .filter(|_| code.contains('R'))
+                .map(|source| root.join(source)),
         });
     }
     files.sort_by_cached_key(|file| {
