@@ -21,7 +21,7 @@ one can be derived, the corrected name.
 - **WHEN** a package `git@ai` is installed and the operator installs
   `Git@AI`
 - **THEN** it resolves to the same package `git@ai`, and no second Store
-  entry, lock entry or receipt is created
+  entry or registration is created
 
 ### Requirement: The case a person types is forgiven
 The system SHALL lowercase a plugin, marketplace or alias name a person

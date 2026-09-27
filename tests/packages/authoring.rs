@@ -507,3 +507,52 @@ fn collect_strings(value: &serde_json::Value, into: &mut Vec<String>) {
         _ => {}
     }
 }
+
+/// The authoring verbs hold the name rule before writing anything, and
+/// tell the author the name they meant.
+#[test]
+fn a_name_outside_the_rule_is_refused_before_the_scaffold() {
+    let root = uze_testkit::temp::scratch("authoring-cli-name-rule");
+    let at = root.join("named");
+    let market = uze(&root)
+        .args(["agent", "market", "create", "My Market", "--at"])
+        .arg(&at)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&market.stderr);
+    assert!(
+        !market.status.success(),
+        "a bad marketplace name must be refused"
+    );
+    assert!(stderr.contains("try `my-market`"), "{stderr}");
+    assert!(!at.exists(), "the refusal wrote nothing");
+    assert!(!registry(&root).contains("My Market"));
+
+    let tools = root.join("tools");
+    let created = create_marketplace(&root, &tools).output().unwrap();
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let plugin = uze(&root)
+        .args([
+            "agent",
+            "plugin",
+            "create",
+            "My_Plugin",
+            "--market",
+            "tools",
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&plugin.stderr);
+    assert!(
+        !plugin.status.success(),
+        "a bad plugin name must be refused"
+    );
+    assert!(stderr.contains("try `my-plugin`"), "{stderr}");
+    assert!(!tools.join("plugins/My_Plugin").exists());
+    assert!(!tools.join("plugins/my-plugin").exists());
+    let _ = fs::remove_dir_all(root);
+}

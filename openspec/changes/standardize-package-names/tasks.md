@@ -10,7 +10,7 @@
 ## 2. Marketplace registration
 
 - [x] 2.1 The manifest reader refuses a marketplace name outside the rule,
-  before a Git marketplace is mirrored
+  before a Git marketplace's mirror is kept under that name
 - [x] 2.2 The registry refuses to record one, whatever supplied the name
 - [x] 2.3 Tests for both
 

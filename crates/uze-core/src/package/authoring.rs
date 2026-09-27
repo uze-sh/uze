@@ -71,10 +71,10 @@ pub fn scaffold_local_marketplace(
         return Err(UzeError::InvalidMarketplaceName(name.to_owned()));
     }
     if !is_plain_directory_name(plugins_dir) {
-        return Err(UzeError::InvalidPackageName {
-            name: plugins_dir.to_owned(),
-            path: project_root.to_path_buf(),
-        });
+        return Err(UzeError::MarketplaceScaffold(format!(
+            "`{plugins_dir}` is not a plugins directory — one path segment of letters, digits, \
+             `-` and `_`, not starting with `-`"
+        )));
     }
     let manifest_path = project_root.join(MARKETPLACE_MANIFEST);
     if manifest_path.is_file() {

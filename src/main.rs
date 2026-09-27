@@ -4553,6 +4553,38 @@ mod grammar_tests {
         );
     }
 
+    /// Every name on record is lowercase, so every argument that names a
+    /// plugin, a marketplace or an alias is forgiven the case it was typed
+    /// in before anything resolves. The install positional is not here: it
+    /// may be a project directory, so its `name@marketplace` form is
+    /// lowercased where it is parsed.
+    #[test]
+    fn every_typed_name_argument_arrives_lowercase() {
+        use clap::Parser;
+        for argv in [
+            vec!["install", "-m", "x@y", "--alias", "MiXeD"],
+            vec!["update", "MiXeD"],
+            vec!["remove", "MiXeD"],
+            vec!["inspect", "MiXeD"],
+            vec!["market", "remove", "MiXeD"],
+            vec!["market", "link", "MiXeD", "/checkout"],
+            vec!["market", "unlink", "MiXeD"],
+            vec!["market", "inspect", "MiXeD"],
+            vec!["agent", "plugin", "create", "x", "--market", "MiXeD"],
+        ] {
+            let parsed = Cli::try_parse_from(std::iter::once("uze").chain(argv.iter().copied()))
+                .unwrap_or_else(|error| panic!("{argv:?}: {error}"));
+            let parsed = format!("{parsed:?}");
+            assert!(
+                parsed.contains("mixed") && !parsed.contains("MiXeD"),
+                "{argv:?} kept the typed case: {parsed}"
+            );
+        }
+        let shorthand =
+            super::ShorthandArgs::try_parse_from(["uze", "x@y", "--alias", "MiXeD"]).unwrap();
+        assert_eq!(shorthand.alias.as_deref(), Some("mixed"));
+    }
+
     /// Context lives on the agent's surface and nowhere else. A root
     /// `context` would put the same three verbs in front of a person who
     /// is served by `status` and `install`, and the audience split is the

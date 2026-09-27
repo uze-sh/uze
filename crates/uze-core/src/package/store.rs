@@ -169,13 +169,9 @@ impl PackageId {
     }
 
     pub fn from_marketplace_plugin(marketplace: &str, name: &str, manifest: &Path) -> Result<Self> {
-        // The id is later used as a bare CLI argument to vendor tooling
-        // (e.g. `codex plugin remove <id>@marketplace`, with no `--`
-        // separator available before it). A leading `-` would let a
-        // maliciously or carelessly named plugin be parsed as a flag by
-        // that vendor CLI rather than as the id itself, so it is rejected
-        // here at the one chokepoint every package id is constructed
-        // through — not just re-checked at each call site.
+        // The one chokepoint every package id is constructed through, so
+        // the name rule (see `is_valid_name_component`) is enforced here
+        // rather than re-checked at each call site.
         let valid = is_valid_name_component(name);
         let valid_marketplace = is_valid_name_component(marketplace);
         if !valid_marketplace {
@@ -195,13 +191,9 @@ impl PackageId {
     }
 
     pub fn from_qualified(value: &str, manifest: &Path) -> Result<Self> {
-        let (name, marketplace) =
-            value
-                .rsplit_once('@')
-                .ok_or_else(|| UzeError::InvalidPackageName {
-                    path: manifest.to_path_buf(),
-                    name: value.to_owned(),
-                })?;
+        let (name, marketplace) = value.rsplit_once('@').ok_or_else(|| {
+            UzeError::InvalidPluginSpec(format!("`{value}` must be `name@marketplace`"))
+        })?;
         Self::from_marketplace_plugin(marketplace, name, manifest)
     }
 
