@@ -152,6 +152,22 @@ fails on any flake — the promotion gate for changing the registry or the
 suite. Verify the gate locally with `python3 conformance/tests/test_gate.py`
 (no docker needed).
 
+**Two legs per vertical, and reusing a passed one**: CI runs each vertical
+as two legs, the common contract and the vendor's own scenarios
+(`lab.py --part contract|vendor`); a local run without `--part` performs
+both. A pull request or a push to `main` does not run a leg again when one
+already passed against the same harness version and the same content of
+everything that vertical reads (`.github/scripts/proof.py` names both
+halves; its `test_proof.py` holds which paths reach which vertical). The
+versions are read from the freshly built image, so a vendor release is
+always a real run; a change to one vendor's integration or scenarios runs
+only that vertical; the terminal UI, its extensions and the Lab's own unit
+tests reach none. A pass records its proof as an artifact named by the key,
+in the run that holds the evidence, so the push to `main` after a merge
+reuses what the pull request proved. This is a decision about whether to
+run, not a record of what ran: the evidence above is untouched, and an
+`unknown` version, the nightly and a hand-started run always run for real.
+
 ## Exploration modes (sandbox, experiments, variations, matrix)
 
 The Lab doubles as an exploration surface for the agent or a maintainer —

@@ -54,21 +54,85 @@ jobs:
     name: Image
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      # Listing artifacts by name is how a proof is found; see
+      # `.github/scripts/proof.py` for why a proof is an artifact.
+      actions: read
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      pending: ${{ steps.plan.outputs.pending }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: lab-release
+          # Restore everywhere, save only from `main` — see `ci.yml`'s `test`.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The Dockerfile's own `uze-build` stage compiled from nothing on every
+      # run — 295 of the job's 342 seconds, measured — because its cache
+      # mounts die with a hosted runner, and at `.cargo/config.toml`'s two
+      # jobs on a four-core machine. Here the same compile runs on the
+      # runner's own toolchain and cache, inside the image the stage names so
+      # the binaries link against the glibc the Lab image runs (the runner's
+      # is newer, and a binary built on it does not start there), and the
+      # result is handed to the Dockerfile in place of that stage. A local
+      # `docker build` still runs the stage itself.
+      - name: Build the binaries the Lab bakes
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "${PWD}:/src" -w /src \
+            -v "${HOME}/.cargo:/cargo" -v "${HOME}/.rustup:/rustup" \
+            -e HOME=/tmp -e CARGO_HOME=/cargo -e RUSTUP_HOME=/rustup \
+            -e PATH=/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e CARGO_BUILD_JOBS="$(nproc)" -e CARGO_TERM_COLOR=always \
+            rust:1.97-bookworm \
+            sh -c 'cargo build --locked --release --bin uze && cargo build --locked --release --features dev-servers --bin uze-mcp-conformance-fixture'
+          mkdir -p "${RUNNER_TEMP}/uze-build/out"
+          cp target/release/uze target/release/uze-mcp-conformance-fixture "${RUNNER_TEMP}/uze-build/out/"
       # The Lab image bakes the real harness binaries (channel-latest),
       # the `uze` binary and the fixture tree; `lab.py` runs each vertical
       # against it in a disposable `--internal` network — zero Internet,
       # zero tokens.
       - name: Build the Lab harness image
-        run: docker build -f conformance/Dockerfile -t conformance-harness:latest .
+        run: |
+          docker buildx build --load --build-context uze-build="${RUNNER_TEMP}/uze-build" \
+            -f conformance/Dockerfile -t conformance-harness:latest .
+      - name: Install Lab runner dependency
+        run: python3 -m pip install --user pexpect
+      # Channel-latest is only known once it is installed, so the versions
+      # a leg keys its proof on are read here, from this image, with the
+      # same probes the run itself records — never resolved a second time
+      # against the vendors, which could answer differently a minute later.
+      #
+      # Every leg's key and prior proof is settled here rather than in the
+      # leg, so an image nobody will load is never saved or uploaded. The
+      # nightly and a hand-started run always run: they are the record that
+      # a verdict still holds.
+      - id: plan
+        name: Plan which legs still need to run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FRESH: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          versions="$(python3 .github/scripts/proof.py versions)"
+          echo "versions: ${versions}"
+          fresh=()
+          if [ "${FRESH}" = true ]; then fresh=(--fresh); fi
+          python3 .github/scripts/proof.py conformance --versions "${versions}" "${fresh[@]}" >> "${GITHUB_OUTPUT}"
+          grep '^pending=' "${GITHUB_OUTPUT}"
       # zstd, not the artifact action's own gzip: the image is measured in
       # gigabytes, `-T0 -3` saturates the runner's cores for a ratio gzip
       # reaches at several times the wall clock, and `compression-level: 0`
       # below stops the upload from trying to compress it a second time.
       - name: Hand it to the verticals
+        if: steps.plan.outputs.pending != '0'
         run: docker save conformance-harness:latest | zstd -T0 -3 -o /tmp/lab-image.tar.zst
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - if: steps.plan.outputs.pending != '0'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: lab-image
           path: /tmp/lab-image.tar.zst
@@ -79,13 +143,19 @@ jobs:
           if-no-files-found: error
 
   conformance:
-    name: E2E - ${{ matrix.label }}
+    name: E2E - ${{ matrix.label }} (${{ matrix.part }})
     needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
+      # Each vertical is two legs: the contract every harness must hold, and
+      # what is unique to the vendor (`lab.py --part`). A vertical ran them
+      # one after the other in a single leg — Antigravity's ten minutes were
+      # two halves of four and a half, and nothing between them.
       matrix:
+        harness: [antigravity, claude, codex, opencode]
+        part: [contract, vendor]
         include:
           - harness: antigravity
             label: Antigravity
@@ -95,9 +165,24 @@ jobs:
             label: Codex
           - harness: opencode
             label: OpenCode
+    env:
+      KEY: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].key }}
+      VERSION: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].version }}
+      PROVEN: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].proven }}
     steps:
+      - name: Already proven
+        if: env.PROVEN != ''
+        run: |
+          echo "::notice title=${{ matrix.label }} (${{ matrix.part }}) already proven::${VERSION} passed in ${PROVEN}"
+          {
+            echo "Passed against ${VERSION} in ${PROVEN}"
+            echo
+            echo "Reused: neither the harness version nor anything this leg reads changed since that run."
+          } >> "${GITHUB_STEP_SUMMARY}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.PROVEN == ''
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: env.PROVEN == ''
         with:
           name: lab-image
           path: /tmp
@@ -105,21 +190,24 @@ jobs:
       # it restored; keep it in the log, because "which image did this leg
       # actually run" is the first question a divergent result raises.
       - name: Load the Lab image
+        if: env.PROVEN == ''
         run: zstd -d -c /tmp/lab-image.tar.zst | docker load
       - name: Install Lab runner dependency
+        if: env.PROVEN == ''
         run: python3 -m pip install --user pexpect
-      - name: Run the ${{ matrix.harness }} vertical
+      - name: Run the ${{ matrix.harness }} ${{ matrix.part }} half
+        if: env.PROVEN == ''
         run: |
-          python3 conformance/lab.py --harness ${{ matrix.harness }} --write-summary --retry-once
+          python3 conformance/lab.py --harness ${{ matrix.harness }} --part ${{ matrix.part }} --write-summary --retry-once
         env:
-          AGY_OUTDIR: /tmp/harness-conformance/${{ matrix.harness }}/run1
-          UZE_EVIDENCE_DIR: /tmp/harness-conformance/${{ matrix.harness }}/run1/evidence
+          AGY_OUTDIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1
+          UZE_EVIDENCE_DIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1/evidence
       - name: Upload evidence
-        if: always()
+        if: always() && env.PROVEN == ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: conformance-evidence-${{ matrix.harness }}
-          path: /tmp/harness-conformance/${{ matrix.harness }}/run1/
+          name: conformance-evidence-${{ matrix.harness }}-${{ matrix.part }}
+          path: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1/
           retention-days: 90
           if-no-files-found: ignore
       # Evidence lives in Actions artifacts (downloadable via UI/API,
@@ -127,3 +215,19 @@ jobs:
       # being pushed to main — the parallel jobs raced each other on git
       # pushes, and artifact storage carries the same audit trail without
       # the commit churn (ADR-035 revised).
+      #
+      # Only a pass is recorded. The proof is an artifact named by its key,
+      # in the run that holds the evidence it points at, and lives exactly
+      # as long as that evidence does.
+      - name: Record the proof
+        if: success() && env.PROVEN == '' && env.KEY != ''
+        run: |
+          mkdir -p /tmp/proof
+          echo "${VERSION} at ${GITHUB_SHA}" > /tmp/proof/proof.txt
+      - if: success() && env.PROVEN == '' && env.KEY != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ env.KEY }}
+          path: /tmp/proof/proof.txt
+          retention-days: 90
+          if-no-files-found: error

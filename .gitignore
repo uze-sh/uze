@@ -30,3 +30,6 @@ journeys/.evidence/
 # coverage counter files (cargo llvm-cov writes these; a manual run can drop
 # them wherever the instrumented process happened to be standing)
 *.profraw
+
+# Python bytecode, from the Lab, the journeys runner and the CI scripts.
+__pycache__/

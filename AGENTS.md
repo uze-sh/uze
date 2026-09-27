@@ -340,6 +340,11 @@ need to).
   `make lab-replay`. `conformance.yml` runs all four verticals (matrix) —
   its own workflow, on the paths that reach the Lab image plus nightly, so
   a docs or web change no longer pays 34 runner-minutes to prove nothing.
+  Each vertical runs as two legs (`lab.py --part contract|vendor`), and a
+  leg — of the Lab or of the journeys — that already passed against the
+  same content of what it reads and the same thing outside the repository
+  it drives is reused, not rerun (`.github/scripts/proof.py`); the nightly
+  always runs.
   `conformance-stability.yml` is ADR-035's promotion gate (3 clean runs per
   vertical), nightly only.
   Debugging a failure: see the `conformance-debug` skill (fast `--sandbox`

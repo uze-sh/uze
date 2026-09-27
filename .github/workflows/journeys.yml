@@ -35,6 +35,39 @@ permissions:
   contents: read
 
 jobs:
+  # One leg per slice per platform. The suite ran as one serial queue: forty
+  # journeys, 11.5 minutes on Linux and 16.3 on macOS, on the critical path of
+  # every run. Every journey builds its own world, so each leg takes an
+  # interleaved slice (`journey.py --shard`).
+  #
+  # The count differs per platform, which a matrix cannot say, so it is
+  # expanded here. Linux takes five: against measured durations the longest
+  # slice is 3.0 minutes. macOS takes four, not the five its durations would
+  # like: GitHub runs five macOS jobs at once per account, `Test (macos)` is
+  # one of them, and a fifth slice waited four minutes for a runner — longer
+  # than it saved.
+  plan:
+    name: Plan the slices
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      legs: ${{ steps.legs.outputs.legs }}
+    steps:
+      - id: legs
+        env:
+          # An event that is not a `workflow_call` — the nightly, a manual
+          # run — carries no inputs, and performs both platforms whatever
+          # changed: a pull request only takes macOS when it reaches something
+          # macOS can tell apart (`ci.yml`'s `journey_platform_surface`), and
+          # this is what stands behind every change it did not take it for.
+          PLATFORMS: ${{ inputs.platforms || '[{"platform":"linux","runner":"ubuntu-24.04"},{"platform":"macos","runner":"macos-15"}]' }}
+        run: |
+          legs="$(jq -c '[.[] | ({linux: 5, macos: 4}[.platform]) as $of
+                          | range(1; $of + 1) as $shard
+                          | {platform, runner, shard: $shard, of: $of}]' <<< "${PLATFORMS}")"
+          echo "legs=${legs}" >> "${GITHUB_OUTPUT}"
+          jq . <<< "${legs}"
+
   journeys:
     # Named for its subject, not for the workflow around it: GitHub renders a
     # check as `<workflow> / <job>`, and `Journeys / Journeys` said one thing
@@ -42,7 +75,8 @@ jobs:
     # and the rest, where the pair now reads as what each tier drives
     # end to end — this one drives UZE, those drive a vendor's harness. The
     # platform is in the name because the two runs prove different halves.
-    name: E2E - UZE (${{ matrix.platform }})
+    name: E2E - UZE (${{ matrix.platform }}, ${{ matrix.shard }}/${{ matrix.of }})
+    needs: plan
     # Pinned images, never `-latest`. The journey drives a rendered screen, so
     # the terminal is part of the contract — the tmux build, the locale and
     # the unicode width tables decide where a glyph lands, and a moving
@@ -55,9 +89,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # An event that is not a `workflow_call` — the nightly, a manual run —
-        # carries no inputs, and falls back to the platform every event runs.
-        include: ${{ fromJSON(inputs.platforms || '[{"platform":"linux","runner":"ubuntu-24.04"}]') }}
+        include: ${{ fromJSON(needs.plan.outputs.legs) }}
+    permissions:
+      contents: read
+      # To find a proof, which is an artifact of an earlier run.
+      actions: read
     env:
       # What the container image used to set. The frames are read as text, so
       # the locale is part of what a selector matches, and it must be the same
@@ -66,10 +102,37 @@ jobs:
       TERM: xterm-256color
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # A slice that already passed against this content, on this runner
+      # image, is not performed again — the push to `main` after a merge is
+      # the case this exists for. The runner image is in the key because the
+      # terminal is part of the contract (see `runs-on` above). The nightly
+      # and a hand-started run always perform: they are the record.
+      # `journey validate` is not part of any proof; the `Python` job in
+      # `ci.yml` runs it on every change.
+      - id: proof
+        name: Look for a run that already proved this slice
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FRESH: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          fresh=()
+          if [ "${FRESH}" = true ]; then fresh=(--fresh); fi
+          python3 .github/scripts/proof.py journeys --platform "${{ matrix.platform }}" \
+            --shard "${{ matrix.shard }}/${{ matrix.of }}" --runner "${ImageOS}-${ImageVersion}" "${fresh[@]}" >> "${GITHUB_OUTPUT}"
+          cat "${GITHUB_OUTPUT}"
+      - name: Already proven
+        if: steps.proof.outputs.proven != ''
+        env:
+          PROVEN: ${{ steps.proof.outputs.proven }}
+        run: |
+          echo "::notice title=Journeys ${{ matrix.platform }} ${{ matrix.shard }}/${{ matrix.of }} already proven::passed in ${PROVEN}"
+          echo "Reused: nothing this slice reads changed since ${PROVEN}" >> "${GITHUB_STEP_SUMMARY}"
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        if: steps.proof.outputs.proven == ''
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        if: steps.proof.outputs.proven == ''
         with:
           # The same key `ci.yml`'s `test` job writes. Both build this
           # workspace with this toolchain and these flags — the two cache
@@ -85,7 +148,7 @@ jobs:
       # job in the gate. macOS only, for the reason `ci.yml`'s `test` job
       # states: the Linux baseline is what every green run so far measured.
       - name: Use the whole runner
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.proof.outputs.proven == ''
         run: echo "CARGO_BUILD_JOBS=$(sysctl -n hw.logicalcpu)" >> "$GITHUB_ENV"
 
       # Run natively, on the runner itself. A hosted runner is already a
@@ -109,21 +172,23 @@ jobs:
       # as somebody installing that release. The directory holds one binary
       # per tag, so an older entry is a fine start for a newer one.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.proof.outputs.proven == ''
         with:
           path: ~/.cache/uze-journeys/released-built
           key: journeys-released-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('journeys/suites/07-upgrade/*.yml') }}
           restore-keys: journeys-released-${{ runner.os }}-${{ runner.arch }}-
       - uses: ./.github/actions/journeys
+        if: steps.proof.outputs.proven == ''
         with:
           # Nightly runs everything, not just the gate tag, and records a cast.
-          args: ${{ github.event_name == 'schedule' && '--record' || '--tag gate' }}
+          args: ${{ github.event_name == 'schedule' && '--record' || '--tag gate' }} --shard ${{ matrix.shard }}/${{ matrix.of }}
 
       # Named, because "No files were found" on the upload below is how a
       # failing run lost its own evidence once: the artifact is silent about
       # an empty directory, and the reason it was empty is not visible
       # anywhere else.
       - name: Show what evidence was written
-        if: always()
+        if: always() && steps.proof.outputs.proven == ''
         run: ls -la journeys/.evidence/ || echo "no evidence directory at all"
 
       # Uploaded on failure and on the nightly: a journey's evidence is what
@@ -138,8 +203,23 @@ jobs:
         if: failure() || github.event_name == 'schedule'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: journey-evidence-${{ matrix.platform }}-${{ github.run_id }}
+          name: journey-evidence-${{ matrix.platform }}-${{ matrix.shard }}-${{ github.run_id }}
           path: journeys/.evidence/
           include-hidden-files: true
           retention-days: 14
+          if-no-files-found: error
+
+      # Only a pass is recorded, as an artifact named by its key in the run
+      # that performed it.
+      - name: Record the proof
+        if: success() && steps.proof.outputs.proven == '' && steps.proof.outputs.key != ''
+        run: |
+          mkdir -p "${RUNNER_TEMP}/proof"
+          echo "${ImageOS}-${ImageVersion} at ${GITHUB_SHA}" > "${RUNNER_TEMP}/proof/proof.txt"
+      - if: success() && steps.proof.outputs.proven == '' && steps.proof.outputs.key != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.proof.outputs.key }}
+          path: ${{ runner.temp }}/proof/proof.txt
+          retention-days: 90
           if-no-files-found: error
