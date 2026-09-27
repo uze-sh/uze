@@ -137,6 +137,33 @@ fn item_names(view: &CodeView) -> Vec<String> {
         .collect()
 }
 
+/// A changed file is indented the way the files tree indents it: one
+/// step per directory above it, so it lines up with a folder beside it
+/// rather than a step past one. The host keeps the fold mark's column for
+/// the status marker, so no extra step is owed for it.
+#[test]
+fn a_changed_file_sits_at_the_depth_the_files_tree_gives_it() {
+    let depths: Vec<(String, usize)> = navigator(&tree_fixture())
+        .rows
+        .into_iter()
+        .map(|row| match row {
+            NavigatorRow::Group { name, depth, .. } | NavigatorRow::Item { name, depth, .. } => {
+                (name, depth)
+            }
+        })
+        .collect();
+    assert_eq!(
+        depths,
+        [
+            ("src/".to_owned(), 0),
+            ("ui/".to_owned(), 1),
+            ("git_diff.rs".to_owned(), 2),
+            ("ui.rs".to_owned(), 1),
+            ("README.md".to_owned(), 0),
+        ]
+    );
+}
+
 /// The view carries meaning, never appearance: a status mark is a
 /// [`Role`], not a colour, so the host's palette stays the only place
 /// chrome colour is decided.
