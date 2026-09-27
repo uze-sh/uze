@@ -342,10 +342,7 @@ fn render_list(
             .unwrap_or(0)
             .clamp(6, 18)
     });
-    let columns = Columns {
-        name: name_width,
-        market: market_width,
-    };
+    let columns = Columns::fitted(name_width, market_width, area.width.into());
 
     let focused = model.plugin_pane == PluginPane::Plugins
         && model.focus == super::super::model::Focus::Content;
@@ -435,9 +432,38 @@ struct Columns {
     /// Present only on "All", where a plugin's marketplace is not already
     /// said by the rail.
     market: Option<usize>,
+    status: usize,
 }
 
+/// The most a column grows past what its widest value needs. The room a
+/// wide terminal leaves is shared between the columns, so the table spans
+/// the list rather than huddling at its left with everything empty after
+/// UPDATES — up to the point where a value and its heading are so far from
+/// the next that the eye loses the row between them.
+const COLUMN_GROWTH: usize = 12;
+
 impl Columns {
+    /// The widths the values need, each grown by an even share of what
+    /// the list has beyond them.
+    fn fitted(name: usize, market: Option<usize>, width: usize) -> Self {
+        let gap = GAP.len();
+        let needed = 1
+            + CHEVRON_WIDTH
+            + name
+            + gap
+            + market.map_or(0, |market| market + gap)
+            + STATUS_WIDTH
+            + gap
+            + UPDATE_WIDTH;
+        let growing = if market.is_some() { 3 } else { 2 };
+        let share = (width.saturating_sub(needed) / growing).min(COLUMN_GROWTH);
+        Self {
+            name: name + share,
+            market: market.map(|market| market + share),
+            status: STATUS_WIDTH + share,
+        }
+    }
+
     fn heading(&self) -> Line<'static> {
         // Over the chevron rather than the name: the chevron is where the
         // first column starts, and a heading indented past it reads as
@@ -450,7 +476,11 @@ impl Columns {
         if let Some(width) = self.market {
             heading.push_str(&format!("{MARKET_HEADING:<width$}{GAP}"));
         }
-        heading.push_str(&format!("{:<STATUS_WIDTH$}{GAP}UPDATES", "STATUS"));
+        heading.push_str(&format!(
+            "{:<width$}{GAP}UPDATES",
+            "STATUS",
+            width = self.status
+        ));
         Line::from(Span::styled(heading, theme::fg(Token::TextDim)))
     }
 }
@@ -504,7 +534,7 @@ fn plugin_line(
         ));
     }
     spans.push(Span::styled(
-        format!("{status:<STATUS_WIDTH$}{GAP}"),
+        format!("{status:<width$}{GAP}", width = columns.status),
         status_style,
     ));
     spans.push(Span::styled(
@@ -712,8 +742,7 @@ fn preview_rows(
         if !current {
             let rows = uze_extensions::code::markdown(&preview_markdown(resource), &theme)
                 .iter()
-                .flat_map(|line| crate::ui::extension_view::folded_rows(line, width.into()))
-                .map(Line::from)
+                .flat_map(|line| crate::ui::extension_view::prose_rows(line, width.into()))
                 .collect();
             *cached = Some(RenderedPreview {
                 identity: resource.identity.clone(),
@@ -820,7 +849,10 @@ fn render_resource_drawer(
     frame.render_widget(
         Paragraph::new(preview_rows(
             resource,
-            preview.width,
+            // One cell short of the edge, like every other row in the drawer.
+            preview
+                .width
+                .saturating_sub(crate::ui::widget::TRAILING_PAD),
             preview.height,
             model.resource_scroll,
         )),

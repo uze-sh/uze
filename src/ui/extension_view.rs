@@ -92,6 +92,149 @@ pub(crate) fn prose(lines: &[ContentLine]) -> Vec<Line<'static>> {
         .collect()
 }
 
+/// Rendered Markdown folded to `width` the way prose is read: at word
+/// boundaries, with each continuation hung under where its line's text
+/// began.
+///
+/// [`folded_rows`] breaks at the cell, which is right for code in an
+/// editor, where every column is a place the caret stands, and wrong for a
+/// paragraph, where "re" and "nders" on two rows is a word the reader has
+/// to put back together. And a continuation that starts back at the edge
+/// reads as a new item: under a bullet it should sit under the bullet's
+/// text, in a quote it should still be quoted, and in a code block it
+/// should sit clear of the block's own indentation, so it reads as the same
+/// line carried on rather than as a line of its own.
+pub(crate) fn prose_rows(line: &ContentLine, width: usize) -> Vec<Line<'static>> {
+    let width = width.max(1);
+    let hang = hanging_indent(line, width);
+    let hang_width = hang.iter().map(TextSpan::width).sum::<usize>();
+
+    let mut rows: Vec<Vec<TextSpan<'static>>> = vec![Vec::new()];
+    let mut used = 0usize;
+    for (word, style) in words(line) {
+        let taken = word.chars().map(cell_width).sum::<usize>();
+        let is_space = word.starts_with(' ');
+        let fits = used + taken <= width;
+        if !fits && used > hang_width && !(rows.len() == 1 && used == 0) {
+            if is_space {
+                // The space a row ends on is where it broke; carried over,
+                // it would indent the continuation by one.
+                continue;
+            }
+            break_row(&mut rows, &hang);
+            used = hang_width;
+        }
+        if is_space && used == hang_width && rows.len() > 1 {
+            continue;
+        }
+        // A word longer than a whole row — a URL, a path — is broken at the
+        // cell, since no row would ever hold it.
+        let mut piece = String::new();
+        for character in word.chars() {
+            let cells = cell_width(character);
+            if used + cells > width && used > hang_width {
+                rows.last_mut()
+                    .expect("a row was pushed above")
+                    .push(TextSpan::styled(std::mem::take(&mut piece), style));
+                break_row(&mut rows, &hang);
+                used = hang_width;
+            }
+            match character {
+                '\t' => piece.push_str(&" ".repeat(TAB_WIDTH)),
+                _ => piece.push(character),
+            }
+            used += cells;
+        }
+        if !piece.is_empty() {
+            rows.last_mut()
+                .expect("a row was pushed above")
+                .push(TextSpan::styled(piece, style));
+        }
+    }
+    rows.into_iter().map(Line::from).collect()
+}
+
+/// Ends the row being filled and starts the next with `hang`. The spaces
+/// the row ended on go with it: they are where it broke, and left in they
+/// would carry a block's ground past its last word.
+fn break_row(rows: &mut Vec<Vec<TextSpan<'static>>>, hang: &[TextSpan<'static>]) {
+    if let Some(row) = rows.last_mut() {
+        while let Some(last) = row.last_mut() {
+            let kept = last.content.trim_end_matches(' ').len();
+            if kept > 0 {
+                last.content.to_mut().truncate(kept);
+                break;
+            }
+            row.pop();
+        }
+    }
+    rows.push(hang.to_vec());
+}
+
+/// A line's runs, split into words and the spaces between them, each
+/// carrying the style of the span it came from.
+fn words(line: &ContentLine) -> Vec<(String, Style)> {
+    let mut words = Vec::new();
+    for span in &line.spans {
+        let style = styled(span).style;
+        let mut current = String::new();
+        let mut in_space = None;
+        for character in span.text.chars() {
+            let space = character == ' ';
+            if in_space.is_some_and(|was| was != space) {
+                words.push((std::mem::take(&mut current), style));
+            }
+            in_space = Some(space);
+            current.push(character);
+        }
+        if !current.is_empty() {
+            words.push((current, style));
+        }
+    }
+    words
+}
+
+/// What a continuation of `line` starts with: blanks as wide as a list
+/// item's marker, the quote's own decoration again, or a code line's
+/// indentation and two more — nothing for a plain paragraph, and nothing when the hang would
+/// leave no room for the text it is hung for.
+fn hanging_indent(line: &ContentLine, width: usize) -> Vec<TextSpan<'static>> {
+    let Some(first) = line.spans.first() else {
+        return Vec::new();
+    };
+    let is_code = line.spans.iter().any(|span| span.color.is_some());
+    // A dimmed run opening the line is the renderer's own decoration — a
+    // quote's bars — and the rows that carry the line on are just as
+    // quoted.
+    let hang = if matches!(first.role, Role::Dim) && !first.text.trim().is_empty() {
+        return vec![styled(first)];
+    } else if is_code {
+        let text: String = line.spans.iter().map(|span| span.text.as_str()).collect();
+        text.chars()
+            .take_while(|character| *character == ' ')
+            .count()
+            + 2
+    } else if matches!(first.role, Role::Muted) && is_list_marker(&first.text) {
+        first.text.chars().map(cell_width).sum()
+    } else {
+        0
+    };
+    if hang == 0 || hang * 2 > width {
+        return Vec::new();
+    }
+    vec![TextSpan::raw(" ".repeat(hang))]
+}
+
+/// `• `, `2. `, each after any nesting indent — what the renderer opens a
+/// list item with.
+fn is_list_marker(text: &str) -> bool {
+    let marker = text.trim_start();
+    marker == "• "
+        || marker
+            .strip_suffix(". ")
+            .is_some_and(|number| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()))
+}
+
 fn styled(span: &Span) -> TextSpan<'static> {
     let mut style = Style::default().fg(span
         .color
@@ -173,7 +316,7 @@ fn fold(
 }
 
 /// `line`'s spans, styled and folded into the rows [`fold`] puts them on.
-pub(crate) fn folded_rows(line: &ContentLine, width: usize) -> Vec<Vec<TextSpan<'static>>> {
+fn folded_rows(line: &ContentLine, width: usize) -> Vec<Vec<TextSpan<'static>>> {
     let mut rows: Vec<Vec<TextSpan<'static>>> = vec![Vec::new()];
     let mut last: Option<*const Span> = None;
     fold(line, width, |row, _, span, character| {
@@ -2287,6 +2430,72 @@ mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
     use uze_extensions::view::{ContentLine, LineTone, Rgb, RowMenu};
+
+    /// Rendered Markdown as the rows `prose_rows` folds it to, in plain
+    /// text.
+    fn prose_at(markdown: &str, width: usize) -> Vec<String> {
+        uze_extensions::code::markdown(markdown, "base16-ocean.dark")
+            .iter()
+            .flat_map(|line| prose_rows(line, width))
+            .map(|row| row.spans.iter().map(|span| span.content.as_ref()).collect())
+            .collect()
+    }
+
+    /// Prose breaks between words, never inside one, and a list item's
+    /// continuation sits under the item's text rather than under its
+    /// bullet.
+    #[test]
+    fn prose_breaks_between_words_and_hangs_under_the_item() {
+        let rows = prose_at(
+            "A test skill for checking how the drawer renders.\n\n\
+             - You are validating the preview with a bullet that wraps.\n",
+            24,
+        );
+        assert_eq!(
+            rows,
+            vec![
+                "A test skill for",
+                "checking how the drawer",
+                "renders.",
+                "",
+                "• You are validating the",
+                "  preview with a bullet",
+                "  that wraps.",
+                "",
+            ]
+        );
+    }
+
+    /// A quote stays quoted on every row it takes, and a code line carries
+    /// on clear of its own indentation.
+    #[test]
+    fn a_quote_keeps_its_bar_and_code_hangs_past_its_indent() {
+        let quote = prose_at("> Never commit without reading the diff.\n", 20);
+        assert!(
+            quote
+                .iter()
+                .filter(|row| !row.is_empty())
+                .all(|row| row.starts_with("│ ")),
+            "{quote:#?}"
+        );
+
+        let code = prose_at("```bash\ngit commit -m feat-preview-resources\n```\n", 20);
+        assert_eq!(code[0], "  git commit -m");
+        assert_eq!(code[1], "    feat-preview-res");
+    }
+
+    /// A word longer than a whole row is broken where the row ends, since
+    /// no row would ever hold it.
+    #[test]
+    fn a_word_longer_than_a_row_is_broken_at_the_cell() {
+        let rows = prose_at("See https://example.com/a/very/long/path now.\n", 16);
+        assert!(
+            rows.iter().all(|row| row.chars().count() <= 16),
+            "{rows:#?}"
+        );
+        assert_eq!(rows[0], "See");
+        assert!(rows[1].starts_with("https://"));
+    }
 
     #[test]
     fn a_choice_list_on_a_board_too_narrow_for_it_draws_without_panicking() {
