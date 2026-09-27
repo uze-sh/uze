@@ -641,6 +641,40 @@ fn linking_to_a_foreign_checkout_is_refused() {
     assert!(refused.is_err(), "{refused:?}");
 }
 
+/// On a machine with no working copy yet, linking is how one comes to be:
+/// the marketplace's source is cloned where the link points, and the link
+/// then reads that clone like any other.
+#[test]
+fn linking_to_an_absent_checkout_clones_the_marketplace_there() {
+    let (application, repository) = project("linked-absent");
+    let root = repository.root().to_path_buf();
+    let market = root.parent().unwrap().join("market");
+    marketplace_beside(&repository, &market, "a");
+    application
+        .marketplace()
+        .add(&format!("file://{}", market.display()))
+        .unwrap();
+    let absent = root.parent().unwrap().join("new-machine").join("market");
+    let empty = root.parent().unwrap().join("made-by-hand");
+    fs::create_dir_all(&empty).unwrap();
+
+    for checkout in [&absent, &empty] {
+        let cloned = application.marketplace().link("mkt", checkout).unwrap();
+
+        assert!(cloned, "{} had nothing to read", checkout.display());
+        assert!(
+            checkout
+                .join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME)
+                .is_file(),
+            "the clone holds the marketplace"
+        );
+        assert_eq!(
+            repository.git_in(checkout, &["rev-parse", "HEAD"]),
+            repository.git_in(&market, &["rev-parse", "HEAD"]),
+        );
+    }
+}
+
 /// A contributor cloning a project whose author declared a marketplace only
 /// they have gets the rest of the environment, and is told what is missing
 /// — rather than nothing at all.

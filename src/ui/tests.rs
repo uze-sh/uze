@@ -790,10 +790,15 @@ fn scroll_moves_selection_without_mutating_anything() {
         Rect::new(0, 0, 100, 40),
     );
     // Scroll on the Plugins tree is read-only navigation: it moves the
-    // selection and fetches the newly selected (installed, local) row's
-    // detail — never a mutation.
-    assert_eq!(intent, Intent::InspectPlugin("two".to_owned()));
+    // selection and leaves the detail to the per-frame check once the
+    // selection rests — never a mutation.
+    assert_eq!(intent, Intent::None);
     assert_eq!(model.remembered.plugin_screen.selected, 1);
+    assert!(model.selection_settling(std::time::Instant::now()));
+    assert_eq!(
+        model.drawer_inspect_intent(),
+        Intent::InspectPlugin("two".to_owned())
+    );
 }
 
 #[test]

@@ -376,13 +376,13 @@ impl TuiModel {
                 self.move_prompt_selection(delta);
                 Intent::None
             }
+            // The detail is asked for by the per-frame check once the
+            // selection rests: holding an arrow down would otherwise start
+            // an inspection for every row it passes over.
             _ => {
                 self.move_selection(delta);
-                if self.route == Route::Plugins {
-                    self.marketplace_inspect_intent()
-                } else {
-                    Intent::None
-                }
+                self.selection_moved_at = Some(std::time::Instant::now());
+                Intent::None
             }
         }
     }

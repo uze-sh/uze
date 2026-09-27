@@ -88,6 +88,60 @@ pub fn repository_of(source: &PackageSource) -> Result<MarketplaceRepository> {
     }
 }
 
+/// Whether `checkout` has nothing in it yet — absent, or an empty
+/// directory — so a link there is a clone to make rather than one to read.
+pub fn checkout_is_vacant(checkout: &Path) -> bool {
+    match std::fs::read_dir(checkout) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+    }
+}
+
+/// Clones the repository behind `source` into `checkout`, for a
+/// marketplace linked on a machine that has no working copy of it yet.
+///
+/// Unlike the mirrors acquisition keeps, this clone is the operator's: they
+/// develop in it and push from it, so Git runs with their own environment
+/// and credentials. It tries every way the machine may reach the
+/// repository, in the order acquisition does, and keeps the first that
+/// answers.
+pub fn clone_checkout(source: &PackageSource, checkout: &Path) -> Result<()> {
+    let fetch = repository_of(source)?.fetch;
+    let parent = checkout
+        .parent()
+        .ok_or_else(|| UzeError::MissingPath(checkout.to_path_buf()))?;
+    std::fs::create_dir_all(parent).map_err(|source| UzeError::Write {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+    let mut urls: Vec<String> = Vec::new();
+    for transport in super::forge::transports(&fetch)? {
+        if !urls.contains(&transport.url) {
+            urls.push(transport.url);
+        }
+    }
+    let target = checkout.to_string_lossy();
+    let mut failures = Vec::new();
+    for url in &urls {
+        let answered = uze_git::write_within(
+            parent,
+            &["clone", "--", url, &target],
+            uze_git::NETWORK_TIMEOUT,
+        )
+        .map_err(|error| error.to_string())
+        .and_then(uze_git::Output::successful);
+        match answered {
+            Ok(_) => return Ok(()),
+            Err(reason) => failures.push(format!("{url}: {reason}")),
+        }
+    }
+    Err(UzeError::AcquisitionFailed(format!(
+        "could not clone {fetch} into {}:\n  {}",
+        checkout.display(),
+        failures.join("\n  ")
+    )))
+}
+
 /// One Git question with a single-line answer, or `None` when Git said no.
 /// Every caller here is asking something whose absence is an answer — not
 /// a repository, no commit yet, no remote — so a non-zero exit is not an

@@ -140,7 +140,9 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     ("market remove", PerformanceClass::Budgeted),
     // Both are a registry write plus dropping a cache entry. `link` also
     // asks Git what repository the checkout is, which is local and answers
-    // in one call.
+    // in one call. Linking where nothing is checked out yet clones first:
+    // that is a working copy being acquired once, at the operator's word,
+    // and the budget holds for every link after it.
     ("market link", PerformanceClass::Budgeted),
     ("market unlink", PerformanceClass::Budgeted),
     ("market inspect", PerformanceClass::Budgeted),

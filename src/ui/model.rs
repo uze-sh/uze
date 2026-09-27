@@ -602,6 +602,9 @@ pub(crate) struct TuiModel {
     /// same fetch again while it is still running. Cleared when its
     /// answer, success or failure, lands.
     pub(crate) inspection_in_flight: Option<super::worker::Intent>,
+    /// When a key or the wheel last moved a list selection; the drawer asks for
+    /// a row's detail only once the selection has rested on it.
+    pub(crate) selection_moved_at: Option<std::time::Instant>,
     /// Whether the active list screen's filter is taking text.
     pub(crate) filtering: bool,
     /// Marketplace group names currently collapsed in the tree — absence
@@ -791,6 +794,7 @@ impl TuiModel {
             plugin_detail: None,
             marketplace_detail: None,
             inspection_in_flight: None,
+            selection_moved_at: None,
             filtering: false,
             collapsed_marketplaces: layout.collapsed_marketplaces.clone(),
             extensions: uze_extensions::registry::ExtensionRegistry::builtin()
@@ -1089,6 +1093,14 @@ impl TuiModel {
             return super::worker::Intent::None;
         }
         intent
+    }
+
+    /// Whether the selection is still moving at `now`, so a detail asked
+    /// for now would be for a row about to be left.
+    pub(crate) fn selection_settling(&self, now: std::time::Instant) -> bool {
+        const SETTLE: std::time::Duration = std::time::Duration::from_millis(120);
+        self.selection_moved_at
+            .is_some_and(|moved| now.saturating_duration_since(moved) < SETTLE)
     }
 
     /// Expands/collapses one marketplace group and re-clamps the selection

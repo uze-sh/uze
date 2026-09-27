@@ -26,7 +26,7 @@ use uze_core::{
 };
 
 use super::AntigravityIntegration;
-use crate::shared::process::{json, run_quiet};
+use crate::shared::process::{capture, json, run_quiet};
 
 /// The `kind` stamped on explicit-plugin receipts. Only this module and its
 /// composition root interpret it.
@@ -138,6 +138,12 @@ pub(super) fn run_agy(
 /// `agy` prints its own `import_manifest.json`, so that is read first: an
 /// `agy` start is a quarter of a second, paid three times by a removal.
 /// Trusted only in the shape the CLI prints; anything else asks the CLI.
+///
+/// Nothing imported is an answer too, spelled two ways that are not a
+/// listing (1.2.11): the manifest keeps `"imports": null`, and the CLI
+/// prints a sentence instead of JSON. Read as unreadable, uninstalling the
+/// last plugin — what every update of the only one does — could never be
+/// confirmed, and blocked the update.
 pub(super) fn installed_plugins(
     executable: &str,
     command_home: &Path,
@@ -145,11 +151,14 @@ pub(super) fn installed_plugins(
     let recorded = std::fs::read(command_home.join(".gemini/config/import_manifest.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .filter(|manifest| {
-            manifest
-                .get("imports")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|imports| imports.iter().all(|entry| entry.get("name").is_some()))
+        .and_then(|manifest| match manifest.get("imports") {
+            Some(serde_json::Value::Null) => Some(no_imports()),
+            Some(serde_json::Value::Array(imports))
+                if imports.iter().all(|entry| entry.get("name").is_some()) =>
+            {
+                Some(manifest)
+            }
+            _ => None,
         });
     if let Some(recorded) = recorded {
         return Ok(recorded);
@@ -160,6 +169,24 @@ pub(super) fn installed_plugins(
         &["plugin", "list"],
         "agy",
     )
+    .or_else(|unreadable| {
+        let said = capture(Path::new(executable), command_home, &["plugin", "list"])
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
+        match said.as_deref() {
+            Some(NOTHING_IMPORTED) => Ok(no_imports()),
+            _ => Err(unreadable),
+        }
+    })
+}
+
+/// What `agy plugin list` prints in place of a listing when nothing is
+/// imported.
+const NOTHING_IMPORTED: &str = "No imported plugins.";
+
+fn no_imports() -> serde_json::Value {
+    serde_json::json!({ "imports": [] })
 }
 
 /// The ownership decision for one installed plugin, separated from the
@@ -514,6 +541,47 @@ mod plugin_tests {
         assert_eq!(plugin_manifest_name(&pkg2), None);
         let (_root3, pkg3) = make_package("name-missing", r#"{"version":"1.0.0"}"#);
         assert_eq!(plugin_manifest_name(&pkg3), None);
+    }
+
+    // --- Listing --------------------------------------------------------------
+
+    /// Uninstalling the last plugin leaves `"imports": null` behind (agy
+    /// 1.2.11). That is a listing with nothing in it, so the plugin just
+    /// taken off reads as gone — never as an unreadable listing that
+    /// blocks the removal an update is made of.
+    #[test]
+    fn a_manifest_emptied_to_null_lists_nothing_imported() {
+        let home = temp_root("agy-null-imports");
+        fs::create_dir_all(home.join(".gemini/config")).unwrap();
+        fs::write(
+            home.join(".gemini/config/import_manifest.json"),
+            r#"{"imports": null}"#,
+        )
+        .unwrap();
+
+        let listing = installed_plugins("/nonexistent/agy", &home).unwrap();
+
+        let inspection = inspect_installed_plugin(&listing, "uze", &home.join("uze"), "digest");
+        assert_eq!(inspection.state, AttachmentState::Missing);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// With no manifest to read, the CLI is asked, and it says there is
+    /// nothing imported in a sentence rather than in JSON.
+    #[cfg(unix)]
+    #[test]
+    fn the_cli_saying_nothing_is_imported_lists_nothing_imported() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let home = temp_root("agy-nothing-imported");
+        let agy = home.join("agy");
+        fs::write(&agy, "#!/bin/sh\necho 'No imported plugins.'\n").unwrap();
+        fs::set_permissions(&agy, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let listing = installed_plugins(&agy.to_string_lossy(), &home).unwrap();
+
+        assert_eq!(listing, serde_json::json!({ "imports": [] }));
+        let _ = fs::remove_dir_all(home);
     }
 
     // --- Exact coverage -----------------------------------------------------

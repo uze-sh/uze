@@ -1734,10 +1734,15 @@ fn run_market(app: &UzeApplication, action: MarketAction) -> Result<()> {
             }
         }
         MarketAction::Link { name, checkout } => {
-            let checkout = checkout
-                .canonicalize()
-                .map_err(|_| uze_application::UzeError::MissingPath(checkout.clone()))?;
-            app.marketplace().link(&name, &checkout)?;
+            let cloned = app.marketplace().link(&name, &checkout)?;
+            let checkout = checkout.canonicalize().unwrap_or(checkout);
+            if cloned {
+                println!(
+                    "{} {name} cloned into {}",
+                    progress::success_icon(),
+                    checkout.display()
+                );
+            }
             println!(
                 "{} {name} is read from {}\n  Its plugins follow your working tree; \
                  agents.lock is not pinned from it.",
