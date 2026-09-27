@@ -153,7 +153,7 @@ scopes! {
     Code => "code", "Code", Workspace, seals: true, text: false;
     /// The same surface with a file open for typing. Its own scope
     /// because it takes text — nothing behind it may answer a letter.
-    CodeEditing => "code-editing", "Editing a file", Workspace, seals: true, text: false;
+    CodeEditing => "code-editing", "Editing a file", Workspace, seals: true, text: true;
     /// The architect surface: a diagram on a board that moves under the
     /// keys the way it moves under the pointer.
     Architect => "architect", "Architect", Workspace, seals: true, text: false;

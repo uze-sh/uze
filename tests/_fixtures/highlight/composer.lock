@@ -1,0 +1,6 @@
+{
+    "content-hash": "8f2c1e",
+    "packages": [
+        { "name": "monolog/monolog", "version": "3.5.0" }
+    ]
+}

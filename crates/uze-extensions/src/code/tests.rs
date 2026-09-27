@@ -22,6 +22,7 @@ use crate::{
     code::highlight::FALLBACK_SYNTAX_THEME,
     view::{
         Command, Content, LineTone, MarkerSide, NavigatorRow, Role, RowIcon, RowMark, Size, Span,
+        ViewHit,
     },
 };
 
@@ -1054,6 +1055,206 @@ fn editing_a_file_and_saving_it_writes_what_was_typed() {
     );
 }
 
+/// Opens `path` from `machine` and starts typing into it.
+fn editing(machine: &FakeMachine, path: &str) -> CodeView {
+    let mut view = files_at("/w");
+    settle(&mut view, machine);
+    view.select(PathBuf::from(path));
+    view.load_selection(None);
+    settle(&mut view, machine);
+    press(&mut view, Command::Edit);
+    assert!(view.editing(), "{path} opened for typing");
+    view
+}
+
+fn buffer(view: &CodeView) -> String {
+    view.open.as_ref().expect("a file is open").contents()
+}
+
+#[test]
+fn indenting_uses_the_files_own_kind_of_indentation() {
+    let machine = FakeMachine::default()
+        .with_file("/w/Makefile", "all:\n\techo hi\n")
+        .with_file("/w/app.yaml", "a:\n  b: 1\n");
+
+    let mut makefile = editing(&machine, "/w/Makefile");
+    press(&mut makefile, Command::Indent);
+    assert_eq!(buffer(&makefile), "\tall:\n\techo hi\n");
+
+    let mut yaml = editing(&machine, "/w/app.yaml");
+    type_text(&mut yaml, "x");
+    press(&mut yaml, Command::Indent);
+    assert_eq!(
+        buffer(&yaml),
+        "x a:\n  b: 1\n",
+        "a two-space file indents to its next two-space step"
+    );
+}
+
+#[test]
+fn a_paste_lands_at_the_caret_as_one_edit() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "head tail\n");
+    let mut view = editing(&machine, "/w/notes.txt");
+    for _ in 0.."head ".len() {
+        press(&mut view, Command::CaretRight);
+    }
+
+    view.paste("one\r\ntwo ", space());
+
+    assert_eq!(buffer(&view), "head one\ntwo tail\n");
+    let open = view.open.as_ref().expect("open");
+    assert_eq!((open.caret.line, open.caret.column), (1, 4));
+    assert_eq!(open.highlighted.len(), open.lines.len());
+    assert!(open.modified);
+}
+
+#[test]
+fn a_paste_reaches_nothing_that_is_only_being_read() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "x\n");
+    let mut view = editing(&machine, "/w/notes.txt");
+    press(&mut view, Command::Close);
+
+    view.paste("pasted", space());
+
+    assert_eq!(buffer(&view), "x\n");
+}
+
+#[test]
+fn page_keys_move_the_caret_a_screen_at_a_time() {
+    let text: String = (1..=100).map(|n| format!("{n}\n")).collect();
+    let machine = FakeMachine::default().with_file("/w/long.txt", &text);
+    let mut view = editing(&machine, "/w/long.txt");
+
+    press(&mut view, Command::ScrollPageDown);
+    press(&mut view, Command::ScrollPageDown);
+    let line = view.open.as_ref().expect("open").caret.line;
+    assert_eq!(line, usize::from(space().height) * 2);
+    assert!(
+        (view.scroll..view.scroll + space().height).contains(&u16::try_from(line).unwrap()),
+        "the caret stays on screen"
+    );
+
+    press(&mut view, Command::ScrollPageUp);
+    assert_eq!(
+        view.open.as_ref().expect("open").caret.line,
+        usize::from(space().height)
+    );
+}
+
+/// One sample per language the editor colours, from
+/// `tests/_fixtures/highlight/`, with the grammar it must be read as.
+/// Compiled in rather than read, since this crate reaches no filesystem.
+macro_rules! highlight_fixtures {
+    ($(($name:literal, $grammar:literal),)*) => {
+        [$(($name, $grammar, include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/_fixtures/highlight/",
+            $name
+        )))),*]
+    };
+}
+
+/// Each fixture is read as its own language, and coloured.
+///
+/// The grammar is asserted, not only the colour: a file read as the wrong
+/// language still gets a number or a string coloured here and there, and
+/// that is how `.fs` passed as a GLSL shader while an F# file drew plain.
+#[test]
+fn every_language_fixture_is_read_as_its_own_language() {
+    use crate::code::highlight;
+    let wrong: Vec<String> = highlight_fixtures![
+        ("batch.bat", "Batch File"),
+        ("c.c", "C"),
+        ("Cargo.lock", "TOML"),
+        ("clojure.clj", "Clojure"),
+        ("CMakeLists.txt", "CMake"),
+        ("composer.lock", "JSON"),
+        ("cpp.cpp", "C++"),
+        ("crystal.cr", "Crystal"),
+        ("csharp.cs", "C#"),
+        ("css.css", "CSS"),
+        ("d.d", "D"),
+        ("dart.dart", "Dart"),
+        ("diff.diff", "Diff"),
+        ("Dockerfile", "Dockerfile"),
+        ("elisp.el", "Lisp"),
+        ("elixir.ex", "Elixir"),
+        ("elm.elm", "Elm"),
+        ("erlang.erl", "Erlang"),
+        ("fish.fish", "Fish"),
+        ("flake.lock", "JSON"),
+        ("fsharp.fs", "F#"),
+        ("glsl.glsl", "GLSL"),
+        ("go.go", "Go"),
+        ("graphql.graphql", "GraphQL"),
+        ("groovy.gradle", "Groovy"),
+        ("haskell.hs", "Haskell"),
+        ("header.h", "C++"),
+        ("html.html", "HTML"),
+        ("ini.ini", "INI"),
+        ("java.java", "Java"),
+        ("javascript-commonjs.cjs", "JavaScript"),
+        ("javascript-module.mjs", "JavaScript"),
+        ("javascript-react.jsx", "TypeScriptReact"),
+        ("javascript.js", "JavaScript"),
+        ("json-with-comments.jsonc", "JSON"),
+        ("json.json", "JSON"),
+        ("julia.jl", "Julia"),
+        ("kotlin.kt", "Kotlin"),
+        ("latex.tex", "LaTeX"),
+        ("less.less", "Less"),
+        ("lua.lua", "Lua"),
+        ("Makefile", "Makefile"),
+        ("markdown-jsx.mdx", "Markdown"),
+        ("markdown.md", "Markdown"),
+        ("mix.lock", "Elixir"),
+        ("nim.nim", "Nim"),
+        ("nix.nix", "Nix"),
+        ("ocaml.ml", "OCaml"),
+        ("perl.pl", "Perl"),
+        ("php.php", "PHP"),
+        ("protobuf.proto", "Protocol Buffer"),
+        ("python.py", "Python"),
+        ("r.r", "R"),
+        ("ruby.rb", "Ruby"),
+        ("rust.rs", "Rust"),
+        ("scala.scala", "Scala"),
+        ("scss.scss", "SCSS"),
+        ("shell-shebang", "Bourne Again Shell (bash)"),
+        ("shell.sh", "Bourne Again Shell (bash)"),
+        ("solidity.sol", "Solidity"),
+        ("sql.sql", "SQL"),
+        ("svelte.svelte", "Svelte"),
+        ("swift.swift", "Swift"),
+        ("terraform.tf", "Terraform"),
+        ("toml.toml", "TOML"),
+        ("typescript-module.mts", "TypeScript"),
+        ("typescript-react.tsx", "TypeScriptReact"),
+        ("typescript.ts", "TypeScript"),
+        ("unknown-json.lock", "JSON"),
+        ("unknown-toml.lock", "TOML"),
+        ("vim.vim", "VimL"),
+        ("vue.vue", "Vue Component"),
+        ("xml.xml", "XML"),
+        ("yaml.yaml", "YAML"),
+        ("yarn.lock", "YAML"),
+        ("zig.zig", "Zig"),
+    ]
+    .into_iter()
+    .filter_map(|(name, grammar, text)| {
+        let path = Path::new(name);
+        let read_as = highlight::syntax_for(path, text.lines().next())
+            .name
+            .as_str();
+        let lines = highlight::lines(text, path, FALLBACK_SYNTAX_THEME, usize::MAX);
+        let coloured = lines.concat().windows(2).any(|pair| pair[0].0 != pair[1].0);
+        (read_as != grammar || !coloured)
+            .then(|| format!("{name}: read as {read_as}, coloured: {coloured}"))
+    })
+    .collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// The one irreversible gesture, so it is the one that must never happen
 /// on a single keystroke.
 #[test]
@@ -1075,6 +1276,58 @@ fn deleting_asks_before_it_deletes() {
 
     press(&mut view, Command::Delete);
     press(&mut view, Command::ConfirmDelete);
+    settle(&mut view, &machine);
+    assert!(
+        !machine
+            .files
+            .borrow()
+            .contains_key(Path::new("/w/scratch.txt"))
+    );
+}
+
+/// The question is asked in the dialog every other one is, and answered
+/// the way the discard question is: by its buttons, or by moving the
+/// keyboard between them and activating one.
+#[test]
+fn deleting_is_asked_in_the_confirm_dialog() {
+    let machine = FakeMachine::default().with_file("/w/scratch.txt", "x\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+
+    press(&mut view, Command::Delete);
+    let confirm = super::view(&view, space())
+        .confirm
+        .expect("deleting asks first");
+    assert_eq!(confirm.subject, "scratch.txt");
+    assert!(
+        !confirm.on_confirm,
+        "the way out is where the keyboard starts"
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
+    assert!(
+        super::view(&view, space()).confirm.is_some(),
+        "only an answer closes it"
+    );
+    press(&mut view, Command::Activate);
+    assert!(
+        view.queue
+            .iter()
+            .all(|request| !matches!(request, FileRequest::Delete(_)))
+    );
+    assert!(super::view(&view, space()).confirm.is_none());
+
+    press(&mut view, Command::Delete);
+    press(&mut view, Command::FocusNext);
+    assert!(
+        super::view(&view, space())
+            .confirm
+            .is_some_and(|confirm| confirm.on_confirm)
+    );
+    press(&mut view, Command::Close);
+
+    press(&mut view, Command::Delete);
+    handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
     settle(&mut view, &machine);
     assert!(
         !machine

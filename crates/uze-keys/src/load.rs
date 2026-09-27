@@ -401,6 +401,9 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "home", Action::CaretLineStart),
         bind(Scope::CodeEditing, "end", Action::CaretLineEnd),
         bind(Scope::CodeEditing, "enter", Action::InsertNewline),
+        bind(Scope::CodeEditing, "tab", Action::InsertIndent),
+        bind(Scope::CodeEditing, "pageup", Action::ScrollPageUp),
+        bind(Scope::CodeEditing, "pagedown", Action::ScrollPageDown),
         bind(Scope::CodeEditing, "backspace", Action::EraseBack),
         bind(Scope::CodeEditing, "delete", Action::EraseForward),
         // The work modal: one keyboard for every row, since each key
@@ -471,6 +474,28 @@ mod tests {
         keymap::Resolution,
         scope::{ALL_SCOPES, Scope},
     };
+
+    /// The editor's own tests hand it characters directly, so only this
+    /// can see the keymap drop them: a letter typed into an open file
+    /// once resolved to nothing, and the file could be navigated but
+    /// never written in.
+    #[test]
+    fn typing_into_a_file_reaches_it_as_text() {
+        let scopes = [Scope::Global, Scope::Workspace, Scope::CodeEditing];
+        for typed in ["a", "q", "E", "shift+e", "space", "/"] {
+            let chord = crate::chord::Chord::parse(typed).expect(typed);
+            assert_eq!(
+                default_keymap().resolve(chord, &scopes),
+                Resolution::Text,
+                "{typed} is text while a file is being edited"
+            );
+        }
+        let tab = crate::chord::Chord::parse("tab").expect("tab");
+        assert_eq!(
+            default_keymap().resolve(tab, &scopes),
+            Resolution::Act(Action::InsertIndent)
+        );
+    }
 
     #[test]
     fn the_built_in_keymap_has_no_conflicts() {

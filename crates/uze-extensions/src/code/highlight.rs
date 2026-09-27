@@ -19,7 +19,7 @@ use std::{path::Path, sync::OnceLock};
 use syntect::{
     easy::HighlightLines,
     highlighting::{Theme, ThemeSet},
-    parsing::SyntaxSet,
+    parsing::{SyntaxReference, SyntaxSet},
 };
 
 use crate::view::Rgb;
@@ -28,9 +28,13 @@ use crate::view::Rgb;
 /// does not bundle.
 pub const FALLBACK_SYNTAX_THEME: &str = "base16-ocean.dark";
 
+/// The grammars: syntect's own set and the ones `bat` adds to it
+/// (TypeScript, TOML, Dockerfile, Kotlin, Swift, Zig, Nix, Terraform and
+/// the rest), from `two-face`'s precompiled dump — syntect's defaults
+/// alone draw a `.ts` or a `Cargo.toml` as plain text.
 pub(crate) fn syntax_set() -> &'static SyntaxSet {
     static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
-    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
+    SYNTAX_SET.get_or_init(two_face::syntax::extra_newlines)
 }
 
 fn theme_set() -> &'static ThemeSet {
@@ -56,14 +60,102 @@ pub(crate) fn theme(name: &str) -> &'static Theme {
 /// carries state across calls — an open block comment, an unterminated
 /// string — and a fresh one at every line is how a doc comment stops
 /// being one halfway down a file.
-pub(crate) fn highlighter(path: &Path, theme_name: &str) -> HighlightLines<'static> {
+///
+/// `first_line` is the file's own, when there is one to hand — see
+/// [`syntax_for`].
+pub(crate) fn highlighter(
+    path: &Path,
+    first_line: Option<&str>,
+    theme_name: &str,
+) -> HighlightLines<'static> {
+    HighlightLines::new(syntax_for(path, first_line), theme(theme_name))
+}
+
+/// The grammar for `path`: by its whole name, then as a lockfile, then by
+/// its extension, then by `first_line`, where a shebang or a modeline says what an unnamed
+/// script is. The name comes first because the grammars list some files
+/// by it — `Makefile`, `Dockerfile`, `.bashrc` — and one of them,
+/// `CMakeLists.txt`, has an extension that would find plain text.
+pub(crate) fn syntax_for(path: &Path, first_line: Option<&str>) -> &'static SyntaxReference {
     let syntax_set = syntax_set();
-    let syntax = path
+    let by_extension = path
         .extension()
         .and_then(|extension| extension.to_str())
-        .and_then(|extension| syntax_set.find_syntax_by_extension(extension))
-        .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
-    HighlightLines::new(syntax, theme(theme_name))
+        .and_then(|extension| {
+            preferred_for(extension)
+                .and_then(|name| syntax_set.find_syntax_by_name(name))
+                .or_else(|| syntax_set.find_syntax_by_extension(extension))
+                .or_else(|| syntax_set.find_syntax_by_extension(same_language_as(extension)?))
+        });
+    let by_name = || {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| syntax_set.find_syntax_by_extension(name))
+    };
+    let by_first_line = || first_line.and_then(|line| syntax_set.find_syntax_by_first_line(line));
+    let as_lockfile = || {
+        let name = path.file_name()?.to_str()?;
+        syntax_set.find_syntax_by_extension(lockfile_language(name, first_line)?)
+    };
+    by_name()
+        .or_else(as_lockfile)
+        .or(by_extension)
+        .or_else(by_first_line)
+        .unwrap_or_else(|| syntax_set.find_syntax_plain_text())
+}
+
+/// The extension of the format a lockfile is written in.
+///
+/// `.lock` names no format: `Cargo.lock` is TOML, `composer.lock` JSON,
+/// `yarn.lock` YAML. The package managers that write them are known by
+/// name; a lockfile none of them wrote is read from its first line, where
+/// JSON opens a brace, TOML a table or an assignment, and YAML a key.
+fn lockfile_language(name: &str, first_line: Option<&str>) -> Option<&'static str> {
+    let known = match name {
+        "Cargo.lock" | "poetry.lock" | "uv.lock" | "pdm.lock" => Some("toml"),
+        "composer.lock" | "flake.lock" | "Pipfile.lock" | "deno.lock" | "bun.lock" => Some("json"),
+        "yarn.lock" | "pubspec.lock" | "Podfile.lock" | "agents.lock" => Some("yaml"),
+        "mix.lock" => Some("ex"),
+        _ => None,
+    };
+    if known.is_some() || !name.ends_with(".lock") {
+        return known;
+    }
+    let line = first_line?.trim();
+    match line.chars().next()? {
+        '{' => Some("json"),
+        '[' => Some("toml"),
+        _ if line.contains(" = ") => Some("toml"),
+        _ if line.ends_with(':') || line.contains(": ") => Some("yaml"),
+        _ => None,
+    }
+}
+
+/// The grammar an extension more than one grammar claims is meant as,
+/// where the one the set lists first is the rarer reading: a `.fs` in a
+/// checkout is F# far more often than a GLSL fragment shader, which has
+/// `.frag` of its own, and a `.h` is a C or C++ header, which the C++
+/// grammar reads both of, rather than Objective-C.
+fn preferred_for(extension: &str) -> Option<&'static str> {
+    match extension {
+        "fs" => Some("F#"),
+        "h" => Some("C++"),
+        _ => None,
+    }
+}
+
+/// The extension whose grammar `extension` is written in, for the
+/// spellings no grammar lists: module variants of JavaScript, JSON with
+/// comments, markdown with components. JSX goes to the TSX grammar,
+/// which is a superset of it and the only one that parses its markup.
+fn same_language_as(extension: &str) -> Option<&'static str> {
+    match extension {
+        "mjs" | "cjs" => Some("js"),
+        "jsx" => Some("tsx"),
+        "jsonc" | "json5" => Some("json"),
+        "mdx" => Some("md"),
+        _ => None,
+    }
 }
 
 /// A highlighter for a language named the way a markdown fence names it
@@ -141,7 +233,7 @@ pub(crate) fn lines(
     theme_name: &str,
     limit: usize,
 ) -> Vec<Vec<(Rgb, String)>> {
-    let mut highlighter = highlighter(path, theme_name);
+    let mut highlighter = highlighter(path, text.lines().next(), theme_name);
     text.lines()
         .take(limit)
         .map(|text| line(&mut highlighter, text, theme_name))

@@ -117,7 +117,7 @@ accepts, which is why the table sums to more than the number of crates.
 
 | Licence | Crates |
 | --- | --- |
-| Apache License 2.0 (`Apache-2.0`) | 192 |
+| Apache License 2.0 (`Apache-2.0`) | 193 |
 | MIT License (`MIT`) | 66 |
 | Unicode License v3 (`Unicode-3.0`) | 1 |
 | zlib License (`Zlib`) | 1 |
@@ -336,6 +336,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `tracing-core` | 0.1.36 | MIT |
 | `tracing-log` | 0.2.0 | MIT |
 | `tracing-subscriber` | 0.3.23 | MIT |
+| `two-face` | 0.5.2+bat-0.26.1 | MIT OR Apache-2.0 |
 | `typenum` | 1.20.1 | MIT OR Apache-2.0 |
 | `unicase` | 2.9.0 | MIT OR Apache-2.0 |
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 |

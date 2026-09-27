@@ -616,6 +616,15 @@ pub enum ScrollDirection {
     Down,
 }
 
+/// How many cells a tab takes on screen.
+///
+/// A contract rather than a detail of either side: the host draws a tab
+/// this wide, and an extension turning a click's cell back into a column
+/// has to count it the same, or every click after an indented tab lands
+/// that many characters off. Fixed rather than stop-aligned, because a
+/// tab is almost always leading indentation, where the two agree.
+pub const TAB_WIDTH: usize = 4;
+
 /// Something the host asks an extension's own surface to do.
 ///
 /// An extension answers a *meaning*, never a key — the same relationship
@@ -669,6 +678,8 @@ pub enum Command {
     CaretLineEnd,
     /// Split the line at the caret.
     Newline,
+    /// One level of indentation at the caret, in the file's own kind.
+    Indent,
     /// Delete the character before the caret.
     EraseBack,
     /// Delete the character under it.

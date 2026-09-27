@@ -91,3 +91,14 @@ inputs in this tree.
   `uze-mcp-conformance-fixture`, not a piece of data: built by the root
   `Cargo.toml` and used by both the deterministic MCP fixture and the Lab's
   isolated marketplace.
+
+## highlight/
+
+One small sample per language the code surface colours, named by the
+file the language is found from (`typescript.ts`, `Dockerfile`,
+`shell-shebang`), since that lookup is the half of highlighting that goes
+wrong. `every_language_fixture_is_read_as_its_own_language` in
+`crates/uze-extensions/src/code/tests.rs` compiles each one in and fails
+on any read as another language or drawn as plain text. Adding a language
+is adding a file here and its name and grammar to that list. Opening the directory in the code surface is also
+the quickest way to look at them all by hand.

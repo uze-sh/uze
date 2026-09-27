@@ -253,7 +253,7 @@ pub struct CodeView {
     notice: Option<Span>,
     /// A delete waiting for its second keystroke. Deleting is the one
     /// gesture here that cannot be undone, so it is the one that asks.
-    confirming_delete: Option<PathBuf>,
+    confirming_delete: Option<Deleting>,
     /// Closing with unsaved changes, waiting for its second Esc.
     confirming_discard: bool,
     /// The actions open on a changed file, if any.
@@ -1169,6 +1169,20 @@ impl CodeView {
         }
     }
 
+    /// Text pasted while the file is being typed into, placed at the
+    /// caret as one edit. Anything else open ignores a paste: there is
+    /// nothing in a read-only surface for it to land in.
+    pub fn paste(&mut self, text: &str, space: Size) {
+        if let Some(open) = self
+            .open
+            .as_mut()
+            .filter(|open| open.editing && open.error.is_none())
+        {
+            open.insert_text(text);
+            self.follow_caret(space.height);
+        }
+    }
+
     fn save(&mut self) {
         let Some(open) = self.open.as_mut().filter(|open| open.error.is_none()) else {
             return;
@@ -1328,7 +1342,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
     // scope. What is left here is the same command set the reading modes
     // answer, plus the two that leave typing.
     if view.editing() {
-        let outcome = edit_command(view, command);
+        let outcome = edit_command(view, command, space);
         view.follow_caret(space.height);
         return outcome;
     }
@@ -1348,12 +1362,20 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         return change_menu::command(view, command);
     }
 
-    if let Some(path) = view.confirming_delete.clone() {
-        view.confirming_delete = None;
-        if command == Command::ConfirmDelete {
-            view.queue.push_back(FileRequest::Delete(path));
-        } else {
-            view.notice = Some(Span::new("delete cancelled", Role::Muted));
+    // Answered the way the discard question is: the keyboard moves
+    // between the two answers, and only an answer closes it.
+    if let Some(deleting) = view.confirming_delete.as_mut() {
+        match command {
+            Command::Activate => {
+                let yes = deleting.on_confirm;
+                answer_delete(view, yes);
+            }
+            Command::ConfirmDelete => answer_delete(view, true),
+            Command::Close => answer_delete(view, false),
+            Command::FocusNext | Command::Collapse | Command::Expand => {
+                deleting.on_confirm = !deleting.on_confirm;
+            }
+            _ => {}
         }
         return CodeOutcome::Stay;
     }
@@ -1448,7 +1470,12 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
                     .row_at(&view.root, path)
                     .is_some_and(|row| row.directory)
             }) {
-                Some(path) => view.confirming_delete = Some(path),
+                Some(path) => {
+                    view.confirming_delete = Some(Deleting {
+                        path,
+                        on_confirm: false,
+                    });
+                }
                 None => {
                     view.notice = Some(Span::new("only files are deletable", Role::Warning));
                 }
@@ -1459,8 +1486,25 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
     CodeOutcome::Stay
 }
 
+/// A file asked about before it is deleted, and which answer the
+/// keyboard is on — the way out until it is moved.
+struct Deleting {
+    path: PathBuf,
+    on_confirm: bool,
+}
+
+fn answer_delete(view: &mut CodeView, yes: bool) {
+    let Some(deleting) = view.confirming_delete.take() else {
+        return;
+    };
+    match yes {
+        true => view.queue.push_back(FileRequest::Delete(deleting.path)),
+        false => view.notice = Some(Span::new("delete cancelled", Role::Muted)),
+    }
+}
+
 /// A command while the buffer is being typed into.
-fn edit_command(view: &mut CodeView, command: Command) -> CodeOutcome {
+fn edit_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcome {
     if command == Command::Save {
         view.save();
         return CodeOutcome::Stay;
@@ -1474,6 +1518,9 @@ fn edit_command(view: &mut CodeView, command: Command) -> CodeOutcome {
         // that asks about leaving.
         Command::Close => open.editing = false,
         Command::Newline => open.split_line(),
+        Command::Indent => open.indent(),
+        Command::ScrollPageUp => open.page(usize::from(space.height), false),
+        Command::ScrollPageDown => open.page(usize::from(space.height), true),
         Command::EraseBack => open.backspace(),
         Command::EraseForward => open.delete_forward(),
         Command::Type(character) => open.insert(character),
@@ -1545,6 +1592,13 @@ pub fn handle_hover(view: &mut CodeView, hit: Option<ViewHit>) -> bool {
 }
 
 pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> CodeOutcome {
+    // Only its answers mean anything while the question is open.
+    if view.confirming_delete.is_some() {
+        if let Some(ViewHit::Answer(yes)) = hit {
+            answer_delete(view, yes);
+        }
+        return CodeOutcome::Stay;
+    }
     view.notice = None;
     if view.content == ContentMode::Map {
         return map_mouse(view, hit, space);
