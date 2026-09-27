@@ -50,5 +50,5 @@
 - [x] 5.1 Journey worlds set `UZE_AUTOUPDATE=off`.
 - [x] 5.2 `docs/versioning.md`: what the updater does, what it will not
   replace, what happens to a running server, and how to stop it.
-- [ ] 5.3 Verify by hand against a real release: an install from `install.sh`
+- [x] 5.3 Verify by hand against a real release: an install from `install.sh`
   at the previous version replaces itself and announces it.

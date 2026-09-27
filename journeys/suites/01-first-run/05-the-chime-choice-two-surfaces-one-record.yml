@@ -1,6 +1,6 @@
 journey: the notification choice made from the CLI is the choice the machine is in force with
 tags: [gate, cli, first-run]
-proves: openspec/changes/flatten-the-command-grammar
+proves: openspec/specs/command-grammar
 about: |
   The chime's choice has two ways in — the workspace client's own control
   and `uze config notification` — and they are two doors into one room: both

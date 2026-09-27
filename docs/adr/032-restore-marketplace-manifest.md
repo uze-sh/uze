@@ -104,3 +104,22 @@ non-interactively — it reports `TRUST_REQUIRED` like any other package.
 Deliberately out of scope: a remote registry, marketplace search, a plugin
 version resolver, and sparse Git checkout (the manifest contract is shaped
 to allow one later without touching Store, Engine, or integrations).
+
+## More Information
+
+**2026-09-27 — identity and access** (`marketplace-access`). A marketplace's
+identity is `https://<host>/<path>`, computed from the URL's shape alone, so
+every machine derives the same name and no machine's configuration can make
+collaborators rewrite each other's lock; an SSH URL with no honest HTTPS
+spelling stays as written, a local repository without `origin` is its path.
+How that name is reached, and with which credentials, is the machine's
+business, never the project file's.
+
+A short locator resolves on one host and **never falls back to another**.
+Over smart HTTP a private repository and an absent one both answer 401, so a
+fallback fires exactly when the operator's own private repository is not
+visible and resolves the same name on a forge where somebody else may own it:
+dependency confusion delivered as convenience. A not-found error lists the
+prefixed forms to try instead.
+
+Source change: openspec/changes/archive/2026-09-27-marketplace-access/

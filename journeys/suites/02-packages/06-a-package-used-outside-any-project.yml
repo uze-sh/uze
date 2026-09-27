@@ -1,6 +1,6 @@
 journey: a package used outside any project is installed and delivered, and declares nothing
 tags: [gate, cli, packages]
-proves: openspec/changes/flatten-the-command-grammar
+proves: openspec/specs/command-grammar
 about: |
   The verb that has two scopes decides its own by where it runs. Standing
   outside every project — no agents.yaml, no repository root, no AGENTS.md
