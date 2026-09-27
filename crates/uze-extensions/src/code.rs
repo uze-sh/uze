@@ -1761,9 +1761,16 @@ pub fn scroll_to(view: &mut CodeView, first: usize) {
 /// Only the content: the wheel over a list scrolls that list, and how far
 /// a list of rows can scroll is a question about how many fit, which the
 /// host answers because the host laid them out.
-pub fn handle_scroll(view: &mut CodeView, direction: ScrollDirection) {
+///
+/// `at_end` is whether the host's last frame already drew the content's
+/// last line: past it the content scrolls off into blank rows, and every
+/// notch taken there is one more to take back. The host says so rather
+/// than a line count because it wraps, and only it knows how many rows
+/// the last lines took.
+pub fn handle_scroll(view: &mut CodeView, direction: ScrollDirection, at_end: bool) {
     view.scroll = match direction {
         ScrollDirection::Up => view.scroll.saturating_sub(3),
+        ScrollDirection::Down if at_end => view.scroll,
         ScrollDirection::Down => view.scroll.saturating_add(3),
     };
 }

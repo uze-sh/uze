@@ -576,6 +576,10 @@ pub(crate) struct Rendered {
     /// the map is a tile or two over, and near an edge is nothing at
     /// all.
     pub(crate) content_gutter: u16,
+    /// Whether the content's last line is on screen, so the wheel knows
+    /// to stop. Only the drawing can say: lines wrap, and how many rows
+    /// the last ones took is settled here and nowhere else.
+    pub(crate) content_at_end: bool,
     /// The room the extension was given to lay this frame out in, so a
     /// click resolves against the geometry that produced what is on
     /// screen.
@@ -693,7 +697,7 @@ pub(crate) fn render(
             caret,
         } => {
             rendered.content_gutter = gutter_width(lines);
-            rendered.content_bar = render_lines(
+            (rendered.content_bar, rendered.content_at_end) = render_lines(
                 frame,
                 content_area,
                 Lines {
@@ -861,6 +865,7 @@ fn render_board(
                 usize::from(board.height),
                 *total,
             );
+            rendered.content_at_end = usize::from(*scroll) + usize::from(board.height) >= *total;
             rendered.content_bar = render_scrollbar(
                 frame,
                 bar,
@@ -1620,7 +1625,7 @@ fn render_lines(
     area: Rect,
     content_lines: Lines<'_>,
     hits: &mut Vec<(Rect, ViewHit)>,
-) -> Option<Scrollbar> {
+) -> (Option<Scrollbar>, bool) {
     let Lines {
         heading,
         scroll,
@@ -1674,6 +1679,7 @@ fn render_lines(
     };
     let text_width = text_width(content.width, gutter);
     let mut y = content.y;
+    let mut at_end = true;
     for (offset, line) in lines
         .iter()
         .enumerate()
@@ -1682,6 +1688,7 @@ fn render_lines(
     {
         let height = line_height(line, content.width, gutter);
         if y.saturating_add(height) > content.bottom() {
+            at_end = false;
             break;
         }
         let row = Rect::new(content.x, y, content.width, height);
@@ -1705,13 +1712,17 @@ fn render_lines(
         }
         y = y.saturating_add(height);
     }
-    render_scrollbar(
+    // The window handed over may stop short of the content: what it left
+    // out is below the last row drawn, so the end is not on screen.
+    let at_end = at_end && first + lines.len() >= total;
+    let bar = render_scrollbar(
         frame,
         bar,
         scroll as usize,
         hits,
         ViewHit::DragContentScrollbar,
-    )
+    );
+    (bar, at_end)
 }
 
 /// An empty surface, or one that failed: what is the matter, and — when
@@ -2321,7 +2332,13 @@ pub(crate) fn render_section_with(
     if !section.collapsed {
         title_style = title_style.add_modifier(Modifier::BOLD);
     }
+    // One column in, the pad the caption keeps at the other end: on the
+    // band an open section wears, a chevron flush against the edge under a
+    // caption held off it reads as a row that slipped. Its rows keep the
+    // same column, so the heading still stands over them.
+    let lead = " ".repeat(usize::from(TRAILING_PAD));
     let mut spans = vec![
+        TextSpan::raw(lead.clone()),
         TextSpan::styled(format!("{fold} "), theme::fg(Token::TextSecondary)),
         TextSpan::styled(section.title.clone(), title_style),
     ];
@@ -2398,8 +2415,9 @@ pub(crate) fn render_section_with(
         // reserved for the gap `push_trailing` always leaves between them.
         let name_width = rect
             .width
-            .saturating_sub(marker_width + 1 + trailing_width + TRAILING_PAD);
+            .saturating_sub(TRAILING_PAD + marker_width + 1 + trailing_width + TRAILING_PAD);
         let mut spans = vec![
+            TextSpan::raw(lead.clone()),
             TextSpan::styled(
                 format!("{mark} "),
                 Style::default().fg(color(row.mark_role)),
@@ -2620,12 +2638,13 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let bright = theme::color(Token::TextBright);
         // The header, then one row per commit; the name starts past the
-        // mark and its gap.
-        assert_ne!(buffer[(2, 1)].fg, bright, "the resting row's name");
-        assert_eq!(buffer[(2, 2)].fg, bright, "the hovered row's name");
+        // lead, the mark and its gap.
+        let name = TRAILING_PAD + 2;
+        assert_ne!(buffer[(name, 1)].fg, bright, "the resting row's name");
+        assert_eq!(buffer[(name, 2)].fg, bright, "the hovered row's name");
         assert_eq!(
-            buffer[(2, 2)].bg,
-            buffer[(2, 1)].bg,
+            buffer[(name, 2)].bg,
+            buffer[(name, 1)].bg,
             "on the same ground as its neighbour"
         );
     }

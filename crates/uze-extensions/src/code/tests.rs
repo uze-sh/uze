@@ -515,11 +515,26 @@ fn selecting_a_file_asks_for_its_diff_rather_than_reading_it() {
 fn the_wheel_scrolls_the_content_and_leaves_the_selection_alone() {
     let mut view = fixture();
 
-    handle_scroll(&mut view, ScrollDirection::Down);
+    handle_scroll(&mut view, ScrollDirection::Down, false);
 
     assert_eq!(view.scroll, 3);
     assert_eq!(view.selected_change(), Some(1));
     assert!(!view.diff_pending());
+}
+
+/// The wheel stops once the last line is on screen: past it the content
+/// would scroll off into blank rows, and each notch there is one more to
+/// take back before anything moves on the way up.
+#[test]
+fn the_wheel_stops_once_the_last_line_is_on_screen() {
+    let mut view = fixture();
+    handle_scroll(&mut view, ScrollDirection::Down, false);
+
+    handle_scroll(&mut view, ScrollDirection::Down, true);
+    assert_eq!(view.scroll, 3, "held where the end came into view");
+
+    handle_scroll(&mut view, ScrollDirection::Up, true);
+    assert_eq!(view.scroll, 0, "and the first notch back moves it");
 }
 
 /// The section names meaning, never colour — the same contract the

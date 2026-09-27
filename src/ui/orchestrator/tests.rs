@@ -53,7 +53,7 @@ mod workspace_tests {
         },
         scroll_timeline, scroll_tree, selected_pane_cwd, space_context_agent, space_cwd,
         space_own_tab, strip_tabs, sync_slot_occupancy, tab_drag_group, tab_drag_group_members,
-        tab_needs_replacement_shell, toggle_space_collapsed, toggle_timeline,
+        tab_needs_replacement_shell, toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
         workspace_has_active_agent_operation,
     };
     use crossterm::event::{MouseButton, MouseEventKind};
@@ -823,6 +823,63 @@ mod workspace_tests {
         );
     }
 
+    /// The content's groove hugs the frame's edge, in the column the pane
+    /// keeps from it (see `extension_view`'s own test of where it is
+    /// drawn) — and a press and the wheel there are still the surface's.
+    /// Routed by the pane alone, both fell through to the chrome and the
+    /// groove drawn to be dragged did nothing.
+    #[test]
+    fn the_content_scrollbar_answers_in_the_panes_margin() {
+        use uze_extensions::{ExtensionHit, code, view::ViewHit};
+
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-content-groove"));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        let mut view = code::CodeView::opening(
+            PathBuf::from("/repo"),
+            "/repo".to_owned(),
+            code::ContentMode::Contents,
+        );
+        view.take_request();
+        model.code = Some(view);
+
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+        let track = Rect::new(pane.right(), pane.y + 1, 1, pane.height - 1);
+        let bar = crate::ui::widget::Scrollbar::measure(track, usize::from(track.height), 500)
+            .expect("five hundred lines in a pane is a scrollbar");
+        driven.attach.model.code_scrollbars.content_bar = Some(bar);
+        driven.attach.model.hits.insert(
+            0,
+            (
+                track,
+                WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::DragContentScrollbar)),
+            ),
+        );
+        let place = |driven: &Driven<'_>| {
+            driven
+                .attach
+                .model
+                .code
+                .as_ref()
+                .expect("still open")
+                .place()
+        };
+        let top = place(&driven);
+
+        driven.press(track.x, track.bottom() - 1);
+        assert_ne!(place(&driven), top, "a press low on the groove scrolls");
+
+        driven.mouse(track.x, track.y, MouseEventKind::Up(MouseButton::Left));
+        driven.press(track.x, track.y);
+        assert_eq!(place(&driven), top, "and one at its top goes back");
+
+        driven.mouse(track.x, track.y, MouseEventKind::Up(MouseButton::Left));
+        driven.mouse(track.x, track.y, MouseEventKind::ScrollDown);
+        assert_ne!(place(&driven), top, "the wheel over it scrolls the content");
+    }
+
     /// The header row is the pane's first row, and the control that says
     /// which half you are in stands where the heading did — the list's
     /// heading named the half it was already the only thing showing.
@@ -1048,7 +1105,7 @@ mod workspace_tests {
     }
 
     /// The sidebar's spec section says, folded, how far the checkout's own
-    /// changes have got; opened, it folds the timeline away and lists them;
+    /// changes have got; opened, it lists them beside an open timeline;
     /// and a change opens the surface on it.
     #[test]
     fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
@@ -1096,8 +1153,8 @@ mod workspace_tests {
             "opened from its header"
         );
         assert!(
-            driven.attach.model.timeline_collapsed,
-            "one section open at a time"
+            !driven.attach.model.timeline_collapsed,
+            "the timeline stays open beside it"
         );
 
         driven.frame();
@@ -5015,34 +5072,23 @@ mod workspace_tests {
         assert_eq!(timeline, rows.len() - 1, "{rows:?}");
     }
 
-    /// One open at a time. They stack in the same column and each takes
-    /// its rows from the tree, so two open at once spends the sidebar on
-    /// what sits under the spaces rather than on the spaces.
+    /// Each section folds on its own: opening one leaves the others as
+    /// they were, so more than one can be open at once.
     #[test]
-    fn opening_one_section_folds_the_other() {
+    fn opening_one_section_leaves_the_others_open() {
         let mut model = session_with_timeline(&["feat: one"]);
         model.timeline_collapsed = true;
-        model.first_steps_collapsed = true;
+        model.first_steps_collapsed = false;
+        model.spec_summary_open = true;
 
         toggle_timeline(&mut model);
         assert!(!model.timeline_collapsed);
-        assert!(model.first_steps_collapsed, "the steps gave way");
+        assert!(!model.first_steps_collapsed, "the steps stayed open");
+        assert!(model.spec_summary_open, "and so did the spec");
 
-        // And back: the section that opens is the one that was asked for.
-        model.first_steps_collapsed = false;
-        model.timeline_collapsed = true;
-        toggle_timeline(&mut model);
-        assert!(!model.timeline_collapsed);
-        assert!(model.first_steps_collapsed);
-
-        // Folding one leaves the other alone — an accordion closes nothing
-        // on the way to closing itself.
-        model.first_steps_collapsed = false;
-        model.timeline_collapsed = true;
-        toggle_timeline(&mut model);
-        toggle_timeline(&mut model);
-        assert!(model.timeline_collapsed);
-        assert!(model.first_steps_collapsed);
+        toggle_spec_summary(&mut model);
+        assert!(!model.spec_summary_open);
+        assert!(!model.timeline_collapsed, "folding one folds only it");
     }
 
     /// The release notice sits on the sections holding the foot, not under
@@ -6595,27 +6641,30 @@ mod workspace_tests {
         );
     }
 
-    /// A section at the foot stands flush against the column's edge, where
-    /// a space's block begins, with a row of air between the tree and the
-    /// foot so a tree that grows to meet it still reads as two things.
+    /// A section at the foot folds from the column a space's block folds
+    /// from, one in from the edge the way its caption is held off the other
+    /// one, with a row of air between the tree and the foot so a tree that
+    /// grows to meet it still reads as two things.
     #[test]
     fn the_foot_sections_stand_on_the_columns_own_grid() {
         let mut model = three_spaces();
         model.first_steps_collapsed = false;
-        let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
+        let Sidebar { rows, .. } = sidebar(&model, &identities_fixture());
         let column = |row: &str, text: &str| row[..row.find(text).unwrap()].chars().count();
+        let chevron = theme::glyph(crate::ui::theme::Symbol::ChevronExpanded);
         let steps = rows
             .iter()
             .position(|row| row.contains("first steps"))
             .expect("the steps are at the foot");
+        let space = rows
+            .iter()
+            .position(|row| row.contains(&format!("{chevron} one")))
+            .expect("a space is open above them");
 
         assert_eq!(
-            column(
-                &rows[steps],
-                &theme::glyph(crate::ui::theme::Symbol::ChevronExpanded)
-            ),
-            usize::from(gutter_column(&hits)),
-            "a section folds from the column's edge: {rows:?}"
+            column(&rows[steps], &chevron),
+            column(&rows[space], &chevron),
+            "a section folds where a space does: {rows:?}"
         );
         assert!(
             rows[steps - 1].trim_end_matches('│').trim().is_empty(),
@@ -8074,7 +8123,7 @@ mod workspace_tests {
 
         /// Any other mouse event at the same viewport the click helpers
         /// use — the rest of a drag, which `press` alone cannot say.
-        fn mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
+        pub(super) fn mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
             let area = self.area;
             let layout = compute_layout(area, self.attach.model.sidebar_width);
             let viewport = Viewport {
