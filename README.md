@@ -7,7 +7,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/uze-sh/uze/ci.yml?branch=main&style=flat-square&labelColor=1e1f20&label=CI)](https://github.com/uze-sh/uze/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/rust-1.97%2B-7d97c9?style=flat-square&labelColor=1e1f20)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-Apache_2.0-A22136?style=flat-square&labelColor=1e1f20)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha-e0b567?style=flat-square&labelColor=1e1f20)](https://uze.sh/docs/roadmap)
+[![Status](https://img.shields.io/badge/status-beta-e0b567?style=flat-square&labelColor=1e1f20)](https://uze.sh/docs/roadmap)
 
 A compatibility layer for agent tooling: install a plugin once, write one
 `AGENTS.md`, and every agent you run gets both through its own most native
