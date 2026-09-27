@@ -76,6 +76,8 @@ pub enum ExtensionHit {
     Architect(view::ViewHit),
     /// The spec extension's full-frame surface.
     Spec(view::ViewHit),
+    /// The spec extension's sidebar section — its changes in flight.
+    SpecSummary(view::ViewHit),
 }
 
 /// One entry of a directory listing, as [`Host::list_dir`] answers it.

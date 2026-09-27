@@ -753,7 +753,14 @@ mod tests {
             if iconless.starts_with("file.")
                 || matches!(
                     iconless.as_str(),
-                    "code" | "architect" | "spec" | "map" | "changes"
+                    "code"
+                        | "architect"
+                        | "spec"
+                        | "map"
+                        | "changes"
+                        | "in-flight"
+                        | "contract"
+                        | "finished"
                 )
             {
                 continue;

@@ -10,9 +10,15 @@ use std::path::Path;
 use crate::Host;
 
 /// Every path, relative to the repository root, that differs from `HEAD`
-/// in the working tree, or that a commit on this branch changed since it
-/// left `target`. Without a target only the working tree is asked: work
-/// on the branch everything is delivered to has no base to be ahead of.
+/// in the working tree, or that a commit only this branch has changed.
+/// Without a target only the working tree is asked: work on the branch
+/// everything is delivered to has no base to be ahead of.
+///
+/// "Only this branch has" excludes the target *and* the target's
+/// upstream. A local target that lags its remote is the ordinary state of
+/// an operator's checkout, and a branch rebased onto the remote carries
+/// every commit the local target has not caught up with yet — commits
+/// that are the project's, not this checkout's.
 ///
 /// A read that fails contributes nothing rather than failing the whole:
 /// a mark this surface cannot place is a mark it does not draw, and the
@@ -26,25 +32,40 @@ pub fn touched(host: &dyn Host, root: &Path, target: Option<&str>) -> Vec<String
         )
         .map(|output| parse_status(&output))
         .unwrap_or_default();
-    if let Some(base) = target.and_then(|target| merge_base(host, root, target))
-        && let Ok(output) = host.git(root, &["diff", "--name-only", "-z", &base, "HEAD"], &[])
-    {
-        paths.extend(
-            output
-                .split('\0')
-                .filter(|path| !path.is_empty())
-                .map(str::to_owned),
-        );
+    if let Some(target) = target {
+        let upstream = upstream_of(host, root, target);
+        let mut args = vec![
+            "log",
+            "--format=",
+            "--name-only",
+            "-z",
+            "HEAD",
+            "--not",
+            target,
+        ];
+        args.extend(upstream.as_deref());
+        if let Ok(output) = host.git(root, &args, &[]) {
+            paths.extend(
+                output
+                    .split(['\0', '\n'])
+                    .filter(|path| !path.is_empty())
+                    .map(str::to_owned),
+            );
+        }
     }
     paths.sort();
     paths.dedup();
     paths
 }
 
-fn merge_base(host: &dyn Host, root: &Path, target: &str) -> Option<String> {
-    let base = host.git(root, &["merge-base", "HEAD", target], &[]).ok()?;
-    let base = base.trim();
-    (!base.is_empty()).then(|| base.to_owned())
+/// The branch `target` follows, when it follows one.
+fn upstream_of(host: &dyn Host, root: &Path, target: &str) -> Option<String> {
+    let spec = format!("{target}@{{upstream}}");
+    let upstream = host
+        .git(root, &["rev-parse", "--symbolic-full-name", &spec], &[])
+        .ok()?;
+    let upstream = upstream.trim();
+    (!upstream.is_empty()).then(|| upstream.to_owned())
 }
 
 /// `git status --porcelain=v1 -z`: `XY path`, and after a rename or copy
@@ -126,6 +147,38 @@ mod tests {
         assert!(
             touched(&RepositoryHost, &root, None).is_empty(),
             "without a target only the working tree is asked, and it is clean"
+        );
+    }
+
+    /// The operator's `main` a commit behind `origin/main`, and this branch
+    /// rebased onto `origin/main`: the commit `main` has not caught up with
+    /// is the project's, not this checkout's.
+    #[test]
+    fn a_commit_the_targets_upstream_has_is_not_this_checkouts() {
+        let repository = uze_testkit::git::Repository::new("spec-ownership-upstream");
+        let root = repository.root().to_path_buf();
+        let target = repository.branch();
+        repository.git(&["remote", "add", "origin", &root.to_string_lossy()]);
+        repository.commit_file("openspec/changes/theirs/tasks.md", "- [ ] one\n");
+        repository.git(&[
+            "update-ref",
+            &format!("refs/remotes/origin/{target}"),
+            "HEAD",
+        ]);
+        repository.git(&["reset", "--quiet", "--hard", "HEAD~1"]);
+        repository.git(&["branch", &format!("--set-upstream-to=origin/{target}")]);
+        repository.git(&[
+            "checkout",
+            "--quiet",
+            "-b",
+            "work",
+            &format!("origin/{target}"),
+        ]);
+        repository.commit_file("openspec/changes/mine/tasks.md", "- [ ] one\n");
+
+        assert_eq!(
+            touched(&RepositoryHost, &root, Some(&target)),
+            ["openspec/changes/mine/tasks.md"]
         );
     }
 

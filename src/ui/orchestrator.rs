@@ -70,6 +70,10 @@ const TIMELINE_COMMITS: usize = 30;
 /// compares patches across the branch and its target, and history does
 /// not move at the pace a working tree does.
 const TIMELINE_REFRESH: Duration = Duration::from_secs(3);
+/// How often the sidebar's spec summary is re-read while the tab stays
+/// put. Slower still: task lists are ticked by hand, a few times an hour,
+/// and each read walks every change in flight.
+const SPEC_SUMMARY_REFRESH: Duration = Duration::from_secs(5);
 
 /// How far apart two reads of the same thing are kept: never closer than
 /// `floor`, and never closer than a few times what the last one took.
@@ -1173,6 +1177,19 @@ struct ArtifactsResolution {
     answer: architect::ArtifactsAnswer,
 }
 
+/// The changes in flight in a checkout, counted, for the sidebar.
+struct SpecSummaryResolution {
+    cwd: PathBuf,
+    summary: Option<spec::Summary>,
+}
+
+/// What the sidebar's spec section last read, and when.
+struct SpecSummaryState {
+    cwd: PathBuf,
+    summary: Option<spec::Summary>,
+    checked_at: Instant,
+}
+
 /// A checkout's specs, read for the checkout they were asked about.
 struct SpecResolution {
     root: PathBuf,
@@ -1211,6 +1228,25 @@ fn spawn_artifacts_read(root: PathBuf, sender: mpsc::Sender<ArtifactsResolution>
             silence,
         );
         let _ = sender.send(ArtifactsResolution { root, answer });
+    });
+}
+
+/// Counting the changes in flight: a directory walk and a read of every
+/// task list, none of it for the render thread.
+fn spawn_spec_summary(
+    cwd: PathBuf,
+    target: Option<String>,
+    sender: mpsc::Sender<SpecSummaryResolution>,
+) {
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::debug_span!("tui.spec_summary").entered();
+        let summary = answered_or(
+            || spec::summary(&WorkspaceHost, &cwd, target.as_deref()),
+            None,
+        );
+        let _ = sender.send(SpecSummaryResolution { cwd, summary });
     });
 }
 
@@ -2586,6 +2622,7 @@ struct Channels {
     placements: Answers<PlacementResolution>,
     artifacts: Answers<ArtifactsResolution>,
     spec: Answers<SpecResolution>,
+    spec_summaries: Answers<SpecSummaryResolution>,
     /// The code surface's map, measured once per checkout it is opened on.
     code_measures: Answers<MeasureResolution>,
 }
@@ -2624,6 +2661,11 @@ struct Remembered {
     /// The checkout a background Git read is out for, so the workspace
     /// asks once rather than once per frame — see [`spawn_git_read`].
     git_pending: Option<PathBuf>,
+    /// The sidebar's spec summary for the checkout in front, and the one
+    /// being read — kept like the badge, so a tab switch shows the last
+    /// answer until the new one lands rather than an empty column.
+    spec_summary: Option<SpecSummaryState>,
+    spec_summary_pending: Option<PathBuf>,
     /// How long the last of those reads took (see [`paced`]).
     git_took: Duration,
     /// Per-pane reconstruction of the line being typed, flushed on Enter.
@@ -2800,6 +2842,10 @@ struct WorkspaceModel {
     collapsed_space_roots: BTreeSet<PathBuf>,
     /// Whether the sidebar's first-steps section is folded to its header.
     first_steps_collapsed: bool,
+    /// Whether the sidebar's spec section is open. Folded until asked,
+    /// and not remembered across launches yet: the other two sections'
+    /// folds live in a record, and a record grows by a shape.
+    spec_summary_open: bool,
     /// Whether it has been put away for good, which is offered only once
     /// every step has been taken.
     first_steps_closed: bool,
@@ -4193,6 +4239,54 @@ impl WorkspaceModel {
         spawn_git_read(cwd, target, !timeline_fresh, sender.clone());
     }
 
+    /// Asks for the spec summary of the checkout in front when the one
+    /// held is about another or has gone stale.
+    fn schedule_spec_summary(&mut self, sender: &mpsc::Sender<SpecSummaryResolution>) {
+        let Some(cwd) = self.focused_cwd() else {
+            self.remembered.spec_summary = None;
+            return;
+        };
+        if self.remembered.spec_summary_pending.is_some() {
+            return;
+        }
+        let fresh = self.remembered.spec_summary.as_ref().is_some_and(|state| {
+            state.cwd == cwd && state.checked_at.elapsed() < SPEC_SUMMARY_REFRESH
+        });
+        if fresh {
+            return;
+        }
+        let target = self.remembered.targets.get(&evaluation_key(&cwd)).cloned();
+        self.remembered.spec_summary_pending = Some(cwd.clone());
+        spawn_spec_summary(cwd, target, sender.clone());
+    }
+
+    /// Installs a finished summary if it is still about the checkout in
+    /// front; releases the pending key either way.
+    fn absorb_spec_summary(&mut self, resolution: SpecSummaryResolution) -> bool {
+        if self.remembered.spec_summary_pending.as_ref() == Some(&resolution.cwd) {
+            self.remembered.spec_summary_pending = None;
+        }
+        if self.focused_cwd().as_ref() != Some(&resolution.cwd) {
+            return false;
+        }
+        let changed =
+            self.remembered.spec_summary.as_ref().is_none_or(|state| {
+                state.cwd != resolution.cwd || state.summary != resolution.summary
+            });
+        self.remembered.spec_summary = Some(SpecSummaryState {
+            cwd: resolution.cwd,
+            summary: resolution.summary,
+            checked_at: Instant::now(),
+        });
+        changed
+    }
+
+    /// The summary the sidebar draws: the checkout in front's, when it has
+    /// a spec layout.
+    fn spec_summary(&self) -> Option<&spec::Summary> {
+        self.remembered.spec_summary.as_ref()?.summary.as_ref()
+    }
+
     /// Installs a finished read, or drops it.
     ///
     /// Returns whether anything on screen changed. An answer about a
@@ -5380,8 +5474,21 @@ fn toggle_timeline(model: &mut WorkspaceModel) {
     // the spaces — and the spaces are what it is for.
     if !model.timeline_collapsed {
         model.first_steps_collapsed = true;
+        model.spec_summary_open = false;
     }
     model.remember_sidebar();
+    model.dirty = true;
+}
+
+/// Opens the sidebar's spec section, or folds it — and, opening, folds the
+/// other two, for the reason `toggle_timeline` gives.
+fn toggle_spec_summary(model: &mut WorkspaceModel) {
+    model.spec_summary_open = !model.spec_summary_open;
+    if model.spec_summary_open {
+        model.timeline_collapsed = true;
+        model.first_steps_collapsed = true;
+        model.remember_sidebar();
+    }
     model.dirty = true;
 }
 
@@ -5552,13 +5659,24 @@ fn open_architect(model: &mut WorkspaceModel) {
 }
 
 fn open_spec(model: &mut WorkspaceModel) {
+    open_spec_on(model, None);
+}
+
+/// The spec surface, opened on the change a summary row named: the step
+/// from the macro to the change it counts.
+fn open_spec_at(model: &mut WorkspaceModel, change: &str) {
+    open_spec_on(model, Some(spec::SpecPlace::change(change)));
+}
+
+fn open_spec_on(model: &mut WorkspaceModel, sent_to: Option<spec::SpecPlace>) {
     let Some(session) = model.session.as_ref() else {
         return;
     };
     let root = session.selected_tab().pane.cwd.clone();
     model.close_code();
     model.close_architect();
-    let place = model.remembered.spec_places.get(&root).cloned();
+    model.close_spec();
+    let place = sent_to.or_else(|| model.remembered.spec_places.get(&root).cloned());
     let display_root = crate::ui::display_project_path(&root);
     model.stand_extension_in_front();
     model.spec_root = Some(root);

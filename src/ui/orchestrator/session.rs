@@ -2878,6 +2878,7 @@ impl Attach<'_> {
                 // The other half of the accordion — see `toggle_timeline`.
                 if !self.model.first_steps_collapsed {
                     self.model.timeline_collapsed = true;
+                    self.model.spec_summary_open = false;
                 }
                 self.model.remember_sidebar();
                 self.model.dirty = true;
@@ -3097,6 +3098,22 @@ impl Attach<'_> {
             WorkspaceHit::Extension(
                 ExtensionHit::Code(_) | ExtensionHit::Architect(_) | ExtensionHit::Spec(_),
             ) => {}
+            // The spec section: its header folds it, and a change opens the
+            // surface on that change. Nothing else is drawn in it.
+            WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)) => match hit {
+                ViewHit::ToggleSection => toggle_spec_summary(&mut self.model),
+                ViewHit::SelectItem(index) => {
+                    let change = self
+                        .model
+                        .spec_summary()
+                        .and_then(|summary| summary.changes.get(index))
+                        .map(|change| change.name.clone());
+                    if let Some(change) = change {
+                        open_spec_at(&mut self.model, &change);
+                    }
+                }
+                _ => {}
+            },
             WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)) => match hit {
                 ViewHit::ToggleSection => toggle_timeline(&mut self.model),
                 ViewHit::ResizeSection => self.model.dragging_timeline = true,
@@ -3978,6 +3995,9 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.spec.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_spec(resolution);
         }
+        while let Ok(resolution) = self.channels.spec_summaries.receiver.try_recv() {
+            self.model.dirty |= self.model.absorb_spec_summary(resolution);
+        }
     }
 
     /// Asks whatever those same surfaces now show and have not read.
@@ -3995,6 +4015,8 @@ impl Attach<'_> {
             .schedule_artifacts_read(&self.channels.artifacts.sender);
         self.model
             .schedule_spec_read(self.home, &self.channels.spec.sender);
+        self.model
+            .schedule_spec_summary(&self.channels.spec_summaries.sender);
     }
 
     /// Advances the activity spinner while anything it animates is on

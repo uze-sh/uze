@@ -124,7 +124,7 @@ fn flat_rows(view: &CodeView) -> Vec<(String, String)> {
         .into_iter()
         .filter_map(|row| match row {
             NavigatorRow::Item { name, detail, .. } => Some((name, detail)),
-            NavigatorRow::Group { .. } => None,
+            _ => None,
         })
         .collect()
 }
@@ -2181,6 +2181,7 @@ fn the_changes_list_marks_status_rather_than_kind() {
         rows.iter().all(|row| match row {
             crate::view::NavigatorRow::Group { icon, .. }
             | crate::view::NavigatorRow::Item { icon, .. } => *icon == crate::view::RowIcon::None,
+            crate::view::NavigatorRow::Band { .. } | crate::view::NavigatorRow::Gap => true,
         }),
         "the changes list asked for a file icon: {rows:?}"
     );

@@ -101,7 +101,10 @@ changes this checkout is working on, then the changes still in progress,
 then the changes that are complete and not yet archived. Within a band,
 changes SHALL be ordered by name. The last band SHALL be headed as ready
 to archive, so a finished change that was never archived is told apart
-from one still being worked on.
+from one still being worked on. A band's heading SHALL be set apart from
+the units under it by form, not only by indentation, SHALL say how many
+units it holds, and SHALL be separated from the band above it by a blank
+row.
 
 #### Scenario: A mix of states
 - **WHEN** change `b` is this checkout's, `a` is at `3/10`, and `c` is at
@@ -115,8 +118,9 @@ from one still being worked on.
 
 ### Requirement: The change this checkout is working on is marked
 A unit SHALL be marked as this checkout's own when a file under it differs
-from `HEAD` in the working tree, or was changed by a commit on this
-checkout's branch since the base the host reports for it. Units marked
+from `HEAD` in the working tree, or was changed by a commit that this
+checkout's branch has and neither the target the host reports nor that
+target's upstream has. Units marked
 this way SHALL be listed before the rest, and the first of them SHALL be
 selected when the surface opens with no place to return to. When the host
 reports no base, only the working tree SHALL be considered.
@@ -131,6 +135,12 @@ reports no base, only the working tree SHALL be considered.
   `openspec/changes/x/tasks.md` since its base, and the working tree is
   clean
 - **THEN** change `x` SHALL be marked as this checkout's
+
+#### Scenario: A local target behind its upstream
+- **WHEN** the operator's `main` lags `origin/main` by a commit that
+  changed `openspec/changes/y/`, and this checkout's branch was rebased
+  onto `origin/main`
+- **THEN** change `y` SHALL NOT be marked as this checkout's
 
 #### Scenario: The operator's checkout on the target branch
 - **WHEN** the host reports no base and the working tree touches no
@@ -179,6 +189,34 @@ exist.
 #### Scenario: The remembered change was archived
 - **WHEN** the remembered change no longer exists under `changes/`
 - **THEN** the surface SHALL open as if nothing were remembered
+
+### Requirement: The sidebar summarises what this checkout is working on
+When the checkout in front is working on one or more changes, by the rule
+that marks a change as this checkout's, the workspace sidebar SHALL show a
+`tasks` section about those changes alone, as the timeline beside it is
+about that checkout alone. Its header SHALL say how many of their
+checkboxes are checked out of all of them, folded or open. Open, it SHALL
+list one row per such change with its own `checked/total`. Activating a
+row SHALL open the spec surface on that change. The section SHALL be
+folded until opened, and opening it SHALL fold the sidebar's other
+sections. A checkout working on no change, or with no spec layout, SHALL
+show no section. Reading it SHALL happen off the thread that draws, SHALL
+open only the changes the checkout touched, and SHALL be repeated while
+the tab stays in front.
+
+#### Scenario: The macro, folded
+- **WHEN** this checkout is working on changes holding 12 checked boxes
+  out of 20, and the project has other changes in flight
+- **THEN** the section header SHALL read `12/20`
+- **AND THEN** the other changes SHALL NOT be listed in it
+
+#### Scenario: From a change in the sidebar to the change
+- **WHEN** the row of change `x` is clicked
+- **THEN** the spec surface SHALL open with change `x` selected
+
+#### Scenario: A checkout working on no change
+- **WHEN** the tab in front is in a checkout that touched no change
+- **THEN** no `tasks` section SHALL be drawn
 
 ### Requirement: Reading the artifacts never blocks the workspace
 Detecting the dialect, walking its directories, reading its files and

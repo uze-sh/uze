@@ -311,6 +311,8 @@ fn row_names(state: &SpecView) -> Vec<String> {
         .rows
         .iter()
         .map(|row| match row {
+            NavigatorRow::Band { name, count, .. } => format!("# {name} ({count})"),
+            NavigatorRow::Gap => String::new(),
             NavigatorRow::Group { name, .. } => format!("# {name}"),
             NavigatorRow::Item { name, depth, .. } => format!("{}{name}", "  ".repeat(*depth)),
         })
@@ -325,10 +327,11 @@ fn changes_are_banded_by_where_they_stand() {
     assert_eq!(
         row_names(&state),
         [
-            "# in progress",
+            "# in progress (2)",
             "  b-change",
             "  c-open",
-            "# ready to archive",
+            "",
+            "# ready to archive (1)",
             "  a-done",
         ]
     );
@@ -346,11 +349,12 @@ fn the_change_this_checkout_touched_comes_first_opened_on_its_first_document() {
     assert_eq!(
         row_names(&state),
         [
-            "# this checkout",
+            "# this checkout (1)",
             "  b",
             "    proposal",
             "    tasks",
-            "# in progress",
+            "",
+            "# in progress (1)",
             "  a",
         ]
     );
@@ -402,16 +406,18 @@ fn switching_to_the_archive_lists_it_newest_first() {
 fn a_band_folds_from_its_heading() {
     let dir = openspec_checkout("spec-fold");
     let mut state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
-    handle_mouse(&mut state, Some(ViewHit::ToggleGroup(3)), space());
+    handle_mouse(&mut state, Some(ViewHit::ToggleGroup(4)), space());
 
     assert_eq!(
         row_names(&state),
         [
-            "# in progress",
+            "# in progress (2)",
             "  b-change",
             "  c-open",
-            "# ready to archive"
-        ]
+            "",
+            "# ready to archive (1)",
+        ],
+        "folded, a band still says how many it holds"
     );
 }
 
@@ -497,4 +503,24 @@ fn the_source_mode_shows_the_markup_numbered() {
         .map(|span| span.text.as_str())
         .collect();
     assert_eq!(text, "## Why");
+}
+
+#[test]
+fn each_subject_is_marked_by_what_it_holds() {
+    let dir = openspec_checkout("spec-subject-icons");
+    let state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let icons: Vec<crate::view::RowIcon> = view(&state, space())
+        .subjects
+        .into_iter()
+        .map(|subject| subject.icon)
+        .collect();
+
+    assert_eq!(
+        icons,
+        [
+            crate::view::RowIcon::InFlight,
+            crate::view::RowIcon::Contract,
+            crate::view::RowIcon::Finished,
+        ]
+    );
 }

@@ -296,6 +296,14 @@ vocabulary! {
         /// near enough to be confused and far enough apart to matter:
         /// one classifies a file, the other names a half of a surface.
         Changes = "changes",
+        /// Work still being done — the spec surface's changes in flight.
+        InFlight = "in-flight",
+        /// What outlives the work that wrote it — the spec surface's
+        /// living specs, read as reference.
+        Contract = "contract",
+        /// Work that was finished and put away — the spec surface's
+        /// archive.
+        Finished = "finished",
 
         // ── typography ─────────────────────────────────────────────────
         /// Elided text.

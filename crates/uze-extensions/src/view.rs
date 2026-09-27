@@ -336,10 +336,39 @@ pub enum RowIcon {
     Map,
     /// What a checkout differs from the branch it started from.
     Changes,
+    /// Work still being done.
+    InFlight,
+    /// What outlives the work that wrote it.
+    Contract,
+    /// Work that was finished and put away.
+    Finished,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NavigatorRow {
+    /// A heading that divides a list into bands of *standing* — where each
+    /// thing under it stands, not what contains it.
+    ///
+    /// Its own kind rather than a [`NavigatorRow::Group`] at depth zero,
+    /// because the two are read differently and have to look it: a group
+    /// is one more folder in a tree, walked through at the tree's weight,
+    /// and a band is where the eye lands first to find the part of the
+    /// list it is after. Drawn at the same weight, a list of bands reads
+    /// as one undivided run. It folds like a group, handed back as
+    /// [`ViewHit::ToggleGroup`].
+    Band {
+        /// The extension's own identifier, as for a group.
+        id: usize,
+        name: String,
+        /// How many things stand in it, said beside the name so a folded
+        /// band still says what it holds.
+        count: usize,
+        collapsed: bool,
+    },
+    /// A row of air, between bands. Nothing is drawn and nothing answers a
+    /// click: it is there so the heading below it starts a new block
+    /// rather than continuing the one above.
+    Gap,
     /// A heading that groups the rows under it. Not selectable, but it
     /// folds: the host draws the mark and hands the gesture back as
     /// [`ViewHit::ToggleGroup`]; which rows a fold hides is the

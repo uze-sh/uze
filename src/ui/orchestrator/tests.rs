@@ -41,12 +41,12 @@ mod workspace_tests {
         AgentIdentity, AgentTabStatus, AgentView, Attach, CHIME_COOLDOWN, CHIME_SETTLE,
         CommitDetailPopup, CommitDetailResolution, CompletionBehavior, DeliveryResolution,
         DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution, PendingDrop,
-        PlacementResolution, RootPicker, ScrollDirection, SpecResolution, TabDragGroup,
-        UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView, WorkspaceModel,
-        adopt_agent_labels, agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
-        can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
-        forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
-        open_commit_detail, open_spec, pane_relative, pending_tab_drop,
+        PlacementResolution, RootPicker, ScrollDirection, SpecResolution, SpecSummaryState,
+        TabDragGroup, UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView,
+        WorkspaceModel, adopt_agent_labels, agent_activity_frame, agent_identity_for_tab,
+        answered_or, blank_pane, can_close_tab_from_menu, checkout_lost, encode_mouse,
+        evaluation_key, forward_paste, forward_scroll, next_agent_label, next_shell_label,
+        open_architect, open_code, open_commit_detail, open_spec, pane_relative, pending_tab_drop,
         render::{
             self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
@@ -1022,6 +1022,99 @@ mod workspace_tests {
     /// The spec button stands first of the three and is the surface's
     /// switch like the others: a click puts it where the pane is, lit, and
     /// a second click on it puts it away.
+    /// Open, the spec section keeps a row of air under its last change, so
+    /// the timeline's header below it starts a block of its own; folded,
+    /// it is its header alone.
+    #[test]
+    fn an_open_spec_section_keeps_air_under_its_last_change() {
+        let summary = uze_extensions::spec::Summary {
+            changes: vec![
+                uze_extensions::spec::ChangeSummary {
+                    name: "a".to_owned(),
+                    progress: None,
+                },
+                uze_extensions::spec::ChangeSummary {
+                    name: "b".to_owned(),
+                    progress: None,
+                },
+            ],
+            done: 0,
+            total: 0,
+        };
+        assert_eq!(render::spec_summary_height(&summary, true, 40), 1 + 2 + 1);
+        assert_eq!(render::spec_summary_height(&summary, false, 40), 1);
+    }
+
+    /// The sidebar's spec section says, folded, how far the checkout's own
+    /// changes have got; opened, it folds the timeline away and lists them;
+    /// and a change opens the surface on it.
+    #[test]
+    fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
+        use uze_extensions::spec::{ChangeSummary, Progress, Summary};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-section"));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        model.timeline_collapsed = false;
+        let cwd = model.focused_cwd().expect("a tab in front");
+        model.remembered.spec_summary = Some(SpecSummaryState {
+            cwd,
+            summary: Some(Summary {
+                changes: vec![
+                    ChangeSummary {
+                        name: "mine".to_owned(),
+                        progress: Some(Progress { done: 1, total: 4 }),
+                    },
+                    ChangeSummary {
+                        name: "theirs".to_owned(),
+                        progress: Some(Progress { done: 2, total: 2 }),
+                    },
+                ],
+                done: 3,
+                total: 6,
+            }),
+            checked_at: std::time::Instant::now(),
+        });
+        let mut driven = driven(model, &home);
+        driven.frame();
+
+        let drawn = |driven: &Driven<'_>, wanted: ViewHit| {
+            driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find(|(_, hit)| *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(wanted)))
+                .map(|(rect, _)| *rect)
+                .unwrap_or_else(|| panic!("{wanted:?} is not in the sidebar"))
+        };
+        let header = drawn(&driven, ViewHit::ToggleSection);
+        driven.press(header.x, header.y);
+        assert!(
+            driven.attach.model.spec_summary_open,
+            "opened from its header"
+        );
+        assert!(
+            driven.attach.model.timeline_collapsed,
+            "one section open at a time"
+        );
+
+        driven.frame();
+        let row = drawn(&driven, ViewHit::SelectItem(1));
+        driven.press(row.x, row.y);
+        let place = driven
+            .attach
+            .model
+            .spec
+            .as_ref()
+            .expect("the surface opened")
+            .place();
+        assert_eq!(
+            place,
+            Some(uze_extensions::spec::SpecPlace::change("theirs")),
+            "on the change that was clicked"
+        );
+    }
+
     #[test]
     fn the_spec_button_opens_and_closes_the_spec_surface() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-button"));

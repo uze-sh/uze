@@ -81,6 +81,17 @@
       key typed while open does not reach the pane, a late answer after
       close is dropped, reopening restores the place.
 
+## 5b. The sidebar summary
+
+- [x] 5b.1 `spec/summary.rs`: ask Git which changes the checkout touched,
+      open only those, total their checkboxes, and answer a
+      `view::Section` whose caption is the total and whose rows are the
+      changes; no section for a checkout working on none.
+- [x] 5b.2 Host: `spawn_spec_summary` / `absorb_spec_summary` on a paced
+      re-read for the tab in front, the section reserved above the
+      timeline, one section open at a time, a row opening the surface on
+      its change.
+
 ## 6. Docs and gate
 
 - [x] 6.1 `docs/architecture/containers.mmd`: the TUI container's

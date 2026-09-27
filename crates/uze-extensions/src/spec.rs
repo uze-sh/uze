@@ -29,6 +29,7 @@ mod catalog;
 mod dialect;
 mod ownership;
 mod progress;
+mod summary;
 #[cfg(test)]
 mod tests;
 
@@ -50,6 +51,7 @@ use crate::{
 pub use catalog::{Artifact, Found, Unit};
 pub use dialect::{Role, Subject};
 pub use progress::Progress;
+pub use summary::{ChangeSummary, Summary, summary, summary_section};
 
 pub const CATALOG: BuiltinExtension = BuiltinExtension {
     id: "spec",
@@ -109,12 +111,7 @@ fn read_with(
         units,
     } = &mut found
     {
-        let touched = ownership::touched(host, &root, target);
-        for unit in units.iter_mut() {
-            unit.own = touched
-                .iter()
-                .any(|path| ownership::lies_in(path, &unit.relative));
-        }
+        mark_own(host, &root, target, units);
         subjects = Subject::ALL
             .into_iter()
             .filter(|subject| {
@@ -131,6 +128,16 @@ fn read_with(
         root,
         found,
         subjects,
+    }
+}
+
+/// Marks the units this checkout touched as its own.
+fn mark_own(host: &dyn Host, root: &Path, target: Option<&str>, units: &mut [Unit]) {
+    let touched = ownership::touched(host, root, target);
+    for unit in units {
+        unit.own = touched
+            .iter()
+            .any(|path| ownership::lies_in(path, &unit.relative));
     }
 }
 
@@ -165,7 +172,10 @@ impl Band {
 /// One row of the navigator, which is also what its `id` names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Row {
-    Band(Band),
+    /// A band, and how many units stand in it.
+    Band(Band, usize),
+    /// Air before every band but the first.
+    Gap,
     Unit(usize),
     Artifact(usize, usize),
 }
@@ -219,6 +229,18 @@ pub struct SpecPlace {
     subject: Subject,
     unit: String,
     artifact: Option<String>,
+}
+
+impl SpecPlace {
+    /// A change in flight, by name — where a click on it anywhere else
+    /// sends the surface.
+    pub fn change(name: &str) -> Self {
+        Self {
+            subject: Subject::Changes,
+            unit: name.to_owned(),
+            artifact: None,
+        }
+    }
 }
 
 pub struct SpecView {
@@ -417,7 +439,10 @@ impl SpecView {
             if members.is_empty() {
                 continue;
             }
-            rows.push(Row::Band(band));
+            if !rows.is_empty() {
+                rows.push(Row::Gap);
+            }
+            rows.push(Row::Band(band, members.len()));
             if !self.folded.contains(&band) {
                 for unit in members {
                     push_unit(&mut rows, unit);
@@ -449,7 +474,7 @@ impl SpecView {
         let selectable: Vec<Target> = rows
             .iter()
             .filter_map(|row| match *row {
-                Row::Band(_) => None,
+                Row::Band(..) | Row::Gap => None,
                 Row::Unit(unit) => Some(Target::Unit(unit)),
                 Row::Artifact(unit, artifact) => Some(Target::Artifact(unit, artifact)),
             })
@@ -657,7 +682,11 @@ pub fn view(state: &SpecView, space: Size) -> View {
                 .map(|subject| Mode {
                     label: subject.label().to_owned(),
                     active: subject == state.subject,
-                    icon: RowIcon::None,
+                    icon: match subject {
+                        Subject::Changes => RowIcon::InFlight,
+                        Subject::Specs => RowIcon::Contract,
+                        Subject::Archive => RowIcon::Finished,
+                    },
                 })
                 .collect(),
             ..base
@@ -685,13 +714,13 @@ fn navigator(state: &SpecView) -> Navigator {
             .iter()
             .enumerate()
             .map(|(id, row)| match *row {
-                Row::Band(band) => NavigatorRow::Group {
+                Row::Band(band, count) => NavigatorRow::Band {
                     id,
                     name: band.label().to_owned(),
-                    depth: 0,
+                    count,
                     collapsed: state.folded.contains(&band),
-                    icon: RowIcon::None,
                 },
+                Row::Gap => NavigatorRow::Gap,
                 Row::Unit(unit) => {
                     let unit_record = &state.units()[unit];
                     NavigatorRow::Item {
@@ -842,10 +871,10 @@ pub fn handle_mouse(state: &mut SpecView, hit: Option<ViewHit>, _space: Size) ->
             Some(Row::Artifact(unit, artifact)) => {
                 state.select(Some(Target::Artifact(unit, artifact)));
             }
-            Some(Row::Band(_)) | None => {}
+            Some(Row::Band(..) | Row::Gap) | None => {}
         },
         Some(ViewHit::ToggleGroup(id)) => {
-            if let Some(Row::Band(band)) = state.rows().get(id).copied()
+            if let Some(Row::Band(band, _)) = state.rows().get(id).copied()
                 && !state.folded.remove(&band)
             {
                 state.folded.insert(band);

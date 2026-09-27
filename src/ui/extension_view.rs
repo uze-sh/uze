@@ -882,16 +882,20 @@ fn groups_of(navigator: &Navigator) -> Vec<MenuGroup<'_>> {
     let mut groups: Vec<MenuGroup<'_>> = Vec::new();
     for row in &navigator.rows {
         match row {
-            NavigatorRow::Group { id, name, .. } => groups.push(MenuGroup {
-                id: *id,
-                name,
-                items: 0,
-            }),
+            // A board's menu has one level of heading, so a band is one.
+            NavigatorRow::Group { id, name, .. } | NavigatorRow::Band { id, name, .. } => {
+                groups.push(MenuGroup {
+                    id: *id,
+                    name,
+                    items: 0,
+                });
+            }
             NavigatorRow::Item { .. } => {
                 if let Some(group) = groups.last_mut() {
                     group.items += 1;
                 }
             }
+            NavigatorRow::Gap => {}
         }
     }
     groups
@@ -902,7 +906,7 @@ fn items_of(navigator: &Navigator, group: usize) -> Vec<MenuItem<'_>> {
     let mut current = None;
     for row in &navigator.rows {
         match row {
-            NavigatorRow::Group { id, .. } => current = Some(*id),
+            NavigatorRow::Group { id, .. } | NavigatorRow::Band { id, .. } => current = Some(*id),
             NavigatorRow::Item {
                 id, name, selected, ..
             } if current == Some(group) => items.push(MenuItem {
@@ -910,7 +914,7 @@ fn items_of(navigator: &Navigator, group: usize) -> Vec<MenuItem<'_>> {
                 name,
                 selected: *selected,
             }),
-            NavigatorRow::Item { .. } => {}
+            NavigatorRow::Item { .. } | NavigatorRow::Gap => {}
         }
     }
     items
@@ -925,15 +929,15 @@ fn active_group(navigator: &Navigator) -> Option<usize> {
     let mut group = None;
     for row in &navigator.rows {
         match row {
-            NavigatorRow::Group { id, .. } => group = Some(*id),
+            NavigatorRow::Group { id, .. } | NavigatorRow::Band { id, .. } => group = Some(*id),
             NavigatorRow::Item { selected: true, .. } => return group,
-            NavigatorRow::Item { .. } => {}
+            NavigatorRow::Item { .. } | NavigatorRow::Gap => {}
         }
     }
     // Nothing selected is still somewhere: the first group.
     navigator.rows.iter().find_map(|row| match row {
-        NavigatorRow::Group { id, .. } => Some(*id),
-        NavigatorRow::Item { .. } => None,
+        NavigatorRow::Group { id, .. } | NavigatorRow::Band { id, .. } => Some(*id),
+        NavigatorRow::Item { .. } | NavigatorRow::Gap => None,
     })
 }
 
@@ -1218,6 +1222,33 @@ fn render_navigator(
     {
         let rect = Rect::new(list.x, list.y + offset as u16, list.width, 1);
         match row {
+            NavigatorRow::Gap => {}
+            // Where the eye lands to find its part of the list, so it is
+            // told apart from the tree by form rather than by hue: capitals
+            // in bold, with the count quieter beside them. Plain ASCII on
+            // purpose — small capitals and subscript digits are glyphs a
+            // terminal's font may not carry, and a heading drawn as boxes
+            // divides nothing.
+            NavigatorRow::Band {
+                id,
+                name,
+                count,
+                collapsed,
+            } => {
+                let fold = mark::disclosure(!*collapsed);
+                let spans = vec![
+                    TextSpan::raw(" "),
+                    TextSpan::styled(format!("{fold} "), theme::fg(Token::TextMuted)),
+                    TextSpan::styled(
+                        name.to_uppercase(),
+                        theme::fg(Token::TextSecondary).add_modifier(Modifier::BOLD),
+                    ),
+                    TextSpan::raw(" "),
+                    TextSpan::styled(count.to_string(), theme::fg(Token::TextMuted)),
+                ];
+                frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+                hits.push((rect, ViewHit::ToggleGroup(*id)));
+            }
             NavigatorRow::Group {
                 id,
                 name,
@@ -1553,6 +1584,9 @@ fn icon_symbol(icon: RowIcon) -> Option<Symbol> {
         RowIcon::Legal => Symbol::FileLegal,
         RowIcon::Map => Symbol::Map,
         RowIcon::Changes => Symbol::Changes,
+        RowIcon::InFlight => Symbol::InFlight,
+        RowIcon::Contract => Symbol::Contract,
+        RowIcon::Finished => Symbol::Finished,
     })
 }
 
@@ -2362,6 +2396,69 @@ mod tests {
             layout: ViewLayout::Sidebar,
             trail: Vec::new(),
         }
+    }
+
+    /// A band is told apart from the tree by form — its name in capitals
+    /// with its count beside it, in glyphs every font has — and the air
+    /// before the next one is drawn blank and answers nothing.
+    #[test]
+    fn a_band_heading_is_set_apart_and_the_gap_before_it_is_air() {
+        let mut view = sample();
+        let navigator = view.navigator.as_mut().expect("the sample has a navigator");
+        navigator.anchor = None;
+        navigator.rows = vec![
+            NavigatorRow::Band {
+                id: 0,
+                name: "in progress".to_owned(),
+                count: 2,
+                collapsed: false,
+            },
+            NavigatorRow::Item {
+                id: 1,
+                name: "a-change".to_owned(),
+                depth: 1,
+                marker: Span::new("1/2", Role::Muted),
+                marker_side: MarkerSide::Trailing,
+                detail: String::new(),
+                selected: false,
+                icon: RowIcon::None,
+            },
+            NavigatorRow::Gap,
+            NavigatorRow::Band {
+                id: 3,
+                name: "ready to archive".to_owned(),
+                count: 1,
+                collapsed: true,
+            },
+        ];
+        let (rows, hits) = draw(&view);
+
+        let band = rows
+            .iter()
+            .position(|row| row.contains("IN PROGRESS 2"))
+            .expect("the band's name is drawn in capitals, with its count");
+        let gap = band + 2;
+        assert!(
+            rows[gap].chars().take(20).all(|glyph| glyph == ' '),
+            "the gap is blank: {:?}",
+            rows[gap]
+        );
+        assert!(rows[gap + 1].contains("READY TO ARCHIVE 1"));
+
+        let answering: Vec<ViewHit> = hits
+            .iter()
+            .filter(|(rect, _)| usize::from(rect.y) == gap && rect.x < 20)
+            .map(|(_, hit)| *hit)
+            .collect();
+        assert!(
+            answering.is_empty(),
+            "the gap answers nothing: {answering:?}"
+        );
+        assert!(
+            hits.iter()
+                .any(|(rect, hit)| usize::from(rect.y) == band && *hit == ViewHit::ToggleGroup(0)),
+            "a band folds from its heading"
+        );
     }
 
     fn draw(view: &View) -> (Vec<String>, Vec<(Rect, ViewHit)>) {

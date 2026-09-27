@@ -136,6 +136,18 @@
       "glyph": "",
       "width": 1
     },
+    "in-flight": {
+      "glyph": "",
+      "width": 1
+    },
+    "contract": {
+      "glyph": "",
+      "width": 1
+    },
+    "finished": {
+      "glyph": "",
+      "width": 1
+    },
     "file.directory": {
       "glyph": "󰉋",
       "width": 1

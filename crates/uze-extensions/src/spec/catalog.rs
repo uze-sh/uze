@@ -61,6 +61,20 @@ pub enum Found {
 
 /// Every unit of every dialect whose marker is at `root`.
 pub fn read(host: &dyn Host, root: &Path, dialects: &[Dialect]) -> Found {
+    read_subjects(host, root, dialects, &Subject::ALL, &|_| true)
+}
+
+/// The same, for `subjects` alone and for the units `keep` accepts by
+/// their path from the root — the sidebar's summary wants the few changes
+/// one checkout is working on, and is read far more often than the surface
+/// is opened, so the rest are never opened at all.
+pub fn read_subjects(
+    host: &dyn Host,
+    root: &Path,
+    dialects: &[Dialect],
+    subjects: &[Subject],
+    keep: &dyn Fn(&str) -> bool,
+) -> Found {
     let detected: Vec<&Dialect> = dialects
         .iter()
         .filter(|dialect| host.list_dir(&root.join(dialect.marker)).is_ok())
@@ -70,7 +84,11 @@ pub fn read(host: &dyn Host, root: &Path, dialects: &[Dialect]) -> Found {
     }
     let mut units = Vec::new();
     for dialect in &detected {
-        for collection in dialect.collections {
+        for collection in dialect
+            .collections
+            .iter()
+            .filter(|collection| subjects.contains(&collection.subject))
+        {
             let directory = root.join(collection.path);
             let Ok(entries) = host.list_dir(&directory) else {
                 continue;
@@ -80,6 +98,7 @@ pub fn read(host: &dyn Host, root: &Path, dialects: &[Dialect]) -> Found {
                 .filter(|entry| entry.directory && !entry.name.starts_with('.'))
                 .map(|entry| entry.name)
                 .filter(|name| !collection.skip.contains(&name.as_str()))
+                .filter(|name| keep(&format!("{}/{name}", collection.path)))
                 .collect();
             names.sort();
             if collection.order == Order::Descending {
