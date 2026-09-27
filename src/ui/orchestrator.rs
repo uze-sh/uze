@@ -5497,27 +5497,13 @@ fn toggle_space_collapsed(model: &mut WorkspaceModel, space: SpaceId) {
 /// model dirty — same as `OpenStatusCatalog`.
 fn toggle_timeline(model: &mut WorkspaceModel) {
     model.timeline_collapsed = !model.timeline_collapsed;
-    // One section open at a time. They stack at the foot of the same
-    // column and each takes its rows from the tree above them, so two open
-    // at once is the sidebar spending most of itself on what sits under
-    // the spaces — and the spaces are what it is for.
-    if !model.timeline_collapsed {
-        model.first_steps_collapsed = true;
-        model.spec_summary_open = false;
-    }
     model.remember_sidebar();
     model.dirty = true;
 }
 
-/// Opens the sidebar's spec section, or folds it — and, opening, folds the
-/// other two, for the reason `toggle_timeline` gives.
+/// Opens the sidebar's spec section, or folds it.
 fn toggle_spec_summary(model: &mut WorkspaceModel) {
     model.spec_summary_open = !model.spec_summary_open;
-    if model.spec_summary_open {
-        model.timeline_collapsed = true;
-        model.first_steps_collapsed = true;
-        model.remember_sidebar();
-    }
     model.dirty = true;
 }
 

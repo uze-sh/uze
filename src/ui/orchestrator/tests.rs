@@ -53,7 +53,7 @@ mod workspace_tests {
         },
         scroll_timeline, scroll_tree, selected_pane_cwd, space_context_agent, space_cwd,
         space_own_tab, strip_tabs, sync_slot_occupancy, tab_drag_group, tab_drag_group_members,
-        tab_needs_replacement_shell, toggle_space_collapsed, toggle_timeline,
+        tab_needs_replacement_shell, toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
         workspace_has_active_agent_operation,
     };
     use crossterm::event::{MouseButton, MouseEventKind};
@@ -1048,7 +1048,7 @@ mod workspace_tests {
     }
 
     /// The sidebar's spec section says, folded, how far the checkout's own
-    /// changes have got; opened, it folds the timeline away and lists them;
+    /// changes have got; opened, it lists them beside an open timeline;
     /// and a change opens the surface on it.
     #[test]
     fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
@@ -1096,8 +1096,8 @@ mod workspace_tests {
             "opened from its header"
         );
         assert!(
-            driven.attach.model.timeline_collapsed,
-            "one section open at a time"
+            !driven.attach.model.timeline_collapsed,
+            "the timeline stays open beside it"
         );
 
         driven.frame();
@@ -5015,34 +5015,23 @@ mod workspace_tests {
         assert_eq!(timeline, rows.len() - 1, "{rows:?}");
     }
 
-    /// One open at a time. They stack in the same column and each takes
-    /// its rows from the tree, so two open at once spends the sidebar on
-    /// what sits under the spaces rather than on the spaces.
+    /// Each section folds on its own: opening one leaves the others as
+    /// they were, so more than one can be open at once.
     #[test]
-    fn opening_one_section_folds_the_other() {
+    fn opening_one_section_leaves_the_others_open() {
         let mut model = session_with_timeline(&["feat: one"]);
         model.timeline_collapsed = true;
-        model.first_steps_collapsed = true;
+        model.first_steps_collapsed = false;
+        model.spec_summary_open = true;
 
         toggle_timeline(&mut model);
         assert!(!model.timeline_collapsed);
-        assert!(model.first_steps_collapsed, "the steps gave way");
+        assert!(!model.first_steps_collapsed, "the steps stayed open");
+        assert!(model.spec_summary_open, "and so did the spec");
 
-        // And back: the section that opens is the one that was asked for.
-        model.first_steps_collapsed = false;
-        model.timeline_collapsed = true;
-        toggle_timeline(&mut model);
-        assert!(!model.timeline_collapsed);
-        assert!(model.first_steps_collapsed);
-
-        // Folding one leaves the other alone — an accordion closes nothing
-        // on the way to closing itself.
-        model.first_steps_collapsed = false;
-        model.timeline_collapsed = true;
-        toggle_timeline(&mut model);
-        toggle_timeline(&mut model);
-        assert!(model.timeline_collapsed);
-        assert!(model.first_steps_collapsed);
+        toggle_spec_summary(&mut model);
+        assert!(!model.spec_summary_open);
+        assert!(!model.timeline_collapsed, "folding one folds only it");
     }
 
     /// The release notice sits on the sections holding the foot, not under

@@ -694,9 +694,9 @@ pub(super) fn render_sidebar(
         .and_then(|badge| badge.timeline.as_ref());
     // Two sections stacked at the foot: the steps above the history, each
     // taking its rows before the tree is laid out, so neither is ever
-    // drawn over the other. Only one of them is open at a time (see
-    // `toggle_timeline`), which is what keeps the pair from eating the
-    // column the spaces are for.
+    // drawn over the other. Any of them may be open at once; each is
+    // budgeted against what the ones below it left, so together they
+    // cannot eat the column the spaces are for.
     let column_bottom = rows.bottom;
     let steps = model.first_steps();
     let steps_height = steps.height();
