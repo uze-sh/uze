@@ -5,12 +5,11 @@ import { UzeMark } from '@/components/uze-mark';
 
 // The landing page's hero illustration: one plugin resolved from the Store,
 // delivered to four harnesses, then read through the three extensions in the
-// order a change is read. It is drawn on a fixed 1200×500 stage and scaled to
-// the column, so every coordinate below is the design's own; the palette is
-// the site's own theme tokens, so it follows the page into light or dark.
-
-const STAGE_W = 1200;
-const STAGE_H = 500;
+// order a change is read. It is drawn on a fixed stage and scaled to the
+// column: 1200×500 left to right where there is room, and the same three
+// panels stacked top to bottom on a phone, where the wide stage would scale
+// its text below reading size. The palette is the site's own theme tokens,
+// so it follows the page into light or dark.
 
 // Every colour is one of the site's theme tokens, or a mix of them, so the
 // illustration reads as part of the page in either theme rather than as a
@@ -143,20 +142,66 @@ function pointAlong(points: Point[], progress: number): Point {
   return points[points.length - 1];
 }
 
-const rowRoute = (r: number): Point[] => [
-  [360, 140 + 54 * r],
-  [440, 140 + 54 * r],
-  [440, 248],
-  [536, 248],
-];
-const harnessRoute = (j: number): Point[] => [
-  [664, 248],
-  [760, 248],
-  [760, 130 + 68 * j],
-  [820, 130 + 68 * j],
-];
+type Layout = {
+  width: number;
+  height: number;
+  store: Point;
+  hub: Point;
+  status: Point;
+  workspace: Point;
+  rowRoute: (r: number) => Point[];
+  harnessRoute: (j: number) => Point[];
+};
 
-function frame(seconds: number, plugin: string) {
+const WIDE: Layout = {
+  width: 1200,
+  height: 500,
+  store: [60, 50],
+  hub: [536, 184],
+  status: [480, 330],
+  workspace: [820, 50],
+  rowRoute: (r) => [
+    [360, 140 + 54 * r],
+    [440, 140 + 54 * r],
+    [440, 248],
+    [536, 248],
+  ],
+  harnessRoute: (j) => [
+    [664, 248],
+    [760, 248],
+    [760, 130 + 68 * j],
+    [820, 130 + 68 * j],
+  ],
+};
+
+// The routes to the harnesses leave the hub by its side and run down the
+// left gutter, so they never cross the status line under it.
+const STACKED: Layout = {
+  width: 380,
+  height: 1110,
+  store: [40, 20],
+  hub: [126, 480],
+  status: [70, 624],
+  workspace: [30, 690],
+  rowRoute: (r) => [
+    [340, 110 + 54 * r],
+    [362, 110 + 54 * r],
+    [362, 452],
+    [190, 452],
+    [190, 480],
+  ],
+  harnessRoute: (j) => [
+    [126, 544],
+    [10, 544],
+    [10, 770 + 68 * j],
+    [30, 770 + 68 * j],
+  ],
+};
+
+// Below this width the wide stage's 15px text would draw at under 9px.
+const STACK_BELOW = 700;
+
+function frame(seconds: number, plugin: string, { rowRoute, harnessRoute }: Layout) {
   const tt = seconds % LOOP;
   const reset = tt > LOOP - 0.3;
   const dots: Point[] = [];
@@ -297,18 +342,18 @@ function useClock(stageRef: React.RefObject<HTMLDivElement | null>) {
   return seconds;
 }
 
-function useScale(wrapRef: React.RefObject<HTMLDivElement | null>) {
-  const [scale, setScale] = useState(1);
+function useColumnWidth(wrapRef: React.RefObject<HTMLDivElement | null>) {
+  const [width, setWidth] = useState(WIDE.width);
   useEffect(() => {
     const element = wrapRef.current;
     if (!element) return;
-    const fit = () => setScale(Math.min(1, element.offsetWidth / STAGE_W));
+    const fit = () => setWidth(element.offsetWidth);
     const observer = new ResizeObserver(fit);
     observer.observe(element);
     fit();
     return () => observer.disconnect();
   }, [wrapRef]);
-  return scale;
+  return width;
 }
 
 const panel: CSSProperties = {
@@ -324,9 +369,11 @@ const nowrap: CSSProperties = { whiteSpace: 'nowrap' };
 
 export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const scale = useScale(wrapRef);
+  const columnWidth = useColumnWidth(wrapRef);
+  const layout = columnWidth < STACK_BELOW ? STACKED : WIDE;
+  const scale = Math.min(1, columnWidth / layout.width);
   const seconds = useClock(wrapRef);
-  const f = frame(seconds, plugin);
+  const f = frame(seconds, plugin, layout);
 
   return (
     <div
@@ -334,16 +381,16 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
       role="img"
       aria-label={`uze ${plugin}: one plugin resolved from the Store, delivered natively to Claude Code, Codex, OpenCode and Antigravity, then read through the Spec, Architect and Code extensions.`}
       className="relative mx-auto w-full overflow-hidden font-mono"
-      style={{ maxWidth: STAGE_W, height: Math.round(STAGE_H * scale) }}
+      style={{ maxWidth: WIDE.width, height: Math.round(layout.height * scale) }}
     >
       <div
         aria-hidden
         style={{
           position: 'absolute',
-          left: 0,
           top: 0,
-          width: STAGE_W,
-          height: STAGE_H,
+          left: `calc(50% - ${(layout.width * scale) / 2}px)`,
+          width: layout.width,
+          height: layout.height,
           transformOrigin: '0 0',
           transform: `scale(${scale})`,
           color: INK,
@@ -351,8 +398,8 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
       >
 
         <svg
-          width={STAGE_W}
-          height={STAGE_H}
+          width={layout.width}
+          height={layout.height}
           style={{ position: 'absolute', inset: 0 }}
           fill="none"
           strokeWidth={1.5}
@@ -364,7 +411,7 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
         </svg>
 
         {/* The plugin, as the Store holds it. */}
-        <div style={{ ...panel, left: 60, top: 50, width: 300, height: 400 }}>
+        <div style={{ ...panel, left: layout.store[0], top: layout.store[1], width: 300, height: 400 }}>
           <div
             style={{
               ...nowrap,
@@ -445,8 +492,8 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
         <div
           style={{
             position: 'absolute',
-            left: 536,
-            top: 184,
+            left: layout.hub[0],
+            top: layout.hub[1],
             width: 128,
             height: 128,
             boxSizing: 'border-box',
@@ -466,8 +513,8 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
           style={{
             ...nowrap,
             position: 'absolute',
-            left: 480,
-            top: 330,
+            left: layout.status[0],
+            top: layout.status[1],
             width: 240,
             textAlign: 'center',
             fontSize: 13,
@@ -481,8 +528,8 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
           style={{
             ...nowrap,
             position: 'absolute',
-            left: 480,
-            top: 356,
+            left: layout.status[0],
+            top: layout.status[1] + 26,
             width: 240,
             display: 'flex',
             justifyContent: 'center',
@@ -505,8 +552,8 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
         <div
           style={{
             ...panel,
-            left: 820,
-            top: 50,
+            left: layout.workspace[0],
+            top: layout.workspace[1],
             width: 320,
             height: 400,
           }}
