@@ -1294,14 +1294,19 @@ fn render_navigator(
                 let fold = mark::disclosure(!*collapsed);
                 let mut spans = vec![
                     TextSpan::raw(" "),
-                    TextSpan::raw("  ".repeat(*depth)),
+                    TextSpan::raw(tree_indent(*depth, rect.width)),
                     TextSpan::styled(format!("{fold} "), theme::fg(Token::TextMuted)),
                 ];
                 spans.extend(row_icon(*icon));
-                spans.push(TextSpan::styled(
-                    name.clone(),
-                    theme::fg(Token::TextSecondary),
-                ));
+                // A compact row's name is a path, whose end is where the
+                // row leads; a plain directory's is a name, read from the
+                // start.
+                let room = label_room(&spans, rect.width);
+                let name = match name.contains('/') {
+                    true => text::elide_head(name, room),
+                    false => text::elide(name, room),
+                };
+                spans.push(TextSpan::styled(name, theme::fg(Token::TextSecondary)));
                 frame.render_widget(Paragraph::new(Line::from(spans)), rect);
                 hits.push((rect, ViewHit::ToggleGroup(*id)));
             }
@@ -1335,13 +1340,17 @@ fn render_navigator(
                         },
                         theme::fg(Token::Accent),
                     ),
-                    TextSpan::raw("  ".repeat(*depth)),
+                    TextSpan::raw(tree_indent(*depth, rect.width)),
                 ];
                 match marker_side {
                     MarkerSide::Leading => {
                         spans.push(leading_marker(marker));
                         spans.extend(row_icon(*icon));
-                        spans.push(TextSpan::styled(name.clone(), label_style));
+                        let room = label_room(&spans, rect.width);
+                        spans.push(TextSpan::styled(
+                            text::elide_file_name(name, room),
+                            label_style,
+                        ));
                     }
                     MarkerSide::Trailing => {
                         spans.extend(row_icon(*icon));
@@ -1382,6 +1391,34 @@ fn leading_marker(marker: &Span) -> TextSpan<'static> {
 /// A flat row's name, its `detail` quieter after it, and the marker pinned
 /// to the right edge. The name gives way last: it is what the row is read
 /// for, and the detail only tells apart two rows that share one.
+/// Levels past which a tree indents by one column rather than two.
+const FULL_INDENT_LEVELS: usize = 4;
+
+/// Columns a tree row keeps for its name however deep it sits.
+const LABEL_FLOOR: usize = 12;
+
+/// The blank a row at `depth` starts with.
+///
+/// Two columns a level near the top, where the shape of the tree is read,
+/// and one past [`FULL_INDENT_LEVELS`], where it is only counted; and never
+/// so much that fewer than [`LABEL_FLOOR`] columns are left for the name.
+/// Indentation that pushes the name out of the column shows where a file
+/// is at the cost of which file it is.
+fn tree_indent(depth: usize, width: u16) -> String {
+    let natural = 2 * depth.min(FULL_INDENT_LEVELS) + depth.saturating_sub(FULL_INDENT_LEVELS);
+    let ceiling = usize::from(width).saturating_sub(LABEL_FLOOR + usize::from(TRAILING_PAD) + 4);
+    " ".repeat(natural.min(ceiling))
+}
+
+/// The columns left for a row's name after what `spans` already holds,
+/// keeping the trailing pad off the divider.
+fn label_room(spans: &[TextSpan<'_>], width: u16) -> usize {
+    let used: usize = spans.iter().map(TextSpan::width).sum();
+    usize::from(width)
+        .saturating_sub(used + usize::from(TRAILING_PAD))
+        .max(1)
+}
+
 fn push_flat_label(
     spans: &mut Vec<TextSpan<'static>>,
     width: u16,

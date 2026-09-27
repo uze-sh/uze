@@ -32,45 +32,92 @@ impl Files {
     }
 
     /// The row `path` is drawn as, if it is drawn — asked by every key
-    /// and every frame, so it is looked up in the listing holding it
-    /// rather than found by flattening the whole tree.
+    /// and every frame, so it walks down the listings along `path` rather
+    /// than flattening the whole tree.
+    ///
+    /// A directory folded into a compact row (see [`row_for`]) is not
+    /// drawn on its own, so it has no row: only the deepest directory of
+    /// the chain does.
     pub(super) fn row_at(&self, root: &Path, path: &Path) -> Option<TreeRow> {
-        let parent = path.parent()?;
-        let entry = self.entry(parent, path)?;
-        let depth = self.depth_of_open(root, parent)?;
-        let directory = entry.directory;
-        Some(TreeRow {
-            path: path.to_path_buf(),
-            name: entry.name.clone(),
-            depth,
-            directory,
-            expanded: directory && self.expanded.contains(path),
-        })
-    }
-
-    /// How deep the rows inside `directory` sit, if it and every directory
-    /// above it up to `root` are open — which is what being drawn takes.
-    fn depth_of_open(&self, root: &Path, directory: &Path) -> Option<usize> {
+        let relative = path.strip_prefix(root).ok()?;
+        let mut components = relative.components();
+        let mut at = root.to_path_buf();
         let mut depth = 0;
-        let mut at = directory;
-        while at != root {
-            let parent = at.parent()?;
-            if !self.expanded.contains(at) || !self.entry(parent, at)?.directory {
+        loop {
+            let name = components.next()?.as_os_str();
+            let entry = self
+                .listings
+                .get(&at)?
+                .iter()
+                .find(|entry| std::ffi::OsStr::new(&entry.name) == name)?;
+            let row = row_for(&at, entry, depth, &self.listings, &self.expanded);
+            if row.path == path {
+                return Some(row);
+            }
+            let deeper = path.strip_prefix(&row.path).ok()?;
+            if !row.expanded || deeper.as_os_str().is_empty() {
                 return None;
             }
+            components = deeper.components();
+            at = row.path;
             depth += 1;
-            at = parent;
         }
-        Some(depth)
     }
 
-    /// The first entry of `parent`'s listing that is `path`, as the tree
-    /// would join it.
-    fn entry(&self, parent: &Path, path: &Path) -> Option<&DirEntry> {
-        self.listings
-            .get(parent)?
-            .iter()
-            .find(|entry| parent.join(&entry.name) == path)
+    /// The row a viewer steps out to from `path`: the nearest drawn
+    /// directory holding it. Not simply the parent, which is not drawn
+    /// when it is folded into a compact row.
+    pub(super) fn enclosing_row(&self, root: &Path, path: &Path) -> Option<PathBuf> {
+        path.ancestors()
+            .skip(1)
+            .take_while(|ancestor| *ancestor != root)
+            .find(|ancestor| self.row_at(root, ancestor).is_some())
+            .map(Path::to_path_buf)
+    }
+}
+
+/// The only child of `directory`, when that child is a directory — what
+/// folds the two into one row.
+pub(super) fn only_subdirectory<'a>(
+    directory: &Path,
+    listings: &'a BTreeMap<PathBuf, Vec<DirEntry>>,
+) -> Option<&'a DirEntry> {
+    match listings.get(directory)?.as_slice() {
+        [only] if only.directory => Some(only),
+        _ => None,
+    }
+}
+
+/// The row `entry` of `directory` is drawn as.
+///
+/// An open directory whose only child is a directory is drawn as one row
+/// with its child, `src/main/java`, standing for the deepest of them: a
+/// chain like that is depth that says nothing, and drawn one level at a
+/// time it spends the column's width on indentation before any name is
+/// reached. Folding or unfolding the row acts on that deepest directory.
+fn row_for(
+    directory: &Path,
+    entry: &DirEntry,
+    depth: usize,
+    listings: &BTreeMap<PathBuf, Vec<DirEntry>>,
+    expanded: &BTreeSet<PathBuf>,
+) -> TreeRow {
+    let mut path = directory.join(&entry.name);
+    let mut name = entry.name.clone();
+    if entry.directory {
+        while expanded.contains(&path)
+            && let Some(only) = only_subdirectory(&path, listings)
+        {
+            name = format!("{name}/{}", only.name);
+            path = path.join(&only.name);
+        }
+    }
+    TreeRow {
+        expanded: entry.directory && expanded.contains(&path),
+        path,
+        name,
+        depth,
+        directory: entry.directory,
     }
 }
 
@@ -120,16 +167,10 @@ fn push_rows(
         return;
     };
     for entry in entries {
-        let path = directory.join(&entry.name);
-        let open = entry.directory && expanded.contains(&path);
-        rows.push(TreeRow {
-            path: path.clone(),
-            name: entry.name.clone(),
-            depth,
-            directory: entry.directory,
-            expanded: open,
-        });
-        if open {
+        let row = row_for(directory, entry, depth, listings, expanded);
+        let open = row.expanded.then(|| row.path.clone());
+        rows.push(row);
+        if let Some(path) = open {
             push_rows(&path, depth + 1, listings, expanded, rows);
         }
     }
@@ -237,5 +278,71 @@ mod tests {
         }
         files.expanded.remove(&root.join("src"));
         assert_eq!(files.row_at(&root, Path::new("/w/src/ui/view.rs")), None);
+    }
+
+    /// A chain of directories that each hold only the next is one row,
+    /// named by the whole chain and standing for its deepest directory —
+    /// the depth it would have spent is kept for names.
+    #[test]
+    fn a_chain_of_only_children_is_one_row() {
+        let root = PathBuf::from("/w");
+        let mut files = Files::default();
+        files
+            .listings
+            .insert(root.clone(), vec![entry("src", true), entry("a.rs", false)]);
+        files
+            .listings
+            .insert(root.join("src"), vec![entry("main", true)]);
+        files
+            .listings
+            .insert(root.join("src/main"), vec![entry("java", true)]);
+        files.listings.insert(
+            root.join("src/main/java"),
+            vec![entry("App.java", false), entry("Util.java", false)],
+        );
+        for open in ["src", "src/main", "src/main/java"] {
+            files.expanded.insert(root.join(open));
+        }
+
+        let rows = files.rows(&root);
+        let names: Vec<(&str, usize)> = rows
+            .iter()
+            .map(|row| (row.name.as_str(), row.depth))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("src/main/java", 0),
+                ("App.java", 1),
+                ("Util.java", 1),
+                ("a.rs", 0)
+            ]
+        );
+        assert_eq!(rows[0].path, root.join("src/main/java"));
+        for row in &rows {
+            assert_eq!(files.row_at(&root, &row.path).as_ref(), Some(row));
+        }
+        assert_eq!(
+            files.row_at(&root, &root.join("src/main")),
+            None,
+            "a directory folded into the chain has no row of its own"
+        );
+        assert_eq!(
+            files.enclosing_row(&root, &root.join("src/main/java/App.java")),
+            Some(root.join("src/main/java"))
+        );
+        assert_eq!(
+            files.enclosing_row(&root, &root.join("src/main/java")),
+            None,
+            "stepping out of a top-level chain reaches the root, which is no row"
+        );
+
+        // Folding the row folds the deepest directory, and the chain
+        // still reads as one row, shut.
+        files.expanded.remove(&root.join("src/main/java"));
+        let shut = files.rows(&root);
+        assert_eq!(shut[0].name, "src/main/java");
+        assert!(!shut[0].expanded);
+        assert_eq!(shut.len(), 2);
     }
 }

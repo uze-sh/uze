@@ -63,6 +63,9 @@ pub enum FileAnswer {
     Listed {
         path: PathBuf,
         entries: Result<Vec<DirEntry>, String>,
+        /// The listings beneath `path` down its chain of only-child
+        /// directories, read in the same answer (see [`only_children_below`]).
+        chain: Vec<(PathBuf, Vec<DirEntry>)>,
     },
     Read {
         path: PathBuf,
@@ -127,6 +130,7 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
         FileRequest::List(path) => FileAnswer::Listed {
             path: path.clone(),
             entries: Err(reason.to_owned()),
+            chain: Vec::new(),
         },
         FileRequest::Read(path) => FileAnswer::Read {
             path: path.clone(),
@@ -158,10 +162,18 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
 /// site rather than a rule to remember.
 pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
     match request {
-        FileRequest::List(path) => FileAnswer::Listed {
-            entries: host.list_dir(&path),
-            path,
-        },
+        FileRequest::List(path) => {
+            let entries = host.list_dir(&path);
+            let chain = match &entries {
+                Ok(entries) => only_children_below(host, &path, entries),
+                Err(_) => Vec::new(),
+            };
+            FileAnswer::Listed {
+                path,
+                entries,
+                chain,
+            }
+        }
         FileRequest::Read(path) => {
             // A document opens as the document it is (see
             // `CodeView::read_selection_as_what_it_is`), and the preview
@@ -192,6 +204,53 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
             paths,
         },
     }
+}
+
+/// How far down a chain of only-child directories one listing reads.
+/// A bound rather than a walk to the bottom, because a symbolic link that
+/// names its own directory is a chain with no bottom.
+const LONGEST_CHAIN: usize = 32;
+
+/// The listings of the directories beneath `directory` that it is drawn
+/// folded together with (see `files::row_for`): while a listing holds a
+/// single directory, that directory is read too.
+///
+/// Read here rather than one request at a time, because the tree draws
+/// between answers: a chain opened a level per answer is seen collapsing
+/// into its row a level at a time, instead of opening as the one row it
+/// is.
+fn only_children_below(
+    host: &dyn Host,
+    directory: &Path,
+    entries: &[DirEntry],
+) -> Vec<(PathBuf, Vec<DirEntry>)> {
+    let mut chain: Vec<(PathBuf, Vec<DirEntry>)> = Vec::new();
+    let mut at = directory.to_path_buf();
+    let mut shown: Vec<&DirEntry> = entries
+        .iter()
+        .filter(|e| super::files::is_shown(e))
+        .collect();
+    while chain.len() < LONGEST_CHAIN {
+        let [only] = shown[..] else { break };
+        if !only.directory {
+            break;
+        }
+        at = at.join(&only.name);
+        let Ok(listed) = host.list_dir(&at) else {
+            break;
+        };
+        chain.push((at.clone(), listed));
+        shown = chain
+            .last()
+            .map(|(_, listed)| {
+                listed
+                    .iter()
+                    .filter(|e| super::files::is_shown(e))
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+    chain
 }
 
 /// Reads `path` and colours its first `lines` lines.

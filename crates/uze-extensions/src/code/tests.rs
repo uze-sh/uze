@@ -855,6 +855,49 @@ fn files_at(root: &str) -> CodeView {
     CodeView::opening(PathBuf::from(root), root.to_owned(), ContentMode::Contents)
 }
 
+/// Opening a directory that holds only a directory carries on down the
+/// chain in the one press, and the selection follows onto the row the
+/// chain is drawn as.
+#[test]
+fn opening_a_chain_of_only_children_opens_all_of_it() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_directory("/w/src/main")
+        .with_directory("/w/src/main/java")
+        .with_file("/w/src/main/java/App.java", "class App {}\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src")));
+
+    press(&mut view, Command::Activate);
+    // One answer brings the whole chain: the tree draws between answers,
+    // and a chain read a level per answer is seen folding into its row.
+    let request = view.take_request().expect("the opened directory is read");
+    view.absorb(fulfill(&machine, request));
+    assert!(
+        view.take_request().is_none(),
+        "nothing further down the chain is left to read"
+    );
+
+    let rows = view.files.rows(&view.root);
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    assert_eq!(names, ["src/main/java", "App.java", "README.md"]);
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/src/main/java")),
+        "the selection is on a row that is drawn"
+    );
+
+    // Left on a file inside the chain steps out to the chain's row.
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::Collapse);
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/src/main/java"))
+    );
+}
+
 #[test]
 fn a_directory_is_read_only_when_it_is_opened() {
     let machine = FakeMachine::default()
