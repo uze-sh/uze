@@ -273,6 +273,8 @@ actions! {
         "Preview", "Show a markdown file as the document it describes, and back";
     SaveFile => "save-file", false,
         "Save", "Write what was typed back to the file";
+    OpenMenu => "open-menu", false,
+        "Actions", "Open what can be done to the selected change: open it, copy its path, discard it";
     DeleteFile => "delete-file", true,
         "Delete", "Delete the selected file, having been asked once";
     ConfirmDelete => "confirm-delete", true,

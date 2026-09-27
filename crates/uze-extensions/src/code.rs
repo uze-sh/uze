@@ -71,8 +71,8 @@ use crate::{
     view::{Caret, Command, Role, ScrollDirection, Size, Span, ViewHit},
 };
 
+mod change_menu;
 mod changes;
-mod changes_tree;
 mod diff;
 mod editor;
 mod files;
@@ -92,7 +92,6 @@ pub use render::view;
 pub use request::{FileAnswer, FileRequest, LoadedFile, fulfill, unanswered};
 
 use changes::Changes;
-use changes_tree::{FileTreeItem, file_tree_items};
 use diff::DiffLineKind;
 use editor::OpenFile;
 use files::Files;
@@ -119,11 +118,15 @@ const REFRESH_INTERVAL: Duration = Duration::from_millis(750);
 /// paces its own reads by the same factor.
 pub const PACE: u32 = 5;
 
-/// What to do after an event reaches an open [`CodeView`] — the host only
-/// needs to know whether to keep the surface open.
+/// What to do after an event reaches an open [`CodeView`]: whether to keep
+/// the surface open, and anything it asked of the host on the way.
+#[derive(Debug, Eq, PartialEq)]
 pub enum CodeOutcome {
     Stay,
     Close,
+    /// Put this text on the clipboard. The host's, because the clipboard
+    /// is the terminal's and reaching it is a sequence written to it.
+    Copy(String),
 }
 
 /// Which list the navigator is showing — always the one the content mode
@@ -253,6 +256,10 @@ pub struct CodeView {
     confirming_delete: Option<PathBuf>,
     /// Closing with unsaved changes, waiting for its second Esc.
     confirming_discard: bool,
+    /// The actions open on a changed file, if any.
+    menu: Option<change_menu::ChangeMenu>,
+    /// A discard asked for and not yet answered.
+    discarding: Option<change_menu::Discarding>,
 }
 
 /// Where a viewer was on a checkout's code surface, so that opening it
@@ -263,8 +270,7 @@ pub struct CodeView {
 /// [`CodeView::resuming`] the next time that checkout is opened.
 ///
 /// What it holds is navigation and nothing else — the file being read,
-/// the directories opened to reach it, the ones folded away, and how far
-/// down it. Deliberately not the content mode: the mode is the door that
+/// the directories opened to reach it, and how far down it. Deliberately not the content mode: the mode is the door that
 /// was used (`Alt+G` reviews, `Alt+E` navigates), and a door that
 /// remembered where it last led would stop being one. Deliberately not a
 /// buffer either: an unsaved edit belongs to the surface that has it
@@ -282,7 +288,6 @@ pub struct CodePlace {
     /// surface where nothing had gone wrong.
     selected_is_a_file: bool,
     expanded: BTreeSet<PathBuf>,
-    folded: BTreeSet<String>,
     scroll: u16,
 }
 
@@ -357,6 +362,8 @@ impl CodeView {
             notice: None,
             confirming_delete: None,
             confirming_discard: false,
+            menu: None,
+            discarding: None,
         };
         if view.navigator() == NavigatorMode::Files {
             view.expand(view.root.clone());
@@ -377,10 +384,8 @@ impl CodeView {
             selected,
             selected_is_a_file,
             expanded,
-            folded,
             scroll,
         } = place;
-        self.changes.folded = folded;
         // Sorted, so a directory is asked for after the one containing it.
         for directory in expanded {
             self.expand(directory);
@@ -411,7 +416,6 @@ impl CodeView {
             selected_is_a_file: self.selected_is_a_file(),
             selected: self.selected.clone(),
             expanded: self.files.expanded.clone(),
-            folded: self.changes.folded.clone(),
             scroll: self.scroll,
         }
     }
@@ -562,10 +566,6 @@ impl CodeView {
             mut changes,
         } = refreshed;
         self.branch = branch;
-        // The folds are the viewer's, not the read's: a refresh answers
-        // what changed, and tidying the tree around it is not something
-        // it gets to undo.
-        changes.folded = std::mem::take(&mut self.changes.folded);
         changes.inherit(&mut self.changes);
         if placement.path != self.selected {
             // The selection moved while the read was out, so its diff is
@@ -703,6 +703,34 @@ impl CodeView {
                     Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
                 }
             }
+            FileAnswer::Restored { paths, outcome } => match outcome {
+                Ok(()) => {
+                    if let Some(path) = paths.first() {
+                        self.notice = Some(Span::new(
+                            format!("discarded changes to {}", file_name(path)),
+                            Role::Success,
+                        ));
+                    }
+                    if self
+                        .open
+                        .as_ref()
+                        .is_some_and(|open| paths.contains(&open.path))
+                    {
+                        self.open = None;
+                    }
+                    for parent in paths.iter().filter_map(|path| path.parent()) {
+                        if self.files.listings.contains_key(parent) {
+                            self.queue
+                                .push_back(FileRequest::List(parent.to_path_buf()));
+                        }
+                    }
+                    // The list and the diff on screen are both of a change
+                    // that is gone: read again now rather than on the clock.
+                    self.changes.refreshed_at = None;
+                    self.changes.diff_pending = true;
+                }
+                Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
+            },
             FileAnswer::Deleted { path, outcome } => match outcome {
                 Ok(()) => {
                     self.notice = Some(Span::new(
@@ -793,6 +821,8 @@ impl CodeView {
         if self.content == mode {
             return;
         }
+        // The menu was opened on the list this leaves.
+        self.menu = None;
         let line = self.line_in_view();
         self.content = mode;
         match mode {
@@ -1104,7 +1134,7 @@ impl CodeView {
                     }
                     return;
                 };
-                if let Some(index) = self.changes.neighbour(&self.root, from, direction)
+                if let Some(index) = self.changes.neighbour(from, direction)
                     && let Some(file) = self.changes.files.get(index)
                 {
                     let path = file.path.clone();
@@ -1310,6 +1340,14 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         return map_command(view, command, space);
     }
 
+    if view.discarding.is_some() {
+        change_menu::answer_command(view, command);
+        return CodeOutcome::Stay;
+    }
+    if view.menu.is_some() {
+        return change_menu::command(view, command);
+    }
+
     if let Some(path) = view.confirming_delete.clone() {
         view.confirming_delete = None;
         if command == Command::ConfirmDelete {
@@ -1351,36 +1389,38 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
             Focus::Navigator => view.step(ScrollDirection::Down),
             Focus::Content => view.scroll = view.scroll.saturating_add(1),
         },
-        Command::Collapse if view.focus == Focus::Navigator => match view.navigator() {
-            NavigatorMode::Changes => {
-                if let Some(selected) = view.selected_change() {
-                    view.changes.fold(&view.root, selected);
-                }
+        Command::Collapse
+            if view.focus == Focus::Navigator && view.navigator() == NavigatorMode::Files =>
+        {
+            fold_tree_row(view)
+        }
+        Command::Expand
+            if view.focus == Focus::Navigator && view.navigator() == NavigatorMode::Files =>
+        {
+            if let Some(row) = view
+                .selected
+                .clone()
+                .and_then(|path| view.files.row_at(&view.root, &path))
+                .filter(|row| row.directory)
+            {
+                view.expand(row.path);
             }
-            NavigatorMode::Files => fold_tree_row(view),
-        },
-        Command::Expand if view.focus == Focus::Navigator => match view.navigator() {
-            NavigatorMode::Changes => {
-                if let Some(selected) = view.selected_change() {
-                    view.changes.unfold(&view.root, selected);
-                }
-            }
-            NavigatorMode::Files => {
-                if let Some(row) = view
-                    .selected
-                    .clone()
-                    .and_then(|path| view.files.row_at(&view.root, &path))
-                    .filter(|row| row.directory)
-                {
-                    view.expand(row.path);
-                }
-            }
-        },
+        }
         Command::Activate if view.focus == Focus::Navigator => activate_selection(view),
         Command::ScrollPageUp => view.scroll = view.scroll.saturating_sub(space.height.max(1)),
         Command::ScrollPageDown => view.scroll = view.scroll.saturating_add(space.height.max(1)),
         // The move the whole surface is for: from a line of the diff into
         // that line of the file, ready to change it.
+        Command::OpenMenu => {
+            if view.navigator() == NavigatorMode::Changes
+                && let Some(index) = view.selected_change()
+            {
+                change_menu::open(view, index);
+            }
+        }
+        // A change is reviewed, kept or thrown away here; the file itself
+        // is edited and deleted in the files half, where it is the subject.
+        Command::Edit | Command::Delete if view.navigator() == NavigatorMode::Changes => {}
         Command::Edit => {
             view.show(ContentMode::Contents);
             if let Some(open) = view
@@ -1498,12 +1538,28 @@ fn activate_selection(view: &mut CodeView) {
     }
 }
 
+/// The pointer moved over the surface, without pressing anything.
+/// Answers whether the frame has to be drawn again.
+pub fn handle_hover(view: &mut CodeView, hit: Option<ViewHit>) -> bool {
+    change_menu::hover(view, hit)
+}
+
 pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> CodeOutcome {
     view.notice = None;
     if view.content == ContentMode::Map {
         return map_mouse(view, hit, space);
     }
+    if view.discarding.is_some() {
+        change_menu::answer_mouse(view, hit);
+        return CodeOutcome::Stay;
+    }
+    if view.menu.is_some() {
+        return change_menu::mouse(view, hit);
+    }
     match hit {
+        Some(ViewHit::OpenMenu(index)) if view.navigator() == NavigatorMode::Changes => {
+            change_menu::open(view, index);
+        }
         Some(ViewHit::SelectItem(index)) => match view.navigator() {
             NavigatorMode::Changes => {
                 if let Some(file) = view.changes.files.get(index) {
@@ -1520,17 +1576,8 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
             }
         },
         Some(ViewHit::ToggleGroup(row)) => match view.navigator() {
-            NavigatorMode::Changes => {
-                // The id handed back is the row's place in the tree this
-                // view last described — rebuilt here from the same state,
-                // so it names the same directory.
-                if let Some(FileTreeItem::Directory { path, .. }) =
-                    file_tree_items(&view.changes, &view.root).get(row)
-                {
-                    let path = path.clone();
-                    view.changes.toggle_directory(path);
-                }
-            }
+            // A flat list has no groups to toggle.
+            NavigatorMode::Changes => {}
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(row) {
                     view.selected = Some(row.path.clone());

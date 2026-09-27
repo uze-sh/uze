@@ -19,9 +19,9 @@ use ratatui::{
     widgets::{Clear, Padding, Paragraph, Wrap},
 };
 use uze_extensions::view::{
-    Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, Mode,
-    Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section, Size,
-    Span, TrailStep, View, ViewHit,
+    Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
+    Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section,
+    Size, Span, TrailStep, View, ViewHit,
 };
 
 use crate::ui::theme::{self, Symbol, Token};
@@ -463,6 +463,85 @@ pub(crate) fn render(
         height: content_area.height,
     };
     rendered
+}
+
+/// A [`uze_extensions::view::RowMenu`], drawn after the view so it lies over whatever it
+/// overlaps: where the pointer asked for it (`at`), or under the row it
+/// was opened on when the keyboard did — and not at all while that row is
+/// scrolled out of sight, since a menu pointing at nothing is a menu
+/// about nothing.
+///
+/// Its entries go to the front of `hits`, because the first rect holding
+/// a point is the one a click lands on, and under the menu there are rows
+/// the click was not meant for.
+pub(crate) fn render_row_menu(
+    frame: &mut ratatui::Frame<'_>,
+    view: &View,
+    area: Rect,
+    at: Option<Rect>,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) {
+    let Some(menu) = view
+        .navigator
+        .as_ref()
+        .and_then(|navigator| navigator.menu.as_ref())
+    else {
+        return;
+    };
+    let Some(row) = hits
+        .iter()
+        .find(|(_, hit)| *hit == ViewHit::SelectItem(menu.row))
+        .map(|(rect, _)| *rect)
+    else {
+        return;
+    };
+    // Under the name rather than at the row's edge, where the accent bar
+    // and the indent are: the menu belongs to the file, not to the column.
+    let anchor = at.unwrap_or(Rect::new(row.x.saturating_add(2), row.y, 1, 1));
+    let entries: Vec<&str> = menu.entries.iter().map(String::as_str).collect();
+    let rows = widget::menu::render(frame, area, anchor, &entries, menu.highlighted);
+    for (index, rect) in rows.into_iter().enumerate().rev() {
+        hits.insert(0, (rect, ViewHit::MenuEntry(index)));
+    }
+}
+
+/// A [`uze_extensions::view::Confirm`], as the same dialog every other
+/// question in the product is asked in, centred in `area`, with the keys
+/// that answer it where the surface is open: `scope`. The caller puts the
+/// scrim behind it and its answers ahead of everything it covers.
+pub(crate) fn render_confirm(
+    frame: &mut ratatui::Frame<'_>,
+    confirm: &uze_extensions::view::Confirm,
+    area: Rect,
+    scope: uze_keys::Scope,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) {
+    let dialog = widget::dialog::Dialog {
+        // Asked only before what cannot be undone.
+        tone: widget::dialog::Tone::Danger,
+        title: &confirm.title,
+        subject: Some(Line::from(confirm.subject.clone())),
+        body: vec![confirm.body.clone()],
+        confirm: Some(&confirm.confirm),
+        focus: Some(match confirm.on_confirm {
+            true => 1,
+            false => widget::dialog::CANCEL,
+        }),
+    };
+    let keys = widget::dialog::Keys {
+        scopes: &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, scope],
+        yes: uze_keys::Action::ConfirmDelete,
+        no: uze_keys::Action::Dismiss,
+    };
+    let answers = widget::dialog::render(
+        frame,
+        area,
+        &dialog,
+        &keys,
+        ViewHit::Answer(false),
+        ViewHit::Answer(true),
+    );
+    hits.splice(0..0, answers);
 }
 
 /// A [`ViewLayout::Board`]: the list as a row of tabs, and under it the
@@ -1085,6 +1164,8 @@ fn render_navigator(
                 name,
                 depth,
                 marker,
+                marker_side,
+                detail,
                 selected,
                 icon,
             } => {
@@ -1099,12 +1180,6 @@ fn render_navigator(
                 // the product marks its selection — the accent bar and the
                 // selected surface the status listing uses — rather than a
                 // neutral lift that the diff beside it easily outshone.
-                // The marker stands in the column a group's fold mark does,
-                // and holds that column's width even when it has nothing to
-                // say — so a file with no status still lines its icon and
-                // name up with the folders beside it.
-                let fold_width = TextSpan::raw(theme::glyph(Symbol::ChevronCollapsed)).width();
-                let marker_width = TextSpan::raw(marker.text.as_str()).width();
                 let mut spans = vec![
                     TextSpan::styled(
                         if *selected {
@@ -1115,17 +1190,18 @@ fn render_navigator(
                         theme::fg(Token::Accent),
                     ),
                     TextSpan::raw("  ".repeat(*depth)),
-                    styled(&Span {
-                        text: format!(
-                            "{}{} ",
-                            marker.text,
-                            " ".repeat(fold_width.saturating_sub(marker_width))
-                        ),
-                        ..marker.clone()
-                    }),
                 ];
-                spans.extend(row_icon(*icon));
-                spans.push(TextSpan::styled(name.clone(), label_style));
+                match marker_side {
+                    MarkerSide::Leading => {
+                        spans.push(leading_marker(marker));
+                        spans.extend(row_icon(*icon));
+                        spans.push(TextSpan::styled(name.clone(), label_style));
+                    }
+                    MarkerSide::Trailing => {
+                        spans.extend(row_icon(*icon));
+                        push_flat_label(&mut spans, rect.width, name, detail, label_style, marker);
+                    }
+                }
                 if *selected {
                     row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceSelected));
                 }
@@ -1138,6 +1214,55 @@ fn render_navigator(
         bar.render(frame, settled.first);
     }
     (settled, bar)
+}
+
+/// A tree row's marker: in the column a group's fold mark stands in, and
+/// holding that column's width even when it has nothing to say — so a
+/// file with no status still lines its icon and name up with the folders
+/// beside it.
+fn leading_marker(marker: &Span) -> TextSpan<'static> {
+    let fold_width = TextSpan::raw(theme::glyph(Symbol::ChevronCollapsed)).width();
+    let marker_width = TextSpan::raw(marker.text.as_str()).width();
+    styled(&Span {
+        text: format!(
+            "{}{} ",
+            marker.text,
+            " ".repeat(fold_width.saturating_sub(marker_width))
+        ),
+        ..marker.clone()
+    })
+}
+
+/// A flat row's name, its `detail` quieter after it, and the marker pinned
+/// to the right edge. The name gives way last: it is what the row is read
+/// for, and the detail only tells apart two rows that share one.
+fn push_flat_label(
+    spans: &mut Vec<TextSpan<'static>>,
+    width: u16,
+    name: &str,
+    detail: &str,
+    label_style: Style,
+    marker: &Span,
+) {
+    let leading: usize = spans.iter().map(TextSpan::width).sum();
+    let marker_width = TextSpan::raw(marker.text.as_str()).width();
+    let room = usize::from(width)
+        .saturating_sub(leading + marker_width + usize::from(TRAILING_PAD) + 1)
+        .max(1);
+    let name = text::elide(name, room);
+    let left = room.saturating_sub(TextSpan::raw(name.as_str()).width());
+    spans.push(TextSpan::styled(name, label_style));
+    if !detail.is_empty() && left > 1 {
+        spans.push(TextSpan::styled(
+            format!(" {}", text::elide(detail, left - 1)),
+            theme::fg(Token::TextMuted),
+        ));
+    }
+    let hue = styled(marker)
+        .style
+        .fg
+        .unwrap_or_else(|| color(marker.role));
+    row::push_trailing(spans, width, marker.text.clone(), hue);
 }
 
 /// The content column: a heading, then as many lines as fit.
@@ -1706,7 +1831,7 @@ fn render_footer(
 /// is bound to. Kept here, beside the render that needs it, rather than in
 /// the extension, which knows nothing of either. Where two actions reach
 /// one command, the first row is the one a footer names.
-const COMMAND_ACTIONS: [(Command, uze_keys::Action); 37] = [
+const COMMAND_ACTIONS: [(Command, uze_keys::Action); 38] = [
     (Command::Close, uze_keys::Action::Dismiss),
     (Command::FocusNext, uze_keys::Action::FocusNext),
     (Command::FocusNext, uze_keys::Action::FocusPrevious),
@@ -1715,6 +1840,7 @@ const COMMAND_ACTIONS: [(Command, uze_keys::Action); 37] = [
     (Command::Collapse, uze_keys::Action::Collapse),
     (Command::Expand, uze_keys::Action::Expand),
     (Command::Activate, uze_keys::Action::Activate),
+    (Command::OpenMenu, uze_keys::Action::OpenMenu),
     (Command::ScrollPageUp, uze_keys::Action::ScrollPageUp),
     (Command::ScrollPageDown, uze_keys::Action::ScrollPageDown),
     (Command::Edit, uze_keys::Action::EditFile),
@@ -1940,7 +2066,7 @@ pub(crate) fn render_section_with(
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
-    use uze_extensions::view::{ContentLine, LineTone, Rgb};
+    use uze_extensions::view::{ContentLine, LineTone, Rgb, RowMenu};
 
     #[test]
     fn a_choice_list_on_a_board_too_narrow_for_it_draws_without_panicking() {
@@ -2089,6 +2215,7 @@ mod tests {
                 focused: true,
                 anchor: Some(1),
                 choosing: None,
+                menu: None,
                 rows: vec![
                     NavigatorRow::Group {
                         id: 0,
@@ -2102,6 +2229,8 @@ mod tests {
                         name: "ui.rs".to_owned(),
                         depth: 1,
                         marker: Span::new("M", Role::Warning),
+                        marker_side: MarkerSide::Leading,
+                        detail: String::new(),
                         selected: true,
                         icon: RowIcon::Code,
                     },
@@ -2129,6 +2258,7 @@ mod tests {
             },
             footer: vec![Command::Close],
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Sidebar,
@@ -2253,6 +2383,45 @@ mod tests {
         );
     }
 
+    /// A flat row reads name, then where it sits, quieter, then its status
+    /// at the right edge — and in a narrow column the place gives way
+    /// before the name does.
+    #[test]
+    fn a_flat_row_pins_its_marker_right_and_gives_up_the_detail_first() {
+        let marker = Span::new("M", Role::Warning);
+        let drawn = |width: u16| {
+            let mut spans = vec![TextSpan::raw(" ")];
+            push_flat_label(
+                &mut spans,
+                width,
+                "ui.rs",
+                "src/components/network",
+                Style::default(),
+                &marker,
+            );
+            spans
+        };
+
+        let wide = drawn(40);
+        let text: String = wide.iter().map(|span| span.content.as_ref()).collect();
+        assert!(
+            text.starts_with(" ui.rs src/components/network"),
+            "{text:?}"
+        );
+        assert!(text.ends_with(&format!("M{}", " ".repeat(TRAILING_PAD.into()))));
+        assert_eq!(spans_width(&wide), 40, "the marker is pinned to the edge");
+        let detail = wide
+            .iter()
+            .find(|span| span.content.contains("src/"))
+            .expect("the place is drawn");
+        assert_eq!(detail.style.fg, Some(theme::color(Token::TextMuted)));
+
+        let narrow = drawn(12);
+        let text: String = narrow.iter().map(|span| span.content.as_ref()).collect();
+        assert!(text.contains("ui.rs") && !text.contains("src"), "{text:?}");
+        assert_eq!(spans_width(&narrow), 12);
+    }
+
     /// The header is one row with a question at each end: which half you
     /// are in, and how the half you are in is drawn.
     ///
@@ -2274,11 +2443,14 @@ mod tests {
                     name: "main.rs".to_owned(),
                     depth: 0,
                     marker: Span::new("", Role::Muted),
+                    marker_side: MarkerSide::Leading,
+                    detail: String::new(),
                     selected: true,
                     icon: RowIcon::None,
                 }],
                 anchor: None,
                 choosing: None,
+                menu: None,
             }),
             content: Content::Lines {
                 heading: "main.rs".to_owned(),
@@ -2295,6 +2467,7 @@ mod tests {
             },
             footer: Vec::new(),
             notice: None,
+            confirm: None,
             modes: vec![
                 Mode {
                     label: "Preview".to_owned(),
@@ -2374,6 +2547,175 @@ mod tests {
         assert_eq!(nav_at(&hits), sidebar_at, "at the same cell");
     }
 
+    /// A row's menu is drawn under that row, over whatever it covers, and
+    /// its entries are the first thing a click there lands on.
+    #[test]
+    fn a_row_menu_lies_under_its_row_and_takes_the_click() {
+        let row = |id: usize, name: &str| NavigatorRow::Item {
+            id,
+            name: name.to_owned(),
+            depth: 0,
+            marker: Span::new("M", Role::Warning),
+            marker_side: MarkerSide::Trailing,
+            detail: String::new(),
+            selected: id == 1,
+            icon: RowIcon::None,
+        };
+        let view = View {
+            title: vec![Span::new("code", Role::Muted)],
+            caption: Vec::new(),
+            navigator: Some(Navigator {
+                heading: "CHANGES".to_owned(),
+                badge: "3".to_owned(),
+                focused: true,
+                rows: vec![row(0, "a.rs"), row(1, "b.rs"), row(2, "c.rs")],
+                anchor: None,
+                choosing: None,
+                menu: Some(RowMenu {
+                    row: 1,
+                    entries: vec!["Open file".to_owned(), "Copy path".to_owned()],
+                    highlighted: 0,
+                }),
+            }),
+            content: Content::Message {
+                text: String::new(),
+                hint: None,
+                role: Role::Muted,
+            },
+            footer: Vec::new(),
+            notice: None,
+            confirm: None,
+            modes: Vec::new(),
+            subjects: Vec::new(),
+            layout: ViewLayout::Sidebar,
+            trail: Vec::new(),
+        };
+        let (rows, hits) = draw_with_menu(&view, None);
+
+        let at = |wanted: ViewHit| {
+            hits.iter()
+                .find(|(_, hit)| *hit == wanted)
+                .map(|(rect, _)| *rect)
+                .expect("drawn")
+        };
+        let (opened_on, first) = (at(ViewHit::SelectItem(1)), at(ViewHit::MenuEntry(0)));
+        assert!(first.y > opened_on.y, "under the row it was opened on");
+        assert!(rows[first.y as usize].contains("Open file"), "{rows:?}");
+        let over = hits
+            .iter()
+            .find(|(rect, _)| rect.contains(ratatui::layout::Position::new(first.x, first.y)))
+            .map(|(_, hit)| *hit);
+        assert_eq!(
+            over,
+            Some(ViewHit::MenuEntry(0)),
+            "the entry, not the row under it"
+        );
+
+        // Asked for by the pointer, it opens where the pointer is.
+        let pointer = Rect::new(30, 4, 1, 1);
+        let (_, hits) = draw_with_menu(&view, Some(pointer));
+        let first = hits
+            .iter()
+            .find(|(_, hit)| *hit == ViewHit::MenuEntry(0))
+            .map(|(rect, _)| *rect)
+            .expect("drawn");
+        assert!(
+            first.y > pointer.y && first.x.abs_diff(pointer.x) <= 2,
+            "at the pointer: {first:?}"
+        );
+    }
+
+    /// A surface's question is the product's dialog: its title, subject,
+    /// what agreeing does, and the two answers as buttons.
+    #[test]
+    fn a_surfaces_question_is_drawn_as_the_products_dialog() {
+        let view = View {
+            title: Vec::new(),
+            caption: Vec::new(),
+            navigator: None,
+            content: Content::Message {
+                text: String::new(),
+                hint: None,
+                role: Role::Muted,
+            },
+            footer: Vec::new(),
+            notice: None,
+            confirm: Some(uze_extensions::view::Confirm {
+                title: "Discard changes".to_owned(),
+                subject: "src/ui.rs".to_owned(),
+                body: "Puts the file back.".to_owned(),
+                confirm: "Discard".to_owned(),
+                on_confirm: false,
+            }),
+            modes: Vec::new(),
+            subjects: Vec::new(),
+            layout: ViewLayout::Sidebar,
+            trail: Vec::new(),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        let mut answers = Vec::new();
+        terminal
+            .draw(|frame| {
+                render_confirm(
+                    frame,
+                    view.confirm.as_ref().expect("asked"),
+                    frame.area(),
+                    uze_keys::Scope::Code,
+                    &mut answers,
+                )
+            })
+            .unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        for words in [
+            "Discard changes",
+            "src/ui.rs",
+            "Puts the file back.",
+            "Cancel",
+            "Discard",
+        ] {
+            assert!(screen.contains(words), "{words:?} is on the dialog");
+        }
+        assert_eq!(
+            answers.iter().map(|(_, hit)| *hit).collect::<Vec<_>>(),
+            [ViewHit::Answer(false), ViewHit::Answer(true)],
+            "the way out before the affirmative"
+        );
+    }
+
+    fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, ViewHit)>) {
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    view,
+                    frame.area(),
+                    Some(24),
+                    NavigatorScroll::default(),
+                    uze_keys::Scope::Code,
+                    &mut hits,
+                );
+                render_row_menu(frame, view, frame.area(), at, &mut hits);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let rows = (0..buffer.area.height)
+            .map(|row| {
+                (0..buffer.area.width)
+                    .map(|column| buffer[(column, row)].symbol())
+                    .collect()
+            })
+            .collect();
+        (rows, hits)
+    }
+
     /// A board's footer carries two things — the keys on its left and
     /// what is drawn on its right — and they are written into one row.
     /// Narrow enough and they used to meet in the middle, which reads as
@@ -2399,6 +2741,7 @@ mod tests {
                 Command::NextMode,
             ],
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,
@@ -2501,6 +2844,7 @@ mod tests {
                 },
                 footer: vec![Command::Close],
                 notice: None,
+                confirm: None,
                 modes: Vec::new(),
                 subjects: Vec::new(),
                 layout: ViewLayout::Board,
@@ -2583,6 +2927,8 @@ mod tests {
                 name: format!("Artifact {group}{item}"),
                 depth: 1,
                 marker: Span::default(),
+                marker_side: MarkerSide::Leading,
+                detail: String::new(),
                 selected: group == 0 && item == 0,
                 icon: RowIcon::None,
             }));
@@ -2596,6 +2942,7 @@ mod tests {
                 focused: false,
                 anchor: None,
                 choosing: None,
+                menu: None,
                 rows,
             }),
             content: Content::Lines {
@@ -2608,6 +2955,7 @@ mod tests {
             },
             footer: vec![Command::Close],
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,
@@ -2736,6 +3084,8 @@ mod tests {
             name: format!("Flow {id:02}"),
             depth: 1,
             marker: Span::default(),
+            marker_side: MarkerSide::Leading,
+            detail: String::new(),
             selected: id == 0,
             icon: RowIcon::None,
         }));
@@ -2748,6 +3098,7 @@ mod tests {
                 focused: false,
                 anchor: None,
                 choosing: Some(Choosing::Item(20)),
+                menu: None,
                 rows,
             }),
             content: Content::Lines {
@@ -2760,6 +3111,7 @@ mod tests {
             },
             footer: vec![Command::Close],
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,
@@ -3363,6 +3715,8 @@ mod tests {
                         name: format!("file-{index}.rs"),
                         depth: 0,
                         marker: Span::new("M", Role::Warning),
+                        marker_side: MarkerSide::Leading,
+                        detail: String::new(),
                         selected: Some(index) == anchor,
                     })
                     .collect(),
@@ -3550,6 +3904,7 @@ mod tests {
                 focused: true,
                 anchor: None,
                 choosing: None,
+                menu: None,
                 rows: vec![
                     NavigatorRow::Group {
                         id: 0,
@@ -3563,6 +3918,8 @@ mod tests {
                         name: "Cargo.toml".to_owned(),
                         depth: 0,
                         marker: Span::new(String::new(), Role::Muted),
+                        marker_side: MarkerSide::Leading,
+                        detail: String::new(),
                         selected: false,
                         icon: RowIcon::Config,
                     },
@@ -3571,6 +3928,8 @@ mod tests {
                         name: "main.rs".to_owned(),
                         depth: 0,
                         marker: Span::new("M", Role::Warning),
+                        marker_side: MarkerSide::Leading,
+                        detail: String::new(),
                         selected: false,
                         icon: RowIcon::Code,
                     },

@@ -141,9 +141,11 @@ pub(super) fn render(
         WorkspaceHit::ResizeSidebar,
     ));
     render_tab_strip(frame, layout.tab_strip, model, identities, hits);
-    if !render_extension(frame, layout.pane, model, hits, metrics) {
+    let extension = render_extension(frame, layout.pane, model, hits, metrics);
+    if extension.is_none() {
         render_pane(frame, layout.pane, model);
     }
+    let question = extension.and_then(|drawn| drawn.question);
     // Over the pane, under the modals: an outcome is worth covering some
     // output for, and worth nothing at all if it draws over the dialog the
     // reader is answering.
@@ -159,8 +161,28 @@ pub(super) fn render(
     // a screen that is still live — so the scrim covers these two and
     // nothing else. Same placement as the management modal's: between
     // what was drawn and what is drawn over it.
-    if model.work.is_some() || model.action_index.is_some() || model.release_notes.is_some() {
+    if model.work.is_some()
+        || model.action_index.is_some()
+        || model.release_notes.is_some()
+        || question.is_some()
+    {
         crate::ui::widget::scrim::render(frame, frame.area());
+    }
+    if let Some(question) = &question {
+        let mut view_hits = Vec::new();
+        crate::ui::extension_view::render_confirm(
+            frame,
+            &question.confirm,
+            frame.area(),
+            question.scope,
+            &mut view_hits,
+        );
+        hits.splice(
+            0..0,
+            view_hits
+                .into_iter()
+                .map(|(rect, hit)| (rect, WorkspaceHit::Extension((question.tag)(hit)))),
+        );
     }
     if let Some(modal) = &model.release_notes {
         let targets = crate::ui::release_notes::render(frame, frame.area(), modal);
@@ -233,7 +255,7 @@ fn render_extension(
     model: &WorkspaceModel,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
     metrics: &mut FrameMetrics,
-) -> bool {
+) -> Option<ExtensionDrawn> {
     // The extension answers with content; the host lays it out and
     // therefore is the only side that can say which rectangle a click
     // landed in. The hits come back in the view's own vocabulary and are
@@ -260,7 +282,7 @@ fn render_extension(
                 ExtensionHit::Code,
             )
         } else {
-            return false;
+            return None;
         };
     metrics.code = Some(crate::ui::extension_view::render(
         frame,
@@ -271,12 +293,40 @@ fn render_extension(
         scope,
         &mut view_hits,
     ));
+    crate::ui::extension_view::render_row_menu(
+        frame,
+        &view,
+        area,
+        model.code_menu_at,
+        &mut view_hits,
+    );
     hits.extend(
         view_hits
             .into_iter()
             .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag(hit)))),
     );
-    true
+    Some(ExtensionDrawn {
+        question: view.confirm.map(|confirm| Question {
+            confirm,
+            scope,
+            tag,
+        }),
+    })
+}
+
+/// What drawing an extension leaves for the rest of the frame.
+struct ExtensionDrawn {
+    /// The question it waits on. Drawn with the client's other modals,
+    /// centred on the whole frame over the scrim, rather than inside the
+    /// pane: until it is answered nothing else responds, and a dialog
+    /// drawn in the pane says the opposite.
+    question: Option<Question>,
+}
+
+struct Question {
+    confirm: uze_extensions::view::Confirm,
+    scope: uze_keys::Scope,
+    tag: fn(ViewHit) -> ExtensionHit,
 }
 
 /// A small popup listing `agent_options`, opened by the selected space
@@ -381,48 +431,10 @@ pub(super) fn render_context_menu(
     menu: &ContextMenu,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    const MIN_WIDTH: u16 = 14;
-    let content_width = menu
-        .items
-        .iter()
-        .map(|action| action.label().len())
-        .max()
-        .unwrap_or(0) as u16;
-    let width = (content_width + 2 * POPUP_H_PAD + 2)
-        .max(MIN_WIDTH)
-        .min(area.width);
-    let height = (menu.items.len() as u16 + 2).min(area.height);
-    let popup = Rect::new(
-        menu.anchor
-            .x
-            .min((area.x + area.width).saturating_sub(width)),
-        (menu.anchor.y + menu.anchor.height).min((area.y + area.height).saturating_sub(height)),
-        width,
-        height,
-    );
-    frame.render_widget(Clear, popup);
-    let inner = Surface::card().render(frame, popup);
-
-    for (index, action) in menu.items.iter().enumerate() {
-        if index as u16 >= inner.height {
-            break;
-        }
-        let row = Rect::new(inner.x, inner.y + index as u16, inner.width, 1);
-        let selected = index == menu.selected;
-        // A filled bar for the selected row, same affordance
-        // `render_agent_picker` uses — always in `theme::color(Token::Accent)`, never a red
-        // fill; every row shares the same neutral color otherwise.
-        let style = if selected {
-            Style::default()
-                .bg(theme::color(Token::Accent))
-                .fg(theme::color(Token::SurfaceBackground))
-                .add_modifier(Modifier::BOLD)
-        } else {
-            theme::fg(Token::TextInactive)
-        };
-        let label = format!("{:pad$}{}", "", action.label(), pad = POPUP_H_PAD as usize);
-        let text = format!("{label:<width$}", width = inner.width as usize);
-        frame.render_widget(Paragraph::new(Span::styled(text, style)), row);
+    let labels: Vec<String> = menu.items.iter().map(|action| action.label()).collect();
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let rows = widget::menu::render(frame, area, menu.anchor, &labels, menu.selected);
+    for (index, row) in rows.into_iter().enumerate() {
         hits.push((row, WorkspaceHit::ContextMenuAction(index)));
     }
 }

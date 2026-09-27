@@ -37,8 +37,9 @@ use crate::{
     Host,
     registry::BuiltinExtension,
     view::{
-        Choosing, Command, Content, ContentLine, Layout, LineTone, Mode, Navigator, NavigatorRow,
-        PanDirection, Role, RowIcon, ScrollDirection, Size, Span, TrailStep, View, ViewHit,
+        Choosing, Command, Content, ContentLine, Layout, LineTone, MarkerSide, Mode, Navigator,
+        NavigatorRow, PanDirection, Role, RowIcon, ScrollDirection, Size, Span, TrailStep, View,
+        ViewHit,
     },
 };
 
@@ -1113,6 +1114,8 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
             name: artifact.name.clone(),
             depth: 1,
             marker: Span::default(),
+            marker_side: MarkerSide::Leading,
+            detail: String::new(),
             selected: index == state.selected,
             icon: RowIcon::None,
         });
@@ -1127,10 +1130,12 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
             rows,
             anchor: None,
             choosing: state.choosing,
+            menu: None,
         }),
         content: content(state, space),
         footer: footer(state),
         notice: None,
+        confirm: None,
         modes: MODES
             .iter()
             .map(|&(showing, label)| Mode {

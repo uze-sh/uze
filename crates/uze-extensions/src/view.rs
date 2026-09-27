@@ -149,6 +149,10 @@ pub struct View {
     /// extension says whether it is a warning and the host decides what
     /// one looks like. `None` when there is nothing to say.
     pub notice: Option<Span>,
+    /// A question the surface waits on before doing something that cannot
+    /// be undone, drawn by the host as a dialog over it. `None` when
+    /// nothing is being asked.
+    pub confirm: Option<Confirm>,
     /// The ways this surface can show what it is showing, in the order
     /// they should be offered, with the current one marked. Empty when
     /// there is only one way, which is most of the time.
@@ -256,6 +260,38 @@ pub struct Navigator {
     /// The extension's to say, like what a fold hides: opening a list is
     /// a state of the surface, and what is highlighted in it a selection.
     pub choosing: Option<Choosing>,
+    /// The actions open on one row, or `None`. The extension's state, like
+    /// [`Navigator::choosing`]: the host draws it beside the row and hands
+    /// a pick back as [`ViewHit::MenuEntry`].
+    pub menu: Option<RowMenu>,
+}
+
+/// Asked before something that cannot be undone: what, of what, what
+/// agreeing does, and the word agreeing is said in — "Discard", not "OK".
+/// The answer comes back as [`ViewHit::Answer`], or as the commands an
+/// open question answers: `Activate` for the one the keyboard is on,
+/// `Close` for no, `ConfirmDelete` for yes, and `FocusNext`, `Collapse`
+/// and `Expand` to move between the two.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Confirm {
+    pub title: String,
+    pub subject: String,
+    pub body: String,
+    pub confirm: String,
+    /// Whether the keyboard is on the affirmative rather than the way out.
+    pub on_confirm: bool,
+}
+
+/// A short list of what can be done to one navigator row, opened on it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RowMenu {
+    /// The `id` of the [`NavigatorRow::Item`] it was opened on — what the
+    /// host draws it beside.
+    pub row: usize,
+    /// Each entry's words, in the order offered.
+    pub entries: Vec<String>,
+    /// The entry the keyboard is on.
+    pub highlighted: usize,
 }
 
 /// An open list on a board's menu, by the `id` highlighted in it.
@@ -324,12 +360,32 @@ pub enum NavigatorRow {
         id: usize,
         name: String,
         depth: usize,
-        /// A short status mark before the name.
+        /// A short status mark.
         marker: Span,
+        /// Which end of the row the marker stands at.
+        marker_side: MarkerSide,
+        /// Drawn quieter after the name, when the row's depth does not
+        /// already say where it sits — a flat list's `mod.rs` is only
+        /// told from another `mod.rs` by its directory. Empty for none.
+        detail: String,
         selected: bool,
         /// What this row is, for the mark the host draws before its name.
         icon: RowIcon,
     },
+}
+
+/// Where a [`NavigatorRow::Item`]'s marker stands.
+///
+/// Before the name in a tree, where it holds the column a folder's
+/// disclosure mark does and so lines files up with the folders beside
+/// them. After it, pinned to the right edge, in a flat list, where there
+/// is no such column and a mark before each name would stagger the names
+/// by the width of whatever each one says.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MarkerSide {
+    #[default]
+    Leading,
+    Trailing,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -480,6 +536,13 @@ pub enum ViewHit {
     SelectItem(usize),
     /// The `id` of a [`NavigatorRow::Group`], clicked to fold or unfold it.
     ToggleGroup(usize),
+    /// The `id` of a [`NavigatorRow::Item`], asked for its actions — the
+    /// secondary button, where a pointer has one.
+    OpenMenu(usize),
+    /// An entry of the open [`RowMenu`], by its index.
+    MenuEntry(usize),
+    /// An answer to the open [`Confirm`]: `true` for the affirmative.
+    Answer(bool),
     /// The selector that offers the groups, pressed: open the list of
     /// them, or shut it.
     ChooseGroup,
@@ -574,6 +637,8 @@ pub enum Command {
     Expand,
     /// Act on the selection.
     Activate,
+    /// Open what can be done to the selection, as a [`RowMenu`].
+    OpenMenu,
     ScrollPageUp,
     ScrollPageDown,
 

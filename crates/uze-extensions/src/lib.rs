@@ -112,8 +112,9 @@ impl PartialOrd for DirEntry {
 /// ships today actually needs, and a wider surface would be speculation
 /// about one that does not exist yet.
 ///
-/// Three of them write ([`Host::write_file`], [`Host::delete_file`], and
-/// the directory listing that makes either reachable), which is a
+/// Four of them write ([`Host::write_file`], [`Host::delete_file`],
+/// [`Host::restore_to_head`], and the directory listing that makes the
+/// first two reachable), which is a
 /// widening of what this trait once granted and the reason it is worth
 /// stating plainly: an extension that edits a file needs to be *given*
 /// that, and a grant nobody can name is a grant nobody can withhold.
@@ -172,6 +173,18 @@ pub trait Host {
     /// nature, and "delete this" meaning "delete these four hundred" is
     /// not a gesture a single keystroke should be able to make.
     fn delete_file(&self, path: &std::path::Path) -> Result<(), String>;
+
+    /// Puts each of `paths` back the way `root`'s last commit has it, in
+    /// the index and on disk alike: restored where the commit has the
+    /// path, removed where it does not. The one write into a repository
+    /// an extension is granted, and a narrow one on purpose — throwing a
+    /// change away is a reviewer's gesture, while staging and committing
+    /// shape what the agent working in the checkout commits next.
+    fn restore_to_head(
+        &self,
+        root: &std::path::Path,
+        paths: &[std::path::PathBuf],
+    ) -> Result<(), String>;
 
     /// The palette to render syntax-highlighted content with.
     ///

@@ -249,6 +249,13 @@ fn a_surface_with_nothing_to_draw_says_why_and_what_to_do() {
         fn delete_file(&self, _: &std::path::Path) -> Result<(), String> {
             Ok(())
         }
+        fn restore_to_head(
+            &self,
+            _: &std::path::Path,
+            _: &[std::path::PathBuf],
+        ) -> Result<(), String> {
+            Ok(())
+        }
         fn syntax_theme(&self) -> String {
             String::new()
         }
@@ -760,6 +767,9 @@ impl Host for Written {
         Ok(())
     }
     fn delete_file(&self, _: &std::path::Path) -> Result<(), String> {
+        Ok(())
+    }
+    fn restore_to_head(&self, _: &std::path::Path, _: &[std::path::PathBuf]) -> Result<(), String> {
         Ok(())
     }
     fn syntax_theme(&self) -> String {

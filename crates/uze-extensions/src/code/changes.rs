@@ -8,16 +8,13 @@
 //! be one thing rather than the same shape written twice.
 
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock, PoisonError},
+    sync::OnceLock,
     time::Instant,
 };
 
-use super::{
-    changes_tree::{FileTreeItem, tree_items},
-    diff::{self, DiffCell},
-};
+use super::diff::{self, DiffCell};
 use crate::{
     Host,
     view::{Role, ScrollDirection},
@@ -29,17 +26,11 @@ use crate::{
 /// One of the two halves [`super::CodeView`] holds. It answers about a
 /// path and knows nothing about the other half — see that type for why
 /// the two stay apart.
-/// The navigator's rows, and the folds they were built with.
-type FoldedTree = (BTreeSet<String>, Arc<Vec<FileTreeItem>>);
-
 #[derive(Default)]
 pub(super) struct Changes {
+    /// In the order the navigator lists them — see
+    /// [`parse_porcelain_status`].
     pub(super) files: Vec<ChangedFile>,
-    /// The directories folded shut in the navigator, by the path
-    /// [`FileTreeItem::Directory`] gives them. A fold never moves the
-    /// selection: the diff being read stays the diff being read, its row
-    /// just stops being drawn until the directory opens again.
-    pub(super) folded: BTreeSet<String>,
     pub(super) diff: Vec<DiffCell>,
     /// Set when the selection moved and cleared when a read catches up.
     ///
@@ -55,13 +46,6 @@ pub(super) struct Changes {
     /// open at all.
     pub(super) error: Option<String>,
     pub(super) refreshed_at: Option<Instant>,
-    /// The list as a tree, worked out once per list rather than once per
-    /// frame — on a checkout with thousands of changes, building it was
-    /// most of what drawing a frame cost. Two: with the viewer's folds,
-    /// kept with the folds it was built for so a fold is never drawn
-    /// stale, and with none, for questions about where a file sits.
-    pub(super) tree: Mutex<Option<FoldedTree>>,
-    pub(super) unfolded: OnceLock<Arc<Vec<FileTreeItem>>>,
     /// Each file's place in `files`, by path — what marks a changed file
     /// in the other list, asked once per row per frame.
     pub(super) positions: OnceLock<HashMap<PathBuf, usize>>,
@@ -134,19 +118,6 @@ impl Changes {
             .copied()
     }
 
-    /// The navigator's rows, with the viewer's folds.
-    pub(super) fn tree(&self, root: &Path) -> Arc<Vec<FileTreeItem>> {
-        let mut built = self.tree.lock().unwrap_or_else(PoisonError::into_inner);
-        match built.as_ref() {
-            Some((folded, items)) if *folded == self.folded => Arc::clone(items),
-            _ => {
-                let items = Arc::new(tree_items(self, root, &self.folded));
-                *built = Some((self.folded.clone(), Arc::clone(&items)));
-                items
-            }
-        }
-    }
-
     /// Takes over what `previous` already worked out about the list, when
     /// the list is the same one — which, re-read every second or two, it
     /// nearly always is.
@@ -154,17 +125,7 @@ impl Changes {
         if self.files != previous.files {
             return;
         }
-        self.tree = std::mem::take(&mut previous.tree);
-        self.unfolded = std::mem::take(&mut previous.unfolded);
         self.positions = std::mem::take(&mut previous.positions);
-    }
-
-    /// The same rows with every directory open.
-    fn unfolded_tree(&self, root: &Path) -> Arc<Vec<FileTreeItem>> {
-        Arc::clone(
-            self.unfolded
-                .get_or_init(|| Arc::new(tree_items(self, root, &BTreeSet::new()))),
-        )
     }
 
     fn load_diff(&mut self, host: &dyn Host, root: &Path, selected: Option<&Path>, shown: u64) {
@@ -208,95 +169,11 @@ impl Changes {
         hasher.finish()
     }
 
-    /// The next changed file in tree order from `from`, in `direction`,
-    /// skipping every file a fold hides. Measured on the unfolded tree,
-    /// so a selection that is itself hidden still knows which way is
-    /// which and steps out to the nearest file that shows.
-    pub(super) fn neighbour(
-        &self,
-        root: &Path,
-        from: usize,
-        direction: ScrollDirection,
-    ) -> Option<usize> {
-        let order: Vec<usize> = self
-            .unfolded_tree(root)
-            .iter()
-            .filter_map(FileTreeItem::file_index)
-            .collect();
-        let shown: BTreeSet<usize> = self
-            .tree(root)
-            .iter()
-            .filter_map(FileTreeItem::file_index)
-            .collect();
-        let position = order.iter().position(|index| *index == from)?;
-        let (before, after) = order.split_at(position);
+    /// The next changed file from `from`, in `direction`.
+    pub(super) fn neighbour(&self, from: usize, direction: ScrollDirection) -> Option<usize> {
         match direction {
-            ScrollDirection::Down => after.iter().skip(1).find(|index| shown.contains(index)),
-            ScrollDirection::Up => before.iter().rev().find(|index| shown.contains(index)),
-        }
-        .copied()
-    }
-
-    /// The directories above `selected`, outermost first, by the path the
-    /// navigator folds them under.
-    fn ancestors_of(&self, root: &Path, selected: usize) -> Vec<String> {
-        let items = self.unfolded_tree(root);
-        let Some(row) = items
-            .iter()
-            .position(|item| item.file_index() == Some(selected))
-        else {
-            return Vec::new();
-        };
-        let FileTreeItem::File { depth, .. } = items[row] else {
-            return Vec::new();
-        };
-        let mut wanted = depth;
-        let mut ancestors = Vec::new();
-        for item in items[..row].iter().rev() {
-            if wanted == 0 {
-                break;
-            }
-            if let FileTreeItem::Directory { path, depth, .. } = item
-                && *depth == wanted - 1
-            {
-                ancestors.push(path.clone());
-                wanted = *depth;
-            }
-        }
-        ancestors.reverse();
-        ancestors
-    }
-
-    /// Folds the innermost open directory above the selection — pressed
-    /// again, the one above that — so the tree closes outward from where
-    /// the viewer is.
-    pub(super) fn fold(&mut self, root: &Path, selected: usize) {
-        if let Some(path) = self
-            .ancestors_of(root, selected)
-            .into_iter()
-            .rev()
-            .find(|path| !self.folded.contains(path))
-        {
-            self.folded.insert(path);
-        }
-    }
-
-    /// Opens the outermost folded directory above the selection — the
-    /// reverse of [`fold`](Self::fold), so a hidden selection comes back
-    /// into view one level at a time.
-    pub(super) fn unfold(&mut self, root: &Path, selected: usize) {
-        if let Some(path) = self
-            .ancestors_of(root, selected)
-            .into_iter()
-            .find(|path| self.folded.contains(path))
-        {
-            self.folded.remove(&path);
-        }
-    }
-
-    pub(super) fn toggle_directory(&mut self, path: String) {
-        if !self.folded.remove(&path) {
-            self.folded.insert(path);
+            ScrollDirection::Down => from.checked_add(1).filter(|next| *next < self.files.len()),
+            ScrollDirection::Up => from.checked_sub(1),
         }
     }
 }
@@ -451,6 +328,9 @@ pub(super) struct ChangedFile {
     /// tab whose `cwd` is a subdirectory; resolving to an absolute path
     /// once here means nothing downstream has to re-derive that.
     pub(super) path: PathBuf,
+    /// Where a rename came from — the other path throwing it away puts
+    /// back. `None` for everything else.
+    pub(super) renamed_from: Option<PathBuf>,
 }
 
 /// Every changed path, untracked ones listed file by file — the one status
@@ -482,6 +362,11 @@ pub(super) fn parse_numstat(output: &str) -> (u32, u32) {
 /// (always repository-root-relative, regardless of `-C` — see
 /// `ChangedFile::path`'s doc comment) against `root` so every
 /// `ChangedFile` carries an absolute path.
+///
+/// Listed grouped by the directory each file sits in and by name within
+/// it, the way a flat changes list reads: a file's neighbours are the
+/// files beside it on disk, rather than whatever order Git's index
+/// happens to keep.
 pub(super) fn parse_porcelain_status(output: &str, root: &Path) -> Vec<ChangedFile> {
     let mut files = Vec::new();
     let mut records = output.split('\0');
@@ -494,9 +379,10 @@ pub(super) fn parse_porcelain_status(output: &str, root: &Path) -> Vec<ChangedFi
         };
         // A rename or copy is two records, where it went and then where it
         // came from — and only the first is where the change lives now.
-        if code.contains(['R', 'C']) {
-            records.next();
-        }
+        let source = match code.contains(['R', 'C']) {
+            true => records.next(),
+            false => None,
+        };
         if relative.is_empty() {
             continue;
         }
@@ -514,8 +400,20 @@ pub(super) fn parse_porcelain_status(output: &str, root: &Path) -> Vec<ChangedFi
         files.push(ChangedFile {
             status,
             path: root.join(relative),
+            // A copy leaves its source where it was.
+            renamed_from: source
+                .filter(|_| code.contains('R'))
+                .map(|source| root.join(source)),
         });
     }
+    files.sort_by_cached_key(|file| {
+        (
+            file.path.parent().map(Path::to_path_buf),
+            file.path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_lowercase()),
+        )
+    });
     files
 }
 
@@ -529,12 +427,43 @@ mod tests {
         let output = " M modified.rs\0A  added.rs\0 D deleted.rs\0?? untracked.rs\0";
         let files = parse_porcelain_status(output, root);
         assert_eq!(files.len(), 4);
-        assert_eq!(files[0].status, FileStatus::Modified);
-        assert_eq!(files[0].path, root.join("modified.rs"));
-        assert_eq!(files[1].status, FileStatus::Added);
-        assert_eq!(files[2].status, FileStatus::Deleted);
+        assert_eq!(files[0].status, FileStatus::Added);
+        assert_eq!(files[1].status, FileStatus::Deleted);
+        assert_eq!(files[2].status, FileStatus::Modified);
+        assert_eq!(files[2].path, root.join("modified.rs"));
         assert_eq!(files[3].status, FileStatus::Untracked);
         assert_eq!(files[3].path, root.join("untracked.rs"));
+    }
+    #[test]
+    fn lists_files_by_directory_then_by_name_whatever_order_git_kept() {
+        let root = Path::new("/repo");
+        let output = " M src/ui/b.rs\0 M src/Z.rs\0 M src/a.rs\0 M top.rs\0";
+        let names: Vec<PathBuf> = parse_porcelain_status(output, root)
+            .into_iter()
+            .map(|file| file.path)
+            .collect();
+        assert_eq!(
+            names,
+            ["top.rs", "src/a.rs", "src/Z.rs", "src/ui/b.rs"].map(|path| root.join(path))
+        );
+    }
+    /// `x` deleted and `x/y` added in its place are two rows, each
+    /// reachable, whichever order Git named them in.
+    #[test]
+    fn a_path_that_is_a_file_and_a_directory_keeps_both_rows() {
+        let root = Path::new("/repo");
+        let files = parse_porcelain_status("?? x/y\0 D x\0", root);
+        let listed: Vec<(PathBuf, FileStatus)> = files
+            .into_iter()
+            .map(|file| (file.path, file.status))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                (root.join("x"), FileStatus::Deleted),
+                (root.join("x/y"), FileStatus::Untracked),
+            ]
+        );
     }
     #[test]
     fn parses_a_rename_using_the_destination_path() {
@@ -561,10 +490,10 @@ mod tests {
         assert_eq!(
             paths,
             [
-                root.join("say \"hi\".rs"),
-                root.join("a -> b.rs"),
-                root.join("\u{e9}t\u{e9}.rs"),
                 root.join(" leading.rs"),
+                root.join("a -> b.rs"),
+                root.join("say \"hi\".rs"),
+                root.join("\u{e9}t\u{e9}.rs"),
             ]
         );
     }
@@ -639,13 +568,13 @@ mod repository_tests {
             "expected a non-empty diff for the file that was asked about"
         );
 
-        std::fs::write(root.join("later.rs"), "fn later() {}\n").unwrap();
+        std::fs::write(root.join("written_later.rs"), "fn later() {}\n").unwrap();
         let changes = Changes::read(&TestHost, &root, Some(&first), 0);
         assert!(
             changes
                 .files
                 .iter()
-                .any(|file| file.path == root.join("later.rs")),
+                .any(|file| file.path == root.join("written_later.rs")),
             "a re-read must pick up a change made while the viewer is open"
         );
         assert_eq!(
