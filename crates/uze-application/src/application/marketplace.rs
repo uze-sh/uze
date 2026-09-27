@@ -456,8 +456,35 @@ impl Marketplace<'_> {
     /// point — inferring a link from a `path:` source is the conflation
     /// that put an operator's home directory into a versioned
     /// `agents.yaml`.
+    ///
+    /// A checkout that does not exist yet, or is an empty directory, is
+    /// cloned from the marketplace's source first: on a new machine, linking
+    /// is how the working copy comes to be. Returns whether it cloned.
     #[tracing::instrument(name = "marketplace.link", skip_all, fields(name = %name), err)]
-    pub fn link(&self, name: &str, checkout: &Path) -> Result<()> {
+    pub fn link(&self, name: &str, checkout: &Path) -> Result<bool> {
+        let checkout = std::path::absolute(checkout).map_err(|source| UzeError::Read {
+            path: checkout.to_path_buf(),
+            source,
+        })?;
+        let cloned = uze_core::acquisition::marketplace::checkout_is_vacant(&checkout);
+        if cloned {
+            let record = uze_core::state::marketplace_list(&self.0.home)?
+                .remove(name)
+                .ok_or_else(|| UzeError::UnknownMarketplace(name.to_owned()))?;
+            // Outside the mutation lock: a clone is a network round trip,
+            // and nothing it writes is UZE's until the link records it.
+            uze_core::acquisition::marketplace::clone_checkout(&record.source, &checkout)?;
+        }
+        self.link_existing(
+            name,
+            &checkout
+                .canonicalize()
+                .map_err(|_| UzeError::MissingPath(checkout.clone()))?,
+        )?;
+        Ok(cloned)
+    }
+
+    fn link_existing(&self, name: &str, checkout: &Path) -> Result<()> {
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         uze_core::state::marketplace_link(&self.0.home, name, checkout)?;
         // What the catalogue holds was read from the source, not from the
