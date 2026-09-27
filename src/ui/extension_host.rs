@@ -24,6 +24,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
+use uze_extensions::Unreadable;
+
 /// How much of a file this host will hand an extension.
 ///
 /// Generous for anything a person reads and small enough that the read
@@ -35,6 +37,10 @@ const READABLE_FILE_LIMIT: u64 = 2 * 1024 * 1024;
 /// reason is the filesystem's rather than ours. Said once so the surface
 /// and this grant cannot describe the same state differently.
 const UNREADABLE: &str = "not readable as text";
+
+fn unreadable() -> Unreadable {
+    Unreadable::Failed(UNREADABLE.to_owned())
+}
 
 /// Where this project declares its artifacts, read from its manifest.
 ///
@@ -100,10 +106,10 @@ impl uze_extensions::Host for WorkspaceHost {
     /// Read through a `take` rather than checked with `metadata` first:
     /// what the cap has to bound is how much lands in memory, and a
     /// length read separately from the bytes is a different question.
-    fn read_file(&self, path: &Path) -> Result<String, String> {
+    fn read_file(&self, path: &Path) -> Result<String, Unreadable> {
         use std::io::Read;
 
-        let file = std::fs::File::open(path).map_err(|_| UNREADABLE.to_owned())?;
+        let file = std::fs::File::open(path).map_err(|_| unreadable())?;
         let mut text = String::new();
         let read = file
             // One byte past the cap: a file exactly at it still opens,
@@ -111,12 +117,15 @@ impl uze_extensions::Host for WorkspaceHost {
             // the rest of it.
             .take(READABLE_FILE_LIMIT + 1)
             .read_to_string(&mut text)
-            .map_err(|_| UNREADABLE.to_owned())?;
+            .map_err(|error| match error.kind() {
+                std::io::ErrorKind::InvalidData => Unreadable::NotText,
+                _ => unreadable(),
+            })?;
         if read as u64 > READABLE_FILE_LIMIT {
-            return Err(format!(
+            return Err(Unreadable::Failed(format!(
                 "too large to open here — over {} MiB",
                 READABLE_FILE_LIMIT / (1024 * 1024)
-            ));
+            )));
         }
         Ok(text)
     }
@@ -484,7 +493,7 @@ fn count_lines_of(path: &Path) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use uze_extensions::Host;
+    use uze_extensions::{Host, Unreadable};
 
     use super::WorkspaceHost;
 
@@ -711,13 +720,24 @@ mod tests {
             .read_file(&over_the_cap)
             .expect_err("one byte over is refused");
         assert!(
-            refused.contains("too large"),
+            refused.to_string().contains("too large"),
             "the refusal names the size rather than the file's kind: {refused}"
         );
         assert_eq!(
             WorkspaceHost.read_file(&directory.join("absent")),
-            Err(super::UNREADABLE.to_owned()),
+            Err(super::unreadable()),
             "a file that is not there is the state a view draws, not a path leak"
+        );
+        let image = directory.join("pixel.png");
+        std::fs::write(
+            &image,
+            [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff],
+        )
+        .unwrap();
+        assert_eq!(
+            WorkspaceHost.read_file(&image),
+            Err(Unreadable::NotText),
+            "bytes that are not text are a kind of file, not a failure"
         );
         std::fs::remove_dir_all(&directory).ok();
     }

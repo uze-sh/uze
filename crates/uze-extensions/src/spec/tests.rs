@@ -29,8 +29,8 @@ impl Host for DiskHost {
         uze_git::repository::root(path)
     }
 
-    fn read_file(&self, path: &Path) -> Result<String, String> {
-        std::fs::read_to_string(path).map_err(|error| error.to_string())
+    fn read_file(&self, path: &Path) -> Result<String, crate::Unreadable> {
+        std::fs::read_to_string(path).map_err(|error| crate::Unreadable::Failed(error.to_string()))
     }
 
     fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>, String> {

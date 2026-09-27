@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{DirEntry, Host, view::Rgb};
+use crate::{DirEntry, Host, Unreadable, view::Rgb};
 
 /// How much of a file is coloured before it is shown.
 ///
@@ -66,7 +66,7 @@ pub enum FileAnswer {
     },
     Read {
         path: PathBuf,
-        file: Result<LoadedFile, String>,
+        file: Result<LoadedFile, Unreadable>,
     },
     /// The same file, coloured all the way through.
     ///
@@ -78,7 +78,7 @@ pub enum FileAnswer {
     /// but silence.
     Coloured {
         path: PathBuf,
-        file: Result<LoadedFile, String>,
+        file: Result<LoadedFile, Unreadable>,
     },
     Saved {
         path: PathBuf,
@@ -130,11 +130,11 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
         },
         FileRequest::Read(path) => FileAnswer::Read {
             path: path.clone(),
-            file: Err(reason.to_owned()),
+            file: Err(Unreadable::Failed(reason.to_owned())),
         },
         FileRequest::Colour(path) => FileAnswer::Coloured {
             path: path.clone(),
-            file: Err(reason.to_owned()),
+            file: Err(Unreadable::Failed(reason.to_owned())),
         },
         FileRequest::Save { path, .. } => FileAnswer::Saved {
             path: path.clone(),
@@ -200,7 +200,7 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
 /// the operator may not read, one too large to hold — travels as the
 /// sentence the view puts where the content would be. Only the host can
 /// tell them apart.
-fn read_and_colour(host: &dyn Host, path: &Path, lines: usize) -> Result<LoadedFile, String> {
+fn read_and_colour(host: &dyn Host, path: &Path, lines: usize) -> Result<LoadedFile, Unreadable> {
     let theme = host.syntax_theme();
     host.read_file(path).map(|text| {
         let highlighted = crate::shared::highlight::lines(&text, path, &theme, lines);

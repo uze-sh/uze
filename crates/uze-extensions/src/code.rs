@@ -573,6 +573,7 @@ impl CodeView {
             // diff on screen — or the one-file read already asked for it
             // — is left as it stands.
             changes.diff = std::mem::take(&mut self.changes.diff);
+            changes.diff_binary = self.changes.diff_binary;
             changes.diff_digest = self.changes.diff_digest;
             changes.diff_unchanged = false;
             changes.diff_pending = self.changes.diff_pending;
@@ -580,6 +581,7 @@ impl CodeView {
             // The read found the diff exactly as it is here, so here is
             // where it stays — the cells were never sent back.
             changes.diff = std::mem::take(&mut self.changes.diff);
+            changes.diff_binary = self.changes.diff_binary;
         }
         self.changes = changes;
         if self.selected.is_none() {
@@ -785,6 +787,7 @@ impl CodeView {
         self.selected = Some(path);
         self.scroll = 0;
         self.changes.diff = Vec::new();
+        self.changes.diff_binary = false;
         self.changes.diff_pending = true;
         self.read_selection_as_what_it_is();
     }
@@ -1230,6 +1233,7 @@ impl DiffAnswer {
         Self(changes::DiffRead {
             path: request.path.clone(),
             digest: 0,
+            binary: false,
             outcome: Err(reason),
         })
     }
