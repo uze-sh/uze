@@ -141,9 +141,11 @@ pub(super) fn render(
         WorkspaceHit::ResizeSidebar,
     ));
     render_tab_strip(frame, layout.tab_strip, model, identities, hits);
-    if !render_extension(frame, layout.pane, model, hits, metrics) {
+    let extension = render_extension(frame, layout.pane, model, hits, metrics);
+    if extension.is_none() {
         render_pane(frame, layout.pane, model);
     }
+    let question = extension.and_then(|drawn| drawn.question);
     // Over the pane, under the modals: an outcome is worth covering some
     // output for, and worth nothing at all if it draws over the dialog the
     // reader is answering.
@@ -159,8 +161,28 @@ pub(super) fn render(
     // a screen that is still live — so the scrim covers these two and
     // nothing else. Same placement as the management modal's: between
     // what was drawn and what is drawn over it.
-    if model.work.is_some() || model.action_index.is_some() || model.release_notes.is_some() {
+    if model.work.is_some()
+        || model.action_index.is_some()
+        || model.release_notes.is_some()
+        || question.is_some()
+    {
         crate::ui::widget::scrim::render(frame, frame.area());
+    }
+    if let Some(question) = &question {
+        let mut view_hits = Vec::new();
+        crate::ui::extension_view::render_confirm(
+            frame,
+            &question.confirm,
+            frame.area(),
+            question.scope,
+            &mut view_hits,
+        );
+        hits.splice(
+            0..0,
+            view_hits
+                .into_iter()
+                .map(|(rect, hit)| (rect, WorkspaceHit::Extension((question.tag)(hit)))),
+        );
     }
     if let Some(modal) = &model.release_notes {
         let targets = crate::ui::release_notes::render(frame, frame.area(), modal);
@@ -233,7 +255,7 @@ fn render_extension(
     model: &WorkspaceModel,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
     metrics: &mut FrameMetrics,
-) -> bool {
+) -> Option<ExtensionDrawn> {
     // The extension answers with content; the host lays it out and
     // therefore is the only side that can say which rectangle a click
     // landed in. The hits come back in the view's own vocabulary and are
@@ -260,7 +282,7 @@ fn render_extension(
                 ExtensionHit::Code,
             )
         } else {
-            return false;
+            return None;
         };
     metrics.code = Some(crate::ui::extension_view::render(
         frame,
@@ -278,13 +300,33 @@ fn render_extension(
         model.code_menu_at,
         &mut view_hits,
     );
-    crate::ui::extension_view::render_confirm(frame, &view, area, scope, &mut view_hits);
     hits.extend(
         view_hits
             .into_iter()
             .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag(hit)))),
     );
-    true
+    Some(ExtensionDrawn {
+        question: view.confirm.map(|confirm| Question {
+            confirm,
+            scope,
+            tag,
+        }),
+    })
+}
+
+/// What drawing an extension leaves for the rest of the frame.
+struct ExtensionDrawn {
+    /// The question it waits on. Drawn with the client's other modals,
+    /// centred on the whole frame over the scrim, rather than inside the
+    /// pane: until it is answered nothing else responds, and a dialog
+    /// drawn in the pane says the opposite.
+    question: Option<Question>,
+}
+
+struct Question {
+    confirm: uze_extensions::view::Confirm,
+    scope: uze_keys::Scope,
+    tag: fn(ViewHit) -> ExtensionHit,
 }
 
 /// A small popup listing `agent_options`, opened by the selected space

@@ -505,21 +505,17 @@ pub(crate) fn render_row_menu(
     }
 }
 
-/// A [`uze_extensions::view::Confirm`], drawn over the whole surface as
-/// the same dialog every other question in the product is asked in, with
-/// the keys that answer it where the surface is open: `scope`.
-///
-/// Its answers go to the front of `hits`, ahead of everything it covers.
+/// A [`uze_extensions::view::Confirm`], as the same dialog every other
+/// question in the product is asked in, centred in `area`, with the keys
+/// that answer it where the surface is open: `scope`. The caller puts the
+/// scrim behind it and its answers ahead of everything it covers.
 pub(crate) fn render_confirm(
     frame: &mut ratatui::Frame<'_>,
-    view: &View,
+    confirm: &uze_extensions::view::Confirm,
     area: Rect,
     scope: uze_keys::Scope,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
-    let Some(confirm) = &view.confirm else {
-        return;
-    };
     let dialog = widget::dialog::Dialog {
         // Asked only before what cannot be undone.
         tone: widget::dialog::Tone::Danger,
@@ -2630,8 +2626,7 @@ mod tests {
     }
 
     /// A surface's question is the product's dialog: its title, subject,
-    /// what agreeing does, the two answers as buttons that take the click
-    /// ahead of whatever the dialog covers, and the keys in its border.
+    /// what agreeing does, and the two answers as buttons.
     #[test]
     fn a_surfaces_question_is_drawn_as_the_products_dialog() {
         let view = View {
@@ -2658,10 +2653,16 @@ mod tests {
             trail: Vec::new(),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
-        let mut hits = vec![(Rect::new(0, 0, 80, 20), ViewHit::Close)];
+        let mut answers = Vec::new();
         terminal
             .draw(|frame| {
-                render_confirm(frame, &view, frame.area(), uze_keys::Scope::Code, &mut hits)
+                render_confirm(
+                    frame,
+                    view.confirm.as_ref().expect("asked"),
+                    frame.area(),
+                    uze_keys::Scope::Code,
+                    &mut answers,
+                )
             })
             .unwrap();
         let screen: String = terminal
@@ -2681,9 +2682,9 @@ mod tests {
             assert!(screen.contains(words), "{words:?} is on the dialog");
         }
         assert_eq!(
-            hits.iter().take(2).map(|(_, hit)| *hit).collect::<Vec<_>>(),
+            answers.iter().map(|(_, hit)| *hit).collect::<Vec<_>>(),
             [ViewHit::Answer(false), ViewHit::Answer(true)],
-            "the answers are asked first, the way out before the affirmative"
+            "the way out before the affirmative"
         );
     }
 
