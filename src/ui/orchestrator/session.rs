@@ -608,14 +608,7 @@ impl Attach<'_> {
                 }
             }
             Action::NewAgent => {
-                // Under the button that opens it by pointer, wherever it
-                // was asked from: one menu, in one place.
-                let anchor = self
-                    .model
-                    .hits
-                    .iter()
-                    .find_map(|(rect, hit)| (*hit == WorkspaceHit::NewAgentMenu).then_some(*rect))
-                    .unwrap_or_default();
+                let anchor = self.new_agent_anchor();
                 self.offer_agents(anchor, None);
             }
             Action::NewSpace => self.open_root_picker(),
@@ -1149,7 +1142,12 @@ impl Attach<'_> {
         };
         let not_a_task = "it holds no task of UZE's, only a checkout".to_owned();
         match (action, &row.task, &row.checkout) {
-            (Action::Activate, ..) => {
+            // A task's slot is never opened as a space of its own: work is
+            // bound to its project's space, so a space rooted at the slot
+            // would hold nothing the task does and hand every agent asked
+            // for there to the project's space instead. Entering a task
+            // resumes it, where it belongs.
+            (Action::Activate, None, _) => {
                 if let Some(directory) = row.directory() {
                     let directory = directory.to_path_buf();
                     self.model.work = None;
@@ -1160,7 +1158,7 @@ impl Attach<'_> {
             // one, and otherwise gives it a slot again on its own branch — a
             // checkout removed by hand took only the uncommitted work.
             // Either way the launch carries the task's identity.
-            (Action::ResumeTask, Some(task), _) => {
+            (Action::Activate | Action::ResumeTask, Some(task), _) => {
                 let resume = ResumeTarget {
                     primary: task.project.clone(),
                     task: task.id.clone(),
@@ -1169,7 +1167,8 @@ impl Attach<'_> {
                     replacing: None,
                 };
                 self.model.work = None;
-                self.offer_agents(Rect::default(), Some(resume));
+                let anchor = self.new_agent_anchor();
+                self.offer_agents(anchor, Some(resume));
             }
             (Action::DeliverTask, Some(task), _) => {
                 self.model
@@ -3150,6 +3149,17 @@ impl Attach<'_> {
 }
 
 impl Attach<'_> {
+    /// Where the harness picker opens when no click placed it: under the
+    /// button that opens it by pointer, wherever it was asked from — one
+    /// menu, in one place.
+    fn new_agent_anchor(&self) -> Rect {
+        self.model
+            .hits
+            .iter()
+            .find_map(|(rect, hit)| (*hit == WorkspaceHit::NewAgentMenu).then_some(*rect))
+            .unwrap_or_default()
+    }
+
     /// Asks which harness runs the new agent — unless exactly one is set
     /// up, where the picker would be a single row to confirm, and the agent
     /// starts at once. None set up still opens it: its one row is the way

@@ -417,7 +417,7 @@ fn buttons_for(
                 Action::FinishTask,
             ));
         }
-        if row.directory().is_some() {
+        if row.task.is_none() && row.directory().is_some() {
             buttons.push((Button::new("Open space", Token::Accent), Action::Activate));
         }
         if let Some(checkout) = &row.checkout {
