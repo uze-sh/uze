@@ -1676,6 +1676,20 @@ def in_repository() -> bool:
     return (REPO / "Cargo.toml").is_file() and (REPO / "web").is_dir()
 
 
+def shard_of(text: str) -> tuple[int, int]:
+    """`I/N`, one-based. Slices interleave rather than cut the sorted list in
+    blocks: the slow journeys sit together in the later chapters, and a block
+    would hand one slice all of them."""
+    index, _, count = text.partition("/")
+    try:
+        shard = (int(index), int(count))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not I/N") from None
+    if not 1 <= shard[0] <= shard[1]:
+        raise argparse.ArgumentTypeError(f"{text!r}: I must be between 1 and N")
+    return shard
+
+
 def specs_of(args) -> list[Path]:
     """One spec, or every spec in a directory that carries `--tag`. The tag
     is how a gate runs the fast journeys on a pull request and everything on
@@ -1690,6 +1704,8 @@ def specs_of(args) -> list[Path]:
     found = sorted(target.rglob("*.yml")) + sorted(target.rglob("*.yaml"))
     if tag := getattr(args, "tag", None):
         found = [spec for spec in found if tag in (load(spec).get("tags") or [])]
+    if shard := getattr(args, "shard", None):
+        found = found[shard[0] - 1 :: shard[1]]
     if not found:
         die(
             f"{target}: no journey to run"
@@ -2012,6 +2028,12 @@ def main() -> int:
         )
         child.add_argument(
             "--tag", help="when SPEC is a directory, only journeys with this tag"
+        )
+        child.add_argument(
+            "--shard",
+            type=shard_of,
+            metavar="I/N",
+            help="when SPEC is a directory, only the I-th of N interleaved slices",
         )
     args = parser.parse_args()
     if args.command == "list":

@@ -42,7 +42,7 @@ jobs:
     # and the rest, where the pair now reads as what each tier drives
     # end to end — this one drives UZE, those drive a vendor's harness. The
     # platform is in the name because the two runs prove different halves.
-    name: E2E - UZE (${{ matrix.platform }})
+    name: E2E - UZE (${{ matrix.target.platform }}, ${{ matrix.shard }}/4)
     # Pinned images, never `-latest`. The journey drives a rendered screen, so
     # the terminal is part of the contract — the tmux build, the locale and
     # the unicode width tables decide where a glyph lands, and a moving
@@ -50,14 +50,21 @@ jobs:
     # commit behind it. `ubuntu-24.04` is the same release
     # `journeys/Dockerfile` states as its `FROM`: both pin the Ubuntu
     # release, which is as far as either can pin.
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.target.runner }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
         # An event that is not a `workflow_call` — the nightly, a manual run —
         # carries no inputs, and falls back to the platform every event runs.
-        include: ${{ fromJSON(inputs.platforms || '[{"platform":"linux","runner":"ubuntu-24.04"}]') }}
+        target: ${{ fromJSON(inputs.platforms || '[{"platform":"linux","runner":"ubuntu-24.04"}]') }}
+        # The suite ran as one serial queue: forty journeys, 11.5 minutes on
+        # Linux and 16.3 on macOS, on the critical path of every run. Every
+        # journey builds its own world, so four runners each take an
+        # interleaved quarter (`journey.py --shard`); measured against the
+        # durations of a green run, the longest quarter is 3.4 and 5.0
+        # minutes. `--shard` in the args below and `4` here are one number.
+        shard: [1, 2, 3, 4]
     env:
       # What the container image used to set. The frames are read as text, so
       # the locale is part of what a selector matches, and it must be the same
@@ -75,7 +82,7 @@ jobs:
           # workspace with this toolchain and these flags — the two cache
           # entries carried the same content hash and half a gigabyte of
           # duplicate dependency builds per branch.
-          shared-key: workspace-${{ matrix.platform }}
+          shared-key: workspace-${{ matrix.target.platform }}
           # Restore everywhere, save only from `main`. The repository sat at
           # 9.91 GB of its 10 GB cache allowance, which means GitHub was
           # evicting by LRU on every run and a "warm cache" was a coin toss.
@@ -116,7 +123,7 @@ jobs:
       - uses: ./.github/actions/journeys
         with:
           # Nightly runs everything, not just the gate tag, and records a cast.
-          args: ${{ github.event_name == 'schedule' && '--record' || '--tag gate' }}
+          args: ${{ github.event_name == 'schedule' && '--record' || '--tag gate' }} --shard ${{ matrix.shard }}/4
 
       # Named, because "No files were found" on the upload below is how a
       # failing run lost its own evidence once: the artifact is silent about
@@ -138,7 +145,7 @@ jobs:
         if: failure() || github.event_name == 'schedule'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: journey-evidence-${{ matrix.platform }}-${{ github.run_id }}
+          name: journey-evidence-${{ matrix.target.platform }}-${{ matrix.shard }}-${{ github.run_id }}
           path: journeys/.evidence/
           include-hidden-files: true
           retention-days: 14
