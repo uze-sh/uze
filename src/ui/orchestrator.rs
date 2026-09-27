@@ -3057,6 +3057,10 @@ struct WorkspaceModel {
     /// beside it — or on its close mark — to be told apart from one
     /// inside.
     manage_chrome: Option<super::widget::modal::Chrome>,
+    /// Whether the pointer is on the modal's close mark. Kept apart from
+    /// `hovered` because the modal seals the client: its motion never
+    /// reaches the hover the rest of the chrome reads.
+    manage_close_hovered: bool,
     /// The modal's shape as it was last closed, kept here so the layout
     /// file is written from this model alone (see `shape`).
     management_layout: uze_application::ManagementLayout,

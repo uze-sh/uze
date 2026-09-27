@@ -573,10 +573,18 @@ impl TuiModel {
                 };
                 self.source_link_hovered = matches!(hovered, Some(Hit::OpenLink(_)));
                 self.version_hovered = matches!(hovered, Some(Hit::RunningReleaseNotes));
+                self.release_notes_close_hovered = false;
                 self.hovered_offer = match hovered {
                     Some(Hit::OfferedAction(action)) => Some(action),
                     _ => None,
                 };
+                Intent::None
+            }
+            MouseEventKind::Moved if matches!(self.overlay, Overlay::ReleaseNotes(_)) => {
+                self.release_notes_close_hovered = matches!(
+                    self.hit_at(event.column, event.row),
+                    Some(Hit::ReleaseNotesClose)
+                );
                 Intent::None
             }
             _ => Intent::None,

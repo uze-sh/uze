@@ -258,9 +258,10 @@ pub(crate) fn render_modal(
     frame: &mut ratatui::Frame<'_>,
     frame_area: Rect,
     model: &TuiModel,
+    close_hovered: bool,
     hits: &mut Vec<(Rect, Hit)>,
 ) -> modal::Chrome {
-    let chrome = modal::render(frame, modal::area(frame_area), "manage");
+    let chrome = modal::render(frame, modal::area(frame_area), "manage", close_hovered);
     // A dialog open inside recedes the modal's own chrome too — its title
     // row and the row under it sit outside the surface `render` dims.
     // `render` paints its whole area afresh, so what it draws is dimmed
@@ -369,7 +370,8 @@ pub(crate) fn render(
         } => overlay::render_action_index(frame, area, model, scopes, filter, *selected, hits),
         Overlay::HarnessHelp => overlay::render_harness_help(frame, area),
         Overlay::ReleaseNotes(modal) => {
-            let targets = super::release_notes::render(frame, area, modal);
+            let targets =
+                super::release_notes::render(frame, area, modal, model.release_notes_close_hovered);
             hits.splice(
                 0..0,
                 [

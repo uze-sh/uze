@@ -273,7 +273,12 @@ pub(super) fn render_work(
     overlay: &WorkOverlay,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let chrome = modal::render(frame, work_area(area), "work");
+    let chrome = modal::render(
+        frame,
+        work_area(area),
+        "work",
+        model.hovered == Some(WorkspaceHit::WorkClose),
+    );
     let mut mine = vec![(chrome.close, WorkspaceHit::WorkClose)];
     let inner = modal::inside(chrome.area);
     let narrow = inner.width < NARROW_WIDTH;

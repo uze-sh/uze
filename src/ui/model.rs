@@ -663,6 +663,8 @@ pub(crate) struct TuiModel {
     /// Whether the pointer is on the footer's version, which opens this
     /// release's notes. Colour is the only answer a terminal has to hover.
     pub(crate) version_hovered: bool,
+    /// Whether the pointer is on the release notes' close mark.
+    pub(crate) release_notes_close_hovered: bool,
     /// The detail drawer's button under the pointer, if any.
     pub(crate) hovered_offer: Option<uze_keys::Action>,
 
@@ -816,6 +818,7 @@ impl TuiModel {
             overview_prompt_hovered: None,
             source_link_hovered: false,
             version_hovered: false,
+            release_notes_close_hovered: false,
             hovered_offer: None,
             tick: 0,
             hits: Vec::new(),
