@@ -189,12 +189,15 @@ The button leads the tab strip's extension group, in the order a change is
 read: spec, arch, code (what it intends, how it was described, what it
 is). The architect button's label shortens to `arch` to pay for the third
 button's room: at 80 columns the strip gives the tabs' room up first.
-`toggle-spec` is bound to `alt+r` (`r` for requirements) in the workspace,
-code, architect and spec scopes, and a new `spec` scope seals the keyboard
-the way `architect` does and borrows the code surface's keys for the moves
-the two share. `alt+d`, `alt+f` and `alt+b` were passed over on purpose: a
-shell in the pane deletes and moves by word on them, and the workspace
-scope takes a chord before the pane sees it.
+`toggle-spec` is bound to `alt+x` in the workspace, code, architect and
+spec scopes: a door is reached with the thumb already on Alt, so it sits
+in the row beside it. A new `spec` scope seals the keyboard the way
+`architect` does and borrows the code surface's keys for the moves the two
+share. `alt+c`, `alt+d`, `alt+f` and `alt+b` were passed over on purpose:
+a shell in the pane capitalises, deletes and moves by word on them, and
+the workspace scope takes a chord before the pane sees it. `alt+r` was the
+first choice and did not survive a Windows machine: AMD's overlay claims it
+system-wide, as NVIDIA's does `alt+z`, so the terminal never receives it.
 
 The remembered place is by checkout, like `architect_places`, and names
 the unit and the artifact (never indexes), so a change that was archived

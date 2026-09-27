@@ -9,7 +9,14 @@ opens where the selected tab is and closes with the same key.
 
 ## Spec
 
-`Alt+R` opens the plans a spec-driven tool keeps in the checkout: each
+<Demo
+  src="/uze-spec.gif"
+  poster="/uze-spec-poster.png"
+  alt="The spec surface: an agent's change opened on its proposal, its tasks read as a checklist, then the project's specs and archive."
+  caption="Alt+X opens it on the change the agent is working on."
+/>
+
+`Alt+X` opens the plans a spec-driven tool keeps in the checkout: each
 change's proposal, design and tasks, and the specs that outlive them. uze
 finds them on its own; there is nothing to declare.
 
@@ -28,34 +35,30 @@ archived.
 `p` switches a document between preview and source. `Enter` opens it in Code,
 where you can edit it. `Tab` moves between the subjects.
 
-Today it reads [OpenSpec](https://github.com/Fission-AI/OpenSpec) (an
-`openspec/` directory at the root of the checkout).
+### Tasks in the sidebar
 
-## Code
+When the selected agent is working on a change, a **tasks** section sits in
+the sidebar above the timeline. Its header says how many of that work's tasks
+are done out of all of them, even folded. Open, it lists each change with its
+own count, and clicking one opens Spec on it. Like the timeline, it is about
+the selected checkout only: the rest of the project's changes are in Spec.
 
-<Demo
-  src="/uze-code.gif"
-  poster="/uze-code-poster.png"
-  alt="The code surface: an agent's changed files and a diff, then the file tree, then the checkout as a treemap."
-  caption="Alt+G opens the changes, Alt+E the files, m the map."
-/>
+### Supported tools
 
-Everything about the checkout the selected agent works in.
+uze recognises a tool by the directory it keeps at the root of the checkout.
 
-| Key | Shows |
-| --- | --- |
-| `Alt+G` | What changed, with the diff |
-| `Alt+E` | The files. `p` switches a document between preview and source |
-| `m` | A map of the checkout: where its code is, and what changes most |
+| Tool | Found by | Status |
+| --- | --- | --- |
+| [OpenSpec](https://github.com/Fission-AI/OpenSpec) | `openspec/` | Supported |
+| [Spec Kit](https://github.com/github/spec-kit) | `.specify/` | Planned |
+| [Kiro](https://kiro.dev) | `.kiro/specs/` | Planned |
+| [Superpowers](https://github.com/obra/superpowers) | `docs/superpowers/` | Planned |
+| [GSD](https://github.com/gsd-build/get-shit-done) | `.planning/` | Planned |
 
-The file you select stays selected when you switch between them. In the files,
-`e` edits a file and `Ctrl+S` saves.
-
-Right-click a changed file, or press `.`, for what you can do with the change:
-open the file, copy its path, or discard the change. Discarding asks once,
-then puts the file back the way the last commit has it. There is no stage or
-commit here: the checkout belongs to the agent working in it, and the agent
-commits its own work.
+Each tool is a small table of where its files live and what each one is for:
+the proposal or requirements, the design, the tasks, the specs. The surface
+reads those roles, never a tool's own file names, so adding one needs no new
+screen.
 
 ## Architect
 
@@ -92,6 +95,32 @@ You don't have to write Mermaid. Ask any agent, with the `uze:architect` skill:
 The skill picks the right kind of diagram, writes it where the architect finds
 it (setting up `artifacts:` if the project has none yet), and checks that it
 draws. C4 views, sequence diagrams and flowcharts are supported.
+
+## Code
+
+<Demo
+  src="/uze-code.gif"
+  poster="/uze-code-poster.png"
+  alt="The code surface: an agent's changed files and a diff, then the file tree, then the checkout as a treemap."
+  caption="Alt+G opens the changes, Alt+E the files, m the map."
+/>
+
+Everything about the checkout the selected agent works in.
+
+| Key | Shows |
+| --- | --- |
+| `Alt+G` | What changed, with the diff |
+| `Alt+E` | The files. `p` switches a document between preview and source |
+| `m` | A map of the checkout: where its code is, and what changes most |
+
+The file you select stays selected when you switch between them. In the files,
+`e` edits a file and `Ctrl+S` saves.
+
+Right-click a changed file, or press `.`, for what you can do with the change:
+open the file, copy its path, or discard the change. Discarding asks once,
+then puts the file back the way the last commit has it. There is no stage or
+commit here: the checkout belongs to the agent working in it, and the agent
+commits its own work.
 
 <Cards>
   <Card title="uze Skills" href="/docs/plugins/skills" />

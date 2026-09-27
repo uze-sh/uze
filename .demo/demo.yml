@@ -53,6 +53,11 @@ video:
   background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
   # Twice the width the README embeds it at, so the page downscales it.
   font_size: 20
+  # The backend that draws box-drawing characters heavy and joined, the
+  # way the terminal the app is used in does: borders, rules and the
+  # architect's edges are most of what this app draws, and the default
+  # backend strokes them hairline-thin.
+  renderer: resvg
   # The app draws with the nerd glyph set (see `provision`), so the
   # renderer needs the patched font too — without it every icon is a
   # blank cell. The fallback is named so a machine without the patched
@@ -125,6 +130,16 @@ sandbox:
     # cannot bind it and the pane sits on "Starting background server...".
     - opencode service set port 49375
     - '{project}/target/release/uze setup claude codex opencode antigravity'
+    # OpenCode's official route is `opencode upgrade`, and from this sandbox
+    # it cannot tell how OpenCode was installed: the binary is the host's,
+    # reached through a link, under a HOME that is not the one it was
+    # installed for. Setup then stops short of UZE's launcher, and the
+    # agent opens with a toast saying its conversation will not be carried
+    # over. The launcher is the same link setup would have made — the one
+    # `claude`, `codex` and `agy` already have. Pointing the sandbox at the
+    # host's own ~/.opencode instead would let that upgrade run, on the
+    # operator's real install.
+    - test -e {home}/.uze/shims/opencode || ln -s {project}/target/release/uze {home}/.uze/shims/opencode
     - '{project}/target/release/uze config icons nerd'
   # The sandbox's own terminal server, by pid, verified through /proc — never
   # a pattern kill, which would match the shell running it.
@@ -336,6 +351,132 @@ fixtures:
               missing --> res
               click router href "src/router.rs"
               click handler href "src/health.rs"
+      # A project that plans its changes with OpenSpec, so the spec surface
+      # has something true to show: one change in flight, one finished and
+      # never archived, one barely started, and one put away. The design of
+      # rate limiting is not here on purpose — .demo/spec writes it
+      # untracked, which is what makes that change the checkout's own.
+      - message: 'docs(openspec): plan rate limiting, logging and config reload'
+        days_ago: 1
+        files:
+          openspec/config.yaml: |
+            schema: spec-driven
+          openspec/specs/health/spec.md: |
+            # health Specification
+
+            ## Purpose
+            Says whether the service can answer, for the load balancer and
+            for whoever is on call.
+
+            ## Requirements
+            ### Requirement: The service reports its health
+            The service SHALL answer `GET /health` with `200` and
+            `{"status":"ok"}` while it can serve requests.
+
+            #### Scenario: A healthy service
+            - **WHEN** `/health` is requested
+            - **THEN** the answer SHALL be `200` with `{"status":"ok"}`
+          openspec/specs/routing/spec.md: |
+            # routing Specification
+
+            ## Purpose
+            Maps a request's path to the handler that answers it.
+
+            ## Requirements
+            ### Requirement: An unknown path is answered, not dropped
+            A path the route table does not carry SHALL be answered with `404`.
+
+            #### Scenario: A path nobody routes
+            - **WHEN** `/nope` is requested
+            - **THEN** the answer SHALL be `404` naming the path
+          openspec/changes/archive/2026-09-18-add-health-endpoint/proposal.md: |
+            ## Why
+
+            The load balancer has no way to tell a live instance from a
+            dead one.
+
+            ## What Changes
+
+            - `GET /health` answers `200` while the service can serve.
+          openspec/changes/archive/2026-09-18-add-health-endpoint/tasks.md: |
+            ## 1. Endpoint
+
+            - [x] 1.1 Add `health::health`
+            - [x] 1.2 Route `/health` to it
+          openspec/changes/add-rate-limiting/proposal.md: |
+            ## Why
+
+            One noisy client can take the service down for everyone.
+            Requests need a budget per client, and a clear answer when it
+            runs out.
+
+            ## What Changes
+
+            - A token bucket per client address, refilled every second.
+            - `429 Too Many Requests` with a `Retry-After` header when the
+              bucket is empty.
+            - The budget is set in `config.toml`, under `[limits]`.
+
+            ## Impact
+
+            - `src/router.rs` asks the limiter before dispatching.
+            - A new `src/limiter.rs`.
+          openspec/changes/add-rate-limiting/tasks.md: |
+            ## 1. Limiter
+
+            - [x] 1.1 Token bucket with a refill clock
+            - [x] 1.2 One bucket per client address
+            - [x] 1.3 Read the budget from `config.toml`
+
+            ## 2. Routing
+
+            - [ ] 2.1 Ask the limiter before dispatching
+            - [ ] 2.2 Answer `429` with `Retry-After`
+
+            ## 3. Proof
+
+            - [ ] 3.1 A burst past the budget is refused
+            - [ ] 3.2 The bucket refills after a second
+          openspec/changes/add-rate-limiting/specs/rate-limiting/spec.md: |
+            ## ADDED Requirements
+
+            ### Requirement: A client past its budget is told to wait
+            The service SHALL answer `429` with a `Retry-After` header to a
+            client that has spent its request budget.
+
+            #### Scenario: A burst
+            - **WHEN** a client sends more requests in a second than its
+              budget allows
+            - **THEN** the requests past the budget SHALL be answered `429`
+          openspec/changes/add-request-logging/proposal.md: |
+            ## Why
+
+            Nobody can say what the service answered, or how slowly.
+
+            ## What Changes
+
+            - One line per request: method, path, status, duration.
+          openspec/changes/add-request-logging/tasks.md: |
+            ## 1. Logging
+
+            - [x] 1.1 Log method, path and status
+            - [x] 1.2 Log the duration
+            - [x] 1.3 Respect the `log` level in `config.toml`
+          openspec/changes/add-config-reload/proposal.md: |
+            ## Why
+
+            Changing a setting means restarting the service.
+
+            ## What Changes
+
+            - `SIGHUP` re-reads `config.toml` without dropping connections.
+          openspec/changes/add-config-reload/tasks.md: |
+            ## 1. Reload
+
+            - [x] 1.1 Catch `SIGHUP`
+            - [ ] 1.2 Re-read `config.toml`
+            - [ ] 1.3 Swap the settings atomically
+            - [ ] 1.4 Log what changed
       - message: 'fix(api): return 404 for an unknown route'
         days_ago: 1
         files:
@@ -512,8 +653,18 @@ beats:
   # look flaky: `probe` keeps the same client across experiments, a take
   # never does.) The proof is the file the status bar names, because the
   # ladder in the header lists every level whether or not you are on one.
+  # The three buttons read in the order a change is read: what it
+  # intends, how it was described, what it is. Spec first, straight across
+  # from the code surface; the proof is a band heading only the spec
+  # surface draws, because the change names are also in the timeline.
+  - say: what the project plans, and how far each change has got
+    click: spec
+    in: strip
+    expect: READY TO ARCHIVE
+    expect_timeout: 10
+    pause: 3.0
   - say: what the project wrote down about itself, drawn in cells
-    click: architect
+    click: arch
     in: strip
     expect: system-context\.mmd
     expect_timeout: 10
@@ -533,7 +684,7 @@ beats:
   # a selection, a mode — so how many it takes to leave depends on how deep
   # the scene went. The lit button closes it from any depth, and the proof
   # is the agent under it drawing again: OpenCode's own footer.
-  - click: architect
+  - click: arch
     in: strip
     expect: ctrl\+p commands
     expect_timeout: 6
@@ -578,7 +729,7 @@ beats:
   # Back where it opened, with both agents still there: the same chord, and
   # a last frame that is the product rather than a settings screen.
   - key: C-o
-    expect: architect
+    expect: spec.+arch.+code
     expect_in: strip
     expect_timeout: 6
     # The strip is drawn under the modal too, so it is the modal's own

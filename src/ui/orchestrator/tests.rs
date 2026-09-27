@@ -980,14 +980,14 @@ mod workspace_tests {
             ('g', "pane"),
             ('a', "architect"),
             ('a', "pane"),
-            ('r', "spec"),
+            ('x', "spec"),
             ('a', "architect"),
-            ('r', "spec"),
+            ('x', "spec"),
             ('e', "code Contents"),
-            ('r', "spec"),
+            ('x', "spec"),
             ('g', "code Diff"),
-            ('r', "spec"),
-            ('r', "pane"),
+            ('x', "spec"),
+            ('x', "pane"),
         ] {
             driven.frame();
             driven.press_key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::ALT));
