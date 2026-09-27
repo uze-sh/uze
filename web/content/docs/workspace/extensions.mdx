@@ -26,11 +26,14 @@ finds them on its own; there is nothing to declare.
 | Specs | The requirements that outlive the changes |
 | Archive | Finished changes, newest first |
 
+A subject appears only when the tool keeps it: Spec Kit archives nothing, so
+a Spec Kit project has no Archive.
+
 Changes are grouped by where they stand. **This checkout** is the change the
 agent in the selected tab is working on, found from the files its branch
-touched, and it opens first. **In progress** comes next, and **ready to
-archive** holds changes whose tasks are all done but that were never
-archived.
+touched, and it opens first. **In progress** comes next. A change whose tasks
+are all done sits in **ready to archive** when its tool archives, and in
+**done** when it does not; done opens folded, since it only grows.
 
 `p` switches a document between preview and source. `Enter` opens it in Code,
 where you can edit it. `Tab` moves between the subjects.
@@ -50,7 +53,7 @@ uze recognises a tool by the directory it keeps at the root of the checkout.
 | Tool | Found by | Status |
 | --- | --- | --- |
 | [OpenSpec](https://github.com/Fission-AI/OpenSpec) | `openspec/` | Supported |
-| [Spec Kit](https://github.com/github/spec-kit) | `.specify/` | Planned |
+| [Spec Kit](https://github.com/github/spec-kit) | `.specify/` | Supported |
 | [Kiro](https://kiro.dev) | `.kiro/specs/` | Planned |
 | [Superpowers](https://github.com/obra/superpowers) | `docs/superpowers/` | Planned |
 | [GSD](https://github.com/gsd-build/get-shit-done) | `.planning/` | Planned |
@@ -59,6 +62,17 @@ Each tool is a small table of where its files live and what each one is for:
 the proposal or requirements, the design, the tasks, the specs. The surface
 reads those roles, never a tool's own file names, so adding one needs no new
 screen.
+
+| | OpenSpec | Spec Kit |
+| --- | --- | --- |
+| A change | `openspec/changes/<name>/` | `specs/<NNN-name>/` |
+| Why, how, tasks | `proposal.md`, `design.md`, `tasks.md` | `spec.md`, `plan.md` and what it writes beside it, `tasks.md` |
+| Specs | `openspec/specs/<capability>/spec.md` | `.specify/memory/constitution.md` |
+| Archive | `openspec/changes/archive/` | none |
+
+A checkout that keeps both lists them together, each change named with its
+tool. Contracts written as YAML, JSON, GraphQL or protobuf are listed beside
+the documents and shown as source.
 
 ## Architect
 
