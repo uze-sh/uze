@@ -553,6 +553,10 @@ mod tests {
                 // reset is rare enough to live on its button and menu.
                 "change-key",
                 "reset-key",
+                // On the Marketplace rail the removal key already reaches it:
+                // `r` removes the thing you are on, and there that is a
+                // marketplace.
+                "remove-marketplace",
                 "install-project-environment",
                 "open-glossary",
                 "apply-profile",

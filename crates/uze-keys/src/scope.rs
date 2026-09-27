@@ -120,7 +120,7 @@ scopes! {
     ManagementSidebar => "management-sidebar", "The route list", Management,
         seals: false, text: false;
     Overview => "overview", "Overview", Management, seals: false, text: false;
-    Plugins => "plugins", "Plugins", Management, seals: false, text: false;
+    Plugins => "plugins", "Marketplace", Management, seals: false, text: false;
     Extensions => "extensions", "Extensions", Management, seals: false, text: false;
     Harnesses => "harnesses", "Integrations", Management, seals: false, text: false;
     Profiles => "profiles", "Profiles", Management, seals: false, text: false;

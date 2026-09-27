@@ -66,8 +66,8 @@ scenes:
         expect: Overview
         expect_timeout: 20
         pause: 1.0
-      - click: "Plugins"
-        say: open the Plugins screen from the sidebar
+      - click: "Marketplace"
+        say: open the Marketplace screen from the sidebar
         in: sidebar
         expect: "skills"
       - click: "Filter plugins"

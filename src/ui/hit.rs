@@ -3,19 +3,20 @@
 
 use ratatui::layout::{Position, Rect};
 
-use super::model::{Focus, Overlay, ResizablePanel, Route, TuiModel};
+use super::model::{Focus, Overlay, PluginPane, ResizablePanel, Route, TuiModel};
 use super::worker::Intent;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Hit {
     Route(Route),
     MarketplaceRow(usize),
-    /// A marketplace group's header row — clicking it expands/collapses
-    /// that group instead of selecting a plugin.
-    MarketplaceGroupToggle(String),
-    /// A plugin detail's Source card — jumps list selection to that
-    /// marketplace's header, expanding it first if it's currently
-    /// collapsed.
+    /// A plugin row's chevron, by position in the visible list: unfolds or
+    /// folds its resources without the row's own click behind it.
+    TogglePluginResources(usize),
+    /// An entry of the Plugins rail; `None` is "All".
+    PluginMarket(Option<String>),
+    /// A plugin detail's Source card — selects that marketplace on the
+    /// rail, which is where a marketplace is described.
     JumpToMarketplace(String),
     /// The external-link glyph on that same card, by marketplace name:
     /// opens where the marketplace actually lives, in the reader's own
@@ -52,9 +53,9 @@ pub(crate) enum Hit {
     PromptHistory(usize),
     /// One row of the open index of everything, by position in it.
     ActionIndexEntry(usize),
-    /// The release notes modal's own area: a click on it is reading, and
-    /// only one outside it closes the modal.
-    ReleaseNotesBody,
+    /// An overlay's own area — the release notes, a dialog: a click on it
+    /// is reading or typing, and only one outside it closes the overlay.
+    OverlayBody,
     /// The mark in the release notes modal's corner. Ahead of the body it
     /// sits on, and like every click that is not on the body, it closes.
     ReleaseNotesClose,
@@ -123,7 +124,7 @@ impl TuiModel {
                 Some(Hit::OfferedAction(action)) => Some(*action),
                 _ => None,
             };
-            if matches!(self.hit_at(column, row), Some(Hit::ReleaseNotesBody)) {
+            if matches!(self.hit_at(column, row), Some(Hit::OverlayBody)) {
                 return Intent::None;
             }
             return match answer {
@@ -145,27 +146,32 @@ impl TuiModel {
             }
             Hit::MarketplaceRow(index) => {
                 self.remembered.plugin_screen.selected = index;
+                self.plugin_pane = PluginPane::Plugins;
                 self.focus = Focus::Content;
                 self.marketplace_inspect_intent()
             }
-            Hit::MarketplaceGroupToggle(marketplace) => {
-                self.marketplace_toggle_group(&marketplace);
+            Hit::TogglePluginResources(index) => {
+                self.remembered.plugin_screen.selected = index;
+                self.plugin_pane = PluginPane::Plugins;
+                self.focus = Focus::Content;
+                if let Some(plugin) = self.selected_marketplace_plugin() {
+                    let id = self.marketplace_plugin_id(&plugin);
+                    self.toggle_plugin_expanded(&id);
+                }
+                self.marketplace_inspect_intent()
+            }
+            Hit::PluginMarket(market) => {
+                self.select_plugin_market(market);
+                self.plugin_pane = PluginPane::Markets;
                 self.focus = Focus::Content;
                 Intent::None
             }
             Hit::JumpToMarketplace(marketplace) => {
-                self.collapsed_marketplaces.remove(&marketplace);
-                let rows = self.marketplace_rows();
-                if let Some(position) = self
-                    .visible_indices_in(&rows)
-                    .iter()
-                    .position(|&raw| rows[raw].marketplace == marketplace)
-                {
-                    self.remembered.plugin_screen.selected = position;
-                }
                 let _ = self.set_route(Route::Plugins);
+                self.select_plugin_market(Some(marketplace));
+                self.plugin_pane = PluginPane::Markets;
                 self.focus = Focus::Content;
-                self.marketplace_inspect_intent()
+                Intent::None
             }
             Hit::OpenLink(marketplace) => self
                 .remembered
@@ -257,9 +263,7 @@ impl TuiModel {
             }
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
-            Hit::ActionIndexEntry(_) | Hit::ReleaseNotesBody | Hit::ReleaseNotesClose => {
-                Intent::None
-            }
+            Hit::ActionIndexEntry(_) | Hit::OverlayBody | Hit::ReleaseNotesClose => Intent::None,
             Hit::OfferedAction(action) => self.act(action),
             Hit::KeysTrack(track) => {
                 self.dragging_keys_track = Some(track);

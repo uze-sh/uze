@@ -1,7 +1,7 @@
 //! TUI — overlay state transitions and their rendering.
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Clear, Paragraph},
@@ -13,7 +13,7 @@ use super::hit::Hit;
 use super::model::{Confirmation, Focus, Overlay, TrustedRetry, TuiModel};
 use super::worker::{Intent, TrustGrant};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::dialog::{self, CANCEL, Dialog, Tone, answer_spans};
+use crate::ui::widget::dialog::{self, CANCEL, Dialog, Tone};
 use crate::ui::widget::{Field, Surface, action_index, hint};
 
 impl TuiModel {
@@ -366,49 +366,54 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
     );
 }
 
-/// A dialog that asks for one line of text: what it is for, the field, and
-/// the keys that answer it. `confirm` is the affirmative's own word.
+/// What a dialog asking for one line of text says: its heading, what
+/// answering does, what the field is waiting for, and the affirmative's own
+/// word.
+pub(crate) struct TextPrompt<'a> {
+    pub(crate) title: &'a str,
+    pub(crate) body: &'a str,
+    pub(crate) placeholder: &'a str,
+    pub(crate) confirm: &'a str,
+}
+
+/// A dialog that asks for one line of text — the same dialog every
+/// question is, with a field between what it means and the answers.
 pub(crate) fn render_text_prompt(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
-    title: &str,
-    caption: &str,
+    prompt: &TextPrompt<'_>,
     input: &str,
-    confirm: &str,
+    hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let width = 60.min(area.width.saturating_sub(4));
-    let height = 7.min(area.height.saturating_sub(2));
-    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
-    frame.render_widget(Clear, popup);
-    let inner = modal(format!(" {title} ")).render(frame, popup);
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            caption.to_owned(),
-            theme::fg(Token::TextMuted),
-        )),
-        rows[0],
+    let keys = dialog::Keys {
+        scopes: &[uze_keys::Scope::Global, uze_keys::Scope::TextPrompt],
+        yes: Action::Activate,
+        no: Action::Dismiss,
+    };
+    let answers = dialog::render(
+        frame,
+        area,
+        &Dialog {
+            tone: Tone::Neutral,
+            title: prompt.title,
+            subject: None,
+            body: vec![prompt.body.to_owned()],
+            confirm: Some(prompt.confirm),
+            focus: None,
+            field: Some(Field::new(input, prompt.placeholder)),
+        },
+        &keys,
+        Hit::OfferedAction(Action::Dismiss),
+        Hit::OfferedAction(Action::Activate),
     );
-    let mut field = vec![Span::raw(format!("{} ", theme::glyph(Symbol::Prompt)))];
-    field.extend(Field::new(input, "").ink(Token::Accent).spans());
-    frame.render_widget(Paragraph::new(Line::from(field)), rows[1]);
-    frame.render_widget(
-        Paragraph::new(Line::from(answer_spans(
-            &[uze_keys::Scope::Global, uze_keys::Scope::TextPrompt],
-            &[
-                (uze_keys::Action::Activate, confirm),
-                (uze_keys::Action::Dismiss, "cancel"),
-            ],
-        ))),
-        rows[3],
+    // The body after the buttons it holds, so a click on the field keeps
+    // what was typed rather than closing over it.
+    hits.splice(
+        0..0,
+        answers
+            .buttons
+            .into_iter()
+            .chain([(answers.popup, Hit::OverlayBody)]),
     );
 }
 
@@ -505,6 +510,7 @@ impl Confirmation {
     fn intent(self, model: &TuiModel) -> Intent {
         match self {
             Self::RemovePlugin(id) => Intent::Remove(id),
+            Self::RemoveMarketplace(name) => Intent::RemoveMarketplace(name),
             Self::UpdatePlugin(id) => Intent::Update(id, TrustGrant::Ask),
             Self::InstallPlugin { name, marketplace } => Intent::Install {
                 name,
@@ -535,6 +541,7 @@ impl Confirmation {
             body: vec![body.to_owned()],
             confirm,
             focus,
+            field: None,
         };
         let named = |id: &str| Some(Line::from(id.to_owned()));
         match self {
@@ -544,6 +551,14 @@ impl Confirmation {
                 named(id),
                 "Takes back everything it delivered to each harness. If any of it was changed \
                  by hand, nothing is removed.",
+                Some("Remove"),
+            ),
+            Self::RemoveMarketplace(name) => dialog(
+                Tone::Danger,
+                "Remove marketplace",
+                named(name),
+                "Removes every plugin it delivered, then the marketplace itself. If any of it \
+                 was changed by hand, that plugin and the marketplace stay.",
                 Some("Remove"),
             ),
             Self::UpdatePlugin(id) => dialog(
@@ -632,7 +647,7 @@ pub(crate) fn render_confirmation(
     );
     // Prepended, because the dialog is drawn over whatever was behind it
     // and that is still in the hit list underneath.
-    hits.splice(0..0, targets);
+    hits.splice(0..0, targets.buttons);
 }
 
 /// The titled modal surface. Callers must render `Clear` over the rect

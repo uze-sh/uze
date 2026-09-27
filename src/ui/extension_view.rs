@@ -642,6 +642,7 @@ pub(crate) fn render_confirm(
             true => 1,
             false => widget::dialog::CANCEL,
         }),
+        field: None,
     };
     let keys = widget::dialog::Keys {
         scopes: &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, scope],
@@ -656,7 +657,7 @@ pub(crate) fn render_confirm(
         ViewHit::Answer(false),
         ViewHit::Answer(true),
     );
-    hits.splice(0..0, answers);
+    hits.splice(0..0, answers.buttons);
 }
 
 /// A [`ViewLayout::Board`]: the list as a row of tabs, and under it the

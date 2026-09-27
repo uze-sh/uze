@@ -12,7 +12,7 @@ use ratatui::{
 };
 use uze_theme::Token;
 
-use super::{Align, Button, Surface, button_row, text};
+use super::{Align, Button, Field, Surface, button_row, text};
 use crate::ui::theme::{self, Symbol};
 
 /// Which of a focus-carrying dialog's two answers is the way out.
@@ -67,6 +67,18 @@ pub(crate) struct Dialog<'a> {
     pub(crate) confirm: Option<&'a str>,
     /// Which answer the keyboard is on, for the dialogs that carry one.
     pub(crate) focus: Option<usize>,
+    /// What the answer needs typed, for the dialogs that ask for a line of
+    /// text: drawn after the explanation and before the answers, so it is
+    /// read, then filled, then answered.
+    pub(crate) field: Option<Field<'a>>,
+}
+
+/// Where a dialog landed: the whole of it, which a click on is not an
+/// answer, and each of its buttons with the tag it was given, the way out
+/// first.
+pub(crate) struct Answers<T> {
+    pub(crate) popup: Rect,
+    pub(crate) buttons: Vec<(Rect, T)>,
 }
 
 /// The widest a dialog is drawn: a sentence across a whole terminal is
@@ -81,8 +93,7 @@ const PAD_X: u16 = 3;
 /// to answer from the keyboard sits in the bottom border, out of the way
 /// of the reading. The height follows the wrapped text, so nothing is cut.
 ///
-/// Answers each button's rect with the tag it was given, the way out
-/// first. The caller registers them, ahead of whatever the dialog covers.
+/// The caller registers the buttons ahead of whatever the dialog covers.
 pub(crate) fn render<T: Clone>(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -90,7 +101,7 @@ pub(crate) fn render<T: Clone>(
     keys: &Keys<'_>,
     cancel: T,
     confirm: T,
-) -> Vec<(Rect, T)> {
+) -> Answers<T> {
     let width = WIDTH.min(area.width.saturating_sub(4));
     let measure = usize::from(width.saturating_sub(2 + PAD_X * 2).max(1));
     let hue = dialog.tone.token();
@@ -123,6 +134,12 @@ pub(crate) fn render<T: Clone>(
         );
     }
     lines.push(Line::default());
+    // The field's text row, then the rule under it that makes it a field.
+    let field_row = dialog.field.as_ref().map(|_| {
+        let row = lines.len() as u16;
+        lines.extend([Line::default(), Line::default(), Line::default()]);
+        row
+    });
     let buttons_row = lines.len() as u16;
     // The row the buttons are drawn over, then the same air below them as
     // above the heading.
@@ -139,16 +156,23 @@ pub(crate) fn render<T: Clone>(
         .padding(Padding::horizontal(PAD_X))
         .render(frame, popup);
     frame.render_widget(Paragraph::new(lines), inner);
-    if buttons_row >= inner.height {
-        return Vec::new();
+    if let (Some(field), Some(row)) = (&dialog.field, field_row)
+        && row + 2 <= inner.height
+    {
+        field.render(frame, Rect::new(inner.x, inner.y + row, inner.width, 2));
     }
-    buttons(
-        frame,
-        Rect::new(inner.x, inner.y + buttons_row, inner.width, 1),
-        dialog,
-        cancel,
-        confirm,
-    )
+    let buttons = if buttons_row < inner.height {
+        buttons(
+            frame,
+            Rect::new(inner.x, inner.y + buttons_row, inner.width, 1),
+            dialog,
+            cancel,
+            confirm,
+        )
+    } else {
+        Vec::new()
+    };
+    Answers { popup, buttons }
 }
 
 /// `y delete · esc cancel` — the dialog's own words for its answers, with
