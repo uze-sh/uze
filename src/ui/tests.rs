@@ -5767,3 +5767,11 @@ fn a_resource_preview_scrolls_to_its_end_and_stops() {
     );
     draw(&model);
 }
+
+#[test]
+fn both_columns_reach_the_terminals_last_row() {
+    let frame = Rect::new(0, 0, 120, 40);
+    let (sidebar, column) = super::sidebar_and_column(frame, None);
+    assert_eq!(sidebar.bottom(), frame.bottom());
+    assert_eq!(column.bottom(), frame.bottom());
+}

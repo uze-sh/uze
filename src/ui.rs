@@ -350,18 +350,11 @@ fn clamp_sidebar_width(width: u16, total_width: u16) -> u16 {
 /// Both clients' first cut of the frame: the sidebar, at the dragged width
 /// or the responsive default, and the column right of it.
 ///
-/// Flush against the top row, not inset by one — the sidebar header is
-/// the client's own top edge, and floating it a row down from the real
-/// terminal top just read as wasted vertical space. One blank row is still
-/// kept at the *bottom*: unlike the top, that gap keeps the last row from
-/// reading as clipped.
+/// Flush against both edges: a blank row at either one read as wasted
+/// room, the top's as a header floating down from the terminal's edge and
+/// the bottom's as a stray empty line under everything.
 fn sidebar_and_column(frame_area: Rect, sidebar_width_override: Option<u16>) -> (Rect, Rect) {
-    let area = Rect::new(
-        frame_area.x,
-        frame_area.y,
-        frame_area.width,
-        frame_area.height.saturating_sub(1),
-    );
+    let area = frame_area;
     let sidebar_width = sidebar_width_override
         .map(|width| clamp_sidebar_width(width, area.width))
         .unwrap_or_else(|| sidebar_width_for(area.width));
