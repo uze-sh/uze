@@ -326,14 +326,7 @@ fn discarding_a_change_asks_once_and_then_restores_it() {
     discard(&mut view);
     assert_eq!(
         menu_of(&view),
-        Some((
-            3,
-            vec![
-                "Discard changes to git_diff.rs".to_owned(),
-                "Cancel".to_owned()
-            ],
-            1
-        ))
+        Some((3, vec!["Confirm".to_owned(), "Cancel".to_owned()], 1))
     );
     press(&mut view, Command::Activate);
     assert!(view.peek_request().is_none(), "cancel restores nothing");

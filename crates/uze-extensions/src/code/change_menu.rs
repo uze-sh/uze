@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use super::{CodeOutcome, CodeView, ContentMode, Focus, file_name, request::FileRequest};
+use super::{CodeOutcome, CodeView, ContentMode, Focus, request::FileRequest};
 use crate::view::{Command, RowMenu, ViewHit};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,7 +56,7 @@ impl ChangeMenu {
             Action::OpenFile => "Open file".to_owned(),
             Action::CopyPath => "Copy path".to_owned(),
             Action::Discard => "Discard changes…".to_owned(),
-            Action::ConfirmDiscard => format!("Discard changes to {}", file_name(&self.path)),
+            Action::ConfirmDiscard => "Confirm".to_owned(),
             Action::Cancel => "Cancel".to_owned(),
         }
     }
