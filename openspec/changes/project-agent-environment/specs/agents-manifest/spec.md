@@ -172,6 +172,22 @@ for the same reason.
 - **THEN** the manifest is reported as malformed, saying UZE does not
   resolve plugin versions yet and naming `ref:` as the pin that exists
 
+### Requirement: A linked path is validated when the manifest is read
+A path in `worktrees.link` SHALL be relative, SHALL stay inside the
+repository, and SHALL be ignored by it; a path violating any of these SHALL
+be rejected when the manifest is read, not when a checkout is prepared,
+because a link to a tracked file is one the agent writes through into the
+operator's checkout.
+
+#### Scenario: A link escaping the repository is rejected at read time
+- **WHEN** a manifest links an absolute path or a path containing a parent segment
+- **THEN** the manifest is reported as malformed, naming the path
+- **AND** no environment is loaded from it
+
+#### Scenario: A link to a tracked file is rejected at read time
+- **WHEN** a manifest links a path the repository does not ignore
+- **THEN** the manifest is reported as malformed, naming the path and the reason
+
 ### Requirement: A key declared twice is an error
 The manifest SHALL be read with duplicate keys refused, rather than with
 YAML's last-one-wins default: a declaration written twice is a mistake in

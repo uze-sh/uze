@@ -59,4 +59,29 @@ and was wrong in a way no review had caught — the object an axis belongs to
 is not decidable from the design, only from asking the question the feature
 exists to ask.
 
+## More Information
+
+**2026-09-27 — what an isolated agent is given, and how its work comes home**
+(`add-portable-worktree-policy`, the change this record refined, archived
+after it). An isolated agent is placed in a checkout before its harness
+starts, and the operator's checkout is never a fallback. A checkout is a
+long-lived slot under `.worktrees/<id>`, reused by the next agent with
+ignored artifacts kept, so the count is bounded by concurrency and a Rust
+project does not pay a cold build per agent. Readiness is read from Git,
+never from what an agent says. Delivery is UZE's, on the operator's action,
+under the repository write lock: rebase the agent's branch in its own
+checkout, run the declared gate on the rebased commits, and advance the
+target **by fast-forward only**; a conflict or failed gate goes back to the
+agent, the only party holding the intent. Nothing that can hold work is
+removed automatically.
+
+Rejected: seating the first agent in the operator's checkout (the collision
+the policy exists to prevent, with the operator as the other writer); merge
+commits (they lose the granular verified commits agents produce and make
+`git bisect` worse); delivering when a pane goes quiet (quiet also means
+waiting for an answer); readiness from a hook (Git already holds the
+answer).
+
+Source change: openspec/changes/archive/2026-09-27-add-portable-worktree-policy/
+
 Source change: openspec/changes/archive/2026-09-20-add-space-kinds/

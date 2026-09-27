@@ -114,6 +114,21 @@ self-update command (`uze update` remains distribution-independent); binary
 signing; publishing to crates.io (already refused by the workspace);
 serving `https://hiukky.com/uze/install.sh` (owned outside this repo).
 
+## More Information
+
+**2026-09-27 — the installer's file updates itself** (`keep-the-installed-binary-current`).
+The self-update non-goal above is lifted, on the condition that made it a
+non-goal: nothing could tell the installer's file from one `cargo install` or
+a package manager placed. `install.sh` now writes a receipt naming the
+physical path it installed and the version that binary reported, and a
+binary replaces itself only when it *is* that file, by rename on the same
+filesystem. Any other binary is told about a release, never replaced.
+Guessing from the path was rejected because `~/.local/bin` is shared with
+other installers. The receipt is a contract between `install.sh` and the
+binary; changing its shape strands every install that relies on it.
+
+Source change: openspec/changes/archive/2026-09-27-keep-the-installed-binary-current/
+
 ## Implementation Plan
 
 - **Affected paths**: `install.sh` (repo root, canonical installer);

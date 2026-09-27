@@ -1,6 +1,6 @@
 journey: an agent authors a plugin and installs it from the marketplace it just made
 tags: [gate, cli, packages]
-proves: openspec/changes/agent-plugin-authoring
+proves: openspec/specs/plugin-authoring
 about: |
   The authoring loop as the product delivers it: one command gives a person
   — or an agent driving a person's prompt — a marketplace, registered and

@@ -58,4 +58,4 @@
 - [x] 6.2 `cargo fmt --check`, `cargo clippy --all-targets -- -D
       warnings`, `cargo test --workspace --no-fail-fast --locked`,
       `openspec validate --all --strict`.
-- [ ] 6.3 Validate by hand in an isolated TUI.
+- [x] 6.3 Validate by hand in an isolated TUI.

@@ -1,6 +1,6 @@
 journey: a project becomes its own marketplace, and its plugins ship with it
 tags: [gate, cli, packages]
-proves: openspec/changes/agent-plugin-authoring
+proves: openspec/specs/plugin-authoring
 about: |
   The local frontier: a project can be its own plugin marketplace —
   marketplace.json at the root, plugins beside it, the layout this

@@ -1,7 +1,7 @@
 //! Vendor-neutral concurrent-work isolation.
 //!
-//! See `openspec/changes/add-portable-worktree-policy/` for the change that
-//! introduced it; its ADR is numbered when that change is archived.
+//! See `openspec/changes/archive/2026-09-27-add-portable-worktree-policy/`
+//! for the change that introduced it, and ADR-053 for the decision.
 //!
 //! Isolation itself is performed where UZE launches an agent, by choosing
 //! its working directory — deterministic, and requiring nothing of the

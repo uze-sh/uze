@@ -1,6 +1,6 @@
 journey: installing with -m inside a project declares nothing the command does not state
 tags: [gate, cli, packages]
-proves: openspec/changes/flatten-the-command-grammar
+proves: openspec/specs/command-grammar
 about: |
   `-m` is the one way a caller that cannot choose a working directory states
   intent — a script, a container, the conformance Lab. Inside a project,

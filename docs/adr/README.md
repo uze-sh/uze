@@ -122,6 +122,7 @@ naming them, and the absorbed records are listed under
 - [051 — Conformance is a disposable lab outside the product, and evidence is layered](051-conformance-is-a-disposable-lab-outside-the-product.md)
 - [052 — What UZE persists is tiered by what deleting it costs, and only records climb](052-what-uze-persists-is-tiered-by-what-deleting-it-costs.md)
 - [053 — Isolation belongs to the agent, not to the space](053-isolation-belongs-to-the-agent-not-to-the-space.md)
+- [054 — Scope is reported, not positional](054-scope-is-reported-not-positional.md)
 
 ## Consolidated records
 
