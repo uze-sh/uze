@@ -9,8 +9,9 @@ about: |
 
   What the surface *shows* is screen text, which a journey only gates on.
   What it *writes* is a fact on disk — so the claim is proven through the
-  one write the surface offers: a file deleted from the selected agent's
-  changes is gone from that agent's checkout, and from nowhere else.
+  one write the Changes list offers: a new file discarded from the
+  selected agent's changes is gone from that agent's checkout, and from
+  nowhere else.
 
 world:
   project: demo-app
@@ -65,7 +66,7 @@ scenes:
       - git: { in: "{project}", dirty: false }
         about: and none in the project's own
 
-  - scene: deleting from the selected agent's changes touches its checkout alone
+  - scene: discarding the selected agent's change touches its checkout alone
     when:
       - key: "M-g"
         say: open the changes of the selected agent
@@ -73,9 +74,15 @@ scenes:
         # up; what says this one opened is the diff it is read in.
         expect: "DIFF ·"
         expect_timeout: 20
-      - key: "d"
-        say: ask to delete the change the surface selected
-        expect: confirm delete
+      - key: "."
+        say: open the actions of the change the surface selected
+        expect: "Discard changes"
+      - click: "Discard changes"
+        in: pane
+        say: ask to discard it
+        # The change is a file the last commit does not have, so throwing
+        # it away is deleting it — and the dialog says so.
+        expect: "cannot be undone"
       - key: "y"
         say: confirm
         pause: 0.5
@@ -86,7 +93,7 @@ scenes:
     then:
       - file: "{project}/.worktrees/*/src/mine_*.rs"
         count: 1
-        about: exactly one change was deleted — the other agent's survives
+        about: exactly one change was discarded — the other agent's survives
       - cmd:
           run: |
             python3 -c "
