@@ -49,15 +49,14 @@ video:
   cast: '{root}/uze-hero.cast'
   cols: 152                 # wide enough for the Integrations cards, narrow
   rows: 36                  # enough that GitHub's ~900px column stays readable
-  speed: 1.45               # reads as a person; past ~1.5 it reads as fast-forward
+  speed: 1.2                # reads as a person; at 1.45 the extension scene read as fast-forward
+  # A beat's pause is a still screen, and the renderer caps a still at its
+  # idle limit (1.5s by default) — which cut every 3s look at an extension
+  # in half. Above the longest pause, so the spec says how long a screen holds.
+  idle_limit: 3.5
   background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
   # Twice the width the README embeds it at, so the page downscales it.
   font_size: 20
-  # The backend that draws box-drawing characters heavy and joined, the
-  # way the terminal the app is used in does: borders, rules and the
-  # architect's edges are most of what this app draws, and the default
-  # backend strokes them hairline-thin.
-  renderer: resvg
   # The app draws with the nerd glyph set (see `provision`), so the
   # renderer needs the patched font too — without it every icon is a
   # blank cell. The fallback is named so a machine without the patched
@@ -625,44 +624,56 @@ beats:
     timeout: 300
     settle: 2.0
     pause: 0.2
+  # The extensions in the order a change is read, which is also the order
+  # the strip lists them: what it intends (spec), how it was described
+  # (arch), what it is (code). Each one is reached straight across from the
+  # one before — a surface's button or chord switches to it from any other
+  # — and only the last is closed, so the scene is one continuous reading.
+  #
   # Every proof below is the narrowest thing on screen that only the state
-  # being proved draws. The code surface's nav row reads `Files  Map
-  # Changes` in every one of its states, and the architect's header lists
-  # every level whether or not you are on one, so neither proves anything —
-  # it is the status bar, and the diff's own header, that do.
-  - say: its uncommitted change, in its own checkout
-    key: M-g
-    expect: 'DIFF ·'
-    expect_timeout: 10
-    refuse: no changes
-    pause: 3.0
-  - say: the same checkout as the tree it sits in, and then as a map of it
-    key: M-e
-    expect: config\.toml
-    expect_timeout: 8
-    pause: 2.2
-  - key: m
-    expect: Ranking
-    expect_timeout: 8
-    pause: 2.8
-  # Straight across, not closed first: a surface's button switches to it
-  # from the other one, and the code surface was never the destination.
-  # The surface remembers where it was left — but a take opens it exactly
-  # once, so on camera that memory is always empty and the first level is
-  # what it draws. (Driving it by hand first is what makes this assertion
-  # look flaky: `probe` keeps the same client across experiments, a take
-  # never does.) The proof is the file the status bar names, because the
-  # ladder in the header lists every level whether or not you are on one.
-  # The three buttons read in the order a change is read: what it
-  # intends, how it was described, what it is. Spec first, straight across
-  # from the code surface; the proof is a band heading only the spec
-  # surface draws, because the change names are also in the timeline.
+  # being proved draws. Change names are also in the timeline, the
+  # architect's header lists every level whether or not you are on one, and
+  # the code surface's nav row reads `Files  Map  Changes` in every one of
+  # its states — so it is a band heading, the status bar and the diff's own
+  # header that prove anything.
   - say: what the project plans, and how far each change has got
     click: spec
     in: strip
     expect: READY TO ARCHIVE
     expect_timeout: 10
-    pause: 3.0
+    pause: 2.2
+  # The status bar names the document on show, and it is the one proof here
+  # that only the state being proved draws: every change name is also in
+  # the list, and a band heading is there whatever is selected.
+  - say: a change is picked, and opened on its proposal
+    key: Down
+    expect: add-rate-limiting/proposal\.md
+    expect_timeout: 6
+    pause: 1.6
+  - say: it holds its documents — the tasks, three of seven done
+    key: Enter
+    expect: contract
+    expect_timeout: 6
+    pause: 0.8
+  - key: [Down, Down]
+    expect: add-rate-limiting/tasks\.md
+    expect_timeout: 6
+    pause: 2.8
+  - say: the specs that outlive the changes
+    key: Tab
+    expect: health/spec\.md
+    expect_timeout: 6
+    pause: 2.2
+  - say: and what was finished and put away
+    key: Tab
+    expect: 2026-09-18-add-health-endpoint/proposal\.md
+    expect_timeout: 6
+    pause: 2.2
+  # The surface remembers where it was left — but a take opens it exactly
+  # once, so on camera that memory is always empty and the first level is
+  # what it draws. (Driving it by hand first is what makes this assertion
+  # look flaky: `probe` keeps the same client across experiments, a take
+  # never does.)
   - say: what the project wrote down about itself, drawn in cells
     click: arch
     in: strip
@@ -680,15 +691,32 @@ beats:
     expect: containers\.mmd
     expect_timeout: 8
     pause: 3.0
-  # Closed by its own button, not by Escape. Escape steps *back* — a level,
-  # a selection, a mode — so how many it takes to leave depends on how deep
-  # the scene went. The lit button closes it from any depth, and the proof
-  # is the agent under it drawing again: OpenCode's own footer.
-  - click: arch
+  # By chord, straight across from the architect: its scope binds the code
+  # surface's chords too, so no Escape has to unwind the level entered above.
+  - say: and what it is — that agent's uncommitted change, in its own checkout
+    key: M-g
+    expect: 'DIFF ·'
+    expect_timeout: 10
+    refuse: no changes
+    pause: 3.4
+  - say: the same checkout as the tree it sits in, and then as a map of it
+    key: M-e
+    expect: config\.toml
+    expect_timeout: 8
+    pause: 2.2
+  - key: m
+    expect: Ranking
+    expect_timeout: 8
+    pause: 2.8
+  # Closed by its own button, not by Escape. Escape steps *back* — a mode, a
+  # selection — so how many it takes to leave depends on how deep the scene
+  # went. The lit button closes it from any depth, and the proof is the
+  # agent under it drawing again: OpenCode's own footer.
+  - click: code
     in: strip
     expect: ctrl\+p commands
     expect_timeout: 6
-    refuse: containers\.mmd
+    refuse: Ranking
     pause: 0.8
   # By its chord, not by a label: management is reached through a mark in
   # the sidebar now, and a glyph is a worse target than the key the product
@@ -708,10 +736,13 @@ beats:
     expect: Harnesses detected
     expect_timeout: 8
     pause: 2.0
-  - click: Plugins
+  # The plugins live under Marketplace since the screen became a rail of
+  # marketplaces beside a plugin table; the rail's heading is the one thing
+  # only this screen draws.
+  - click: Marketplace
     in: sidebar
     offset: 2
-    expect: Filter plugins
+    expect: MARKETPLACES
     expect_timeout: 8
     pause: 2.1
   - click: Extensions

@@ -34,16 +34,14 @@ video:
   cols: 152
   rows: 36
   speed: 1.3
+  # Above the longest pause: the renderer caps a still screen at its idle
+  # limit (1.5s by default), which halved every look the beats ask for.
+  idle_limit: 3.5
   background: 0a0c0d
   # Twice the column it is embedded in, so the page downscales rather
   # than stretches. The grid above is untouched by this — it only
   # multiplies the pixels each cell is drawn with.
   font_size: 20
-  # The backend that draws box-drawing characters heavy and joined, the
-  # way the terminal the app is used in does: borders, rules and the
-  # architect's edges are most of what this app draws, and the default
-  # backend strokes them hairline-thin.
-  renderer: resvg
   # The app draws with the nerd glyph set (see `provision`), so the renderer
   # needs the patched font too — without it every icon is a blank cell. The
   # fallback is named so a machine without the patched build still renders
