@@ -3252,10 +3252,30 @@ impl WorkspaceModel {
                     }
                 }
             }
+            ClientEvent::SelectionText { text, .. } => self.copy(text),
             ClientEvent::Error { message } => self.error = Some(message),
             ClientEvent::Detached | ClientEvent::Stopped => {}
         }
     }
+    /// Puts a released selection's text on the clipboard. A drag that
+    /// covered only blanks copies nothing and says nothing.
+    fn copy(&mut self, text: String) {
+        if text.is_empty() {
+            return;
+        }
+        let characters = text.chars().count();
+        self.raise_toast(
+            ToastKind::Done,
+            "copied",
+            format!(
+                "{characters} character{} to the clipboard",
+                if characters == 1 { "" } else { "s" }
+            ),
+            None,
+        );
+        self.clipboard = Some(text);
+    }
+
     /// Clears an in-progress tab drag if the tab it names no longer exists
     /// — closed by another client, or by a concurrent `CloseTab`, while
     /// this one was mid-drag. Called on every `SessionUpdated`; leaves an
