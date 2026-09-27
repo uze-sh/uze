@@ -2,7 +2,7 @@
 //!
 //! The agentic side of the product: skills, agents, MCP — everything
 //! installable from a marketplace. Three columns: the marketplaces down the
-//! left (an "All" first, then every registered one, the embedded
+//! left (an "all" first, then every registered one, the embedded
 //! `uze-official` snapshot badged as official, and a "local" group for
 //! ad-hoc installs no catalogue knows about, so a direct install never
 //! disappears from the TUI); the plugins of the one selected beside them,
@@ -167,15 +167,18 @@ fn plural(count: usize) -> &'static str {
 
 /// The group name as rendered: "uze-official" reads oddly right above a
 /// child plugin that's *also* named "uze" — the official mark already says
-/// what the suffix did — and the synthetic local group gets a capitalized
-/// label instead of the bare word.
+/// what the suffix did. Every other name is drawn as it is spelled, in the
+/// lowercase the rail's own entries are: the local group and "all" beside
+/// them are names in the same list, not headings over it.
 fn group_display_name(marketplace: &str) -> &str {
     match marketplace {
         "uze-official" => "uze",
-        "local" => "Local",
         other => other,
     }
 }
+
+/// The rail's first entry, which narrows to no marketplace.
+const EVERY_MARKET: &str = "all";
 
 /// The ground and the edge mark of a selected row. The keyboard's own
 /// row wears the accent bar; a selection the keyboard has left keeps a
@@ -223,7 +226,7 @@ fn render_rail(
             market_badge(model, name, &offered)
         });
         let (state, bar) = selection(entry == market, focused);
-        let name = entry.map_or("All", group_display_name);
+        let name = entry.map_or(EVERY_MARKET, group_display_name);
         let name_room =
             (width as usize).saturating_sub(2 + COUNT_WIDTH + text::columns(&badge) + 1);
         let name_style = if entry == market {
@@ -925,7 +928,7 @@ fn render_market_drawer(
     let mut lines: Vec<Line<'static>> = vec![
         Line::from(heading),
         Line::from(Span::styled(
-            text::elide(market.map_or("All", group_display_name), room),
+            text::elide(market.map_or(EVERY_MARKET, group_display_name), room),
             theme::fg_bold(Token::TextBright),
         )),
         Line::from(""),
