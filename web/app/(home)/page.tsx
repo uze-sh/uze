@@ -4,6 +4,7 @@ import { InstallCommand } from '@/components/install-command';
 import { TrademarkNotice } from '@/components/trademark-notice';
 import matrix from '@/lib/harness-matrix.json';
 import { UzeMark } from '@/components/uze-mark';
+import { HeroIllustration } from '@/components/hero-illustration';
 
 type Capability = 'context' | 'skills' | 'mcp' | 'agents' | 'hooks' | 'session' | 'package';
 
@@ -145,12 +146,19 @@ export default function HomePage() {
           </Link>{' '}
           on anything else.
         </p>
+      </section>
 
+      {/* What uze does, drawn: a screen of its own, the same height as the
+          hero, so the illustration is never read against the headline or
+          the recording. It carries no ground of its own and follows the
+          theme. */}
+      <section className="flex w-full max-w-6xl min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] items-center pt-14 pb-28 sm:pb-36">
+        <HeroIllustration />
       </section>
 
       {/* The recording. `prefers-reduced-motion` gets a still frame instead,
           and <source media> means only the matched file is ever fetched. */}
-      <section className="w-full max-w-6xl pt-12 pb-24 sm:pb-28">
+      <section className="w-full max-w-6xl pt-16 pb-24 sm:pt-20 sm:pb-28">
         <figure className="m-0">
           <div className="uze-demo-frame border border-line" style={{ background: '#0a0c0d' }}>
             <picture>
