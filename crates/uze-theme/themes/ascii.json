@@ -74,8 +74,12 @@
     "manage": "=",
     "code": "",
     "architect": "",
+    "spec": "",
     "map": "",
     "changes": "",
+    "in-flight": "",
+    "contract": "",
+    "finished": "",
 
     "text.ellipsis": "...",
     "text.em-dash": "--",

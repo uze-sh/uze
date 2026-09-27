@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     DirEntry,
-    code::highlight::FALLBACK_SYNTAX_THEME,
+    shared::highlight::FALLBACK_SYNTAX_THEME,
     view::{
         Command, Content, LineTone, MarkerSide, NavigatorRow, Role, RowIcon, RowMark, Size, Span,
         ViewHit,
@@ -124,7 +124,7 @@ fn flat_rows(view: &CodeView) -> Vec<(String, String)> {
         .into_iter()
         .filter_map(|row| match row {
             NavigatorRow::Item { name, detail, .. } => Some((name, detail)),
-            NavigatorRow::Group { .. } => None,
+            _ => None,
         })
         .collect()
 }
@@ -1161,7 +1161,7 @@ macro_rules! highlight_fixtures {
 /// that is how `.fs` passed as a GLSL shader while an F# file drew plain.
 #[test]
 fn every_language_fixture_is_read_as_its_own_language() {
-    use crate::code::highlight;
+    use crate::shared::highlight;
     let wrong: Vec<String> = highlight_fixtures![
         ("batch.bat", "Batch File"),
         ("c.c", "C"),
@@ -2181,6 +2181,7 @@ fn the_changes_list_marks_status_rather_than_kind() {
         rows.iter().all(|row| match row {
             crate::view::NavigatorRow::Group { icon, .. }
             | crate::view::NavigatorRow::Item { icon, .. } => *icon == crate::view::RowIcon::None,
+            crate::view::NavigatorRow::Band { .. } | crate::view::NavigatorRow::Gap => true,
         }),
         "the changes list asked for a file icon: {rows:?}"
     );

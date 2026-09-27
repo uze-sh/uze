@@ -41,12 +41,12 @@ mod workspace_tests {
         AgentIdentity, AgentTabStatus, AgentView, Attach, CHIME_COOLDOWN, CHIME_SETTLE,
         CommitDetailPopup, CommitDetailResolution, CompletionBehavior, DeliveryResolution,
         DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution, PendingDrop,
-        PlacementResolution, RootPicker, ScrollDirection, TabDragGroup, UpstreamSync, Viewport,
-        WorkOverlay, WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels,
-        agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
-        can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
-        forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
-        open_commit_detail, pane_relative, pending_tab_drop,
+        PlacementResolution, RootPicker, ScrollDirection, SpecResolution, SpecSummaryState,
+        TabDragGroup, UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView,
+        WorkspaceModel, adopt_agent_labels, agent_activity_frame, agent_identity_for_tab,
+        answered_or, blank_pane, can_close_tab_from_menu, checkout_lost, encode_mouse,
+        evaluation_key, forward_paste, forward_scroll, next_agent_label, next_shell_label,
+        open_architect, open_code, open_commit_detail, open_spec, pane_relative, pending_tab_drop,
         render::{
             self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
@@ -958,11 +958,13 @@ mod workspace_tests {
             match (
                 model.code.as_ref().map(CodeView::showing),
                 model.architect.is_some(),
+                model.spec.is_some(),
             ) {
-                (Some(mode), false) => format!("code {mode:?}"),
-                (None, true) => "architect".to_owned(),
-                (None, false) => "pane".to_owned(),
-                (Some(_), true) => panic!("two surfaces at once"),
+                (Some(mode), false, false) => format!("code {mode:?}"),
+                (None, true, false) => "architect".to_owned(),
+                (None, false, true) => "spec".to_owned(),
+                (None, false, false) => "pane".to_owned(),
+                _ => panic!("two surfaces at once"),
             }
         };
         for (key, expected) in [
@@ -978,6 +980,14 @@ mod workspace_tests {
             ('g', "pane"),
             ('a', "architect"),
             ('a', "pane"),
+            ('x', "spec"),
+            ('a', "architect"),
+            ('x', "spec"),
+            ('e', "code Contents"),
+            ('x', "spec"),
+            ('g', "code Diff"),
+            ('x', "spec"),
+            ('x', "pane"),
         ] {
             driven.frame();
             driven.press_key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::ALT));
@@ -1007,6 +1017,263 @@ mod workspace_tests {
             .expect("the code button");
         driven.press(button.x, button.y);
         assert!(driven.attach.model.code.is_none(), "closed in one click");
+    }
+
+    /// The spec button stands first of the three and is the surface's
+    /// switch like the others: a click puts it where the pane is, lit, and
+    /// a second click on it puts it away.
+    /// Open, the spec section keeps a row of air under its last change, so
+    /// the timeline's header below it starts a block of its own; folded,
+    /// it is its header alone.
+    #[test]
+    fn an_open_spec_section_keeps_air_under_its_last_change() {
+        let summary = uze_extensions::spec::Summary {
+            changes: vec![
+                uze_extensions::spec::ChangeSummary {
+                    name: "a".to_owned(),
+                    progress: None,
+                },
+                uze_extensions::spec::ChangeSummary {
+                    name: "b".to_owned(),
+                    progress: None,
+                },
+            ],
+            done: 0,
+            total: 0,
+        };
+        assert_eq!(render::spec_summary_height(&summary, true, 40), 1 + 2 + 1);
+        assert_eq!(render::spec_summary_height(&summary, false, 40), 1);
+    }
+
+    /// The sidebar's spec section says, folded, how far the checkout's own
+    /// changes have got; opened, it folds the timeline away and lists them;
+    /// and a change opens the surface on it.
+    #[test]
+    fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
+        use uze_extensions::spec::{ChangeSummary, Progress, Summary};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-section"));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        model.timeline_collapsed = false;
+        let cwd = model.focused_cwd().expect("a tab in front");
+        model.remembered.spec_summary = Some(SpecSummaryState {
+            cwd,
+            summary: Some(Summary {
+                changes: vec![
+                    ChangeSummary {
+                        name: "mine".to_owned(),
+                        progress: Some(Progress { done: 1, total: 4 }),
+                    },
+                    ChangeSummary {
+                        name: "theirs".to_owned(),
+                        progress: Some(Progress { done: 2, total: 2 }),
+                    },
+                ],
+                done: 3,
+                total: 6,
+            }),
+            checked_at: std::time::Instant::now(),
+        });
+        let mut driven = driven(model, &home);
+        driven.frame();
+
+        let drawn = |driven: &Driven<'_>, wanted: ViewHit| {
+            driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find(|(_, hit)| *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(wanted)))
+                .map(|(rect, _)| *rect)
+                .unwrap_or_else(|| panic!("{wanted:?} is not in the sidebar"))
+        };
+        let header = drawn(&driven, ViewHit::ToggleSection);
+        driven.press(header.x, header.y);
+        assert!(
+            driven.attach.model.spec_summary_open,
+            "opened from its header"
+        );
+        assert!(
+            driven.attach.model.timeline_collapsed,
+            "one section open at a time"
+        );
+
+        driven.frame();
+        let row = drawn(&driven, ViewHit::SelectItem(1));
+        driven.press(row.x, row.y);
+        let place = driven
+            .attach
+            .model
+            .spec
+            .as_ref()
+            .expect("the surface opened")
+            .place();
+        assert_eq!(
+            place,
+            Some(uze_extensions::spec::SpecPlace::change("theirs")),
+            "on the change that was clicked"
+        );
+    }
+
+    #[test]
+    fn the_spec_button_opens_and_closes_the_spec_surface() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-button"));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let order: Vec<WorkspaceHit> = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .filter(|(_, hit)| {
+                matches!(
+                    hit,
+                    WorkspaceHit::OpenSpec | WorkspaceHit::OpenArchitect | WorkspaceHit::OpenFiles
+                )
+            })
+            .map(|(rect, hit)| (rect.x, *hit))
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .into_values()
+            .collect();
+        assert_eq!(
+            order,
+            [
+                WorkspaceHit::OpenSpec,
+                WorkspaceHit::OpenArchitect,
+                WorkspaceHit::OpenFiles
+            ],
+            "intent, description, the code itself"
+        );
+
+        let button = hit_rect(&driven.attach.model, WorkspaceHit::OpenSpec);
+        driven.press(button.x, button.y);
+        assert!(driven.attach.model.spec.is_some(), "opened by its button");
+        assert!(driven.attach.model.code.is_none());
+        assert!(driven.attach.model.architect.is_none());
+
+        driven.frame();
+        let button = hit_rect(&driven.attach.model, WorkspaceHit::OpenSpec);
+        driven.press(button.x, button.y);
+        assert!(driven.attach.model.spec.is_none(), "closed in one click");
+    }
+
+    /// The surface seals the keyboard: a letter it has no use for is not
+    /// typed into the program underneath it.
+    #[test]
+    fn a_key_typed_over_the_spec_surface_does_not_reach_the_pane() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-seals"));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        open_spec(&mut model);
+        let mut driven = driven(model, &home);
+        driven.frame();
+        driven.sent();
+
+        driven.press_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+
+        assert!(driven.attach.model.spec.is_some());
+        assert!(
+            !driven
+                .sent()
+                .iter()
+                .any(|request| matches!(request, ClientRequest::Input { .. })),
+            "nothing reached the pane"
+        );
+    }
+
+    /// An answer carries the checkout it was read for, so one landing
+    /// after the surface was closed, or reopened on another checkout, is
+    /// dropped rather than drawn.
+    #[test]
+    fn a_spec_answer_for_a_surface_since_closed_or_moved_is_dropped() {
+        let (mut model, first, second) = two_agents_with_shells();
+        let answer = |root: PathBuf| SpecResolution {
+            root: root.clone(),
+            answer: uze_extensions::spec::SpecAnswer {
+                root,
+                branch: "main".to_owned(),
+                theme: String::new(),
+                found: uze_extensions::spec::Found::NoLayout,
+                subjects: Vec::new(),
+            },
+        };
+        model.session.as_mut().expect("session").select_tab(first);
+        open_spec(&mut model);
+        let asked_for = model.spec_root.clone().expect("a root");
+        model.close_spec();
+        assert!(!model.absorb_spec(answer(asked_for.clone())));
+        assert!(model.spec.is_none(), "nothing reopened");
+
+        model.session.as_mut().expect("session").select_tab(second);
+        open_spec(&mut model);
+        if model.spec_root.as_ref() != Some(&asked_for) {
+            assert!(
+                !model.absorb_spec(answer(asked_for.clone())),
+                "an answer about another checkout is not drawn"
+            );
+        }
+        let here = model.spec_root.clone().expect("a root");
+        assert!(model.absorb_spec(answer(here)), "its own answer lands");
+    }
+
+    /// Coming back to a checkout's spec surface returns to the document it
+    /// was left on, by name.
+    #[test]
+    fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
+        use uze_extensions::{spec, view::Command};
+
+        let (mut model, first, _second) = two_agents_with_shells();
+        let answer = |model: &mut WorkspaceModel| {
+            let artifact = |name: &str| spec::Artifact {
+                path: PathBuf::from(format!("/repo/openspec/changes/x/{name}.md")),
+                relative: format!("{name}.md"),
+                role: match name {
+                    "proposal" => spec::Role::Why,
+                    _ => spec::Role::How,
+                },
+                name: name.to_owned(),
+                text: Ok(format!("# {name}\n")),
+            };
+            model.spec.as_mut().expect("open").absorb(spec::SpecAnswer {
+                root: PathBuf::from("/repo"),
+                branch: "main".to_owned(),
+                theme: String::new(),
+                found: spec::Found::Units {
+                    dialects: vec!["OpenSpec"],
+                    units: vec![spec::Unit {
+                        subject: spec::Subject::Changes,
+                        name: "x".to_owned(),
+                        relative: "openspec/changes/x".to_owned(),
+                        dialect: "OpenSpec",
+                        artifacts: vec![artifact("proposal"), artifact("design")],
+                        progress: None,
+                        own: false,
+                    }],
+                },
+                subjects: vec![spec::Subject::Changes],
+            });
+        };
+        let space = uze_extensions::view::Size {
+            width: 120,
+            height: 40,
+        };
+
+        model.session.as_mut().expect("session").select_tab(first);
+        open_spec(&mut model);
+        answer(&mut model);
+        for command in [Command::Expand, Command::SelectNext, Command::SelectNext] {
+            spec::handle_command(model.spec.as_mut().expect("open"), command, space);
+        }
+        let left_on = model.spec.as_ref().expect("open").place();
+        model.close_spec();
+
+        open_spec(&mut model);
+        answer(&mut model);
+        assert_eq!(model.spec.as_ref().expect("open").place(), left_on);
+        assert!(left_on.is_some());
     }
 
     /// A surface's button is a switch: the press is answered by it

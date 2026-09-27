@@ -195,7 +195,7 @@ fn the_artifacts_go_round_and_an_area_opens_on_its_first() {
         .iter()
         .filter_map(|row| match row {
             NavigatorRow::Group { id, .. } => Some(*id),
-            NavigatorRow::Item { .. } => None,
+            _ => None,
         })
         .collect();
     assert_eq!(areas.len(), 3);

@@ -4,11 +4,13 @@
 //! harness registry: one crate, one module per extension, one registry
 //! entry point ([`registry::ExtensionRegistry`]) naming the set.
 //!
-//! Two ship today. [`code`] draws the active checkout four ways: what
+//! Three ship today, one per question a reader brings to a checkout.
+//! [`spec`] answers what it *intends*: the proposals, designs, tasks and
+//! specs a spec-driven-development tool keeps, read as documents.
+//! [`architect`] answers what somebody *described*, drawing architecture
+//! diagrams in cells. [`code`] answers what it *is*, four ways: what
 //! changed in it, what it contains, its commit timeline, and a map of
-//! where its lines are.
-//! [`architect`] is a proof of concept that draws architecture diagrams
-//! in cells. Another is a module with its own `CATALOG` entry, one
+//! where its lines are. Another is a module with its own `CATALOG` entry, one
 //! registration in `ExtensionRegistry::builtin`, and one [`ExtensionHit`]
 //! variant per surface it draws, not a new crate.
 //!
@@ -47,6 +49,7 @@ pub mod architect;
 pub mod code;
 pub mod registry;
 mod shared;
+pub mod spec;
 pub mod view;
 
 /// Something a viewer did inside an extension's own surface, addressed to
@@ -71,6 +74,10 @@ pub enum ExtensionHit {
     CodeTimeline(view::ViewHit),
     /// The architect extension's full-frame surface.
     Architect(view::ViewHit),
+    /// The spec extension's full-frame surface.
+    Spec(view::ViewHit),
+    /// The spec extension's sidebar section — its changes in flight.
+    SpecSummary(view::ViewHit),
 }
 
 /// One entry of a directory listing, as [`Host::list_dir`] answers it.

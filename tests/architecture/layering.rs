@@ -476,7 +476,7 @@ fn no_chrome_glyph_is_written_where_it_is_drawn() {
             "the adapter: the one place a symbol resolves to its glyph",
         ),
         (
-            "crates/uze-extensions/src/code/markdown.rs",
+            "crates/uze-extensions/src/shared/markdown.rs",
             "a rendered document's own typography — a rule and a quote bar \
              are the document's structure drawn as text, content rather \
              than chrome, the way syntax colour is",

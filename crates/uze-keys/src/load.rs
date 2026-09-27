@@ -317,6 +317,13 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Workspace, "alt+g", Action::ToggleChanges),
         bind(Scope::Workspace, "alt+e", Action::ToggleFiles),
         bind(Scope::Workspace, "alt+a", Action::ToggleArchitect),
+        // Under the thumb that is already on Alt, beside the other doors.
+        // Not `z`: GPU overlays claim it system-wide (NVIDIA's; AMD's takes
+        // `r`, the first choice here), so the terminal never receives it.
+        // Not `c`, `d`, `f` or `b`: a shell in the pane capitalises, deletes
+        // and moves by word on those, and the workspace scope takes a chord
+        // before the pane ever sees it.
+        bind(Scope::Workspace, "alt+x", Action::ToggleSpec),
         bind(Scope::Workspace, "alt+n", Action::NewAgent),
         // The container of agents, beside the agent's own chord: `s` for
         // space, on the same modifier.
@@ -349,10 +356,12 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Code, "pageup", Action::ScrollPageUp),
         bind(Scope::Code, "alt+e", Action::ToggleFiles),
         bind(Scope::Code, "alt+a", Action::ToggleArchitect),
+        bind(Scope::Code, "alt+x", Action::ToggleSpec),
         bind(Scope::Architect, "esc", Action::Dismiss),
         bind(Scope::Architect, "alt+a", Action::ToggleArchitect),
         bind(Scope::Architect, "alt+g", Action::ToggleChanges),
         bind(Scope::Architect, "alt+e", Action::ToggleFiles),
+        bind(Scope::Architect, "alt+x", Action::ToggleSpec),
         // The arrows move the board, all four ways: on a surface whose
         // whole point is a drawing larger than the screen, that is what
         // an arrow means, and the list of diagrams is a row of tabs.
@@ -382,6 +391,22 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Architect, "shift+down", Action::SelectBoxDown),
         bind(Scope::Architect, "pagedown", Action::ScrollPageDown),
         bind(Scope::Architect, "pageup", Action::ScrollPageUp),
+        // A list with a document beside it: the code surface's keys, for
+        // the moves the two share, so a hand that knows one knows the other.
+        bind(Scope::Spec, "esc", Action::Dismiss),
+        bind(Scope::Spec, "alt+x", Action::ToggleSpec),
+        bind(Scope::Spec, "alt+g", Action::ToggleChanges),
+        bind(Scope::Spec, "alt+e", Action::ToggleFiles),
+        bind(Scope::Spec, "alt+a", Action::ToggleArchitect),
+        bind(Scope::Spec, "tab", Action::FocusNext),
+        bind(Scope::Spec, "down", Action::SelectNext),
+        bind(Scope::Spec, "up", Action::SelectPrevious),
+        bind(Scope::Spec, "left", Action::Collapse),
+        bind(Scope::Spec, "right", Action::Expand),
+        bind(Scope::Spec, "enter", Action::Activate),
+        bind(Scope::Spec, "pagedown", Action::ScrollPageDown),
+        bind(Scope::Spec, "pageup", Action::ScrollPageUp),
+        bind(Scope::Spec, "p", Action::TogglePreview),
         bind(Scope::Code, "e", Action::EditFile),
         bind(Scope::Code, "p", Action::TogglePreview),
         bind(Scope::Code, "m", Action::ToggleMap),

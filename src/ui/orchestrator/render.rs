@@ -272,6 +272,15 @@ fn render_extension(
                 uze_keys::Scope::Architect,
                 ExtensionHit::Architect,
             )
+        } else if let Some(spec) = &model.spec {
+            (
+                uze_extensions::spec::view(
+                    spec,
+                    crate::ui::extension_view::code_space(area, model.code_tree_width, None),
+                ),
+                uze_keys::Scope::Spec,
+                ExtensionHit::Spec,
+            )
         } else if let Some(code) = &model.code {
             (
                 uze_extensions::code::view(
@@ -684,18 +693,29 @@ pub(super) fn render_sidebar(
             rows.remaining().saturating_sub(steps_height),
         )
     });
+    // The spec section sits on the timeline: what the work intends over
+    // what it did. Reserved the same way, before the tree.
+    let spec_summary = model.spec_summary();
+    let spec_reserved = spec_summary.map_or(0, |summary| {
+        spec_summary_height(
+            summary,
+            model.spec_summary_open,
+            rows.remaining()
+                .saturating_sub(steps_height)
+                .saturating_sub(reserved),
+        )
+    });
+    let foot = reserved + spec_reserved;
     let strip = steps.rect(Rect::new(
         inner.x,
         inner.y,
         inner.width,
-        column_bottom
-            .saturating_sub(inner.y)
-            .saturating_sub(reserved),
+        column_bottom.saturating_sub(inner.y).saturating_sub(foot),
     ));
 
     // One row of air above the foot, so a tree that grows to meet it still
     // reads as a tree over two sections rather than as one list.
-    rows.bottom = strip.map_or(column_bottom - reserved, |rect| rect.y.saturating_sub(1));
+    rows.bottom = strip.map_or(column_bottom - foot, |rect| rect.y.saturating_sub(1));
     // The release notice sits on whatever holds the foot — the steps, or
     // the history once the steps are put away — rather than under them: it
     // is news, and news below two sections reads as the column's floor.
@@ -838,6 +858,19 @@ pub(super) fn render_sidebar(
         }
     }
 
+    if let Some(summary) = spec_summary
+        && spec_reserved > 0
+    {
+        rows.scroll_past(0);
+        let air = if model.spec_summary_open && spec_reserved > 1 {
+            SPEC_SUMMARY_AIR
+        } else {
+            0
+        };
+        rows.bottom = column_bottom - reserved - air;
+        rows.y = column_bottom - foot;
+        render_spec_summary(frame, summary, model, &mut rows, hits);
+    }
     if let Some(timeline) = timeline
         && reserved > 0
     {
@@ -846,6 +879,68 @@ pub(super) fn render_sidebar(
         rows.y = column_bottom - reserved;
         metrics.marquee |= render_timeline(frame, timeline, model, &mut rows, hits);
     }
+}
+
+/// The rows the spec section takes: its header, and while it is open a row
+/// per change and a row of air under the last, so the next section's
+/// header starts a block of its own rather than reading as one more
+/// change — all within half of what the column has left, since the spaces
+/// are what the sidebar is for. Nothing when even the header would not
+/// fit.
+pub(super) fn spec_summary_height(
+    summary: &uze_extensions::spec::Summary,
+    open: bool,
+    remaining: u16,
+) -> u16 {
+    let budget = remaining / 2;
+    if budget < 1 {
+        return 0;
+    }
+    let changes = u16::try_from(summary.changes.len()).unwrap_or(u16::MAX);
+    if open {
+        1 + changes + SPEC_SUMMARY_AIR
+    } else {
+        1
+    }
+    .min(budget)
+}
+
+/// The blank row an open spec section keeps under its last change.
+const SPEC_SUMMARY_AIR: u16 = 1;
+
+/// The sidebar's spec section. The extension says what it holds; this
+/// supplies the fold, which is host state, and tags the hits it gets back.
+fn render_spec_summary(
+    frame: &mut ratatui::Frame<'_>,
+    summary: &uze_extensions::spec::Summary,
+    model: &WorkspaceModel,
+    rows: &mut Rows,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let section = uze_extensions::spec::summary_section(summary, !model.spec_summary_open, 0);
+    let mut section_hits = Vec::new();
+    let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
+    let hovered_row = match model.hovered {
+        Some(WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::SelectItem(index)))) => {
+            Some(index)
+        }
+        _ => None,
+    };
+    crate::ui::extension_view::render_section_with(
+        frame,
+        &section,
+        &mut column,
+        false,
+        None,
+        hovered_row,
+        &mut section_hits,
+    );
+    hits.extend(section_hits.into_iter().map(|(rect, hit)| {
+        (
+            rect,
+            WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)),
+        )
+    }));
 }
 
 /// The rows the space tree comes to, whether or not the column can show
@@ -2761,16 +2856,17 @@ pub(super) fn render_tab_strip(
     }
 
     // ── actions ────────────────────────────────────────────────────────
-    // The two extensions are one group of buttons, not two chips with air
+    // The extensions are one group of buttons, not chips with air
     // between them: each puts its surface where the pane is — the
     // same kind of errand — and one continuous ground says that, where
-    // two detached chips read as two unrelated controls.
+    // detached chips read as unrelated controls.
     //
-    // Both are always there — a checkout always has a shape and files —
-    // which is what lets them be the fixed pair the eye learns, with
+    // All are always there — a checkout always has a shape, files and
+    // an answer to what it intends, even when that answer is "no layout"
+    // — which is what lets them be the fixed set the eye learns, with
     // every zone that comes and goes sitting to the left of them.
     //
-    // No bold: two words side by side at the same weight read as one
+    // No bold: words side by side at the same weight read as one
     // strip of controls, and bold made each of them claim the row on its
     // own. The pair of glyphs at the tab side's end is the other way
     // round, and says why in its own place.
@@ -2779,11 +2875,22 @@ pub(super) fn render_tab_strip(
         // the pane shows one thing, so the strip lights one thing, and
         // while a surface is up that is its button, not the tab it
         // covers. Said by the ground, not by the word's hue or weight.
+        // In the order a change is read: what it intends, what it was
+        // described as, and what it is.
         let buttons = [
+            (
+                WorkspaceHit::OpenSpec,
+                Symbol::Spec,
+                "spec",
+                model.spec.is_some(),
+            ),
             (
                 WorkspaceHit::OpenArchitect,
                 Symbol::Architect,
-                "architect",
+                // Short, as the other two are: three errands in one group,
+                // and the strip's room is the tabs' before it is the
+                // buttons'.
+                "arch",
                 model.architect.is_some(),
             ),
             (
@@ -2927,7 +3034,8 @@ pub(super) fn render_tab_strip(
     // loses a tab's tail, which the strip can scroll back to, rather than
     // the button that makes the next tab, which nothing else offers.
     let limit = trailing_right;
-    let extension_in_front = model.code.is_some() || model.architect.is_some();
+    let extension_in_front =
+        model.code.is_some() || model.architect.is_some() || model.spec.is_some();
     let mut spans = Vec::new();
     let mut x = inner.x;
     let strip_len = strip.len();

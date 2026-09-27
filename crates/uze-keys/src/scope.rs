@@ -157,6 +157,9 @@ scopes! {
     /// The architect surface: a diagram on a board that moves under the
     /// keys the way it moves under the pointer.
     Architect => "architect", "Architect", Workspace, seals: true, text: false;
+    /// The spec surface: a checkout's changes and specs, read as
+    /// documents.
+    Spec => "spec", "Spec", Workspace, seals: true, text: false;
     /// The directory picker a new space is born from.
     RootPicker => "root-picker", "Choosing a directory", Workspace, seals: true, text: true;
     /// The inline rename buffer over a tab or space label.

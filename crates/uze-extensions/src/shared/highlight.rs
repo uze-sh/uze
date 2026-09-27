@@ -1,8 +1,7 @@
 //! Syntax highlighting, for the modes that show a file's own text.
 //!
-//! Its own module because the diff [`super::diff`] draws, the file
-//! [`super::editor`] opens and the code blocks [`super::markdown`] renders
-//! all colour source code, and the alternative was a copy of the syntect
+//! Its own module because the code surface's diff and editor and the
+//! code blocks [`super::markdown`] renders all colour source code, and the alternative was a copy of the syntect
 //! plumbing each — the shape where a fallback theme is fixed in one place
 //! and left wrong in the others.
 //!
@@ -222,7 +221,7 @@ pub(crate) fn plain(theme_name: &str, text: &str) -> Vec<(Rgb, String)> {
 /// stream.
 ///
 /// Bounded because the cost is per line and the screen is not: see
-/// [`super::request`]. Taken from the front rather than from a window
+/// the code surface's file requests. Taken from the front rather than from a window
 /// anywhere else, because syntect's state is the reason a doc comment
 /// stays one for the lines below it — there is no way to colour line
 /// five hundred without having walked the four hundred and ninety-nine

@@ -1,34 +1,53 @@
-# The keys screen, as a spec — see .demo/code/demo.yml for how the sandbox
-# is shared between the demos and why each sandbox key is what it is.
+# The spec surface, as a spec. This file is the source of truth: it says what
+# the video shows, in order, and everything needed to make it again.
 #
-#   tui-record probe  .demo/keys
-#   tui-record run    .demo/keys
+#   tui-record beats  .demo/spec   # the script, as prose
+#   tui-record seed   .demo/spec   # build the sandbox (first run, or after a /tmp wipe)
+#   tui-record probe  .demo/spec   # the app in its sandbox, to try a selector out
+#   tui-record run    .demo/spec   # record → cut → leak-check → render → poster
 #
+# `tui-record` ships with the `tui` plugin: uze install -m tui@ai
+#
+# It records in the **same sandbox as .demo/demo.yml** — one {root}, one
+# {fixtures}, one remembered HEAD — so the `demo-app` fixture below is that
+# file's, byte for byte. Change a commit in one and change it in every spec
+# that shares it, or seeding one rewinds the others to a base they were not
+# recorded against.
+#
+# No harness is started here, so this spec grants no credential and installs
+# no harness binary: the surface it films reads Git and the checkout, and
+# nothing else.
+
 video:
-  title: uze — keys
-  out: .demo/keys/uze-keys.gif
-  poster: .demo/keys/uze-keys-poster.png
+  title: uze — spec
+  out: .demo/spec/uze-spec.gif
+  poster: .demo/spec/uze-spec-poster.png
   publish:
     - from: out
-      to: web/public/uze-keys.gif
+      to: web/public/uze-spec.gif
     - from: poster
-      to: web/public/uze-keys-poster.png
-  cast: '{root}/uze-keys.cast'
-  # The same grade as the code and architect demos, so the docs read as one set.
+      to: web/public/uze-spec-poster.png
+  cast: '{root}/uze-spec.cast'
+  # The same grade as the other surfaces, so the three read as one product
+  # on the extensions page.
   cols: 152
   rows: 36
   speed: 1.3
-  background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
+  background: 0a0c0d
   font_size: 20
   # The backend that draws box-drawing characters heavy and joined, the
   # way the terminal the app is used in does: borders, rules and the
   # architect's edges are most of what this app draws, and the default
   # backend strokes them hairline-thin.
   renderer: resvg
+  # The subjects carry icons only in the nerd set (see `provision`), so the
+  # renderer needs the patched font or they are blank cells.
   font_family: FiraCode Nerd Font Mono,DejaVu Sans Mono
   font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
   wait_collapse: 1.0
-  poster_when: 'Keyboard saved'
+  # The surface open on the checkout's own change, its proposal rendered:
+  # the frame that says what this surface is for.
+  poster_when: 'add-rate-limiting/proposal\.md'
   sidebar: 31
 sandbox:
   root: ~/.uzedemo          # never on screen
@@ -70,6 +89,28 @@ sandbox:
     # is excluded: the rewind removes those itself, and pulling the directory
     # out from under Git first leaves metadata to prune.
     - git -C {fixtures}/demo-app clean -qfd -e .worktrees 2>/dev/null || true
+    # What makes add-rate-limiting *this checkout's* change: a design the
+    # operator is drafting, untracked. Written here, after the clean and
+    # before the rewind, because the rewind is `reset --hard` — it reverts a
+    # tracked file and leaves an untracked one alone.
+    - |
+      cat > {fixtures}/demo-app/openspec/changes/add-rate-limiting/design.md <<'DESIGN'
+      ## Context
+
+      The router dispatches every request straight to its handler; there
+      is nowhere to say no.
+
+      ## Decisions
+
+      ### A token bucket per client address
+
+      Refilled every second to the budget in `config.toml`. A bucket is
+      cheap, and a burst within budget is never refused.
+
+      ### `429` with `Retry-After`
+
+      The client is told how long to wait rather than left to guess.
+      DESIGN
     # A home with no layout is a first run: the first-steps list opens and
     # pushes the timeline off the sidebar. The video is of a project already
     # in use, so the list starts folded and the timeline open — written here
@@ -85,9 +126,6 @@ sandbox:
         "first_steps": { "collapsed": true, "closed": false, "taken": [] }
       }
       LAYOUT
-    # The appearance demo shares this sandbox and ends in another theme.
-    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set default >/dev/null
-    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config icons nerd >/dev/null
   clear:
     # The rewind removes the checkouts but leaves the directory that held
     # them, and the `clean` above deliberately spares it — so an empty
@@ -97,8 +135,6 @@ sandbox:
     - '{fixtures}/demo-app/.worktrees'
     - '{home}/.uze/state/terminal'
     - '{runtime}/uze-runtime'
-    # A take rebinds a key; the next one must find the defaults again.
-    - '{home}/.uze/keys.json'
   write:
     - path: '{home}/demoshell'
       executable: true
@@ -383,51 +419,52 @@ fixtures:
             fn not_found(path: &str) -> Response {
                 Response::text(404, format!("no route for {path}"))
             }
-# What the video shows, in order. The status line under the content says
-# "Keyboard saved" only once the new binding is written, and the strip is the
-# proof the key works: a second shell tab exists only because F4 opened it.
+# What the video shows, in order. Edit this list first.
+#
+# Every `expect` reads the frame the surface draws: the content heading names
+# the change and the file on show (`add-rate-limiting/tasks.md`), which is
+# the narrowest proof that a selection moved. The bands are proved by their
+# headings, drawn in capitals.
 beats:
-  - say: uze is open on a project
-    pause: 1.2
-  - say: every key lives in management, under shortcuts
-    key: C-o
-    expect: status & health
+  - say: uze is open on a project that plans its changes with OpenSpec
+    pause: 1.4
+  - say: the sidebar says how far this checkout's own work has got
+    click: tasks
+    in: sidebar
+    expect: add-rate-limiting
+    expect_in: sidebar
     expect_timeout: 8
-    pause: 0.6
-  - click: Shortcuts
-    in: screen
-    expect: Filter keys and actions
-    expect_timeout: 8
-    pause: 1.2
-  - say: find an action by name
-    click: Filter keys and actions
-    in: screen
-    expect: 'Filter keys and actions|▏'
-    pause: 0.3
-  - type: shell
-    submit: false
-    expect: New shell
-    expect_timeout: 6
-    pause: 1.2
-  - say: change its key — the screen waits for one
-    click: Change key
-    in: screen
-    expect: Waiting for a key
-    expect_timeout: 6
-    pause: 1.0
-  - say: press the new one; it is saved at once
-    key: F4
-    expect: Keyboard saved
+    pause: 2.4
+  - say: the plans themselves, opened on the change this checkout is drafting
+    click: spec
+    in: strip
+    expect: add-rate-limiting/proposal\.md
+    expect_timeout: 10
+    pause: 3.0
+  - say: its design, rendered
+    key: Down
+    expect: add-rate-limiting/design\.md
     expect_timeout: 6
     pause: 2.4
-  - say: back in the workspace, F4 opens a shell
-    key: C-o
-    refuse: status & health
-    pause: 0.8
-  - key: F4
-    expect_in: strip
-    expect: 'shell.*shell'
-    expect_timeout: 8
-    pause: 2.2
-  - say: and out
+  - say: and its tasks, three of seven done
+    key: Down
+    expect: add-rate-limiting/tasks\.md
+    expect_timeout: 6
+    pause: 3.0
+  - say: the rest of the project's work, by where it stands
+    key: Left
+    expect: READY TO ARCHIVE
+    expect_timeout: 6
+    pause: 2.4
+  - say: the specs that outlive the changes
+    key: Tab
+    expect: routing
+    expect_timeout: 6
+    pause: 2.0
+  - say: and what was finished and put away
+    key: Tab
+    expect: 2026-09-18-add-health-endpoint
+    expect_timeout: 6
+    pause: 2.4
+  - say: and out — the cut stops here, before the screen blanks
     end: C-q

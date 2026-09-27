@@ -32,12 +32,12 @@ use std::path::Path;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::{
-    code::highlight,
+    shared::highlight,
     view::{ContentLine, LineTone, Role, Span},
 };
 
 /// Whether `path` is a document this can render.
-pub(super) fn is_markdown(path: &Path) -> bool {
+pub(crate) fn is_markdown(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
@@ -392,7 +392,7 @@ fn blank() -> ContentLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code::highlight::FALLBACK_SYNTAX_THEME;
+    use crate::shared::highlight::FALLBACK_SYNTAX_THEME;
 
     fn rendered(source: &str) -> Vec<ContentLine> {
         render(source, FALLBACK_SYNTAX_THEME)

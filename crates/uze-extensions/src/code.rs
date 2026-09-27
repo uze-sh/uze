@@ -14,7 +14,7 @@
 //!
 //! The merge is not a de-duplication. What was genuinely shared already
 //! is: the host draws both (`src/ui/extension_view.rs`), and highlighting
-//! is [`highlight`]. The two navigators only look alike —
+//! is `shared::highlight`. The two navigators only look alike —
 //! [`changes`] compacts a flat, complete list from `git status`, and
 //! [`files`] flattens a partial tree that grows as directories are
 //! opened. What one extension can have and two cannot is a **selection
@@ -76,18 +76,16 @@ mod changes;
 mod diff;
 mod editor;
 mod files;
-mod highlight;
 mod history;
 mod map;
-mod markdown;
 mod render;
 mod request;
 mod treemap;
 
+pub use crate::shared::markdown::render as markdown;
 pub use changes::{ChangeSummary, change_summary};
 pub use history::{Commit, CommitDetail, Timeline, commit_detail, timeline, timeline_section};
 pub use map::{FileMeasure, Measure, measure};
-pub use markdown::render as markdown;
 pub use render::view;
 pub use request::{FileAnswer, FileRequest, LoadedFile, fulfill, unanswered};
 
@@ -443,7 +441,9 @@ impl CodeView {
     /// Whether the selection is a document the preview can render — what
     /// decides whether the mode is offered at all.
     pub(super) fn selected_is_markdown(&self) -> bool {
-        self.selected.as_deref().is_some_and(markdown::is_markdown)
+        self.selected
+            .as_deref()
+            .is_some_and(crate::shared::markdown::is_markdown)
     }
 
     /// Whether the selection is a file rather than a directory — what
