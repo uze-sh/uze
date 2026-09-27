@@ -2994,6 +2994,7 @@ impl Attach<'_> {
                 | ViewHit::ToggleGroup(_)
                 | ViewHit::OpenMenu(_)
                 | ViewHit::MenuEntry(_)
+                | ViewHit::Answer(_)
                 | ViewHit::ChooseGroup
                 | ViewHit::ChooseItem
                 | ViewHit::SelectTrail(_)

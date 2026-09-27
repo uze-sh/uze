@@ -309,30 +309,48 @@ fn copying_a_path_hands_the_host_the_checkouts_own_spelling() {
     assert!(menu_of(&view).is_none());
 }
 
-/// Throwing a change away cannot be undone, so it asks in the menu it was
-/// chosen from, with the harmless answer under the keyboard; only the
-/// second pick reaches the machine, and the list is read again at once.
+/// Picks "Discard changes…" from the selected file's menu.
+fn ask_to_discard(view: &mut CodeView) {
+    press(view, Command::OpenMenu);
+    press(view, Command::SelectNext);
+    press(view, Command::SelectNext);
+    press(view, Command::Activate);
+}
+
+/// Throwing a change away cannot be undone, so it is asked as a dialog,
+/// with the keyboard on the way out; only a yes reaches the machine, and
+/// the list is read again at once.
 #[test]
-fn discarding_a_change_asks_once_and_then_restores_it() {
+fn discarding_a_change_asks_first_and_then_restores_it() {
     let machine = FakeMachine::default();
     let mut view = flat_fixture();
-    let discard = |view: &mut CodeView| {
-        press(view, Command::OpenMenu);
-        press(view, Command::SelectNext);
-        press(view, Command::SelectNext);
-        press(view, Command::Activate);
-    };
 
-    discard(&mut view);
-    assert_eq!(
-        menu_of(&view),
-        Some((3, vec!["Confirm".to_owned(), "Cancel".to_owned()], 1))
+    ask_to_discard(&mut view);
+    assert!(
+        menu_of(&view).is_none(),
+        "the menu gave way to the question"
     );
-    press(&mut view, Command::Activate);
-    assert!(view.peek_request().is_none(), "cancel restores nothing");
+    let asked = super::view(&view, space()).confirm.expect("a question");
+    assert_eq!(
+        (
+            asked.title.as_str(),
+            asked.subject.as_str(),
+            asked.confirm.as_str()
+        ),
+        ("Discard changes", "src/ui/git_diff.rs", "Discard")
+    );
+    assert!(!asked.on_confirm, "the keyboard starts on the way out");
 
-    discard(&mut view);
-    press(&mut view, Command::SelectPrevious);
+    press(&mut view, Command::SelectNext);
+    assert!(view.discarding.is_some(), "the question holds the keyboard");
+    press(&mut view, Command::Activate);
+    assert!(
+        view.discarding.is_none() && view.peek_request().is_none(),
+        "no restores nothing"
+    );
+
+    ask_to_discard(&mut view);
+    press(&mut view, Command::Expand);
     press(&mut view, Command::Activate);
     settle(&mut view, &machine);
 
@@ -347,6 +365,36 @@ fn discarding_a_change_asks_once_and_then_restores_it() {
     );
 }
 
+/// The dialog's buttons answer it, and nothing else on the surface does.
+#[test]
+fn a_click_answers_the_question_only_on_its_buttons() {
+    let machine = FakeMachine::default();
+    let mut view = flat_fixture();
+    ask_to_discard(&mut view);
+
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
+    assert!(view.discarding.is_some());
+    assert_eq!(view.selected_change(), Some(3), "nothing behind it moved");
+
+    handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
+    settle(&mut view, &machine);
+    assert_eq!(machine.restored.borrow().len(), 1);
+}
+
+/// What agreeing does is said for the kind of change it undoes.
+#[test]
+fn the_question_says_what_discarding_this_change_does() {
+    let root = PathBuf::from("/repo");
+    let body = |porcelain: &str| {
+        let mut view = surface(&root, changes::parse_porcelain_status(porcelain, &root), 0);
+        ask_to_discard(&mut view);
+        super::view(&view, space()).confirm.expect("asked").body
+    };
+    assert!(body("?? new.rs\0").starts_with("Deletes the file"));
+    assert!(body(" M kept.rs\0").starts_with("Puts the file back"));
+    assert!(body("R  new.rs\0old.rs\0").contains("brings old.rs back"));
+}
+
 /// A rename is two paths, and throwing it away puts the old one back.
 #[test]
 fn discarding_a_rename_restores_both_of_its_paths() {
@@ -357,12 +405,8 @@ fn discarding_a_rename_restores_both_of_its_paths() {
         changes::parse_porcelain_status("R  new.rs\0old.rs\0", &root),
         0,
     );
-    press(&mut view, Command::OpenMenu);
-    press(&mut view, Command::SelectNext);
-    press(&mut view, Command::SelectNext);
-    press(&mut view, Command::Activate);
-    press(&mut view, Command::SelectPrevious);
-    press(&mut view, Command::Activate);
+    ask_to_discard(&mut view);
+    press(&mut view, Command::ConfirmDelete);
     settle(&mut view, &machine);
 
     assert_eq!(

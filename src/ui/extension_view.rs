@@ -505,6 +505,49 @@ pub(crate) fn render_row_menu(
     }
 }
 
+/// A [`uze_extensions::view::Confirm`], drawn over the whole surface as
+/// the same dialog every other question in the product is asked in, with
+/// the keys that answer it where the surface is open: `scope`.
+///
+/// Its answers go to the front of `hits`, ahead of everything it covers.
+pub(crate) fn render_confirm(
+    frame: &mut ratatui::Frame<'_>,
+    view: &View,
+    area: Rect,
+    scope: uze_keys::Scope,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) {
+    let Some(confirm) = &view.confirm else {
+        return;
+    };
+    let dialog = widget::dialog::Dialog {
+        // Asked only before what cannot be undone.
+        tone: widget::dialog::Tone::Danger,
+        title: &confirm.title,
+        subject: Some(Line::from(confirm.subject.clone())),
+        body: vec![confirm.body.clone()],
+        confirm: Some(&confirm.confirm),
+        focus: Some(match confirm.on_confirm {
+            true => 1,
+            false => widget::dialog::CANCEL,
+        }),
+    };
+    let keys = widget::dialog::Keys {
+        scopes: &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, scope],
+        yes: uze_keys::Action::ConfirmDelete,
+        no: uze_keys::Action::Dismiss,
+    };
+    let answers = widget::dialog::render(
+        frame,
+        area,
+        &dialog,
+        &keys,
+        ViewHit::Answer(false),
+        ViewHit::Answer(true),
+    );
+    hits.splice(0..0, answers);
+}
+
 /// A [`ViewLayout::Board`]: the list as a row of tabs, and under it the
 /// drawing, given every cell that is left and cut at the edge.
 fn render_board(
@@ -2219,6 +2262,7 @@ mod tests {
             },
             footer: vec![Command::Close],
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Sidebar,
@@ -2427,6 +2471,7 @@ mod tests {
             },
             footer: Vec::new(),
             notice: None,
+            confirm: None,
             modes: vec![
                 Mode {
                     label: "Preview".to_owned(),
@@ -2543,6 +2588,7 @@ mod tests {
             },
             footer: Vec::new(),
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Sidebar,
@@ -2580,6 +2626,64 @@ mod tests {
         assert!(
             first.y > pointer.y && first.x.abs_diff(pointer.x) <= 2,
             "at the pointer: {first:?}"
+        );
+    }
+
+    /// A surface's question is the product's dialog: its title, subject,
+    /// what agreeing does, the two answers as buttons that take the click
+    /// ahead of whatever the dialog covers, and the keys in its border.
+    #[test]
+    fn a_surfaces_question_is_drawn_as_the_products_dialog() {
+        let view = View {
+            title: Vec::new(),
+            caption: Vec::new(),
+            navigator: None,
+            content: Content::Message {
+                text: String::new(),
+                hint: None,
+                role: Role::Muted,
+            },
+            footer: Vec::new(),
+            notice: None,
+            confirm: Some(uze_extensions::view::Confirm {
+                title: "Discard changes".to_owned(),
+                subject: "src/ui.rs".to_owned(),
+                body: "Puts the file back.".to_owned(),
+                confirm: "Discard".to_owned(),
+                on_confirm: false,
+            }),
+            modes: Vec::new(),
+            subjects: Vec::new(),
+            layout: ViewLayout::Sidebar,
+            trail: Vec::new(),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        let mut hits = vec![(Rect::new(0, 0, 80, 20), ViewHit::Close)];
+        terminal
+            .draw(|frame| {
+                render_confirm(frame, &view, frame.area(), uze_keys::Scope::Code, &mut hits)
+            })
+            .unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        for words in [
+            "Discard changes",
+            "src/ui.rs",
+            "Puts the file back.",
+            "Cancel",
+            "Discard",
+        ] {
+            assert!(screen.contains(words), "{words:?} is on the dialog");
+        }
+        assert_eq!(
+            hits.iter().take(2).map(|(_, hit)| *hit).collect::<Vec<_>>(),
+            [ViewHit::Answer(false), ViewHit::Answer(true)],
+            "the answers are asked first, the way out before the affirmative"
         );
     }
 
@@ -2636,6 +2740,7 @@ mod tests {
                 Command::NextMode,
             ],
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,
@@ -2738,6 +2843,7 @@ mod tests {
                 },
                 footer: vec![Command::Close],
                 notice: None,
+                confirm: None,
                 modes: Vec::new(),
                 subjects: Vec::new(),
                 layout: ViewLayout::Board,
@@ -2848,6 +2954,7 @@ mod tests {
             },
             footer: vec![Command::Close],
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,
@@ -3003,6 +3110,7 @@ mod tests {
             },
             footer: vec![Command::Close],
             notice: None,
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: ViewLayout::Board,

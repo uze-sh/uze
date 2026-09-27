@@ -43,6 +43,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
             },
             footer,
             notice: notice(code),
+            confirm: None,
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: Layout::Sidebar,
@@ -62,6 +63,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
             content: map_content(code, space),
             footer,
             notice: notice(code),
+            confirm: None,
             modes: modes(code),
             subjects: subjects(code),
             layout: Layout::Board,
@@ -84,6 +86,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
         },
         footer,
         notice: notice(code),
+        confirm: super::change_menu::confirm(code),
         modes: modes(code),
         subjects: subjects(code),
         layout: Layout::Sidebar,
@@ -263,6 +266,9 @@ fn footer(code: &CodeView) -> Vec<Command> {
     }
     if code.menu.is_some() {
         return vec![Command::SelectNext, Command::Activate, Command::Close];
+    }
+    if code.discarding.is_some() {
+        return vec![Command::Activate, Command::Close];
     }
     // The map is the same checkout seen another way, so it is offered
     // wherever the checkout is — and from inside it, the way back out is

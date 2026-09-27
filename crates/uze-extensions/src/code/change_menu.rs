@@ -9,20 +9,24 @@
 
 use std::path::PathBuf;
 
-use super::{CodeOutcome, CodeView, ContentMode, Focus, request::FileRequest};
-use crate::view::{Command, RowMenu, ViewHit};
+use super::{CodeOutcome, CodeView, ContentMode, Focus, changes::FileStatus, request::FileRequest};
+use crate::view::{Command, Confirm, RowMenu, ViewHit};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Action {
     OpenFile,
     CopyPath,
-    /// The first of the two steps a discard takes.
+    /// Throwing a change away cannot be undone, so this only asks: see
+    /// [`Discarding`].
     Discard,
-    /// The second: throwing a change away cannot be undone, so it is asked
-    /// in the menu it was chosen from, with the harmless answer under the
-    /// keyboard.
-    ConfirmDiscard,
-    Cancel,
+}
+
+/// A discard waiting on its answer, asked as a dialog rather than as one
+/// more row of the menu, which reads as another option instead of a
+/// question. The keyboard starts on the way out.
+pub(super) struct Discarding {
+    path: PathBuf,
+    on_confirm: bool,
 }
 
 /// The menu open on one changed file. Held by path rather than by row, so
@@ -56,8 +60,6 @@ impl ChangeMenu {
             Action::OpenFile => "Open file".to_owned(),
             Action::CopyPath => "Copy path".to_owned(),
             Action::Discard => "Discard changes…".to_owned(),
-            Action::ConfirmDiscard => "Confirm".to_owned(),
-            Action::Cancel => "Cancel".to_owned(),
         }
     }
 }
@@ -154,29 +156,97 @@ fn perform(view: &mut CodeView, entry: usize) -> CodeOutcome {
             return CodeOutcome::Copy(relative.to_string_lossy().into_owned());
         }
         Action::Discard => {
-            view.menu = Some(ChangeMenu {
-                actions: vec![Action::ConfirmDiscard, Action::Cancel],
-                highlighted: 1,
-                ..menu
+            view.discarding = Some(Discarding {
+                path: menu.path,
+                on_confirm: false,
             });
         }
-        Action::ConfirmDiscard => {
-            let mut paths = vec![menu.path.clone()];
-            // A rename is two paths, and throwing it away brings the old
-            // name back as well as taking the new one off.
-            if let Some(from) = view
-                .changes
-                .position_of(Some(&menu.path))
-                .and_then(|index| view.changes.files[index].renamed_from.clone())
-            {
-                paths.push(from);
-            }
-            view.queue.push_back(FileRequest::Restore {
-                root: view.root.clone(),
-                paths,
-            });
-        }
-        Action::Cancel => {}
     }
     CodeOutcome::Stay
+}
+
+/// The question an open discard asks, for the host to draw.
+pub(super) fn confirm(view: &CodeView) -> Option<Confirm> {
+    let discarding = view.discarding.as_ref()?;
+    let file = view
+        .changes
+        .position_of(Some(&discarding.path))
+        .map(|index| &view.changes.files[index]);
+    let body = match file.map(|file| (file.status, file.renamed_from.as_ref())) {
+        Some((FileStatus::Untracked | FileStatus::Added, _)) => {
+            "Deletes the file, which the last commit does not have. This cannot be undone."
+                .to_owned()
+        }
+        Some((_, Some(from))) => format!(
+            "Takes the new name off and brings {} back the way the last commit has it. \
+             This cannot be undone.",
+            relative(view, from)
+        ),
+        _ => "Puts the file back the way the last commit has it. This cannot be undone.".to_owned(),
+    };
+    Some(Confirm {
+        title: "Discard changes".to_owned(),
+        subject: relative(view, &discarding.path),
+        body,
+        confirm: "Discard".to_owned(),
+        on_confirm: discarding.on_confirm,
+    })
+}
+
+/// A command while a discard is being asked about. The question is modal:
+/// what does not answer it or move between its answers does nothing.
+pub(super) fn answer_command(view: &mut CodeView, command: Command) {
+    let Some(discarding) = view.discarding.as_mut() else {
+        return;
+    };
+    match command {
+        Command::Activate => {
+            let yes = discarding.on_confirm;
+            answer(view, yes);
+        }
+        Command::ConfirmDelete => answer(view, true),
+        Command::Close => answer(view, false),
+        Command::FocusNext | Command::Collapse | Command::Expand => {
+            discarding.on_confirm = !discarding.on_confirm;
+        }
+        _ => {}
+    }
+}
+
+/// A click while a discard is being asked about: only its answers mean
+/// anything.
+pub(super) fn answer_mouse(view: &mut CodeView, hit: Option<ViewHit>) {
+    if let Some(ViewHit::Answer(yes)) = hit {
+        answer(view, yes);
+    }
+}
+
+fn answer(view: &mut CodeView, yes: bool) {
+    let Some(discarding) = view.discarding.take() else {
+        return;
+    };
+    if !yes {
+        return;
+    }
+    let mut paths = vec![discarding.path.clone()];
+    // A rename is two paths, and throwing it away brings the old name back
+    // as well as taking the new one off.
+    if let Some(from) = view
+        .changes
+        .position_of(Some(&discarding.path))
+        .and_then(|index| view.changes.files[index].renamed_from.clone())
+    {
+        paths.push(from);
+    }
+    view.queue.push_back(FileRequest::Restore {
+        root: view.root.clone(),
+        paths,
+    });
+}
+
+fn relative(view: &CodeView, path: &std::path::Path) -> String {
+    path.strip_prefix(&view.root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
 }

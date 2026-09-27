@@ -278,6 +278,7 @@ fn render_extension(
         model.code_menu_at,
         &mut view_hits,
     );
+    crate::ui::extension_view::render_confirm(frame, &view, area, scope, &mut view_hits);
     hits.extend(
         view_hits
             .into_iter()

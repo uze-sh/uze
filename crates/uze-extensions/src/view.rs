@@ -149,6 +149,10 @@ pub struct View {
     /// extension says whether it is a warning and the host decides what
     /// one looks like. `None` when there is nothing to say.
     pub notice: Option<Span>,
+    /// A question the surface waits on before doing something that cannot
+    /// be undone, drawn by the host as a dialog over it. `None` when
+    /// nothing is being asked.
+    pub confirm: Option<Confirm>,
     /// The ways this surface can show what it is showing, in the order
     /// they should be offered, with the current one marked. Empty when
     /// there is only one way, which is most of the time.
@@ -260,6 +264,22 @@ pub struct Navigator {
     /// [`Navigator::choosing`]: the host draws it beside the row and hands
     /// a pick back as [`ViewHit::MenuEntry`].
     pub menu: Option<RowMenu>,
+}
+
+/// Asked before something that cannot be undone: what, of what, what
+/// agreeing does, and the word agreeing is said in — "Discard", not "OK".
+/// The answer comes back as [`ViewHit::Answer`], or as the commands an
+/// open question answers: `Activate` for the one the keyboard is on,
+/// `Close` for no, `ConfirmDelete` for yes, and `FocusNext`, `Collapse`
+/// and `Expand` to move between the two.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Confirm {
+    pub title: String,
+    pub subject: String,
+    pub body: String,
+    pub confirm: String,
+    /// Whether the keyboard is on the affirmative rather than the way out.
+    pub on_confirm: bool,
 }
 
 /// A short list of what can be done to one navigator row, opened on it.
@@ -521,6 +541,8 @@ pub enum ViewHit {
     OpenMenu(usize),
     /// An entry of the open [`RowMenu`], by its index.
     MenuEntry(usize),
+    /// An answer to the open [`Confirm`]: `true` for the affirmative.
+    Answer(bool),
     /// The selector that offers the groups, pressed: open the list of
     /// them, or shut it.
     ChooseGroup,

@@ -1135,6 +1135,7 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
         content: content(state, space),
         footer: footer(state),
         notice: None,
+        confirm: None,
         modes: MODES
             .iter()
             .map(|&(showing, label)| Mode {

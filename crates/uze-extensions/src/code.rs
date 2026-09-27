@@ -258,6 +258,8 @@ pub struct CodeView {
     confirming_discard: bool,
     /// The actions open on a changed file, if any.
     menu: Option<change_menu::ChangeMenu>,
+    /// A discard asked for and not yet answered.
+    discarding: Option<change_menu::Discarding>,
 }
 
 /// Where a viewer was on a checkout's code surface, so that opening it
@@ -361,6 +363,7 @@ impl CodeView {
             confirming_delete: None,
             confirming_discard: false,
             menu: None,
+            discarding: None,
         };
         if view.navigator() == NavigatorMode::Files {
             view.expand(view.root.clone());
@@ -1337,6 +1340,10 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         return map_command(view, command, space);
     }
 
+    if view.discarding.is_some() {
+        change_menu::answer_command(view, command);
+        return CodeOutcome::Stay;
+    }
     if view.menu.is_some() {
         return change_menu::command(view, command);
     }
@@ -1541,6 +1548,10 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
     view.notice = None;
     if view.content == ContentMode::Map {
         return map_mouse(view, hit, space);
+    }
+    if view.discarding.is_some() {
+        change_menu::answer_mouse(view, hit);
+        return CodeOutcome::Stay;
     }
     if view.menu.is_some() {
         return change_menu::mouse(view, hit);
