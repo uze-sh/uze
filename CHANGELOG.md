@@ -4,16 +4,42 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.2](https://github.com/uze-sh/uze/compare/v1.0.0-beta.1...v1.0.0-beta.2) - 2026-09-27
+
+### Features
+
+- **spec:** Add the spec surface for OpenSpec changes and tasks ([#138](https://github.com/uze-sh/uze/pull/138)) ([47988ef](https://github.com/uze-sh/uze/commit/47988ef86478d3d8022ddad60ada98416c2c4f51))
+
+### Fixes
+
+- **antigravity:** Read an empty `agy plugin list` as no imports ([#135](https://github.com/uze-sh/uze/pull/135)) ([b8c7f84](https://github.com/uze-sh/uze/commit/b8c7f84882457771f5c65f7770fd35376bfd86ce))
+- **ui:** Resume a task on enter in the work list instead of opening its slot as a space ([#139](https://github.com/uze-sh/uze/pull/139)) ([5a46a0a](https://github.com/uze-sh/uze/commit/5a46a0ab171ea8b8ebc40104c4bdec6a29b17f65))
+
+### Performance
+
+- **checkout:** Remember whether a branch is integrated per pair of commits ([#140](https://github.com/uze-sh/uze/pull/140)) ([a1809de](https://github.com/uze-sh/uze/commit/a1809dec613f15f622cb36810de40c8a63c82227))
+
+### Documentation
+
+- **openspec:** Archive nine delivered changes ([#137](https://github.com/uze-sh/uze/pull/137)) ([6e6a83c](https://github.com/uze-sh/uze/commit/6e6a83c6fc57dbd40c9ec1f7f383c718243a66c1))
+
 ## [1.0.0-beta.1](https://github.com/uze-sh/uze/compare/v0.0.0-alpha.10...v1.0.0-beta.1) - 2026-09-27
 
 ### Features
 
 - **worktree:** Account for checkouts by recorded ownership ([#128](https://github.com/uze-sh/uze/pull/128)) ([8a32af3](https://github.com/uze-sh/uze/commit/8a32af396e4f9c418745a555ab8dd292a2e2f605))
+- **web:** Add a changelog page rendered from CHANGELOG.md ([#133](https://github.com/uze-sh/uze/pull/133)) ([e62c9df](https://github.com/uze-sh/uze/commit/e62c9df45b4a1f09ac015ad9a81431b037152b82))
+- **ui:** List the code surface's changes flat with a per-file context menu ([#132](https://github.com/uze-sh/uze/pull/132)) ([d135f87](https://github.com/uze-sh/uze/commit/d135f8799dc387d0da5aa3753cda43df64dcdea4))
 
 ### Fixes
 
 - **ui:** Move the pull/push counts to the header and fix the changes tree indent ([#129](https://github.com/uze-sh/uze/pull/129)) ([a363801](https://github.com/uze-sh/uze/commit/a363801dd8d35cde4901b946dfd39366e25fc82a))
 - **agent:** Label an agent in the operator's checkout on `agent work name` ([#130](https://github.com/uze-sh/uze/pull/130)) ([8476a17](https://github.com/uze-sh/uze/commit/8476a17bb5c03334be5ea143050e091b64be75d6))
+- **code:** Repair text input and grammar detection in the file editor ([#134](https://github.com/uze-sh/uze/pull/134)) ([e91e523](https://github.com/uze-sh/uze/commit/e91e5238b7f6bf57afee13608d85fe14fcb2860c))
+
+### Chore
+
+- **versioning:** Move the release series from alpha to 1.0.0-beta ([#131](https://github.com/uze-sh/uze/pull/131)) ([a87fa45](https://github.com/uze-sh/uze/commit/a87fa450c8506c28c2ff5c94daf5642d3ba7fa23))
 
 ## [0.0.0-alpha.10](https://github.com/uze-sh/uze/compare/v0.0.0-alpha.9...v0.0.0-alpha.10) - 2026-09-26
 
