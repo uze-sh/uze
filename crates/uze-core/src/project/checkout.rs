@@ -26,8 +26,10 @@ pub mod record;
 pub mod subagent;
 
 use std::{
+    collections::HashMap,
     fmt, fs,
     path::{Path, PathBuf},
+    sync::{LazyLock, Mutex},
     time::{Duration, SystemTime},
 };
 
@@ -1241,19 +1243,106 @@ pub fn commits_ahead(root: &Path, target: &str, branch: &str) -> usize {
 /// Fails closed, the way [`is_dirty`] does: a question Git could not answer
 /// is answered `false` here, because this predicate is what authorizes
 /// `branch -D` and `reset --hard` over an agent's committed work.
+///
+/// Remembered per pair of commits for the life of the process. Evaluation
+/// asks it of every parked branch on every pass, and the squash question
+/// costs up to five Git processes a branch; the answer can only change when
+/// one of the two commits does, and resolving them is one process. Only a
+/// complete answer is remembered — one that fell closed is asked again.
 pub fn is_integrated(root: &Path, target: &str, branch: &str) -> bool {
-    match commits_ahead_checked(root, target, branch) {
-        Some(0) => true,
-        Some(_) => patch_is_in(root, target, branch) || squashed_patch_is_in(root, target, branch),
+    let Some((target, branch)) = resolve_commit_pair(root, target, branch) else {
+        return false;
+    };
+    let question = IntegrationQuestion {
+        root: root.to_path_buf(),
+        target,
+        branch,
+    };
+    if let Some(answer) = remembered_integration(&question) {
+        return answer;
+    }
+    match integration_between(root, &question.target, &question.branch) {
+        Some(answer) => {
+            remember_integration(question, answer);
+            answer
+        }
         None => false,
     }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct IntegrationQuestion {
+    root: PathBuf,
+    target: String,
+    branch: String,
+}
+
+/// Enough for every branch of a busy repository across many moves of its
+/// target; past it the memory starts over rather than tracking age.
+const REMEMBERED_INTEGRATIONS: usize = 4096;
+
+static INTEGRATIONS: LazyLock<Mutex<HashMap<IntegrationQuestion, bool>>> =
+    LazyLock::new(Mutex::default);
+
+fn remembered_integration(question: &IntegrationQuestion) -> Option<bool> {
+    let integrations = INTEGRATIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    integrations.get(question).copied()
+}
+
+fn remember_integration(question: IntegrationQuestion, answer: bool) {
+    let mut integrations = INTEGRATIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if integrations.len() >= REMEMBERED_INTEGRATIONS {
+        integrations.clear();
+    }
+    integrations.insert(question, answer);
+}
+
+/// Both names as the commits they point at, in one process, or `None` when
+/// either does not name a commit.
+fn resolve_commit_pair(root: &Path, target: &str, branch: &str) -> Option<(String, String)> {
+    let listing = read(
+        root,
+        &[
+            "rev-parse",
+            &format!("{target}^{{commit}}"),
+            &format!("{branch}^{{commit}}"),
+            "--",
+        ],
+    )?;
+    let mut commits = listing.lines().filter(|line| *line != "--");
+    let (Some(target), Some(branch), None) = (commits.next(), commits.next(), commits.next())
+    else {
+        return None;
+    };
+    Some((target.to_owned(), branch.to_owned()))
+}
+
+/// Whether `branch` is in `target`, or `None` when Git could not answer a
+/// question a "no" would rest on. A "yes" from either patch question stands
+/// on its own: the other failing cannot take it back.
+fn integration_between(root: &Path, target: &str, branch: &str) -> Option<bool> {
+    if commits_ahead_checked(root, target, branch)? == 0 {
+        return Some(true);
+    }
+    let patch = patch_is_in(root, target, branch);
+    if patch == Some(true) {
+        return Some(true);
+    }
+    if squashed_patch_is_in(root, target, branch)? {
+        return Some(true);
+    }
+    patch
 }
 
 /// Whether every commit of `branch` outside `target` has an equivalent
 /// there — what a rebase merge, and a fast-forward of a single commit,
 /// leave behind.
-fn patch_is_in(root: &Path, target: &str, branch: &str) -> bool {
-    read(root, &["cherry", target, branch]).is_some_and(|listing| every_commit_is_there(&listing))
+fn patch_is_in(root: &Path, target: &str, branch: &str) -> Option<bool> {
+    read(root, &["cherry", target, branch]).map(|listing| every_commit_is_there(&listing))
 }
 
 /// `git cherry` marks a commit `-` when the target already has its patch.
@@ -1273,14 +1362,10 @@ fn every_commit_is_there(listing: &str) -> bool {
 /// Its dates are pinned: evaluation asks this of every parked task on every
 /// pass, and a probe dated by the clock was a new object each time — loose
 /// objects piling up in the operator's repository until Git collected them.
-fn squashed_patch_is_in(root: &Path, target: &str, branch: &str) -> bool {
-    let Some(base) = read(root, &["merge-base", "--", target, branch]) else {
-        return false;
-    };
-    let Some(tree) = read(root, &["rev-parse", &format!("{branch}^{{tree}}")]) else {
-        return false;
-    };
-    let Some(probe) = uze_git::write_with_env(
+fn squashed_patch_is_in(root: &Path, target: &str, branch: &str) -> Option<bool> {
+    let base = read(root, &["merge-base", "--", target, branch])?;
+    let tree = read(root, &["rev-parse", &format!("{branch}^{{tree}}")])?;
+    let probe = uze_git::write_with_env(
         root,
         &[
             "-c",
@@ -1301,10 +1386,8 @@ fn squashed_patch_is_in(root: &Path, target: &str, branch: &str) -> bool {
     )
     .ok()
     .and_then(|output| output.successful().ok())
-    .map(|stdout| stdout.trim().to_owned()) else {
-        return false;
-    };
-    read(root, &["cherry", target, &probe]).is_some_and(|listing| every_commit_is_there(&listing))
+    .map(|stdout| stdout.trim().to_owned())?;
+    patch_is_in(root, target, &probe)
 }
 
 /// A read whose failure is simply no answer.
@@ -2362,6 +2445,45 @@ mod tests {
             before,
             "the second probe is the first one"
         );
+    }
+
+    /// The answer is remembered per pair of commits, so a branch asked
+    /// about before it landed is answered again once the target moves —
+    /// by a squash, which only patch identity can see.
+    #[test]
+    fn a_branch_asked_about_before_it_landed_is_answered_as_landed() {
+        let repository = repository("slots-landed-later");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let (task, slot) = launch(&repository, &mut store, "later");
+        let branch = task.isolation().unwrap().branch.clone();
+        fs::write(slot.path.join("feature.rs"), b"fn f() {}").unwrap();
+        repository.git_in(&slot.path, &["add", "."]);
+        repository.git_in(&slot.path, &["commit", "-qm", "the feature"]);
+        fs::write(slot.path.join("feature.rs"), b"fn f() -> u8 { 1 }").unwrap();
+        repository.git_in(&slot.path, &["commit", "-qam", "and its fix"]);
+        assert!(!is_integrated(primary, TARGET, &branch));
+
+        repository.git(&["merge", "--squash", &branch]);
+        repository.git(&["commit", "-qm", "the feature (#8)"]);
+
+        assert!(is_integrated(primary, TARGET, &branch));
+    }
+
+    /// Falling closed is not an answer to keep: a target the clone lacks
+    /// is asked about again, and answered once it appears.
+    #[test]
+    fn a_target_that_appears_later_is_asked_about_again() {
+        let repository = repository("slots-target-later");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let (task, _slot) = launch(&repository, &mut store, "early");
+        let branch = task.isolation().unwrap().branch.clone();
+        assert!(!is_integrated(primary, "release", &branch));
+
+        repository.git(&["branch", "release", &branch]);
+
+        assert!(is_integrated(primary, "release", &branch));
     }
 
     /// A worktree UZE did not create is none of its business. A harness
