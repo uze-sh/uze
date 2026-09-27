@@ -54,7 +54,7 @@ pub use uze_core::{
     reconciliation::ReconciliationReport,
     router::CompatibilityRoute,
     router::HarnessCapabilities,
-    store::parse_plugin_marketplace_spec,
+    store::{parse_plugin_marketplace_spec, typed_name},
     // For a runner of the binary's own that sends a child's output
     // somewhere `ProcessOutput` cannot name: its timeout must still reach
     // the whole tree the way every other child's does.

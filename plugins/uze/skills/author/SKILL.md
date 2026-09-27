@@ -1,4 +1,5 @@
 ---
+name: author
 # Two lines deciding who finds this skill: the long text is what the model
 # matches an invocation against, so it names the moment the skill answers —
 # "create a plugin for me" — not what a scaffold is.
@@ -67,6 +68,13 @@ plugin to it directly.
 uze agent plugin create <name> --market <market> [--description "…"] \
     [--hook] [--mcp] [--agent] [--instructions]
 ```
+
+Every name here (the marketplace's, the plugin's, each skill's) is
+lowercase kebab-case: `a-z`, `0-9` and single `-` between them, at most
+64 characters, the one spelling every harness accepts. A skill's `name`
+equals its directory. The verbs and both checks refuse anything else and
+say the name you meant; a display casing belongs in `plugin.json`'s
+`interface.displayName`, never in the name.
 
 The default is a skill plugin: `plugin.json` plus
 `skills/<name>/SKILL.md` — edit the skill body, and choose the

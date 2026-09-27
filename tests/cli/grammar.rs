@@ -719,3 +719,130 @@ fn an_extension_is_switched_from_the_cli() {
     );
     let _ = std::fs::remove_dir_all(home);
 }
+
+/// A marketplace whose manifest names it outside the name rule is refused
+/// before anything is recorded, and told the name it meant.
+#[test]
+fn market_add_refuses_a_name_outside_the_rule_and_records_nothing() {
+    let home = temporary_home("market-add-name-rule");
+    let market_root = home.join("market");
+    std::fs::create_dir_all(&market_root).unwrap();
+    std::fs::write(
+        market_root.join("marketplace.json"),
+        r#"{"name": "My_Market", "plugins": []}"#,
+    )
+    .unwrap();
+
+    let output = uze(&home)
+        .args(["market", "add", market_root.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "a bad name must be refused");
+    assert!(stderr.contains("try `my-market`"), "{stderr}");
+
+    let list = uze(&home)
+        .args(["market", "list", "--format", "json"])
+        .output()
+        .unwrap();
+    let listed = String::from_utf8_lossy(&list.stdout);
+    assert!(
+        !listed.to_lowercase().contains("my_market") && !listed.contains("my-market"),
+        "nothing was recorded: {listed}"
+    );
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// A plugin whose own `plugin.json` names it outside the rule is refused
+/// at install, before any byte reaches the Store, even when the
+/// marketplace entry that points at it is well named.
+#[test]
+fn a_plugin_named_outside_the_rule_is_refused_at_install() {
+    let home = temporary_home("install-name-rule");
+    let plugin = home.join("source");
+    std::fs::create_dir_all(plugin.join("skills/flow")).unwrap();
+    std::fs::write(
+        plugin.join("plugin.json"),
+        r#"{"name": "Flow", "description": "x"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        plugin.join("skills/flow/SKILL.md"),
+        "---\nname: flow\ndescription: x\n---\nbody\n",
+    )
+    .unwrap();
+    uze_testkit::marketplace::stage(
+        &home.join("market"),
+        r#"{"name": "test", "plugins": [{"name": "flow", "source": "./plugins/flow"}]}"#,
+        &[("flow".to_owned(), plugin)],
+    );
+    let added = uze(&home)
+        .args(["market", "add", home.join("market").to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        added.status.success(),
+        "{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+
+    let install = uze(&home)
+        .args(["install", "-m", "flow@test"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&install.stderr);
+    assert!(
+        !install.status.success(),
+        "an uppercase name must be refused"
+    );
+    assert!(stderr.contains("try `flow`"), "{stderr}");
+    let stored = home.join("store/plugins/test");
+    assert!(
+        !stored.exists() || std::fs::read_dir(&stored).unwrap().next().is_none(),
+        "nothing reached the Store"
+    );
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// Two spellings of one name are one package: installing again in
+/// another case finds the package already there rather than adding a
+/// second Store entry.
+#[test]
+fn two_spellings_of_one_name_are_one_package() {
+    let home = temporary_home("install-two-spellings");
+    let spec = staged_market(&home);
+    for typed in [spec.clone(), spec.to_uppercase()] {
+        let output = uze(&home)
+            .args(["install", "-m", typed.as_str()])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "`install -m {typed}` failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let stored: Vec<String> = std::fs::read_dir(home.join("store/plugins/test"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(stored, vec![spec.split_once('@').unwrap().0.to_owned()]);
+
+    let status = uze(&home)
+        .args(["status", "-m", "--format", "json"])
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    let from_test = report["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|package| {
+            package["id"]
+                .as_str()
+                .is_some_and(|id| id.to_lowercase().ends_with("@test"))
+        })
+        .count();
+    assert_eq!(from_test, 1, "one package, one registration: {report}");
+    let _ = std::fs::remove_dir_all(home);
+}

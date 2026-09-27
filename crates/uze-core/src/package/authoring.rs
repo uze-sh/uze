@@ -68,16 +68,13 @@ pub fn scaffold_local_marketplace(
     plugins_dir: &str,
 ) -> Result<(PathBuf, PathBuf)> {
     if !store::is_valid_package_name(name) {
-        return Err(UzeError::InvalidPackageName {
-            name: name.to_owned(),
-            path: project_root.to_path_buf(),
-        });
+        return Err(UzeError::InvalidMarketplaceName(name.to_owned()));
     }
-    if !store::is_valid_package_name(plugins_dir) {
-        return Err(UzeError::InvalidPackageName {
-            name: plugins_dir.to_owned(),
-            path: project_root.to_path_buf(),
-        });
+    if !is_plain_directory_name(plugins_dir) {
+        return Err(UzeError::MarketplaceScaffold(format!(
+            "`{plugins_dir}` is not a plugins directory — one path segment of letters, digits, \
+             `-` and `_`, not starting with `-`"
+        )));
     }
     let manifest_path = project_root.join(MARKETPLACE_MANIFEST);
     if manifest_path.is_file() {
@@ -124,10 +121,7 @@ pub fn scaffold_local_marketplace(
 /// an author line in the author's repository.
 pub fn scaffold_marketplace(name: &str, description: Option<&str>, at: &Path) -> Result<PathBuf> {
     if !store::is_valid_package_name(name) {
-        return Err(UzeError::InvalidPackageName {
-            name: name.to_owned(),
-            path: at.to_path_buf(),
-        });
+        return Err(UzeError::InvalidMarketplaceName(name.to_owned()));
     }
     if !is_absent_or_empty_directory(at) {
         return Err(UzeError::MarketplaceScaffold(format!(
@@ -426,8 +420,19 @@ fn plugins_directory(manifest: &serde_json::Value) -> String {
     };
     recorded
         .or_else(inhabited)
-        .filter(|directory| store::is_valid_package_name(directory))
+        .filter(|directory| is_plain_directory_name(directory))
         .unwrap_or_else(|| PLUGINS_DIRECTORY.to_owned())
+}
+
+/// A directory the marketplace keeps its plugins in: one path segment that
+/// cannot be read as a flag. It is a path, never an id a harness sees, so
+/// the name rule's case and length do not apply to it.
+fn is_plain_directory_name(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('-')
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == '_'
+        })
 }
 
 fn read_json(path: &Path) -> Result<serde_json::Value> {
@@ -530,9 +535,18 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
                              project this skill"
                         ));
                     }
-                    if let Some(reason) = skill_frontmatter_fault(&resource.capability.payload) {
-                        findings.push(format!("{path}: {reason}"));
-                    }
+                    let directory = resource
+                        .capability
+                        .path
+                        .parent()
+                        .and_then(Path::file_name)
+                        .and_then(|name| name.to_str())
+                        .unwrap_or_default();
+                    findings.extend(
+                        skill_frontmatter_faults(&resource.capability.payload, directory)
+                            .into_iter()
+                            .map(|reason| format!("{path}: {reason}")),
+                    );
                 }
                 delivers.push(resource.identity());
             }
@@ -543,40 +557,70 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
     Ok(ValidationReport { delivers, findings })
 }
 
-/// What a harness reading this `SKILL.md` would trip over in its
-/// frontmatter. The install-side reader is deliberately lenient — it
-/// extracts only the `invoke:` booleans and keeps the bytes verbatim — so
-/// this is the one place the frontmatter is read as the YAML a harness
-/// parses it as.
-fn skill_frontmatter_fault(payload: &[u8]) -> Option<String> {
+/// What a harness reading this `SKILL.md`, from the directory named
+/// `directory`, would trip over in its frontmatter. The install-side reader
+/// is deliberately lenient — it extracts only the `invoke:` booleans and
+/// keeps the bytes verbatim — so this is the one place the frontmatter is
+/// read as the YAML a harness parses it as.
+fn skill_frontmatter_faults(payload: &[u8], directory: &str) -> Vec<String> {
     let Ok(text) = std::str::from_utf8(payload) else {
-        return Some("is not UTF-8".to_owned());
+        return vec!["is not UTF-8".to_owned()];
     };
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let Some((head, _)) = crate::skill::split_frontmatter(text) else {
-        return Some(
-            "has no frontmatter — it opens with a `---` line, carries `description:`, and \
-             closes with another `---` line"
+        return vec![
+            "has no frontmatter — it opens with a `---` line, carries `name:` and \
+             `description:`, and closes with another `---` line"
                 .to_owned(),
-        );
+        ];
     };
     let frontmatter: serde_yaml::Value =
         match from_str_with_config(head, &ParserConfig::serde_yaml_compat()) {
             Ok(frontmatter) => frontmatter,
             Err(error) => {
-                return Some(format!(
+                return vec![format!(
                     "frontmatter is not valid YAML ({error}) — quote a value that carries `: ` \
                      or starts with a special character"
-                ));
+                )];
             }
         };
+    let mut faults = Vec::new();
     let described = frontmatter
         .get("description")
         .and_then(serde_yaml::Value::as_str)
         .is_some_and(|description| !description.trim().is_empty());
-    (!described).then(|| {
-        "frontmatter has no `description` — it is what the model matches an invocation against"
-            .to_owned()
+    if !described {
+        faults.push(
+            "frontmatter has no `description` — it is what the model matches an invocation \
+             against"
+                .to_owned(),
+        );
+    }
+    faults.extend(skill_name_fault(&frontmatter, directory));
+    faults
+}
+
+/// The Agent Skills specification's rule for `name`, which every harness
+/// enforces on delivery: the same lowercase kebab-case a plugin is held
+/// to, and equal to the directory the skill lives in.
+fn skill_name_fault(frontmatter: &serde_yaml::Value, directory: &str) -> Option<String> {
+    let Some(name) = frontmatter.get("name").and_then(serde_yaml::Value::as_str) else {
+        return Some(format!(
+            "frontmatter has no `name` — the Agent Skills specification requires one, equal \
+             to its directory: `name: {directory}`"
+        ));
+    };
+    if !store::is_valid_package_name(name) {
+        return Some(format!(
+            "`name: {name}` is refused by every harness: {}",
+            store::name_rule(name)
+        ));
+    }
+    (name != directory).then(|| {
+        format!(
+            "`name: {name}` differs from its directory `{directory}` — harnesses require the \
+             two to match; rename one"
+        )
     })
 }
 
@@ -674,6 +718,13 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
         }
     };
     for entry in &manifest.plugins {
+        if !store::is_valid_package_name(&entry.name) {
+            findings.push(format!(
+                "{}: not a valid plugin name: {}",
+                entry.name,
+                store::name_rule(&entry.name)
+            ));
+        }
         match marketplace::resolve_plugin_source(&manifest, &entry.name, root) {
             Ok(resolved) => {
                 delivers.push(entry.name.clone());

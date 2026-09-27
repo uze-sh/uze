@@ -169,13 +169,9 @@ impl PackageId {
     }
 
     pub fn from_marketplace_plugin(marketplace: &str, name: &str, manifest: &Path) -> Result<Self> {
-        // The id is later used as a bare CLI argument to vendor tooling
-        // (e.g. `codex plugin remove <id>@marketplace`, with no `--`
-        // separator available before it). A leading `-` would let a
-        // maliciously or carelessly named plugin be parsed as a flag by
-        // that vendor CLI rather than as the id itself, so it is rejected
-        // here at the one chokepoint every package id is constructed
-        // through — not just re-checked at each call site.
+        // The one chokepoint every package id is constructed through, so
+        // the name rule (see `is_valid_name_component`) is enforced here
+        // rather than re-checked at each call site.
         let valid = is_valid_name_component(name);
         let valid_marketplace = is_valid_name_component(marketplace);
         if !valid_marketplace {
@@ -195,13 +191,9 @@ impl PackageId {
     }
 
     pub fn from_qualified(value: &str, manifest: &Path) -> Result<Self> {
-        let (name, marketplace) =
-            value
-                .rsplit_once('@')
-                .ok_or_else(|| UzeError::InvalidPackageName {
-                    path: manifest.to_path_buf(),
-                    name: value.to_owned(),
-                })?;
+        let (name, marketplace) = value.rsplit_once('@').ok_or_else(|| {
+            UzeError::InvalidPluginSpec(format!("`{value}` must be `name@marketplace`"))
+        })?;
         Self::from_marketplace_plugin(marketplace, name, manifest)
     }
 
@@ -216,17 +208,68 @@ impl PackageId {
     }
 }
 
-/// The one charset/shape rule every plugin name, marketplace name, and
-/// local active-name alias is held to (ADR-036): a leading `-` would let a
-/// carelessly named entry be parsed as a flag by a vendor CLI that takes it
-/// as a bare positional argument, so it is rejected at every chokepoint
-/// that turns operator/manifest text into one of these tokens.
+/// The longest name any harness accepts: the Agent Skills specification and
+/// OpenCode both cap a skill name at 64, and a plugin's name becomes one.
+pub const NAME_MAX_LEN: usize = 64;
+
+/// The one rule every plugin name, marketplace name, and install alias is
+/// held to: lowercase kebab-case, `^[a-z0-9]+(-[a-z0-9]+)*$`, at most
+/// [`NAME_MAX_LEN`] characters.
+///
+/// It is the intersection of what every harness UZE delivers to accepts —
+/// the Agent Skills specification, Claude Code's and Codex's plugin names,
+/// Gemini's extension names — so a name UZE accepts is never one a harness
+/// rejects later. It also subsumes the older leading-`-` rule (ADR-036): a
+/// name a vendor CLI takes as a bare positional argument cannot be parsed
+/// as a flag. And because it is lowercase-only, two names that differ by
+/// case cannot become two packages sharing one directory on a
+/// case-insensitive filesystem.
 fn is_valid_name_component(value: &str) -> bool {
-    !value.is_empty()
-        && !value.starts_with('-')
-        && value.chars().all(|character| {
-            character.is_ascii_alphanumeric() || character == '-' || character == '_'
-        })
+    value.len() <= NAME_MAX_LEN
+        && !value.is_empty()
+        && value
+            .split('-')
+            .all(|segment| !segment.is_empty() && segment.bytes().all(is_name_byte))
+}
+
+fn is_name_byte(byte: u8) -> bool {
+    byte.is_ascii_lowercase() || byte.is_ascii_digit()
+}
+
+/// The name [`is_valid_package_name`] would accept for `value`, when one
+/// can be derived: lowercased, `_`, spaces and `.` read as `-`, anything
+/// else outside the rule dropped, hyphens collapsed and trimmed, cut to
+/// [`NAME_MAX_LEN`]. `None` when nothing is left, or when `value` already
+/// holds.
+pub fn suggested_name(value: &str) -> Option<String> {
+    if is_valid_name_component(value) {
+        return None;
+    }
+    let mut suggestion = String::with_capacity(value.len());
+    for character in value.chars() {
+        let character = character.to_ascii_lowercase();
+        if character.is_ascii_lowercase() || character.is_ascii_digit() {
+            suggestion.push(character);
+        } else if matches!(character, '-' | '_' | ' ' | '.') && !suggestion.ends_with('-') {
+            suggestion.push('-');
+        }
+    }
+    suggestion.truncate(NAME_MAX_LEN);
+    let suggestion = suggestion.trim_matches('-');
+    (!suggestion.is_empty()).then(|| suggestion.to_owned())
+}
+
+/// What a refused name is told: the rule, and the corrected name when one
+/// can be derived.
+pub fn name_rule(value: &str) -> String {
+    let rule = format!(
+        "names are lowercase kebab-case: `a-z`, `0-9` and single `-` between them, at most \
+         {NAME_MAX_LEN} characters"
+    );
+    match suggested_name(value) {
+        Some(suggestion) => format!("{rule} — try `{suggestion}`"),
+        None => rule,
+    }
 }
 
 /// The same rule a [`PackageId`] is held to, asked before one is built — the
@@ -237,20 +280,29 @@ pub fn is_valid_package_name(value: &str) -> bool {
 }
 
 /// Parses the `plugin@marketplace` spelling an operator types. Both halves
-/// are required and held to the same rule a [`PackageId`] is.
+/// are required and held to the same rule a [`PackageId`] is, after
+/// [`typed_name`] forgives their case.
 pub fn parse_plugin_marketplace_spec(spec: &str) -> Result<(String, String)> {
-    let (plugin, marketplace) = spec.split_once('@').ok_or_else(|| {
+    let typed = typed_name(spec);
+    let (plugin, marketplace) = typed.split_once('@').ok_or_else(|| {
         UzeError::InvalidPluginSpec(format!("`{spec}` must be `name@marketplace`"))
     })?;
     for part in [plugin, marketplace] {
         if !is_valid_name_component(part) {
             return Err(UzeError::InvalidPluginSpec(format!(
-                "`{spec}` must be `name@marketplace`, and `{part}` is not a valid name: \
-                 letters, digits, `-` and `_`, not starting with `-`"
+                "`{spec}` must be `name@marketplace`, and `{part}` is not a valid name: {}",
+                name_rule(part)
             )));
         }
     }
     Ok((plugin.to_owned(), marketplace.to_owned()))
+}
+
+/// A name as a person typed it, in the only case a name can be spelled in.
+/// Every name on record is lowercase, so `Flow@AI` can only ever have meant
+/// `flow@ai`; resolution after this stays exact.
+pub fn typed_name(value: &str) -> String {
+    value.to_ascii_lowercase()
 }
 
 /// Whether `value` is a valid qualified `name@marketplace` package id — the
@@ -937,9 +989,77 @@ mod tests {
     }
 
     #[test]
+    fn a_typed_spec_resolves_in_the_one_case_a_name_has() {
+        let (plugin, marketplace) = parse_plugin_marketplace_spec("Flow@AI").unwrap();
+        assert_eq!((plugin.as_str(), marketplace.as_str()), ("flow", "ai"));
+        let refused = parse_plugin_marketplace_spec("my_plugin@ai")
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("try `my-plugin`"), "{refused}");
+    }
+
+    #[test]
+    fn a_name_is_lowercase_kebab_case_of_at_most_64_characters() {
+        for valid in [
+            "a",
+            "git",
+            "uze-official",
+            "x2",
+            "2x",
+            "a-b-c",
+            &"a".repeat(64),
+        ] {
+            assert!(is_valid_package_name(valid), "{valid} should hold");
+        }
+        for invalid in [
+            "",
+            "Flow",
+            "PDF-Processing",
+            "my_plugin",
+            "double--hyphen",
+            "-leading",
+            "trailing-",
+            "-",
+            "has space",
+            "has.dot",
+            "has/slash",
+            "ünicode",
+            &"a".repeat(65),
+        ] {
+            assert!(
+                !is_valid_package_name(invalid),
+                "{invalid} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn a_refused_name_is_told_the_name_it_meant() {
+        for (typed, meant) in [
+            ("Flow", "flow"),
+            ("PDF-Processing", "pdf-processing"),
+            ("my_plugin", "my-plugin"),
+            ("My Plugin", "my-plugin"),
+            ("double--hyphen", "double-hyphen"),
+            ("-leading", "leading"),
+            ("trailing-", "trailing"),
+            ("v1.2", "v1-2"),
+            ("__a__b__", "a-b"),
+        ] {
+            assert_eq!(suggested_name(typed).as_deref(), Some(meant), "{typed}");
+            assert!(is_valid_package_name(meant));
+        }
+        assert_eq!(suggested_name(&"a".repeat(65)), Some("a".repeat(64)));
+        assert_eq!(suggested_name("git"), None);
+        assert_eq!(suggested_name("---"), None);
+        assert!(!name_rule("---").contains("try"));
+    }
+
+    #[test]
     fn package_id_rejects_invalid_names() {
         let manifest = PathBuf::from("/tmp/plugin.json");
-        assert!(PackageId::from_plugin_name("valid-name_123", &manifest).is_ok());
+        assert!(PackageId::from_plugin_name("valid-name-123", &manifest).is_ok());
+        assert!(PackageId::from_plugin_name("valid_name", &manifest).is_err());
         assert!(PackageId::from_plugin_name("", &manifest).is_err());
         assert!(PackageId::from_plugin_name("has space", &manifest).is_err());
         assert!(PackageId::from_plugin_name("has/slash", &manifest).is_err());
