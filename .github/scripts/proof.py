@@ -42,7 +42,10 @@ import urllib.request
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 #: Bump to invalidate every recorded proof, e.g. when what a leg proves
-#: changes in a way the inputs below cannot see.
+#: changes in a way the inputs below cannot see. This file is deliberately
+#: not one of those inputs: editing it would otherwise throw away every
+#: proof over a comment, and a change to what a key covers already changes
+#: every key it touches.
 SCHEME = "v2"
 
 HARNESSES = ("antigravity", "claude", "codex", "opencode")
@@ -66,7 +69,6 @@ LAB_READS = (
     "conformance/",
     "marketplace.json",
     ".github/workflows/conformance.yml",
-    ".github/scripts/proof.py",
 )
 
 #: Compiled into the image but never reached by a vertical. The terminal UI
@@ -93,7 +95,6 @@ JOURNEY_READS = (
     "marketplace.json",
     ".github/workflows/journeys.yml",
     ".github/actions/journeys/",
-    ".github/scripts/proof.py",
 )
 
 JOURNEY_NEVER_REACHES = ("journeys/**/*.md",)
