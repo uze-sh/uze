@@ -669,3 +669,53 @@ fn an_unknown_notification_choice_is_reported_and_left_alone() {
     );
     let _ = std::fs::remove_dir_all(home);
 }
+
+/// The CLI flips the same switch the management screen does: written to
+/// `[extensions]` in `config.toml`, read back by the listing, and an id
+/// UZE does not carry refused rather than recorded.
+#[test]
+fn an_extension_is_switched_from_the_cli() {
+    let home = temporary_home("extension-switch");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let output = uze(&home)
+        .args(["config", "extension", "architect", "off"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let written = std::fs::read_to_string(home.join("config.toml")).unwrap();
+    assert!(written.contains("[extensions]"), "got: {written}");
+    assert!(written.contains("architect = false"), "got: {written}");
+
+    let output = uze(&home)
+        .args(["config", "extension", "--format", "json"])
+        .output()
+        .unwrap();
+    let listed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let enabled = |id: &str| {
+        listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == id)
+            .map(|entry| entry["enabled"].as_bool().unwrap())
+    };
+    assert_eq!(enabled("architect"), Some(false));
+    assert_eq!(enabled("code"), Some(true));
+
+    let output = uze(&home)
+        .args(["config", "extension", "nope", "off"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "an unknown id is refused");
+    assert_eq!(
+        std::fs::read_to_string(home.join("config.toml")).unwrap(),
+        written,
+        "and nothing is written for it"
+    );
+    let _ = std::fs::remove_dir_all(home);
+}

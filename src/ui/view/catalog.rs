@@ -56,7 +56,10 @@ pub(crate) struct Card<'a> {
     pub(crate) name: &'a str,
     pub(crate) badge: Option<Badge>,
     pub(crate) description: &'a str,
-    pub(crate) caption: Line<'a>,
+    pub(crate) caption: Span<'a>,
+    /// Whether the thing is in use here, said after the caption at the
+    /// card's foot.
+    pub(crate) state: Option<Span<'a>>,
 }
 
 pub(crate) fn render_card(
@@ -100,9 +103,24 @@ pub(crate) fn render_card(
         Rect::new(inner.x, inner.y + 1, inner.width, 2),
     );
     frame.render_widget(
-        Paragraph::new(card.caption),
+        Paragraph::new(foot(card.caption, card.state, inner.width)),
         Rect::new(inner.x, inner.y + 4, inner.width, 1),
     );
+}
+
+/// The caption and the state after it, or the state alone where both do
+/// not fit: the state is what a person scans the catalog for, and a word
+/// clipped to "Ena" says nothing.
+fn foot<'a>(caption: Span<'a>, state: Option<Span<'a>>, width: u16) -> Line<'a> {
+    let Some(state) = state else {
+        return Line::from(caption);
+    };
+    const GAP: &str = "  ";
+    if caption.width() + GAP.len() + state.width() <= usize::from(width) {
+        Line::from(vec![caption, Span::raw(GAP), state])
+    } else {
+        Line::from(state)
+    }
 }
 
 /// The name, and right-aligned beside it only what fits with a gap

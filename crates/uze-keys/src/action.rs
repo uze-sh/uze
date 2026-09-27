@@ -168,6 +168,14 @@ actions! {
     AddMarketplace => "add-marketplace", false,
         "Add marketplace", "Register a marketplace by path or URL";
 
+    // --- Management, things done to an extension -----------------------
+    EnableExtension => "enable-extension", false,
+        "Enable", "Offer the selected extension in the workspace again";
+    DisableExtension => "disable-extension", false,
+        "Disable",
+        "Take the selected extension out of the workspace: its keys, its buttons and \
+         its entries in the index";
+
     // --- Management, things done to a project ---------------------------
     InstallProjectEnvironment => "install-project-environment", false,
         "Install the project's environment", "Install what this project declares but the machine lacks";

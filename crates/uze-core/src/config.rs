@@ -19,9 +19,9 @@
 //! writing over it would destroy the text the operator was in the middle of
 //! fixing.
 
-use std::fs;
+use std::{collections::BTreeMap, fs};
 
-use toml_edit::{DocumentMut, Item, Table, value};
+use toml_edit::{DocumentMut, Item, Table, Value};
 
 use crate::{
     error::{Result, UzeError},
@@ -40,6 +40,31 @@ pub fn get(home: &UzeHome, section: &str, key: &str) -> Result<Option<String>> {
 }
 
 pub fn set(home: &UzeHome, section: &str, key: &str, setting: &str) -> Result<()> {
+    set_value(home, section, key, setting.into())
+}
+
+/// Every boolean in `section`, by key. A key holding anything else is left
+/// out rather than guessed at: the section's owner reads its absence as
+/// its own default.
+pub fn bools(home: &UzeHome, section: &str) -> Result<BTreeMap<String, bool>> {
+    let document = read(home)?;
+    Ok(document
+        .get(section)
+        .and_then(Item::as_table_like)
+        .map(|table| {
+            table
+                .iter()
+                .filter_map(|(key, item)| Some((key.to_owned(), item.as_bool()?)))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+pub fn set_bool(home: &UzeHome, section: &str, key: &str, setting: bool) -> Result<()> {
+    set_value(home, section, key, setting.into())
+}
+
+fn set_value(home: &UzeHome, section: &str, key: &str, setting: Value) -> Result<()> {
     let mut document = read(home)?;
     let table = document
         .entry(section)
@@ -49,11 +74,11 @@ pub fn set(home: &UzeHome, section: &str, key: &str, setting: &str) -> Result<()
     match table.get_mut(key).and_then(Item::as_value_mut) {
         Some(existing) => {
             let decor = existing.decor().clone();
-            *existing = setting.into();
+            *existing = setting;
             *existing.decor_mut() = decor;
         }
         None => {
-            table.insert(key, value(setting));
+            table.insert(key, Item::Value(setting));
         }
     }
     write(home, &document)

@@ -1161,6 +1161,135 @@ mod workspace_tests {
         assert!(driven.attach.model.spec.is_none(), "closed in one click");
     }
 
+    fn switched_off(ids: &[&str]) -> std::collections::BTreeSet<String> {
+        ids.iter().map(|id| (*id).to_owned()).collect()
+    }
+
+    /// Switching an extension off takes every way in with it: the surface
+    /// standing in the pane closes, its button leaves the strip, its key
+    /// reaches the program underneath, and the index stops listing it.
+    #[test]
+    fn an_extension_switched_off_leaves_the_strip_the_keys_and_the_index() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-extension-off"));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        open_architect(&mut model);
+        model.follow_extension_switch(switched_off(&[uze_extensions::architect::CATALOG.id]));
+        assert!(model.architect.is_none(), "the open surface closed");
+
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let hits: Vec<WorkspaceHit> = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .map(|(_, hit)| *hit)
+            .collect();
+        assert!(!hits.contains(&WorkspaceHit::OpenArchitect));
+        assert!(hits.contains(&WorkspaceHit::OpenSpec));
+        assert!(hits.contains(&WorkspaceHit::OpenFiles));
+
+        driven.sent();
+        driven.press_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::ALT));
+        assert!(
+            driven.attach.model.architect.is_none(),
+            "its key opens nothing"
+        );
+        assert!(
+            driven
+                .sent()
+                .iter()
+                .any(|request| matches!(request, ClientRequest::Input { .. })),
+            "the chord is the program's again"
+        );
+
+        let listed: Vec<uze_keys::Action> = super::action_index_rows(
+            &[uze_keys::Scope::Global, uze_keys::Scope::Workspace],
+            "",
+            &driven.attach.model.disabled_extensions,
+        )
+        .into_iter()
+        .map(|(action, _)| action)
+        .collect();
+        assert!(!listed.contains(&uze_keys::Action::ToggleArchitect));
+        assert!(listed.contains(&uze_keys::Action::ToggleSpec));
+    }
+
+    #[test]
+    fn every_extension_switched_off_takes_the_whole_button_group() {
+        let home = UzeHome::at(uze_testkit::temp::scratch(
+            "orchestrator-extensions-all-off",
+        ));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        model.follow_extension_switch(switched_off(&[
+            uze_extensions::code::CATALOG.id,
+            uze_extensions::architect::CATALOG.id,
+            uze_extensions::spec::CATALOG.id,
+        ]));
+        let mut driven = driven(model, &home);
+        driven.frame();
+        assert!(!driven.attach.model.hits.iter().any(|(_, hit)| matches!(
+            hit,
+            WorkspaceHit::OpenSpec | WorkspaceHit::OpenArchitect | WorkspaceHit::OpenFiles
+        )));
+        assert!(
+            !driven
+                .attach
+                .model
+                .first_steps()
+                .steps
+                .iter()
+                .any(|step| matches!(
+                    step,
+                    uze_keys::Action::ToggleChanges | uze_keys::Action::ToggleFiles
+                )),
+            "a first step nobody can take is not offered"
+        );
+    }
+
+    /// Nothing is read for a sidebar section whose extension is off, and
+    /// an answer already on its way when it was switched off is dropped.
+    #[test]
+    fn a_switched_off_extension_reads_nothing_for_the_sidebar() {
+        let mut model = agent_session_in("/repo");
+        model.follow_extension_switch(switched_off(&[
+            uze_extensions::code::CATALOG.id,
+            uze_extensions::spec::CATALOG.id,
+        ]));
+        let (git, _git_answers) = std::sync::mpsc::channel();
+        let (summary, _summary_answers) = std::sync::mpsc::channel();
+
+        model.schedule_git_read(&git);
+        model.schedule_spec_summary(&summary);
+
+        assert!(model.remembered.git_pending.is_none());
+        assert!(model.remembered.spec_summary_pending.is_none());
+        assert!(!model.absorb_git_read(GitResolution {
+            cwd: PathBuf::from("/repo"),
+            answer: GitAnswer::Summary(None),
+            took: Duration::ZERO,
+        }));
+        assert!(model.remembered.git_badge.is_none());
+    }
+
+    /// Switching back on puts it all back: the button returns and a key
+    /// opens the surface again.
+    #[test]
+    fn an_extension_switched_back_on_opens_again() {
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        model.follow_extension_switch(switched_off(&[uze_extensions::spec::CATALOG.id]));
+        open_spec(&mut model);
+        assert!(model.spec.is_none());
+
+        model.follow_extension_switch(std::collections::BTreeSet::new());
+        open_spec(&mut model);
+        assert!(model.spec.is_some());
+    }
+
     /// The surface seals the keyboard: a letter it has no use for is not
     /// typed into the program underneath it.
     #[test]

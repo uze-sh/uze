@@ -265,6 +265,8 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Plugins, "i", Action::InstallPlugin),
         bind(Scope::Plugins, "u", Action::UpdatePlugin),
         bind(Scope::Plugins, "r", Action::RemovePlugin),
+        bind(Scope::Extensions, "e", Action::EnableExtension),
+        bind(Scope::Extensions, "o", Action::DisableExtension),
         bind(Scope::Harnesses, "s", Action::SetupHarness),
         bind(Scope::Harnesses, "a", Action::AnalyzeContext),
         bind(Scope::Harnesses, "p", Action::ApplyContextPlan),

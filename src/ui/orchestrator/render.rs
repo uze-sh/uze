@@ -204,7 +204,7 @@ pub(super) fn render(
         render_work(frame, frame.area(), model, overlay, hits);
     }
     if let Some(index) = &model.action_index {
-        render_action_index(frame, frame.area(), index, hits);
+        render_action_index(frame, frame.area(), index, &model.disabled_extensions, hits);
     }
     if let Some(picker) = &model.agent_picker {
         render_agent_picker(frame, frame.area(), picker.anchor, picker, hits);
@@ -864,7 +864,7 @@ pub(super) fn render_sidebar(
             match hit {
                 ViewHit::ToggleSection => hits.push((rect, WorkspaceHit::ToggleFirstSteps)),
                 ViewHit::SelectItem(index) => {
-                    if let Some(action) = FIRST_STEPS.get(index) {
+                    if let Some(action) = steps.steps.get(index) {
                         hits.push((rect, WorkspaceHit::QuickAction(*action)));
                     }
                 }
@@ -2742,10 +2742,11 @@ pub(super) fn render_action_index(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     index: &ActionIndexOverlay,
+    disabled: &std::collections::BTreeSet<String>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let rows = action_index_rows(&index.scopes, &index.filter);
-    let reachable = action_index_rows(&index.scopes, "").len();
+    let rows = action_index_rows(&index.scopes, &index.filter, disabled);
+    let reachable = action_index_rows(&index.scopes, "", disabled).len();
     let entries = action_index::render(
         frame,
         area,
@@ -2879,7 +2880,9 @@ pub(super) fn render_tab_strip(
     // All are always there — a checkout always has a shape, files and
     // an answer to what it intends, even when that answer is "no layout"
     // — which is what lets them be the fixed set the eye learns, with
-    // every zone that comes and goes sitting to the left of them.
+    // every zone that comes and goes sitting to the left of them. The one
+    // exception is the operator's own: an extension switched off takes
+    // its button with it, and all three off take the group.
     //
     // No bold: words side by side at the same weight read as one
     // strip of controls, and bold made each of them claim the row on its
@@ -2892,14 +2895,16 @@ pub(super) fn render_tab_strip(
         // covers. Said by the ground, not by the word's hue or weight.
         // In the order a change is read: what it intends, what it was
         // described as, and what it is.
-        let buttons = [
+        let buttons: Vec<GroupButton> = [
             (
+                spec::CATALOG.id,
                 WorkspaceHit::OpenSpec,
                 Symbol::Spec,
                 "spec",
                 model.spec.is_some(),
             ),
             (
+                architect::CATALOG.id,
                 WorkspaceHit::OpenArchitect,
                 Symbol::Architect,
                 // Short, as the other two are: three errands in one group,
@@ -2909,27 +2914,33 @@ pub(super) fn render_tab_strip(
                 model.architect.is_some(),
             ),
             (
+                code::CATALOG.id,
                 WorkspaceHit::OpenFiles,
                 Symbol::Code,
                 "code",
                 model.code.is_some(),
             ),
         ]
-        .map(|(hit, symbol, name, open)| GroupButton {
+        .into_iter()
+        .filter(|(extension, ..)| model.offers_extension(extension))
+        .map(|(_, hit, symbol, name, open)| GroupButton {
             hit,
             label: surface_label(symbol, name),
             hue: theme::color(Token::TextSecondary),
             strong: false,
             lit: open,
             switch: true,
-        });
-        let width = group_width(&buttons);
-        let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
-        let (spans, group_hits) =
-            button_group(model, &buttons, Token::SurfaceRaised, (rect.x, rect.y));
-        hits.extend(group_hits);
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
-        trailing_right = ZoneEdge::Filled.left_of(rect.x);
+        })
+        .collect();
+        if !buttons.is_empty() {
+            let width = group_width(&buttons);
+            let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
+            let (spans, group_hits) =
+                button_group(model, &buttons, Token::SurfaceRaised, (rect.x, rect.y));
+            hits.extend(group_hits);
+            frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+            trailing_right = ZoneEdge::Filled.left_of(rect.x);
+        }
     }
 
     // ── git changes ────────────────────────────────────────────────────

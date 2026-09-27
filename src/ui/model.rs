@@ -614,6 +614,8 @@ pub(crate) struct TuiModel {
     /// The official uze extensions catalog, from
     /// `uze_extensions::registry::ExtensionRegistry`.
     pub(crate) extensions: Vec<BuiltinExtension>,
+    /// The ids of those the operator switched off, as last written.
+    pub(crate) disabled_extensions: BTreeSet<String>,
 
     pub(crate) profile_panel: ProfilePanel,
     pub(crate) profile_editor_selected: usize,
@@ -802,6 +804,7 @@ impl TuiModel {
             extensions: uze_extensions::registry::ExtensionRegistry::builtin()
                 .all()
                 .to_vec(),
+            disabled_extensions: super::extension_switch::disabled(),
             profile_panel: ProfilePanel::List,
             profile_editor_selected: 0,
             profile_harness_selected: 0,
@@ -1026,6 +1029,25 @@ impl TuiModel {
         )
     }
 
+    pub(crate) fn extension_enabled(&self, id: &str) -> bool {
+        !self.disabled_extensions.contains(id)
+    }
+
+    /// Switching the selected extension to `enabled`, or nothing when it
+    /// already is — an offer that is not available answers no key.
+    pub(crate) fn switch_selected_extension(&self, enabled: bool) -> crate::ui::worker::Intent {
+        match self.selected_extension() {
+            Some(extension) if self.extension_enabled(extension.id) != enabled => {
+                crate::ui::worker::Intent::SwitchExtension {
+                    id: extension.id.to_owned(),
+                    name: extension.name.to_owned(),
+                    enabled,
+                }
+            }
+            _ => crate::ui::worker::Intent::None,
+        }
+    }
+
     pub(crate) fn extension_visible_indices(&self) -> Vec<usize> {
         let needle = self
             .remembered
@@ -1238,7 +1260,7 @@ impl TuiModel {
     /// The list at the foot of the sidebar, as it stands.
     pub(crate) fn first_steps(&self) -> super::FirstSteps<'_> {
         super::FirstSteps {
-            steps: &super::management::FIRST_STEPS,
+            steps: super::management::FIRST_STEPS.to_vec(),
             taken: &self.steps_taken,
             collapsed: self.first_steps_collapsed,
             closed: self.first_steps_closed,
@@ -1477,7 +1499,11 @@ impl TuiModel {
                 .unwrap_or_default(),
             Route::Extensions => self
                 .selected_extension()
-                .map(|_| uze_application::application::offers::extension_offers())
+                .map(|extension| {
+                    uze_application::application::offers::extension_offers(
+                        self.extension_enabled(extension.id),
+                    )
+                })
                 .unwrap_or_default(),
             Route::Harnesses => self
                 .selected_harness()

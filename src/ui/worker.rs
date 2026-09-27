@@ -58,6 +58,13 @@ pub(crate) enum Intent {
     /// Ring the bell for these finished agent turns from now on, in the
     /// running workspace as much as on the next launch.
     SelectChime(uze_application::Chime),
+    /// Offer this extension in the workspace, or stop offering it — in the
+    /// running workspace as much as on the next launch.
+    SwitchExtension {
+        id: String,
+        name: String,
+        enabled: bool,
+    },
     /// Read the themes and the glyph sets the Settings screen chooses
     /// from. Sent on arriving there rather than per frame, so the list
     /// cannot change under the cursor between two frames.
@@ -128,6 +135,7 @@ impl Intent {
             Self::OpenThemePicker => "open_theme_picker",
             Self::SelectGlyphSet(_) => "select_glyph_set",
             Self::SelectChime(_) => "select_chime",
+            Self::SwitchExtension { .. } => "switch_extension",
             Self::LoadSettings => "load_settings",
             Self::SelectTheme(_) => "select_theme",
             Self::Refresh => "refresh",
@@ -236,6 +244,16 @@ pub(crate) fn dispatch(
             }
             Err(error) => model.status = Status::Error(error),
         },
+        Intent::SwitchExtension { id, name, enabled } => {
+            match switch_extension(home, &id, enabled) {
+                Ok(()) => {
+                    model.status =
+                        Status::Success(crate::ui::extension_switch::outcome(&name, enabled));
+                    model.disabled_extensions = crate::ui::extension_switch::disabled();
+                }
+                Err(error) => model.status = Status::Error(error),
+            }
+        }
         Intent::LoadSettings => load_settings(home, model),
         Intent::PersistKeymap => persist_keymap(home, model),
         Intent::ClearPromptHistory => clear_prompt_history(home, model),
@@ -1284,6 +1302,17 @@ fn select_chime(home: &UzeHome, chime: uze_application::Chime) -> std::result::R
     if chime != uze_application::Chime::Silent {
         crate::ui::chime::preview();
     }
+    Ok(())
+}
+
+/// Records the choice and puts it in force in this process — the
+/// workspace under the modal drops or restores the extension on its next
+/// frame.
+fn switch_extension(home: &UzeHome, id: &str, enabled: bool) -> std::result::Result<(), String> {
+    tui_application(home.clone())
+        .and_then(|app| app.extensions().set_enabled(id, enabled))
+        .map_err(|error| error.to_string())?;
+    crate::ui::extension_switch::set(id, enabled);
     Ok(())
 }
 

@@ -19,7 +19,7 @@ use uze_application::{
 use super::super::hit::Hit;
 use super::super::model::{ResizablePanel, Route, TuiModel};
 use super::super::{content_area, render_screen_header};
-use super::catalog::{Badge, Card, render_card};
+use super::catalog::{Card, render_card};
 use super::{DrawerStatus, render_drawer_footer};
 use crate::ui::theme::{self, Symbol, Token};
 
@@ -56,29 +56,22 @@ impl HarnessStatus {
         }
     }
 
-    /// The mark a card wears, which is nothing at all when a harness is
-    /// not configured: a card carrying no mark already says so, and a
-    /// second way of saying it is a warning on every harness the person
-    /// has not set up — most of them, on most machines, with nothing
-    /// wrong.
-    fn mark(self) -> Option<String> {
-        match self {
-            Self::Configured => Some(theme::glyph(Symbol::MarkOk)),
-            Self::NotConfigured => None,
-        }
-    }
-
+    /// The word the card's foot and the drawer carry. "Enabled" for the
+    /// one ready to receive plugins, the word the Extensions cards use for
+    /// the same answer, so the two catalogs read alike.
     fn label(self) -> &'static str {
         match self {
-            Self::Configured => "Configured",
+            Self::Configured => "Enabled",
             Self::NotConfigured => "Not configured",
         }
     }
 
+    /// Dim rather than a warning for one not configured: that is most of
+    /// the catalog, on most machines, with nothing wrong.
     fn color(self) -> Color {
         match self {
-            Self::Configured => theme::color(Token::Accent),
-            Self::NotConfigured => theme::color(Token::TextMuted),
+            Self::Configured => theme::color(Token::StateSuccess),
+            Self::NotConfigured => theme::color(Token::TextDim),
         }
     }
 }
@@ -243,23 +236,20 @@ fn render_harness_card(
     harness: &HarnessHealth,
     selected: bool,
 ) {
-    // No mark at all is a harness UZE has not configured.
+    // The state sits at the foot beside the id, where the Extensions
+    // cards say theirs, rather than as a badge beside the name.
     let status = HarnessStatus::from(harness);
-    let badge = status.mark().map(|mark| Badge {
-        mark,
-        label: status.label(),
-        color: status.color(),
-    });
     render_card(
         frame,
         rect,
         Card {
             name: &harness.display_name,
-            badge,
+            badge: None,
             description: &harness.description,
-            caption: Line::from(Span::styled(
-                harness.integration.as_str(),
-                theme::fg(Token::TextMuted),
+            caption: Span::styled(harness.integration.as_str(), theme::fg(Token::TextMuted)),
+            state: Some(Span::styled(
+                status.label(),
+                Style::default().fg(status.color()),
             )),
         },
         selected,
@@ -506,9 +496,8 @@ mod tests {
         let status = HarnessStatus::from(&harness);
 
         assert_eq!(status, HarnessStatus::Configured);
-        assert_eq!(status.label(), "Configured");
+        assert_eq!(status.label(), "Enabled");
         assert_eq!(status_note(&harness), "Ready to receive plugins");
-        assert_eq!(status.mark(), Some(theme::glyph(Symbol::MarkOk)));
     }
 
     /// One state, two shapes. A harness nobody installed and one the
@@ -527,8 +516,7 @@ mod tests {
             let status = HarnessStatus::from(harness);
             assert_eq!(status, HarnessStatus::NotConfigured);
             assert_eq!(status.label(), "Not configured");
-            assert_eq!(status.mark(), None, "and the card wears nothing");
-            assert_eq!(status.color(), theme::color(Token::TextMuted));
+            assert_eq!(status.color(), theme::color(Token::TextDim));
         }
 
         assert_eq!(

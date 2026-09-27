@@ -51,6 +51,7 @@ use uze_application::{
 mod agent_support;
 mod chime;
 pub mod extension_host;
+mod extension_switch;
 mod extension_view;
 mod hit;
 mod input;
@@ -112,6 +113,7 @@ pub fn run(home: UzeHome) -> Result<()> {
     // screen alone.
     report_panics_on_a_restored_terminal(terminal.keyboard());
     chime::load(&home);
+    extension_switch::load(&home);
     // The client's shape as this user last left it — read once, here, and
     // handed to the attach, which writes every section of it back as it
     // changes (see `uze_application::ClientLayout`).
@@ -544,7 +546,9 @@ impl Rows {
 /// leave a stale key printed here. What it adds is the only thing the
 /// keymap cannot know — whether the operator has ever done it.
 pub(crate) struct FirstSteps<'a> {
-    pub(crate) steps: &'a [uze_keys::Action],
+    /// The steps this surface offers — the fixed list, less any whose
+    /// extension is switched off.
+    pub(crate) steps: Vec<uze_keys::Action>,
     /// The steps already taken, by action name.
     pub(crate) taken: &'a std::collections::BTreeSet<String>,
     pub(crate) collapsed: bool,
