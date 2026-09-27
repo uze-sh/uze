@@ -425,18 +425,20 @@ mod tests {
         // this test raced that exec and passed only by catching the
         // instant before it; under coverage instrumentation, which is
         // slower, it lost. A second command is what keeps the shell alive
-        // to be the answer.
-        let mut child = std::process::Command::new("/bin/sh")
+        // to be the answer. Bash rather than `/bin/sh`: on macOS that is a
+        // shim which `exec`s the shell it selects, so the name it answers
+        // by depended on whether the probe looked before the exec.
+        let mut child = std::process::Command::new("/bin/bash")
             .args(["-c", "sleep 30; :"])
             .spawn()
             .unwrap();
-        let named = wait_for_name(child.id() as libc::pid_t, "sh");
+        let named = wait_for_name(child.id() as libc::pid_t, "bash");
         let _ = child.kill();
         let _ = child.wait();
 
         assert_eq!(
             named.as_deref(),
-            Some("sh"),
+            Some("bash"),
             "an interpreter given `-c` has no script, so it is its own answer"
         );
     }
