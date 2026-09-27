@@ -2332,7 +2332,13 @@ pub(crate) fn render_section_with(
     if !section.collapsed {
         title_style = title_style.add_modifier(Modifier::BOLD);
     }
+    // One column in, the pad the caption keeps at the other end: on the
+    // band an open section wears, a chevron flush against the edge under a
+    // caption held off it reads as a row that slipped. Its rows keep the
+    // same column, so the heading still stands over them.
+    let lead = " ".repeat(usize::from(TRAILING_PAD));
     let mut spans = vec![
+        TextSpan::raw(lead.clone()),
         TextSpan::styled(format!("{fold} "), theme::fg(Token::TextSecondary)),
         TextSpan::styled(section.title.clone(), title_style),
     ];
@@ -2409,8 +2415,9 @@ pub(crate) fn render_section_with(
         // reserved for the gap `push_trailing` always leaves between them.
         let name_width = rect
             .width
-            .saturating_sub(marker_width + 1 + trailing_width + TRAILING_PAD);
+            .saturating_sub(TRAILING_PAD + marker_width + 1 + trailing_width + TRAILING_PAD);
         let mut spans = vec![
+            TextSpan::raw(lead.clone()),
             TextSpan::styled(
                 format!("{mark} "),
                 Style::default().fg(color(row.mark_role)),
@@ -2631,12 +2638,13 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let bright = theme::color(Token::TextBright);
         // The header, then one row per commit; the name starts past the
-        // mark and its gap.
-        assert_ne!(buffer[(2, 1)].fg, bright, "the resting row's name");
-        assert_eq!(buffer[(2, 2)].fg, bright, "the hovered row's name");
+        // lead, the mark and its gap.
+        let name = TRAILING_PAD + 2;
+        assert_ne!(buffer[(name, 1)].fg, bright, "the resting row's name");
+        assert_eq!(buffer[(name, 2)].fg, bright, "the hovered row's name");
         assert_eq!(
-            buffer[(2, 2)].bg,
-            buffer[(2, 1)].bg,
+            buffer[(name, 2)].bg,
+            buffer[(name, 1)].bg,
             "on the same ground as its neighbour"
         );
     }

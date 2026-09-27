@@ -6641,27 +6641,30 @@ mod workspace_tests {
         );
     }
 
-    /// A section at the foot stands flush against the column's edge, where
-    /// a space's block begins, with a row of air between the tree and the
-    /// foot so a tree that grows to meet it still reads as two things.
+    /// A section at the foot folds from the column a space's block folds
+    /// from, one in from the edge the way its caption is held off the other
+    /// one, with a row of air between the tree and the foot so a tree that
+    /// grows to meet it still reads as two things.
     #[test]
     fn the_foot_sections_stand_on_the_columns_own_grid() {
         let mut model = three_spaces();
         model.first_steps_collapsed = false;
-        let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
+        let Sidebar { rows, .. } = sidebar(&model, &identities_fixture());
         let column = |row: &str, text: &str| row[..row.find(text).unwrap()].chars().count();
+        let chevron = theme::glyph(crate::ui::theme::Symbol::ChevronExpanded);
         let steps = rows
             .iter()
             .position(|row| row.contains("first steps"))
             .expect("the steps are at the foot");
+        let space = rows
+            .iter()
+            .position(|row| row.contains(&format!("{chevron} one")))
+            .expect("a space is open above them");
 
         assert_eq!(
-            column(
-                &rows[steps],
-                &theme::glyph(crate::ui::theme::Symbol::ChevronExpanded)
-            ),
-            usize::from(gutter_column(&hits)),
-            "a section folds from the column's edge: {rows:?}"
+            column(&rows[steps], &chevron),
+            column(&rows[space], &chevron),
+            "a section folds where a space does: {rows:?}"
         );
         assert!(
             rows[steps - 1].trim_end_matches('│').trim().is_empty(),
