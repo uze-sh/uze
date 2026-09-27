@@ -1031,8 +1031,9 @@ fn remove_message(report: RemovePluginReport) -> String {
         }
         RemovePluginReport::Blocked { report, .. } => {
             format!(
-                "{} changed outside UZE; managed state was preserved",
-                report.package_id
+                "{} changed outside UZE; managed state was preserved{}",
+                report.package_id,
+                what_blocked(&report)
             )
         }
     }
@@ -1043,11 +1044,37 @@ fn update_message(report: UpdatePluginReport) -> String {
         UpdatePluginReport::Updated { plugin, .. } => format!("Updated {}", plugin.id),
         UpdatePluginReport::Blocked { report, .. } => {
             format!(
-                "{} update blocked; managed state was preserved",
-                report.package_id
+                "{} update blocked; managed state was preserved{}",
+                report.package_id,
+                what_blocked(&report)
             )
         }
     }
+}
+
+/// The first receipt that stood in the way, and why: "blocked" alone
+/// leaves the operator nothing to act on.
+fn what_blocked(report: &uze_application::ReconciliationReport) -> String {
+    if let Some(error) = &report.ledger_error {
+        return format!(": {error}");
+    }
+    report
+        .receipts
+        .iter()
+        .find(|receipt| {
+            !matches!(
+                receipt.inspection.state,
+                uze_application::AttachmentState::Matched
+                    | uze_application::AttachmentState::Missing
+            )
+        })
+        .map(|receipt| {
+            format!(
+                ": {} ({})",
+                receipt.inspection.reason, receipt.receipt.integration
+            )
+        })
+        .unwrap_or_default()
 }
 
 /// Hands `url` to the reader's browser on a thread of its own, and tells

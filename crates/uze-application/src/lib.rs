@@ -49,6 +49,9 @@ pub use uze_core::{
     },
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
     provisioning::{ProcessOutput, ProcessResult, ProcessRunner, ProcessSpec, SystemProcessRunner},
+    // What a blocked removal or update carries, so a surface can say which
+    // receipt stood in the way.
+    reconciliation::ReconciliationReport,
     router::CompatibilityRoute,
     router::HarnessCapabilities,
     store::parse_plugin_marketplace_spec,
