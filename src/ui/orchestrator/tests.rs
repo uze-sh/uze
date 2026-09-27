@@ -8347,6 +8347,10 @@ mod workspace_tests {
                         head: (4, 0),
                     },
                 },
+                ClientRequest::Select {
+                    pane,
+                    gesture: SelectionGesture::Release,
+                },
                 ClientRequest::CopySelection { pane },
             ],
             "the server holds the selection, so the view can scroll under it"
@@ -8445,6 +8449,44 @@ mod workspace_tests {
         );
         copy_answered(&mut driven, "");
         assert_eq!(driven.attach.model.clipboard, None);
+    }
+
+    #[test]
+    fn a_drag_past_the_top_of_a_full_screen_program_scrolls_it_with_the_wheel() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-drag-past-top"));
+        let mut model = model_of(session("/tmp"));
+        pane_showing(&mut model, "hello world", true);
+        let focused = model.focused_pane();
+        if let Some(snapshot) = model.panes.get_mut(&focused) {
+            snapshot.alternate_screen = true;
+        }
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+
+        driven.press(pane.x + 2, pane.y + 1);
+        driven.mouse(
+            pane.x + 2,
+            pane.y - 1,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+
+        let sent = driven.sent();
+        assert!(
+            !sent
+                .iter()
+                .any(|request| matches!(request, ClientRequest::Scroll { .. })),
+            "the alternate screen has no scrollback to move: {sent:?}"
+        );
+        let wheel = sent.iter().find_map(|request| match request {
+            ClientRequest::Input { bytes, .. } => Some(bytes.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            wheel.as_deref(),
+            Some(&b"\x1b[<64;3;1M"[..]),
+            "the program scrolls itself, at the edge the pointer overshot"
+        );
     }
 
     fn forwarded_input(driven: &mut Driven<'_>) -> Vec<Vec<u8>> {

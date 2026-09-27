@@ -248,6 +248,9 @@ pub enum SelectionGesture {
     Extend {
         head: (u16, u16),
     },
+    /// The button came up: the view moving from now on no longer moves the
+    /// selection's end.
+    Release,
     Clear,
 }
 

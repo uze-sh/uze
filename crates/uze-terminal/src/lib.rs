@@ -8,6 +8,7 @@ pub mod launch;
 mod process_probe;
 mod protocol;
 mod runtime;
+mod selection;
 mod state;
 
 pub use protocol::{

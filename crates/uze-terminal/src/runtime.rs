@@ -15,9 +15,7 @@ use alacritty_terminal::{
     Term,
     event::{Event, EventListener},
     grid::{Dimensions, Scroll},
-    index::{Column, Point, Side},
-    selection::{Selection as TextSelection, SelectionType},
-    term::{Config, TermMode, cell::Flags, test::TermSize, viewport_to_point},
+    term::{Config, TermMode, cell::Flags, test::TermSize},
     vte::ansi::{Color as EngineColor, NamedColor, Processor, Rgb},
 };
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -30,6 +28,7 @@ use crate::{
     SpaceId, SpaceSeat, TabId, TerminalColor,
     launch::Launch,
     process_probe,
+    selection::PaneSelection,
     state::{OpenedSpace, PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed},
 };
 
@@ -2350,10 +2349,10 @@ struct PaneRuntime {
     /// [`PaneRuntime::damage_since_last`] can diff against what they
     /// already have instead of resending every cell on every PTY read.
     last_sent: Mutex<Option<PaneSnapshot>>,
-    /// Whether the selection was drawn backwards, so its anchor is the end
-    /// it reads last. The terminal keeps the selection itself, and moves it
-    /// with the lines it covers, but never says which end was pressed.
-    selection_reversed: Mutex<bool>,
+    /// Shared with the thread that reads the pane's output, which has to
+    /// follow the content under a selection the moment it is drawn. Always
+    /// locked after `terminal`, never before it.
+    selection: Arc<Mutex<PaneSelection>>,
 }
 
 /// Answers a pane's own program, including its OSC 10/11 colour queries.
@@ -2482,6 +2481,8 @@ impl PaneRuntime {
             ReplySink::new(reply_sender, palette),
         )));
         let parser_terminal = Arc::clone(&terminal);
+        let selection = Arc::new(Mutex::new(PaneSelection::default()));
+        let parser_selection = Arc::clone(&selection);
         thread::spawn(move || {
             let mut reader = reader;
             let mut parser: Processor = Processor::new();
@@ -2490,10 +2491,13 @@ impl PaneRuntime {
                 match std::io::Read::read(&mut reader, &mut buffer) {
                     Ok(0) | Err(_) => break,
                     Ok(read) => {
-                        parser.advance(
-                            &mut *parser_terminal.lock().expect("terminal poisoned"),
-                            &buffer[..read],
-                        );
+                        let mut terminal = parser_terminal.lock().expect("terminal poisoned");
+                        parser.advance(&mut *terminal, &buffer[..read]);
+                        parser_selection
+                            .lock()
+                            .expect("selection poisoned")
+                            .observe(&terminal);
+                        drop(terminal);
                         let _ = damage.send(id);
                     }
                 }
@@ -2517,7 +2521,7 @@ impl PaneRuntime {
             terminal,
             launch,
             last_sent: Mutex::new(None),
-            selection_reversed: Mutex::new(false),
+            selection,
         })
     }
 
@@ -2536,18 +2540,19 @@ impl PaneRuntime {
     }
 
     fn select(&self, gesture: SelectionGesture) -> bool {
-        select(
-            &mut self.terminal.lock().expect("terminal poisoned"),
-            &mut self
-                .selection_reversed
-                .lock()
-                .expect("selection_reversed poisoned"),
-            gesture,
-        )
+        let mut terminal = self.terminal.lock().expect("terminal poisoned");
+        self.selection
+            .lock()
+            .expect("selection poisoned")
+            .apply(&mut terminal, gesture)
     }
 
     fn selected_text(&self) -> String {
-        selected_text(&self.terminal.lock().expect("terminal poisoned"))
+        let terminal = self.terminal.lock().expect("terminal poisoned");
+        self.selection
+            .lock()
+            .expect("selection poisoned")
+            .text(&terminal)
     }
 
     fn resize(&self, columns: u16, rows: u16) {
@@ -2637,7 +2642,12 @@ impl PaneRuntime {
     }
 
     fn snapshot(&self) -> PaneSnapshot {
-        snapshot(self.id, &self.terminal.lock().expect("terminal poisoned"))
+        let terminal = self.terminal.lock().expect("terminal poisoned");
+        snapshot_selected(
+            self.id,
+            &terminal,
+            &self.selection.lock().expect("selection poisoned"),
+        )
     }
 
     /// Hands `send` a full snapshot and remembers it as the baseline for
@@ -2788,9 +2798,18 @@ fn whole_pane(snapshot: PaneSnapshot) -> PaneDamage {
     }
 }
 
+#[cfg(test)]
 fn snapshot(pane: PaneId, terminal: &Term<ReplySink>) -> PaneSnapshot {
+    snapshot_selected(pane, terminal, &PaneSelection::default())
+}
+
+fn snapshot_selected(
+    pane: PaneId,
+    terminal: &Term<ReplySink>,
+    selection: &PaneSelection,
+) -> PaneSnapshot {
     let content = terminal.renderable_content();
-    let selection = content.selection;
+    let highlight = selection.highlight(terminal);
     let columns = terminal.grid().columns() as u16;
     let rows = terminal.grid().screen_lines() as u16;
     let cells = terminal
@@ -2810,7 +2829,7 @@ fn snapshot(pane: PaneId, terminal: &Term<ReplySink>) -> PaneSnapshot {
                     inverse: cell.flags.contains(Flags::INVERSE),
                     hidden: cell.flags.contains(Flags::HIDDEN),
                     strikeout: cell.flags.contains(Flags::STRIKEOUT),
-                    selected: selection.is_some_and(|range| range.contains(indexed.point)),
+                    selected: highlight.contains(indexed.point),
                 },
             }
         })
@@ -2829,70 +2848,6 @@ fn snapshot(pane: PaneId, terminal: &Term<ReplySink>) -> PaneSnapshot {
         bracketed_paste: mode.contains(TermMode::BRACKETED_PASTE),
         cells,
     }
-}
-
-/// Applies `gesture` to the terminal's selection; whether what it covers
-/// changed. `reversed` is the pane's note of which end was pressed.
-fn select(terminal: &mut Term<ReplySink>, reversed: &mut bool, gesture: SelectionGesture) -> bool {
-    let before = terminal
-        .selection
-        .as_ref()
-        .and_then(|s| s.to_range(terminal));
-    match gesture {
-        SelectionGesture::Begin { anchor, head } => {
-            let (selection, backwards) =
-                spanning(grid_point(terminal, anchor), grid_point(terminal, head));
-            terminal.selection = Some(selection);
-            *reversed = backwards;
-        }
-        SelectionGesture::Extend { head } => {
-            if let Some(range) = before {
-                let anchor = if *reversed { range.end } else { range.start };
-                let (selection, backwards) = spanning(anchor, grid_point(terminal, head));
-                terminal.selection = Some(selection);
-                *reversed = backwards;
-            }
-        }
-        SelectionGesture::Clear => terminal.selection = None,
-    }
-    terminal
-        .selection
-        .as_ref()
-        .and_then(|s| s.to_range(terminal))
-        != before
-}
-
-/// The selection as text, blank rows at its end dropped (the terminal
-/// already drops each row's trailing blanks); empty when it covered
-/// nothing else.
-fn selected_text(terminal: &Term<ReplySink>) -> String {
-    let text = terminal.selection_to_string().unwrap_or_default();
-    text.trim_end_matches('\n').to_owned()
-}
-
-/// A cell of the view as a point of the grid, whose lines stay the same
-/// lines while the view scrolls over them.
-fn grid_point(terminal: &Term<ReplySink>, (column, row): (u16, u16)) -> Point {
-    let row = usize::from(row).min(terminal.screen_lines().saturating_sub(1));
-    let column = usize::from(column).min(terminal.columns().saturating_sub(1));
-    viewport_to_point(
-        terminal.grid().display_offset(),
-        Point::new(row, Column(column)),
-    )
-}
-
-/// A selection covering both `anchor` and `head` whichever reads first,
-/// and whether it was drawn backwards.
-fn spanning(anchor: Point, head: Point) -> (TextSelection, bool) {
-    let backwards = head < anchor;
-    let (anchor_side, head_side) = if backwards {
-        (Side::Right, Side::Left)
-    } else {
-        (Side::Left, Side::Right)
-    };
-    let mut selection = TextSelection::new(SelectionType::Simple, anchor, anchor_side);
-    selection.update(head, head_side);
-    (selection, backwards)
 }
 
 fn mouse_mode(mode: TermMode) -> MouseMode {
@@ -3104,8 +3059,8 @@ mod tests {
         WORKSPACE_SCHEMA_VERSION, WorkspaceLock, arrival, bind_endpoint, forward_events,
         held_by_a_server, identify, identity_of, listener_at, load_persisted_workspace_at,
         persisted_state_path, read_event, read_message, relaunch_command_for_process, retire,
-        select, selected_text, send_request, serves_this_build, signalable, snapshot, socket_path,
-        view_for, workspace_is_claimed, workspace_lock_path, write_atomically, write_message,
+        send_request, serves_this_build, signalable, snapshot, socket_path, view_for,
+        workspace_is_claimed, workspace_lock_path, write_atomically, write_message,
     };
     use std::os::unix::fs::PermissionsExt;
     use std::sync::{Arc, Mutex};
@@ -3120,7 +3075,7 @@ mod tests {
     // assert against an answer nothing can give. Widen the gate by teaching
     // `process_probe` a new platform, never by widening it here.
 
-    use crate::{Palette, SelectionGesture};
+    use crate::Palette;
 
     /// A sink over the default palette, for the tests that only need a
     /// terminal to parse into.
@@ -3521,134 +3476,6 @@ mod tests {
 
         parser.advance(&mut terminal, b"\x1b[?1000l\x1b[?1002l\x1b[?1006l");
         assert_eq!(snapshot(PaneId(1), &terminal).mouse, MouseMode::default());
-    }
-
-    /// Five numbered lines into a three-row pane: two in the scrollback,
-    /// three on screen.
-    fn numbered_lines() -> Term<ReplySink> {
-        let (sender, _receiver) = std::sync::mpsc::channel();
-        let mut terminal = Term::new(Config::default(), &TermSize::new(12, 3), reply_sink(sender));
-        let mut parser: Processor = Processor::new();
-        parser.advance(
-            &mut terminal,
-            b"line 1\r\nline 2\r\nline 3\r\nline 4\r\nline 5",
-        );
-        terminal
-    }
-
-    fn selected_rows(terminal: &Term<ReplySink>) -> Vec<String> {
-        let pane = snapshot(PaneId(1), terminal);
-        pane.cells
-            .chunks(usize::from(pane.columns))
-            .map(|row| {
-                row.iter()
-                    .filter(|cell| cell.attributes.selected)
-                    .map(|cell| cell.character)
-                    .collect()
-            })
-            .collect()
-    }
-
-    #[test]
-    fn a_selection_stays_on_its_lines_while_the_view_scrolls() {
-        let mut terminal = numbered_lines();
-        let mut reversed = false;
-        assert!(select(
-            &mut terminal,
-            &mut reversed,
-            SelectionGesture::Begin {
-                anchor: (0, 0),
-                head: (5, 0),
-            },
-        ));
-        assert_eq!(selected_rows(&terminal), ["line 3", "", ""]);
-
-        terminal.scroll_display(Scroll::Delta(1));
-        assert_eq!(selected_rows(&terminal), ["", "line 3", ""]);
-    }
-
-    #[test]
-    fn a_selection_extended_after_scrolling_copies_past_the_screen() {
-        let mut terminal = numbered_lines();
-        let mut reversed = false;
-        select(
-            &mut terminal,
-            &mut reversed,
-            SelectionGesture::Begin {
-                anchor: (5, 2),
-                head: (5, 2),
-            },
-        );
-        terminal.scroll_display(Scroll::Delta(2));
-        select(
-            &mut terminal,
-            &mut reversed,
-            SelectionGesture::Extend { head: (0, 0) },
-        );
-        assert_eq!(
-            selected_text(&terminal),
-            "line 1\nline 2\nline 3\nline 4\nline 5"
-        );
-    }
-
-    #[test]
-    fn a_selection_drawn_backwards_keeps_the_cell_it_was_pressed_on() {
-        let mut terminal = numbered_lines();
-        let mut reversed = false;
-        select(
-            &mut terminal,
-            &mut reversed,
-            SelectionGesture::Begin {
-                anchor: (5, 1),
-                head: (2, 0),
-            },
-        );
-        assert_eq!(selected_text(&terminal), "ne 3\nline 4");
-        select(
-            &mut terminal,
-            &mut reversed,
-            SelectionGesture::Extend { head: (3, 2) },
-        );
-        assert_eq!(selected_text(&terminal), "4\nline");
-    }
-
-    #[test]
-    fn a_selection_moves_with_output_that_scrolls_its_lines_up() {
-        let mut terminal = numbered_lines();
-        let mut reversed = false;
-        select(
-            &mut terminal,
-            &mut reversed,
-            SelectionGesture::Begin {
-                anchor: (0, 2),
-                head: (5, 2),
-            },
-        );
-        let mut parser: Processor = Processor::new();
-        parser.advance(&mut terminal, b"\r\nline 6");
-        assert_eq!(selected_rows(&terminal), ["", "line 5", ""]);
-        assert_eq!(selected_text(&terminal), "line 5");
-    }
-
-    #[test]
-    fn clearing_the_selection_leaves_nothing_selected_or_to_copy() {
-        let mut terminal = numbered_lines();
-        let mut reversed = false;
-        select(
-            &mut terminal,
-            &mut reversed,
-            SelectionGesture::Begin {
-                anchor: (0, 0),
-                head: (5, 2),
-            },
-        );
-        assert!(select(
-            &mut terminal,
-            &mut reversed,
-            SelectionGesture::Clear
-        ));
-        assert_eq!(selected_rows(&terminal), ["", "", ""]);
-        assert_eq!(selected_text(&terminal), "");
     }
 
     #[test]

@@ -2214,7 +2214,7 @@ impl Attach<'_> {
                     .map(|selection| selection.follow(layout.pane, mouse.column, mouse.row))
                     .unwrap_or_default();
                 for request in requests {
-                    let _ = send_request(&mut self.stream, &request);
+                    self.send_selection_request(request, mouse, layout.pane);
                 }
             }
             _ if self.model.architect_grab.is_some() => {
@@ -2413,6 +2413,13 @@ impl Attach<'_> {
         };
         if selection.release() {
             let pane = selection.pane;
+            let _ = send_request(
+                &mut self.stream,
+                &ClientRequest::Select {
+                    pane,
+                    gesture: uze_terminal::SelectionGesture::Release,
+                },
+            );
             let _ = send_request(&mut self.stream, &ClientRequest::CopySelection { pane });
             return;
         }
@@ -2423,6 +2430,36 @@ impl Attach<'_> {
         };
         forward_mouse(&mut self.stream, &self.model, pane, press);
         forward_mouse(&mut self.stream, &self.model, pane, mouse);
+    }
+
+    /// Sends what a drag said, except the scroll a drag past the edge asks
+    /// for over a program on the alternate screen: that screen has no
+    /// scrollback to move, and the program scrolls itself, so it gets the
+    /// wheel — the server follows what it redraws.
+    fn send_selection_request(&mut self, request: ClientRequest, mouse: MouseEvent, pane: Rect) {
+        let alternate_screen = self
+            .model
+            .panes
+            .get(&self.model.focused_pane())
+            .is_some_and(|snapshot| snapshot.alternate_screen);
+        match request {
+            ClientRequest::Scroll { lines, .. } if alternate_screen => {
+                let wheel = MouseEvent {
+                    kind: if lines > 0 {
+                        MouseEventKind::ScrollUp
+                    } else {
+                        MouseEventKind::ScrollDown
+                    },
+                    column: mouse.column.clamp(pane.x, pane.right().saturating_sub(1)),
+                    row: mouse.row.clamp(pane.y, pane.bottom().saturating_sub(1)),
+                    modifiers: mouse.modifiers,
+                };
+                forward_scroll(&mut self.stream, &self.model, pane, wheel);
+            }
+            request => {
+                let _ = send_request(&mut self.stream, &request);
+            }
+        }
     }
 
     /// Drops the selection a press or a key ends, and the server's with it.
