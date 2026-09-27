@@ -193,11 +193,13 @@ mod render;
 mod selection;
 mod session;
 mod work;
+mod work_list;
 use checkouts::*;
 use input::*;
 use render::*;
 use session::*;
 use work::*;
+use work_list::*;
 
 /// Why an attach ended.
 pub(crate) enum WorkspaceExit {
@@ -419,14 +421,6 @@ struct ActionIndexOverlay {
     scopes: Vec<uze_keys::Scope>,
     filter: String,
     selected: usize,
-}
-
-/// The work modal's preserved section: tasks holding work that no live
-/// tab is in front of.
-struct PreservedOverlay {
-    selected: usize,
-    /// A discard was asked for and waits for its confirmation.
-    confirm_discard: bool,
 }
 
 /// What an evaluation of `cwd` is reserved under.
@@ -1620,9 +1614,9 @@ impl WorkspaceShape {
 /// hit-testing vec just for one extension.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum WorkspaceHit {
-    /// One of the work modal's sections, in its sidebar.
-    WorkSection(WorkSection),
-    /// One row of the work modal's open section, by its index there.
+    /// One of the work modal's projects, by its place in the sidebar.
+    WorkProject(usize),
+    /// One row of the project in front, by its index there.
     WorkRow(usize),
     /// One of the work modal's buttons, by the action it performs.
     WorkAction(Action),
@@ -2614,14 +2608,9 @@ struct Remembered {
     /// Whether a sweep is out, so the list asks once rather than once per
     /// frame.
     preserved_pending: bool,
-    /// The checkouts view's last answer, for the directory it was asked
-    /// about. Drawn while the next read is out.
-    checkouts: Option<CheckoutsResolution>,
-    /// The directory a checkouts read is out for.
-    checkouts_pending: Option<PathBuf>,
-    /// How many checkouts reads were asked for: only the answer to the
-    /// last one is drawn, so a read that began before a change landed
-    /// never replaces the one that began after it.
+    /// How many checkouts reads were asked for: only the answer to a
+    /// project's last one is drawn, so a read that began before a change
+    /// landed never replaces the one that began after it.
     checkouts_asked: u64,
     /// Whether a change to the checkouts is out: a clean-up walks and
     /// removes several directories, and a second one started beside it

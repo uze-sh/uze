@@ -68,7 +68,7 @@
 
 - [x] 9.1 `CheckoutsView` read model in `uze-application` with each checkout's owner and facts, including what holds a slot in use and its size on disk (measured in the background read), and the total.
 - [x] 9.2 Draw a subagent checkout under its parent in the agent column.
-- [x] 9.3 Checkouts view in the space's menu through `spawn_checkouts`/`absorb_checkouts`: open a space, adopt (isolation directory only, with the "becomes free" notice), remove (inspect first, keep the branch), clean up (the operator's class only: clean, unused, in the target; harness isolation left to its harness), and join a parked child into its parked parent (`Workspace::join_parked_work`, named by the parent's id). The view is the work modal's checkouts section.
+- [x] 9.3 Checkouts view in the space's menu through `spawn_checkouts`/`absorb_checkouts`: open a space, adopt (isolation directory only, with the "becomes free" notice), remove (inspect first, keep the branch), clean up (the operator's class only: clean, unused, in the target; harness isolation left to its harness), and join a parked child into its parked parent (`Workspace::join_parked_work`, named by the parent's id). The view is the work modal: one list per project, merging its kept tasks with its checkouts and grouped by what each asks of the operator (needs you, in progress, ready for the next agent, others).
 - [x] 9.4 `TestBackend` tests for grouping, refusal reasons and the clean-up summary; architecture suite green.
 
 ## 10. Gate

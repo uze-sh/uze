@@ -32,11 +32,25 @@ pub(crate) fn within(
     scopes: &[uze_keys::Scope],
     actions: &[uze_keys::Action],
 ) -> Line<'static> {
+    let named: Vec<(uze_keys::Action, String)> = actions
+        .iter()
+        .map(|action| (*action, action.label().to_owned()))
+        .collect();
+    named_within(width, scopes, &named)
+}
+
+/// The same line, each action under the name the caller gives it: one key
+/// that does a different thing on each row says the thing it does here.
+pub(crate) fn named_within(
+    width: u16,
+    scopes: &[uze_keys::Scope],
+    actions: &[(uze_keys::Action, String)],
+) -> Line<'static> {
     let keymap = uze_keys::active();
     let separator = theme::glyph(Symbol::HintSeparator);
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut used = 0usize;
-    for action in actions {
+    for (action, name) in actions {
         let Some(chord) = keymap.chord_for(*action, scopes) else {
             continue;
         };
@@ -45,7 +59,7 @@ pub(crate) fn within(
             false => format!(" {separator} "),
         };
         let chord = chord.to_string();
-        let label = format!(" {}", action.label().to_lowercase());
+        let label = format!(" {}", name.to_lowercase());
         let cost = lead.chars().count() + chord.chars().count() + label.chars().count();
         if used + cost > width as usize {
             break;

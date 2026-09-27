@@ -8,10 +8,11 @@ about: |
   what the agent was in — by accident, or because the screen was getting
   full — must cost nothing but that.
 
-  The surface that says so is the work modal's preserved section. It used to answer
-  only for the repositories the session had already looked at, which meant
-  a project with nothing open was invisible — precisely the case the list
-  exists for, since the thing being gone is *why* the work needs finding.
+  The surface that says so is the work modal, which lists every project
+  with kept work. It used to answer only for the repositories the session
+  had already looked at, which meant a project with nothing open was
+  invisible, precisely the case the list exists for, since the thing being
+  gone is *why* the work needs finding.
 
   What the machine must show: after the agent's tab is closed and the agent
   parked, the work is still on disk on its own branch, the records still
@@ -100,8 +101,8 @@ scenes:
   - scene: the work is found again without the tab that held it
     when:
       - key: "M-p"
-        say: open the work modal on the preserved work
-        expect: kept work
+        say: open the work modal on the project
+        expect: NEEDS YOU
         expect_timeout: 20
         pause: 1.5
     then:

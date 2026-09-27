@@ -74,6 +74,10 @@ impl Button {
         self.enabled
     }
 
+    pub(crate) fn label(&self) -> &str {
+        &self.label
+    }
+
     pub(crate) fn strong(mut self, strong: bool) -> Self {
         self.strong = strong;
         self

@@ -42,8 +42,8 @@ mod workspace_tests {
         CommitDetailPopup, CommitDetailResolution, CompletionBehavior, DeliveryResolution,
         DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution, PendingDrop,
         PlacementResolution, RootPicker, ScrollDirection, TabDragGroup, UpstreamSync, Viewport,
-        WorkOverlay, WorkResolution, WorkSection, WorkStateView, WorkspaceModel,
-        adopt_agent_labels, agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
+        WorkOverlay, WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels,
+        agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
         can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
         forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
         open_commit_detail, pane_relative, pending_tab_drop,
@@ -2186,11 +2186,11 @@ mod workspace_tests {
         let mut model = agent_with_task(WorkStateView::Ready, 1);
         model.remembered.preserved_work =
             vec![preserved("/repo", "t2", "yesterday", WorkStateView::Parked)];
-        model.work = Some(WorkOverlay::open(WorkSection::Preserved, None));
+        model.work = Some(WorkOverlay::open(None));
         let mut driven = driven(model, &home);
 
         let keymap = uze_keys::active();
-        let scopes = [uze_keys::Scope::PreservedWork];
+        let scopes = [uze_keys::Scope::Work];
         let ask = keymap
             .chord_for(uze_keys::Action::DiscardTask, &scopes)
             .expect("discard is bound here");
@@ -9186,7 +9186,7 @@ mod workspace_tests {
             menu.items,
             vec![
                 uze_keys::Action::RenameSelection,
-                uze_keys::Action::ShowCheckouts,
+                uze_keys::Action::ShowSpaceWork,
                 uze_keys::Action::CloseTab
             ]
         );
@@ -9810,15 +9810,12 @@ mod workspace_tests {
         // takes its project from the row rather than from wherever the
         // client happens to be looking.
         model.remembered.preserved_work = app.workspace().preserved_work();
-        model.work = Some(WorkOverlay::open(WorkSection::Preserved, None));
+        model.work = Some(WorkOverlay::open(None));
         let mut driven = driven(model, &home);
 
         let keymap = uze_keys::active();
         let resume = keymap
-            .chord_for(
-                uze_keys::Action::ResumeTask,
-                &[uze_keys::Scope::PreservedWork],
-            )
+            .chord_for(uze_keys::Action::ResumeTask, &[uze_keys::Scope::Work])
             .expect("resume is bound here");
         let pick = keymap
             .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::AgentPicker])

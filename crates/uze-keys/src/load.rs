@@ -400,35 +400,26 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "enter", Action::InsertNewline),
         bind(Scope::CodeEditing, "backspace", Action::EraseBack),
         bind(Scope::CodeEditing, "delete", Action::EraseForward),
-        // The work modal: one scope per section, since a letter means
-        // something different in each, and the same way between them.
-        bind(Scope::PreservedWork, "esc", Action::Dismiss),
-        bind(Scope::PreservedWork, "alt+p", Action::ToggleWork),
-        bind(Scope::PreservedWork, "tab", Action::NextSection),
-        bind(Scope::PreservedWork, "right", Action::NextSection),
-        bind(Scope::PreservedWork, "shift+tab", Action::PreviousSection),
-        bind(Scope::PreservedWork, "left", Action::PreviousSection),
-        bind(Scope::PreservedWork, "down", Action::SelectNext),
-        bind(Scope::PreservedWork, "up", Action::SelectPrevious),
-        bind(Scope::PreservedWork, "i", Action::DeliverTask),
-        bind(Scope::PreservedWork, "f", Action::FinishTask),
-        bind(Scope::PreservedWork, "r", Action::ResumeTask),
-        bind(Scope::PreservedWork, "d", Action::DiscardTask),
-        bind(Scope::PreservedWork, "y", Action::ConfirmDiscard),
-        bind(Scope::Checkouts, "esc", Action::Dismiss),
-        bind(Scope::Checkouts, "alt+p", Action::ToggleWork),
-        bind(Scope::Checkouts, "tab", Action::NextSection),
-        bind(Scope::Checkouts, "right", Action::NextSection),
-        bind(Scope::Checkouts, "shift+tab", Action::PreviousSection),
-        bind(Scope::Checkouts, "left", Action::PreviousSection),
-        bind(Scope::Checkouts, "down", Action::SelectNext),
-        bind(Scope::Checkouts, "up", Action::SelectPrevious),
-        bind(Scope::Checkouts, "enter", Action::Activate),
-        bind(Scope::Checkouts, "a", Action::AdoptCheckout),
-        bind(Scope::Checkouts, "j", Action::JoinCheckout),
-        bind(Scope::Checkouts, "d", Action::RemoveCheckout),
-        bind(Scope::Checkouts, "c", Action::CleanUpCheckouts),
-        bind(Scope::Checkouts, "y", Action::ConfirmCheckoutChange),
+        // The work modal: one keyboard for every row, since each key
+        // means one thing whichever row is selected, and a row it does
+        // not apply to says why.
+        bind(Scope::Work, "esc", Action::Dismiss),
+        bind(Scope::Work, "alt+p", Action::ToggleWork),
+        bind(Scope::Work, "tab", Action::NextProject),
+        bind(Scope::Work, "right", Action::NextProject),
+        bind(Scope::Work, "shift+tab", Action::PreviousProject),
+        bind(Scope::Work, "left", Action::PreviousProject),
+        bind(Scope::Work, "down", Action::SelectNext),
+        bind(Scope::Work, "up", Action::SelectPrevious),
+        bind(Scope::Work, "enter", Action::Activate),
+        bind(Scope::Work, "r", Action::ResumeTask),
+        bind(Scope::Work, "i", Action::DeliverTask),
+        bind(Scope::Work, "f", Action::FinishTask),
+        bind(Scope::Work, "j", Action::JoinCheckout),
+        bind(Scope::Work, "a", Action::AdoptCheckout),
+        bind(Scope::Work, "d", Action::DiscardTask),
+        bind(Scope::Work, "c", Action::CleanUpCheckouts),
+        bind(Scope::Work, "y", Action::ConfirmDiscard),
         bind(Scope::AgentPicker, "down", Action::SelectNext),
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
@@ -522,8 +513,8 @@ mod tests {
                 // guess.
                 "choose-area",
                 // The work modal's own key opens it; this is the space
-                // menu's way straight to the checkouts of that space.
-                "show-checkouts",
+                // menu's way straight to that space's project.
+                "show-space-work",
             ],
             "an action gained or lost a chord; say so here on purpose"
         );
@@ -566,10 +557,8 @@ mod tests {
                 "code.delete-file=d",
                 "code.confirm-delete=y",
                 "preserved-work.discard-task=d",
+                "preserved-work.clean-up-checkouts=c",
                 "preserved-work.confirm-discard=y",
-                "checkouts.remove-checkout=d",
-                "checkouts.clean-up-checkouts=c",
-                "checkouts.confirm-checkout-change=y",
             ]
         );
     }

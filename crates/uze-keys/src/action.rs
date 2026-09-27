@@ -298,29 +298,31 @@ actions! {
     // Named for what it opened when released: an operator's keys.json
     // binds it by this name, and a new one would drop the binding.
     ToggleWork => "toggle-preserved-work", false,
-        "Work", "Show the work no live tab is in front of, and this project's checkouts";
-    NextSection => "next-section", false,
-        "Next section", "Move to the next section of the work modal";
-    PreviousSection => "previous-section", false,
-        "Previous section", "Move to the previous section of the work modal";
+        "Work", "Show each project's kept work and checkouts, and what each asks of you";
+    NextProject => "next-project", false,
+        "Next project", "Move to the next project of the work modal";
+    PreviousProject => "previous-project", false,
+        "Previous project", "Move to the previous project of the work modal";
     ResumeTask => "resume-task", false,
-        "Resume", "Put the selected preserved task back into a slot";
+        "Resume", "Put the selected kept task back into a slot";
     FinishTask => "finish-task", false,
         "Mark done", "Record the selected task as finished";
+    // One key for the one thing that takes a row away, whichever row it
+    // is: a task's work is discarded with its checkout and branch, a
+    // checkout nobody's task holds is removed and its branch kept.
     DiscardTask => "discard-task", true,
-        "Discard", "Destroy the selected task's uncommitted work";
+        "Discard",
+        "Discard the selected task's work, or remove the selected checkout, keeping its branch";
+    // Answers whichever question the work modal is asking, which was only
+    // ever a discard when this id shipped.
     ConfirmDiscard => "confirm-discard", true,
-        "Confirm discard", "Confirm destroying the work, having been asked once";
-
-    // --- Workspace, the project's checkouts -------------------------------
-    ShowCheckouts => "show-checkouts", false,
-        "Checkouts", "Open the work modal on every checkout of this space's project";
+        "Confirm", "Go ahead with what the work modal asked, having been asked once";
+    ShowSpaceWork => "show-space-work", false,
+        "Work", "Open the work modal on this space's project";
     AdoptCheckout => "adopt-checkout", false,
         "Adopt",
         "Record the selected checkout as UZE's own slot; a clean one is free for \
          the next agent at once";
-    RemoveCheckout => "remove-checkout", true,
-        "Remove", "Remove the selected checkout's directory, keeping its branch";
     JoinCheckout => "join-checkout", false,
         "Join",
         "Bring a parked agent's subagent's commits onto that agent's branch, and free \
@@ -328,8 +330,6 @@ actions! {
     CleanUpCheckouts => "clean-up-checkouts", true,
         "Clean up",
         "Remove every checkout of yours that is clean, unused and already in the target";
-    ConfirmCheckoutChange => "confirm-checkout-change", true,
-        "Confirm", "Go ahead with the change to the checkouts, having been asked once";
 }
 
 impl fmt::Display for Action {
@@ -401,13 +401,11 @@ mod tests {
                     "clean-up-checkouts",
                     "clear-prompt-history",
                     "close-tab",
-                    "confirm-checkout-change",
                     "confirm-delete",
                     "confirm-discard",
                     "delete-file",
                     "delete-profile",
                     "discard-task",
-                    "remove-checkout",
                     "remove-plugin",
                 ]
                 .map(str::to_owned)

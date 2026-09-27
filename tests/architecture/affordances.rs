@@ -262,12 +262,12 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(Action::ToggleWork, Control("the first-steps section"));
     put(
-        Action::NextSection,
-        Control("the work modal's sidebar of sections"),
+        Action::NextProject,
+        Control("the work modal's sidebar of projects"),
     );
     put(
-        Action::PreviousSection,
-        Control("the work modal's sidebar of sections"),
+        Action::PreviousProject,
+        Control("the work modal's sidebar of projects"),
     );
     put(
         Action::ResumeTask,
@@ -279,14 +279,14 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::DiscardTask,
-        Control("the work modal's discard button"),
+        Control("the work modal's discard or remove button"),
     );
     put(
         Action::ConfirmDiscard,
-        Control("the confirm button the discard raises"),
+        Control("the confirm button the work modal raises"),
     );
     put(
-        Action::ShowCheckouts,
+        Action::ShowSpaceWork,
         Control("the space header's right-click menu"),
     );
     put(
@@ -298,16 +298,8 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Control("the work modal's join button"),
     );
     put(
-        Action::RemoveCheckout,
-        Control("the work modal's remove button"),
-    );
-    put(
         Action::CleanUpCheckouts,
         Control("the work modal's clean-up button"),
-    );
-    put(
-        Action::ConfirmCheckoutChange,
-        Control("the confirm button the work modal raises"),
     );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));

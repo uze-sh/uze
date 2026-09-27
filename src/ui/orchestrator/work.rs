@@ -1,22 +1,23 @@
-//! The work modal: the work kept without a tab and the checkouts of the
-//! space's project, as two sections of one surface drawn the way the
-//! management modal is — a titled frame, a sidebar of sections, a content
-//! column with its header, and the keys that act here along the foot.
+//! The work modal: every project with work UZE kept or a space open on
+//! it, and for the one in front a single list of its kept tasks and its
+//! checkouts, drawn the way the management modal is: a titled frame, a
+//! sidebar of projects, a content column with its header, and the keys
+//! that act here along the foot.
 //!
-//! Every section is described as a [`Section`] and drawn by one function,
-//! so the two cannot drift apart in how a row, a question or a button row
-//! looks.
+//! The list itself, and what it offers for the row in front, is
+//! `work_list`'s; this module holds what is open and lays it out.
 
-use super::checkouts::{CheckoutsOverlay, checkout_count, checkouts_section, sidebar_caption};
+use super::checkouts::bytes_to_say;
+use super::work_list::{needing_you, project_section, rows_of};
 use super::*;
 use crate::ui::widget::{
     Align, Button, Edge, RowState, Rule, button_row, footer, hint, modal, nav, row, screen_header,
     stat::{self, Stat},
     text,
 };
+use uze_application::{CheckoutsView, PreservedWork};
 
-/// The widest the modal is drawn: two short lists do not need a wide
-/// terminal's every column, and a row read across more than this loses
+/// The widest the modal is drawn: a row read across more than this loses
 /// the reader on the way back.
 const WORK_MAX_WIDTH: u16 = 120;
 const SIDEBAR_WIDTH: u16 = 24;
@@ -25,87 +26,148 @@ const SIDEBAR_WIDTH: u16 = 24;
 const NARROW_WIDTH: u16 = 70;
 const NARROW_SIDEBAR_WIDTH: u16 = 16;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(in crate::ui) enum WorkSection {
-    Preserved,
-    Checkouts,
-}
-
-impl WorkSection {
-    pub(super) const ALL: [Self; 2] = [Self::Preserved, Self::Checkouts];
-
-    fn title(self) -> &'static str {
-        match self {
-            Self::Preserved => "Preserved",
-            Self::Checkouts => "Checkouts",
-        }
-    }
-
-    /// The keyboard the section answers with: a letter means something
-    /// different in each.
-    pub(super) fn scope(self) -> uze_keys::Scope {
-        match self {
-            Self::Preserved => uze_keys::Scope::PreservedWork,
-            Self::Checkouts => uze_keys::Scope::Checkouts,
-        }
-    }
-
-    pub(super) fn step(self, forward: bool) -> Self {
-        let index = Self::ALL.iter().position(|section| *section == self);
-        let count = Self::ALL.len();
-        let next = match (index, forward) {
-            (Some(index), true) => (index + 1) % count,
-            (Some(index), false) => (index + count - 1) % count,
-            (None, _) => 0,
-        };
-        Self::ALL[next]
-    }
-}
-
 /// Open state of the work modal.
 pub(super) struct WorkOverlay {
-    pub(super) section: WorkSection,
-    pub(super) preserved: PreservedOverlay,
-    /// `None` with no space open: a checkout belongs to a project, and
-    /// there is none to ask about.
-    pub(super) checkouts: Option<CheckoutsOverlay>,
+    /// The project in front, by the directory its checkouts are read
+    /// from. `None` until one is chosen: the modal then shows the first
+    /// that needs the operator.
+    pub(super) project: Option<PathBuf>,
+    /// Index into the project's rows (see [`rows_of`]).
+    pub(super) selected: usize,
+    /// A change was asked for and waits for its confirmation.
+    pub(super) asking: Option<WorkQuestion>,
+    /// Each project's checkouts, read the first time it comes in front and
+    /// kept while the modal is open: the read measures every checkout.
+    pub(super) reads: BTreeMap<PathBuf, ProjectRead>,
 }
 
 impl WorkOverlay {
-    pub(super) fn open(section: WorkSection, project: Option<PathBuf>) -> Self {
+    pub(super) fn open(project: Option<PathBuf>) -> Self {
         Self {
-            section,
-            preserved: PreservedOverlay {
-                selected: 0,
-                confirm_discard: false,
-            },
-            checkouts: project.map(CheckoutsOverlay::over),
+            project,
+            selected: 0,
+            asking: None,
+            reads: BTreeMap::new(),
         }
     }
 
-    /// Withdraws whatever question either section is asking, and says
-    /// whether there was one.
+    /// Withdraws the question being asked, and says whether there was one.
     pub(super) fn withdraw(&mut self) -> bool {
-        let asked = self.preserved.confirm_discard
-            || self
-                .checkouts
-                .as_ref()
-                .is_some_and(|checkouts| checkouts.asking.is_some());
-        self.preserved.confirm_discard = false;
-        if let Some(checkouts) = self.checkouts.as_mut() {
-            checkouts.asking = None;
-        }
-        asked
+        self.asking.take().is_some()
+    }
+
+    /// The last answer about `key`'s checkouts: `Some(None)` outside a
+    /// repository.
+    pub(super) fn answer(&self, key: &Path) -> Option<&Option<CheckoutsView>> {
+        self.reads.get(key)?.answer.as_ref()
+    }
+
+    pub(super) fn view(&self, key: &Path) -> Option<&CheckoutsView> {
+        self.answer(key)?.as_ref()
     }
 }
 
-/// What a section puts in the content column, described before anything
-/// is drawn so that one function lays every section out.
+/// One project's read of its checkouts.
+pub(super) struct ProjectRead {
+    /// The read whose answer is awaited: one to any earlier is dropped.
+    pub(super) asked: u64,
+    pub(super) pending: bool,
+    /// Drawn while the next read is out, so a list never empties on its
+    /// way to being refreshed.
+    pub(super) answer: Option<Option<CheckoutsView>>,
+}
+
+/// A change the modal asked about and waits on the confirmation for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum WorkQuestion {
+    /// A task's work: its checkout and its branch go.
+    Discard,
+    /// A checkout no task holds: its directory goes, its branch stays.
+    Remove,
+    Adopt,
+    Join,
+    CleanUp,
+}
+
+/// One entry of the sidebar.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Project {
+    /// The directory its checkouts are read from.
+    pub(super) key: PathBuf,
+    /// The repository's primary checkout, once a read has said; `key`
+    /// until then.
+    pub(super) primary: PathBuf,
+}
+
+impl Project {
+    pub(super) fn name(&self) -> String {
+        self.primary.file_name().map_or_else(
+            || self.primary.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        )
+    }
+
+    /// Whether `work` was recorded in this project.
+    pub(super) fn owns(&self, work: &PreservedWork) -> bool {
+        work.project == self.primary || work.project == self.key
+    }
+}
+
+/// Every project the modal lists, in the order the sidebar draws them: the
+/// space in front, the other spaces, then every project whose work was
+/// kept without a space open on it.
+pub(super) fn projects(model: &WorkspaceModel, overlay: &WorkOverlay) -> Vec<Project> {
+    let mut projects: Vec<Project> = Vec::new();
+    let mut add = |key: PathBuf| {
+        let primary = overlay
+            .view(&key)
+            .map_or_else(|| key.clone(), |view| view.primary.clone());
+        if !projects
+            .iter()
+            .any(|project| project.key == key || project.primary == primary)
+        {
+            projects.push(Project { key, primary });
+        }
+    };
+    if let Some(session) = &model.session {
+        let front = session.selected_space();
+        for space in std::iter::once(front).chain(&session.workspace.spaces) {
+            add(uze_application::slot_key(&space.root));
+        }
+    }
+    for work in model.preserved_tasks() {
+        add(work.project);
+    }
+    projects
+}
+
+/// The project in front and its place in [`projects`]: the one chosen, or
+/// else the first that needs the operator, or else the first.
+pub(super) fn front(model: &WorkspaceModel, overlay: &WorkOverlay) -> Option<(usize, Project)> {
+    let projects = projects(model, overlay);
+    let chosen = overlay.project.as_ref().and_then(|key| {
+        projects
+            .iter()
+            .position(|project| &project.key == key || &project.primary == key)
+    });
+    let index = chosen
+        .or_else(|| {
+            projects
+                .iter()
+                .position(|project| needing_you(&rows_of(model, overlay, project)) > 0)
+        })
+        .unwrap_or(0);
+    projects
+        .into_iter()
+        .nth(index)
+        .map(|project| (index, project))
+}
+
+/// What the content column shows, described before anything is drawn so
+/// that one function lays it out.
 pub(super) struct Section {
-    scope: uze_keys::Scope,
-    title: &'static str,
-    subtitle: &'static str,
-    pub(super) trailer: Option<Span<'static>>,
+    pub(super) title: String,
+    pub(super) subtitle: String,
     pub(super) cards: Vec<Stat>,
     /// The list, each line with the row a click on it selects.
     pub(super) lines: Vec<(Line<'static>, Option<usize>)>,
@@ -113,16 +175,15 @@ pub(super) struct Section {
     pub(super) focus: Option<(usize, usize)>,
     prompt: Option<String>,
     buttons: Vec<(Button, Action)>,
-    hints: Vec<Action>,
+    /// Each action the foot names, under the name it goes by here.
+    hints: Vec<(Action, String)>,
 }
 
 impl Section {
-    pub(super) fn new(scope: uze_keys::Scope, title: &'static str, subtitle: &'static str) -> Self {
+    pub(super) fn new(title: String, subtitle: String) -> Self {
         Self {
-            scope,
             title,
             subtitle,
-            trailer: None,
             cards: Vec::new(),
             lines: Vec::new(),
             focus: None,
@@ -143,17 +204,19 @@ impl Section {
         ));
     }
 
-    /// A question waiting for `confirm`, which takes the button row.
-    pub(super) fn ask(&mut self, question: String, confirm: Action) {
+    /// A question waiting for the confirmation, which takes the button row.
+    pub(super) fn ask(&mut self, question: String) {
         self.prompt = Some(question);
         self.buttons = vec![
             (
-                Button::new(confirm.label(), Token::StateDanger).strong(true),
-                confirm,
+                Button::new(Action::ConfirmDiscard.label(), Token::StateDanger).strong(true),
+                Action::ConfirmDiscard,
             ),
             (Button::new("Cancel", Token::TextSecondary), Action::Dismiss),
         ];
-        self.hints = vec![confirm, Action::Dismiss];
+        self.hints = [Action::ConfirmDiscard, Action::Dismiss]
+            .map(|action| (action, action.label().to_owned()))
+            .to_vec();
     }
 
     /// What can be done to the selection: a button each, and a hint for
@@ -162,8 +225,11 @@ impl Section {
         self.hints = buttons
             .iter()
             .filter(|(button, _)| button.is_enabled())
-            .map(|(_, action)| *action)
-            .chain([Action::NextSection, Action::Dismiss])
+            .map(|(button, action)| (*action, button.label().to_owned()))
+            .chain(
+                [Action::NextProject, Action::Dismiss]
+                    .map(|action| (action, action.label().to_owned())),
+            )
             .collect();
         self.buttons = buttons;
     }
@@ -185,131 +251,6 @@ pub(super) fn list_row(
     text::clip(&mut line, usize::from(width));
     row::fill(&mut line.spans, width, state);
     line
-}
-
-/// The preserved section: every task holding work that no live tab is in
-/// front of, whichever project it is in.
-pub(super) fn preserved_section(
-    model: &WorkspaceModel,
-    overlay: &PreservedOverlay,
-    width: u16,
-) -> Section {
-    let preserved = model.preserved_tasks();
-    let mut section = Section::new(
-        uze_keys::Scope::PreservedWork,
-        "Preserved",
-        "work no live tab is in front of",
-    );
-    if preserved.is_empty() {
-        section.say("nothing preserved — every task is either live or delivered");
-    }
-    for (index, work) in preserved.iter().enumerate() {
-        let selected = index == overlay.selected;
-        let state = RowState::of(
-            selected,
-            model.hovered == Some(WorkspaceHit::WorkRow(index)),
-        );
-        let (mark, hue) = task_mark(&work.state)
-            .unwrap_or_else(|| (theme::glyph(Symbol::MarkDot), theme::color(Token::TextDim)));
-        // What the *record* says, which is all this list asks. How far a
-        // branch is ahead and what the forge holds are questions about the
-        // project you are in, and asking them here would put one Git read
-        // per project on the machine behind a keystroke.
-        let what = match &work.state {
-            WorkStateView::Parked if work.checkout.is_none() => "checkout removed",
-            WorkStateView::Parked => "nobody is there",
-            WorkStateView::Uncommitted => "uncommitted changes",
-            WorkStateView::Conflicted { .. } => "conflict to resolve",
-            WorkStateView::GateFailed => "checks failed",
-            WorkStateView::Running => "was running",
-            WorkStateView::Integrating => "delivering",
-            _ => "ready",
-        };
-        // The project, because this list crosses them: two agents carrying
-        // a branch of the same name in two repositories are one row twice
-        // without it.
-        let project = work
-            .project
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| work.project.display().to_string());
-        let trailing = format!("{project} · {what}");
-        let room = usize::from(width)
-            .saturating_sub(text::columns(&trailing) + 6)
-            .max(8);
-        let lead = vec![
-            Span::raw(" "),
-            Span::styled(format!("{mark} "), Style::default().fg(hue)),
-            Span::styled(
-                text::elide(&work.label, room),
-                theme::fg(if selected {
-                    Token::TextBright
-                } else {
-                    Token::TextPrimary
-                }),
-            ),
-        ];
-        let first = section.lines.len();
-        section
-            .lines
-            .push((list_row(lead, Some(trailing), width, state), Some(index)));
-        if selected {
-            let checkout = work.checkout.as_ref().map_or_else(
-                || "checkout removed".to_owned(),
-                |path| path.display().to_string(),
-            );
-            section.lines.push((
-                list_row(
-                    vec![
-                        Span::raw("   "),
-                        Span::styled(
-                            text::elide_head(
-                                &format!("{} · {checkout}", work.branch),
-                                usize::from(width).saturating_sub(4),
-                            ),
-                            theme::fg(Token::TextMuted),
-                        ),
-                    ],
-                    None,
-                    width,
-                    state,
-                ),
-                Some(index),
-            ));
-            section.focus = Some((first, section.lines.len() - 1));
-        }
-    }
-    let chosen = preserved.get(overlay.selected);
-    if overlay.confirm_discard {
-        section.ask(
-            format!(
-                "discard {} and its branch? its uncommitted work is lost",
-                chosen.map_or("this task", |work| work.label.as_str())
-            ),
-            Action::ConfirmDiscard,
-        );
-    } else {
-        let any = chosen.is_some();
-        section.offer(vec![
-            (
-                Button::new(Action::ResumeTask.label(), Token::Accent).enabled(any),
-                Action::ResumeTask,
-            ),
-            (
-                Button::new(Action::DeliverTask.label(), Token::Accent).enabled(any),
-                Action::DeliverTask,
-            ),
-            (
-                Button::new(Action::FinishTask.label(), Token::TextSecondary).enabled(any),
-                Action::FinishTask,
-            ),
-            (
-                Button::new(Action::DiscardTask.label(), Token::StateDanger).enabled(any),
-                Action::DiscardTask,
-            ),
-        ]);
-    }
-    section
 }
 
 /// Where the modal sits over `area`: the management modal's place, held
@@ -347,22 +288,31 @@ pub(super) fn render_work(
     let [content, foot] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(2)]).areas(column);
 
-    render_sections(frame, sidebar, model, overlay, narrow, &mut mine);
+    let front = front(model, overlay);
+    render_projects(
+        frame,
+        sidebar,
+        model,
+        overlay,
+        front.as_ref().map(|(index, _)| *index),
+        narrow,
+        &mut mine,
+    );
 
     let content = crate::ui::content_area(content);
-    let section = match overlay.section {
-        WorkSection::Preserved => preserved_section(model, &overlay.preserved, content.width),
-        WorkSection::Checkouts => {
-            checkouts_section(model, overlay.checkouts.as_ref(), content.width)
-        }
-    };
+    let section = project_section(
+        model,
+        overlay,
+        front.as_ref().map(|(_, project)| project),
+        content.width,
+    );
     draw_section(frame, content, &section, &mut mine);
     footer::render(
         frame,
         foot,
-        hint::within(
+        hint::named_within(
             foot.width.saturating_sub(2),
-            &[uze_keys::Scope::Global, section.scope],
+            &[uze_keys::Scope::Global, uze_keys::Scope::Work],
             &section.hints,
         ),
         None,
@@ -375,13 +325,30 @@ pub(super) fn render_work(
     hits.splice(0..0, mine);
 }
 
-/// The sidebar: one entry per section, its count pinned right and what it
-/// holds beneath.
-fn render_sections(
+/// What the sidebar says under a project's name: its size on disk once
+/// read, an ellipsis while it is being read, and nothing before.
+fn project_caption(overlay: &WorkOverlay, project: &Project) -> String {
+    match overlay.reads.get(&project.key) {
+        None => String::new(),
+        Some(ProjectRead { answer: None, .. }) => theme::glyph(Symbol::Ellipsis),
+        Some(ProjectRead {
+            answer: Some(None), ..
+        }) => "no repository".to_owned(),
+        Some(ProjectRead {
+            answer: Some(Some(view)),
+            ..
+        }) => format!("{} on disk", bytes_to_say(view.total_bytes)),
+    }
+}
+
+/// The sidebar: one entry per project, how many of its rows need the
+/// operator pinned right, and its size beneath.
+fn render_projects(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     model: &WorkspaceModel,
     overlay: &WorkOverlay,
+    front: Option<usize>,
     narrow: bool,
     mine: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
@@ -389,7 +356,7 @@ fn render_sections(
         .padding(Padding::new(1, 0, 0, 0))
         .render(frame, area);
     let mut rows = crate::ui::Rows::over(inner);
-    for section in WorkSection::ALL {
+    for (index, project) in projects(model, overlay).iter().enumerate() {
         let rect = if narrow {
             let Some(rect) = rows.next(1) else { break };
             rect
@@ -402,45 +369,34 @@ fn render_sections(
                 ..label
             }
         };
-        let (caption, count) = match section {
-            WorkSection::Preserved => ("kept work".to_owned(), Some(model.preserved_tasks().len())),
-            WorkSection::Checkouts => (
-                sidebar_caption(model, overlay.checkouts.as_ref()),
-                overlay
-                    .checkouts
-                    .as_ref()
-                    .and_then(|checkouts| checkout_count(model, checkouts)),
-            ),
-        };
-        let selected = section == overlay.section;
+        let selected = front == Some(index);
+        let needing = needing_you(&rows_of(model, overlay, project));
         nav::entry(
             frame,
             rect,
-            Line::from(Span::styled(section.title(), nav::label_style(selected))),
-            &caption,
+            Line::from(Span::styled(
+                project.name(),
+                nav::label_style(selected).add_modifier(Modifier::BOLD),
+            )),
+            &project_caption(overlay, project),
             selected,
-            count,
+            (needing > 0).then_some(needing),
         );
-        mine.push((rect, WorkspaceHit::WorkSection(section)));
+        mine.push((rect, WorkspaceHit::WorkProject(index)));
     }
 }
 
-/// Draws one section into the content column: its header, its cards, its
-/// list scrolled to the selection, the question it is asking and the
-/// buttons that act on it.
+/// Draws the project in front into the content column: its header, its
+/// cards, its list scrolled to the selection, the question it is asking
+/// and the buttons that act on the selection.
 fn draw_section(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     section: &Section,
     mine: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let mut body = screen_header::render(
-        frame,
-        area,
-        section.title,
-        section.subtitle,
-        section.trailer.clone(),
-    );
+    let subtitle = text::elide_head(&section.subtitle, usize::from(area.width));
+    let mut body = screen_header::render(frame, area, &section.title, &subtitle, None);
     // Cards only with room for a row of the list beneath them and the
     // buttons: a figure is a summary of the list, never a replacement.
     if !section.cards.is_empty() && body.height >= 7 {
