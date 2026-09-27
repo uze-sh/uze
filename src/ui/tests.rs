@@ -4203,6 +4203,7 @@ fn an_unfolded_plugin_groups_its_resources_by_kind_and_the_drawer_does_not_repea
         identity: name.to_owned(),
         name: name.to_owned(),
         kind,
+        preview: Default::default(),
     };
     let mut model = TuiModel {
         route: Route::Plugins,
@@ -5612,4 +5613,157 @@ fn a_text_prompt_is_answered_by_its_buttons_and_a_click_inside_keeps_it() {
         Intent::AddMarketplace("https://example.com/team".to_owned())
     );
     assert_eq!(model.overlay, Overlay::None);
+}
+
+fn resource(
+    identity: &str,
+    kind: uze_application::CapabilityKind,
+    path: &str,
+    text: &str,
+) -> uze_application::application::PluginCapability {
+    uze_application::application::PluginCapability {
+        identity: identity.to_owned(),
+        name: identity.to_owned(),
+        kind,
+        preview: uze_application::application::CapabilityPreview {
+            path: path.to_owned(),
+            text: text.to_owned(),
+        },
+    }
+}
+
+/// `git` unfolded, with a skill and an MCP server under it.
+fn unfolded_git() -> TuiModel {
+    use uze_application::CapabilityKind;
+    let mut model = two_market_model();
+    model.expanded_plugins.insert("git@ai".to_owned());
+    model.plugin_resources.insert(
+        "git@ai".to_owned(),
+        vec![
+            resource(
+                "term",
+                CapabilityKind::Mcp,
+                "mcp.json",
+                "{\n  \"command\": \"npx\"\n}",
+            ),
+            resource(
+                "commit",
+                CapabilityKind::AgentSkill,
+                "skills/commit/SKILL.md",
+                "---\nname: commit\ndescription: Conventional commit messages.\n---\n\n# Commit\n\nWrite one from the staged diff.\n",
+            ),
+        ],
+    );
+    model
+}
+
+/// The arrows walk an unfolded plugin's resources in the order the tree
+/// draws them — skills before MCP servers, whatever order they arrived in
+/// — and the step back from a resource lands on its plugin.
+#[test]
+fn the_arrows_walk_an_unfolded_plugins_resources_in_drawn_order() {
+    let mut model = unfolded_git();
+    model.select_plugin_row(1, None);
+
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(
+        model.selected_resource().map(|r| r.name).as_deref(),
+        Some("commit")
+    );
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(
+        model.selected_resource().map(|r| r.name).as_deref(),
+        Some("term")
+    );
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(
+        model.remembered.plugin_screen.selected, 2,
+        "then the next plugin"
+    );
+    assert!(model.selected_resource().is_none());
+
+    model.act(uze_keys::Action::SelectPrevious);
+    assert_eq!(
+        model.selected_resource().map(|r| r.name).as_deref(),
+        Some("term")
+    );
+    model.act(uze_keys::Action::FocusSidebar);
+    assert!(
+        model.selected_resource().is_none(),
+        "left returns to the plugin"
+    );
+    assert_eq!(model.remembered.plugin_screen.selected, 1);
+    assert!(
+        model.expanded_plugins.contains("git@ai"),
+        "which stays unfolded"
+    );
+}
+
+/// A resource the keyboard is on is previewed in the drawer: what it is,
+/// where it sits, and its text rendered — the frontmatter as YAML rather
+/// than read as a rule, the body as Markdown.
+#[test]
+fn a_selected_resource_is_previewed_in_the_drawer() {
+    let mut model = unfolded_git();
+    model.select_plugin_row(1, Some("commit".to_owned()));
+    let mut terminal = Terminal::new(TestBackend::new(150, 30)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .unwrap();
+    let drawer: Vec<String> = buffer_rows(&terminal)
+        .iter()
+        .map(|row| row.rsplit('│').next().unwrap_or_default().to_owned())
+        .collect();
+
+    for expected in [
+        "SKILL",
+        "skills/commit/SKILL.md",
+        "description: Conventional commit",
+        "Write one from the staged diff.",
+    ] {
+        assert!(
+            drawer.iter().any(|row| row.contains(expected)),
+            "{expected:?} in the drawer: {drawer:#?}"
+        );
+    }
+    assert!(
+        !drawer.iter().any(|row| row.trim() == "---"),
+        "the frontmatter's fences are not drawn as a rule: {drawer:#?}"
+    );
+    assert!(hits.iter().any(|(_, hit)| *hit == Hit::ResourcePreview));
+}
+
+/// A long preview scrolls to where its last row meets the drawer's bottom
+/// and no further, so the way back up costs no presses spent past its end.
+#[test]
+fn a_resource_preview_scrolls_to_its_end_and_stops() {
+    let mut model = unfolded_git();
+    let long: String = (0..80).map(|n| format!("Line {n}.\n\n")).collect();
+    model.plugin_resources.get_mut("git@ai").unwrap()[1]
+        .preview
+        .text = long;
+    model.select_plugin_row(1, Some("commit".to_owned()));
+    let mut terminal = Terminal::new(TestBackend::new(150, 30)).unwrap();
+    let mut draw = |model: &TuiModel| {
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .unwrap();
+    };
+    draw(&model);
+
+    for _ in 0..40 {
+        model.act(uze_keys::Action::ScrollPageDown);
+    }
+    let limit = crate::ui::view::plugins::preview_scroll_limit();
+    assert!(limit > 0, "the preview is longer than the drawer");
+    assert_eq!(model.resource_scroll, limit);
+
+    model.act(uze_keys::Action::ScrollPageUp);
+    assert!(
+        model.resource_scroll < limit,
+        "one page back is a page back"
+    );
+    draw(&model);
 }

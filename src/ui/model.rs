@@ -632,6 +632,13 @@ pub(crate) struct TuiModel {
     /// carries none and asking every catalogue for them per frame would put
     /// a read of every plugin on the render path.
     pub(crate) plugin_resources: BTreeMap<String, Vec<PluginCapability>>,
+    /// The resource under the selected plugin the keyboard is on, by
+    /// identity; `None` is the plugin's own row. Only honoured while that
+    /// plugin is unfolded and still offers it — see
+    /// [`TuiModel::selected_resource`].
+    pub(crate) selected_resource: Option<String>,
+    /// How far the drawer's preview of that resource is scrolled, in rows.
+    pub(crate) resource_scroll: u16,
 
     /// The official uze extensions catalog, from
     /// `uze_extensions::registry::ExtensionRegistry`.
@@ -826,6 +833,8 @@ impl TuiModel {
             plugin_pane: PluginPane::default(),
             expanded_plugins: BTreeSet::new(),
             plugin_resources: BTreeMap::new(),
+            selected_resource: None,
+            resource_scroll: 0,
             extensions: uze_extensions::registry::ExtensionRegistry::builtin()
                 .all()
                 .to_vec(),
@@ -1206,8 +1215,82 @@ impl TuiModel {
     pub(crate) fn select_plugin_market(&mut self, market: Option<String>) {
         if self.plugin_market != market {
             self.plugin_market = market;
-            self.remembered.plugin_screen.selected = 0;
+            self.select_plugin_row(0, None);
         }
+    }
+
+    /// Puts the keyboard on a plugin, or on one of its resources, and
+    /// starts that resource's preview from its top.
+    pub(crate) fn select_plugin_row(&mut self, position: usize, resource: Option<String>) {
+        if self.remembered.plugin_screen.selected != position || self.selected_resource != resource
+        {
+            self.resource_scroll = 0;
+        }
+        self.remembered.plugin_screen.selected = position;
+        self.selected_resource = resource;
+    }
+
+    /// Every row of the plugin list the keyboard can stand on, top to
+    /// bottom: each visible plugin, then — when it is unfolded — each of
+    /// its resources in the order the tree draws them. A kind's heading is
+    /// drawn but never stood on.
+    pub(crate) fn plugin_list_rows(&self) -> Vec<(usize, Option<String>)> {
+        let rows = self.marketplace_rows();
+        let mut list = Vec::new();
+        for (position, &raw) in self.visible_indices_in(&rows).iter().enumerate() {
+            list.push((position, None));
+            let id = self.marketplace_plugin_id(&rows[raw]);
+            if !self.expanded_plugins.contains(&id) {
+                continue;
+            }
+            for (_, resources) in self
+                .plugin_resources_of(&id)
+                .map(super::agent_support::resource_groups)
+                .unwrap_or_default()
+            {
+                list.extend(
+                    resources
+                        .into_iter()
+                        .map(|resource| (position, Some(resource.identity.clone()))),
+                );
+            }
+        }
+        list
+    }
+
+    /// Steps the keyboard through [`Self::plugin_list_rows`], stopping at
+    /// either end the way every other list does.
+    pub(crate) fn move_plugin_row(&mut self, delta: isize) {
+        let list = self.plugin_list_rows();
+        let Some(last) = list.len().checked_sub(1) else {
+            return;
+        };
+        let here = (
+            self.remembered.plugin_screen.selected,
+            self.selected_resource().map(|resource| resource.identity),
+        );
+        let current = list
+            .iter()
+            .position(|row| *row == here)
+            .or_else(|| list.iter().position(|(position, _)| *position == here.0))
+            .unwrap_or(0);
+        let (position, resource) = list[current.saturating_add_signed(delta).min(last)].clone();
+        self.select_plugin_row(position, resource);
+    }
+
+    /// The resource the keyboard is on, while its plugin is selected,
+    /// unfolded and still offers it.
+    pub(crate) fn selected_resource(&self) -> Option<PluginCapability> {
+        let identity = self.selected_resource.as_deref()?;
+        let plugin = self.selected_marketplace_plugin()?;
+        let id = self.marketplace_plugin_id(&plugin);
+        if !self.expanded_plugins.contains(&id) {
+            return None;
+        }
+        self.plugin_resources_of(&id)?
+            .iter()
+            .find(|resource| resource.identity == identity)
+            .cloned()
     }
 
     /// The registered marketplace the rail is on; `None` on "All" and on
@@ -1220,10 +1303,13 @@ impl TuiModel {
             .find(|summary| summary.name == market)
     }
 
-    /// Unfolds or folds one plugin's resources.
+    /// Unfolds or folds one plugin's resources. Folding takes the keyboard
+    /// off a resource it hid, back to the plugin it belonged to.
     pub(crate) fn toggle_plugin_expanded(&mut self, plugin: &str) {
         if !self.expanded_plugins.remove(plugin) {
             self.expanded_plugins.insert(plugin.to_owned());
+        } else {
+            self.selected_resource = None;
         }
     }
 

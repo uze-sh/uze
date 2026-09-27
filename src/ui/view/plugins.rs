@@ -27,7 +27,7 @@ use uze_application::application::{
     DoctorReport, FreshnessState, MarketplacePluginSummary, PluginCapability, Revision,
 };
 
-use super::super::agent_support::capability_label;
+use super::super::agent_support::{capability_label, resource_groups};
 use super::super::hit::Hit;
 use super::super::model::{PluginPane, ResizablePanel, Route, TuiModel};
 use super::super::{content_area, render_screen_header};
@@ -150,7 +150,12 @@ pub(crate) fn render_plugins(
 
     match selected {
         Some(plugin) if model.plugin_pane == PluginPane::Plugins => {
-            render_plugin_drawer(frame, outer, model, plugin, hits)
+            match model.selected_resource() {
+                Some(resource) => {
+                    render_resource_drawer(frame, outer, model, plugin, &resource, hits)
+                }
+                None => render_plugin_drawer(frame, outer, model, plugin, hits),
+            }
         }
         _ => render_market_drawer(frame, outer, model, &marketplace_rows, market, hits),
     }
@@ -344,6 +349,7 @@ fn render_list(
 
     let focused = model.plugin_pane == PluginPane::Plugins
         && model.focus == super::super::model::Focus::Content;
+    let selected_resource = model.selected_resource().map(|resource| resource.identity);
     let mut lines: Vec<ListLine> = Vec::new();
     let mut selected_line = 0;
     for (position, &raw) in visible.iter().enumerate() {
@@ -351,6 +357,11 @@ fn render_list(
         let id = model.marketplace_plugin_id(plugin);
         let expanded = model.expanded_plugins.contains(&id);
         let is_selected = position == model.remembered.plugin_screen.selected;
+        // The plugin's own row wears the selection only while the keyboard
+        // is not on one of its resources below it.
+        let on_resource = is_selected
+            .then_some(selected_resource.as_deref())
+            .flatten();
         if is_selected {
             selected_line = lines.len();
         }
@@ -359,7 +370,7 @@ fn render_list(
                 plugin,
                 &columns,
                 expanded,
-                selection(is_selected, focused),
+                selection(is_selected && on_resource.is_none(), focused),
                 model.was_just_updated(&id),
                 area.width,
             ),
@@ -369,14 +380,17 @@ fn render_list(
             ],
         });
         if expanded {
-            lines.extend(
-                resource_tree(model.plugin_resources_of(&id))
-                    .into_iter()
-                    .map(|line| ListLine {
-                        line,
-                        hits: vec![(0, area.width, Hit::MarketplaceRow(position))],
-                    }),
+            let tree = resource_tree(
+                model.plugin_resources_of(&id),
+                position,
+                on_resource,
+                focused,
+                area.width,
             );
+            if let Some(offset) = tree.iter().position(|entry| entry.selected) {
+                selected_line = lines.len() + offset;
+            }
+            lines.extend(tree.into_iter().map(|entry| entry.line));
         }
     }
 
@@ -530,36 +544,51 @@ fn freshness_label(plugin: &MarketplacePluginSummary, just_updated: bool) -> (St
     }
 }
 
+/// One row of an unfolded plugin's tree, and whether the keyboard is on it.
+struct TreeLine {
+    line: ListLine,
+    selected: bool,
+}
+
 /// An unfolded plugin's resources, one branch per kind and a leaf per
-/// resource, hung under the plugin's chevron. `None` is a plugin whose
-/// resources have not arrived yet: it was unfolded, which asked for them.
-fn resource_tree(capabilities: Option<&[PluginCapability]>) -> Vec<Line<'static>> {
-    let indent = "  ";
+/// resource, hung under the plugin's chevron. A leaf is a row the keyboard
+/// and the pointer stand on; a kind's heading is not. `None` is a plugin
+/// whose resources have not arrived yet: it was unfolded, which asked for
+/// them.
+fn resource_tree(
+    capabilities: Option<&[PluginCapability]>,
+    position: usize,
+    selected: Option<&str>,
+    focused: bool,
+    width: u16,
+) -> Vec<TreeLine> {
     let faint = theme::fg(Token::TextFaint);
-    let leaf = |glyph: Symbol, words: String, style: Style| {
-        Line::from(vec![
-            Span::styled(format!("{indent}{} ", theme::glyph(glyph)), faint),
+    let heading = |spans: Vec<Span<'static>>| TreeLine {
+        line: ListLine {
+            line: Line::from(spans),
+            hits: vec![(0, width, Hit::MarketplaceRow(position))],
+        },
+        selected: false,
+    };
+    let note = |words: String, style: Style| {
+        heading(vec![
+            Span::styled(format!("  {} ", theme::glyph(Symbol::TreeLast)), faint),
             Span::styled(words, style),
         ])
     };
     let Some(capabilities) = capabilities else {
-        return vec![leaf(
-            Symbol::TreeLast,
-            "loading…".to_owned(),
-            theme::fg(Token::TextMuted),
-        )];
+        return vec![note("loading…".to_owned(), theme::fg(Token::TextMuted))];
     };
     let groups = resource_groups(capabilities);
     if groups.is_empty() {
-        return vec![leaf(
-            Symbol::TreeLast,
+        return vec![note(
             theme::glyph(Symbol::MarkUnsupported),
             theme::fg(Token::TextDim),
         )];
     }
     let mut lines = Vec::new();
     let last_group = groups.len() - 1;
-    for (group_index, (label, names)) in groups.into_iter().enumerate() {
+    for (group_index, (kind, resources)) in groups.into_iter().enumerate() {
         let (branch, stem) = if group_index == last_group {
             (Symbol::TreeLast, "  ".to_owned())
         } else {
@@ -568,25 +597,246 @@ fn resource_tree(capabilities: Option<&[PluginCapability]>) -> Vec<Line<'static>
                 format!("{} ", theme::glyph(Symbol::TreeVertical)),
             )
         };
-        lines.push(Line::from(vec![
-            Span::styled(format!("{indent}{} ", theme::glyph(branch)), faint),
-            Span::styled(label.to_owned(), theme::fg(Token::TextMuted)),
-            Span::styled(format!("  {}", names.len()), theme::fg(Token::TextDim)),
+        lines.push(heading(vec![
+            Span::styled(format!("  {} ", theme::glyph(branch)), faint),
+            Span::styled(capability_label(kind), theme::fg(Token::TextMuted)),
+            Span::styled(format!("  {}", resources.len()), theme::fg(Token::TextDim)),
         ]));
-        let last_name = names.len() - 1;
-        for (name_index, name) in names.into_iter().enumerate() {
-            let twig = if name_index == last_name {
+        let last_resource = resources.len() - 1;
+        for (index, resource) in resources.into_iter().enumerate() {
+            let twig = if index == last_resource {
                 Symbol::TreeLast
             } else {
                 Symbol::TreeBranch
             };
-            lines.push(Line::from(vec![
-                Span::styled(format!("{indent}{stem} {} ", theme::glyph(twig)), faint),
-                Span::styled(name.to_owned(), theme::fg(Token::TextPrimary)),
-            ]));
+            let is_selected = selected == Some(resource.identity.as_str());
+            let (state, bar) = selection(is_selected, focused);
+            let lead = format!("{stem} {} ", theme::glyph(twig));
+            let mut spans = vec![
+                Span::styled(bar, theme::fg(Token::Accent)),
+                Span::styled(format!(" {lead}"), faint),
+                Span::styled(
+                    resource.name.clone(),
+                    if is_selected {
+                        theme::fg_bold(Token::TextBright)
+                    } else {
+                        theme::fg(Token::TextPrimary)
+                    },
+                ),
+            ];
+            row::fill(&mut spans, width, state);
+            lines.push(TreeLine {
+                line: ListLine {
+                    line: Line::from(spans),
+                    hits: vec![(
+                        0,
+                        width,
+                        Hit::PluginResource(position, resource.identity.clone()),
+                    )],
+                },
+                selected: is_selected,
+            });
         }
     }
     lines
+}
+
+/// A Markdown file's leading `---` frontmatter and the body after it.
+fn split_frontmatter(text: &str) -> Option<(&str, &str)> {
+    let rest = text
+        .strip_prefix("---\n")
+        .or_else(|| text.strip_prefix("---\r\n"))?;
+    let end = rest.find("\n---")?;
+    let body = rest[end + 4..].trim_start_matches(['\r', '\n']);
+    Some((&rest[..end], body))
+}
+
+/// A resource's text as the drawer renders it: Markdown as Markdown, with
+/// its frontmatter shown as the YAML it is rather than read as a rule and
+/// a heading; a JSON definition as highlighted JSON.
+fn preview_markdown(resource: &PluginCapability) -> String {
+    let text = &resource.preview.text;
+    match resource.kind {
+        CapabilityKind::Mcp | CapabilityKind::Hook => format!("```json\n{text}\n```\n"),
+        CapabilityKind::AgentSkill | CapabilityKind::Agent | CapabilityKind::Instruction => {
+            match split_frontmatter(text) {
+                Some((frontmatter, body)) => format!("```yaml\n{frontmatter}\n```\n\n{body}"),
+                None => text.clone(),
+            }
+        }
+    }
+}
+
+/// The last preview drawn, and what it was drawn from.
+struct RenderedPreview {
+    identity: String,
+    theme: String,
+    text: String,
+    width: u16,
+    /// Folded to `width` already, one entry per row on screen.
+    rows: Vec<Line<'static>>,
+    /// How many of them the drawer had room for.
+    height: u16,
+}
+
+thread_local! {
+    static RENDERED_PREVIEW: std::cell::RefCell<Option<RenderedPreview>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The rows of `resource`'s preview on show in a column `width` wide and
+/// `height` tall, `scroll` rows down.
+///
+/// Rendered and folded once per resource, text, theme and width rather
+/// than once per frame: a Markdown parse and a syntect pass over every
+/// fenced block cost milliseconds for a long skill, and a wrapped
+/// paragraph refolds the whole document even to show one screen of it —
+/// while the drawer is redrawn on every keystroke, pointer move and tick.
+/// Kept here rather than on the model because it is a cost of drawing,
+/// not state anything else reads; one entry because the drawer shows one
+/// resource.
+fn preview_rows(
+    resource: &PluginCapability,
+    width: u16,
+    height: u16,
+    scroll: u16,
+) -> Vec<Line<'static>> {
+    let theme = uze_theme::active().syntax_theme().to_owned();
+    RENDERED_PREVIEW.with_borrow_mut(|cached| {
+        let current = cached.as_ref().is_some_and(|cached| {
+            cached.identity == resource.identity
+                && cached.width == width
+                && cached.theme == theme
+                && cached.text == resource.preview.text
+        });
+        if !current {
+            let rows = uze_extensions::code::markdown(&preview_markdown(resource), &theme)
+                .iter()
+                .flat_map(|line| crate::ui::extension_view::folded_rows(line, width.into()))
+                .map(Line::from)
+                .collect();
+            *cached = Some(RenderedPreview {
+                identity: resource.identity.clone(),
+                theme,
+                text: resource.preview.text.clone(),
+                width,
+                rows,
+                height,
+            });
+        }
+        let Some(cached) = cached.as_mut() else {
+            return Vec::new();
+        };
+        cached.height = height;
+        cached
+            .rows
+            .iter()
+            .skip(scroll.into())
+            .take(height.into())
+            .cloned()
+            .collect()
+    })
+}
+
+/// How far the preview drawn last can scroll before its last row reaches
+/// the drawer's bottom — what keeps the wheel from scrolling on into
+/// nothing, and the way back up from costing the presses spent there.
+pub(crate) fn preview_scroll_limit() -> u16 {
+    RENDERED_PREVIEW.with_borrow(|cached| {
+        cached.as_ref().map_or(0, |cached| {
+            u16::try_from(cached.rows.len())
+                .unwrap_or(u16::MAX)
+                .saturating_sub(cached.height)
+        })
+    })
+}
+
+/// What a resource is, as the drawer heads it.
+fn resource_kind_label(kind: CapabilityKind) -> &'static str {
+    match kind {
+        CapabilityKind::AgentSkill => "SKILL",
+        CapabilityKind::Agent => "AGENT",
+        CapabilityKind::Hook => "HOOK",
+        CapabilityKind::Mcp => "MCP SERVER",
+        CapabilityKind::Instruction => "INSTRUCTIONS",
+    }
+}
+
+/// The drawer for a resource the keyboard is on: what it is and where it
+/// sits in its plugin, then its text, rendered — a quick read before
+/// installing, or of what an installed plugin actually does. The footer
+/// still speaks for the plugin, which is what installs and removes.
+fn render_resource_drawer(
+    frame: &mut ratatui::Frame<'_>,
+    content: Rect,
+    model: &TuiModel,
+    plugin: &MarketplacePluginSummary,
+    resource: &PluginCapability,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    let inner = super::drawer(
+        frame,
+        content,
+        ResizablePanel::MarketplaceDrawer,
+        model,
+        hits,
+    );
+    let offers = plugin.offers();
+    let (body, status_area) = super::drawer_body_and_footer(inner, &offers);
+    let room = body.width.saturating_sub(crate::ui::widget::TRAILING_PAD) as usize;
+
+    let mut heading = vec![Span::styled(
+        resource_kind_label(resource.kind),
+        theme::fg(Token::TextMuted),
+    )];
+    row::push_trailing(
+        &mut heading,
+        body.width,
+        plugin.name.clone(),
+        theme::color(Token::TextDim),
+    );
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(heading),
+        Line::from(Span::styled(
+            text::elide(&resource.name, room),
+            theme::fg_bold(Token::TextBright),
+        )),
+    ];
+    if !resource.preview.path.is_empty() {
+        lines.push(Line::from(Span::styled(
+            text::elide_head(&resource.preview.path, room),
+            theme::fg(Token::TextMuted),
+        )));
+    }
+    lines.push(Line::from(""));
+    let header_rows = lines.len() as u16;
+    frame.render_widget(Paragraph::new(lines), body);
+
+    let preview = Rect {
+        y: body.y + header_rows,
+        height: body.height.saturating_sub(header_rows),
+        ..body
+    };
+    frame.render_widget(
+        Paragraph::new(preview_rows(
+            resource,
+            preview.width,
+            preview.height,
+            model.resource_scroll,
+        )),
+        preview,
+    );
+    hits.push((preview, Hit::ResourcePreview));
+
+    render_drawer_footer(
+        frame,
+        status_area,
+        plugin_status(model, plugin),
+        &offers,
+        model.hovered_offer,
+        None,
+        hits,
+    );
 }
 
 fn render_market_drawer(
@@ -965,9 +1215,25 @@ fn render_plugin_drawer(
     // Untrimmed: every line is folded already.
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
 
-    // The buttons below say what can be done, so the note no longer names
-    // the key that does it.
-    let status = if plugin.installed {
+    render_drawer_footer(
+        frame,
+        status_area,
+        plugin_status(model, plugin),
+        &offers,
+        model.hovered_offer,
+        None,
+        hits,
+    );
+}
+
+/// Where a plugin stands, as its drawer's footer says it — the plugin's
+/// own drawer and the drawer of any resource under it alike, since what
+/// installs and removes is the plugin.
+///
+/// The buttons beside it say what can be done, so the note does not name
+/// the key that does it.
+fn plugin_status(model: &TuiModel, plugin: &MarketplacePluginSummary) -> DrawerStatus<'static> {
+    if plugin.installed {
         let qualified_id = model.marketplace_plugin_id(plugin);
         if model.was_just_updated(&qualified_id) {
             DrawerStatus {
@@ -1010,43 +1276,7 @@ fn render_plugin_drawer(
             headline: "Not installed",
             subtitle: "Available from this marketplace",
         }
-    };
-    render_drawer_footer(
-        frame,
-        status_area,
-        status,
-        &offers,
-        model.hovered_offer,
-        None,
-        hits,
-    );
-}
-
-/// The order a reader meets a plugin's resources in: what they invoke
-/// first, what runs on its own after.
-const RESOURCE_ORDER: [CapabilityKind; 5] = [
-    CapabilityKind::AgentSkill,
-    CapabilityKind::Agent,
-    CapabilityKind::Hook,
-    CapabilityKind::Mcp,
-    CapabilityKind::Instruction,
-];
-
-/// A plugin's resources by kind, in [`RESOURCE_ORDER`], leaving out the
-/// kinds it declares none of.
-fn resource_groups(capabilities: &[PluginCapability]) -> Vec<(&'static str, Vec<&str>)> {
-    RESOURCE_ORDER
-        .iter()
-        .map(|kind| {
-            let names = capabilities
-                .iter()
-                .filter(|capability| capability.kind == *kind)
-                .map(|capability| capability.name.as_str())
-                .collect::<Vec<_>>();
-            (capability_label(*kind), names)
-        })
-        .filter(|(_, names)| !names.is_empty())
-        .collect()
+    }
 }
 
 /// Attachment health for one plugin, derived from the doctor report every

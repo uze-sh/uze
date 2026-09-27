@@ -173,7 +173,7 @@ fn fold(
 }
 
 /// `line`'s spans, styled and folded into the rows [`fold`] puts them on.
-fn folded_rows(line: &ContentLine, width: usize) -> Vec<Vec<TextSpan<'static>>> {
+pub(crate) fn folded_rows(line: &ContentLine, width: usize) -> Vec<Vec<TextSpan<'static>>> {
     let mut rows: Vec<Vec<TextSpan<'static>>> = vec![Vec::new()];
     let mut last: Option<*const Span> = None;
     fold(line, width, |row, _, span, character| {

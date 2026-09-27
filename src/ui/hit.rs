@@ -13,6 +13,12 @@ pub(crate) enum Hit {
     /// A plugin row's chevron, by position in the visible list: unfolds or
     /// folds its resources without the row's own click behind it.
     TogglePluginResources(usize),
+    /// A resource row under an unfolded plugin, by the plugin's position
+    /// and the resource's identity.
+    PluginResource(usize, String),
+    /// The drawer's preview of the selected resource: the wheel scrolls it
+    /// rather than the list, and a click on it does nothing.
+    ResourcePreview,
     /// An entry of the Plugins rail; `None` is "All".
     PluginMarket(Option<String>),
     /// A plugin detail's Source card — selects that marketplace on the
@@ -145,13 +151,13 @@ impl TuiModel {
                 entering
             }
             Hit::MarketplaceRow(index) => {
-                self.remembered.plugin_screen.selected = index;
+                self.select_plugin_row(index, None);
                 self.plugin_pane = PluginPane::Plugins;
                 self.focus = Focus::Content;
                 self.marketplace_inspect_intent()
             }
             Hit::TogglePluginResources(index) => {
-                self.remembered.plugin_screen.selected = index;
+                self.select_plugin_row(index, None);
                 self.plugin_pane = PluginPane::Plugins;
                 self.focus = Focus::Content;
                 if let Some(plugin) = self.selected_marketplace_plugin() {
@@ -160,6 +166,13 @@ impl TuiModel {
                 }
                 self.marketplace_inspect_intent()
             }
+            Hit::PluginResource(position, identity) => {
+                self.select_plugin_row(position, Some(identity));
+                self.plugin_pane = PluginPane::Plugins;
+                self.focus = Focus::Content;
+                Intent::None
+            }
+            Hit::ResourcePreview => Intent::None,
             Hit::PluginMarket(market) => {
                 self.select_plugin_market(market);
                 self.plugin_pane = PluginPane::Markets;
