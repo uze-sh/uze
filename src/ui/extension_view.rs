@@ -20,8 +20,8 @@ use ratatui::{
 };
 use uze_extensions::view::{
     Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
-    Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, RowMenu, ScrollTarget,
-    Section, Size, Span, TrailStep, View, ViewHit,
+    Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section,
+    Size, Span, TrailStep, View, ViewHit,
 };
 
 use crate::ui::theme::{self, Symbol, Token};
@@ -462,30 +462,32 @@ pub(crate) fn render(
         width: content_area.width,
         height: content_area.height,
     };
-    if let Some(menu) = view
-        .navigator
-        .as_ref()
-        .and_then(|navigator| navigator.menu.as_ref())
-    {
-        render_row_menu(frame, area, menu, hits);
-    }
     rendered
 }
 
-/// A [`RowMenu`], drawn last so it lies over whatever it overlaps, just
-/// under the row it was opened on — and not at all while that row is
+/// A [`uze_extensions::view::RowMenu`], drawn after the view so it lies over whatever it
+/// overlaps: where the pointer asked for it (`at`), or under the row it
+/// was opened on when the keyboard did — and not at all while that row is
 /// scrolled out of sight, since a menu pointing at nothing is a menu
 /// about nothing.
 ///
 /// Its entries go to the front of `hits`, because the first rect holding
 /// a point is the one a click lands on, and under the menu there are rows
 /// the click was not meant for.
-fn render_row_menu(
+pub(crate) fn render_row_menu(
     frame: &mut ratatui::Frame<'_>,
+    view: &View,
     area: Rect,
-    menu: &RowMenu,
+    at: Option<Rect>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
+    let Some(menu) = view
+        .navigator
+        .as_ref()
+        .and_then(|navigator| navigator.menu.as_ref())
+    else {
+        return;
+    };
     let Some(row) = hits
         .iter()
         .find(|(_, hit)| *hit == ViewHit::SelectItem(menu.row))
@@ -495,7 +497,7 @@ fn render_row_menu(
     };
     // Under the name rather than at the row's edge, where the accent bar
     // and the indent are: the menu belongs to the file, not to the column.
-    let anchor = Rect::new(row.x.saturating_add(2), row.y, 1, 1);
+    let anchor = at.unwrap_or(Rect::new(row.x.saturating_add(2), row.y, 1, 1));
     let entries: Vec<&str> = menu.entries.iter().map(String::as_str).collect();
     let rows = widget::menu::render(frame, area, anchor, &entries, menu.highlighted);
     for (index, rect) in rows.into_iter().enumerate().rev() {
@@ -2025,7 +2027,7 @@ pub(crate) fn render_section_with(
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
-    use uze_extensions::view::{ContentLine, LineTone, Rgb};
+    use uze_extensions::view::{ContentLine, LineTone, Rgb, RowMenu};
 
     #[test]
     fn a_choice_list_on_a_board_too_narrow_for_it_draws_without_panicking() {
@@ -2546,7 +2548,7 @@ mod tests {
             layout: ViewLayout::Sidebar,
             trail: Vec::new(),
         };
-        let (rows, hits) = draw_sized(&view, 80, 16);
+        let (rows, hits) = draw_with_menu(&view, None);
 
         let at = |wanted: ViewHit| {
             hits.iter()
@@ -2566,6 +2568,47 @@ mod tests {
             Some(ViewHit::MenuEntry(0)),
             "the entry, not the row under it"
         );
+
+        // Asked for by the pointer, it opens where the pointer is.
+        let pointer = Rect::new(30, 4, 1, 1);
+        let (_, hits) = draw_with_menu(&view, Some(pointer));
+        let first = hits
+            .iter()
+            .find(|(_, hit)| *hit == ViewHit::MenuEntry(0))
+            .map(|(rect, _)| *rect)
+            .expect("drawn");
+        assert!(
+            first.y > pointer.y && first.x.abs_diff(pointer.x) <= 2,
+            "at the pointer: {first:?}"
+        );
+    }
+
+    fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, ViewHit)>) {
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    view,
+                    frame.area(),
+                    Some(24),
+                    NavigatorScroll::default(),
+                    uze_keys::Scope::Code,
+                    &mut hits,
+                );
+                render_row_menu(frame, view, frame.area(), at, &mut hits);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let rows = (0..buffer.area.height)
+            .map(|row| {
+                (0..buffer.area.width)
+                    .map(|column| buffer[(column, row)].symbol())
+                    .collect()
+            })
+            .collect();
+        (rows, hits)
     }
 
     /// A board's footer carries two things — the keys on its left and

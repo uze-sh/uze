@@ -271,6 +271,13 @@ fn render_extension(
         scope,
         &mut view_hits,
     ));
+    crate::ui::extension_view::render_row_menu(
+        frame,
+        &view,
+        area,
+        model.code_menu_at,
+        &mut view_hits,
+    );
     hits.extend(
         view_hits
             .into_iter()

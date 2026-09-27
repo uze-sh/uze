@@ -1627,6 +1627,9 @@ impl Attach<'_> {
 
     /// Hands one command down, and does what the surface asks back.
     fn tell_the_code_surface(&mut self, command: Command) {
+        if command == Command::OpenMenu {
+            self.model.code_menu_at = None;
+        }
         let space = self.code_space();
         if let Some(outcome) = self
             .model
@@ -2331,6 +2334,7 @@ impl Attach<'_> {
         if let Some(WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::SelectItem(row)))) =
             self.model.hit_at(mouse.column, mouse.row)
         {
+            self.model.code_menu_at = Some(Rect::new(mouse.column, mouse.row, 1, 1));
             let space = self.code_space();
             if let Some(outcome) = self
                 .model

@@ -2832,6 +2832,10 @@ struct WorkspaceModel {
     /// the content* the pointer went. Geometry belongs to the render, so
     /// it travels from there rather than being derived twice.
     code_scrollbars: extension_view::Rendered,
+    /// Where the pointer asked for the code surface's row menu, which is
+    /// where it opens. `None` when the keyboard asked, and the menu opens
+    /// under its row instead.
+    code_menu_at: Option<Rect>,
     /// A press on the navigator's edge, waiting to find out what it is.
     code_edge_drag: Option<EdgeDrag>,
     /// Whether the content's own scrollbar is being held. Unambiguous, so
