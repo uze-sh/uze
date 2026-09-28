@@ -215,8 +215,11 @@ OpenCode have no such mechanism).
 ### Context
 
 See the proposal's "How the bytes reach a harness". Evidence for every vendor claim below is in
-the study runs (`conformance/experiments/<vendor>/study_mechanics*.py` and
-`study_discovery*.py`); versions are those of image `beta4-final`.
+the study runs of 2026-09-28 (observation-only experiments
+`experiments/<vendor>/study_mechanics*.py` and `study_discovery*.py`, removed
+once their facts were recorded here; recover them from commit `083571f7` to
+measure again); versions are those of image `beta4-final`. The facts a
+delivery depends on become Lab checks in `harness-dialect-table`.
 
 #### What each harness does with each mechanic
 

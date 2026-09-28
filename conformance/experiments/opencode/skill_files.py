@@ -3,7 +3,7 @@
 OpenCode answers a `skill` tool call with the Skill's body and a
 `<skill_files>` block listing the files beside its `SKILL.md`. Its walker
 does not descend a skill root that is a symbolic link: measured on 2.0.18
-(`experiments/opencode/study_mechanics`), a linked root delivers the body
+(the delivery-mechanics study of 2026-09-28), a linked root delivers the body
 and an empty `<skill_files>`. UZE delivered every loose Skill that way until
 `deliver-the-whole-plugin`; it now writes a real directory.
 
@@ -19,9 +19,10 @@ Run: python3 conformance/lab.py --harness opencode --experiment opencode/skill_f
 """
 
 import json
+import os
 import re
+import subprocess
 
-from experiments.claude.study_mechanics_lib import run_container
 from harnesses.opencode.scenarios import opencode_container
 from shared import common
 
@@ -46,7 +47,19 @@ def run(cfg, prov_ip):
     )
     turn = f"cd /work && timeout 150 opencode run --standalone --auto '{TRIGGER}' 2>&1 | tail -20"
     cmd = opencode_container(cfg, prov_ip, turn, plugins="flow", tty=False)
-    _, log = run_container(cfg, cmd, "opencode-skill-files", timeout=900)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, errors="replace", timeout=900
+    )
+    with open(os.path.join(cfg.outdir, "opencode-skill-files.out"), "w") as f:
+        f.write(proc.stdout + "\n=== stderr\n" + proc.stderr)
+    log = subprocess.run(
+        ["docker", "exec", cfg.prov_name, "cat", "/app/raw-requests.log"],
+        capture_output=True,
+        text=True,
+        errors="replace",
+    ).stdout
+    with open(os.path.join(cfg.outdir, "opencode-skill-files.requests.log"), "w") as f:
+        f.write(log)
 
     carrying = [block for block in log.split("### ") if BODY in block]
     common.check(
