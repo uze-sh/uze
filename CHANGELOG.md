@@ -4,6 +4,30 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.3](https://github.com/uze-sh/uze/compare/v1.0.0-beta.2...v1.0.0-beta.3) - 2026-09-28
+
+### Features
+
+- **spec:** Read Spec Kit projects in the spec surface ([#142](https://github.com/uze-sh/uze/pull/142)) ([90050cc](https://github.com/uze-sh/uze/commit/90050cc8923722244e132b8dea600fcb507c82f9))
+- **code:** Render an empty state for binary files in contents and diff ([#143](https://github.com/uze-sh/uze/pull/143)) ([9b5eb94](https://github.com/uze-sh/uze/commit/9b5eb94ab9f366311ed7eacba51535ab9a4e8169))
+- **extensions:** Add an enable/disable switch for built-in extensions ([#145](https://github.com/uze-sh/uze/pull/145)) ([b796c0d](https://github.com/uze-sh/uze/commit/b796c0dfa6d1dca75d2739a2082ebba7c7af8367))
+- **ui:** Split the plugins screen into a marketplace rail and plugin table ([#144](https://github.com/uze-sh/uze/pull/144)) ([9e8620a](https://github.com/uze-sh/uze/commit/9e8620a826f26d68d5573a263a5858fb4ffac809))
+- **web:** Add the animated delivery illustration to the landing page ([#151](https://github.com/uze-sh/uze/pull/151)) ([addb43c](https://github.com/uze-sh/uze/commit/addb43cd0a6aaa7626433e6747f923e39e9d3d3d))
+
+### Fixes
+
+- **core:** Hold plugin, marketplace and alias names to lowercase kebab-case ([#146](https://github.com/uze-sh/uze/pull/146)) ([4bab676](https://github.com/uze-sh/uze/commit/4bab676182c6c91f5fe883cbf223c5f33904b483))
+- **code:** Route presses on the content scrollbar to the code surface ([#149](https://github.com/uze-sh/uze/pull/149)) ([6352d37](https://github.com/uze-sh/uze/commit/6352d3786933f5be6fd268958bc639a41b73d35b))
+- **ui:** Anchor pane text selection to the scrollback ([#147](https://github.com/uze-sh/uze/pull/147)) ([b009c93](https://github.com/uze-sh/uze/commit/b009c93aa67eda2a19c0afc02c836dd9d742afe0))
+
+### Documentation
+
+- **demo:** Re-record every demo against the current build ([#150](https://github.com/uze-sh/uze/pull/150)) ([f8add83](https://github.com/uze-sh/uze/commit/f8add835c3f7c4fbee0337a9e4c576db64ab5686))
+
+### CI
+
+- Reuse proven E2E legs and run the journeys and the Lab in parallel ([#148](https://github.com/uze-sh/uze/pull/148)) ([5392815](https://github.com/uze-sh/uze/commit/5392815c47cd5eb0532c138dd9d8b80a37a4f32a))
+
 ## [1.0.0-beta.2](https://github.com/uze-sh/uze/compare/v1.0.0-beta.1...v1.0.0-beta.2) - 2026-09-27
 
 ### Features
