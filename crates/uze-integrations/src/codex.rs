@@ -217,10 +217,7 @@ impl IntegrationPort for CodexIntegration {
         codex_version(&self.provisioning_executable())
     }
 
-    /// OpenCode also discovers Skills from this exact same
-    /// `~/.agents/skills` directory; see `OpenCodeIntegration`'s override
-    /// of the same method for why this must be reported.
-    fn shared_agent_skill_root(&self) -> Option<PathBuf> {
+    fn skill_discovery_root(&self) -> Option<PathBuf> {
         Some(self.skills_dir.clone())
     }
 
@@ -281,6 +278,10 @@ impl IntegrationPort for CodexIntegration {
         default_exposure_name_candidates(resource)
     }
 
+    fn package_receipt_serves(&self, receipt: &AttachmentReceipt) -> bool {
+        marketplace::receipt_serves::<CodexMarketplace>(&self.uze_home, receipt)
+    }
+
     fn package_exposure_plan(
         &self,
         package: &StoredPackage,
@@ -294,19 +295,8 @@ impl IntegrationPort for CodexIntegration {
             return Ok(None);
         };
         let attached = match &artifact {
-            ManagedArtifact::SymlinkReference { .. } => {
-                // Only materialize when this resource is the one that owns
-                // the physical entry. When the shared-root resolution reused
-                // another integration's receipt (resolved_artifact_target
-                // set), the existing artifact is authoritative and nothing
-                // new may replace it — but a user-only Skills must still
-                // carry THIS integration's encoding, or the reuse would
-                // silently drop the invocation policy (ADR-030 §25).
-                if resource.capability.kind == CapabilityKind::AgentSkill {
-                    self.materialize_or_verify_skill(resource)?;
-                }
-                artifact.attach_standard()?;
-                true
+            ManagedArtifact::GeneratedTree { path, .. } => {
+                return self.attach_skill(resource, path).map(Some);
             }
             ManagedArtifact::VendorConfigEntry {
                 entry_name,

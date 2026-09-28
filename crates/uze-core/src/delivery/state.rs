@@ -148,6 +148,20 @@ pub fn receipts(home: &UzeHome, package_id: Option<&str>) -> Result<Vec<Attachme
         .collect())
 }
 
+/// The digest UZE recorded for the directory it put at `path`, if a
+/// receipt says it put one there.
+pub fn owned_tree_digest(home: &UzeHome, path: &Path) -> Result<Option<String>> {
+    Ok(receipts(home, None)?
+        .into_iter()
+        .find_map(|receipt| match receipt.artifact {
+            crate::integration::ManagedArtifact::GeneratedTree {
+                path: recorded,
+                digest,
+            } if recorded == path => Some(digest),
+            _ => None,
+        }))
+}
+
 /// Records an attachment, replacing whatever was recorded for the same
 /// one. Idempotent: attaching twice leaves one receipt, which is what the
 /// map's key bought and the fields buy without it.

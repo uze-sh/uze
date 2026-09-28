@@ -64,11 +64,12 @@ fn codex_user_only_wrapper_carries_the_policy_sidecar_and_never_touches_store() 
         .attach_receipt(&r)
         .unwrap()
         .expect("user-only Skill attaches on Codex");
-    let ManagedArtifact::SymlinkReference { path, target } = &receipt.artifact else {
-        panic!("expected a managed symlink reference");
+    let ManagedArtifact::GeneratedTree { path, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     assert_eq!(path.file_name().unwrap().to_str(), Some("flow:review"));
-    assert_eq!(fs::read_link(path).unwrap(), *target);
+    assert!(path.is_dir() && !path.is_symlink(), "a real directory");
+    let target = path;
     let wrapper = fs::read_to_string(target.join("SKILL.md")).unwrap();
     assert!(
         wrapper.starts_with("---\nname: flow:review\n"),

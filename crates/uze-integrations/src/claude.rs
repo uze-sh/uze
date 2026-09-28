@@ -54,12 +54,10 @@ use crate::shared::agent::{
 };
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
-use crate::shared::package_root::resolve_bytes;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
 use crate::shared::provision::{official_installer, provision_cli};
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
-use skills::materialize_shim;
 /// Claude Code peer integration. Its transparent-attachment strategy is a
 /// UZE-managed "skills-dir plugin" reference at `<claude_home>/skills/<name>`
 /// (see ADR-006): Claude auto-loads any directory there containing
@@ -300,6 +298,10 @@ impl IntegrationPort for ClaudeIntegration {
         }
     }
 
+    fn skill_discovery_root(&self) -> Option<std::path::PathBuf> {
+        Some(self.skills_dir.clone())
+    }
+
     /// Claude namespaces plugin skills itself (`/flow:review` for a plugin
     /// named `flow` — see `docs/capabilities/skill-invocation-policy.md`),
     /// so UZE never materializes the namespace into the plugin: the plugin
@@ -321,6 +323,10 @@ impl IntegrationPort for ClaudeIntegration {
         }
         let active_name = active_plugin_name(&self.uze_home, resource);
         qualified_exposure_name_candidates(resource, &active_name)
+    }
+
+    fn package_receipt_serves(&self, receipt: &AttachmentReceipt) -> bool {
+        marketplace::receipt_serves::<ClaudeMarketplace>(&self.uze_home, receipt)
     }
 
     fn package_exposure_plan(
@@ -388,35 +394,8 @@ impl IntegrationPort for ClaudeIntegration {
             return Ok(None);
         };
         let attached = match &artifact {
-            ManagedArtifact::SymlinkReference { path, target } => {
-                if resource.capability.kind == CapabilityKind::AgentSkill {
-                    let skill_source_dir = resource
-                        .capability
-                        .path
-                        .parent()
-                        .expect("SKILL.md has a parent");
-                    let entry_name = path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .expect("a managed Skill entry has a UTF-8 name");
-                    // The shim's own plugin directory gets the stable
-                    // namespaced label (`flow:review`), while the *manifest
-                    // plugin name* stays the namespace (`flow`): Claude then
-                    // exposes the skill as `/flow:review` (ADR-026) instead
-                    // of double namespacing it (`/flow:flow:review`).
-                    let namespace = active_plugin_name(&self.uze_home, resource);
-                    let policy = resource.skill_invocation();
-                    materialize_shim(
-                        target,
-                        skill_source_dir,
-                        resolve_bytes(&resource.capability.payload, &resource.package_root),
-                        entry_name,
-                        Some(&namespace),
-                        &policy,
-                    )?;
-                }
-                artifact.attach_standard()?;
-                true
+            ManagedArtifact::GeneratedTree { path, .. } => {
+                return self.attach_skill(resource, path).map(Some);
             }
             ManagedArtifact::VendorConfigEntry {
                 entry_name,
@@ -632,6 +611,33 @@ impl PreferencePort for ClaudeIntegration {
     }
 }
 
+/// The names Claude's MCP registry accepts for a server, most readable
+/// first: `<plugin>-<server>`, then `<plugin>-<marketplace>-<server>`.
+fn mcp_registry_names(uze_home: &UzeHome, resource: &Resource) -> Vec<String> {
+    let Some(server) = resource.logical_capability_name() else {
+        return Vec::new();
+    };
+    let plugin = active_plugin_name(uze_home, resource);
+    let marketplace = resource.package_id.marketplace();
+    [
+        format!("{plugin}-{server}"),
+        format!("{plugin}-{marketplace}-{server}"),
+    ]
+    .into_iter()
+    .map(|name| {
+        name.chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect()
+    })
+    .collect()
+}
+
 #[cfg(test)]
 mod lifecycle_tests {
     use std::path::Path;
@@ -723,31 +729,4 @@ mod lifecycle_tests {
         assert!(!shim.exists());
         let _ = fs::remove_dir_all(root);
     }
-}
-
-/// The names Claude's MCP registry accepts for a server, most readable
-/// first: `<plugin>-<server>`, then `<plugin>-<marketplace>-<server>`.
-fn mcp_registry_names(uze_home: &UzeHome, resource: &Resource) -> Vec<String> {
-    let Some(server) = resource.logical_capability_name() else {
-        return Vec::new();
-    };
-    let plugin = active_plugin_name(uze_home, resource);
-    let marketplace = resource.package_id.marketplace();
-    [
-        format!("{plugin}-{server}"),
-        format!("{plugin}-{marketplace}-{server}"),
-    ]
-    .into_iter()
-    .map(|name| {
-        name.chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                    c
-                } else {
-                    '-'
-                }
-            })
-            .collect()
-    })
-    .collect()
 }

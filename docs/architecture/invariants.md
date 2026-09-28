@@ -170,22 +170,34 @@ where it always was, and never gains a policy sidecar it did not declare.
 > `tests/integrations/policy.rs::absent_invoke_block_defaults_to_model_and_user_and_behaves_as_before`
 > `crates/uze-core/src/capability.rs::skill_without_invocation_block_defaults_and_is_not_reattached`
 
-### A shared-root entry always carries the superset of both encodings
+### A loose Skill is a directory of its own, and every root has one owner
 
-Codex and OpenCode share `~/.agents/skills`. The one physical entry a
-non-default Skill gets is the **superset** representation: SKILL.md carries
-OpenCode's own invocation controls (`opencode/autoinvoke`, `slash`) AND the
-entry carries Codex's `agents/openai.yaml` policy sidecar whenever
-`invoke.model` is false — so whichever integration created the entry, the
-other's reuse verification passes and the canonical policy can never
-silently degrade into model visibility. A genuinely foreign artifact
-(a wrapper that predates the superset or carries no encoding) still fails
-deterministically (`ProjectionConflict`) instead of degrading a user-only
-or model-only policy.
+A Skill delivered outside a plugin is a regular directory in its harness's
+own root: the rendered `SKILL.md`, whatever the harness reads beside it,
+and the canonical supporting files copied. Nothing in it is a link, and
+nothing resolves into the Store: OpenCode does not walk a linked skill
+root, Codex does not list a linked `SKILL.md`. Its receipt is the
+directory's `tree_sha256`, so an edit is drift UZE leaves in place, and a
+directory with no receipt is not UZE's to replace. No two integrations
+write one root, so no directory carries two vendors' encodings and no
+removal has to ask who else still holds it. An entry an earlier build
+linked there is retired before the directory takes its place.
 
-> `tests/projection/shared_roots.rs::user_only_skill_codex_and_opencode_preserves_codex_policy`
-> `tests/projection/shared_roots.rs::model_only_skill_shared_root_reuse_carries_both_encodings`
-> `tests/projection/shared_roots.rs::foreign_shared_entry_without_opencode_encoding_still_conflicts`
+> `tests/projection/skill_roots.rs::opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied`
+> `tests/projection/skill_roots.rs::an_edited_skill_is_drift_and_is_left_as_the_operator_left_it`
+> `tests/projection/skill_roots.rs::an_entry_an_earlier_build_linked_is_replaced_by_a_directory`
+> `tests/integrations/lifecycle_conformance.rs::every_integration_owns_its_skill_root`
+
+### A generated directory is replaced whole
+
+A directory a harness reads is built beside its destination and swapped in
+with one rename, so a reader sees one build: Claude Code reads a
+directory-marketplace plugin live from its source. A failed build leaves
+the previous tree and no staging behind.
+
+> `crates/uze-core/src/delivery/persistence.rs::tests::a_replaced_directory_holds_only_the_new_tree`
+> `crates/uze-core/src/delivery/persistence.rs::tests::a_failed_build_keeps_the_previous_tree_and_leaves_no_staging`
+> `crates/uze-core/src/delivery/persistence.rs::tests::something_other_than_a_directory_is_never_replaced`
 
 ### Invocation labels are stable and presentation-only (ADR-026)
 
@@ -802,7 +814,7 @@ failure reported total failure over partial work.
 > `crates/uze-core/src/delivery/exposure.rs::tests::attach_adopts_a_reference_whose_target_no_longer_exists`
 > `crates/uze-core/src/delivery/exposure.rs::tests::attach_preserves_a_reference_somebody_repointed_at_their_own_content`
 > `crates/uze-core/src/delivery/exposure.rs::tests::attach_preserves_a_reference_whose_target_cannot_be_read`
-> `tests/projection/shared_roots.rs::a_name_somebody_else_holds_blocks_its_own_capability_and_no_other`
+> `tests/projection/skill_roots.rs::a_name_somebody_else_holds_blocks_its_own_capability_and_no_other`
 
 ### A linked marketplace follows a working tree and pins nothing
 

@@ -821,20 +821,17 @@ mod delivery_note_tests {
 }
 
 impl Health<'_> {
-    /// Every reference in a *shared* discovery root that points into
-    /// `$UZE_HOME` at something gone and that no receipt claims.
-    ///
-    /// Shared roots only: that is the namespace where one package's
-    /// leftover holds a name a different package needs, which is the whole
-    /// reason to look. A root one integration owns can only collide with
-    /// itself, and `IntegrationPort` deliberately exposes no directory
-    /// listing beyond this one.
+    /// Every reference in a skill discovery root that points into
+    /// `$UZE_HOME` at something gone and that no receipt claims: what an
+    /// earlier build's linked delivery leaves behind once its target moved,
+    /// holding a name the current delivery needs. `IntegrationPort`
+    /// deliberately exposes no directory listing beyond this one.
     pub(crate) fn dangling_references(&self) -> Vec<uze_core::leftovers::DanglingReference> {
         let roots: Vec<std::path::PathBuf> = self
             .0
             .integrations
             .iter()
-            .filter_map(|integration| integration.shared_agent_skill_root())
+            .filter_map(|integration| integration.skill_discovery_root())
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect();

@@ -76,8 +76,8 @@ fn opencode_default_skill_wrapper_carries_the_qualified_label() {
         .attach_receipt(&r)
         .unwrap()
         .expect("default Skill attaches on OpenCode");
-    let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact else {
-        panic!("expected a managed symlink reference");
+    let ManagedArtifact::GeneratedTree { path: target, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     let wrapper = fs::read_to_string(target.join("SKILL.md")).unwrap();
     assert!(
@@ -107,8 +107,8 @@ fn opencode_user_only_wrapper_carries_autoinvoke_metadata() {
         .attach_receipt(&r)
         .unwrap()
         .expect("user-only Skill attaches on OpenCode");
-    let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact else {
-        panic!("expected a managed symlink reference");
+    let ManagedArtifact::GeneratedTree { path: target, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     let wrapper = fs::read_to_string(target.join("SKILL.md")).unwrap();
     assert!(
@@ -141,8 +141,8 @@ fn opencode_model_only_wrapper_carries_slash_false() {
         .attach_receipt(&r)
         .unwrap()
         .expect("model-only Skill attaches on OpenCode");
-    let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact else {
-        panic!("expected a managed symlink reference");
+    let ManagedArtifact::GeneratedTree { path: target, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     let wrapper = fs::read_to_string(target.join("SKILL.md")).unwrap();
     assert!(

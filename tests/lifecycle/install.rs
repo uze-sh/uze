@@ -156,17 +156,10 @@ fn one_plugin_install_is_planned_once_for_native_and_decomposed_harnesses() {
             .iter()
             .all(|plan| plan.route == CompatibilityRoute::Adaptable)
     );
-    assert!(matches!(
-        claude_routes
-            .iter()
-            .find(|p| matches!(
-                p.mechanism,
-                ExposureMechanism::Managed(ManagedArtifact::SymlinkReference { .. })
-            ))
-            .unwrap()
-            .mechanism,
-        ExposureMechanism::Managed(ManagedArtifact::SymlinkReference { .. })
-    ));
+    assert!(claude_routes.iter().any(|p| matches!(
+        p.mechanism,
+        ExposureMechanism::Managed(ManagedArtifact::GeneratedTree { .. })
+    )));
     assert!(claude_routes.iter().any(|p| matches!(
         p.mechanism,
         ExposureMechanism::Managed(ManagedArtifact::VendorConfigEntry { .. })
@@ -192,7 +185,7 @@ fn one_plugin_install_is_planned_once_for_native_and_decomposed_harnesses() {
     );
     assert!(matches!(
         opencode.exposure_plan(skill).mechanism,
-        ExposureMechanism::Managed(ManagedArtifact::SymlinkReference { .. })
+        ExposureMechanism::Managed(ManagedArtifact::GeneratedTree { .. })
     ));
     assert_eq!(
         opencode.exposure_plan(mcp).route,
@@ -223,8 +216,8 @@ fn one_plugin_install_is_planned_once_for_native_and_decomposed_harnesses() {
         "__UZE_MCP_FIXTURE_BINARY__"
     );
     assert!(
-        root.join("agents/skills/uze-plugin-first-conformance:uze-plugin-first")
-            .is_symlink(),
+        root.join("config/opencode/skills/uze-plugin-first-conformance:uze-plugin-first")
+            .is_dir(),
         "OpenCode V2 should expose the skill under its stable namespaced label"
     );
     fs::remove_dir_all(root).unwrap();

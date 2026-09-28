@@ -361,6 +361,10 @@ impl IntegrationPort for AntigravityIntegration {
         )
     }
 
+    fn skill_discovery_root(&self) -> Option<PathBuf> {
+        Some(self.skills_dir.clone())
+    }
+
     /// Antigravity's naming decision: every UZE-projected Skill gets its
     /// stable namespaced invocation label (`flow:review`) as the single
     /// candidate — never a bare alias, never collision-dependent naming
@@ -456,17 +460,8 @@ impl IntegrationPort for AntigravityIntegration {
             return Ok(None);
         };
         let attached = match &artifact {
-            ManagedArtifact::SymlinkReference { .. } => {
-                // Materialize the generated wrapper first — and only when
-                // this resource owns the physical entry (a resolved shared
-                // artifact is authoritative; nothing new may replace it).
-                if resource.resolved_artifact_target.is_none()
-                    && resource.capability.kind == CapabilityKind::AgentSkill
-                {
-                    skills::materialize_generated_skill(&self.uze_home, resource)?;
-                }
-                artifact.attach_standard()?;
-                true
+            ManagedArtifact::GeneratedTree { path, .. } => {
+                return self.attach_skill(resource, path).map(Some);
             }
             ManagedArtifact::VendorConfigEntry {
                 entry_name,

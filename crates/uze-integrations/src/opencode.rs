@@ -59,10 +59,10 @@ use crate::shared::plan::{blocked, unsupported};
 use mcp::attach_mcp_config;
 use provision::{provision_opencode, resolve_opencode_binary};
 
-/// OpenCode does not consume the external plugin envelope. It does natively
-/// discover user Agent Skills at `~/.agents/skills` and natively reads local
-/// MCP definitions from its global config, so this integration decomposes
-/// only those portable capabilities.
+/// OpenCode does not consume the external plugin envelope. It natively
+/// discovers user Agent Skills in its own `~/.config/opencode/skills` and
+/// reads local MCP definitions from its global config, so this integration
+/// decomposes only those portable capabilities.
 #[derive(Clone)]
 pub struct OpenCodeIntegration {
     skills_dir: PathBuf,
@@ -76,12 +76,16 @@ pub struct OpenCodeIntegration {
 
 impl OpenCodeIntegration {
     pub fn new(agents_home: PathBuf, config_path: PathBuf, uze_home: UzeHome) -> Self {
+        let config_dir = config_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
         Self {
-            skills_dir: agents_home.join("skills"),
-            agents_dir: config_path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join("agents"),
+            // Its own root, not the `~/.agents/skills` it also reads: that
+            // one is Codex's, and OpenCode's own root wins a name found in
+            // both, so the skill it shows is the one encoded for it.
+            skills_dir: config_dir.join("skills"),
+            agents_dir: config_dir.join("agents"),
             config_path,
             command_home: agents_home
                 .parent()
@@ -156,8 +160,8 @@ impl IntegrationPort for OpenCodeIntegration {
     /// OpenCode's own Skills docs (opencode.ai/docs/skills, 2026) document
     /// loading `.agents/skills/*/SKILL.md` "along the way" walking up from
     /// cwd — a project-local convention read directly by the `opencode`
-    /// binary, with no UZE involvement, independent of the UZE-managed
-    /// `$HOME/.agents/skills` symlink this integration writes elsewhere.
+    /// binary, with no UZE involvement, independent of the user-scope skills
+    /// this integration writes elsewhere.
     fn discovers_project_agents_directory(&self) -> bool {
         true
     }
@@ -241,12 +245,7 @@ impl IntegrationPort for OpenCodeIntegration {
         default_exposure_name_candidates(resource)
     }
 
-    /// Codex also discovers Skills from this exact same
-    /// `~/.agents/skills` directory (see its own override of this
-    /// method), so a name this integration claims here must be treated as
-    /// claimed for it too — every member derives the same single
-    /// namespaced label, so the group always converges on one entry.
-    fn shared_agent_skill_root(&self) -> Option<PathBuf> {
+    fn skill_discovery_root(&self) -> Option<PathBuf> {
         Some(self.skills_dir.clone())
     }
 
@@ -286,12 +285,8 @@ impl IntegrationPort for OpenCodeIntegration {
             return Ok(None);
         };
         let attached = match &artifact {
-            ManagedArtifact::SymlinkReference { .. } => {
-                if resource.capability.kind == CapabilityKind::AgentSkill {
-                    self.materialize_or_verify_skill(resource)?;
-                }
-                artifact.attach_standard()?;
-                true
+            ManagedArtifact::GeneratedTree { path, .. } => {
+                return self.attach_skill(resource, path).map(Some);
             }
             ManagedArtifact::ManagedHookFile { path } => {
                 self.attach_hook_bridge(resource, path)?;

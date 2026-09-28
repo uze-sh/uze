@@ -65,12 +65,12 @@ Every harness offers a plugin's agents by the same name, `<plugin>:<name>` (a su
 under `agents/` joins it), and receives each agent as a file of its own, carrying only the
 fields that harness reads.
 
-- **[Claude Code](https://code.claude.com)**: plugin delivery through a UZE-managed marketplace; a skills-directory
-  reference is the fallback. Project context arrives through the `CLAUDE.md` bridge
+- **[Claude Code](https://code.claude.com)**: plugin delivery through a UZE-managed marketplace; a skill directory
+  of its own in `~/.claude/skills` is the fallback. Project context arrives through the `CLAUDE.md` bridge
   (`@AGENTS.md`), the only bridge uze maintains. Hooks merge into its own user-scope hook
   configuration.
-- **[Codex](https://chatgpt.com/codex)**: the same marketplace model; its skills root (`~/.agents/skills`) is shared with
-  OpenCode, which uze accounts for when resolving names. User-only skills carry
+- **[Codex](https://chatgpt.com/codex)**: the same marketplace model; a skill the plugin does not cover goes to its
+  documented user root, `~/.agents/skills`. User-only skills carry
   `agents/openai.yaml` with implicit invocation disabled. Hooks merge into Codex's own
   `hooks.json` command form.
 - **[OpenCode](https://opencode.ai)**: consumes no external plugin envelope: skills and agents are delivered natively,
@@ -79,10 +79,12 @@ fields that harness reads.
   slash command. `slash: false` withholds one from the `/` catalog but a mention still expands
   it, which is why a `user: false` policy is reported adapted rather than native. Its binary is
   detected as `opencode`, with the legacy `opencode2` alias still resolved.
-- **[Antigravity](https://antigravity.google)**: the Google-family v0 harness: the canonical `plugin.json` *is* a
-  valid plugin manifest, so envelope-less packages install straight from the Store. Non-default
-  invocation policies are **adapted**: no explicit-only mechanism exists, so skills stay
-  model-discoverable and slash-invocable. It carries the widest hook effect set of the four.
+- **[Antigravity](https://antigravity.google)**: the Google-family v0 harness. uze installs a plugin it generates
+  from the package, with the plugin root resolved in every skill and the MCP servers translated;
+  agents go to its global agents directory under their plugin label, since a plugin's agents lose
+  it. Invocation policies are native: `disable-model-invocation` and `disable-slash-command` are
+  the harness's own controls. It carries the widest hook effect set of the four, and has no
+  session-start event.
 
 The runtime shim is in
 [The terminal session](/docs/advanced/terminal#resuming-after-a-reboot).

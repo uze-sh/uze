@@ -4,13 +4,13 @@ fn package_fixture() -> PathBuf {
     uze_testkit::fixtures::canonical("skill-plugin")
 }
 
-fn contains_fixture_skill_wrapper(entries: &[PathBuf], uze_home: &std::path::Path) -> bool {
+/// Whether one of `entries` is the fixture's skill as UZE delivers it
+/// loose: a real directory whose SKILL.md carries the qualified label.
+fn contains_fixture_skill(entries: &[PathBuf]) -> bool {
     entries.iter().any(|entry| {
-        let Ok(target) = std::fs::read_link(entry) else {
-            return false;
-        };
-        target.starts_with(uze_home.join("runtime/attachments"))
-            && std::fs::read_to_string(target.join("SKILL.md")).is_ok_and(|skill| {
+        entry.is_dir()
+            && !entry.is_symlink()
+            && std::fs::read_to_string(entry.join("SKILL.md")).is_ok_and(|skill| {
                 skill.starts_with("---\nname: uze-agent-skill-conformance:uze-e2e\n")
             })
     })
@@ -598,18 +598,20 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
         "the default uze package's generated Claude envelope should exist too"
     );
 
-    let codex_entries: Vec<_> = std::fs::read_dir(home.join(".agents/skills"))
+    // OpenCode has no plugin, so each skill lands in its own root as a
+    // directory of its own.
+    let opencode_entries: Vec<_> = std::fs::read_dir(home.join(".config/opencode/skills"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .collect();
     assert!(
-        codex_entries.len() >= 2,
-        "codex/opencode should have default + fixture"
+        opencode_entries.len() >= 2,
+        "OpenCode should have default + fixture, got {opencode_entries:?}"
     );
-    assert!(codex_entries.iter().any(|p| p.is_symlink()));
+    assert!(opencode_entries.iter().all(|p| !p.is_symlink()));
     assert!(
-        contains_fixture_skill_wrapper(&codex_entries, &uze_home),
-        "codex should contain the qualified fixture skill wrapper"
+        contains_fixture_skill(&opencode_entries),
+        "OpenCode should contain the qualified fixture skill"
     );
 
     let _ = std::fs::remove_dir_all(home);
@@ -635,9 +637,9 @@ fn add_prepares_a_detected_opencode_and_attaches_without_prior_setup() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let skills_dir = home.join(".agents/skills");
+    let skills_dir = home.join(".config/opencode/skills");
     let entries: Vec<_> = std::fs::read_dir(&skills_dir)
-        .expect("detected OpenCode should have a prepared global skills dir")
+        .expect("detected OpenCode should have its skills delivered")
         .map(|entry| entry.unwrap().path())
         .collect();
     // Default `uze` (`uze-uze`) plus the fixture.
@@ -645,10 +647,10 @@ fn add_prepares_a_detected_opencode_and_attaches_without_prior_setup() {
         entries.len() >= 2,
         "should have default + fixture, got {entries:?}"
     );
-    assert!(entries.iter().any(|p| p.is_symlink()));
+    assert!(entries.iter().all(|p| !p.is_symlink()));
     assert!(
-        contains_fixture_skill_wrapper(&entries, &uze_home),
-        "the qualified fixture skill wrapper should be present alongside the default plugin"
+        contains_fixture_skill(&entries),
+        "the qualified fixture skill should be present alongside the default plugin"
     );
 
     let integrations = std::fs::read_to_string(uze_home.join("cache/harnesses.json")).unwrap();
@@ -950,22 +952,19 @@ fn root_remove_no_longer_falls_back_to_global_removal() {
     let _ = std::fs::remove_dir_all(home);
 }
 
-/// Repoints one managed symlink this package owns at foreign content, so
-/// reconciliation reports `Drifted` and the removal plan refuses to touch
-/// it — the lifecycle-safety outcome `Blocked` reports.
+/// Edits the SKILL.md of one skill directory this package owns by hand,
+/// so reconciliation reports `Drifted` and the removal plan refuses to
+/// touch it — the lifecycle-safety outcome `Blocked` reports.
 #[cfg(unix)]
-fn drift_a_managed_attachment(home: &std::path::Path, uze_home: &std::path::Path) {
-    let skills = home.join(".agents/skills");
+fn drift_a_managed_attachment(home: &std::path::Path) {
+    let skills = home.join(".config/opencode/skills");
     let managed = std::fs::read_dir(&skills)
         .unwrap()
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .find(|entry| contains_fixture_skill_wrapper(std::slice::from_ref(entry), uze_home))
-        .expect("the fixture attaches at least one managed symlink");
-    let foreign = home.join("foreign");
-    std::fs::create_dir_all(&foreign).unwrap();
-    std::fs::remove_file(&managed).unwrap();
-    std::os::unix::fs::symlink(&foreign, &managed).unwrap();
+        .find(|entry| contains_fixture_skill(std::slice::from_ref(entry)))
+        .expect("the fixture attaches at least one managed skill directory");
+    std::fs::write(managed.join("SKILL.md"), "edited by hand\n").unwrap();
 }
 
 /// `Blocked` means the safety check refused and nothing was removed. The
@@ -986,7 +985,7 @@ fn a_blocked_removal_reports_and_fails() {
         "install failed: {}",
         String::from_utf8_lossy(&add.stderr)
     );
-    drift_a_managed_attachment(&home, &uze_home);
+    drift_a_managed_attachment(&home);
 
     for format in ["text", "json"] {
         let removal = Command::new(env!("CARGO_BIN_EXE_uze"))
@@ -1034,7 +1033,7 @@ fn a_blocked_update_reports_and_fails() {
         "install failed: {}",
         String::from_utf8_lossy(&add.stderr)
     );
-    drift_a_managed_attachment(&home, &uze_home);
+    drift_a_managed_attachment(&home);
 
     let update = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
@@ -1356,7 +1355,7 @@ fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
 }
 
 /// A skill and an agent of one name are two different things in two
-/// different places — `~/.agents/skills/crew:review` and
+/// different places — `~/.config/opencode/skills/crew:review/` and
 /// `~/.config/opencode/agents/crew:review.md` — so neither is refused as
 /// holding the other's name.
 #[cfg(unix)]
@@ -1394,7 +1393,10 @@ fn a_skill_and_an_agent_of_one_name_are_both_delivered() {
     );
     let report = String::from_utf8_lossy(&add.stdout);
     assert!(!report.contains("not delivered"), "{report}");
-    assert!(home.join(".agents/skills/crew:review").exists());
+    assert!(
+        home.join(".config/opencode/skills/crew:review/SKILL.md")
+            .is_file()
+    );
     assert!(
         home.join(".config/opencode/agents/crew:review.md")
             .is_file()

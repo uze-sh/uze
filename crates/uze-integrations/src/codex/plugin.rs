@@ -147,6 +147,15 @@ impl MarketplaceDialect for CodexMarketplace {
             &["plugin", "remove", selector],
         )
     }
+
+    fn remove_marketplace(executable: &Path, home: &Path, name: &str) -> Result<()> {
+        run_quiet(
+            executable,
+            home,
+            &format!("codex plugin marketplace remove {name}"),
+            &["plugin", "marketplace", "remove", name],
+        )
+    }
 }
 
 fn inspect_codex_plugin(

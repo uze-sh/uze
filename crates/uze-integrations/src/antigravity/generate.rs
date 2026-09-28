@@ -25,7 +25,7 @@ use uze_core::{Result, UzeError, capability::Resource, home::UzeHome, store::Sto
 use crate::shared::marketplace::remove_generated_dir;
 use crate::shared::mcp::delivered_mcp_servers;
 use crate::shared::package_root::resolve_bytes;
-use crate::shared::skill::{recreate_dir, write_file};
+use crate::shared::skill::write_file;
 use crate::shared::tree::mirror_tree;
 
 /// Root of every package's generated plugin directory. Lives under
@@ -181,61 +181,66 @@ pub(super) fn materialize_generated_plugin(
     package: &StoredPackage,
 ) -> Result<PathBuf> {
     let dir = generated_package_dir_for_id(uze_home, package.id.as_str());
-    recreate_dir(&dir)?;
-    let manifest = generated_plugin_document(package);
-    fs::write(
-        dir.join("plugin.json"),
-        serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
-    )
-    .map_err(|source| UzeError::Write {
-        path: dir.join("plugin.json"),
-        source,
-    })?;
-
-    let skills_source = package.root.join("skills");
-    if skills_source.is_dir() {
-        let package_root = fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
-            path: package.root.clone(),
-            source,
-        })?;
-        mirror_tree(&skills_source, &dir.join("skills"), &package_root, &[])?;
-        for resource in uze_core::engine::package_resources_at(&package.id, &package.root)? {
-            if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {
-                continue;
-            }
-            if let std::borrow::Cow::Owned(resolved) =
-                resolve_bytes(&resource.capability.payload, &resource.package_root)
-                && let Ok(relative) = resource.capability.path.strip_prefix(&package.root)
-            {
-                write_file(&dir.join(relative), &resolved)?;
-            }
-        }
-    }
-    let author_mcp = package.root.join("mcp_config.json");
-    if author_mcp.is_file() {
-        fs::copy(&author_mcp, dir.join("mcp_config.json")).map_err(|source| UzeError::Write {
-            path: dir.join("mcp_config.json"),
-            source,
-        })?;
-    } else if canonical_mcp_servers(package).is_some() {
-        let mcp = translated_mcp_config(package);
+    uze_core::persistence::replace_dir(&dir, |staging| {
+        let manifest = generated_plugin_document(package);
         fs::write(
-            dir.join("mcp_config.json"),
-            serde_json::to_vec_pretty(&mcp).expect("generated MCP config is serializable"),
+            staging.join("plugin.json"),
+            serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
         )
         .map_err(|source| UzeError::Write {
-            path: dir.join("mcp_config.json"),
+            path: staging.join("plugin.json"),
             source,
         })?;
-    }
-    // No `hooks.json` is written here. AGY 1.1.24 reads hooks from its
-    // shared customization roots and never opens a plugin's `hooks.json`,
-    // whatever its own plugin guide says (measured in the Conformance Lab:
-    // `agy plugin validate` counts the file's hooks while the session
-    // reports `loaded 0 named hooks from 0 hooks.json file(s)`). A file the
-    // vendor never reads is not a delivery, so hooks go to
-    // `~/.gemini/config/hooks.json` as receipt-owned named entries instead
-    // (see `AntigravityIntegration::hook_exposure_plan`).
+
+        let skills_source = package.root.join("skills");
+        if skills_source.is_dir() {
+            let package_root =
+                fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
+                    path: package.root.clone(),
+                    source,
+                })?;
+            mirror_tree(&skills_source, &staging.join("skills"), &package_root, &[])?;
+            for resource in uze_core::engine::package_resources_at(&package.id, &package.root)? {
+                if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {
+                    continue;
+                }
+                if let std::borrow::Cow::Owned(resolved) =
+                    resolve_bytes(&resource.capability.payload, &resource.package_root)
+                    && let Ok(relative) = resource.capability.path.strip_prefix(&package.root)
+                {
+                    write_file(&staging.join(relative), &resolved)?;
+                }
+            }
+        }
+        let author_mcp = package.root.join("mcp_config.json");
+        if author_mcp.is_file() {
+            fs::copy(&author_mcp, staging.join("mcp_config.json")).map_err(|source| {
+                UzeError::Write {
+                    path: staging.join("mcp_config.json"),
+                    source,
+                }
+            })?;
+        } else if canonical_mcp_servers(package).is_some() {
+            let mcp = translated_mcp_config(package);
+            fs::write(
+                staging.join("mcp_config.json"),
+                serde_json::to_vec_pretty(&mcp).expect("generated MCP config is serializable"),
+            )
+            .map_err(|source| UzeError::Write {
+                path: staging.join("mcp_config.json"),
+                source,
+            })?;
+        }
+        // No `hooks.json` is written here. AGY 1.1.24 reads hooks from its
+        // shared customization roots and never opens a plugin's `hooks.json`,
+        // whatever its own plugin guide says (measured in the Conformance Lab:
+        // `agy plugin validate` counts the file's hooks while the session
+        // reports `loaded 0 named hooks from 0 hooks.json file(s)`). A file the
+        // vendor never reads is not a delivery, so hooks go to
+        // `~/.gemini/config/hooks.json` as receipt-owned named entries instead
+        // (see `AntigravityIntegration::hook_exposure_plan`).
+        Ok(())
+    })?;
     Ok(dir)
 }
 

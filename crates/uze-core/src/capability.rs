@@ -101,11 +101,6 @@ pub struct Resource {
     /// first-choice `exposure_name_candidates` entry — correct for preview
     /// calls that never attach anything.
     pub resolved_exposure_name: Option<String>,
-    /// The artifact target (e.g. a shim directory) from an existing
-    /// `SymlinkReference` receipt, when `resolved_exposure_name` came from
-    /// reusing it, so `exposure_plan` reuses the exact same artifact rather
-    /// than materializing a new one at a different path.
-    pub resolved_artifact_target: Option<PathBuf>,
 }
 
 impl Resource {
@@ -122,7 +117,6 @@ impl Resource {
             resource_name: None,
             skill_policy,
             resolved_exposure_name: None,
-            resolved_artifact_target: None,
         }
     }
 

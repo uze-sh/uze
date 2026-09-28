@@ -104,8 +104,8 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
     fn exposure_name_candidates(&self, resource: &ProjectResource) -> Vec<String> {
         self.0.exposure_name_candidates(resource)
     }
-    fn shared_agent_skill_root(&self) -> Option<PathBuf> {
-        self.0.shared_agent_skill_root()
+    fn skill_discovery_root(&self) -> Option<PathBuf> {
+        self.0.skill_discovery_root()
     }
     fn package_exposure_plan(
         &self,
@@ -189,7 +189,7 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
 /// directory or `mcp.json` — which every fixture in this file has — now
 /// qualifies for whole-package native delivery rather than per-Skill
 /// decomposition, so it can no longer exercise
-/// Managed `SymlinkReference` naming resolution through the full
+/// capability-level naming resolution through the full
 /// `add_plugin` path. OpenCode has no package-level native delivery
 /// concept at all (`package_exposure_plan` stays at Core's `None`
 /// default for every package, unconditionally) and uses the same shared
@@ -198,7 +198,8 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
 /// this file's central claims are about, without incidentally also
 /// asserting anything about package-level generation — matching this
 /// milestone's guidance to adjust the test's level rather than add a
-/// product-level escape hatch.
+/// product-level escape hatch. Returns OpenCode's own skills root,
+/// `<root>/opencode-config/skills`.
 fn app_with_opencode(root: &Path) -> (UzeApplication, PathBuf) {
     let agents_home = root.join("opencode-agents");
     let uze_home = UzeHome::at(root.join("uze-home"));
@@ -211,7 +212,7 @@ fn app_with_opencode(root: &Path) -> (UzeApplication, PathBuf) {
         )))],
         Box::new(NoopProcessRunner),
     );
-    (application, agents_home)
+    (application, root.join("opencode-config/skills"))
 }
 
 fn install(app: &UzeApplication, path: PathBuf) -> uze_application::application::PluginSummary {
@@ -303,10 +304,10 @@ fn default_candidates_carry_no_uze_collision_prefix() {
 #[test]
 fn package_uze_plus_skill_uze_naturally_gets_the_stable_label_no_special_case() {
     let root = temp("uze-natural");
-    let (application, agents_home) = app_with_opencode(&root);
+    let (application, skills_dir) = app_with_opencode(&root);
     install(&application, official_package());
 
-    let mut names: Vec<String> = fs::read_dir(agents_home.join("skills"))
+    let mut names: Vec<String> = fs::read_dir(skills_dir.clone())
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_owned())
         .collect();
@@ -333,7 +334,7 @@ fn official_package() -> PathBuf {
 #[test]
 fn two_packages_with_the_same_skill_name_coexist_deterministically() {
     let root = temp("managed-collision");
-    let (application, agents_home) = app_with_opencode(&root);
+    let (application, skills_dir) = app_with_opencode(&root);
     let fixture_root = root.join("fixtures");
 
     install(
@@ -345,7 +346,7 @@ fn two_packages_with_the_same_skill_name_coexist_deterministically() {
         skill_fixture(&fixture_root, "security", "review"),
     );
 
-    let mut names: Vec<String> = fs::read_dir(agents_home.join("skills"))
+    let mut names: Vec<String> = fs::read_dir(skills_dir.clone())
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_owned())
         .collect();
@@ -361,7 +362,7 @@ fn two_packages_with_the_same_skill_name_coexist_deterministically() {
 
     // Removing one must not disturb the other.
     application.plugins().remove("frontend").unwrap();
-    let remaining: Vec<String> = fs::read_dir(agents_home.join("skills"))
+    let remaining: Vec<String> = fs::read_dir(skills_dir.clone())
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_owned())
         .collect();
@@ -374,17 +375,13 @@ fn two_packages_with_the_same_skill_name_coexist_deterministically() {
 #[test]
 fn a_foreign_artifact_occupying_the_short_name_is_never_overwritten() {
     let root = temp("foreign-collision");
-    let (application, agents_home) = app_with_opencode(&root);
+    let (application, skills_dir) = app_with_opencode(&root);
     let package_dir = skill_fixture(&root.join("fixtures"), "security", "review");
 
     // A foreign, non-UZE directory already occupies the exact namespaced
     // label UZE would claim.
-    fs::create_dir_all(agents_home.join("skills/security:review")).unwrap();
-    fs::write(
-        agents_home.join("skills/security:review/SKILL.md"),
-        "not ours",
-    )
-    .unwrap();
+    fs::create_dir_all(skills_dir.join("security:review")).unwrap();
+    fs::write(skills_dir.join("security:review/SKILL.md"), "not ours").unwrap();
 
     let report = application
         .plugins()
@@ -403,7 +400,7 @@ fn a_foreign_artifact_occupying_the_short_name_is_never_overwritten() {
         report.blocked
     );
     assert_eq!(
-        fs::read_to_string(agents_home.join("skills/security:review/SKILL.md")).unwrap(),
+        fs::read_to_string(skills_dir.join("security:review/SKILL.md")).unwrap(),
         "not ours",
         "the foreign artifact must be completely untouched"
     );
@@ -415,7 +412,7 @@ fn a_foreign_artifact_occupying_the_short_name_is_never_overwritten() {
 #[test]
 fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() {
     let root = temp("lifecycle");
-    let (application, agents_home) = app_with_opencode(&root);
+    let (application, skills_dir) = app_with_opencode(&root);
     install(
         &application,
         skill_fixture(&root.join("fixtures"), "acme", "review"),
@@ -425,23 +422,20 @@ fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() 
     assert_eq!(inspection.managed_state.matched, 1);
 
     // MISSING: remove the physical artifact by hand.
-    fs::remove_file(agents_home.join("skills/acme:review")).unwrap();
+    fs::remove_dir_all(skills_dir.join("acme:review")).unwrap();
     let inspection = application.plugins().inspect("acme").unwrap();
     assert_eq!(inspection.managed_state.missing, 1);
 
     // Re-add is idempotent: recreates exactly the same (existing-receipt)
     // artifact name.
     setup_without_touching_the_real_shell_rc(&application, None).unwrap();
-    assert!(agents_home.join("skills/acme:review").is_symlink());
+    assert!(skills_dir.join("acme:review").is_dir());
     let inspection = application.plugins().inspect("acme").unwrap();
     assert_eq!(inspection.managed_state.matched, 1);
 
-    // DRIFTED: repoint the symlink elsewhere.
-    let elsewhere = root.join("elsewhere");
-    fs::create_dir_all(&elsewhere).unwrap();
-    fs::remove_file(agents_home.join("skills/acme:review")).unwrap();
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&elsewhere, agents_home.join("skills/acme:review")).unwrap();
+    // DRIFTED: edit the delivered SKILL.md by hand.
+    let skill = skills_dir.join("acme:review/SKILL.md");
+    fs::write(&skill, "edited by hand").unwrap();
     let inspection = application.plugins().inspect("acme").unwrap();
     assert_eq!(inspection.managed_state.drifted, 1);
 
@@ -450,13 +444,10 @@ fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() 
         application.plugins().remove("acme").unwrap(),
         uze_application::application::RemovePluginReport::Blocked { .. }
     ));
-    assert_eq!(
-        fs::read_link(agents_home.join("skills/acme:review")).unwrap(),
-        elsewhere
-    );
+    assert_eq!(fs::read_to_string(&skill).unwrap(), "edited by hand");
 
     // Fix it back, then remove cleanly; remove twice is a safe no-op.
-    fs::remove_file(agents_home.join("skills/acme:review")).unwrap();
+    fs::remove_dir_all(skills_dir.join("acme:review")).unwrap();
     setup_without_touching_the_real_shell_rc(&application, None).unwrap();
     assert!(matches!(
         application.plugins().remove("acme").unwrap(),

@@ -19,10 +19,10 @@
 //! harness's own surface (section 5 — no vendor field names in the
 //! canonical model).
 //!
-//! The one shared-root wrapper this module also writes
-//! ([`write_superset_skill_wrapper`]) is different by necessity: it lives
-//! in a directory Codex and OpenCode consume *together*, so its bytes are
-//! the superset of both vendors' encodings — never a canonical rewrite.
+//! A loose Skill reaches its harness as a directory of its own
+//! ([`attach_skill_tree`]): the rendered `SKILL.md` and whatever else the
+//! harness needs beside it, written, and the canonical supporting files,
+//! copied. Nothing in it links into the Store.
 
 use std::{
     fs,
@@ -32,11 +32,10 @@ use std::{
 use uze_core::{
     Result, UzeError,
     capability::Resource,
-    exposure::{ExposureMechanism, ExposurePlan},
+    exposure::{ExposureMechanism, ExposurePlan, ManagedArtifact},
     home::UzeHome,
     integration::{IntegrationPort, active_plugin_name, qualified_exposure_name_candidates},
     router::CompatibilityRoute,
-    skill::SkillInvocationPolicy,
 };
 
 /// A Skill that nobody may invoke is never projected (ADR-030 §1).
@@ -85,27 +84,8 @@ pub(crate) fn skill_label(uze_home: &UzeHome, resource: &Resource) -> Option<Str
         .next()
 }
 
-/// Where `vendor` generates one Skill's wrapper, under UZE's own state and
-/// never under the Store: `<attachments>/<vendor>/skills/<package>/<skill>`.
-pub(crate) fn generated_skill_dir(
-    uze_home: &UzeHome,
-    vendor: &str,
-    resource: &Resource,
-) -> PathBuf {
-    let package_id = resource
-        .package_root
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("unknown");
-    let name = resource
-        .logical_capability_name()
-        .unwrap_or_else(|| resource.name());
-    skill_wrapper_root(uze_home, vendor)
-        .join(package_id)
-        .join(name)
-}
-
-/// The root every one of `vendor`'s generated Skill wrappers sits under.
+/// The root an earlier build generated `vendor`'s Skill wrappers under,
+/// which an entry detached from that build may still point into.
 pub(crate) fn skill_wrapper_root(uze_home: &UzeHome, vendor: &str) -> PathBuf {
     crate::shared::path::attachment_root(uze_home, vendor).join("skills")
 }
@@ -127,58 +107,6 @@ pub fn render_skill_wrapper(name: &str, canonical_bytes: &[u8], markers: &[&str]
     document.push_str("---\n");
     document.push_str(&body);
     document
-}
-
-/// The two harnesses that read the shared `~/.agents/skills` root.
-pub(crate) enum SharedRootReader {
-    Codex,
-    OpenCode,
-}
-
-/// When shared-root resolution reused another integration's wrapper for
-/// `resource`, that wrapper must still carry `reader`'s own encoding of the
-/// canonical policy — otherwise it would silently degrade (ADR-030 §25).
-pub(crate) fn verify_reused_wrapper(
-    resource: &Resource,
-    wrapper: &Path,
-    skills_dir: &Path,
-    reader: SharedRootReader,
-    integration_id: &str,
-) -> Result<()> {
-    let policy = resource.skill_invocation();
-    let missing = if policy.is_invalid() {
-        None
-    } else {
-        match reader {
-            SharedRootReader::Codex => (!policy.model && !has_explicit_only_sidecar(wrapper)).then_some(
-                "Codex needs agents/openai.yaml with policy.allow_implicit_invocation: false for a user-only Skill",
-            ),
-            SharedRootReader::OpenCode => {
-                let bytes = fs::read(wrapper.join("SKILL.md")).unwrap_or_default();
-                if !policy.model && !has_opencode_autoinvoke_false(&bytes) {
-                    Some("OpenCode needs metadata.opencode/autoinvoke: false for a user-only Skill")
-                } else if !policy.user && !has_slash_false(&bytes) {
-                    Some("OpenCode needs slash: false for a model-only Skill")
-                } else {
-                    None
-                }
-            }
-        }
-    };
-    let Some(requirement) = missing else {
-        return Ok(());
-    };
-    let entry = resource
-        .resolved_exposure_name
-        .as_ref()
-        .map_or_else(|| wrapper.to_path_buf(), |name| skills_dir.join(name));
-    Err(crate::shared::projection::conflict(
-        resource,
-        &entry,
-        wrapper,
-        requirement,
-        integration_id,
-    ))
 }
 
 /// Splits a canonical SKILL.md into `(description, body)`:
@@ -312,28 +240,6 @@ pub fn frontmatter_value(bytes: &[u8], key: &str) -> Option<String> {
     head_value(head, key).map(str::to_owned)
 }
 
-/// Whether the payload declares OpenCode's user-only control —
-/// `metadata` containing `opencode/autoinvoke: false` (the documented V2
-/// syntax; real-world SKILL.md files use this exact shape). Read from the
-/// frontmatter lines alone: a body line that happens to say the same thing
-/// declares nothing, and counting it would accept a reused wrapper that
-/// does not carry the control.
-pub fn has_opencode_autoinvoke_false(bytes: &[u8]) -> bool {
-    frontmatter_has_line(bytes, "opencode/autoinvoke: false")
-}
-
-/// Whether the payload declares OpenCode's user-invocation suppression —
-/// a trimmed `slash: false` line in frontmatter.
-pub fn has_slash_false(bytes: &[u8]) -> bool {
-    frontmatter_has_line(bytes, "slash: false")
-}
-
-fn frontmatter_has_line(bytes: &[u8], declaration: &str) -> bool {
-    is_utf8(bytes)
-        .and_then(|text| split_frontmatter(text.strip_prefix('\u{feff}').unwrap_or(text)))
-        .is_some_and(|(head, _)| head.lines().any(|line| line.trim() == declaration))
-}
-
 /// Whether `skill_dir` carries Codex's explicit-only policy sidecar:
 /// `agents/openai.yaml` declaring `allow_implicit_invocation: false`.
 pub fn has_explicit_only_sidecar(skill_dir: &Path) -> bool {
@@ -348,59 +254,72 @@ fn is_utf8(bytes: &[u8]) -> Option<&str> {
     std::str::from_utf8(bytes).ok()
 }
 
-/// Writes one shared-root Skill wrapper directory — the superset
-/// representation Codex and OpenCode both consume from their single shared
-/// `~/.agents/skills` physical entry:
-///
-/// ```text
-/// <wrapper>/
-/// ├── SKILL.md          stable namespaced label as `name`, canonical
-/// │                      description/body, plus OpenCode's own native
-/// │                      invocation controls (`opencode/autoinvoke`,
-/// │                      `slash`)
-/// └── agents/
-///     └── openai.yaml   Codex's explicit-only policy sidecar (model=false)
-/// ```
-///
-/// Every integration that shares the root materializes this exact content
-/// under its own `$UZE_HOME` wrapper directory, so whichever wrapper the
-/// shared symlink ends up pointing at, every consumer finds its own
-/// encoding — and the other integration's reuse verification passes instead
-/// of degrading the canonical `invoke:` policy (ADR-030 §25). The harness
-/// that does not own an encoding ignores it: Codex reads `name` and the
-/// policy sidecar and ignores OpenCode's frontmatter fields (verified via
-/// `codex debug prompt-input` against codex-cli 0.149.1); OpenCode derives
-/// the skill id from the path and ignores unknown files. The canonical
-/// bytes are never rewritten; anything else in the canonical skill
-/// directory stays referenced, not copied. Idempotent and rebuilt
-/// wholesale — the directory is entirely UZE-owned and non-authoritative
-/// (ADR-013 §5).
-pub fn write_superset_skill_wrapper(
-    dir: &Path,
+/// A loose Skill as planned: the directory it will be delivered as, whose
+/// digest is recorded once the tree is attached.
+pub(crate) fn skill_tree_plan(path: PathBuf) -> ManagedArtifact {
+    ManagedArtifact::GeneratedTree {
+        path,
+        digest: String::new(),
+    }
+}
+
+/// Delivers `resource` as the directory `path`: every canonical supporting
+/// file copied (the names in `skip` left out), then `rendered` written over
+/// them — the `SKILL.md` in the harness's own encoding and any file the
+/// harness reads beside it. Replaced whole, so a session reading it sees
+/// one build; and returned as the receipt's artifact, digest included.
+pub(crate) fn attach_skill_tree(
+    uze_home: &UzeHome,
+    path: &Path,
+    resource: &Resource,
+    rendered: &[(&str, Vec<u8>)],
+    skip: &[&str],
+) -> Result<ManagedArtifact> {
+    let owned = uze_core::state::owned_tree_digest(uze_home, path)?;
+    let canonical_dir = resource
+        .capability
+        .path
+        .parent()
+        .expect("SKILL.md has a parent");
+    let digest = uze_core::exposure::attach_generated_tree(path, owned.as_deref(), |staging| {
+        copy_supporting_files(canonical_dir, &resource.package_root, staging, skip)?;
+        for (relative, bytes) in rendered {
+            let file = staging.join(relative);
+            if let Some(parent) = file.parent() {
+                fs::create_dir_all(parent).map_err(|source| UzeError::Write {
+                    path: parent.to_path_buf(),
+                    source,
+                })?;
+            }
+            write_file(&file, bytes)?;
+        }
+        Ok(())
+    })?;
+    Ok(ManagedArtifact::GeneratedTree {
+        path: path.to_path_buf(),
+        digest,
+    })
+}
+
+/// Copies a canonical skill directory's files except `SKILL.md` and `skip`,
+/// with the envelope mirror's containment rule: a link inside the package is
+/// copied as the bytes it names, one that escapes it is refused by name. An
+/// absent canonical directory (a Resource built without a real Store path,
+/// in unit-test contexts) has nothing to copy.
+fn copy_supporting_files(
     canonical_dir: &Path,
-    canonical_bytes: &[u8],
-    label: &str,
-    policy: &SkillInvocationPolicy,
+    package_root: &Path,
+    destination: &Path,
+    skip: &[&str],
 ) -> Result<()> {
-    recreate_dir(dir)?;
-    let mut markers = Vec::new();
-    if !policy.user {
-        markers.push("slash: false");
+    if !canonical_dir.is_dir() {
+        return Ok(());
     }
-    if !policy.model {
-        markers.extend(["metadata:", "  opencode/autoinvoke: false"]);
-    }
-    write_file(
-        &dir.join("SKILL.md"),
-        render_skill_wrapper(label, canonical_bytes, &markers).as_bytes(),
-    )?;
-    if !policy.model {
-        write_explicit_only_sidecar(dir)?;
-    }
-    // A canonical `agents/` directory stays out: the sidecar above is the
-    // encoding this wrapper owns, and an author's own `agents/openai.yaml`
-    // is never re-derived into it.
-    link_extras(canonical_dir, dir, &["agents"])
+    let package_root =
+        fs::canonicalize(package_root).unwrap_or_else(|_| package_root.to_path_buf());
+    let mut excluded = vec!["SKILL.md"];
+    excluded.extend_from_slice(skip);
+    crate::shared::tree::mirror_tree(canonical_dir, destination, &package_root, &excluded)
 }
 
 /// Codex's official invocation-policy metadata: `agents/openai.yaml` beside
@@ -423,89 +342,11 @@ pub(crate) fn write_explicit_only_sidecar(skill_dir: &Path) -> Result<()> {
     )
 }
 
-/// Replaces `dir` with an empty directory: a generated artifact is rebuilt
-/// wholesale, never patched, because nothing in it is authoritative.
-pub(crate) fn recreate_dir(dir: &Path) -> Result<()> {
-    if dir.exists() {
-        fs::remove_dir_all(dir).map_err(|source| UzeError::Write {
-            path: dir.to_path_buf(),
-            source,
-        })?;
-    }
-    fs::create_dir_all(dir).map_err(|source| UzeError::Write {
-        path: dir.to_path_buf(),
-        source,
-    })
-}
-
 pub(crate) fn write_file(path: &Path, content: &[u8]) -> Result<()> {
     fs::write(path, content).map_err(|source| UzeError::Write {
         path: path.to_path_buf(),
         source,
     })
-}
-
-/// Points `link` at `source`, repairing a link that points elsewhere and
-/// refusing to replace anything that is not a link.
-pub(crate) fn link_or_repair(link: &Path, source: &Path) -> Result<()> {
-    match fs::symlink_metadata(link) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            let current = fs::read_link(link).map_err(|error| UzeError::Read {
-                path: link.to_path_buf(),
-                source: error,
-            })?;
-            if current == source {
-                return Ok(());
-            }
-            fs::remove_file(link).map_err(|error| UzeError::Write {
-                path: link.to_path_buf(),
-                source: error,
-            })?;
-            uze_core::persistence::create_symlink(source, link)
-        }
-        Ok(_) => Err(UzeError::ManagedEntryConflict(link.to_path_buf())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            uze_core::persistence::create_symlink(source, link)
-        }
-        Err(error) => Err(UzeError::Read {
-            path: link.to_path_buf(),
-            source: error,
-        }),
-    }
-}
-
-/// Links every entry of a canonical skill directory except `SKILL.md` (and
-/// the names in `skip`) into a generated skill directory, so a wrapper that
-/// replaces `SKILL.md` never drops the scripts and references it names by
-/// relative path. An entry already present is left as it is. An absent
-/// canonical directory (a Resource built without a real Store path, in
-/// unit-test contexts) has no extras to link.
-pub fn link_extras(canonical_dir: &Path, target_dir: &Path, skip: &[&str]) -> Result<()> {
-    let entries = match fs::read_dir(canonical_dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(source) => {
-            return Err(UzeError::Read {
-                path: canonical_dir.to_path_buf(),
-                source,
-            });
-        }
-    };
-    for entry in entries {
-        let entry = entry.map_err(|source| UzeError::Read {
-            path: canonical_dir.to_path_buf(),
-            source,
-        })?;
-        let name = entry.file_name();
-        if name == "SKILL.md" || skip.iter().any(|skipped| name == *skipped) {
-            continue;
-        }
-        let target = target_dir.join(&name);
-        if !target.exists() && !target.is_symlink() {
-            uze_core::persistence::create_symlink(&entry.path(), &target)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -578,17 +419,6 @@ mod tests {
         assert_eq!(description.as_deref(), Some("Review code"));
         assert_eq!(body, "Body.\r\n");
         assert!(has_user_invocable_false(bytes));
-    }
-
-    #[test]
-    fn an_opencode_control_counts_only_in_the_frontmatter() {
-        let in_body = b"---\nname: n\n---\nslash: false\nopencode/autoinvoke: false\n";
-        assert!(!has_slash_false(in_body));
-        assert!(!has_opencode_autoinvoke_false(in_body));
-        let declared =
-            b"---\nname: n\nslash: false\nmetadata:\n  opencode/autoinvoke: false\n---\nbody\n";
-        assert!(has_slash_false(declared));
-        assert!(has_opencode_autoinvoke_false(declared));
     }
 
     #[test]

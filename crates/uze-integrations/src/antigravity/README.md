@@ -6,9 +6,9 @@
 
 | Surface | Status | Mechanism | Evidence |
 |---|---|---|---|
-| Plugin (explicit) | SUPPORTED, exact coverage | `agy plugin install <Store package path>` — the canonical `plugin.json` (name + description) **is** the vendor manifest (extra fields tolerated) | PROVEN — real-binary dogfood: attach → `agy plugin list` shows import → inspect MATCHED → remove → unregistered → reinstall MATCHED |
+| Plugin (explicit) | SUPPORTED, exact coverage | Superseded: every package is installed from a plugin UZE generates (`$UZE_HOME/runtime/attachments/antigravity/generated/<id>/`), because agy staged a Store tree with `${PLUGIN_ROOT}` unresolved and its agents under bare names; an earlier Store-tree receipt is retired | PROVEN — real-binary dogfood: attach → `agy plugin list` shows import → inspect MATCHED → remove → unregistered → reinstall MATCHED |
 | Plugin (generated) | SUPPORTED, exact coverage | canonical `mcp.json` → generated envelope (`mcp_config.json` translation: `url`/`httpUrl` → `serverUrl`) installed from `$UZE_HOME/runtime/attachments/antigravity/plugins/<id>/` | PROVEN — real-binary dogfood + `agy plugin validate` (skills + mcpServers processed) |
-| Skills | SUPPORTED, native (default policy) | via plugin (package-level) or a managed `SymlinkReference` → `~/.gemini/antigravity-cli/skills/<label>` (CLI-documented global skills root) | DOCUMENTED (root) + TESTED (lifecycle/drift) |
+| Skills | SUPPORTED, native (default policy) | via plugin (package-level) or a managed directory `~/.gemini/antigravity-cli/skills/<label>` (CLI-documented global skills root, which agy 1.2 moves to `~/.gemini/config/skills` and links back): SKILL.md and the supporting files, copied; receipt `GeneratedTree` | DOCUMENTED (root) + TESTED (lifecycle/drift) |
 | Skill invocation policy | NATIVE model-only; ADAPTED user-only | `disable-slash-command: true` preserves `model=true,user=false`; no model-discovery suppression exists for `model=false,user=true` | PROVEN (agy 1.1.21) + TESTED |
 | MCP | SUPPORTED, adapted | `agy mcp add <name> <command> [args…]` → `~/.gemini/config/mcp_config.json` | PROVEN (add/list/remove/disable) + TESTED (inspection) |
 

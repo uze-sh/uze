@@ -21,7 +21,6 @@ pub(crate) mod path;
 pub(crate) mod plan;
 pub(crate) mod preference;
 pub(crate) mod process;
-pub(crate) mod projection;
 pub(crate) mod provision;
 pub(crate) mod skill;
 pub(crate) mod toml_config;

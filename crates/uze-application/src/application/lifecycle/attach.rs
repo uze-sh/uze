@@ -248,7 +248,7 @@ impl UzeApplication {
                         .and_then(|plan| CapabilityShortfall::of(resource, plan)),
                 );
             } else {
-                if let Some(held) = self.retire_renamed_receipts(resource, integration)? {
+                if let Some(held) = self.retire_superseded_receipts(resource, integration)? {
                     delivery.blocked.push(held);
                     continue;
                 }
@@ -365,14 +365,16 @@ impl UzeApplication {
         }
     }
 
-    /// Retires what an earlier build attached for `resource` under a name
-    /// this build no longer gives it — an agent named after its file before
-    /// it carried its plugin's label, an MCP server registered under a name
-    /// its harness refuses. Without this, "an existing receipt wins" would
-    /// keep the old name forever. A renamed artifact someone changed since
-    /// is left in place and the capability is held back, never offered a
-    /// second time beside it.
-    fn retire_renamed_receipts(
+    /// Retires what an earlier build attached for `resource` in a form this
+    /// build no longer gives it: under another name (an agent named after
+    /// its file before it carried its plugin's label, an MCP server
+    /// registered under a name its harness refuses), or as another kind of
+    /// artifact (a skill linked into the generated tier before it was a
+    /// directory of its own). Without this, "an existing receipt wins" would
+    /// keep the old form forever. One someone changed since is left in
+    /// place and the capability is held back, never offered a second time
+    /// beside it.
+    fn retire_superseded_receipts(
         &self,
         resource: &Resource,
         integration: &dyn IntegrationPort,
@@ -382,25 +384,32 @@ impl UzeApplication {
         if !named_by_candidates || integration.exposure_name_candidates(resource).is_empty() {
             return Ok(None);
         }
-        let shared_root = integration.shared_agent_skill_root();
-        let current: BTreeSet<String> = self
-            .integrations
-            .iter()
-            .filter(|other| {
-                other.id() == integration.id()
-                    || (shared_root.is_some() && other.shared_agent_skill_root() == shared_root)
-            })
-            .flat_map(|other| other.exposure_name_candidates(resource))
+        let current: BTreeSet<String> = integration
+            .exposure_name_candidates(resource)
+            .into_iter()
             .collect();
+        let planned = planned_kind(integration, resource);
         let identity = resource.identity();
-        for receipt in state::receipts(&self.home, Some(resource.package_id.as_str()))? {
-            let renamed = receipt.integration == integration.id()
-                && receipt.resource_identity.as_deref() == Some(identity.as_str())
-                && receipt
-                    .artifact
-                    .exposure_name()
-                    .is_some_and(|name| !current.contains(&name));
-            if renamed && !self.retire_receipt(integration, &receipt)? {
+        let receipts = state::receipts(&self.home, Some(resource.package_id.as_str()))?;
+        for receipt in &receipts {
+            if receipt.integration != integration.id()
+                || receipt.resource_identity.as_deref() != Some(identity.as_str())
+            {
+                continue;
+            }
+            let renamed = receipt
+                .artifact
+                .exposure_name()
+                .is_some_and(|name| !current.contains(&name));
+            let reshaped =
+                planned.is_some_and(|kind| std::mem::discriminant(&receipt.artifact) != kind);
+            if !(renamed || reshaped) {
+                continue;
+            }
+            if reshaped {
+                self.release_obsolete_co_holders(resource, receipt, &receipts)?;
+            }
+            if !self.retire_receipt(integration, receipt)? {
                 return Ok(Some(BlockedDelivery {
                     integration: integration.id().to_owned(),
                     capability: identity,
@@ -415,6 +424,34 @@ impl UzeApplication {
         Ok(None)
     }
 
+    /// An earlier build let two harnesses share one skill entry, each with
+    /// its own receipt. When the entry is being replaced by another kind of
+    /// artifact, a co-holder whose own plan also moved on no longer holds
+    /// it, so its receipt is forgotten and the entry can be taken off.
+    fn release_obsolete_co_holders(
+        &self,
+        resource: &Resource,
+        receipt: &AttachmentReceipt,
+        receipts: &[AttachmentReceipt],
+    ) -> Result<()> {
+        for other in receipts.iter().filter(|other| {
+            other.integration != receipt.integration
+                && other.resource_identity == receipt.resource_identity
+                && other.artifact.location() == receipt.artifact.location()
+        }) {
+            let moved_on = self
+                .integrations
+                .iter()
+                .find(|candidate| candidate.id() == other.integration)
+                .and_then(|candidate| planned_kind(candidate.as_ref(), resource))
+                .is_some_and(|kind| std::mem::discriminant(&other.artifact) != kind);
+            if moved_on {
+                state::forget_receipt(&self.home, other)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Resolves `resource`'s physical exposure name for `integration`,
     /// immediately before an attach call — the one place a naming decision
     /// happens. Returns a clone of `resource` with `resolved_exposure_name`
@@ -422,16 +459,13 @@ impl UzeApplication {
     ///
     /// "Existing receipt wins": a receipt for this exact
     /// `resource.identity()` hands back its already-recorded physical name
-    /// verbatim, which is what makes re-add/setup idempotent. The same
-    /// reuse extends to a *different* integration's receipt for the same
-    /// resource when both report the same `shared_agent_skill_root` (Codex
-    /// and OpenCode both read `~/.agents/skills`), so the second attach
-    /// writes the very same entry instead of a second one beside it.
+    /// verbatim, which is what makes re-add/setup idempotent. Every
+    /// discovery directory has one owner, so only this integration's
+    /// receipts are consulted.
     ///
-    /// Only a resource with no reusable receipt anywhere asks the
-    /// integration for ordered candidates (`exposure_name_candidates`) and
-    /// takes the first not already claimed — by this integration or by one
-    /// sharing its skill root. It resolves purely from the ledger, never
+    /// Only a resource with no receipt asks the integration for ordered
+    /// candidates (`exposure_name_candidates`) and takes the first this
+    /// integration has not already claimed. It resolves purely from the ledger, never
     /// the filesystem, so it never decides a foreign-artifact conflict;
     /// attach's own structural check remains the last word on that.
     pub(crate) fn resolve_exposure_name(
@@ -449,31 +483,14 @@ impl UzeApplication {
             return Ok(resolved);
         };
         let resource_id = resource.identity();
-        // Only Agent Skills live in a directory shared across integrations
-        // (Codex, OpenCode all read `~/.agents/skills`).
-        let shared_root = (resource.capability.kind == CapabilityKind::AgentSkill)
-            .then(|| integration.shared_agent_skill_root())
-            .flatten();
-        let shares_root = |other_id: &str| -> bool {
-            let Some(root) = &shared_root else {
-                return false;
-            };
-            self.integrations.iter().any(|other| {
-                other.id() == other_id && other.shared_agent_skill_root().as_ref() == Some(root)
-            })
-        };
         // Existing receipt wins: a resource already attached keeps the
         // physical entry it was given, so re-running attach never renames
         // or duplicates it.
         if let Some(existing) = all_receipts.iter().find(|receipt| {
             receipt.resource_identity.as_deref() == Some(resource_id.as_str())
-                && (receipt.integration == integration.id() || shares_root(&receipt.integration))
+                && receipt.integration == integration.id()
         }) {
             resolved.resolved_exposure_name = existing.artifact.exposure_name();
-            resolved.resolved_artifact_target = match &existing.artifact {
-                ManagedArtifact::SymlinkReference { target, .. } => Some(target.clone()),
-                _ => None,
-            };
             return Ok(resolved);
         }
         // A name is taken only where this resource would be written: a skill
@@ -490,33 +507,11 @@ impl UzeApplication {
         };
         let claimed: BTreeSet<String> = all_receipts
             .iter()
-            .filter(|receipt| {
-                receipt.integration == integration.id() || shares_root(&receipt.integration)
-            })
+            .filter(|receipt| receipt.integration == integration.id())
             .filter(|receipt| contends(receipt))
             .filter_map(|receipt| receipt.artifact.exposure_name())
             .collect();
-        // A shared root must converge on the same physical name no matter
-        // which member happens to attach first. If any integration sharing
-        // `shared_root` prefers the resource's bare logical name first (only
-        // OpenCode does today, for its V2 slash-command UX), that preference
-        // governs for the whole group — otherwise whichever of
-        // Codex/OpenCode attaches before OpenCode would lock the
-        // group onto the always-qualified fallback via the reuse check
-        // above, even though the bare name was free.
-        let candidates = shared_root
-            .as_ref()
-            .and_then(|root| {
-                self.integrations
-                    .iter()
-                    .filter(|other| other.shared_agent_skill_root().as_ref() == Some(root))
-                    .map(|other| other.exposure_name_candidates(resource))
-                    .find(|list| {
-                        list.first().map(String::as_str)
-                            == resource.logical_capability_name().as_deref()
-                    })
-            })
-            .unwrap_or_else(|| integration.exposure_name_candidates(resource));
+        let candidates = integration.exposure_name_candidates(resource);
         if let Some(free) = candidates
             .iter()
             .find(|candidate| !claimed.contains(*candidate))
@@ -526,9 +521,8 @@ impl UzeApplication {
             return Ok(resolved);
         }
         // Every candidate is already claimed. The reuse path above already
-        // returned for the same-resource case (identical canonical identity
-        // sharing one physical entry across shared-root harnesses), so a
-        // claimed name here belongs to a DIFFERENT canonical resource: two
+        // returned for the same resource, so a claimed name here belongs to
+        // a DIFFERENT canonical resource: two
         // distinct resources converging on one label — one physical entry,
         // incompatible representations. That is a projection ownership
         // conflict, not drift; report it deterministically before any
@@ -547,9 +541,7 @@ impl UzeApplication {
         };
         let claimant = all_receipts
             .iter()
-            .filter(|receipt| {
-                receipt.integration == integration.id() || shares_root(&receipt.integration)
-            })
+            .filter(|receipt| receipt.integration == integration.id())
             .filter(|receipt| contends(receipt))
             .find(|receipt| receipt.artifact.exposure_name().as_deref() == Some(entry.as_str()));
         let Some(claimant) = claimant else {
@@ -558,15 +550,17 @@ impl UzeApplication {
             resolved.resolved_exposure_name = Some(entry);
             return Ok(resolved);
         };
-        let requested_target = match integration.exposure_plan(resource).mechanism {
-            ExposureMechanism::Managed(ManagedArtifact::SymlinkReference { target, .. }) => target,
+        let requested_target = match &planned {
+            Some(ManagedArtifact::SymlinkReference { target, .. }) => target.clone(),
             _ => resource.capability.path.clone(),
         };
+        let entry_path = planned
+            .as_ref()
+            .and_then(|artifact| artifact.location().parent().map(|dir| dir.join(&entry)))
+            .unwrap_or_else(|| PathBuf::from(&entry));
         Err(UzeError::ProjectionConflict(Box::new(
             uze_core::error::ProjectionConflictDetails {
-                entry: integration
-                    .shared_agent_skill_root()
-                    .map_or_else(|| PathBuf::from(&entry), |root| root.join(&entry)),
+                entry: entry_path,
                 requested: resource.identity(),
                 requested_integration: integration.id().to_owned(),
                 requested_target,
@@ -677,8 +671,20 @@ impl UzeApplication {
     }
 }
 
-/// Whether two artifacts compete for one name: the same kind of entry in the
-/// same place — one discovery directory, one vendor registry, one hook file.
+/// The kind of artifact `integration` now plans for `resource`, if any.
+fn planned_kind(
+    integration: &dyn IntegrationPort,
+    resource: &Resource,
+) -> Option<std::mem::Discriminant<ManagedArtifact>> {
+    match integration.exposure_plan(resource).mechanism {
+        ExposureMechanism::Managed(artifact) => Some(std::mem::discriminant(&artifact)),
+        ExposureMechanism::Unsupported { .. } => None,
+    }
+}
+
+/// Whether two artifacts compete for one name: an entry in the same place —
+/// one discovery directory, one vendor registry, one hook file. A link and a
+/// directory of the same name in one directory are one name.
 fn same_name_space(
     a: &uze_core::integration::ManagedArtifact,
     b: &uze_core::integration::ManagedArtifact,
@@ -686,8 +692,8 @@ fn same_name_space(
     use uze_core::integration::ManagedArtifact as Artifact;
     match (a, b) {
         (
-            Artifact::SymlinkReference { path: a, .. },
-            Artifact::SymlinkReference { path: b, .. },
+            Artifact::SymlinkReference { path: a, .. } | Artifact::GeneratedTree { path: a, .. },
+            Artifact::SymlinkReference { path: b, .. } | Artifact::GeneratedTree { path: b, .. },
         )
         | (Artifact::GeneratedFile { path: a, .. }, Artifact::GeneratedFile { path: b, .. })
         | (Artifact::ManagedHookFile { path: a }, Artifact::ManagedHookFile { path: b }) => {

@@ -32,10 +32,10 @@ impl UzeHome {
         &self.root
     }
 
-    /// Root the package tree is published under. Several harnesses resolve a
-    /// package path relative to the root of their own catalogue, so an
-    /// integration that maintains such a catalogue places it here — but the
-    /// layout stays UZE's, and this module names no harness.
+    /// Root of the installed packages' bytes, and of nothing else: no
+    /// harness reads from here. What a harness reads is materialized into
+    /// the generated tier, so the one tier whose loss costs the packages is
+    /// never a path another program holds open.
     pub fn store_dir(&self) -> PathBuf {
         self.root.join("store")
     }

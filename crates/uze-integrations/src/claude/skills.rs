@@ -1,25 +1,27 @@
 //! Claude Code Agent Skill exposure — the managed skills-dir plugin shim
-//! (see ADR-006): a small owned manifest plus a `SKILL.md` reference,
-//! symlinked once into `<claude_home>/skills/<name>`. Invocation policy is
-//! translated into Claude's own SKILL.md frontmatter fields
+//! (see ADR-006): a directory of its own at `<claude_home>/skills/<name>`
+//! holding a small owned manifest, the delivered `SKILL.md` and the
+//! canonical supporting files, copied. Invocation policy is translated
+//! into Claude's own SKILL.md frontmatter fields
 //! (`disable-model-invocation`, `user-invocable`) — see ADR-030.
 
-use std::{borrow::Cow, fs, path::Path};
+use std::path::Path;
 
 use uze_core::{
-    Result, UzeError,
+    Result,
     capability::Resource,
     exposure::{ExposureMechanism, ExposurePlan, ManagedArtifact},
-    integration::IntegrationPort,
+    integration::{IntegrationPort, active_plugin_name},
     router::CompatibilityRoute,
     skill::SkillInvocationPolicy,
     state,
 };
 
 use super::ClaudeIntegration;
+use crate::shared::package_root::resolve_bytes;
 use crate::shared::skill::{
-    entry_name, frontmatter_value, invalid_policy_plan, link_extras, link_or_repair,
-    render_skill_wrapper, setup_pending_plan, write_file,
+    attach_skill_tree, entry_name, frontmatter_value, invalid_policy_plan, render_skill_wrapper,
+    setup_pending_plan, skill_tree_plan,
 };
 
 impl ClaudeIntegration {
@@ -41,6 +43,37 @@ impl ClaudeIntegration {
         )
     }
 
+    pub(super) fn attach_skill(&self, resource: &Resource, path: &Path) -> Result<ManagedArtifact> {
+        let entry_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("a managed Skill entry has a UTF-8 name");
+        // The shim's own directory gets the stable namespaced label
+        // (`flow:review`), while the *manifest plugin name* stays the
+        // namespace (`flow`): Claude then exposes the skill as
+        // `/flow:review` (ADR-026) instead of double namespacing it.
+        let namespace = active_plugin_name(&self.uze_home, resource);
+        let canonical_dir = resource
+            .capability
+            .path
+            .parent()
+            .expect("SKILL.md has a parent");
+        let delivered = resolve_bytes(&resource.capability.payload, &resource.package_root);
+        attach_skill_tree(
+            &self.uze_home,
+            path,
+            resource,
+            &rendered_shim_files(
+                canonical_dir,
+                &delivered,
+                entry_name,
+                Some(&namespace),
+                &resource.skill_invocation(),
+            ),
+            &[".claude-plugin"],
+        )
+    }
+
     pub(super) fn skill_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
         let policy = resource.skill_invocation();
         if policy.is_invalid() {
@@ -52,14 +85,8 @@ impl ClaudeIntegration {
         let Some(entry_name) = entry_name(self, resource) else {
             return setup_pending_plan("Claude Code");
         };
-        let shim_root = resource
-            .resolved_artifact_target
-            .clone()
-            .unwrap_or_else(|| {
-                crate::shared::path::attachment_root(&self.uze_home, "claude").join(&entry_name)
-            });
         let mut evidence = String::from(
-            "UZE materializes a small owned manifest shim (.claude-plugin/plugin.json plus a SKILL.md reference into the UZE store) and symlinks it once into <claude_home>/skills/. Claude auto-loads it on every future session with no --plugin-dir flag.",
+            "UZE delivers the Skill as its own directory in <claude_home>/skills/: a small owned manifest (.claude-plugin/plugin.json), the SKILL.md and the canonical supporting files, copied. Claude auto-loads it on every future session with no --plugin-dir flag.",
         );
         if !policy.is_default() {
             evidence.push_str(
@@ -70,34 +97,25 @@ impl ClaudeIntegration {
         // on a shim UZE generates rather than the Store bytes.
         ExposurePlan {
             route: CompatibilityRoute::Adaptable,
-            mechanism: ExposureMechanism::Managed(ManagedArtifact::SymlinkReference {
-                path: self.skills_dir.join(entry_name),
-                target: shim_root,
-            }),
+            mechanism: ExposureMechanism::Managed(skill_tree_plan(
+                self.skills_dir.join(entry_name),
+            )),
             evidence,
         }
     }
 }
 
-/// Materializes the UZE-owned shim directory: the small plugin manifest
-/// plus a `SKILL.md` that is either a symlink to the canonical Store bytes
-/// (default model+user policy — byte-preserving) or a UZE-generated file
-/// carrying the canonical name/description/body plus Claude's own
-/// invocation markers (non-default policy — the canonical bytes stay in
-/// the Store; this wrapper is a Derived Artifact, ADR-013 §5).
-pub(super) fn materialize_shim(
-    shim_root: &Path,
+/// What the shim holds beside the copied supporting files: the small plugin
+/// manifest and the delivered `SKILL.md`. The default policy delivers the
+/// canonical bytes (package root resolved); any other carries Claude's own
+/// invocation markers on the canonical name, description and body.
+pub(super) fn rendered_shim_files(
     canonical_skill_dir: &Path,
-    delivered: Cow<[u8]>,
+    delivered: &[u8],
     entry_name: &str,
     namespace: Option<&str>,
     policy: &SkillInvocationPolicy,
-) -> Result<()> {
-    let plugin_dir = shim_root.join(".claude-plugin");
-    fs::create_dir_all(&plugin_dir).map_err(|source| UzeError::Write {
-        path: plugin_dir.clone(),
-        source,
-    })?;
+) -> Vec<(&'static str, Vec<u8>)> {
     // The manifest plugin `name` is what Claude uses to namespace
     // components (plugins-reference: "This name is used for namespacing
     // components"), so it must be the *namespace* (`flow`) while the shim
@@ -112,45 +130,26 @@ pub(super) fn materialize_shim(
         "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
         "name": plugin_name,
         "version": "0.1.0",
-        "description": "UZE-managed skill, referencing the UZE store.",
+        "description": "UZE-managed skill.",
         "skills": ["./"],
     });
-    fs::write(
-        plugin_dir.join("plugin.json"),
-        serde_json::to_vec_pretty(&manifest).expect("plugin manifest serialization is infallible"),
-    )
-    .map_err(|source| UzeError::Write {
-        path: plugin_dir.join("plugin.json"),
-        source,
-    })?;
-
-    // Claude resolves a skill's relative scripts and references against the
-    // shim, not against the Store, so they are linked beside its SKILL.md.
-    link_extras(canonical_skill_dir, shim_root, &[".claude-plugin"])?;
-    let skill_link = shim_root.join("SKILL.md");
-    if policy.is_default() && matches!(delivered, Cow::Borrowed(_)) {
-        let skill_source = canonical_skill_dir.join("SKILL.md");
-        return link_or_repair(&skill_link, &skill_source);
-    }
-    // A non-default policy must carry Claude's own frontmatter markers, and
-    // a resolved package root differs from the Store bytes: either way the
-    // delivered SKILL.md is materialized — never a symlink.
-    let document = if policy.is_default() {
-        String::from_utf8_lossy(&delivered).into_owned()
+    let skill = if policy.is_default() {
+        delivered.to_vec()
     } else {
         let fallback_name = canonical_skill_dir
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or(entry_name);
-        claude_wrapper_skill_document(&delivered, policy, fallback_name)
+        claude_wrapper_skill_document(delivered, policy, fallback_name).into_bytes()
     };
-    if skill_link.is_symlink() {
-        fs::remove_file(&skill_link).map_err(|source| UzeError::Write {
-            path: skill_link.clone(),
-            source,
-        })?;
-    }
-    write_file(&skill_link, document.as_bytes())
+    vec![
+        (
+            ".claude-plugin/plugin.json",
+            serde_json::to_vec_pretty(&manifest)
+                .expect("plugin manifest serialization is infallible"),
+        ),
+        ("SKILL.md", skill),
+    ]
 }
 
 /// Renders the generated SKILL.md for one canonical Skill under a
@@ -178,41 +177,43 @@ pub(super) fn claude_wrapper_skill_document(
 mod tests {
     use super::*;
 
-    /// A skill's relative scripts must resolve from the shim Claude loads,
-    /// whichever policy decides how its `SKILL.md` is delivered.
+    fn file<'a>(files: &'a [(&str, Vec<u8>)], name: &str) -> &'a str {
+        files
+            .iter()
+            .find(|(path, _)| *path == name)
+            .map(|(_, bytes)| std::str::from_utf8(bytes).unwrap())
+            .unwrap()
+    }
+
     #[test]
-    fn the_shim_links_the_skills_supporting_files_beside_its_skill_md() {
-        for (label, body) in [
-            (
-                "claude-shim-default",
-                "---\nname: deploy\n---\nRun scripts/run.sh.\n",
-            ),
-            (
-                "claude-shim-user-only",
-                "---\nname: deploy\ninvoke:\n  model: false\n  user: true\n---\nRun scripts/run.sh.\n",
-            ),
-        ] {
-            let root = uze_testkit::temp::scratch(label);
-            let canonical = root.join("store/skills/deploy");
-            fs::create_dir_all(canonical.join("scripts")).unwrap();
-            fs::write(canonical.join("SKILL.md"), body).unwrap();
-            fs::write(canonical.join("scripts/run.sh"), "#!/bin/sh\n").unwrap();
-            let shim = root.join("shim");
-            let policy = uze_core::skill::parse_skill_invocation(body.as_bytes())
-                .unwrap_or(SkillInvocationPolicy::MODEL_AND_USER);
-            materialize_shim(
-                &shim,
-                &canonical,
-                Cow::Borrowed(body.as_bytes()),
-                "flow:deploy",
-                Some("flow"),
-                &policy,
-            )
-            .unwrap();
-            assert!(shim.join("scripts").is_symlink(), "{label}");
-            assert!(shim.join("scripts/run.sh").is_file(), "{label}");
-            assert!(shim.join("SKILL.md").exists(), "{label}");
-            let _ = fs::remove_dir_all(root);
-        }
+    fn the_shim_names_its_namespace_and_carries_the_policy_markers() {
+        let body =
+            "---\nname: deploy\ninvoke:\n  model: false\n  user: true\n---\nRun scripts/run.sh.\n";
+        let policy = uze_core::skill::parse_skill_invocation(body.as_bytes())
+            .unwrap_or(SkillInvocationPolicy::MODEL_AND_USER);
+        let files = rendered_shim_files(
+            Path::new("/store/skills/deploy"),
+            body.as_bytes(),
+            "flow:deploy",
+            Some("flow"),
+            &policy,
+        );
+        assert!(file(&files, ".claude-plugin/plugin.json").contains("\"name\": \"flow\""));
+        let skill = file(&files, "SKILL.md");
+        assert!(skill.contains("disable-model-invocation: true"), "{skill}");
+        assert!(skill.ends_with("Run scripts/run.sh.\n"));
+    }
+
+    #[test]
+    fn a_default_policy_delivers_the_canonical_bytes() {
+        let body = "---\nname: deploy\n---\nRun scripts/run.sh.\n";
+        let files = rendered_shim_files(
+            Path::new("/store/skills/deploy"),
+            body.as_bytes(),
+            "flow:deploy",
+            Some("flow"),
+            &SkillInvocationPolicy::MODEL_AND_USER,
+        );
+        assert_eq!(file(&files, "SKILL.md"), body);
     }
 }

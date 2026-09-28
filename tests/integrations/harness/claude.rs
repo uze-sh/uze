@@ -46,8 +46,8 @@ fn claude_user_only_shim_carries_the_disable_model_marker() {
         .attach_receipt(&r)
         .unwrap()
         .expect("user-only Skill attaches on Claude");
-    let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact else {
-        panic!("expected a managed symlink reference");
+    let ManagedArtifact::GeneratedTree { path: target, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     let shim_skill = fs::read_to_string(target.join("SKILL.md")).unwrap();
     assert!(

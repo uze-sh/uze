@@ -252,8 +252,8 @@ fn default_skill_package_installs_cleanly_on_every_harness_as_before() {
 
     // And the default Skill wrapper on Codex carries NO policy sidecar.
     let receipt = codex.attach_receipt(&resource).unwrap().expect("attaches");
-    let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact else {
-        panic!("expected a managed symlink reference");
+    let ManagedArtifact::GeneratedTree { path: target, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     assert!(
         !target.join("agents/openai.yaml").exists(),

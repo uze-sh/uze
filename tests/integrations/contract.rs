@@ -29,6 +29,26 @@ fn install(
     )
 }
 
+/// Records what `attach` returned, as the application does after every
+/// attachment: the receipt is what makes a later attach UZE's to replace.
+fn record(
+    home: &UzeHome,
+    integration: &str,
+    resource: &uze_core::Resource,
+    artifact: ManagedArtifact,
+) {
+    uze_core::state::record_receipt(
+        home,
+        uze_core::integration::AttachmentReceipt {
+            package_id: resource.package_id.as_str().to_owned(),
+            resource_identity: Some(resource.identity()),
+            integration: integration.to_owned(),
+            artifact,
+        },
+    )
+    .unwrap();
+}
+
 fn package_fixture() -> PathBuf {
     uze_testkit::fixtures::canonical("skill-plugin")
 }
@@ -191,27 +211,28 @@ fn claude_prefers_managed_attachment_once_setup_state_is_recorded() {
 
     assert!(matches!(
         claude.exposure_plan(resource).mechanism,
-        ExposureMechanism::Managed(ManagedArtifact::SymlinkReference { .. })
+        ExposureMechanism::Managed(ManagedArtifact::GeneratedTree { .. })
     ));
 
-    let attached = claude
+    let artifact = claude
         .attach(resource)
         .unwrap()
-        .expect("managed attachment path")
-        .location();
-    assert!(attached.is_symlink());
+        .expect("managed attachment path");
+    let attached = artifact.location();
+    assert!(attached.is_dir() && !attached.is_symlink());
     assert_eq!(attached.parent().unwrap(), claude_home.join("skills"));
-
-    let shim_root = fs::read_link(&attached).unwrap();
-    assert!(shim_root.join(".claude-plugin/plugin.json").is_file());
-    let skill_link = shim_root.join("SKILL.md");
-    assert!(skill_link.is_symlink());
+    assert!(attached.join(".claude-plugin/plugin.json").is_file());
+    let skill = attached.join("SKILL.md");
+    assert!(skill.is_file() && !skill.is_symlink());
     assert_eq!(
-        fs::read_link(&skill_link).unwrap(),
-        resource.capability.path.parent().unwrap().join("SKILL.md")
+        fs::read(&skill).unwrap(),
+        fs::read(&resource.capability.path).unwrap(),
+        "a default-policy Skill is delivered with its canonical bytes"
     );
 
-    // Idempotent: attaching again resolves to the same entry, no error.
+    // Idempotent once the receipt says UZE put it there, as every
+    // attachment through the application does.
+    record(&uze_home, claude.id(), resource, artifact);
     let attached_again = claude.attach(resource).unwrap().unwrap().location();
     assert_eq!(attached, attached_again);
 
@@ -240,33 +261,31 @@ fn codex_prefers_managed_attachment_once_setup_state_is_recorded() {
 
     assert!(matches!(
         codex.exposure_plan(resource).mechanism,
-        ExposureMechanism::Managed(ManagedArtifact::SymlinkReference { .. })
+        ExposureMechanism::Managed(ManagedArtifact::GeneratedTree { .. })
     ));
 
-    let attached = codex
+    let artifact = codex
         .attach(resource)
         .unwrap()
-        .expect("managed attachment path")
-        .location();
-    assert!(attached.is_symlink());
-    // The managed reference points at UZE's generated wrapper skill
-    // (name = stable namespaced label `uze-agent-skill-conformance:uze-e2e`,
-    // body verbatim from the canonical Store SKILL.md) — never at the Store
-    // directory, because Codex derives the model-visible name from
-    // frontmatter and the canonical bytes are not rewritten.
-    let wrapped = fs::read_link(&attached).unwrap();
+        .expect("managed attachment path");
+    let attached = artifact.location();
+    // A directory of its own in Codex's documented user root, whose SKILL.md
+    // carries the stable namespaced label (Codex derives the model-visible
+    // name from frontmatter; the canonical bytes are not rewritten).
+    assert!(attached.is_dir() && !attached.is_symlink());
+    assert_eq!(attached.parent().unwrap(), agents_home.join("skills"));
     assert!(
-        wrapped.starts_with(home_root.join("runtime/attachments/codex/skills")),
-        "the symlink must target a Derived Artifact under $UZE_HOME: {}",
-        wrapped.display()
+        fs::read_to_string(attached.join("SKILL.md"))
+            .unwrap()
+            .starts_with("---\nname: uze-agent-skill-conformance:uze-e2e\n")
     );
-    assert!(wrapped.join("SKILL.md").is_file());
     assert_eq!(
         attached.file_name().unwrap(),
         "uze-agent-skill-conformance:uze-e2e"
     );
 
     // Idempotent, and independent of Claude's own attachment state.
+    record(&uze_home, codex.id(), resource, artifact);
     let attached_again = codex.attach(resource).unwrap().unwrap().location();
     assert_eq!(attached, attached_again);
     assert!(!uze_core::state::is_installed(&uze_home, "claude-code"));

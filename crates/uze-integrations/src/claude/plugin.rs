@@ -178,6 +178,15 @@ impl MarketplaceDialect for ClaudeMarketplace {
             &["plugin", "uninstall", selector],
         )
     }
+
+    fn remove_marketplace(executable: &Path, home: &Path, name: &str) -> Result<()> {
+        run_quiet(
+            executable,
+            home,
+            &format!("claude plugin marketplace remove {name}"),
+            &["plugin", "marketplace", "remove", name],
+        )
+    }
 }
 
 /// One of Claude's own plugin records, read where it keeps them.
@@ -1093,6 +1102,143 @@ mod claude_native_coverage_tests {
             uze_core::exposure::ExposureMechanism::Unsupported { .. }
         ));
         let _ = fs::remove_dir_all(_root);
+    }
+}
+
+#[cfg(test)]
+mod explicit_marketplace_tests {
+    use std::{collections::BTreeMap, fs, path::PathBuf};
+
+    use uze_core::{
+        home::UzeHome,
+        integration::{AttachmentReceipt, ManagedArtifact},
+        store::{PackageId, StoredPackage},
+    };
+
+    use super::ClaudeMarketplace;
+    use crate::shared::marketplace::{self, MarketplaceDialect};
+
+    fn explicit_package(root: &std::path::Path) -> StoredPackage {
+        let pkg_root = root.join("store/plugins/local/kit");
+        fs::create_dir_all(pkg_root.join(".claude-plugin")).unwrap();
+        fs::create_dir_all(pkg_root.join("skills/a/scripts")).unwrap();
+        fs::write(
+            pkg_root.join(".claude-plugin/plugin.json"),
+            r#"{"name":"kit"}"#,
+        )
+        .unwrap();
+        fs::write(pkg_root.join("plugin.json"), r#"{"name":"kit"}"#).unwrap();
+        fs::write(pkg_root.join("skills/a/SKILL.md"), "---\nname: a\n---\n").unwrap();
+        fs::write(pkg_root.join("skills/a/scripts/run.sh"), "#!/bin/sh\n").unwrap();
+        let id = PackageId::from_plugin_name("kit", &pkg_root.join("plugin.json")).unwrap();
+        StoredPackage {
+            active_name: id.plugin_name().to_owned(),
+            id,
+            root: pkg_root.clone(),
+            manifest: pkg_root.join("plugin.json"),
+            provenance: uze_core::acquisition::Provenance {
+                requested: uze_core::acquisition::PackageSource::Local {
+                    path: PathBuf::from("/tmp/fake"),
+                },
+                resolved: uze_core::acquisition::ResolvedSource::Local {
+                    path: PathBuf::from("/tmp/fake"),
+                },
+            },
+        }
+    }
+
+    fn explicit_receipt(package: &StoredPackage, marketplace_root: PathBuf) -> AttachmentReceipt {
+        let detail: BTreeMap<String, serde_json::Value> = [(
+            "marketplace_root".to_owned(),
+            serde_json::json!(marketplace_root),
+        )]
+        .into_iter()
+        .collect();
+        AttachmentReceipt {
+            package_id: package.id.as_str().to_owned(),
+            resource_identity: None,
+            integration: "claude-code".to_owned(),
+            artifact: ManagedArtifact::IntegrationOwned {
+                kind: ClaudeMarketplace::EXPLICIT_KIND.to_owned(),
+                selector: "kit@uze-local".to_owned(),
+                detail,
+            },
+        }
+    }
+
+    #[test]
+    fn an_explicit_envelope_is_mirrored_out_of_the_store() {
+        let root = uze_testkit::temp::scratch("explicit-mirror");
+        let home = UzeHome::at(root.join("uze"));
+        let package = explicit_package(&root);
+        let stale = home.store_dir().join(ClaudeMarketplace::CATALOGUE_PATH);
+        fs::create_dir_all(stale.parent().unwrap()).unwrap();
+        fs::write(&stale, "{}").unwrap();
+
+        marketplace::republish::<ClaudeMarketplace>(&home, std::slice::from_ref(&package)).unwrap();
+
+        let mirror = marketplace::explicit_package_dir::<ClaudeMarketplace>(&home, &package);
+        assert!(mirror.starts_with(home.runtime_dir()));
+        assert!(mirror.join(".claude-plugin/plugin.json").is_file());
+        assert!(mirror.join("skills/a/scripts/run.sh").is_file());
+        assert!(!mirror.join("skills").is_symlink());
+        let catalogue = marketplace::marketplace_root::<ClaudeMarketplace>(
+            &home,
+            marketplace::Origin::Explicit,
+        )
+        .join(ClaudeMarketplace::CATALOGUE_PATH);
+        let document: serde_json::Value =
+            serde_json::from_slice(&fs::read(catalogue).unwrap()).unwrap();
+        assert_eq!(document["plugins"][0]["source"], "./plugins/local/kit");
+        assert!(!stale.exists(), "no catalogue is left in the Store");
+    }
+
+    #[test]
+    fn a_receipt_made_through_the_store_rooted_marketplace_no_longer_serves() {
+        let root = uze_testkit::temp::scratch("explicit-serves");
+        let home = UzeHome::at(root.join("uze"));
+        let package = explicit_package(&root);
+        let old = explicit_receipt(&package, home.store_dir());
+        let current = explicit_receipt(
+            &package,
+            marketplace::marketplace_root::<ClaudeMarketplace>(
+                &home,
+                marketplace::Origin::Explicit,
+            ),
+        );
+        assert!(!marketplace::receipt_serves::<ClaudeMarketplace>(
+            &home, &old
+        ));
+        assert!(marketplace::receipt_serves::<ClaudeMarketplace>(
+            &home, &current
+        ));
+    }
+
+    #[test]
+    fn the_generated_tier_is_pruned_by_reference() {
+        let root = uze_testkit::temp::scratch("explicit-prune");
+        let home = UzeHome::at(root.join("uze"));
+        let generated = marketplace::generated_root::<ClaudeMarketplace>(&home);
+        let orphan = generated.join("gone@local");
+        let named = generated.join("kept@local");
+        let explicit_orphan =
+            marketplace::explicit_root::<ClaudeMarketplace>(&home).join("plugins/local/gone");
+        for dir in [&orphan, &named, &explicit_orphan] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        let mut receipt = explicit_receipt(&explicit_package(&root), generated.clone());
+        if let ManagedArtifact::IntegrationOwned { detail, .. } = &mut receipt.artifact {
+            detail.insert("package_root".to_owned(), serde_json::json!(named));
+        }
+        uze_core::state::record_receipt(&home, receipt).unwrap();
+
+        marketplace::republish::<ClaudeMarketplace>(&home, &[]).unwrap();
+
+        assert!(!orphan.exists() && !explicit_orphan.exists());
+        assert!(
+            named.exists(),
+            "a directory a receipt names waits for its detach"
+        );
     }
 }
 

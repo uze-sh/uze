@@ -5,7 +5,7 @@ plugin — either the package's own explicit `.claude-plugin/plugin.json`
 (Explicit Native Package), or, absent one, a UZE-synthesized envelope
 covering the package's conventional `skills/`/`mcp.json` surface (Generated
 Native Package, ADR-013) — or, when neither surface is safely
-representable, decomposed into a managed Skill symlink plus a registered
+representable, decomposed into a managed Skill directory plus a registered
 MCP server. The only integration in this crate with a runtime-projection
 mechanism (`--add-dir` delivery of `AGENTS.md`, independent of package
 delivery).
@@ -16,7 +16,7 @@ delivery).
 |---|---|---|---|
 | Plugin (native, explicit) | SUPPORTED | Derived marketplace catalogue → `claude plugin install` | EMPIRICAL (marketplace/install config confirmed live 2026-08-20 per ADR-013); CLI-shelling functions have no unit test |
 | Plugin (native, generated) | SUPPORTED | Second, UZE-owned `uze-store` catalogue → `claude plugin install` (ADR-013) | TESTED (`claude::generate::generated_native_tests`) + CODE_FACT |
-| Skills | SUPPORTED | Native envelope (VIA_PACKAGE) or managed skills-dir symlink (NATIVE_CAPABILITY) | EMPIRICAL — real `claude -p` run returned the exact proof token end-to-end (ADR-006) |
+| Skills | SUPPORTED | Native envelope (VIA_PACKAGE) or a managed directory in `<claude_home>/skills/<label>` (NATIVE_CAPABILITY) | EMPIRICAL — real `claude -p` run returned the exact proof token end-to-end (ADR-006) |
 | MCP | SUPPORTED (config), PARTIAL (behavioral) | Native envelope (VIA_PACKAGE) or `claude mcp add --scope user --transport stdio` (SAFE_ADAPTATION) | EMPIRICAL for config/discovery (`claude mcp get`/`list` confirmed `✔ Connected` live, ADR-007); a real tool call needed a non-default `--allowedTools=mcp__...` flag and a secondary headless-discovery quirk was never fully closed |
 | Context (runtime) | EXPERIMENTAL | `--add-dir` + `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` (RUNTIME_PROJECTION) | EMPIRICAL — extensive real-CLI evidence (ADR-014); `/compact` retention across a session is the one open gap |
 | Agents | Supported | Inside the package plugin (Claude names them `<plugin>:<subdirs>:<name>`); outside one, a generated `~/.claude/agents/<label>.md` with `name: <label>`. Plugin agents lose `permissionMode`, `hooks`, `mcpServers`, `initialPrompt`, reported as Degraded | EMPIRICAL (`conformance/experiments/claude/parity.py`, Claude Code 2.1.283) |
@@ -33,9 +33,12 @@ each Skill on its canonical invocation policy being preserved — see
 
 ```
 Store plugin (.claude-plugin/plugin.json present)          [Explicit Native Package]
-        │
+        │  mirrored as real files, replaced whole (Claude reads it live)
         ▼
-store/.claude-plugin/marketplace.json   (derived, republish_packages)
+runtime/attachments/claude/explicit/plugins/<market>/<name>/
+runtime/attachments/claude/explicit/.claude-plugin/marketplace.json
+        │  (derived, republish_packages; a second `marketplace add` of
+        │   `uze-local` re-points an earlier Store-rooted one)
         │
         ▼
 claude plugin marketplace add  (once)  →  claude plugin install <id>@uze-local
@@ -57,8 +60,10 @@ Store plugin (no explicit envelope, but skills/ dir and/or mcp.json present)  [G
         ▼
 $UZE_HOME/runtime/attachments/claude/generated/<id>/.claude-plugin/plugin.json
    (UZE-synthesized: name/version/description from canonical plugin.json,
-    skills symlinked from the Store, mcp.json's mcpServers inline with
-    `${PLUGIN_ROOT}` resolved to the Store path)
+    the whole package mirrored as real files, rebuilt beside the live
+    directory and swapped in with one rename because Claude reads this
+    directory live, mcp.json's mcpServers inline with `${PLUGIN_ROOT}`
+    resolved to the Store path)
         │
         ▼
 $UZE_HOME/.../generated/.claude-plugin/marketplace.json   ("uze-store")
@@ -76,9 +81,9 @@ provided = discovered ∩ (conventional skills/ ∪ mcp.json's mcpServers) — s
 ```
 Store plugin (no envelope of either kind, or resource undeclared by one)
         │
-        ├── Skill → managed shim (.claude-plugin/plugin.json + SKILL.md
-        │            symlink) at $UZE_HOME state dir → symlinked once into
-        │            <claude_home>/skills/<name>/         [NATIVE_CAPABILITY]
+        ├── Skill → a directory <claude_home>/skills/<label>/ holding
+        │            .claude-plugin/plugin.json, SKILL.md and the supporting
+        │            files, copied                        [NATIVE_CAPABILITY]
         │            (pre-setup fallback: --plugin-dir conformance probe)
         │
         └── MCP   → claude mcp add --scope user --transport stdio
@@ -138,10 +143,9 @@ wholesale on every call — deterministic, idempotent, never touching the
 Store package. An explicit envelope, even malformed, always wins; presence
 alone (not validity) decides the branch.
 
-Default-policy `skills/` entries are still whole-directory symlinks to the
-Store (byte-preserving). A Skill with a non-default `invoke:` policy
-(ADR-030) is materialized as one real, UZE-owned SKILL.md per Skill
-instead: it carries the canonical `name`/`description` (description
+Every `skills/` entry is a real directory mirrored from the Store; Claude's
+cache copy drops linked files. A Skill with a non-default `invoke:` policy
+(ADR-030) gets one UZE-owned SKILL.md: it carries the canonical `name`/`description` (description
 re-quoted as a safely escaped YAML double-quoted scalar — never
 raw-interpolated, so no description content can forge or duplicate a
 frontmatter key) plus the injected markers for whichever half of the
@@ -183,7 +187,7 @@ long-term is explicitly undecided (ADR-014 Consequences).
 |---|---|---|---|
 | `IntegrationOwned{kind:"claude-plugin"}` (explicit) | `inspect_claude_plugin` — `claude plugin marketplace list --json` + `plugin list --json`, checks marketplace root + installed + enabled | `claude plugin uninstall <selector>` | Yes — MATCHED only when marketplace root, installed, and enabled all agree |
 | `IntegrationOwned{kind:"claude-plugin-generated"}` (generated) | Same `inspect_claude_plugin` (marketplace-root-agnostic) | Same `ClaudeMarketplace::remove_plugin`, plus `shared::marketplace::remove_generated_package` (Derived Artifact, safe to delete unconditionally) | Yes — identical inspection path to explicit |
-| `SymlinkReference` (Skill shim) | standard receipt inspection (`ManagedArtifact::inspect_standard`) | standard detach + `cleanup_unused_wrapper` GC if the shim is now unreferenced | Yes |
+| `GeneratedTree` (Skill directory) | standard: the directory's `tree_sha256` against the receipt | standard detach, only while it still matches | Yes: an edited directory is Drifted and left in place |
 | `VendorConfigEntry` (MCP) | `inspect_claude_mcp` — read-only `~/.claude.json` parse, exact command+args match | `claude mcp remove <name>` | Yes — Blocked (not silently accepted) if the receipt requests cwd/env/enabled state this integration can't verify |
 
 One thing worth a second look, not necessarily a bug: `inspect_claude_plugin`

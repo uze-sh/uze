@@ -199,14 +199,14 @@ fn assert_native_skill_and_mcp(integration: &dyn IntegrationPort) {
 }
 
 /// OpenCode V2 is standard (`opencode`, legacy `opencode2` alias kept):
-/// Skills are consumed natively from the shared `~/.agents/skills` root
+/// Skills are consumed natively from its own `~/.config/opencode/skills`
 /// (native), and MCP is native as a `mcp.servers` entry UZE writes into
 /// `opencode.json` directly.
 fn assert_opencode_native_skill_adapted_mcp(integration: &dyn IntegrationPort) {
     let capabilities = integration.capabilities();
     assert!(
         capabilities.native.contains(&CapabilityKind::AgentSkill),
-        "opencode: AgentSkill must be declared native (shared-root discovery)"
+        "opencode: AgentSkill must be declared native (its own skills root)"
     );
     assert!(
         capabilities.native.contains(&CapabilityKind::Mcp),

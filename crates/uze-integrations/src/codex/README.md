@@ -1,11 +1,14 @@
 # Codex Integration
 
 Peer integration for OpenAI Codex CLI. Transparent attachment: Agent Skills
-via a persistent user-scope symlink (`~/.agents/skills/<name>`), MCP via
+as a directory of their own in Codex's documented user root
+(`~/.agents/skills/<label>`), MCP via
 `codex mcp add` (global only — no `--scope` flag exists), and a native
 plugin path — either the package's own explicit `.codex-plugin/plugin.json`
 via a UZE-generated local marketplace catalogue
-(`~/.agents/plugins/marketplace.json` under the Store, referenced by
+(`.agents/plugins/marketplace.json` under
+`$UZE_HOME/runtime/attachments/codex/explicit/`, beside a real-file mirror of
+each such package, referenced by
 `codex plugin marketplace add`), or, absent one, a UZE-synthesized envelope
 in a second, UZE-owned marketplace (Generated Native Package, ADR-013).
 
@@ -15,7 +18,7 @@ in a second, UZE-owned marketplace (Generated Native Package, ADR-013).
 |---|---|---|---|
 | Native Package (explicit) | Supported, exact coverage | `.codex-plugin/plugin.json` → generated catalogue → `codex plugin add` | CODE_FACT + TESTED (11 tests) + EMPIRICAL (config/install only) |
 | Native Package (generated) | Supported, exact coverage | Second `uze-store` catalogue (own root, path-containment-safe) → `codex plugin add` (ADR-013) | CODE_FACT + TESTED (15 tests) + EMPIRICAL — real-binary dogfood (Codex 0.148.0): attach → inspect (Matched) → detach (Missing) → reinstall (Matched) |
-| Skills | Supported | Persistent symlink, `~/.agents/skills/<name>` | EMPIRICAL (behavioral, ADR-006) |
+| Skills | Supported | A directory in `~/.agents/skills/<label>`: rendered SKILL.md, the policy sidecar when it applies, supporting files copied (Codex does not list a linked `SKILL.md`) | EMPIRICAL (behavioral, ADR-006; Lab `experiments/codex/study_mechanics`) |
 | Skill invocation policy | Supported (model=false) / Degraded (user=false) | Generated wrapper + `agents/openai.yaml` → `policy.allow_implicit_invocation: false`; no way to hide a skill from explicit `$skill` invocation — stated honestly (ADR-030) | DOCUMENTED (Codex Build skills docs) + EMPIRICAL (verified against codex-cli 0.149.0 via `codex debug prompt-input`) |
 | MCP | Supported (config), unproven behaviorally | `codex mcp add` → `~/.codex/config.toml` | EMPIRICAL (configuration), UNKNOWN (discovery), gap (behavioral) |
 | Context (AGENTS.md) | Native, out of this crate's scope | Codex reads `AGENTS.md` directly | DOCUMENTED |
@@ -27,9 +30,13 @@ in a second, UZE-owned marketplace (Generated Native Package, ADR-013).
 
 ```
 Store package (.codex-plugin/plugin.json present)
-        │
+        │  mirrored as real files, replaced whole
         ▼
-store/.agents/plugins/marketplace.json   (derived catalogue, rebuildable)
+runtime/attachments/codex/explicit/plugins/<market>/<name>/
+runtime/attachments/codex/explicit/.agents/plugins/marketplace.json
+        │  (derived, rebuildable; never in the Store: Codex refuses a second
+        │   `marketplace add` of `uze-local` from another root, so an
+        │   earlier Store-rooted one is removed and its plugins reinstalled)
         │
         ▼
 codex plugin marketplace add <root>   (once, if not already registered)
@@ -76,7 +83,7 @@ one IntegrationOwned{kind:"marketplace-plugin-generated", detail.origin:"generat
 ```
 
 Without either kind of envelope, Skills and MCP decompose individually
-through the same symlink/`codex mcp add` mechanisms described above.
+through the same Skill directory / `codex mcp add` mechanisms described above.
 
 ## Native package
 
@@ -93,7 +100,7 @@ package root (`..`, an absolute path), or point at a file that can't be
 read/parsed — each case degrades to "no coverage for that field" rather than
 erroring; the package still installs natively, just with a smaller (possibly
 empty) `provided_resource_identities`. Undeclared resources fall through to
-individual attachment (Skill symlink / `codex mcp add`), never silently
+individual attachment (Skill directory / `codex mcp add`), never silently
 dropped. `attach_package` then ensures the derived catalogue is registered as
 a Codex marketplace and runs `codex plugin add <id>@uze-local`, idempotent
 via a pre-check against `codex plugin list --json`.
@@ -121,7 +128,7 @@ does nothing with it, and nothing here anticipates that it should.
 
 | Artifact | Receipt kind | Inspect | Detach |
 |---|---|---|---|
-| Skill symlink | `SymlinkReference` (standard) | Standard | Standard |
+| Skill directory | `GeneratedTree` (standard) | `tree_sha256` against the receipt | Standard, only when it still matches |
 | MCP entry | `VendorConfigEntry` | `codex mcp get --json`; absence = exit 1 + stable stderr string, any other non-zero stays `Blocked` | `codex mcp remove` |
 | Native plugin (explicit) | `IntegrationOwned{kind:"marketplace-plugin"}` | `codex plugin marketplace list --json` + `codex plugin list --json`, checked before every destructive call (ADR-009) | `codex plugin remove` |
 | Native plugin (generated) | `IntegrationOwned{kind:"marketplace-plugin-generated"}` | Same `inspect_codex_plugin` (marketplace-root-agnostic) | Same `CodexMarketplace::remove_plugin`, plus `shared::marketplace::remove_generated_package` (Derived Artifact) |
