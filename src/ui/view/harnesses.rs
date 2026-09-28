@@ -303,17 +303,6 @@ fn render_harness_drawer(
                 theme::fg(Token::TextTertiary),
             ),
         ]),
-        Line::from(vec![
-            label_span("Delivery", theme::fg(Token::TextMuted)),
-            Span::styled(
-                harness
-                    .strategy
-                    .as_deref()
-                    .map(friendly_delivery)
-                    .unwrap_or("Not configured yet"),
-                theme::fg(Token::TextTertiary),
-            ),
-        ]),
     ];
     if let Some(provisioning) = &harness.provisioning {
         lines.push(Line::from(vec![
@@ -342,21 +331,6 @@ fn render_harness_drawer(
 /// so every row's value starts at the same x position.
 fn label_span(label: &str, style: Style) -> Span<'static> {
     Span::styled(format!("{label:<width$}", width = LABEL_COL), style)
-}
-
-/// `harness.strategy` carries the internal identifier `install()` recorded
-/// (see each `IntegrationPort::install` impl) — meant for state/receipts,
-/// not a reader. Every identifier currently in use gets a plain-language
-/// translation here; an integration adding a new one shows up as the raw
-/// identifier rather than silently, so a gap is obvious instead of hidden.
-fn friendly_delivery(strategy: &str) -> &str {
-    match strategy {
-        "managed-user-scope-skills-dir" => "Skills folder (UZE-managed)",
-        "native-user-scope-skills-plus-managed-mcp-config" => {
-            "Native skills + MCP config (UZE-managed)"
-        }
-        other => other,
-    }
 }
 
 /// One row per capability UZE knows about, in the order a reader would care
