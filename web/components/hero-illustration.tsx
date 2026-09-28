@@ -73,21 +73,25 @@ const TRANSCRIPT: [string, string][] = [
   ['✓ committed 3f2a91c', 'done'],
 ];
 
-// The script's clock, in seconds of one loop.
-const T_TYPE = 1.0;
-const T_ROW = 1.2;
+// The script's clock, in seconds of one loop. Two commands, the way a reader
+// would run them: the marketplace is added, then the plugin is installed
+// from it.
+const T_MARKET_TYPED = 1.0;
+const T_PLUGIN = 1.8;
+const T_PLUGIN_TYPED = 2.4;
+const T_ROW = 2.6;
 const ROW_GAP = 0.26;
-const T_HEX = 2.7;
-const T_DLV = 2.85;
-const T_DLV_END = 3.5;
-const T_RUN = 3.9;
-const T_EXT = 5.0;
+const T_HEX = 4.1;
+const T_DLV = 4.25;
+const T_DLV_END = 4.9;
+const T_RUN = 5.3;
+const T_EXT = 6.4;
 const EXT_GAP = 2.8;
-const T_DONE = 13.6;
-const LOOP = 17.0;
+const T_DONE = 15.0;
+const LOOP = 18.4;
 // What a reader who asked for no motion sees: delivered everywhere, the
 // skill tab open.
-const STILL_AT = 5.8;
+const STILL_AT = 7.2;
 
 type Point = [number, number];
 
@@ -201,7 +205,7 @@ const STACK_BELOW = 700;
 // on the page, and at its own size it sat small in a 1440px window.
 const MAX_WIDE_SCALE = 1.08;
 
-function frame(seconds: number, plugin: string, { rowRoute, harnessRoute }: Layout) {
+function frame(seconds: number, plugin: string, source: string, { rowRoute, harnessRoute }: Layout) {
   const tt = seconds % LOOP;
   const reset = tt > LOOP - 0.3;
   const dots: Point[] = [];
@@ -247,20 +251,28 @@ function frame(seconds: number, plugin: string, { rowRoute, harnessRoute }: Layo
   const extIn = extIndex >= 0 ? ease(clamp(sinceExt / 0.25)) : 0;
   const extOut = extIndex === 2 ? 1 - ease(clamp((sinceExt - (EXT_GAP - 0.25)) / 0.25)) : 1;
 
-  const typed = `uze ${plugin}`;
+  const typing = (text: string, from: number, to: number) =>
+    text.slice(0, Math.floor(clamp((tt - from) / (to - from)) * text.length));
+  const addMarket = `uze market add ${source}`;
   let command: string;
   let okOpacity: number;
   if (!reset && tt >= T_DONE) {
     command = `uze inspect ${plugin.split('@')[0]}`;
     okOpacity = clamp((tt - T_DONE) / 0.3);
+  } else if (tt < T_PLUGIN) {
+    command = typing(addMarket, 0, T_MARKET_TYPED);
+    okOpacity = clamp((tt - T_MARKET_TYPED - 0.1) / 0.2);
   } else {
-    command = typed.slice(0, Math.floor(clamp(tt / T_TYPE) * typed.length));
+    command = typing(`uze ${plugin}`, T_PLUGIN, T_PLUGIN_TYPED);
     okOpacity = delivered ? 1 : 0;
   }
 
   let status = 'one plugin, every agent';
   let statusColor = MUTED;
-  if (!reset && tt >= T_ROW && tt < T_HEX) {
+  if (!reset && tt >= T_MARKET_TYPED && tt < T_PLUGIN) {
+    status = `${source} added`;
+    statusColor = MUTED;
+  } else if (!reset && tt >= T_ROW && tt < T_HEX) {
     status = 'resolving';
     statusColor = MUTED;
   } else if (!reset && tt >= T_HEX && tt < T_DLV_END) {
@@ -374,7 +386,7 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
   const maxScale = layout === WIDE ? MAX_WIDE_SCALE : 1;
   const scale = Math.min(maxScale, columnWidth / layout.width);
   const seconds = useClock(wrapRef);
-  const f = frame(seconds, plugin, layout);
+  const f = frame(seconds, plugin, source, layout);
 
   return (
     <div
@@ -484,7 +496,7 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
               color: MUTED,
             }}
           >
-            <span>from {source}</span>
+            <span>agents.yaml</span>
             <span>agents.lock</span>
           </div>
         </div>
