@@ -19,7 +19,9 @@ use uze_core::{
 };
 
 use crate::shared::process::{VersionToken, detect_version};
-use crate::shared::provision::official_installer;
+use crate::shared::provision::{
+    found_outside_path, official_installer, platform_has_automated_route, unsupported_platform,
+};
 
 /// Resolves the OpenCode V2 executable. V2 is the standard channel
 /// (`opencode`); the legacy `opencode2` alias is still accepted for
@@ -77,10 +79,8 @@ pub(super) fn provision_opencode(
     detect: impl Fn() -> HarnessDetection,
     shims_dir: &Path,
 ) -> Result<ProvisioningResult> {
-    if !cfg!(unix) {
-        return Ok(ProvisioningResult::blocked(
-            "OpenCode automatic provisioning is currently supported on Unix and WSL only",
-        ));
+    if !platform_has_automated_route() {
+        return Ok(unsupported_platform("OpenCode", "https://opencode.ai/docs"));
     }
     let method = "official-install-script";
     let resolved = resolve_opencode_binary(shims_dir);
@@ -133,7 +133,9 @@ pub(super) fn provision_opencode(
             "installer finished but `opencode` could not be verified",
         ));
     }
-    Ok(ProvisioningResult::verified(action, method, verified))
+    let off_path = installed_outside_path(&documented_install_dirs(|key| std::env::var_os(key)))
+        .and_then(|executable| found_outside_path(&PROGRAMS, shims_dir, &executable));
+    Ok(ProvisioningResult::verified(action, method, verified).found_outside_path(off_path))
 }
 
 #[cfg(test)]

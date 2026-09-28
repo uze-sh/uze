@@ -55,7 +55,7 @@ use crate::shared::agent::{
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
-use crate::shared::provision::{official_installer, provision_cli};
+use crate::shared::provision::{OfficialRoute, official_installer, provision_cli};
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
 /// Claude Code peer integration. Its transparent-attachment strategy is a
@@ -259,14 +259,20 @@ impl IntegrationPort for ClaudeIntegration {
 
     fn provision(&self, runner: &dyn ProcessRunner) -> Result<ProvisioningResult> {
         let executable = self.provisioning_executable();
+        let route = OfficialRoute {
+            label: "Claude Code",
+            program: "claude",
+            install: official_installer("https://claude.ai/install.sh", "bash"),
+            update: ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
+            method: "official-native-installer",
+            manual_route: "https://code.claude.com/docs/en/installation",
+        };
         provision_cli(
             runner,
+            route,
             &executable,
-            "Claude Code",
+            &self.uze_home.shims_dir(),
             self.detect(),
-            official_installer("https://claude.ai/install.sh", "bash"),
-            ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
-            "official-native-installer",
             claude_version,
         )
     }

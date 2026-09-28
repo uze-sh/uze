@@ -92,7 +92,7 @@ use crate::shared::agent::{
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
 use crate::shared::process::real_executable;
-use crate::shared::provision::{official_installer, provision_cli};
+use crate::shared::provision::{OfficialRoute, official_installer, provision_cli};
 use generate::remove_generated_plugin_by_id;
 use mcp::attach_mcp_entry;
 use plugin::{
@@ -334,14 +334,20 @@ impl IntegrationPort for AntigravityIntegration {
         // post-install `--version` verification works even when the user's
         // current shell has not re-sourced its rc files yet.
         let executable = self.provisioning_executable();
+        let route = OfficialRoute {
+            label: "Antigravity CLI",
+            program: "agy",
+            install: official_installer(INSTALLER_URL, "bash"),
+            update: ProcessSpec::new(&executable, ["update"]).with_inherited_output(),
+            method: "official-native-installer",
+            manual_route: "https://antigravity.google/docs/cli/install/",
+        };
         provision_cli(
             runner,
+            route,
             &executable,
-            "Antigravity CLI",
+            &self.uze_home.shims_dir(),
             self.detect(),
-            official_installer(INSTALLER_URL, "bash"),
-            ProcessSpec::new(&executable, ["update"]).with_inherited_output(),
-            "official-native-installer",
             provision::detect_binary,
         )
     }

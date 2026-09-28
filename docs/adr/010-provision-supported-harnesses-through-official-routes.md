@@ -74,7 +74,13 @@ harness uninstall remain future work.
   automation route must follow the documented package-manager options rather
   than an invented script. [Install](https://opencode.ai/docs),
   [CLI](https://dev.opencode.ai/docs/cli/)
-- Gemini CLI documents npm/Homebrew installation and latest-stable update.
-  [Installation](https://geminicli.com/docs/get-started/installation/)
+- Antigravity CLI replaced Gemini CLI as the Google-family harness
+  (ADR-027). It documents a Unix installer, a PowerShell installer on
+  Windows, and `agy update`. [Install](https://antigravity.google/docs/cli/install/)
+- No Windows route is automated yet: none of the PowerShell commands has
+  been exercised by a Windows runner here, so on Windows `uze setup`
+  reports Blocked and names the vendor page above instead.
+- Harness removal is gated on ownership, not on this record: see the
+  "Harness removal" section of the source change's `design.md`.
 
 Source change: openspec/changes/provision-harnesses-through-official-sources/

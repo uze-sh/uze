@@ -2084,6 +2084,12 @@ fn run_setup(
                     pb.finish_and_clear();
                 }
                 println!("{}", summary);
+                if let Some(found) = &result.provisioning.located_outside_path {
+                    println!(
+                        "  ↳ found at {}, which this shell's PATH does not reach yet; open a new shell to run it by name",
+                        progress::accent(found.display().to_string())
+                    );
+                }
                 if let Some(shim) = &result.runtime_shim {
                     println!(
                         "  ↳ shim: {}",

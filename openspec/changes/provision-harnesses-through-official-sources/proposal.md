@@ -20,7 +20,8 @@ provisioning.
 - Retain `uze add <plugin>` as a non-provisioning path: it prepares and
   attaches to harnesses already detected, but never downloads or upgrades a
   harness implicitly.
-- Start with Claude Code, Codex, OpenCode, and Gemini CLI using documented
+- Start with Claude Code, Codex, OpenCode, and Antigravity CLI (which
+  replaced Gemini CLI as the Google-family harness, ADR-027) using documented
   official installation/update routes. An unavailable official route on a
   platform is reported clearly rather than replaced with an unofficial one.
 - Record only UZE-initiated provisioning provenance for future safe harness

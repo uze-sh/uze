@@ -316,6 +316,11 @@ pub struct ProvisioningRecord {
     pub action: ProvisionAction,
     pub status: ProvisionStatus,
     pub method: String,
+    /// The operating system the route ran on (`linux`, `macos`, ...): a
+    /// method label means a different command on each. Absent from a
+    /// record written before it was kept, which is the truth about it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     pub version: Option<String>,
     pub recorded_at_unix_secs: u64,
 }
@@ -348,6 +353,7 @@ pub fn record_provisioning(
             action: result.action,
             status: result.status,
             method: result.method.clone(),
+            platform: Some(std::env::consts::OS.to_owned()),
             version: result.detection.version.clone(),
             recorded_at_unix_secs,
         },
@@ -725,6 +731,21 @@ mod tests {
     }
 
     #[test]
+    fn a_provisioning_record_written_before_the_platform_was_kept_still_reads() {
+        let home = temp_home("provisioning-no-platform");
+        home.ensure_layout().unwrap();
+        fs::write(
+            home.provisioning_state_path(),
+            r#"{"harnesses":{"codex":{"action":"UPDATE","status":"VERIFIED","method":"official-native-installer","version":"1.0.0","recorded_at_unix_secs":1}}}"#,
+        )
+        .unwrap();
+        let record = provisioning(&home, "codex").unwrap().unwrap();
+        assert_eq!(record.status, ProvisionStatus::Verified);
+        assert!(record.platform.is_none());
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
     fn provisioning_state_is_secret_free_and_separate_from_attachment_ownership() {
         let home = temp_home("provisioning");
         let result = ProvisioningResult::verified(
@@ -739,9 +760,13 @@ mod tests {
         let record = provisioning(&home, "opencode").unwrap().unwrap();
         assert_eq!(record.action, ProvisionAction::Install);
         assert_eq!(record.version.as_deref(), Some("1.2.3"));
+        assert_eq!(record.method, "official-install-script");
+        assert_eq!(record.platform.as_deref(), Some(std::env::consts::OS));
         assert!(!home.state_dir().join("attachments.json").exists());
         let raw = fs::read_to_string(home.provisioning_state_path()).unwrap();
-        assert!(!raw.contains("command"));
+        for leaked in ["command", "curl", "http", "install.sh", "stdout", "stderr"] {
+            assert!(!raw.contains(leaked), "{leaked} reached the record: {raw}");
+        }
         fs::remove_dir_all(home.root()).unwrap();
     }
 }

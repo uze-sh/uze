@@ -499,6 +499,159 @@ fn setup_opencode_legacy_binary_uses_installer_not_stable_upgrade() {
     let _ = std::fs::remove_dir_all(fake_bin);
 }
 
+/// A plugin installed while no harness exists reaches Claude Code when a
+/// later `uze setup claude-code` finds one, as the one native package
+/// Claude is handed: no capability-level copy beside it, and nothing
+/// delivered twice by a second setup.
+#[test]
+#[cfg(unix)]
+fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
+    let home = temporary_home("cli-setup-after-add-home");
+    let uze_home = temporary_home("cli-setup-after-add-uze-home");
+    let fake_bin = fake_harness_bin_dir("cli-setup-after-add-bin");
+    let claude_receipts = || -> Vec<serde_json::Value> {
+        let ledger: serde_json::Value = std::fs::read(uze_home.join("state/attachments.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        ledger["receipts"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|receipt| {
+                receipt["integration"] == "claude-code"
+                    && receipt["package_id"] == "uze-agent-skill-conformance@test"
+            })
+            .collect()
+    };
+
+    let add = install_via_marketplace(&home, &uze_home, &package_fixture(), "/usr/bin:/bin");
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    assert!(
+        claude_receipts().is_empty(),
+        "no harness existed, so nothing was delivered"
+    );
+
+    let setup = || {
+        let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+            .env("UZE_HOME", &uze_home)
+            .env("HOME", &home)
+            .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+            .args(["setup", "claude-code"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    setup();
+    let delivered = claude_receipts();
+    assert_eq!(
+        delivered.len(),
+        1,
+        "one package-level delivery: {delivered:?}"
+    );
+    assert_eq!(
+        delivered[0]["artifact"]["INTEGRATION_OWNED"]["kind"], "claude-plugin-generated",
+        "{delivered:?}"
+    );
+    assert!(
+        delivered[0]["resource_identity"].is_null(),
+        "the package is delivered whole, not capability by capability: {delivered:?}"
+    );
+    let skills = std::fs::read_dir(home.join(".claude/skills"))
+        .unwrap()
+        .count();
+    assert_eq!(
+        skills, 0,
+        "no capability-level copy beside the native package"
+    );
+
+    setup();
+    assert_eq!(
+        claude_receipts(),
+        delivered,
+        "a second setup delivers nothing twice"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(uze_home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// A fresh OpenCode install lands where its official installer puts it,
+/// `~/.opencode/bin`, and only edits the shell's rc files: `uze setup
+/// opencode` verifies it there and says where it is, and that the shell it
+/// runs in does not reach it until a new one starts.
+#[test]
+#[cfg(unix)]
+fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = temporary_home("cli-setup-opencode-fresh-home");
+    let uze_home = temporary_home("cli-setup-opencode-fresh-uze-home");
+    let fake_bin = temporary_home("cli-setup-opencode-fresh-bin");
+    std::fs::create_dir_all(&fake_bin).unwrap();
+    let installed = home.join(".opencode/bin/opencode");
+    // Stands in for `sh -c "installer=$(curl ...) && ... | bash"`: it
+    // records the route it was handed and installs where the real one does.
+    let sh = fake_bin.join("sh");
+    std::fs::write(
+        &sh,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> \"{log}\"\nmkdir -p \"{dir}\"\nprintf '#!/bin/sh\\necho opencode v9.9.9\\n' > \"{bin}\"\nchmod 755 \"{bin}\"\n",
+            log = fake_bin.join("commands.log").display(),
+            dir = installed.parent().unwrap().display(),
+            bin = installed.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &uze_home)
+        .env("HOME", &home)
+        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .env_remove("OPENCODE_INSTALL_DIR")
+        .env_remove("XDG_BIN_DIR")
+        .args(["setup", "opencode"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let commands = std::fs::read_to_string(fake_bin.join("commands.log")).unwrap();
+    assert!(commands.contains("opencode.ai/v2/install"), "{commands}");
+    assert!(installed.is_file());
+    assert!(
+        stdout.contains("opencode: ready (install; version v9.9.9"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("found at {}", installed.display()))
+            && stdout.contains("open a new shell"),
+        "{stdout}"
+    );
+    assert!(
+        home.join(".agents/skills").is_dir(),
+        "prepared after verification"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(uze_home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
 /// Deterministic end-to-end: `uze setup` against fake, PATH-resolvable
 /// `claude`/`codex` executables (so no real harness install is required to
 /// run this test), then `uze add` alone attaching the shared fixture skill

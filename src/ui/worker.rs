@@ -491,17 +491,35 @@ fn set_up(harness: String, home: &UzeHome, sender: &Sender<WorkerResult>, model:
                 results
                     .into_iter()
                     .find(|r| r.integration == harness)
-                    .map(|r| {
-                        if r.configured {
-                            format!("{harness} ready")
-                        } else {
-                            format!("{harness} setup {:?}", r.provisioning.status)
-                        }
-                    })
+                    .map(|r| setup_outcome(&harness, &r))
                     .unwrap_or_else(|| format!("{harness} setup attempted"))
             })
         },
     );
+}
+
+/// What one `uze setup` did, in the words the CLI reports it with: the
+/// action taken, the version verified, where an executable off `PATH` was
+/// found, and why a harness that is not ready is not.
+fn setup_outcome(harness: &str, result: &uze_application::application::SetupResult) -> String {
+    if !result.configured {
+        let reason = result
+            .provisioning
+            .reason
+            .as_deref()
+            .unwrap_or("executable was not verified");
+        return format!("{harness} setup {:?}: {reason}", result.provisioning.status);
+    }
+    let action = format!("{:?}", result.provisioning.action).to_lowercase();
+    let version = result.detection.version.as_deref().unwrap_or("unknown");
+    let mut outcome = format!("{harness} ready ({action}; version {version})");
+    if let Some(found) = &result.provisioning.located_outside_path {
+        outcome.push_str(&format!(
+            "; found at {}, open a new shell to run it by name",
+            found.display()
+        ));
+    }
+    outcome
 }
 
 fn add_marketplace(
@@ -1706,6 +1724,46 @@ mod tests {
         assert_eq!(
             model.status,
             Status::Error("No browser to open file:///etc/passwd with".to_owned())
+        );
+    }
+
+    fn setup_result(
+        provisioning: uze_application::ProvisioningResult,
+    ) -> uze_application::application::SetupResult {
+        uze_application::application::SetupResult {
+            integration: "example".to_owned(),
+            detection: provisioning.detection.clone(),
+            configured: provisioning.status == uze_application::ProvisionStatus::Verified,
+            provisioning,
+            runtime_shim: None,
+            attach_error: None,
+            shim_error: None,
+        }
+    }
+
+    #[test]
+    fn a_setup_outcome_says_what_was_done_and_where_the_executable_is() {
+        let verified = uze_application::ProvisioningResult::verified(
+            uze_application::ProvisionAction::Install,
+            "official-test-route",
+            uze_application::HarnessDetection {
+                present: true,
+                version: Some("v1.2.3".to_owned()),
+            },
+        )
+        .found_outside_path(Some(PathBuf::from("/home/u/.example/bin/example")));
+        assert_eq!(
+            setup_outcome("example", &setup_result(verified)),
+            "example ready (install; version v1.2.3); found at \
+             /home/u/.example/bin/example, open a new shell to run it by name"
+        );
+
+        let blocked = uze_application::ProvisioningResult::blocked(
+            "install it by following https://example.invalid/install",
+        );
+        assert_eq!(
+            setup_outcome("example", &setup_result(blocked)),
+            "example setup Blocked: install it by following https://example.invalid/install"
         );
     }
 }

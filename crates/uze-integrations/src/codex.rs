@@ -51,7 +51,7 @@ use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::package_root::resolve_text;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
-use crate::shared::provision::{official_installer, provision_cli};
+use crate::shared::provision::{OfficialRoute, official_installer, provision_cli};
 use mcp::attach_mcp_entry;
 use plugin::CodexMarketplace;
 
@@ -223,17 +223,23 @@ impl IntegrationPort for CodexIntegration {
 
     fn provision(&self, runner: &dyn ProcessRunner) -> Result<ProvisioningResult> {
         let executable = self.provisioning_executable();
-        provision_cli(
-            runner,
-            &executable,
-            "Codex",
-            self.detect(),
-            official_installer("https://chatgpt.com/codex/install.sh", "sh"),
+        let route = OfficialRoute {
+            label: "Codex",
+            program: "codex",
+            install: official_installer("https://chatgpt.com/codex/install.sh", "sh"),
             // Real-CLI dogfood against codex-cli 0.148.0 found `--upgrade` is not
             // a recognized flag — `codex --help` lists `update` as a
             // subcommand instead.
-            ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
-            "official-native-installer",
+            update: ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
+            method: "official-native-installer",
+            manual_route: "https://github.com/openai/codex/blob/main/README.md",
+        };
+        provision_cli(
+            runner,
+            route,
+            &executable,
+            &self.uze_home.shims_dir(),
+            self.detect(),
             codex_version,
         )
     }

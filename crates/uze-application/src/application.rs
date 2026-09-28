@@ -352,6 +352,8 @@ impl UzeApplication {
 }
 
 #[cfg(test)]
+mod setup_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tracing_tests;
