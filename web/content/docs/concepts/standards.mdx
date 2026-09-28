@@ -26,18 +26,38 @@ different directory per agent. That gap is what uze fills.
 
 ## What uze adds
 
-The standards themselves name what they leave out: hooks, subagents and
-permissions. uze models a capability only when no standard covers it, and two
-qualify today:
+The standards above describe the parts of an agent's environment. None of them
+describes the environment itself: which parts a project uses, where they come
+from, and how to obtain the same ones again. uze proposes three files for that
+gap. Each is small, readable without uze, and answers a single question. They
+are offered as candidates for a shared convention, not as a private format.
 
-- **Agents** (`agents/<name>.md`): a Markdown agent definition, delivered to each
-  agent's native agent format.
-- **Hooks** (`hooks.json`): one hook file and a plain command contract, instead
-  of adopting one vendor's hook format.
+### `agents.yaml`: what a project declares
 
-And three files of its own, each for something no standard addresses:
+A project states its intent in one file at its root: the marketplaces it draws
+from, the plugins it takes from each, and how agent work in the repository is
+handled. A person writes it and tools read it. Unknown keys are rejected rather
+than ignored, since a misspelled key in a file a person wrote should not be
+read as a decision.
 
-- **`agents.yaml` and `agents.lock`**: what a project declares, and exactly what
-  that resolved to, so `git clone && uze install` rebuilds the same environment.
-- **`marketplace.json`**: the list of plugins in a marketplace, under the name
-  the marketplace specification and the agents already use.
+### `agents.lock`: what the declaration resolved to
+
+The lock records what resolving the declaration produced, and nothing more:
+the commit each marketplace was read at, and a SHA-256 digest of the bytes each
+plugin delivered. It carries no intent, so it can always be regenerated and
+never needs repair. The division is the one language package managers draw
+between a manifest and a lockfile, applied to the tools an agent works with.
+Together the pair makes an environment reproducible: `git clone && uze install`
+yields the same plugins, at the same bytes, on any machine.
+
+### `marketplace.json`: what a source offers
+
+A marketplace is a Git repository with an index at its root, naming each plugin
+and the directory it lives in. The index keeps the name and the fields (`name`,
+`owner`, `plugins`) that agent marketplaces already use, so an existing
+marketplace needs no second index to be read.
+
+The complete schemas are in [agents.yaml & agents.lock](/docs/reference/project-files)
+and [Plugin format](/docs/reference/plugin-format#marketplacejson). They are
+written for adoption: a tool other than uze reading these files is the outcome
+they aim at.
