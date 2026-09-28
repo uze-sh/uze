@@ -477,3 +477,12 @@ def run(cfg, prov_ip):
         for kind in ("deny", "allow", "order"):
             with describe(kind):
                 phase_hooks(cfg, prov_ip, kind)
+    # Promoted from `experiments/claude/{session-start,parity}` (ADR-035).
+    # Imported here: both import this module for its container helpers.
+    from experiments.claude import parity
+    from experiments.session_start_probe import run as session_start
+
+    with describe("session-start"):
+        session_start(cfg, prov_ip)
+    with describe("parity"):
+        parity.run(cfg, prov_ip)

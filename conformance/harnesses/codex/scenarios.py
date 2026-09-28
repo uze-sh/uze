@@ -640,3 +640,9 @@ def run(cfg, prov_ip):
         for kind in ("deny", "allow", "order"):
             with describe(kind):
                 phase_hooks(cfg, prov_ip, kind)
+    # Promoted from `experiments/codex/session-start` (ADR-035); imported
+    # here because the probe imports this module for its container helper.
+    from experiments.session_start_probe import run as session_start
+
+    with describe("session-start"):
+        session_start(cfg, prov_ip)
