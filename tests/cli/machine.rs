@@ -670,7 +670,7 @@ fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
         "{stdout}"
     );
     assert!(
-        home.join(".agents/skills").is_dir(),
+        home.join(".config/opencode/skills").is_dir(),
         "prepared after verification"
     );
 
