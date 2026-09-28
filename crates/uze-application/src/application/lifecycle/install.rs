@@ -242,11 +242,8 @@ impl Plugins<'_> {
                     shortfalls: delivery
                         .shortfalls
                         .iter()
-                        .map(|one| CapabilityShortfallReport {
-                            capability: one.capability.clone(),
-                            route: one.route,
-                            evidence: one.evidence.clone(),
-                        })
+                        .cloned()
+                        .map(CapabilityShortfallReport::from)
                         .collect(),
                 },
             });
@@ -567,19 +564,5 @@ fn delivery_route(
             reason: format!("the package view could not be published: {error}"),
         };
     }
-    match &delivery.plan {
-        Some(_) if delivery.plan_set_aside => DeliveryRoute::CapabilityByCapability {
-            reason: "capabilities already delivered one by one could not be safely replaced by \
-                     the package"
-                .to_owned(),
-        },
-        Some(plan) => DeliveryRoute::Package {
-            envelope: plan.envelope,
-            route: plan.route,
-            evidence: plan.evidence.clone(),
-        },
-        None => DeliveryRoute::CapabilityByCapability {
-            reason: "the harness has no package-level delivery for this package".to_owned(),
-        },
-    }
+    super::effective::delivery_route_of(delivery.plan.as_ref(), delivery.plan_set_aside)
 }

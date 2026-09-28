@@ -11,9 +11,9 @@
 
 ## 2. Effective view
 
-- [ ] 2.1 `uze inspect <plugin> --harness <h>` builds plans without
+- [x] 2.1 `uze inspect <plugin> --harness <h>` builds plans without
   attaching; classify in `command_performance.rs`.
-- [ ] 2.2 Test: inspect and install report agree for a composed package on
+- [x] 2.2 Test: inspect and install report agree for a composed package on
   each integration (fake harnesses).
 
 ## 3. Failure is not success
@@ -32,10 +32,10 @@
 
 ## 5. Doctor against intent
 
-- [ ] 5.1 Doctor compares expected capabilities per harness with present and
+- [x] 5.1 Doctor compares expected capabilities per harness with present and
   readable ones; per-integration readability checks (Claude cache, label
   rule, OpenCode agent fields).
-- [ ] 5.2 Test: empty plugin cache and an unreadable agent are reported.
+- [x] 5.2 Test: empty plugin cache and an unreadable agent are reported.
 
 ## 6. Documentation reachable from the install
 

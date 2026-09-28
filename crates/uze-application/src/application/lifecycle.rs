@@ -2,6 +2,7 @@
 //! delivery to the detected harnesses.
 
 pub mod attach;
+pub mod effective;
 pub mod install;
 pub mod remove;
 pub mod update;

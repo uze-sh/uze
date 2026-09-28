@@ -1426,6 +1426,7 @@ mod tests {
                 plugins: Vec::new(),
                 harnesses: Vec::new(),
                 attachments: Vec::new(),
+                deliveries: Vec::new(),
                 ledger_error: None,
                 provisioning_state_error: None,
                 leftovers: Default::default(),

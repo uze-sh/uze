@@ -51,10 +51,16 @@ digest per package); provenance is shown, not compared.
 
 ### Readability checks belong to integrations
 
-`IntegrationPort` gains nothing new if the check is part of inspect: each
-integration's inspect already runs per receipt; it adds vendor-side facts it
-alone knows (Claude plugin cache contents for its selector, the harness name
-rule for a label, OpenCode's accepted agent fields). Core stays vendor-free.
+`IntegrationPort::unreadable(package, receipt, served)` answers, for a
+receipt that still inspects as matched, what the harness would not load of
+it; the default answers nothing. Each integration adds the vendor-side facts
+it alone knows: Claude Code, that the plugin its marketplace points at still
+exists and that the cached copy its record names carries every skill and
+agent, and that a user agent's frontmatter `name` is the label it is filed
+under; OpenCode, that an agent file has `mode: subagent`, a `provider/model`
+`model` and a map for `tools`. `doctor` compares the plan `inspect` computes
+with the receipts and their inspection, then asks this. Core stays
+vendor-free.
 
 ## Risks / Trade-offs
 

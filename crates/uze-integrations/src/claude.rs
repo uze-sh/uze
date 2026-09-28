@@ -26,8 +26,8 @@ use uze_core::{
     home::UzeHome,
     integration::{
         AttachmentInspection, AttachmentReceipt, AttachmentState, ContextDelivery,
-        HarnessDetection, IntegrationPort, ManagedArtifact, PublicationStatus, active_plugin_name,
-        default_exposure_name_candidates, qualified_exposure_name_candidates,
+        HarnessDetection, IntegrationPort, ManagedArtifact, PublicationStatus, UnreadableDelivery,
+        active_plugin_name, default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
     preference::{
         PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
@@ -50,7 +50,7 @@ pub use mcp::detach_mcp_entry;
 
 use crate::hooks::{HookEntry, HookTarget};
 use crate::shared::agent::{
-    MarkdownAgent, agent_file_plan, agent_label, markdown_agent, projection_route,
+    MarkdownAgent, agent_file_plan, agent_label, delivered_agent, markdown_agent, projection_route,
 };
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
@@ -365,6 +365,38 @@ impl IntegrationPort for ClaudeIntegration {
         })
     }
 
+    /// The plugin UZE handed Claude must still be there, in Claude's cache
+    /// as much as in UZE's marketplace; and a user agent is named by its
+    /// frontmatter `name`, which must be the label it is filed under.
+    fn unreadable(
+        &self,
+        package: &StoredPackage,
+        receipt: &AttachmentReceipt,
+        served: &[&Resource],
+    ) -> Vec<UnreadableDelivery> {
+        match &receipt.artifact {
+            ManagedArtifact::IntegrationOwned { kind, selector, .. } => plugin::plugin_unreadable(
+                &self.command_home,
+                &self.uze_home,
+                package,
+                kind,
+                selector,
+                served,
+            ),
+            ManagedArtifact::GeneratedFile { path, .. } => served
+                .iter()
+                .filter(|resource| resource.capability.kind == CapabilityKind::Agent)
+                .filter_map(|resource| {
+                    user_agent_unreadable(path).map(|reason| UnreadableDelivery {
+                        capability: resource.identity(),
+                        reason,
+                    })
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     fn attach_package(
         &self,
         package: &StoredPackage,
@@ -575,6 +607,27 @@ impl ClaudeIntegration {
             self.hooks_config_path(),
             "Claude Code reads `hooks` from its user settings file; UZE merges one group entry per canonical hook (matcher and timeout preserved) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps the exact entry receipt-owned. The generated settings entry follows the plugin `hooks/hooks.json` group form; SessionStart is Claude's own event, matched on the session's source.",
         )
+    }
+}
+
+/// Why Claude Code would not show the agent at `path` under the label it
+/// is filed under.
+fn user_agent_unreadable(path: &Path) -> Option<String> {
+    let document = match delivered_agent(path) {
+        Ok(document) => document,
+        Err(reason) => return Some(reason),
+    };
+    let label = path.file_stem()?.to_str()?;
+    match document.name.as_deref() {
+        None => Some(format!(
+            "{} has no `name`, which is what Claude Code names a user agent by",
+            path.display()
+        )),
+        Some(name) if name != label => Some(format!(
+            "Claude Code names this agent `{name}` after its frontmatter, not `{label}`, the \
+             label it is delivered under"
+        )),
+        Some(_) => None,
     }
 }
 

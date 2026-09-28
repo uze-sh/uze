@@ -121,9 +121,16 @@ enum Command {
         format: OutputFormat,
     },
     /// Inspect one installed package's delivery
+    ///
+    /// What each harness receives of it: the route, the name every
+    /// capability is exposed under, where it lands, and what it loses.
+    /// Computed from local state alone, attaching nothing.
     Inspect {
         #[arg(value_parser = typed_name)]
         plugin: String,
+        /// Only this harness, by the name `uze doctor` shows or its id
+        #[arg(long)]
+        harness: Option<String>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
@@ -1151,9 +1158,13 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                 }
             }
         }
-        Command::Inspect { plugin, format } => {
-            let report = app.plugins().inspect(&plugin)?;
-            emit(format, &report, render_inspection);
+        Command::Inspect {
+            plugin,
+            harness,
+            format,
+        } => {
+            let report = app.plugins().inspect_on(&plugin, harness.as_deref())?;
+            emit(format, &report, |report| render_inspection(report, verbose));
         }
         Command::Status {
             path,
@@ -3016,7 +3027,7 @@ fn render_undelivered(plugins: &[uze_application::application::PluginSummary]) -
     text
 }
 
-fn render_inspection(report: &PluginInspection) -> String {
+fn render_inspection(report: &PluginInspection, verbose: bool) -> String {
     let mut text = progress::report_title(&report.plugin.id, Some("Plugin inspection"));
     text.push('\n');
     text.push_str(&progress::report_section("Source"));
@@ -3033,25 +3044,7 @@ fn render_inspection(report: &PluginInspection) -> String {
     text.push('\n');
     text.push_str(&progress::report_section("Delivery"));
     for delivery in &report.deliveries {
-        let package = delivery
-            .package_plan
-            .as_ref()
-            .map_or("decomposed".to_owned(), |plan| format!("{:?}", plan.route));
-        text.push_str(&format!(
-            "\n{}\n  Package  {package}\n",
-            delivery.display_name
-        ));
-        for capability in &delivery.capabilities {
-            let status = if capability.provided_by_package {
-                "provided by package".to_owned()
-            } else {
-                capability
-                    .plan
-                    .as_ref()
-                    .map_or("not exposed".to_owned(), |plan| format!("{:?}", plan.route))
-            };
-            text.push_str(&format!("  {:?}  {status}\n", capability.kind));
-        }
+        text.push_str(&render_effective_delivery(delivery, verbose));
     }
     let state = &report.managed_state;
     text.push('\n');
@@ -3064,6 +3057,77 @@ fn render_inspection(report: &PluginInspection) -> String {
         text.push_str(&format!("  ledger blocked: {error}\n"));
     }
     text
+}
+
+/// One harness's effective view: the route the install report would name,
+/// then every capability with the name a session sees it under, its route
+/// and where it lands, and what a capability short of native loses.
+fn render_effective_delivery(
+    delivery: &uze_application::application::HarnessDelivery,
+    verbose: bool,
+) -> String {
+    use uze_application::CompatibilityRoute;
+    let mut out = String::new();
+    let (headline, why) = describe_route(&delivery.route);
+    let detected = if delivery.detected {
+        String::new()
+    } else {
+        format!("  {}", progress::label("(not detected)"))
+    };
+    out.push_str(&format!(
+        "\n{}  {headline}{detected}\n",
+        progress::title(&delivery.display_name)
+    ));
+    out.push_str(&format!("  {}\n", progress::label(format!("why: {why}"))));
+    for capability in &delivery.capabilities {
+        let kind = format!("{:?}", capability.kind);
+        let name = capability
+            .exposed_name
+            .as_deref()
+            .unwrap_or(capability.identity.as_str());
+        if capability.kind == uze_application::CapabilityKind::Instruction {
+            out.push_str(&format!(
+                "  {kind:<10}  {name}  {}\n",
+                progress::label("through the project context")
+            ));
+            continue;
+        }
+        if let Some(reason) = &capability.blocked {
+            out.push_str(&format!(
+                "  {kind:<10}  {name}  {}\n",
+                progress::warning_text(format!("blocked — {reason}"))
+            ));
+            continue;
+        }
+        let route = route_word(capability.route);
+        let route = if capability.route == CompatibilityRoute::Native {
+            progress::success_text(route)
+        } else {
+            progress::warning_text(route)
+        };
+        let carrier = if capability.provided_by_package {
+            " in the package"
+        } else {
+            ""
+        };
+        let location = capability
+            .location
+            .as_ref()
+            .map(|location| format!("  {}", progress::label(location.display().to_string())))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "  {kind:<10}  {name}  {route}{carrier}{location}\n"
+        ));
+        if capability.route != CompatibilityRoute::Native || verbose {
+            let evidence = if verbose {
+                capability.evidence.as_str()
+            } else {
+                leading_sentence(&capability.evidence)
+            };
+            out.push_str(&format!("              {}\n", progress::label(evidence)));
+        }
+    }
+    out
 }
 
 /// Compact per-harness report for an install/add: one line per harness with
@@ -3904,6 +3968,7 @@ fn render_doctor(report: &DoctorReport) -> String {
         }
     }
     text.push('\n');
+    text.push_str(&render_delivery_health(report));
     text.push_str(&progress::report_section("Attachments"));
     for attachment in &report.attachments {
         let state = &attachment.state;
@@ -3984,6 +4049,58 @@ fn render_doctor(report: &DoctorReport) -> String {
         "\n{}\n",
         progress::label("Documentation: https://uze.sh/docs")
     ));
+    text
+}
+
+/// Each package's delivery against its plan, per detected harness: how
+/// many expected capabilities are there and readable, and each one that is
+/// not with why. Absent when nothing was delivered to a detected harness.
+fn render_delivery_health(report: &DoctorReport) -> String {
+    let checked: Vec<_> = report
+        .deliveries
+        .iter()
+        .filter(|package| !package.harnesses.is_empty())
+        .collect();
+    if checked.is_empty() {
+        return String::new();
+    }
+    let mut text = progress::report_section("Delivery");
+    for package in checked {
+        text.push_str(&format!("  {}\n", package.plugin));
+        for harness in &package.harnesses {
+            let count = format!("{} of {} present", harness.present, harness.expected);
+            let count = if harness.healthy() {
+                progress::success_text(count)
+            } else {
+                progress::warning_text(count)
+            };
+            text.push_str(&format!(
+                "    {}  {count}\n",
+                progress::title(&harness.display_name)
+            ));
+            // A package entry that fails fails every capability it carries
+            // for one reason: said once, naming them all.
+            for group in harness
+                .findings
+                .chunk_by(|left, right| left.kind == right.kind && left.detail == right.detail)
+            {
+                let names: Vec<&str> = group
+                    .iter()
+                    .map(|finding| finding.capability.as_str())
+                    .collect();
+                let kind = format!("{:?}", group[0].kind).to_lowercase();
+                text.push_str(&format!(
+                    "      {}\n",
+                    progress::warning_text(format!(
+                        "{} {kind} — {}",
+                        names.join(", "),
+                        group[0].detail
+                    ))
+                ));
+            }
+        }
+    }
+    text.push('\n');
     text
 }
 

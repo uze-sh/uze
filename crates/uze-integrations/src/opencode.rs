@@ -30,7 +30,7 @@ use uze_core::{
     hook::PortableHook,
     integration::{
         AttachmentInspection, AttachmentReceipt, AttachmentState, ContextDelivery,
-        HarnessDetection, IntegrationPort, ManagedArtifact, active_plugin_name,
+        HarnessDetection, IntegrationPort, ManagedArtifact, UnreadableDelivery, active_plugin_name,
         default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
     preference::{
@@ -50,8 +50,8 @@ mod skills;
 
 use crate::hooks::{self as hook_projection, HookTarget};
 use crate::shared::agent::{
-    MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried,
-    markdown_agent, projection_route,
+    MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, delivered_agent,
+    fields_not_carried, markdown_agent, projection_route,
 };
 use crate::shared::json_config;
 use crate::shared::mcp::McpEntry;
@@ -310,6 +310,30 @@ impl IntegrationPort for OpenCodeIntegration {
         Ok(attached.then_some(artifact))
     }
 
+    /// An agent file OpenCode cannot read is dropped without a word, so a
+    /// definition an earlier build wrote, or one edited since, is read the
+    /// way OpenCode reads it.
+    fn unreadable(
+        &self,
+        _package: &uze_core::store::StoredPackage,
+        receipt: &AttachmentReceipt,
+        served: &[&Resource],
+    ) -> Vec<UnreadableDelivery> {
+        let ManagedArtifact::GeneratedFile { path, .. } = &receipt.artifact else {
+            return Vec::new();
+        };
+        served
+            .iter()
+            .filter(|resource| resource.capability.kind == CapabilityKind::Agent)
+            .filter_map(|resource| {
+                opencode_agent_unreadable(path).map(|reason| UnreadableDelivery {
+                    capability: resource.identity(),
+                    reason,
+                })
+            })
+            .collect()
+    }
+
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
         if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
             return self.inspect_hook_bridge(receipt, path);
@@ -360,6 +384,34 @@ impl PreferencePort for OpenCodeIntegration {
     fn plan(&self, preferences: &Preferences) -> Result<PreferencePlan> {
         preferences::plan(&self.config_path, preferences)
     }
+}
+
+/// Why OpenCode would not offer the agent at `path` to the model: the
+/// fields it refuses (measured on 2.0.15 and 2.0.18) and the `mode` without
+/// which the agent is a primary one it never dispatches.
+fn opencode_agent_unreadable(path: &Path) -> Option<String> {
+    let document = match delivered_agent(path) {
+        Ok(document) => document,
+        Err(reason) => return Some(reason),
+    };
+    let field = |name: &str| document.frontmatter.get(name);
+    let mut problems = Vec::new();
+    if field("mode").and_then(|mode| mode.as_str()) != Some("subagent") {
+        problems
+            .push("`mode` is not `subagent`, so OpenCode never offers it to the model".to_owned());
+    }
+    if let Some(model) = field("model")
+        && model.as_str().is_none_or(|model| !model.contains('/'))
+    {
+        problems.push(
+            "`model` is not the `provider/model` form OpenCode reads, so it drops the agent"
+                .to_owned(),
+        );
+    }
+    if field("tools").is_some_and(|tools| !tools.is_mapping()) {
+        problems.push("`tools` is not a map, so OpenCode drops the agent".to_owned());
+    }
+    (!problems.is_empty()).then(|| format!("{}: {}", path.display(), problems.join("; ")))
 }
 
 /// OpenCode's agent file: named after the file, so no `name`; `mode:

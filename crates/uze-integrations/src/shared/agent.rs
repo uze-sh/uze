@@ -101,3 +101,11 @@ pub(crate) fn markdown_agent(label: &str, resource: &Resource, shape: &MarkdownA
     let name = shape.name_in_frontmatter.then_some(label);
     document.render(name, shape.set, shape.keep, &body)
 }
+
+/// The definition a harness reads at `path`, or why it reads none.
+pub(crate) fn delivered_agent(path: &Path) -> Result<AgentDocument, String> {
+    let bytes = std::fs::read(path)
+        .map_err(|error| format!("{} cannot be read: {error}", path.display()))?;
+    AgentDocument::parse(&bytes)
+        .ok_or_else(|| format!("the frontmatter of {} does not parse", path.display()))
+}

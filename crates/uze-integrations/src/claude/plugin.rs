@@ -14,7 +14,7 @@ use std::{
 use uze_core::{
     Result,
     capability::{CapabilityKind, Resource},
-    integration::{AttachmentInspection, AttachmentState},
+    integration::{AttachmentInspection, AttachmentState, UnreadableDelivery},
     skill::SkillInvocationPolicy,
     store::StoredPackage,
 };
@@ -186,6 +186,116 @@ impl MarketplaceDialect for ClaudeMarketplace {
             &format!("claude plugin marketplace remove {name}"),
             &["plugin", "marketplace", "remove", name],
         )
+    }
+}
+
+/// What Claude would not load of a plugin UZE delivered and its receipt
+/// still matches: the plugin the marketplace points at gone from where UZE
+/// wrote it, or Claude's cached copy (the `installPath` its record names,
+/// which is what a session actually reads) missing a skill or an agent the
+/// package carries. A hollow cache is what an install that raced Claude's
+/// copy, or a copy made before the files existed, leaves behind.
+pub(super) fn plugin_unreadable(
+    command_home: &Path,
+    uze_home: &uze_core::home::UzeHome,
+    package: &StoredPackage,
+    kind: &str,
+    selector: &str,
+    served: &[&Resource],
+) -> Vec<UnreadableDelivery> {
+    let every = |reason: String| {
+        served
+            .iter()
+            .map(|resource| UnreadableDelivery {
+                capability: resource.identity(),
+                reason: reason.clone(),
+            })
+            .collect::<Vec<_>>()
+    };
+    let source = match crate::shared::marketplace::receipt_origin::<ClaudeMarketplace>(kind) {
+        Some(Origin::Explicit) => package.root.clone(),
+        Some(Origin::Generated) => crate::shared::marketplace::generated_package_dir::<
+            ClaudeMarketplace,
+        >(uze_home, package.id.as_str()),
+        None => return Vec::new(),
+    };
+    if !source.join(".claude-plugin/plugin.json").is_file() {
+        return every(format!(
+            "the plugin Claude's marketplace points at is gone from {}",
+            source.display()
+        ));
+    }
+    let Some(install_path) = recorded_install_path(command_home, selector) else {
+        return Vec::new();
+    };
+    if !install_path.is_dir() {
+        return every(format!(
+            "Claude's cached copy of the plugin at {} does not exist",
+            install_path.display()
+        ));
+    }
+    let mut files = Vec::new();
+    collect_files(&install_path, 0, &mut files);
+    served
+        .iter()
+        .filter_map(|resource| {
+            let found = match resource.capability.kind {
+                CapabilityKind::AgentSkill => {
+                    let skill = resource.capability.path.parent()?.file_name()?;
+                    files.iter().any(|file| {
+                        file.file_name() == Some(OsStr::new("SKILL.md"))
+                            && file.parent().and_then(Path::file_name) == Some(skill)
+                    })
+                }
+                CapabilityKind::Agent => {
+                    let agent = resource.capability.path.file_name()?;
+                    files.iter().any(|file| {
+                        file.file_name() == Some(agent)
+                            && file.components().any(|part| part.as_os_str() == "agents")
+                    })
+                }
+                _ => return None,
+            };
+            (!found).then(|| UnreadableDelivery {
+                capability: resource.identity(),
+                reason: format!(
+                    "not in Claude's cached copy of the plugin at {}",
+                    install_path.display()
+                ),
+            })
+        })
+        .collect()
+}
+
+/// Where Claude's record says its user-scope copy of `selector` lives.
+fn recorded_install_path(home: &Path, selector: &str) -> Option<PathBuf> {
+    let installed = recorded(home, "installed_plugins.json")?;
+    installed
+        .get("plugins")?
+        .get(selector)?
+        .as_array()?
+        .iter()
+        .find(|install| install.get("scope").and_then(serde_json::Value::as_str) == Some("user"))?
+        .get("installPath")?
+        .as_str()
+        .map(PathBuf::from)
+}
+
+/// Every file under `dir`, to a depth no plugin layout reaches.
+fn collect_files(dir: &Path, depth: usize, files: &mut Vec<PathBuf>) {
+    const DEEPEST: usize = 8;
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if depth < DEEPEST {
+                collect_files(&path, depth + 1, files);
+            }
+        } else if path.is_file() {
+            files.push(path);
+        }
     }
 }
 

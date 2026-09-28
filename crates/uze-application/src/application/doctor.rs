@@ -25,19 +25,25 @@ impl Health<'_> {
     pub fn report(&self) -> DoctorReport {
         let maintenance = self.maintain();
         let mut report = self.doctor_shell();
-        let attachments = report
+        let (attachments, deliveries) = report
             .plugins
             .iter()
             .map(|plugin: &PluginSummary| {
                 let reconciliation = self.0.reconcile_cached_report(&plugin.id);
-                PackageManagedState {
+                let deliveries = PackageDeliveryHealth {
+                    plugin: plugin.id.clone(),
+                    harnesses: self.delivery_health(plugin, &reconciliation),
+                };
+                let attachments = PackageManagedState {
                     plugin: plugin.id.clone(),
                     state: managed_state(&reconciliation),
                     hooks: self.hook_health(&reconciliation),
-                }
+                };
+                (attachments, deliveries)
             })
-            .collect();
+            .unzip();
         report.attachments = attachments;
+        report.deliveries = deliveries;
         report.maintenance = maintenance;
         report
     }
@@ -106,6 +112,46 @@ impl Health<'_> {
         }
         rows.sort_by(|left, right| (&left.hook, &left.harness).cmp(&(&right.hook, &right.harness)));
         rows
+    }
+
+    /// Every detected harness a package was delivered to, its planned
+    /// capabilities compared with the receipts that record them, their
+    /// inspection, and what the integration knows the harness would not
+    /// read. A harness the package is recorded as undelivered to is left
+    /// to that record, which already says so.
+    fn delivery_health(
+        &self,
+        plugin: &PluginSummary,
+        reconciliation: &ReconciliationReport,
+    ) -> Vec<HarnessDeliveryHealth> {
+        let Ok(package) = self.0.package_by_name(&plugin.id) else {
+            return Vec::new();
+        };
+        let Ok(resources) = uze_core::engine::package_resources(&package) else {
+            return Vec::new();
+        };
+        let resources: Vec<_> = resources.iter().collect();
+        self.0
+            .integrations
+            .iter()
+            .map(|integration| integration.as_ref())
+            .filter(|integration| self.0.detect_cached(*integration).present)
+            .filter(|integration| {
+                !plugin
+                    .undelivered
+                    .iter()
+                    .any(|undelivered| undelivered.integration == integration.id())
+            })
+            .map(|integration| {
+                let planned = self.0.plan_delivery_to(&package, &resources, integration);
+                let held: Vec<_> = reconciliation
+                    .receipts
+                    .iter()
+                    .filter(|entry| entry.receipt.integration == integration.id())
+                    .collect();
+                check_delivery(&package, &resources, integration, &planned, &held)
+            })
+            .collect()
     }
 
     /// Everything [`report`](Self::report) says except per-receipt
@@ -185,6 +231,7 @@ impl Health<'_> {
             plugins,
             harnesses,
             attachments: Vec::new(),
+            deliveries: Vec::new(),
             ledger_error,
             provisioning_state_error,
             leftovers,
@@ -847,5 +894,150 @@ impl Health<'_> {
             })
             .collect();
         uze_core::leftovers::dangling_references(&self.0.home, &roots, &claimed)
+    }
+}
+
+/// One harness's expected capabilities against what it holds.
+fn check_delivery(
+    package: &StoredPackage,
+    resources: &[&uze_core::capability::Resource],
+    integration: &dyn IntegrationPort,
+    planned: &super::lifecycle::effective::PlannedDelivery,
+    held: &[&uze_core::reconciliation::ReconciledReceipt],
+) -> HarnessDeliveryHealth {
+    let expected: Vec<&CapabilityDelivery> = planned.expected().collect();
+    let name_of = |capability: &CapabilityDelivery| {
+        capability
+            .exposed_name
+            .clone()
+            .unwrap_or_else(|| capability.identity.clone())
+    };
+    let resource_of = |identity: &str| {
+        resources
+            .iter()
+            .copied()
+            .find(|resource| resource.identity() == identity)
+    };
+    let mut findings = Vec::new();
+    let mut failing = std::collections::BTreeSet::new();
+    let unreadable = |entry: &uze_core::reconciliation::ReconciledReceipt,
+                      served: &[&CapabilityDelivery],
+                      findings: &mut Vec<DeliveryFinding>,
+                      failing: &mut std::collections::BTreeSet<String>| {
+        let served_resources: Vec<_> = served
+            .iter()
+            .filter_map(|capability| resource_of(&capability.identity))
+            .collect();
+        for one in integration.unreadable(package, &entry.receipt, &served_resources) {
+            let capability = served
+                .iter()
+                .find(|capability| capability.identity == one.capability)
+                .map_or_else(|| one.capability.clone(), |capability| name_of(capability));
+            failing.insert(one.capability);
+            findings.push(DeliveryFinding {
+                capability,
+                kind: DeliveryFindingKind::Unreadable,
+                detail: one.reason,
+            });
+        }
+    };
+    let inspected = |entry: &uze_core::reconciliation::ReconciledReceipt| {
+        let kind = match entry.inspection.state {
+            AttachmentState::Matched => return None,
+            AttachmentState::Missing => DeliveryFindingKind::Missing,
+            _ => DeliveryFindingKind::Unhealthy,
+        };
+        Some((
+            kind,
+            format!(
+                "{:?} at {}: {}",
+                entry.inspection.state,
+                entry.receipt.artifact.location().display(),
+                entry.inspection.reason
+            ),
+        ))
+    };
+
+    let packaged: Vec<&CapabilityDelivery> = expected
+        .iter()
+        .copied()
+        .filter(|capability| capability.provided_by_package)
+        .collect();
+    if !packaged.is_empty() {
+        let entry = held
+            .iter()
+            .copied()
+            .find(|entry| entry.receipt.resource_identity.is_none());
+        let problem = match entry {
+            None => Some((
+                DeliveryFindingKind::Missing,
+                "no delivery of the package is recorded for this harness".to_owned(),
+            )),
+            Some(entry) => inspected(entry),
+        };
+        match (problem, entry) {
+            (Some((kind, detail)), _) => {
+                for capability in &packaged {
+                    failing.insert(capability.identity.clone());
+                    findings.push(DeliveryFinding {
+                        capability: name_of(capability),
+                        kind,
+                        detail: detail.clone(),
+                    });
+                }
+            }
+            (None, Some(entry)) => unreadable(entry, &packaged, &mut findings, &mut failing),
+            (None, None) => {}
+        }
+    }
+    for capability in expected
+        .iter()
+        .copied()
+        .filter(|capability| !capability.provided_by_package)
+    {
+        let Some(entry) = held.iter().copied().find(|entry| {
+            entry.receipt.resource_identity.as_deref() == Some(capability.identity.as_str())
+        }) else {
+            failing.insert(capability.identity.clone());
+            findings.push(DeliveryFinding {
+                capability: name_of(capability),
+                kind: DeliveryFindingKind::Missing,
+                detail: "no delivery of it is recorded for this harness".to_owned(),
+            });
+            continue;
+        };
+        if let (Some(wanted), Some(found)) = (
+            capability.exposed_name.as_deref(),
+            entry.receipt.artifact.exposure_name(),
+        ) && wanted != found
+        {
+            failing.insert(capability.identity.clone());
+            findings.push(DeliveryFinding {
+                capability: wanted.to_owned(),
+                kind: DeliveryFindingKind::Renamed,
+                detail: format!("delivered as `{found}`"),
+            });
+        }
+        match inspected(entry) {
+            Some((kind, detail)) => {
+                failing.insert(capability.identity.clone());
+                findings.push(DeliveryFinding {
+                    capability: name_of(capability),
+                    kind,
+                    detail,
+                });
+            }
+            None => unreadable(entry, &[capability], &mut findings, &mut failing),
+        }
+    }
+    HarnessDeliveryHealth {
+        integration: integration.id().to_owned(),
+        display_name: integration.display_name().to_owned(),
+        expected: expected.len(),
+        present: expected
+            .iter()
+            .filter(|capability| !failing.contains(&capability.identity))
+            .count(),
+        findings,
     }
 }

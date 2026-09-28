@@ -1456,3 +1456,279 @@ fn a_project_install_one_harness_refuses_fails_and_names_it() {
     let _ = std::fs::remove_dir_all(home);
     let _ = std::fs::remove_dir_all(fake_bin);
 }
+
+/// A package with a skill and an agent whose frontmatter only Claude Code
+/// reads whole, so every route a harness can take shows up somewhere.
+#[cfg(unix)]
+fn composed_package(home: &std::path::Path) -> PathBuf {
+    use std::fs;
+
+    let package = home.join("crew");
+    fs::create_dir_all(package.join("agents")).unwrap();
+    fs::create_dir_all(package.join("skills/review")).unwrap();
+    fs::write(package.join("plugin.json"), r#"{"name": "crew"}"#).unwrap();
+    fs::write(
+        package.join("skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews a change.\n---\nReview it.\n",
+    )
+    .unwrap();
+    fs::write(
+        package.join("agents/reviewer.md"),
+        "---\nname: reviewer\ndescription: Reviews a change.\nmodel: haiku\ntools: Read, Grep\n---\nReview.\n",
+    )
+    .unwrap();
+    package
+}
+
+#[cfg(unix)]
+fn uze_at(home: &std::path::Path, path: &str, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", home.join(".uze"))
+        .env("HOME", home)
+        .env("PATH", path)
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+#[cfg(unix)]
+fn uze_json_at(home: &std::path::Path, path: &str, args: &[&str]) -> serde_json::Value {
+    let mut with_json = args.to_vec();
+    with_json.extend(["--format", "json"]);
+    let output = uze_at(home, path, &with_json);
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "{args:?} must answer in JSON ({error}): {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    })
+}
+
+/// `uze inspect --harness` is computed without attaching anything, and is
+/// only worth running before a release if it says what the install says:
+/// the same route and the same capabilities short of native, harness by
+/// harness.
+#[cfg(unix)]
+#[test]
+fn inspect_and_install_report_agree_on_every_harness() {
+    let home = temporary_home("cli-inspect-agrees");
+    let fake_bin = fake_harness_bin_dir("cli-inspect-agrees-bin");
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let package = composed_package(&home);
+
+    let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let installed: serde_json::Value = serde_json::from_slice(&add.stdout).unwrap();
+    let delivered = installed["deliveries"].as_array().expect("deliveries");
+    assert_eq!(delivered.len(), 4, "every harness is detected: {installed}");
+    let attachments = std::fs::read(home.join(".uze/state/attachments.json")).ok();
+
+    let inspected = uze_json_at(&home, &path, &["inspect", "crew"]);
+    for install in delivered {
+        let integration = install["integration"].as_str().unwrap();
+        let view = inspected["deliveries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|view| view["integration"] == integration)
+            .unwrap_or_else(|| panic!("inspect names {integration}: {inspected}"));
+        assert_eq!(view["detected"], true, "{view}");
+        assert_eq!(view["route"], install["route"], "{integration} route");
+        assert_eq!(
+            view["shortfalls"], install["shortfalls"],
+            "{integration} shortfalls"
+        );
+
+        let one = uze_json_at(&home, &path, &["inspect", "crew", "--harness", integration]);
+        let only = one["deliveries"].as_array().unwrap();
+        assert_eq!(only.len(), 1, "{one}");
+        assert_eq!(only[0], *view, "narrowed to {integration}");
+        let text = uze_at(&home, &path, &["inspect", "crew", "--harness", integration]);
+        assert!(text.status.success());
+        let text = String::from_utf8_lossy(&text.stdout);
+        assert!(
+            text.contains("crew:review") && text.contains("crew:reviewer"),
+            "{integration} names each capability as a session sees it: {text}"
+        );
+    }
+    let opencode = inspected["deliveries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|view| view["integration"] == "opencode")
+        .unwrap();
+    assert!(
+        opencode["shortfalls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|one| one["capability"] == "crew:reviewer" && one["route"] == "DEGRADED"),
+        "the fields OpenCode cannot read are said: {opencode}"
+    );
+    assert_eq!(
+        std::fs::read(home.join(".uze/state/attachments.json")).ok(),
+        attachments,
+        "inspect records nothing"
+    );
+    let unknown = uze_at(&home, &path, &["inspect", "crew", "--harness", "nowhere"]);
+    assert!(!unknown.status.success(), "an unknown harness is refused");
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// Receipts that match are not a delivery a harness reads: Claude Code's
+/// cached copy of the plugin can be empty, and an agent file an earlier
+/// build wrote can carry fields OpenCode drops the agent over. Doctor
+/// compares what the plan expects with what each harness would load.
+#[cfg(unix)]
+#[test]
+fn doctor_reports_an_empty_plugin_cache_and_an_unreadable_agent() {
+    use std::fs;
+    use uze_core::{UzeHome, exposure::ManagedArtifact, state};
+
+    let home = temporary_home("cli-doctor-intent");
+    let fake_bin = fake_harness_bin_dir("cli-doctor-intent-bin");
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let package = composed_package(&home);
+    let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let uze = UzeHome::at(home.join(".uze"));
+    let receipts: Vec<_> = state::receipts(&uze, None)
+        .unwrap()
+        .into_iter()
+        .filter(|receipt| receipt.package_id.starts_with("crew@"))
+        .collect();
+
+    // Claude's records say the plugin is installed and enabled, and the copy
+    // they point at holds nothing.
+    let claude = receipts
+        .iter()
+        .find(|receipt| receipt.integration == "claude-code" && receipt.resource_identity.is_none())
+        .expect("the Claude plugin receipt");
+    let ManagedArtifact::IntegrationOwned {
+        selector, detail, ..
+    } = &claude.artifact
+    else {
+        panic!("{claude:?}");
+    };
+    let marketplace_root = detail["marketplace_root"].as_str().unwrap();
+    let marketplace = selector.rsplit_once('@').unwrap().1;
+    let cache = home.join(".claude/plugins/cache/crew");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(
+        home.join(".claude/plugins/known_marketplaces.json"),
+        serde_json::json!({ marketplace: {
+            "source": { "source": "directory", "path": marketplace_root },
+            "installLocation": marketplace_root
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        home.join(".claude/plugins/installed_plugins.json"),
+        serde_json::json!({ "version": 2, "plugins": {
+            selector.as_str(): [{ "scope": "user", "installPath": cache }]
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        home.join(".claude/settings.json"),
+        serde_json::json!({ "enabledPlugins": { selector.as_str(): true } }).to_string(),
+    )
+    .unwrap();
+
+    // The agent file as 1.0.0-beta.3 wrote it, and its receipt with it.
+    let opencode = receipts
+        .iter()
+        .find(|receipt| {
+            receipt.integration == "opencode"
+                && matches!(receipt.artifact, ManagedArtifact::GeneratedFile { .. })
+        })
+        .expect("the OpenCode agent receipt");
+    let ManagedArtifact::GeneratedFile { path: agent, .. } = &opencode.artifact else {
+        unreachable!();
+    };
+    let written =
+        "---\ndescription: Reviews a change.\nmodel: haiku\ntools: Read, Grep\n---\nReview.\n";
+    fs::write(agent, written).unwrap();
+    state::forget_receipt(&uze, opencode).unwrap();
+    let mut earlier = opencode.clone();
+    earlier.artifact = ManagedArtifact::GeneratedFile {
+        path: agent.clone(),
+        content: written.to_owned(),
+    };
+    state::record_receipt(&uze, earlier).unwrap();
+
+    let doctor = uze_json_at(&home, &path, &["doctor"]);
+    let harness = |id: &str| {
+        doctor["deliveries"]
+            .as_array()
+            .expect("deliveries")
+            .iter()
+            .find(|package| package["plugin"].as_str().unwrap().starts_with("crew@"))
+            .and_then(|package| {
+                package["harnesses"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|harness| harness["integration"] == id)
+                    .cloned()
+            })
+            .unwrap_or_else(|| panic!("doctor checks crew on {id}: {doctor}"))
+    };
+    let unreadable = |harness: &serde_json::Value, capability: &str, says: &str| {
+        harness["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| {
+                finding["kind"] == "unreadable"
+                    && finding["capability"] == capability
+                    && finding["detail"].as_str().unwrap().contains(says)
+            })
+    };
+    let claude = harness("claude-code");
+    assert!(
+        unreadable(&claude, "crew:review", "cached copy")
+            && unreadable(&claude, "crew:reviewer", "cached copy"),
+        "{claude}"
+    );
+    assert_eq!(claude["present"], 0, "{claude}");
+    let opencode = harness("opencode");
+    assert!(
+        unreadable(&opencode, "crew:reviewer", "`model`")
+            && unreadable(&opencode, "crew:reviewer", "`tools`")
+            && unreadable(&opencode, "crew:reviewer", "`mode`"),
+        "{opencode}"
+    );
+    assert!(
+        !opencode["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["capability"] == "crew:review"),
+        "the skill beside it is fine: {opencode}"
+    );
+
+    let text = uze_at(&home, &path, &["doctor"]);
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        text.contains("0 of 2 present") && text.contains("crew:reviewer unreadable"),
+        "{text}"
+    );
+
+    let _ = fs::remove_dir_all(home);
+    let _ = fs::remove_dir_all(fake_bin);
+}

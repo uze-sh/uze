@@ -52,7 +52,7 @@ pub(crate) struct CapabilityShortfall {
 }
 
 impl CapabilityShortfall {
-    fn of(
+    pub(crate) fn of(
         resource: &Resource,
         (route, evidence): (uze_core::router::CompatibilityRoute, String),
     ) -> Option<Self> {
@@ -85,7 +85,7 @@ pub(crate) struct BlockedDelivery {
 
 /// Whether `error` refuses one name, or says something is wrong with the
 /// machine. See [`BlockedDelivery`].
-fn refuses_one_name(error: &uze_core::UzeError) -> bool {
+pub(crate) fn refuses_one_name(error: &uze_core::UzeError) -> bool {
     matches!(
         error,
         uze_core::UzeError::ManagedEntryDrift(_)
@@ -311,7 +311,7 @@ impl UzeApplication {
 
     /// The capability receipts this integration holds for the package that
     /// `plan` now provides.
-    fn covered_receipts(
+    pub(crate) fn covered_receipts(
         &self,
         package: &StoredPackage,
         integration: &dyn IntegrationPort,

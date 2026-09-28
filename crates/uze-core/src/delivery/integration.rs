@@ -61,6 +61,14 @@ pub struct AttachmentInspection {
     pub reason: String,
 }
 
+/// One capability a harness would not load although UZE delivered it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnreadableDelivery {
+    /// The capability's resource identity.
+    pub capability: String,
+    pub reason: String,
+}
+
 /// Read-only detection of a harness binary. No side effects.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct HarnessDetection {
@@ -404,6 +412,39 @@ pub trait IntegrationPort: Send + Sync {
         _resource: &crate::capability::Resource,
     ) -> Option<(crate::router::CompatibilityRoute, String)> {
         None
+    }
+
+    /// The name a session sees `resource` under when the harness loads it
+    /// from a package rather than from a delivery of its own. The neutral
+    /// answer is the plugin namespace every plugin mechanism modelled today
+    /// applies to what it invokes by label; anything else keeps its own
+    /// name. Presentation only: nothing is looked up or owned by it.
+    fn packaged_exposure_name(
+        &self,
+        package: &StoredPackage,
+        resource: &crate::capability::Resource,
+    ) -> Option<String> {
+        let logical = resource.logical_capability_name()?;
+        if resource.capability.kind.is_invoked_by_label() {
+            Some(format!("{}:{logical}", package.active_name))
+        } else {
+            Some(logical)
+        }
+    }
+
+    /// What the harness would not load of a delivery whose receipt still
+    /// inspects as matched: facts about the harness's own reading of the
+    /// artifact that only the owning integration knows (a plugin cache
+    /// left without the files, a definition whose fields the harness
+    /// refuses). `served` is every resource the receipt delivers. Empty by
+    /// default, and never a reason to detach anything: `doctor` reports it.
+    fn unreadable(
+        &self,
+        _package: &StoredPackage,
+        _receipt: &AttachmentReceipt,
+        _served: &[&crate::capability::Resource],
+    ) -> Vec<UnreadableDelivery> {
+        Vec::new()
     }
 
     /// Detects whether the harness binary is present and, if cheaply
