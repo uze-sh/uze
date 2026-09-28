@@ -214,6 +214,7 @@ impl Health<'_> {
                     remedy: uze_core::leftovers::DanglingReference::REMEDY,
                 })
                 .collect(),
+            unregistered_packages: self.0.store.unregistered_directories().unwrap_or_default(),
             total: found.len(),
             set_aside: found
                 .into_iter()

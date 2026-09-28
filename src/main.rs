@@ -4045,6 +4045,15 @@ fn render_doctor(report: &DoctorReport) -> String {
             ));
         }
     }
+    if !report.leftovers.unregistered_packages.is_empty() {
+        text.push_str("\nPackage bytes no install records\n");
+        for path in &report.leftovers.unregistered_packages {
+            text.push_str(&format!("  {}\n", path.display()));
+        }
+        text.push_str(
+            "  nothing installs, updates or removes them; delete one once you no longer want it\n",
+        );
+    }
     if !report.maintenance.outcomes.is_empty() {
         text.push_str("\nMaintenance\n");
         for outcome in &report.maintenance.outcomes {

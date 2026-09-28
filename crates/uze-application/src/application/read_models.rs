@@ -1155,6 +1155,11 @@ pub struct UpgradeLeftovers {
     /// receipt claims — `uze doctor` removes these, unlike `set_aside`,
     /// whose bytes only a person can judge.
     pub dangling: Vec<DanglingReferenceRecord>,
+    /// Package directories under the Store that its registry does not
+    /// list: bytes an interrupted install or a hand copy left. Reported,
+    /// never removed, because a package's bytes are the one thing UZE
+    /// cannot always acquire again.
+    pub unregistered_packages: Vec<PathBuf>,
     /// How many there are in all, including the ones not listed: a report
     /// that names forty is one nobody reads.
     pub total: usize,

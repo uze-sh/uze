@@ -368,6 +368,33 @@ fn setup_reports_absent_harnesses_as_failure_without_writing_state() {
 /// harness is detected, therefore both remain "not configured" even after
 /// the default plugin's store entry is seeded.
 #[test]
+fn doctor_reports_package_bytes_no_install_records_and_keeps_them() {
+    let home = temporary_home("cli-doctor-unregistered-bytes");
+    let stray = home.join("store/plugins/local/stray");
+    std::fs::create_dir_all(&stray).unwrap();
+    std::fs::write(stray.join("plugin.json"), r#"{"name":"stray"}"#).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &home)
+        .env("HOME", &home)
+        .env("PATH", "")
+        .arg("doctor")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Package bytes no install records"),
+        "{stdout}"
+    );
+    assert!(stdout.contains(&stray.display().to_string()), "{stdout}");
+    assert!(
+        stray.join("plugin.json").is_file(),
+        "doctor never deletes bytes"
+    );
+    let _ = std::fs::remove_dir_all(home);
+}
+
+#[test]
 fn doctor_reports_not_configured_before_any_setup() {
     let home = temporary_home("cli-doctor-before-setup");
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))

@@ -36,7 +36,7 @@
   name as the new source, Codex 0.158.0 refuses it until `marketplace remove`
   (which uninstalls its plugins); the attach does the second when the first
   fails, and the old receipts are retired by `package_receipt_serves`.
-- [ ] 2.2 Reference-driven pruning of the generated tier; report-only audit of
+- [x] 2.2 Reference-driven pruning of the generated tier; report-only audit of
   `store/`.
 - [x] 2.3 Measure clone/reflink on the Lab filesystem; decide whether a
   hardlink materializer from a read-only generated copy is worth offering.
