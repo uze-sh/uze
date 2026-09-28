@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { UzeMark } from '@/components/uze-mark';
+import matrix from '@/lib/harness-matrix.json';
 
-// The landing page's hero illustration: one plugin resolved from the Store,
-// delivered to four harnesses, then read through the three extensions in the
-// order a change is read. It is drawn on a fixed stage and scaled to the
+// The landing page's package illustration: one plugin from a marketplace,
+// resolved into the Store, delivered to four harnesses, and then shown at
+// work in them: a skill invoked, its MCP server connected, its hook run. It is drawn on a fixed stage and scaled to the
 // column: 1200×500 left to right where there is room, and the same three
 // panels stacked top to bottom on a phone, where the wide stage would scale
 // its text below reading size. The palette is the site's own theme tokens,
@@ -29,12 +30,11 @@ const FAINT = mix(MUTED, 55);
 // Flat, not outlined: depth is opaque fills stepping from the page toward
 // the ink, neutral in both themes — the surface token is tinted green in the
 // dark one, and a whole panel of it reads as a cast. Green is kept for the
-// marks: tags, checks, routes and the lit extension.
+// marks: tags, checks, routes and the lit tab.
 const PANEL = mix(INK, 4, PAPER);
 const CARD = mix(INK, 7, PAPER);
 const CARD_ON = mix(INK, 12, PAPER);
 const SHEET = mix(INK, 9, PAPER);
-const REMOVED = '#e5534b';
 
 const ROWS: [string, string][] = [
   ['AGENTS.md', 'md'],
@@ -44,36 +44,33 @@ const ROWS: [string, string][] = [
   ['hooks/', 'H'],
 ];
 const HARNESSES = ['Claude Code', 'Codex', 'OpenCode', 'Antigravity'];
-const SLOTS = ['md', 'S', 'M', 'A', 'H'];
-// Antigravity receives its hooks as a generated plugin: the one route here
-// that is not the harness's own.
-const ROUTE = [
-  ['n', 'n', 'n', 'n', 'n'],
-  ['n', 'n', 'n', 'n', 'n'],
-  ['n', 'n', 'n', 'n', 'a'],
-  ['n', 'n', 'n', 'n', 'n'],
+type Capability = 'context' | 'skills' | 'mcp' | 'agents' | 'hooks';
+const SLOTS: [string, Capability][] = [
+  ['md', 'context'],
+  ['S', 'skills'],
+  ['M', 'mcp'],
+  ['A', 'agents'],
+  ['H', 'hooks'],
 ];
-const EXTENSIONS = ['Spec', 'Architect', 'Code'];
-const EXT_TITLE = ['spec · add-review', 'architect · docs/architecture', 'code · src/review/hook.rs'];
-const EXT_META = ['3 of 7 tasks', 'C4 · 3 containers', '+42 −7'];
+// Each slot's colour is the route its harness really takes, read from the
+// matrix the integrations generate (the same one the table below the fold
+// is built from), so the picture cannot claim a native route the code
+// stopped taking.
+const routeOf = (harness: string, capability: Capability) =>
+  matrix.harnesses.find((entry) => entry.name === harness)?.[capability] ?? 'native';
+const colorOf = (route: string) => (route === 'native' ? G : AMB);
+// What a delivered plugin looks like at work, one capability per tab. The
+// hook tab answers the adapted hook route above in words.
+const TABS = ['skills', 'mcp', 'hooks'];
+const TAB_TITLE = ['skill · /git:commit', 'mcp · status', 'hook · pre-commit'];
+const TAB_META = ['Claude Code', '4 connected', '4 ran'];
 
-const SPEC_TASKS: [string, boolean][] = [
-  ['Define review rules', true],
-  ['Read agents.yaml config', true],
-  ['Wire pre-commit hook', true],
-  ['Write scenario tests', false],
-  ['Document the skill', false],
-  ['Archive the change', false],
-];
-const ADDED = mix(G, 12);
-const DIFF: [number, string, string, string, string][] = [
-  [12, ' ', 'fn on_commit(ctx: &Ctx) -> Result {', '', MUTED],
-  [13, '-', '    let rules = default_rules();', mix(REMOVED, 12), REMOVED],
-  [14, '+', '    let rules = ctx.config.review_rules()?;', ADDED, G],
-  [15, '+', '    let diff = ctx.git.staged_diff()?;', ADDED, G],
-  [16, ' ', '    for rule in rules {', '', MUTED],
-  [17, '+', '        rule.check(&diff)?;', ADDED, G],
-  [18, ' ', '    }', '', MUTED],
+const TRANSCRIPT: [string, string][] = [
+  ['> /git:commit', 'prompt'],
+  ['● reading the staged diff', 'step'],
+  ['● a Conventional Commit, from the diff', 'step'],
+  ['feat(web): add the package illustration', 'result'],
+  ['✓ committed 3f2a91c', 'done'],
 ];
 
 // The script's clock, in seconds of one loop.
@@ -85,11 +82,11 @@ const T_DLV = 2.85;
 const T_DLV_END = 3.5;
 const T_RUN = 3.9;
 const T_EXT = 5.0;
-const EXT_GAP = 1.7;
-const T_DONE = 10.3;
-const LOOP = 11.9;
+const EXT_GAP = 2.8;
+const T_DONE = 13.6;
+const LOOP = 17.0;
 // What a reader who asked for no motion sees: delivered everywhere, the
-// spec surface open.
+// skill tab open.
 const STILL_AT = 5.8;
 
 type Point = [number, number];
@@ -200,6 +197,9 @@ const STACKED: Layout = {
 
 // Below this width the wide stage's 15px text would draw at under 9px.
 const STACK_BELOW = 700;
+// On a wide screen it may draw larger than the design: it is the one picture
+// on the page, and at its own size it sat small in a 1440px window.
+const MAX_WIDE_SCALE = 1.08;
 
 function frame(seconds: number, plugin: string, { rowRoute, harnessRoute }: Layout) {
   const tt = seconds % LOOP;
@@ -233,11 +233,11 @@ function frame(seconds: number, plugin: string, { rowRoute, harnessRoute }: Layo
   const harnesses = HARNESSES.map((name, j) => ({
     name,
     running: !reset && tt >= T_RUN + j * 0.18,
-    slots: SLOTS.map((letter, k) => ({ letter, color: ROUTE[j][k] === 'n' ? G : AMB })),
+    slots: SLOTS.map(([letter, capability]) => ({ letter, color: colorOf(routeOf(name, capability)) })),
   }));
   const anyRunning = !reset && tt >= T_RUN;
 
-  const extensions = EXTENSIONS.map((name, k) => {
+  const tabs = TABS.map((name, k) => {
     const at = T_EXT + k * EXT_GAP;
     return { name, on: !reset && tt >= at && tt < at + EXT_GAP, seen: !reset && tt >= at };
   });
@@ -279,7 +279,7 @@ function frame(seconds: number, plugin: string, { rowRoute, harnessRoute }: Layo
     delivering,
     delivered,
     anyRunning,
-    extensions,
+    tabs,
     extIndex,
     extOpacity: extIn * extOut,
     extOffset: (1 - extIn) * 8,
@@ -367,11 +367,12 @@ const panel: CSSProperties = {
 };
 const nowrap: CSSProperties = { whiteSpace: 'nowrap' };
 
-export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: string }) {
+export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { plugin?: string; source?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const columnWidth = useColumnWidth(wrapRef);
   const layout = columnWidth < STACK_BELOW ? STACKED : WIDE;
-  const scale = Math.min(1, columnWidth / layout.width);
+  const maxScale = layout === WIDE ? MAX_WIDE_SCALE : 1;
+  const scale = Math.min(maxScale, columnWidth / layout.width);
   const seconds = useClock(wrapRef);
   const f = frame(seconds, plugin, layout);
 
@@ -379,9 +380,9 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
     <div
       ref={wrapRef}
       role="img"
-      aria-label={`uze ${plugin}: one plugin resolved from the Store, delivered natively to Claude Code, Codex, OpenCode and Antigravity, then read through the Spec, Architect and Code extensions.`}
+      aria-label={`uze ${plugin}: one plugin from the ${source} marketplace, resolved into the Store and delivered natively to Claude Code, Codex, OpenCode and Antigravity, where its skill is invoked, its MCP server connects and its hook runs.`}
       className="relative mx-auto w-full overflow-hidden font-mono"
-      style={{ maxWidth: WIDE.width, height: Math.round(layout.height * scale) }}
+      style={{ height: Math.round(layout.height * scale) }}
     >
       <div
         aria-hidden
@@ -483,7 +484,7 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
               color: MUTED,
             }}
           >
-            <span>agents.yaml</span>
+            <span>from {source}</span>
             <span>agents.lock</span>
           </div>
         </div>
@@ -587,7 +588,7 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
               position: 'relative',
             }}
           >
-            <ExtensionSheet index={f.extIndex} opacity={f.extOpacity} offset={f.extOffset} />
+            <CapabilitySheet index={f.extIndex} opacity={f.extOpacity} offset={f.extOffset} />
             {f.harnesses.map((harness) => (
               <div
                 key={harness.name}
@@ -661,7 +662,7 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
               gap: 8,
             }}
           >
-            {f.extensions.map((extension) => (
+            {f.tabs.map((extension) => (
               <div
                 key={extension.name}
                 style={{
@@ -706,7 +707,7 @@ export function HeroIllustration({ plugin = 'review-kit@acme' }: { plugin?: stri
   );
 }
 
-function ExtensionSheet({ index, opacity, offset }: { index: number; opacity: number; offset: number }) {
+function CapabilitySheet({ index, opacity, offset }: { index: number; opacity: number; offset: number }) {
   return (
     <div
       style={{
@@ -740,132 +741,80 @@ function ExtensionSheet({ index, opacity, offset }: { index: number; opacity: nu
           fontSize: 12,
         }}
       >
-        <span style={{ color: G, fontWeight: 700 }}>{EXT_TITLE[index] ?? ''}</span>
-        <span style={{ color: MUTED }}>{EXT_META[index] ?? ''}</span>
+        <span style={{ color: G, fontWeight: 700 }}>{TAB_TITLE[index] ?? ''}</span>
+        <span style={{ color: MUTED }}>{TAB_META[index] ?? ''}</span>
       </div>
-      {index === 0 ? <SpecSheet /> : null}
-      {index === 1 ? <ArchitectSheet /> : null}
-      {index === 2 ? <CodeSheet /> : null}
+      {index === 0 ? <SkillSheet /> : null}
+      {index === 1 ? <McpSheet /> : null}
+      {index === 2 ? <HookSheet /> : null}
     </div>
   );
 }
 
-function SpecSheet() {
+function SkillSheet() {
+  const colorOf = { prompt: INK, step: MUTED, result: G, done: G };
   return (
-    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12 }}>
-      {SPEC_TASKS.map(([task, done]) => (
+    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
+      {TRANSCRIPT.map(([line, kind]) => (
         <div
-          key={task}
-          style={{ ...nowrap, display: 'flex', alignItems: 'center', gap: 10, color: done ? INK : MUTED }}
+          key={line}
+          style={{
+            ...nowrap,
+            color: colorOf[kind as keyof typeof colorOf],
+            fontWeight: kind === 'prompt' || kind === 'result' ? 700 : 400,
+          }}
         >
-          <span
+          {line}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// One row per harness, the same four the cards under this sheet name.
+function HarnessRows({ status }: { status: (j: number) => [string, string] }) {
+  return (
+    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+      {HARNESSES.map((name, j) => {
+        const [label, color] = status(j);
+        return (
+          <div
+            key={name}
             style={{
-              width: 14,
-              height: 14,
+              ...nowrap,
+              height: 30,
               boxSizing: 'border-box',
-              borderRadius: 3,
-              background: done ? G : PANEL,
-              color: PAPER,
-              fontSize: 10,
-              fontWeight: 700,
+              borderRadius: 6,
+              background: PANEL,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
+              justifyContent: 'space-between',
+              padding: '0 10px',
             }}
           >
-            {done ? '✓' : ''}
-          </span>
-          <span>{task}</span>
-        </div>
-      ))}
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: INK }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
+              {name}
+            </span>
+            <span style={{ color }}>{label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-const box = (left: number, top: number, width: number, height: number, radius: number): CSSProperties => ({
-  position: 'absolute',
-  left,
-  top,
-  width,
-  height,
-  boxSizing: 'border-box',
-  background: PANEL,
-  borderRadius: radius,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-});
-
-function ArchitectSheet() {
-  return (
-    <div style={{ flex: 1, position: 'relative' }}>
-      <svg
-        width={288}
-        height={180}
-        style={{ position: 'absolute', inset: 0 }}
-        fill="none"
-        stroke={SOFT}
-        strokeWidth={1.5}
-      >
-        {[
-          'M92 40 L108 40',
-          'M180 40 L196 40',
-          'M144 58 L144 74',
-          'M144 74 L48 74 L48 92',
-          'M144 74 L112 74 L112 92',
-          'M144 74 L176 74 L176 92',
-          'M144 74 L240 74 L240 92',
-          'M144 130 L144 146',
-        ].map((d) => (
-          <path key={d} d={d} />
-        ))}
-      </svg>
-      <div style={{ ...box(32, 24, 60, 32, 5), fontSize: 11, color: INK }}>CLI</div>
-      <div
-        style={{
-          ...box(108, 24, 72, 32, 5),
-          background: CARD_ON,
-          fontSize: 11,
-          color: G,
-          fontWeight: 700,
-        }}
-      >
-        Store
-      </div>
-      <div style={{ ...box(196, 24, 60, 32, 5), fontSize: 11, color: INK }}>TUI</div>
-      {['claude', 'codex', 'opencode', 'antigrav'].map((name, i) => (
-        <div key={name} style={{ ...box(22 + 64 * i, 92, 52, 26, 4), fontSize: 10, color: MUTED }}>
-          {name}
-        </div>
-      ))}
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 10,
-          textAlign: 'center',
-          fontSize: 11,
-          color: MUTED,
-        }}
-      >
-        C4 · container · Enter to walk in
-      </div>
-    </div>
-  );
+function McpSheet() {
+  return <HarnessRows status={() => ['connected · 3 tools', G]} />;
 }
 
-function CodeSheet() {
+function HookSheet() {
   return (
-    <div style={{ padding: '10px 0', display: 'flex', flexDirection: 'column', fontSize: 11, lineHeight: 1.9 }}>
-      {DIFF.map(([line, sign, text, background, color]) => (
-        <div key={line} style={{ ...nowrap, display: 'flex', gap: 10, padding: '0 12px', background, color }}>
-          <span style={{ width: 20, color: FAINT, textAlign: 'right', flexShrink: 0 }}>{line}</span>
-          <span style={{ width: 10, flexShrink: 0 }}>{sign}</span>
-          <span>{text}</span>
-        </div>
-      ))}
-    </div>
+    <HarnessRows
+      status={(j) => {
+        const route = routeOf(HARNESSES[j], 'hooks');
+        return [`${route} · allowed`, colorOf(route)];
+      }}
+    />
   );
 }

@@ -109,6 +109,19 @@ const pillars = [
   },
 ];
 
+// What the section below it pictures, said before it is shown: the
+// illustration is the package manager and the recording is the workspace,
+// and neither reads as that on its own.
+function SectionHeading({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) {
+  return (
+    <header className="text-center">
+      <p className="font-mono text-xs text-accent">{eyebrow}</p>
+      <h2 className="mt-3 font-mono text-2xl font-bold tracking-tight text-ink sm:text-3xl">{title}</h2>
+      <p className="mx-auto mt-3 max-w-[56ch] text-sm leading-relaxed text-muted sm:text-base">{body}</p>
+    </header>
+  );
+}
+
 export default function HomePage() {
   return (
     <main className="flex flex-col items-center flex-1 px-6 font-sans">
@@ -152,14 +165,33 @@ export default function HomePage() {
           hero, so the illustration is never read against the headline or
           the recording. It carries no ground of its own and follows the
           theme. */}
-      <section className="flex w-full max-w-6xl min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] items-center pt-14 pb-28 sm:pb-36">
-        <HeroIllustration />
+      <section className="flex w-full max-w-[1296px] min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-12">
+        <SectionHeading
+          eyebrow="Packages"
+          title="One plugin, every agent."
+          body="Install it once. uze keeps the bytes in its Store and delivers each capability through the most native route each harness has."
+        />
+        {/* As wide as the column, and no wider than the height left under
+            the heading allows at the stage's 12:5, so the heading and the
+            picture share one screen on a short desktop too. */}
+        <div className="mx-auto mt-4 w-full" style={{ maxWidth: 'calc((100dvh - var(--uze-banner-height) - 3.5rem - 16rem) * 2.4)' }}>
+          <HeroIllustration />
+        </div>
       </section>
 
       {/* The recording. `prefers-reduced-motion` gets a still frame instead,
           and <source media> means only the matched file is ever fetched. */}
-      <section className="w-full max-w-6xl pt-16 pb-24 sm:pt-20 sm:pb-28">
-        <figure className="m-0">
+      <section className="flex w-full max-w-6xl min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-8">
+        <SectionHeading
+          eyebrow="Workspace"
+          title="Several agents, one terminal."
+          body="Each agent works in a checkout of its own. Read what it plans, how the project is shaped and what it changed, then bring the work home."
+        />
+        {/* The same fit as the illustration, at the recording's own ratio. */}
+        <figure
+          className="mx-auto mt-8 mb-0 w-full"
+          style={{ maxWidth: 'calc((100dvh - var(--uze-banner-height) - 3.5rem - 14rem) * 1.79)' }}
+        >
           <div className="uze-demo-frame border border-line" style={{ background: '#0a0c0d' }}>
             <picture>
               <source srcSet="/uze-demo-poster.png" media="(prefers-reduced-motion: reduce)" />
@@ -172,10 +204,6 @@ export default function HomePage() {
               />
             </picture>
           </div>
-          <figcaption className="mt-3 text-center font-mono text-xs text-muted">
-            Run <span className="text-ink">uze</span> with no arguments. Ctrl+O switches between the
-            workspace and the machine view.
-          </figcaption>
         </figure>
       </section>
 
