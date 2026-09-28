@@ -567,6 +567,22 @@ fn install_project_environment(
             // CLI's `uze install`; the TUI adds no install logic.
             app.project()
                 .install(&root, &uze_application::NoTrustAuthority)
+                .and_then(|report| {
+                    // Installed but not delivered everywhere is a failure
+                    // to say, exactly as the CLI exits non-zero on it.
+                    let missed: Vec<String> = report
+                        .undelivered()
+                        .map(|(plugin, delivery)| format!("{plugin} to {}", delivery.display_name))
+                        .collect();
+                    if missed.is_empty() {
+                        Ok(report)
+                    } else {
+                        Err(uze_application::UzeError::DeliveryFailed(format!(
+                            "installed, but not delivered: {}",
+                            missed.join(", ")
+                        )))
+                    }
+                })
                 .map(|report| match report {
                     InstallReport::NoChanges => "Project environment already up to date".to_owned(),
                     InstallReport::Installed {
@@ -660,7 +676,20 @@ fn install(
         move |app, authority| {
             app.marketplace()
                 .install_plugin(&spec, authority)
-                .map(|report| format!("Installed {}", report.plugin.id))
+                .and_then(|report| {
+                    let missed: Vec<&str> = report
+                        .undelivered()
+                        .map(|delivery| delivery.display_name.as_str())
+                        .collect();
+                    if missed.is_empty() {
+                        return Ok(format!("Installed {}", report.plugin.id));
+                    }
+                    Err(uze_application::UzeError::DeliveryFailed(format!(
+                        "{} installed, but not delivered to {}",
+                        report.plugin.id,
+                        missed.join(", ")
+                    )))
+                })
         },
         TrustedRetry::Install {
             name: retry_name,
@@ -1525,6 +1554,7 @@ mod tests {
                 store_path: PathBuf::from("/store/example"),
                 capability_count: 1,
                 freshness: uze_application::application::Freshness::not_checked(),
+                undelivered: Vec::new(),
             })
             .collect();
         model

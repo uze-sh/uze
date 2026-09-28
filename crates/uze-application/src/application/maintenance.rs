@@ -234,6 +234,7 @@ impl Health<'_> {
                     receipt.artifact,
                     ManagedArtifact::SymlinkReference { .. }
                         | ManagedArtifact::ManagedTextRegion { .. }
+                        | ManagedArtifact::GeneratedFile { .. }
                 )
             }) {
                 let ledger_key = receipt.cache_key();

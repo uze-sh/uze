@@ -32,6 +32,7 @@
 //! unchanged, and the shared entry can never silently degrade into model
 //! visibility for either consumer (ADR-030 §25).
 
+use crate::shared::package_root::resolve_bytes;
 use std::path::{Path, PathBuf};
 
 use uze_core::{
@@ -79,7 +80,7 @@ pub(super) fn materialize_generated_skill(
     write_superset_skill_wrapper(
         &dir,
         canonical_dir,
-        &resource.capability.payload,
+        &resolve_bytes(&resource.capability.payload, &resource.package_root),
         &label,
         &resource.skill_invocation(),
     )?;

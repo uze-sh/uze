@@ -30,6 +30,9 @@ pub use uze_core::{
     },
     context::PlannedAction,
     conversation::Claim,
+    // Which manifest a package-level delivery handed the harness, as the
+    // install report names it.
+    exposure::PackageEnvelope,
     features::{ALL_FEATURES, Feature},
     hosts::HostEntry,
     integration::{AttachmentState, PublicationStatus},

@@ -5,7 +5,6 @@ use std::{ffi::OsString, path::Path};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    capability::CapabilityKind,
     conversation::SessionId,
     error::Result,
     exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan},
@@ -396,6 +395,26 @@ pub trait IntegrationPort: Send + Sync {
         None
     }
 
+    /// Whether a package-level receipt still delivers what this build's plan
+    /// delivers. One from a route this build no longer takes (the Store tree
+    /// installed where a generated plugin is now installed) is replaced
+    /// rather than kept because it still inspects as matched.
+    fn package_receipt_serves(&self, _receipt: &AttachmentReceipt) -> bool {
+        true
+    }
+
+    /// How a resource a package plan provides reaches the harness, when that
+    /// is less than native: the harness loads it from the package, but not
+    /// all of what the author wrote (ADR-031: route evidence rather than
+    /// hidden loss). `None` when the package delivers it whole.
+    fn packaged_shortfall(
+        &self,
+        _package: &StoredPackage,
+        _resource: &crate::capability::Resource,
+    ) -> Option<(crate::router::CompatibilityRoute, String)> {
+        None
+    }
+
     /// Detects whether the harness binary is present and, if cheaply
     /// obtainable, its version. Read-only; performs no filesystem writes.
     ///
@@ -585,7 +604,8 @@ pub trait IntegrationPort: Send + Sync {
     fn repair_missing_receipt(&self, receipt: &AttachmentReceipt) -> Result<bool> {
         match &receipt.artifact {
             ManagedArtifact::SymlinkReference { .. }
-            | ManagedArtifact::ManagedTextRegion { .. } => {
+            | ManagedArtifact::ManagedTextRegion { .. }
+            | ManagedArtifact::GeneratedFile { .. } => {
                 receipt.artifact.attach_standard()?;
                 Ok(true)
             }
@@ -631,8 +651,8 @@ pub fn active_plugin_name(
     crate::store::UzeStore::new(home.clone()).active_name_for(&resource.package_id)
 }
 
-/// The single candidate for every UZE-projected Skill: its own stable
-/// namespaced invocation label (`flow:review`), never a bare alias and
+/// The single candidate for every UZE-projected Skill and Agent: its own
+/// stable namespaced label (`flow:review`), never a bare alias and
 /// never a collision-dependent qualification (ADR-026). One candidate by
 /// construction, so installation order and the presence of other plugins
 /// cannot change it. Other capabilities (MCP) deliberately stay on
@@ -644,7 +664,7 @@ pub fn qualified_exposure_name_candidates(
     resource: &crate::capability::Resource,
     active_plugin_name: &str,
 ) -> Vec<String> {
-    if resource.capability.kind != CapabilityKind::AgentSkill {
+    if !resource.capability.kind.is_invoked_by_label() {
         return Vec::new();
     }
     let Some(logical) = resource.logical_capability_name() else {

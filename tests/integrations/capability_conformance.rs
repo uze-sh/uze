@@ -257,6 +257,13 @@ fn no_harness_turns_a_malformed_envelope_into_coverage() {
     }
 }
 
+/// A skill only a declaration can load: nested one level below `skills/`,
+/// where no harness's default scan reaches it, so coverage of it can only
+/// come from the unsafe declaration each case below is about.
+fn colliding_skill(package: &StoredPackage) -> Resource {
+    skill_resource(package, "skills/nested", "commit")
+}
+
 #[test]
 fn no_harness_lets_an_escaping_declaration_cover_a_resource() {
     for subject in subjects("escaping") {
@@ -272,7 +279,7 @@ fn no_harness_lets_an_escaping_declaration_cover_a_resource() {
             "flow",
             &[(envelope.manifest, escaping)],
         );
-        let skill = skill_resource(&package, "skills", "commit");
+        let skill = colliding_skill(&package);
         assert_an_unsafe_declaration_never_covers_the_colliding_resource(
             subject.integration.as_ref(),
             &package,
@@ -286,7 +293,7 @@ fn no_harness_lets_an_escaping_declaration_cover_a_resource() {
 fn no_harness_lets_an_absolute_declaration_cover_a_colliding_resource() {
     // The regression this guards: a per-entry normalizer stripped a leading
     // `/` before testing whether a declaration was absolute, so
-    // `/skills/commit` silently became the relative `skills/commit` and was
+    // `/skills/nested` silently became the relative `skills/nested` and was
     // accepted. Both vendors that declare paths now share one predicate
     // (`crate::shared::path::normalize_declared_relative_path`); this proves
     // the invariant the fix restores, not either vendor's syntax.
@@ -303,7 +310,7 @@ fn no_harness_lets_an_absolute_declaration_cover_a_colliding_resource() {
             "flow",
             &[(envelope.manifest, absolute)],
         );
-        let skill = skill_resource(&package, "skills", "commit");
+        let skill = colliding_skill(&package);
         assert_an_unsafe_declaration_never_covers_the_colliding_resource(
             subject.integration.as_ref(),
             &package,
@@ -330,7 +337,7 @@ fn no_harness_lets_a_whitespace_padded_absolute_declaration_cover_a_colliding_re
             "flow",
             &[(envelope.manifest, padded)],
         );
-        let skill = skill_resource(&package, "skills", "commit");
+        let skill = colliding_skill(&package);
         assert_an_unsafe_declaration_never_covers_the_colliding_resource(
             subject.integration.as_ref(),
             &package,

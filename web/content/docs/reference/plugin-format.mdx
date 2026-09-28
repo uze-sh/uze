@@ -75,9 +75,33 @@ description: Breaks a task into an ordered plan.
 Everything below the front matter is the agent's instructions.
 ```
 
-Codex has no Markdown agent format, so uze generates its TOML file from yours.
-Fields beyond `name` and `description`, such as a model or permissions, are not
-carried portably.
+Every agent is offered as `<plugin>:<name>`, and a subdirectory under `agents/`
+joins the name: `agents/review/security.md` in plugin `flow` is
+`flow:review:security`. A `name` in the front matter replaces only the file's
+part, so `name: audit` in that file is `flow:review:audit`. Dispatch an agent by
+that full name.
+
+`name` and `description` are read the same way by every harness. Anything else,
+such as a model or a tool list, belongs to one harness: Claude Code keeps it,
+and the other harnesses receive the agent without it. The install names what
+each harness did not receive. Codex has no Markdown agent format, so uze
+generates its TOML file from yours.
+
+## Files your plugin ships
+
+A skill, an agent, a hook or an MCP server can use any other file of the
+plugin, such as a script, a template or a reference page. Name it with
+`${PLUGIN_ROOT}`, which uze resolves to the installed copy of your plugin in
+`SKILL.md`, agent definitions, `hooks.json` and `mcp.json`, for every harness:
+
+```markdown
+Read the checklist in ${PLUGIN_ROOT}/phases/plan.md before you start.
+```
+
+Relative paths inside a skill's own directory (`scripts/`, `references/`) keep
+working as well. Folders a single harness would load as a feature of its own,
+such as Claude Code's `commands/` or `bin/`, are not delivered: uze delivers
+what every harness shares.
 
 ## MCP servers
 
@@ -96,8 +120,8 @@ Each agent receives it through its own mechanism (`claude mcp add`,
 
 ## Hooks
 
-`hooks.json` runs a command when an agent is about to use a tool, has used one,
-or stops:
+`hooks.json` runs a command when a session starts, when an agent is about to
+use a tool or has used one, or when it stops:
 
 ```json
 {
@@ -113,11 +137,14 @@ or stops:
 }
 ```
 
-- **Events:** `PreToolUse`, `PostToolUse`, `Stop`.
+- **Events:** `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart`.
 - **Matcher:** tool aliases separated by `|`: `shell`, `file.read`,
   `file.write`, `file.edit`, `search.files`, `search.web`, `agent.spawn`,
-  `agent.message`, or `native:<tool>`. Omitted, it matches every tool.
+  `agent.message`, or `native:<tool>`. Omitted, it matches every tool. On
+  `SessionStart` the matcher names how the session began instead: `startup`,
+  `resume`, `clear`. Omitted, it matches all three.
 - **Effect:** `observe` (default), `allow`, `ask`, `deny`, `transform`.
+  `SessionStart` only observes: any other effect there is refused.
 
 The handler reads the context from `HOOK_*` environment variables and answers
 with its exit code:
@@ -139,13 +166,19 @@ Not every agent carries every effect:
 
 | Agent | Events | Effects |
 | --- | --- | --- |
-| Claude Code | `PreToolUse`, `PostToolUse`, `Stop` | `observe`, `allow`, `deny` |
-| Codex | `PreToolUse`, `PostToolUse`, `Stop` | `observe`, `allow`, `deny` |
+| Claude Code | `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart` | `observe`, `allow`, `deny` |
+| Codex | `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart` | `observe`, `allow`, `deny` |
 | Antigravity | `PreToolUse`, `PostToolUse`, `Stop` | `observe`, `allow`, `ask`, `deny` |
 | OpenCode | `PreToolUse`, `PostToolUse` | `observe`, `allow` |
 
+A `SessionStart` handler gets `HOOK_EVENT=session_start` and `HOOK_SOURCE`
+(`startup`, `resume` or `clear`), and nothing it answers keeps the session from
+opening. Keep it fast and safe to run twice.
+
 A hook an agent cannot honour is reported before it is installed, never
-silently weakened. The full contract, every variable included, is in
+silently weakened. An agent without the event, such as Antigravity or OpenCode
+for `SessionStart`, still receives the plugin's other hooks. The full contract,
+every variable included, is in
 [portable-hooks.md](https://github.com/uze-sh/uze/blob/main/docs/capabilities/portable-hooks.md).
 
 ## Commands a plugin runs

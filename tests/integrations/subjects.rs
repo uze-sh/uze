@@ -92,8 +92,8 @@ fn bindings_for(id: &str) -> &'static Bindings {
                 escaping: Support::Has(
                     r#"{"name":"flow","skills":["../../etc","/absolute-that-still-resolves-relative"]}"#,
                 ),
-                absolute: Support::Has(r#"{"name":"flow","skills":["/skills/commit"]}"#),
-                absolute_padded: Support::Has(r#"{"name":"flow","skills":["  /skills/commit  "]}"#),
+                absolute: Support::Has(r#"{"name":"flow","skills":["/skills/nested"]}"#),
+                absolute_padded: Support::Has(r#"{"name":"flow","skills":["  /skills/nested  "]}"#),
                 duplicate: Support::Has(
                     r#"{"name":"flow","skills":["./skills/commit","./skills/commit","skills/commit"]}"#,
                 ),
@@ -114,8 +114,8 @@ fn bindings_for(id: &str) -> &'static Bindings {
                 manifest: ".codex-plugin/plugin.json",
                 malformed: "{not json",
                 escaping: Support::Has(r#"{"name":"flow","skills":"../../etc"}"#),
-                absolute: Support::Has(r#"{"name":"flow","skills":"/skills/commit"}"#),
-                absolute_padded: Support::Has(r#"{"name":"flow","skills":"  /skills/commit  "}"#),
+                absolute: Support::Has(r#"{"name":"flow","skills":"/skills/nested"}"#),
+                absolute_padded: Support::Has(r#"{"name":"flow","skills":"  /skills/nested  "}"#),
                 duplicate: Support::NotApplicable(
                     "the declaration is a single directory string, which cannot hold a repeat",
                 ),

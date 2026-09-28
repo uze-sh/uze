@@ -97,6 +97,7 @@ impl Plugins<'_> {
             state::forget_receipt(&self.0.home, &reconciled.receipt)?;
         }
         self.0.store.remove_package(&package.id)?;
+        state::forget_undelivered(&self.0.home, package.id.as_str(), None)?;
         // The package set changed, so every derived view is now stale. A
         // failure to rebuild one does not un-remove the package.
         if republish {

@@ -333,7 +333,9 @@ fn mcp_resource_routes_to_managed_vendor_config_once_setup_state_is_recorded() {
             claude_plan.mechanism
         );
     };
-    assert_eq!(entry_name, "uze-mcp-conformance@local-uze-conformance");
+    // Claude's registry accepts letters, digits, `-` and `_` only; the
+    // marketplace-qualified `@` form was refused by the real CLI.
+    assert_eq!(entry_name, "uze-mcp-conformance-uze-conformance");
     assert_eq!(command.to_str().unwrap(), "__UZE_MCP_FIXTURE_BINARY__");
     assert!(args.is_empty());
 
@@ -348,8 +350,12 @@ fn mcp_resource_routes_to_managed_vendor_config_once_setup_state_is_recorded() {
             codex_plan.mechanism
         );
     };
-    // Same package, same entry-naming rule, independent of which harness asks.
-    assert_eq!(codex_entry_name, entry_name);
+    // Each harness's registry has its own character rule; Codex keeps the
+    // marketplace-qualified form its configuration accepts.
+    assert_eq!(
+        codex_entry_name,
+        "uze-mcp-conformance@local-uze-conformance"
+    );
 
     fs::remove_dir_all(home_root).unwrap();
 }

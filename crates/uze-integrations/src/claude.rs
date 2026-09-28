@@ -16,6 +16,7 @@
 use std::{fs, path::Path};
 
 use crate::shared::plan::unsupported;
+use uze_core::capability::agent::AgentDocument;
 use uze_core::{
     Result, UzeError,
     capability::CapabilityKind,
@@ -32,7 +33,7 @@ use uze_core::{
         PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
     },
     provisioning::{ProcessRunner, ProcessSpec, ProvisioningResult},
-    router::HarnessCapabilities,
+    router::{CompatibilityRoute, HarnessCapabilities},
     state,
     store::StoredPackage,
 };
@@ -48,9 +49,12 @@ mod skills;
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::{HookEntry, HookTarget};
-use crate::shared::agent::{agent_name, markdown_agent_plan};
+use crate::shared::agent::{
+    MarkdownAgent, agent_file_plan, agent_label, markdown_agent, projection_route,
+};
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
+use crate::shared::package_root::resolve_bytes;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
 use crate::shared::provision::{official_installer, provision_cli};
 use mcp::attach_mcp_entry;
@@ -296,18 +300,23 @@ impl IntegrationPort for ClaudeIntegration {
         }
     }
 
-    /// Claude namespaces plugin skills/commands itself (`/flow:review` for a
-    /// plugin named `flow` — see `docs/capabilities/skill-invocation-policy.md`), so UZE
-    /// never materializes the namespace into the plugin: the plugin declares
-    /// the plain logical name and Claude owns the `plugin:` prefix. For the
-    /// capability-level fallback shim the physical directory name is the
-    /// stable namespaced label (ADR-026). MCP deliberately stays on the
-    /// shared default (fully qualified only) — its physical name never
-    /// reaches the terminal UX the same way, and mixing naming policies just
-    /// because both are `Resource`s would be exactly the "não misture Skill
-    /// e MCP" mistake the design explicitly rules out.
+    /// Claude namespaces plugin skills itself (`/flow:review` for a plugin
+    /// named `flow` — see `docs/capabilities/skill-invocation-policy.md`),
+    /// so UZE never materializes the namespace into the plugin: the plugin
+    /// declares the plain logical name and Claude owns the `plugin:` prefix.
+    /// For the capability-level fallback the physical name is the stable
+    /// namespaced label (ADR-026).
+    ///
+    /// An MCP server registered outside a plugin goes through `claude mcp
+    /// add`, which accepts only letters, digits, `-` and `_` ("Invalid name
+    /// std@cardinal-rtc" refused the whole install on 1.0.0-beta.3): the
+    /// plugin and server name first, then qualified by the marketplace for
+    /// the rare collision, every other character spelled as `-`.
     fn exposure_name_candidates(&self, resource: &Resource) -> Vec<String> {
-        if resource.capability.kind != CapabilityKind::AgentSkill {
+        if resource.capability.kind == CapabilityKind::Mcp {
+            return mcp_registry_names(&self.uze_home, resource);
+        }
+        if !resource.capability.kind.is_invoked_by_label() {
             return default_exposure_name_candidates(resource);
         }
         let active_name = active_plugin_name(&self.uze_home, resource);
@@ -320,6 +329,34 @@ impl IntegrationPort for ClaudeIntegration {
         resources: &[&Resource],
     ) -> Option<PackageExposurePlan> {
         marketplace::package_plan::<ClaudeMarketplace>(package, resources)
+    }
+
+    /// Claude loads a plugin's agents but ignores four fields a user agent
+    /// honours (plugin components reference: "Ignored fields:
+    /// `permissionMode`, `hooks`, `mcpServers`, and `initialPrompt`"), so an
+    /// agent that declares one reaches it without that part.
+    fn packaged_shortfall(
+        &self,
+        _package: &StoredPackage,
+        resource: &Resource,
+    ) -> Option<(CompatibilityRoute, String)> {
+        if resource.capability.kind != CapabilityKind::Agent {
+            return None;
+        }
+        let document = AgentDocument::parse(&resource.capability.payload)?;
+        let ignored: Vec<&str> = ["permissionMode", "hooks", "mcpServers", "initialPrompt"]
+            .into_iter()
+            .filter(|field| document.frontmatter.contains_key(field))
+            .collect();
+        (!ignored.is_empty()).then(|| {
+            (
+                CompatibilityRoute::Degraded,
+                format!(
+                    "Claude Code ignores these fields on an agent a plugin delivers: {}.",
+                    ignored.join(", ")
+                ),
+            )
+        })
     }
 
     fn attach_package(
@@ -372,6 +409,7 @@ impl IntegrationPort for ClaudeIntegration {
                     materialize_shim(
                         target,
                         skill_source_dir,
+                        resolve_bytes(&resource.capability.payload, &resource.package_root),
                         entry_name,
                         Some(&namespace),
                         &policy,
@@ -414,6 +452,10 @@ impl IntegrationPort for ClaudeIntegration {
                         wrapper,
                     },
                 )?;
+                true
+            }
+            ManagedArtifact::GeneratedFile { .. } => {
+                artifact.attach_standard()?;
                 true
             }
             _ => false,
@@ -518,17 +560,32 @@ impl IntegrationPort for ClaudeIntegration {
     }
 }
 
+/// A Claude user agent outside a plugin: named by its frontmatter `name`,
+/// which becomes the label, and keeping every authored field — Claude's
+/// format is the canonical one.
+const CLAUDE_USER_AGENT: MarkdownAgent = MarkdownAgent {
+    name_in_frontmatter: true,
+    set: &[],
+    keep: |_| true,
+};
+
 impl ClaudeIntegration {
+    /// Only reached when the package is not delivered as a plugin: Claude
+    /// names a user agent after its frontmatter `name`, so the generated
+    /// definition is named with the label and keeps every other field,
+    /// Claude's own format being the canonical one.
     fn agent_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
-        let entry_name = resource
-            .resolved_exposure_name
-            .clone()
-            .unwrap_or_else(|| agent_name(resource));
-        markdown_agent_plan(
+        let label = agent_label(&self.uze_home, resource);
+        let content = markdown_agent(&label, resource, &CLAUDE_USER_AGENT);
+        agent_file_plan(
             &self.agents_dir,
-            &entry_name,
-            resource,
-            "Claude Code natively discovers Markdown subagents from its user agents directory; UZE keeps a receipt-owned symlink to the canonical Store definition.",
+            &label,
+            "md",
+            content,
+            projection_route(
+                "Claude Code natively discovers Markdown subagents from its user agents directory; outside a plugin UZE writes the definition there under the agent's label, receipt-owned by its content.",
+                &[],
+            ),
         )
     }
 
@@ -537,7 +594,7 @@ impl ClaudeIntegration {
             &self.uze_home,
             resource,
             self.hooks_config_path(),
-            "Claude Code reads `hooks` from its user settings file; UZE merges one group entry per canonical hook (matcher and timeout preserved) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps the exact entry receipt-owned. The generated settings entry follows the plugin `hooks/hooks.json` group form.",
+            "Claude Code reads `hooks` from its user settings file; UZE merges one group entry per canonical hook (matcher and timeout preserved) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps the exact entry receipt-owned. The generated settings entry follows the plugin `hooks/hooks.json` group form; SessionStart is Claude's own event, matched on the session's source.",
         )
     }
 }
@@ -666,4 +723,31 @@ mod lifecycle_tests {
         assert!(!shim.exists());
         let _ = fs::remove_dir_all(root);
     }
+}
+
+/// The names Claude's MCP registry accepts for a server, most readable
+/// first: `<plugin>-<server>`, then `<plugin>-<marketplace>-<server>`.
+fn mcp_registry_names(uze_home: &UzeHome, resource: &Resource) -> Vec<String> {
+    let Some(server) = resource.logical_capability_name() else {
+        return Vec::new();
+    };
+    let plugin = active_plugin_name(uze_home, resource);
+    let marketplace = resource.package_id.marketplace();
+    [
+        format!("{plugin}-{server}"),
+        format!("{plugin}-{marketplace}-{server}"),
+    ]
+    .into_iter()
+    .map(|name| {
+        name.chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect()
+    })
+    .collect()
 }

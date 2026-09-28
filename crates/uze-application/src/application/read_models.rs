@@ -90,6 +90,19 @@ pub struct PluginSummary {
     /// Whether the one installed is the one that exists, and when that was
     /// last established.
     pub freshness: Freshness,
+    /// Every harness the package is installed for and could not be
+    /// delivered to. Empty for a package every harness received.
+    pub undelivered: Vec<UndeliveredHarness>,
+}
+
+/// One harness a package stayed installed without reaching, and the error
+/// its delivery ended in.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UndeliveredHarness {
+    pub integration: String,
+    /// The harness's own name, for a person reading the listing.
+    pub display_name: String,
+    pub error: String,
 }
 
 /// What UZE can say about whether an installed package is current.
@@ -349,6 +362,64 @@ pub struct BlockedCapability {
     pub reason: String,
 }
 
+/// What one harness received of a package, or why it received nothing.
+#[derive(Clone, Debug, Serialize)]
+pub struct HarnessDeliveryReport {
+    pub integration: String,
+    pub display_name: String,
+    #[serde(flatten)]
+    pub outcome: HarnessDeliveryOutcome,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum HarnessDeliveryOutcome {
+    Delivered {
+        route: DeliveryRoute,
+        /// Every artifact recorded for this harness, the package's own
+        /// entry and each capability delivered beside it alike.
+        attachments: Vec<PathBuf>,
+        blocked: Vec<BlockedCapability>,
+        /// Capabilities the harness received short of their canonical
+        /// meaning, each saying what it lost.
+        shortfalls: Vec<CapabilityShortfallReport>,
+    },
+    /// The delivery stopped with `error`, and whatever it had attached to
+    /// this harness was taken back off.
+    Failed { error: String },
+}
+
+/// A capability delivered on a route less than native.
+#[derive(Clone, Debug, Serialize)]
+pub struct CapabilityShortfallReport {
+    pub capability: String,
+    pub route: uze_core::router::CompatibilityRoute,
+    pub evidence: String,
+}
+
+/// How a package reached a harness, and why that way rather than another.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeliveryRoute {
+    /// As one package, through the harness's own plugin mechanism.
+    Package {
+        envelope: uze_core::exposure::PackageEnvelope,
+        route: uze_core::router::CompatibilityRoute,
+        evidence: String,
+    },
+    /// Each capability attached on its own.
+    CapabilityByCapability { reason: String },
+}
+
+impl HarnessDeliveryReport {
+    pub fn error(&self) -> Option<&str> {
+        match &self.outcome {
+            HarnessDeliveryOutcome::Failed { error } => Some(error),
+            HarnessDeliveryOutcome::Delivered { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct AddPluginReport {
     pub plugin: PluginSummary,
@@ -363,6 +434,17 @@ pub struct AddPluginReport {
     /// project, or from the marketplace built into UZE, installs on the
     /// machine alone — and the scope it reports has to say so.
     pub declared: bool,
+    /// One entry per detected harness, in the registry's order.
+    pub deliveries: Vec<HarnessDeliveryReport>,
+}
+
+impl AddPluginReport {
+    /// The harnesses this install failed on, while the package stayed.
+    pub fn undelivered(&self) -> impl Iterator<Item = &HarnessDeliveryReport> {
+        self.deliveries
+            .iter()
+            .filter(|delivery| delivery.error().is_some())
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -371,6 +453,7 @@ pub enum UpdatePluginReport {
         plugin: PluginSummary,
         attachments: Vec<AttachmentSummary>,
         publications: Vec<PublicationOutcome>,
+        deliveries: Vec<HarnessDeliveryReport>,
     },
     /// The installed package could not be safely detached, so nothing was
     /// replaced. The newly resolved revision is discarded with its scratch

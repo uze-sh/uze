@@ -4,7 +4,7 @@
 //! translated into Claude's own SKILL.md frontmatter fields
 //! (`disable-model-invocation`, `user-invocable`) — see ADR-030.
 
-use std::{fs, path::Path};
+use std::{borrow::Cow, fs, path::Path};
 
 use uze_core::{
     Result, UzeError,
@@ -88,6 +88,7 @@ impl ClaudeIntegration {
 pub(super) fn materialize_shim(
     shim_root: &Path,
     canonical_skill_dir: &Path,
+    delivered: Cow<[u8]>,
     entry_name: &str,
     namespace: Option<&str>,
     policy: &SkillInvocationPolicy,
@@ -127,21 +128,22 @@ pub(super) fn materialize_shim(
     // shim, not against the Store, so they are linked beside its SKILL.md.
     link_extras(canonical_skill_dir, shim_root, &[".claude-plugin"])?;
     let skill_link = shim_root.join("SKILL.md");
-    if policy.is_default() {
+    if policy.is_default() && matches!(delivered, Cow::Borrowed(_)) {
         let skill_source = canonical_skill_dir.join("SKILL.md");
         return link_or_repair(&skill_link, &skill_source);
     }
-    // Non-default policy: the delivered SKILL.md must carry Claude's own
-    // frontmatter markers, so it is materialized — never a symlink.
-    let bytes = fs::read(canonical_skill_dir.join("SKILL.md")).map_err(|error| UzeError::Read {
-        path: canonical_skill_dir.join("SKILL.md"),
-        source: error,
-    })?;
-    let fallback_name = canonical_skill_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(entry_name);
-    let document = claude_wrapper_skill_document(&bytes, policy, fallback_name);
+    // A non-default policy must carry Claude's own frontmatter markers, and
+    // a resolved package root differs from the Store bytes: either way the
+    // delivered SKILL.md is materialized — never a symlink.
+    let document = if policy.is_default() {
+        String::from_utf8_lossy(&delivered).into_owned()
+    } else {
+        let fallback_name = canonical_skill_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(entry_name);
+        claude_wrapper_skill_document(&delivered, policy, fallback_name)
+    };
     if skill_link.is_symlink() {
         fs::remove_file(&skill_link).map_err(|source| UzeError::Write {
             path: skill_link.clone(),
@@ -198,7 +200,15 @@ mod tests {
             let shim = root.join("shim");
             let policy = uze_core::skill::parse_skill_invocation(body.as_bytes())
                 .unwrap_or(SkillInvocationPolicy::MODEL_AND_USER);
-            materialize_shim(&shim, &canonical, "flow:deploy", Some("flow"), &policy).unwrap();
+            materialize_shim(
+                &shim,
+                &canonical,
+                Cow::Borrowed(body.as_bytes()),
+                "flow:deploy",
+                Some("flow"),
+                &policy,
+            )
+            .unwrap();
             assert!(shim.join("scripts").is_symlink(), "{label}");
             assert!(shim.join("scripts/run.sh").is_file(), "{label}");
             assert!(shim.join("SKILL.md").exists(), "{label}");

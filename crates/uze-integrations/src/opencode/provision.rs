@@ -6,7 +6,10 @@
 //! `opencode2` name is still probed for backward compatibility. UZE's
 //! runtime shim keeps `opencode` stable without mutating vendor paths.
 
-use std::path::Path;
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 use uze_core::{
     Result,
@@ -30,10 +33,37 @@ use crate::shared::provision::official_installer;
 /// so a bare lookup could re-enter UZE's own runtime shim instead of the
 /// vendor CLI.
 pub(super) fn resolve_opencode_binary(shims_dir: &Path) -> Option<(String, HarnessDetection)> {
-    let path = resolve_real_executable(&["opencode", "opencode2"], shims_dir)?;
+    let path = resolve_real_executable(&PROGRAMS, shims_dir).or_else(|| {
+        installed_outside_path(&documented_install_dirs(|key| std::env::var_os(key)))
+    })?;
     let path = path.to_string_lossy().into_owned();
     let detection = detect_binary(&path);
     detection.present.then_some((path, detection))
+}
+
+const PROGRAMS: [&str; 2] = ["opencode", "opencode2"];
+
+/// Where the official installer puts the binary, in the order it chooses:
+/// `$OPENCODE_INSTALL_DIR`, `$XDG_BIN_DIR`, `~/bin`, then `~/.opencode/bin`.
+/// A fresh install only edits the person's rc files, which no running shell
+/// has read again, so `uze setup opencode` finds it there rather than
+/// reporting an install that succeeded as unverifiable.
+fn documented_install_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = ["OPENCODE_INSTALL_DIR", "XDG_BIN_DIR"]
+        .into_iter()
+        .filter_map(|key| var(key).map(PathBuf::from))
+        .collect();
+    if let Some(home) = var("HOME").map(PathBuf::from) {
+        dirs.push(home.join("bin"));
+        dirs.push(home.join(".opencode/bin"));
+    }
+    dirs
+}
+
+fn installed_outside_path(dirs: &[PathBuf]) -> Option<PathBuf> {
+    dirs.iter()
+        .flat_map(|dir| PROGRAMS.iter().map(move |program| dir.join(program)))
+        .find(|candidate| candidate.is_file())
 }
 
 /// `opencode --version` prints "opencode2 v0.0.0-beta-17823" — the version
@@ -109,6 +139,8 @@ pub(super) fn provision_opencode(
 #[cfg(test)]
 mod provision_tests {
     use std::path::Path;
+
+    use super::{documented_install_dirs, installed_outside_path};
 
     use uze_core::home::UzeHome;
     use uze_core::integration::IntegrationPort;
@@ -193,5 +225,31 @@ mod provision_tests {
             assert!(commands[0].arguments[1].contains("opencode.ai/v2/install"));
         }
         assert_eq!(commands.len(), 1);
+    }
+
+    #[test]
+    fn the_installer_destinations_are_searched_in_its_own_order() {
+        let dirs = documented_install_dirs(|key| match key {
+            "XDG_BIN_DIR" => Some("/xdg/bin".into()),
+            "HOME" => Some("/home/a".into()),
+            _ => None,
+        });
+        assert_eq!(
+            dirs,
+            ["/xdg/bin", "/home/a/bin", "/home/a/.opencode/bin"]
+                .map(std::path::PathBuf::from)
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn a_binary_the_installer_placed_off_path_is_found() {
+        let root = uze_testkit::temp::scratch("opencode-off-path");
+        let bin = root.join(".opencode/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("opencode"), "#!/bin/sh\n").unwrap();
+        let found = installed_outside_path(&[root.join("bin"), bin.clone()]);
+        assert_eq!(found, Some(bin.join("opencode")));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

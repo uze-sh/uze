@@ -13,7 +13,7 @@ use std::{
 
 use uze_core::{
     Result,
-    capability::Resource,
+    capability::{CapabilityKind, Resource},
     integration::{AttachmentInspection, AttachmentState},
     skill::SkillInvocationPolicy,
     store::StoredPackage,
@@ -42,7 +42,8 @@ impl MarketplaceDialect for ClaudeMarketplace {
     const EXPLICIT_KIND: &'static str = "claude-plugin";
     const GENERATED_KIND: &'static str = "claude-plugin-generated";
     const EXPLICIT_EVIDENCE: &'static str = "The preserved external .claude-plugin/plugin.json is exposed through UZE's derived Claude marketplace. Claude Code owns Skill and MCP loading for this plugin, so UZE must not attach them a second time.";
-    const GENERATED_EVIDENCE: &'static str = "No .claude-plugin/plugin.json was provided. UZE synthesizes one deterministically into a UZE-owned derived directory (never the Store) covering exactly the package's conventional skills/ directory and mcp.json-declared servers, published through a second, generated-only Claude marketplace.";
+    const GENERATED_EVIDENCE: &'static str = "No .claude-plugin/plugin.json was provided. UZE synthesizes one deterministically into a UZE-owned derived directory (never the Store): a copy of the package carrying its skills, agents and mcp.json-declared servers, published through a second, generated-only Claude marketplace, so Claude names every skill and agent under the plugin.";
+    const ENVELOPE_CARRIES_AGENTS: bool = true;
 
     fn catalogue_document(
         name: &str,
@@ -303,104 +304,138 @@ fn installed_entry<'a>(
     })
 }
 
+/// What the package's own `.claude-plugin/plugin.json` makes Claude load,
+/// by Claude's documented discovery (plugins reference, "How each key
+/// combines with its default location"), so nothing it loads is delivered
+/// a second time beside it:
+///
+/// - Skills: `skills/` is always scanned; a `skills` field only adds
+///   directories to it.
+/// - Agents: `agents/`, recursively, unless an `agents` field lists the
+///   files to load instead.
+/// - MCP servers: `.mcp.json`, merged with `mcpServers` given inline, as a
+///   path to a JSON file, or as a list of either.
+/// - Hooks: an envelope that declares hooks of its own (`hooks/hooks.json`
+///   or a `hooks` field) is the author's Claude hook surface, and the
+///   canonical `hooks.json` is not delivered beside it.
+///
+/// A Skill is covered only when the bytes Claude reads already carry its
+/// canonical invocation policy, since UZE never rewrites an author's
+/// envelope (ADR-030 §13).
 pub(super) fn claude_exact_coverage(
     package: &StoredPackage,
     resources: &[&Resource],
 ) -> BTreeSet<String> {
-    let manifest_path = package.root.join(".claude-plugin/plugin.json");
-    let bytes = match fs::read(&manifest_path) {
-        Ok(bytes) => bytes,
-        Err(_) => return BTreeSet::new(),
+    let Some(manifest) = read_json(&package.root.join(".claude-plugin/plugin.json")) else {
+        return BTreeSet::new();
     };
-    let value: serde_json::Value = match serde_json::from_slice(&bytes) {
-        Ok(v) => v,
-        Err(_) => return BTreeSet::new(),
-    };
+    let skill_dirs = declared_paths(manifest.get("skills"));
+    let listed_agents = manifest
+        .get("agents")
+        .map(|agents| declared_paths(Some(agents)));
+    let mcp_servers = envelope_mcp_servers(&package.root, &manifest);
+    let has_hooks =
+        manifest.get("hooks").is_some() || package.root.join("hooks/hooks.json").is_file();
 
-    let mut declared_skill_dirs: BTreeSet<String> = BTreeSet::new();
-    if let Some(skills) = value.get("skills").and_then(serde_json::Value::as_array) {
-        for entry in skills {
-            let Some(raw) = entry.as_str() else {
-                continue;
-            };
-            // `normalize_declared_relative_path` rejects absolute/escaping/
-            // empty/dot-only declarations outright — see
-            // `crate::shared::path`'s own doc comment for why this must
-            // never strip a leading `/` and let it through as relative.
-            let Some(normalized) = normalize_declared_relative_path(raw) else {
-                continue;
-            };
-            declared_skill_dirs.insert(normalized.to_string_lossy().into_owned());
-        }
-    }
-
-    let mut declared_mcp: BTreeSet<String> = BTreeSet::new();
-    if let Some(servers) = value
-        .get("mcpServers")
-        .and_then(serde_json::Value::as_object)
-    {
-        for key in servers.keys() {
-            declared_mcp.insert(key.clone());
-        }
-    }
-
-    let mut provided = BTreeSet::new();
-    for resource in resources {
-        match resource.capability.kind {
-            uze_core::capability::CapabilityKind::AgentSkill => {
-                let Some(parent) = resource
-                    .capability
-                    .path
-                    .strip_prefix(&package.root)
-                    .ok()
-                    .and_then(|p| p.parent())
-                    .map(|p| p.to_string_lossy().into_owned())
-                else {
-                    continue;
-                };
-                // Parent is like "skills/skill-a"
-                if !declared_skill_dirs.contains(&parent) {
-                    continue;
+    resources
+        .iter()
+        .filter(|resource| {
+            let relative = resource
+                .capability
+                .path
+                .strip_prefix(&package.root)
+                .unwrap_or(&resource.capability.path);
+            match resource.capability.kind {
+                CapabilityKind::AgentSkill => {
+                    let parent = relative.parent().unwrap_or(Path::new(""));
+                    let loaded = parent.parent() == Some(Path::new("skills"))
+                        || skill_dirs
+                            .iter()
+                            .any(|dir| parent == dir || parent.parent() == Some(dir));
+                    loaded && skill_policy_preserved(resource)
                 }
-                // A path match alone is not enough (ADR-030 §13): UZE never
-                // rewrites an author's explicit-envelope content, so the
-                // delivered bytes are whatever the canonical SKILL.md itself
-                // contains, and Claude's defaults are model+user. A Skill is
-                // only honestly claimed as covered when its canonical
-                // `invoke:` policy matches what the shipped bytes declare to
-                // Claude:
-                //   - default policy  → Claude's own defaults apply;
-                //   - model=false     → the bytes must already carry
-                //     `disable-model-invocation: true`;
-                //   - user=false      → the bytes must already carry
-                //     `user-invocable: false`;
-                //   - invalid         → never covered (falls through to
-                //     capability-level delivery, which refuses it).
-                let policy = resource.skill_invocation();
-                let preserved = if policy.is_invalid() {
-                    false
-                } else if !policy.model {
-                    crate::shared::skill::has_disable_model_invocation(&resource.capability.payload)
-                } else if !policy.user {
-                    crate::shared::skill::has_user_invocable_false(&resource.capability.payload)
-                } else {
-                    true
-                };
-                if preserved {
-                    provided.insert(resource.identity());
-                }
+                CapabilityKind::Agent => match &listed_agents {
+                    None => relative.starts_with("agents"),
+                    Some(files) => files.iter().any(|file| file == relative),
+                },
+                CapabilityKind::Mcp => resource
+                    .resource_name
+                    .as_ref()
+                    .is_some_and(|name| mcp_servers.contains(name)),
+                CapabilityKind::Hook => has_hooks,
+                CapabilityKind::Instruction => false,
             }
-            uze_core::capability::CapabilityKind::Mcp => {
-                if let Some(name) = &resource.resource_name
-                    && declared_mcp.contains(name)
+        })
+        .map(|resource| resource.identity())
+        .collect()
+}
+
+fn skill_policy_preserved(resource: &Resource) -> bool {
+    let policy = resource.skill_invocation();
+    if policy.is_invalid() {
+        false
+    } else if !policy.model {
+        crate::shared::skill::has_disable_model_invocation(&resource.capability.payload)
+    } else if !policy.user {
+        crate::shared::skill::has_user_invocable_false(&resource.capability.payload)
+    } else {
+        true
+    }
+}
+
+fn read_json(path: &Path) -> Option<serde_json::Value> {
+    serde_json::from_slice(&fs::read(path).ok()?).ok()
+}
+
+/// A path field's declarations — one path or a list of them — normalized,
+/// with anything absolute or escaping the plugin dropped (see
+/// `crate::shared::path`: such a path never loads in Claude either).
+fn declared_paths(field: Option<&serde_json::Value>) -> Vec<std::path::PathBuf> {
+    let raw: Vec<&str> = match field {
+        Some(serde_json::Value::String(path)) => vec![path.as_str()],
+        Some(serde_json::Value::Array(items)) => {
+            items.iter().filter_map(serde_json::Value::as_str).collect()
+        }
+        _ => Vec::new(),
+    };
+    raw.into_iter()
+        .filter_map(normalize_declared_relative_path)
+        .collect()
+}
+
+/// Every server name Claude loads from the envelope.
+fn envelope_mcp_servers(root: &Path, manifest: &serde_json::Value) -> BTreeSet<String> {
+    fn add_document(names: &mut BTreeSet<String>, document: &serde_json::Value) {
+        if let Some(servers) = document
+            .get("mcpServers")
+            .and_then(serde_json::Value::as_object)
+        {
+            names.extend(servers.keys().cloned());
+        }
+    }
+    let mut names = BTreeSet::new();
+    if let Some(document) = read_json(&root.join(".mcp.json")) {
+        add_document(&mut names, &document);
+    }
+    let declared = match manifest.get("mcpServers") {
+        Some(serde_json::Value::Array(items)) => items.iter().collect(),
+        Some(single) => vec![single],
+        None => Vec::new(),
+    };
+    for entry in declared {
+        match entry {
+            serde_json::Value::Object(servers) => names.extend(servers.keys().cloned()),
+            serde_json::Value::String(path) => {
+                if let Some(document) = normalize_declared_relative_path(path)
+                    .and_then(|relative| read_json(&root.join(relative)))
                 {
-                    provided.insert(resource.identity());
+                    add_document(&mut names, &document);
                 }
             }
             _ => {}
         }
     }
-    provided
+    names
 }
 
 fn inspect_claude_plugin(
@@ -551,6 +586,10 @@ mod claude_native_coverage_tests {
         body: &str,
     ) -> Resource {
         let path = pkg.root.join(format!("skills/{skill}/SKILL.md"));
+        skill_at(pkg, path, body)
+    }
+
+    fn skill_at(pkg: &uze_core::store::StoredPackage, path: PathBuf, body: &str) -> Resource {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, body).unwrap();
         Resource::from_package(
@@ -680,7 +719,7 @@ mod claude_native_coverage_tests {
     }
 
     #[test]
-    fn envelope_declares_subset_only_that_subset_is_covered() {
+    fn every_skill_under_skills_is_loaded_whatever_the_skills_field_lists() {
         let (_root, pkg) = make_package_with_plugin(
             "subset",
             r#"{"name":"test-pkg","version":"0.1.0","skills":["./skills/a"]}"#,
@@ -690,35 +729,42 @@ mod claude_native_coverage_tests {
         let r_m = mcp_resource(&pkg, "mcp-x");
         let resources = vec![&r_a, &r_b, &r_m];
         let covered = claude_exact_coverage(&pkg, &resources);
-        assert_eq!(covered, BTreeSet::from([r_a.identity()]));
-        assert!(!covered.contains(&r_b.identity()));
-        assert!(!covered.contains(&r_m.identity()));
+        // Claude always scans `skills/`; the field only adds directories.
+        assert_eq!(covered, BTreeSet::from([r_a.identity(), r_b.identity()]));
+        assert!(!covered.contains(&r_m.identity()), "no server was declared");
         let _ = fs::remove_dir_all(_root);
     }
 
     #[test]
-    fn envelope_references_nonexistent_resource_is_ignored() {
+    fn a_declared_directory_that_does_not_exist_changes_nothing() {
         let (_root, pkg) = make_package_with_plugin(
             "ghost",
             r#"{"name":"test-pkg","skills":["./skills/ghost"]}"#,
         );
         let r_a = skill_resource(&pkg, "a");
-        let resources = vec![&r_a];
-        let covered = claude_exact_coverage(&pkg, &resources);
-        assert!(covered.is_empty());
+        let covered = claude_exact_coverage(&pkg, &[&r_a]);
+        assert_eq!(covered, BTreeSet::from([r_a.identity()]));
         let _ = fs::remove_dir_all(_root);
     }
 
     #[test]
-    fn store_has_extra_resource_not_declared_is_not_covered() {
-        let (_root, pkg) =
-            make_package_with_plugin("extra", r#"{"name":"test-pkg","skills":["./skills/a"]}"#);
-        let r_a = skill_resource(&pkg, "a");
-        let r_extra = skill_resource(&pkg, "extra");
-        // Also create a file for extra on disk already via skill_resource
-        let resources = vec![&r_a, &r_extra];
-        let covered = claude_exact_coverage(&pkg, &resources);
-        assert_eq!(covered, BTreeSet::from([r_a.identity()]));
+    fn a_nested_skill_is_loaded_only_when_its_directory_is_declared() {
+        let (_root, pkg) = make_package_with_plugin(
+            "nested",
+            r#"{"name":"test-pkg","skills":["./skills/extra"]}"#,
+        );
+        let declared = skill_at(
+            &pkg,
+            pkg.root.join("skills/extra/deploy/SKILL.md"),
+            "---\nname: deploy\n---\n",
+        );
+        let undeclared = skill_at(
+            &pkg,
+            pkg.root.join("skills/other/audit/SKILL.md"),
+            "---\nname: audit\n---\n",
+        );
+        let covered = claude_exact_coverage(&pkg, &[&declared, &undeclared]);
+        assert_eq!(covered, BTreeSet::from([declared.identity()]));
         let _ = fs::remove_dir_all(_root);
     }
 
@@ -739,13 +785,109 @@ mod claude_native_coverage_tests {
     }
 
     #[test]
-    fn empty_coverage_when_no_skills_or_mcp_declared() {
+    fn an_envelope_without_fields_still_loads_its_default_skills() {
         let (_root, pkg) =
             make_package_with_plugin("empty", r#"{"name":"test-pkg","version":"0.1.0"}"#);
         let r_a = skill_resource(&pkg, "a");
-        let resources = vec![&r_a];
-        let covered = claude_exact_coverage(&pkg, &resources);
-        assert!(covered.is_empty());
+        let covered = claude_exact_coverage(&pkg, &[&r_a]);
+        // This is the report's duplicate delivery: every skill was also
+        // linked loose because an envelope with no `skills` field was read
+        // as covering nothing.
+        assert_eq!(covered, BTreeSet::from([r_a.identity()]));
+        let _ = fs::remove_dir_all(_root);
+    }
+
+    #[test]
+    fn agents_are_loaded_from_agents_unless_the_field_lists_files() {
+        let agent = |pkg: &uze_core::store::StoredPackage, relative: &str| {
+            let path = pkg.root.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "---\ndescription: d\n---\nbody\n").unwrap();
+            Resource::from_package(
+                pkg.id.clone(),
+                pkg.root.clone(),
+                Capability {
+                    kind: CapabilityKind::Agent,
+                    path,
+                    payload: Vec::new(),
+                },
+            )
+        };
+        let (_root, pkg) = make_package_with_plugin("agents-default", r#"{"name":"test-pkg"}"#);
+        let flat = agent(&pkg, "agents/reviewer.md");
+        let nested = agent(&pkg, "agents/review/security.md");
+        assert_eq!(
+            claude_exact_coverage(&pkg, &[&flat, &nested]),
+            BTreeSet::from([flat.identity(), nested.identity()])
+        );
+        let _ = fs::remove_dir_all(_root);
+
+        let (_root, pkg) = make_package_with_plugin(
+            "agents-listed",
+            r#"{"name":"test-pkg","agents":["./agents/reviewer.md"]}"#,
+        );
+        let flat = agent(&pkg, "agents/reviewer.md");
+        let nested = agent(&pkg, "agents/review/security.md");
+        assert_eq!(
+            claude_exact_coverage(&pkg, &[&flat, &nested]),
+            BTreeSet::from([flat.identity()])
+        );
+        let _ = fs::remove_dir_all(_root);
+    }
+
+    #[test]
+    fn servers_are_read_from_mcp_json_and_from_a_declared_file() {
+        let (_root, pkg) = make_package_with_plugin(
+            "mcp-files",
+            r#"{"name":"test-pkg","mcpServers":"./mcp/servers.json"}"#,
+        );
+        fs::write(
+            pkg.root.join(".mcp.json"),
+            r#"{"mcpServers":{"rtc":{"command":"x"}}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(pkg.root.join("mcp")).unwrap();
+        fs::write(
+            pkg.root.join("mcp/servers.json"),
+            r#"{"mcpServers":{"gitlab":{"command":"y"}}}"#,
+        )
+        .unwrap();
+        let rtc = mcp_resource(&pkg, "rtc");
+        let gitlab = mcp_resource(&pkg, "gitlab");
+        let other = mcp_resource(&pkg, "other");
+        assert_eq!(
+            claude_exact_coverage(&pkg, &[&rtc, &gitlab, &other]),
+            BTreeSet::from([rtc.identity(), gitlab.identity()])
+        );
+        let _ = fs::remove_dir_all(_root);
+    }
+
+    #[test]
+    fn an_envelope_with_hooks_of_its_own_shadows_the_canonical_ones() {
+        let hook = |pkg: &uze_core::store::StoredPackage| {
+            Resource::from_package_named(
+                pkg.id.clone(),
+                pkg.root.clone(),
+                Capability {
+                    kind: CapabilityKind::Hook,
+                    path: pkg.root.join("hooks.json"),
+                    payload: Vec::new(),
+                },
+                "guard".to_owned(),
+            )
+        };
+        let (_root, pkg) = make_package_with_plugin("no-hooks", r#"{"name":"test-pkg"}"#);
+        assert!(claude_exact_coverage(&pkg, &[&hook(&pkg)]).is_empty());
+        let _ = fs::remove_dir_all(_root);
+
+        let (_root, pkg) = make_package_with_plugin("own-hooks", r#"{"name":"test-pkg"}"#);
+        fs::create_dir_all(pkg.root.join("hooks")).unwrap();
+        fs::write(pkg.root.join("hooks/hooks.json"), r#"{"hooks":{}}"#).unwrap();
+        let guard = hook(&pkg);
+        assert_eq!(
+            claude_exact_coverage(&pkg, &[&guard]),
+            BTreeSet::from([guard.identity()])
+        );
         let _ = fs::remove_dir_all(_root);
     }
 
@@ -778,25 +920,25 @@ mod claude_native_coverage_tests {
 
     /// Regression test for a real bug (see `crate::shared::path`'s own doc
     /// comment): the previous per-entry normalization stripped a leading
-    /// `/` before checking `is_absolute()`, so `/skills/commit` silently
-    /// became the relative declaration `skills/commit` and was ACCEPTED —
-    /// wrongly covering a real skill that lives at exactly that path. The
-    /// escape-attempts test above never caught this because none of its
-    /// declared paths collided with a resource that actually exists;
-    /// this one deliberately does.
+    /// `/` before checking `is_absolute()`, so `/skills/extra` silently
+    /// became the relative declaration `skills/extra` and was ACCEPTED —
+    /// wrongly covering a real skill that lives at exactly that path.
     #[test]
     fn leading_slash_declaration_is_rejected_even_when_it_would_collide_with_a_real_skill() {
         let (_root, pkg) = make_package_with_plugin(
             "leading-slash-collision",
-            r#"{"name":"test-pkg","skills":["/skills/commit"]}"#,
+            r#"{"name":"test-pkg","skills":["/skills/extra"]}"#,
         );
-        let commit = skill_resource(&pkg, "commit");
-        let resources = vec![&commit];
-        let covered = claude_exact_coverage(&pkg, &resources);
+        let nested = skill_at(
+            &pkg,
+            pkg.root.join("skills/extra/commit/SKILL.md"),
+            "---\nname: commit\n---\n",
+        );
+        let covered = claude_exact_coverage(&pkg, &[&nested]);
         assert!(
             covered.is_empty(),
-            "`/skills/commit` is an absolute declaration and must never be silently \
-             relativized into covering the real `skills/commit` resource: got {covered:?}"
+            "`/skills/extra` is an absolute declaration and must never be silently \
+             relativized into covering the real `skills/extra` directory: got {covered:?}"
         );
         let _ = fs::remove_dir_all(_root);
     }
@@ -807,11 +949,14 @@ mod claude_native_coverage_tests {
     fn whitespace_padded_absolute_declaration_is_also_rejected() {
         let (_root, pkg) = make_package_with_plugin(
             "whitespace-padded-absolute",
-            r#"{"name":"test-pkg","skills":["  /skills/commit  "]}"#,
+            r#"{"name":"test-pkg","skills":["  /skills/extra  "]}"#,
         );
-        let commit = skill_resource(&pkg, "commit");
-        let resources = vec![&commit];
-        let covered = claude_exact_coverage(&pkg, &resources);
+        let nested = skill_at(
+            &pkg,
+            pkg.root.join("skills/extra/commit/SKILL.md"),
+            "---\nname: commit\n---\n",
+        );
+        let covered = claude_exact_coverage(&pkg, &[&nested]);
         assert!(covered.is_empty(), "got {covered:?}");
         let _ = fs::remove_dir_all(_root);
     }
@@ -923,7 +1068,9 @@ mod claude_native_coverage_tests {
         let (_root, pkg) =
             make_package_with_plugin("receipt", r#"{"name":"test-pkg","skills":["./skills/a"]}"#);
         let r_a = skill_resource(&pkg, "a");
-        let r_b = skill_resource(&pkg, "b");
+        // A server the envelope does not load stays with capability-level
+        // delivery.
+        let r_b = mcp_resource(&pkg, "undeclared");
         let resources = vec![&r_a, &r_b];
         let integration =
             ClaudeIntegration::new(_root.join("claude"), UzeHome::at(_root.join("uze")));

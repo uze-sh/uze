@@ -28,6 +28,7 @@ fn plugin(id: &str) -> PluginSummary {
         store_path: PathBuf::from("/store/example"),
         capability_count: 2,
         freshness: uze_application::application::Freshness::not_checked(),
+        undelivered: Vec::new(),
     }
 }
 

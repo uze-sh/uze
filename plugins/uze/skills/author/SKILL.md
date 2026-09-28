@@ -86,8 +86,19 @@ contract; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `--instructions` adds a prose contribution the project's `AGENTS.md`
 composes when it reconciles. Every generated file carries commented field
 documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
-`hooks.json` and `mcp.json` alike — UZE resolves it to the installed copy
-for every harness; anything else is reached through `PATH`.
+`hooks.json`, `mcp.json`, a `SKILL.md` and an agent definition alike — UZE
+resolves it to the installed copy for every harness; anything else is
+reached through `PATH`.
+
+An agent is `agents/<name>.md`: frontmatter with `name` and `description`,
+and its prompt as the body. Every harness offers it as
+`<plugin>:<subdirectories>:<name>` — `agents/review/security.md` in plugin
+`flow` is `flow:review:security`, and the frontmatter `name` replaces only
+the last part — so a skill that dispatches it names it that way. `name`
+and `description` are what every harness reads the same way; anything else
+(`model`, `tools`) is one harness's vocabulary: Claude Code keeps it, the
+others receive the agent without it, and the install names what each one
+did not receive.
 
 ## 3. Check, always before install
 

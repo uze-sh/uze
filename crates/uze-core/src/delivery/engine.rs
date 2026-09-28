@@ -78,9 +78,10 @@ fn hook_resources(id: &PackageId, package_root: &Path) -> Result<Vec<Resource>> 
         .collect()
 }
 
-/// Discovers the portable Agent surface. Agent definitions are ordinary
-/// Markdown files directly below `agents/`; integrations own every vendor
-/// projection of those bytes (ADR-031).
+/// Discovers the portable Agent surface: every Markdown file below
+/// `agents/`, subdirectories included (they are part of the agent's name,
+/// `capability::agent`). Integrations own every vendor projection of those
+/// bytes (ADR-031).
 fn agent_resources(id: &PackageId, package_root: &Path) -> Result<Vec<Resource>> {
     let agents_root = package_root.join("agents");
     if !agents_root.is_dir() {
@@ -291,9 +292,11 @@ mod discovery_tests {
         assert_eq!(resources.len(), 1);
         assert_eq!(resources[0].capability.kind, CapabilityKind::Agent);
         assert_eq!(resources[0].capability.payload, bytes);
+        // The subdirectory is part of the name (`capability::agent`), so two
+        // files of one name in two subdirectories never collide.
         assert_eq!(
             resources[0].logical_capability_name().as_deref(),
-            Some("reviewer")
+            Some("review:reviewer")
         );
         fs::remove_dir_all(root).unwrap();
     }

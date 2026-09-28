@@ -360,7 +360,15 @@ fn write_plugin_files(
         create_dir(&agents)?;
         write_file(
             &agents.join(format!("{name}.md")),
-            include_str!("authoring/agent.md.template"),
+            include_str!("authoring/agent.md.template")
+                .replace("{PLUGIN_NAME}", name)
+                .replace("{AGENT_NAME}", name)
+                .replace(
+                    "{AGENT_DESCRIPTION}",
+                    &yaml_double_quoted(
+                        "When to hand work to this agent. The model reads this to decide.",
+                    ),
+                ),
         )?;
     }
     if caps.instructions {
@@ -548,6 +556,19 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
                             .map(|reason| format!("{path}: {reason}")),
                     );
                 }
+                if resource.capability.kind == CapabilityKind::Agent {
+                    let path = resource.capability.path.display();
+                    let relative = resource
+                        .capability
+                        .path
+                        .strip_prefix(root.join("agents"))
+                        .unwrap_or(&resource.capability.path);
+                    findings.extend(
+                        agent_faults(relative, &resource.capability.payload)
+                            .into_iter()
+                            .map(|reason| format!("{path}: {reason}")),
+                    );
+                }
                 delivers.push(resource.identity());
             }
         }
@@ -597,6 +618,58 @@ fn skill_frontmatter_faults(payload: &[u8], directory: &str) -> Vec<String> {
         );
     }
     faults.extend(skill_name_fault(&frontmatter, directory));
+    faults
+}
+
+/// What a harness reading this agent definition would trip over. Every
+/// harness offers it under `<plugin>:<subdirectories>:<name>`, so each part
+/// of that label is held to the name rule, and the frontmatter is read as
+/// the YAML a harness parses it as: one that does not parse loses the
+/// agent on some harnesses and its name and description on the rest.
+fn agent_faults(relative_to_agents: &Path, payload: &[u8]) -> Vec<String> {
+    let Ok(text) = std::str::from_utf8(payload) else {
+        return vec!["is not UTF-8".to_owned()];
+    };
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let mut faults = Vec::new();
+    let Some((head, _)) = crate::skill::split_frontmatter(text) else {
+        return vec![
+            "has no frontmatter — it opens with a `---` line, carries `name:` and \
+             `description:`, and closes with another `---` line"
+                .to_owned(),
+        ];
+    };
+    let frontmatter: serde_yaml::Value =
+        match from_str_with_config(head, &ParserConfig::serde_yaml_compat()) {
+            Ok(frontmatter) => frontmatter,
+            Err(error) => {
+                return vec![format!(
+                    "frontmatter is not valid YAML ({error}) — quote a value that carries `: ` \
+                     or starts with a special character"
+                )];
+            }
+        };
+    let described = frontmatter
+        .get("description")
+        .and_then(serde_yaml::Value::as_str)
+        .is_some_and(|description| !description.trim().is_empty());
+    if !described {
+        faults.push(
+            "frontmatter has no `description` — it is what the model reads to decide to \
+             hand work to this agent"
+                .to_owned(),
+        );
+    }
+    if let Some(label) = crate::capability::agent::logical_name(relative_to_agents, payload) {
+        for part in label.split(':') {
+            if !store::is_valid_package_name(part) {
+                faults.push(format!(
+                    "`{part}` in the agent's label `{label}` is refused by harnesses: {}",
+                    store::name_rule(part)
+                ));
+            }
+        }
+    }
     faults
 }
 

@@ -12,13 +12,15 @@
 //! directory (not an inline list), and `mcpServers` names one external file
 //! rather than embedding servers inline.
 
-use std::{fs, path::Path};
+use std::{borrow::Cow, fs, path::Path};
 
 use uze_core::{Result, UzeError, store::StoredPackage};
 
 use crate::shared::marketplace::manifest_fields;
 use crate::shared::mcp::delivered_mcp_servers;
+use crate::shared::package_root::resolve_bytes;
 use crate::shared::skill::write_file;
+use crate::shared::tree::mirror_tree;
 
 /// Writes the generated `.codex-plugin/plugin.json` and the surfaces it
 /// declares into a fresh envelope directory. Name/version/description come
@@ -112,12 +114,17 @@ fn materialize_generated_skills(
             .unwrap_or_else(|| resource.name());
         let target_dir = envelope_dir.join("skills").join(&skill_name);
         if policy.is_default() {
-            mirror_tree(canonical_dir, &target_dir, package_root)?;
+            mirror_tree(canonical_dir, &target_dir, package_root, &[])?;
+            let delivered = resolve_bytes(&resource.capability.payload, &resource.package_root);
+            if let Cow::Owned(resolved) = delivered {
+                crate::shared::skill::write_file(&target_dir.join("SKILL.md"), &resolved)?;
+            }
             continue;
         }
         materialize_user_only_skill_dir(
             &target_dir,
             canonical_dir,
+            &resource,
             package_root,
             &skill_name,
             &policy,
@@ -132,6 +139,7 @@ fn materialize_generated_skills(
 fn materialize_user_only_skill_dir(
     target_dir: &Path,
     canonical_dir: &Path,
+    resource: &uze_core::capability::Resource,
     package_root: &Path,
     skill_name: &str,
     policy: &uze_core::skill::SkillInvocationPolicy,
@@ -140,10 +148,7 @@ fn materialize_user_only_skill_dir(
         path: target_dir.to_path_buf(),
         source: source_error,
     })?;
-    let bytes = fs::read(canonical_dir.join("SKILL.md")).map_err(|error| UzeError::Read {
-        path: canonical_dir.join("SKILL.md"),
-        source: error,
-    })?;
+    let bytes = resolve_bytes(&resource.capability.payload, &resource.package_root);
     let name = crate::shared::skill::frontmatter_value(&bytes, "name")
         .unwrap_or_else(|| skill_name.to_owned());
     crate::shared::skill::write_file(
@@ -153,97 +158,7 @@ fn materialize_user_only_skill_dir(
     if !policy.model {
         crate::shared::skill::write_explicit_only_sidecar(target_dir)?;
     }
-    for entry in sorted_entries(canonical_dir)? {
-        let name = entry.file_name();
-        if name == "SKILL.md" {
-            continue;
-        }
-        mirror_entry(&entry.path(), &target_dir.join(&name), package_root)?;
-    }
-    Ok(())
-}
-
-/// Mirrors one canonical directory into the envelope as real files and
-/// directories. A symlink inside the package is resolved to the bytes it
-/// names when it stays inside the package root; a symlinked directory is
-/// left out, exactly as package discovery never descends into one (the
-/// containment invariant), and a link that escapes the package or dangles
-/// is refused by name rather than silently dropped — a silent drop is the
-/// failure this mirror exists to prevent.
-fn mirror_tree(source: &Path, destination: &Path, package_root: &Path) -> Result<()> {
-    fs::create_dir_all(destination).map_err(|source_error| UzeError::Write {
-        path: destination.to_path_buf(),
-        source: source_error,
-    })?;
-    for entry in sorted_entries(source)? {
-        mirror_entry(
-            &entry.path(),
-            &destination.join(entry.file_name()),
-            package_root,
-        )?;
-    }
-    Ok(())
-}
-
-fn mirror_entry(source: &Path, destination: &Path, package_root: &Path) -> Result<()> {
-    let metadata = fs::symlink_metadata(source).map_err(|source_error| UzeError::Read {
-        path: source.to_path_buf(),
-        source: source_error,
-    })?;
-    if metadata.is_dir() {
-        return mirror_tree(source, destination, package_root);
-    }
-    if metadata.is_file() {
-        return mirror_file(source, destination);
-    }
-    if !metadata.file_type().is_symlink() {
-        return Err(UzeError::ExposureUnavailable(format!(
-            "the Codex envelope cannot carry special filesystem entry `{}`",
-            source.display()
-        )));
-    }
-    let resolved = fs::canonicalize(source).map_err(|source_error| UzeError::Read {
-        path: source.to_path_buf(),
-        source: source_error,
-    })?;
-    if !resolved.starts_with(package_root) {
-        return Err(UzeError::ExposureUnavailable(format!(
-            "the Codex envelope refuses symlink `{}`: it resolves outside the package",
-            source.display()
-        )));
-    }
-    if resolved.is_dir() {
-        return Ok(());
-    }
-    mirror_file(&resolved, destination)
-}
-
-/// `fs::copy` carries the permission bits, so a skill's helper script stays
-/// executable in the envelope.
-fn mirror_file(source: &Path, destination: &Path) -> Result<()> {
-    fs::copy(source, destination)
-        .map(|_| ())
-        .map_err(|source_error| UzeError::Write {
-            path: destination.to_path_buf(),
-            source: source_error,
-        })
-}
-
-/// Sorted so the envelope is written in one deterministic order on every
-/// rebuild.
-fn sorted_entries(dir: &Path) -> Result<Vec<fs::DirEntry>> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|source_error| UzeError::Read {
-            path: dir.to_path_buf(),
-            source: source_error,
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|source_error| UzeError::Read {
-            path: dir.to_path_buf(),
-            source: source_error,
-        })?;
-    entries.sort_by_key(fs::DirEntry::file_name);
-    Ok(entries)
+    mirror_tree(canonical_dir, target_dir, package_root, &["SKILL.md"])
 }
 
 #[cfg(test)]

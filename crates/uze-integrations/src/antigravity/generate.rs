@@ -1,10 +1,14 @@
-//! Antigravity's GENERATED native plugin envelope: for a canonical UZE
-//! package whose plugin.json is a valid Antigravity manifest but whose MCP
-//! servers live in canonical `mcp.json` — which the plugin system does not
-//! read (`mcp_config.json` is the vendor name) — this module
-//! deterministically synthesizes the plugin into a UZE-owned derived
-//! directory and installs that, so the package still ships as one native
-//! plugin instead of decomposing into per-capability shims.
+//! Antigravity's GENERATED native plugin envelope: every package whose
+//! plugin.json is a valid Antigravity manifest is installed through a plugin
+//! UZE synthesizes into a UZE-owned derived directory, never the Store tree
+//! itself. `agy plugin install` stages a byte copy of what it is given, so a
+//! Store tree would reach it with `${PLUGIN_ROOT}` unresolved in every
+//! skill, and with the package's `agents/`, which agy loads from a plugin
+//! under their bare names beside the labelled ones UZE delivers (measured on
+//! 1.2.12). The plugin carries the manifest, the skills mirrored with the
+//! package root resolved, and the MCP servers in the vendor's
+//! `mcp_config.json` — translated from canonical `mcp.json`, or the author's
+//! own `mcp_config.json` when the package ships one.
 //!
 //! Generated Native Plugin sits between Explicit Native Plugin and Native
 //! Capability (ADR-013 §3), mirroring the other
@@ -20,7 +24,9 @@ use uze_core::{Result, UzeError, capability::Resource, home::UzeHome, store::Sto
 
 use crate::shared::marketplace::remove_generated_dir;
 use crate::shared::mcp::delivered_mcp_servers;
-use crate::shared::skill::recreate_dir;
+use crate::shared::package_root::resolve_bytes;
+use crate::shared::skill::{recreate_dir, write_file};
+use crate::shared::tree::mirror_tree;
 
 /// Root of every package's generated plugin directory. Lives under
 /// `$UZE_HOME/runtime/attachments/antigravity/plugins/` — the same convention
@@ -74,7 +80,7 @@ pub(super) fn generated_exact_coverage(
     package: &StoredPackage,
     resources: &[&Resource],
 ) -> BTreeSet<String> {
-    let declared_mcp = canonical_mcp_servers(package).unwrap_or_default();
+    let declared_mcp = delivered_mcp_names(package);
     let mut provided = BTreeSet::new();
     for resource in resources {
         match resource.capability.kind {
@@ -98,6 +104,17 @@ pub(super) fn generated_exact_coverage(
         }
     }
     provided
+}
+
+/// The servers the generated plugin's `mcp_config.json` declares: the
+/// author's own file when the package ships one, else canonical `mcp.json`.
+fn delivered_mcp_names(package: &StoredPackage) -> BTreeSet<String> {
+    let author = super::plugin::author_mcp_config_servers(package);
+    if author.is_empty() {
+        canonical_mcp_servers(package).unwrap_or_default()
+    } else {
+        author
+    }
 }
 
 /// The generated `plugin.json` document. Name is the canonical manifest's
@@ -154,10 +171,9 @@ fn translated_mcp_config(package: &StoredPackage) -> serde_json::Value {
 /// Materializes (or refreshes) one package's generated plugin directory.
 /// Idempotent and deterministic: recreated wholesale from the Store package
 /// on every call — the directory is entirely UZE-owned and
-/// non-authoritative (ADR-013 §5). Default-policy `skills/` are symlinked
-/// to the Store's own bytes, never copied (the vendor's install verb
-/// dereferences them when it stages its copy); canonical MCP servers are
-/// translated into the vendor `mcp_config.json`. `commands/` is no longer a
+/// non-authoritative (ADR-013 §5). `skills/` is mirrored as real files with
+/// the package root resolved in every `SKILL.md`; the MCP servers go into
+/// the vendor `mcp_config.json`. `commands/` is no longer a
 /// canonical surface (ADR-030): a vendor-authored `commands/` directory is
 /// only ever delivered through an explicit plugin the author shipped.
 pub(super) fn materialize_generated_plugin(
@@ -178,9 +194,30 @@ pub(super) fn materialize_generated_plugin(
 
     let skills_source = package.root.join("skills");
     if skills_source.is_dir() {
-        uze_core::persistence::create_symlink(&skills_source, &dir.join("skills"))?;
+        let package_root = fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
+            path: package.root.clone(),
+            source,
+        })?;
+        mirror_tree(&skills_source, &dir.join("skills"), &package_root, &[])?;
+        for resource in uze_core::engine::package_resources_at(&package.id, &package.root)? {
+            if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {
+                continue;
+            }
+            if let std::borrow::Cow::Owned(resolved) =
+                resolve_bytes(&resource.capability.payload, &resource.package_root)
+                && let Ok(relative) = resource.capability.path.strip_prefix(&package.root)
+            {
+                write_file(&dir.join(relative), &resolved)?;
+            }
+        }
     }
-    if canonical_mcp_servers(package).is_some() {
+    let author_mcp = package.root.join("mcp_config.json");
+    if author_mcp.is_file() {
+        fs::copy(&author_mcp, dir.join("mcp_config.json")).map_err(|source| UzeError::Write {
+            path: dir.join("mcp_config.json"),
+            source,
+        })?;
+    } else if canonical_mcp_servers(package).is_some() {
         let mcp = translated_mcp_config(package);
         fs::write(
             dir.join("mcp_config.json"),
@@ -397,7 +434,7 @@ mod generated_native_tests {
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.join("plugin.json")).unwrap()).unwrap();
         assert_eq!(manifest["name"], "flow");
-        assert!(dir.join("skills").is_symlink());
+        assert!(!dir.join("skills").is_symlink() && dir.join("skills").is_dir());
         assert!(
             !dir.join("commands").exists(),
             "commands/ is no longer a canonical surface; the generated plugin never carries it"
@@ -413,6 +450,34 @@ mod generated_native_tests {
             mcp["mcpServers"]["remote-b"].get("url").is_none(),
             "legacy url key must be rewritten"
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// agy stages a byte copy of what it installs and loads a plugin's
+    /// `agents/` under their bare names, so the plugin carries resolved
+    /// skills and no agents — those arrive as labelled files on their own.
+    #[test]
+    fn the_plugin_resolves_the_package_root_and_leaves_agents_out() {
+        let (root, pkg) = make_package_with_mcp("resolved-no-agents");
+        fs::write(
+            pkg.root.join("skills/commit/SKILL.md"),
+            "---\nname: commit\ndescription: d\n---\nRun ${PLUGIN_ROOT}/scripts/x.sh\n",
+        )
+        .unwrap();
+        fs::create_dir_all(pkg.root.join("agents")).unwrap();
+        fs::write(
+            pkg.root.join("agents/reviewer.md"),
+            "---\ndescription: d\n---\nb\n",
+        )
+        .unwrap();
+        let uze_home = UzeHome::at(root.join("uze"));
+        let dir = materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        let skill = fs::read_to_string(dir.join("skills/commit/SKILL.md")).unwrap();
+        assert!(
+            skill.contains(&format!("Run {}/scripts/x.sh", pkg.root.display())),
+            "{skill}"
+        );
+        assert!(!dir.join("agents").exists());
         let _ = fs::remove_dir_all(root);
     }
 

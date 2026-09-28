@@ -540,3 +540,44 @@ fn a_manifest_of_the_wrong_shape_is_refused_before_any_write() -> Result<()> {
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }
+
+#[test]
+fn check_names_an_agent_a_harness_would_drop_or_rename() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-agent-faults");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    let plugin = scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
+    fs::create_dir_all(plugin.join("agents/Review")).unwrap();
+    fs::write(plugin.join("agents/bare.md"), "No frontmatter at all.\n").unwrap();
+    fs::write(
+        plugin.join("agents/Review/audit.md"),
+        "---\nname: audit\n---\nBody.\n",
+    )
+    .unwrap();
+
+    let report = check_plugin(&plugin)?;
+    let bare = report
+        .findings
+        .iter()
+        .find(|finding| finding.contains("agents/bare.md"))
+        .expect("an agent without frontmatter is reported");
+    assert!(bare.contains("no frontmatter"), "{bare}");
+    let nested: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|finding| finding.contains("agents/Review/audit.md"))
+        .collect();
+    assert!(
+        nested
+            .iter()
+            .any(|finding| finding.contains("no `description`")),
+        "{nested:?}"
+    );
+    assert!(
+        nested
+            .iter()
+            .any(|finding| finding.contains("`Review` in the agent's label `Review:audit`")),
+        "{nested:?}"
+    );
+    Ok(())
+}

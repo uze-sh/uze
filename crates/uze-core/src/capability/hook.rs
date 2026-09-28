@@ -39,6 +39,7 @@ pub enum HookEvent {
     PreToolUse,
     PostToolUse,
     Stop,
+    SessionStart,
 }
 
 impl HookEvent {
@@ -47,9 +48,22 @@ impl HookEvent {
             Self::PreToolUse => "pre_tool_use",
             Self::PostToolUse => "post_tool_use",
             Self::Stop => "stop",
+            Self::SessionStart => "session_start",
         }
     }
+
+    /// Whether a group on this event may only observe. A session has no
+    /// operation to allow or refuse, and a plugin able to stop a person's
+    /// session from opening is not a semantic worth claiming portably.
+    pub const fn only_observes(self) -> bool {
+        matches!(self, Self::SessionStart)
+    }
 }
+
+/// How a session came to start, as a `SessionStart` matcher names it and
+/// `HOOK_SOURCE` carries it. The portable set is what every harness with the
+/// event reports; a vendor's further sources are never promised.
+pub const SESSION_SOURCES: &[&str] = &["startup", "resume", "clear"];
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -127,9 +141,29 @@ pub struct PortableHook {
 pub enum HookMatcher {
     Portable(String),
     Native(String),
+    /// One of [`SESSION_SOURCES`]; only a `SessionStart` group carries it.
+    Source(String),
 }
 
 impl HookMatcher {
+    /// Parses one `|`-separated matcher token under the grammar of the
+    /// event it belongs to: a session event matches how the session began,
+    /// every other event keeps the tool grammar.
+    pub fn parse_for(event: HookEvent, token: &str) -> std::result::Result<Self, String> {
+        if event != HookEvent::SessionStart {
+            return Self::parse(token);
+        }
+        let token = token.trim();
+        if SESSION_SOURCES.contains(&token) {
+            return Ok(Self::Source(token.to_owned()));
+        }
+        Err(format!(
+            "unknown session source `{token}`; a {} matcher lists {}",
+            event.abi_name(),
+            SESSION_SOURCES.join(", ")
+        ))
+    }
+
     pub fn parse(token: &str) -> std::result::Result<Self, String> {
         let token = token.trim();
         if let Some(native) = token.strip_prefix("native:") {
@@ -327,7 +361,11 @@ pub fn assess(
     } else {
         None
     };
+    let lacks_the_event = !capabilities.events.contains(&hook.event);
     let route = match reason {
+        // An event the target never fires has no partial form: nothing of
+        // the group reaches it, which is what Unsupported says.
+        Some(_) if lacks_the_event => CompatibilityRoute::Unsupported,
         Some(_) if hook.effect == HookEffect::Deny || hook.effect == HookEffect::Ask => {
             CompatibilityRoute::Unsupported
         }
@@ -384,6 +422,16 @@ pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
             if group.hooks.is_empty() {
                 return invalid(path, &format!("hook `{id}` has no handlers"));
             }
+            if event.only_observes() && group.effect != HookEffect::Observe {
+                return invalid(
+                    path,
+                    &format!(
+                        "hook `{id}` declares effect `{}` on SessionStart, which only observes; \
+                         use effect `observe`",
+                        group.effect.abi_name()
+                    ),
+                );
+            }
             if matches!(group.effect, HookEffect::Transform) && event != HookEvent::PreToolUse {
                 return invalid(
                     path,
@@ -393,7 +441,7 @@ pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
             let matchers = match group.matcher {
                 Some(matcher) => matcher
                     .split('|')
-                    .map(HookMatcher::parse)
+                    .map(|token| HookMatcher::parse_for(event, token))
                     .collect::<std::result::Result<Vec<_>, _>>()
                     .map_err(|reason| UzeError::InvalidHookManifest {
                         path: path.to_path_buf(),
@@ -554,13 +602,56 @@ mod tests {
             },
             true,
         );
-        assert_eq!(compatibility.route, CompatibilityRoute::Degraded);
+        assert_eq!(compatibility.route, CompatibilityRoute::Unsupported);
         assert!(
             compatibility
                 .reason
                 .unwrap()
                 .contains("no `stop` semantic event")
         );
+    }
+
+    #[test]
+    fn session_start_observes_and_matches_on_how_the_session_began() {
+        let hooks = parse_manifest(
+            Path::new("hooks.json"),
+            br#"{"hooks":{"SessionStart":[{"id":"ui","matcher":"startup|resume","hooks":[{"type":"command","command":"ensure-ui"}]},{"hooks":[{"type":"command","command":"every"}]}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(hooks[0].event, HookEvent::SessionStart);
+        assert_eq!(hooks[0].effect, HookEffect::Observe);
+        assert_eq!(
+            hooks[0].matchers,
+            vec![
+                HookMatcher::Source("startup".into()),
+                HookMatcher::Source("resume".into())
+            ]
+        );
+        assert!(hooks[1].matchers.is_empty(), "no matcher is every source");
+        assert_eq!(hooks[1].id, "session_start-1");
+    }
+
+    #[test]
+    fn session_start_refuses_a_decision_and_a_tool_matcher() {
+        for (source, names) in [
+            (
+                br#"{"hooks":{"SessionStart":[{"id":"gate","effect":"deny","hooks":[{"type":"command","command":"ok"}]}]}}"#.as_slice(),
+                ["gate", "`deny`", "`observe`"],
+            ),
+            (
+                br#"{"hooks":{"SessionStart":[{"id":"x","matcher":"shell","hooks":[{"type":"command","command":"ok"}]}]}}"#.as_slice(),
+                ["`shell`", "startup", "clear"],
+            ),
+        ] {
+            let Err(UzeError::InvalidHookManifest { reason, .. }) =
+                parse_manifest(Path::new("hooks.json"), source)
+            else {
+                panic!("the manifest must be refused");
+            };
+            for name in names {
+                assert!(reason.contains(name), "{name} missing from: {reason}");
+            }
+        }
     }
 
     #[test]

@@ -43,6 +43,7 @@
 //! for `model=false`, so the entry is correct whichever integration
 //! created it (ADR-030 §25).
 
+use crate::shared::package_root::resolve_bytes;
 use std::path::{Path, PathBuf};
 
 use uze_core::{
@@ -98,7 +99,7 @@ pub(super) fn materialize_generated_skill(
     write_superset_skill_wrapper(
         &dir,
         canonical_dir,
-        &resource.capability.payload,
+        &resolve_bytes(&resource.capability.payload, &resource.package_root),
         &label,
         &policy,
     )?;

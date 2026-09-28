@@ -19,7 +19,7 @@ use std::{
 use uze_core::{
     Result, UzeError,
     capability::{CapabilityKind, Resource},
-    exposure::PackageExposurePlan,
+    exposure::{PackageEnvelope, PackageExposurePlan},
     home::UzeHome,
     integration::{AttachmentInspection, AttachmentReceipt, ManagedArtifact, PublicationStatus},
     router::CompatibilityRoute,
@@ -47,6 +47,10 @@ pub(crate) trait MarketplaceDialect {
     const GENERATED_KIND: &'static str;
     const EXPLICIT_EVIDENCE: &'static str;
     const GENERATED_EVIDENCE: &'static str;
+    /// Whether the harness loads a plugin's `agents/` and names each one
+    /// under the plugin: a generated envelope then carries the package's
+    /// agents, and no agent is delivered beside it.
+    const ENVELOPE_CARRIES_AGENTS: bool;
 
     /// The whole catalogue document around its `plugins`.
     fn catalogue_document(
@@ -135,10 +139,13 @@ pub(crate) fn has_envelope<D: MarketplaceDialect>(package: &StoredPackage) -> bo
 
 /// Whether UZE can safely synthesize an envelope: none of the package's
 /// own, and at least one structural surface to generate from — a
-/// conventional `skills/` directory or a root `mcp.json`.
+/// conventional `skills/` directory, a root `mcp.json`, or `agents/` for a
+/// harness whose plugins carry agents.
 pub(crate) fn generatable<D: MarketplaceDialect>(package: &StoredPackage) -> bool {
     !has_envelope::<D>(package)
-        && (package.root.join("skills").is_dir() || package.root.join("mcp.json").is_file())
+        && (package.root.join("skills").is_dir()
+            || package.root.join("mcp.json").is_file()
+            || (D::ENVELOPE_CARRIES_AGENTS && package.root.join("agents").is_dir()))
 }
 
 /// Root of every generated envelope, and the generated marketplace's own
@@ -212,15 +219,17 @@ pub(crate) fn package_plan<D: MarketplaceDialect>(
     package: &StoredPackage,
     resources: &[&Resource],
 ) -> Option<PackageExposurePlan> {
-    let (provided, evidence) = if has_envelope::<D>(package) {
+    let (provided, evidence, envelope) = if has_envelope::<D>(package) {
         (
             D::explicit_coverage(package, resources),
             D::EXPLICIT_EVIDENCE,
+            PackageEnvelope::Own,
         )
     } else if generatable::<D>(package) {
         (
             generated_exact_coverage::<D>(package, resources),
             D::GENERATED_EVIDENCE,
+            PackageEnvelope::Generated,
         )
     } else {
         return None;
@@ -228,6 +237,7 @@ pub(crate) fn package_plan<D: MarketplaceDialect>(
     Some(PackageExposurePlan {
         package_id: package.id.clone(),
         route: CompatibilityRoute::Native,
+        envelope,
         provided_resource_identities: provided,
         evidence: evidence.to_owned(),
     })
@@ -236,8 +246,8 @@ pub(crate) fn package_plan<D: MarketplaceDialect>(
 /// The resources a generated envelope provides, computed against what it
 /// can preserve rather than by re-reading a manifest it wrote, so generation
 /// and coverage agree by construction: a Skill under `skills/` whose policy
-/// the envelope carries, and an MCP server named in the package's
-/// `mcp.json`.
+/// the envelope carries, an MCP server named in the package's `mcp.json`,
+/// and every agent when the harness's plugins carry agents.
 pub(crate) fn generated_exact_coverage<D: MarketplaceDialect>(
     package: &StoredPackage,
     resources: &[&Resource],
@@ -254,6 +264,7 @@ pub(crate) fn generated_exact_coverage<D: MarketplaceDialect>(
                 .resource_name
                 .as_ref()
                 .is_some_and(|name| declared_mcp.contains(name)),
+            CapabilityKind::Agent => D::ENVELOPE_CARRIES_AGENTS,
             _ => false,
         })
         .map(|resource| resource.identity())

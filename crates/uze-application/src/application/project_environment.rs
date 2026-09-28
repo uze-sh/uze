@@ -460,7 +460,7 @@ impl Project<'_> {
             // origin, so installing again hands back what is already held.
             // `replace_with` is the path that replaces, and it puts the
             // installed revision back if the new one cannot be delivered.
-            let installed_id = if self.0.package_by_name(&qualified).is_ok() {
+            let (installed_id, deliveries) = if self.0.package_by_name(&qualified).is_ok() {
                 let materialized = request.materialize_plugin(
                     &name,
                     super::marketplace::MirrorAt {
@@ -475,7 +475,9 @@ impl Project<'_> {
                     .plugins()
                     .replace_with(&qualified, materialized, authority)
                 {
-                    Ok(UpdatePluginReport::Updated { plugin, .. }) => plugin.id,
+                    Ok(UpdatePluginReport::Updated {
+                        plugin, deliveries, ..
+                    }) => (plugin.id, deliveries),
                     Ok(UpdatePluginReport::Blocked { .. }) => {
                         outcomes.push(UpdateOutcome::Held {
                             plugin: name,
@@ -497,15 +499,14 @@ impl Project<'_> {
                 }
             } else {
                 let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
-                self.resolve_and_install(
+                let report = self.resolve_and_install(
                     &name,
                     &marketplace,
                     &request,
                     authority,
                     &uze_core::naming::NoNameCollisionAuthority,
-                )?
-                .plugin
-                .id
+                )?;
+                (report.plugin.id, report.deliveries)
             };
 
             let pinned =
@@ -525,11 +526,15 @@ impl Project<'_> {
             let entry_moved = lock.plugins.get(&name) != entry_before.as_ref();
             outcomes.push(
                 if before.as_deref() == Some(after.as_str()) && !entry_moved {
-                    UpdateOutcome::AlreadyCurrent { plugin: name }
+                    UpdateOutcome::AlreadyCurrent {
+                        plugin: name,
+                        deliveries,
+                    }
                 } else {
                     UpdateOutcome::Moved {
                         plugin: name,
                         revision: after,
+                        deliveries,
                     }
                 },
             );
@@ -585,16 +590,20 @@ impl Project<'_> {
         };
         let mut outcomes = Vec::new();
         for id in targets {
-            let before = self.resolved_revision(&id);
+            let before = self.installed_revision(&id);
             match self.0.plugins().update(&id, authority) {
-                Ok(UpdatePluginReport::Updated { .. }) => {
-                    let after = self.resolved_revision(&id);
-                    outcomes.push(if after == before {
-                        UpdateOutcome::AlreadyCurrent { plugin: id }
+                Ok(UpdatePluginReport::Updated { deliveries, .. }) => {
+                    let after = self.installed_revision(&id);
+                    outcomes.push(if after.content == before.content {
+                        UpdateOutcome::AlreadyCurrent {
+                            plugin: id,
+                            deliveries,
+                        }
                     } else {
                         UpdateOutcome::Moved {
                             plugin: id,
-                            revision: after,
+                            revision: after.named_against(&before),
+                            deliveries,
                         }
                     });
                 }
@@ -623,11 +632,19 @@ impl Project<'_> {
         })
     }
 
-    fn resolved_revision(&self, id: &str) -> String {
-        self.0
-            .package_by_name(id)
-            .map(|package| package.provenance.resolved.display())
-            .unwrap_or_default()
+    /// What decides whether an update changed a package is its content: a
+    /// linked marketplace resolves to the same checkout path however much
+    /// its files change, and a new commit can carry the same bytes.
+    fn installed_revision(&self, id: &str) -> InstalledRevision {
+        let package = self.0.package_by_name(id).ok();
+        InstalledRevision {
+            content: package
+                .as_ref()
+                .and_then(|package| uze_core::digest::tree_sha256(&package.root).ok()),
+            provenance: package
+                .map(|package| package.provenance.resolved.display())
+                .unwrap_or_default(),
+        }
     }
 
     /// Brings the project's declared environment about, in two passes over
@@ -681,6 +698,7 @@ impl Project<'_> {
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         let mut installed_plugins = Vec::new();
         let mut skipped: Vec<SkippedPlugin> = Vec::new();
+        let mut undelivered: Vec<(String, HarnessDeliveryReport)> = Vec::new();
 
         // Every marketplace this install is about to read, fetched at once:
         // what the manifest declares and the lock does not answer for, and
@@ -772,7 +790,7 @@ impl Project<'_> {
             };
             let request = MarketplaceRequest::of(&fetch_source)?;
             self.register_marketplace(marketplace, fetch_source, &request.repository.identity)?;
-            self.resolve_into_lock(
+            let report = self.resolve_into_lock(
                 &mut lock,
                 &stale.plugin,
                 marketplace,
@@ -780,6 +798,11 @@ impl Project<'_> {
                 authority,
                 &uze_core::naming::NoNameCollisionAuthority,
             )?;
+            undelivered.extend(
+                report
+                    .undelivered()
+                    .map(|delivery| (stale.plugin.clone(), delivery.clone())),
+            );
             // Saved per entry, not once at the end: bytes are already in
             // the Store, and a later failure must not leave the lock
             // denying what this machine now holds.
@@ -826,13 +849,18 @@ impl Project<'_> {
             // substituted remote must stop here, not be discovered later by
             // reading what an agent was told to do.
             Self::verify_integrity_of(&name, &locked, materialized.root())?;
-            self.0.plugins().install_materialized(
+            let report = self.0.plugins().install_materialized(
                 materialized,
                 marketplace,
                 None,
                 authority,
                 &uze_core::naming::NoNameCollisionAuthority,
             )?;
+            undelivered.extend(
+                report
+                    .undelivered()
+                    .map(|delivery| (name.clone(), delivery.clone())),
+            );
             installed_plugins.push(name);
         }
 
@@ -889,6 +917,7 @@ impl Project<'_> {
             removed: removed_plugins,
             skipped,
             reconciled,
+            undelivered,
         })
     }
 
@@ -1153,15 +1182,45 @@ pub enum RemoveProjectPluginReport {
     Removed { plugin: String },
 }
 
+/// A package as an update compares it: by its content, named by where it
+/// came from.
+struct InstalledRevision {
+    content: Option<String>,
+    provenance: String,
+}
+
+impl InstalledRevision {
+    /// The name a moved package's new revision reads under: where it came
+    /// from when that moved too, else its content digest, since a linked
+    /// checkout's path says nothing about what changed.
+    fn named_against(self, before: &Self) -> String {
+        if self.provenance != before.provenance {
+            return self.provenance;
+        }
+        self.content
+            .map(|digest| digest.trim_start_matches("sha256:").to_owned())
+            .unwrap_or(self.provenance)
+    }
+}
+
 /// What `uze update` did to each plugin it considered.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "outcome", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum UpdateOutcome {
     /// The declared ref had moved, and the project now points at where it
     /// points.
-    Moved { plugin: String, revision: String },
+    Moved {
+        plugin: String,
+        revision: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        deliveries: Vec<HarnessDeliveryReport>,
+    },
     /// The declared ref resolves to the revision already locked.
-    AlreadyCurrent { plugin: String },
+    AlreadyCurrent {
+        plugin: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        deliveries: Vec<HarnessDeliveryReport>,
+    },
     /// Considered and deliberately not moved, with the reason — a
     /// marketplace linked to a checkout on this machine pins nothing, and a
     /// revision introducing execution waits for an explicit decision.
@@ -1196,6 +1255,26 @@ impl UpdateReport {
             .any(|outcome| matches!(outcome, UpdateOutcome::Moved { .. }))
     }
 
+    /// Every harness an updated package stayed installed without reaching,
+    /// with the package it is about.
+    pub fn undelivered(&self) -> impl Iterator<Item = (&str, &HarnessDeliveryReport)> {
+        self.outcomes.iter().flat_map(|outcome| {
+            let (plugin, deliveries) = match outcome {
+                UpdateOutcome::Moved {
+                    plugin, deliveries, ..
+                }
+                | UpdateOutcome::AlreadyCurrent { plugin, deliveries } => {
+                    (plugin.as_str(), deliveries.as_slice())
+                }
+                _ => ("", &[][..]),
+            };
+            deliveries
+                .iter()
+                .filter(|delivery| delivery.error().is_some())
+                .map(move |delivery| (plugin, delivery))
+        })
+    }
+
     /// The packages the safety check refused to touch.
     pub fn blocked(&self) -> impl Iterator<Item = &str> {
         self.outcomes.iter().filter_map(|outcome| match outcome {
@@ -1225,7 +1304,23 @@ pub enum InstallReport {
         skipped: Vec<SkippedPlugin>,
         #[serde(default)]
         reconciled: bool,
+        /// Harnesses a plugin installed here could not be delivered to.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        undelivered: Vec<(String, HarnessDeliveryReport)>,
     },
+}
+
+impl InstallReport {
+    /// Each harness a plugin this install placed could not reach.
+    pub fn undelivered(&self) -> impl Iterator<Item = (&str, &HarnessDeliveryReport)> {
+        let entries = match self {
+            Self::Installed { undelivered, .. } => undelivered.as_slice(),
+            _ => &[],
+        };
+        entries
+            .iter()
+            .map(|(plugin, delivery)| (plugin.as_str(), delivery))
+    }
 }
 
 /// One plugin `install` could not reach, and why.

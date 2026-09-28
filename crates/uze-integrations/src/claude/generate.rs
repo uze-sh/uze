@@ -1,54 +1,102 @@
 //! Claude Code's GENERATED native plugin envelope: for a canonical UZE
 //! package that ships no explicit `.claude-plugin/plugin.json`, this module
 //! deterministically synthesizes one into a UZE-owned derived directory —
-//! never into the Store — so the package can still install as one native
-//! Claude plugin instead of decomposing into per-capability shims.
+//! never into the Store — so the package installs as one native Claude
+//! plugin instead of decomposing into per-capability shims.
 //!
 //! Generated Native Package sits between Explicit Native Package and Native
-//! Capability in the delivery hierarchy (ADR-013 §3): a
-//! source package's absence of a vendor envelope no longer forces
-//! capability-level decomposition by itself — only the absence of anything
-//! UZE can safely represent does.
+//! Capability in the delivery hierarchy (ADR-013 §3): a source package's
+//! absence of a vendor envelope no longer forces capability-level
+//! decomposition by itself — only the absence of anything UZE can safely
+//! represent does.
 //!
-//! Safe synthesis is deliberately structural for the default model+user
-//! policy: the generated manifest declares the package's whole conventional
-//! `skills/` directory (mirroring Codex's own `"./skills/"` convention)
-//! verbatim, and its `mcp.json`'s `mcpServers` object with only the package
-//! root resolved — nothing else is translated, reinterpreted, or invented
-//! beyond name/version/description already declared in the package's own
-//! canonical `plugin.json`.
+//! The envelope is the package: a copy of every file the Store holds for
+//! it, so a skill that reads a file beside it resolves the file from the
+//! plugin root exactly as it would in a plugin written for Claude, and
+//! Claude's own copy into its plugin cache is complete (links into the
+//! Store arrived there hollow). Claude names the skills and agents it finds
+//! in it `<plugin>:<name>` — the label UZE commits to — by its own rules.
 //!
-//! A Skill whose canonical `invoke:` policy is not the default is the one
-//! deliberate exception (ADR-030): Claude
-//! has no vendor-neutral `invoke:` concept, but it does honor its own
-//! frontmatter fields (`disable-model-invocation: true` → user-only;
-//! `user-invocable: false` → model-only), so the generated envelope
-//! materializes one real SKILL.md per non-default Skill carrying those
-//! markers — never a symlink — while preserving the canonical
-//! name/description/body. Still a Derived Artifact (ADR-013 §5) under
-//! `$UZE_HOME`, never the Store: only the physical representation of the
-//! Skill changed, not its ownership.
+//! Three things are not copied as they are. The manifest is generated from
+//! the package's canonical `plugin.json`, with the canonical `mcp.json`
+//! servers inline and the package root resolved. A path Claude would load
+//! as a component the canonical format does not define ([`NOT_PORTABLE`])
+//! is left out: UZE delivers what every harness shares, never a
+//! Claude-only behaviour it did not decide to deliver. And every `SKILL.md`
+//! and agent definition has `${PLUGIN_ROOT}` resolved; a Skill whose
+//! canonical `invoke:` policy is not the default also carries Claude's own
+//! markers (`disable-model-invocation: true` → user-only;
+//! `user-invocable: false` → model-only), since Claude has no `invoke:`
+//! concept of its own (ADR-030), and one whose policy is invalid is left
+//! out rather than delivered with a meaning its author did not declare.
 
 use std::{fs, path::Path};
 
-use uze_core::{Result, UzeError, store::StoredPackage};
+use uze_core::{
+    Result, UzeError,
+    capability::{CapabilityKind, Resource},
+    store::StoredPackage,
+};
 
 use crate::shared::marketplace::manifest_fields;
 use crate::shared::mcp::delivered_mcp_servers;
-use crate::shared::skill::{link_extras, link_or_repair, recreate_dir, write_file};
+use crate::shared::package_root::resolve_text;
+use crate::shared::skill::write_file;
+use crate::shared::tree::mirror_tree;
 
 /// The description a generated manifest declares when the package's own
 /// canonical `plugin.json` states none.
 pub(super) const GENERATED_DESCRIPTION: &str =
     "UZE-managed Claude plugin, generated from a vendor-neutral package.";
 
-/// Writes the generated `.claude-plugin/plugin.json` and the `skills/`
-/// surface it declares into a fresh envelope directory. Name/version/
-/// description come from the package's own canonical `plugin.json`, never
-/// invented; `skills`/`mcpServers` are declared only when the structural
-/// surface they describe exists on disk, and `mcpServers` is carried inline
-/// with the package root resolved.
+/// Paths Claude loads from a plugin root as components the canonical
+/// format does not define — commands, executables put on the shell `PATH`,
+/// output styles, workflows, themes, monitors, plugin settings, language
+/// servers — and its own hook and MCP files, which the canonical
+/// `hooks.json` and `mcp.json` stand in for. `.claude-plugin` is generated.
+pub(super) const NOT_PORTABLE: &[&str] = &[
+    ".claude-plugin",
+    "commands",
+    "bin",
+    "output-styles",
+    "workflows",
+    "themes",
+    "monitors",
+    "settings.json",
+    ".lsp.json",
+    ".mcp.json",
+    "hooks/hooks.json",
+];
+
+/// Writes the envelope into the fresh directory `dir`: the package's
+/// portable files, then the generated manifest, then the rewritten skill
+/// and agent definitions.
 pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Result<()> {
+    let package_root = fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
+        path: package.root.clone(),
+        source,
+    })?;
+    mirror_tree(&package.root, dir, &package_root, NOT_PORTABLE)?;
+    write_manifest(package, dir)?;
+    let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;
+    for resource in &resources {
+        match resource.capability.kind {
+            CapabilityKind::AgentSkill => rewrite_skill(package, resource, dir)?,
+            CapabilityKind::Agent => rewrite_definition(package, resource, dir, |text| {
+                resolve_text(text, &package.root).into_owned()
+            })?,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Name/version/description come from the package's own canonical
+/// `plugin.json`, never invented; `mcpServers` is declared only when the
+/// package declares servers, and carried inline with the package root
+/// resolved. Claude scans `skills/` and `agents/` by default, so the
+/// manifest names neither.
+fn write_manifest(package: &StoredPackage, dir: &Path) -> Result<()> {
     let (description, version) = manifest_fields(&package.manifest, GENERATED_DESCRIPTION);
     let mut manifest = serde_json::json!({
         "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
@@ -56,9 +104,6 @@ pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Resul
         "version": version,
         "description": description,
     });
-    if package.root.join("skills").is_dir() {
-        manifest["skills"] = serde_json::json!(["./skills"]);
-    }
     if let Some(servers) = delivered_mcp_servers(package) {
         manifest["mcpServers"] = servers;
     }
@@ -70,68 +115,64 @@ pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Resul
     write_file(
         &plugin_dir.join("plugin.json"),
         &serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
-    )?;
-    materialize_generated_skills(package, dir)
+    )
 }
 
-/// Materializes the generated envelope's `skills/` surface.
-///
-/// A Skill whose canonical `invoke:` policy is the default is symlinked
-/// wholesale (byte-preserving, the Store stays the single source of
-/// truth). A Skill with a non-default policy gets one UZE-owned
-/// materialized SKILL.md carrying the canonical name/description/body plus
-/// Claude's own invocation markers — every other file in the canonical
-/// skill directory stays referenced — because Claude has no `invoke:`
-/// concept of its own. The invalid policy is never materialized and is
-/// excluded from coverage, so generation and coverage keep agreeing by
-/// construction (ADR-030 §13).
-fn materialize_generated_skills(package: &StoredPackage, envelope_dir: &Path) -> Result<()> {
-    if !package.root.join("skills").is_dir() {
+fn rewrite_skill(package: &StoredPackage, resource: &Resource, dir: &Path) -> Result<()> {
+    let policy = resource.skill_invocation();
+    if policy.is_invalid() {
+        let copied = envelope_path(package, resource, dir);
+        if let Some(skill_dir) = copied.parent() {
+            fs::remove_dir_all(skill_dir).map_err(|source| UzeError::Write {
+                path: skill_dir.to_path_buf(),
+                source,
+            })?;
+        }
         return Ok(());
     }
-    let skills_dir = envelope_dir.join("skills");
-    fs::create_dir_all(&skills_dir).map_err(|source| UzeError::Write {
-        path: skills_dir.clone(),
-        source,
-    })?;
-    let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;
-    for resource in resources.into_iter().filter(|resource| {
-        resource.capability.kind == uze_core::capability::CapabilityKind::AgentSkill
-    }) {
-        let policy = resource.skill_invocation();
-        if policy.is_invalid() {
-            continue;
+    let skill_name = resource
+        .logical_capability_name()
+        .unwrap_or_else(|| resource.name());
+    rewrite_definition(package, resource, dir, |text| {
+        let text = resolve_text(text, &package.root);
+        if policy.is_default() {
+            text.into_owned()
+        } else {
+            super::skills::claude_wrapper_skill_document(text.as_bytes(), &policy, &skill_name)
         }
-        let canonical_dir = resource
+    })
+}
+
+/// Replaces the copied definition of `resource` with `rewrite` of its
+/// canonical text.
+fn rewrite_definition(
+    package: &StoredPackage,
+    resource: &Resource,
+    dir: &Path,
+    rewrite: impl FnOnce(&str) -> String,
+) -> Result<()> {
+    let text = String::from_utf8_lossy(&resource.capability.payload);
+    write_file(
+        &envelope_path(package, resource, dir),
+        rewrite(&text).as_bytes(),
+    )
+}
+
+fn envelope_path(package: &StoredPackage, resource: &Resource, dir: &Path) -> std::path::PathBuf {
+    dir.join(
+        resource
             .capability
             .path
-            .parent()
-            .expect("SKILL.md has a parent");
-        let skill_name = resource
-            .logical_capability_name()
-            .unwrap_or_else(|| resource.name());
-        let target_dir = skills_dir.join(&skill_name);
-        if policy.is_default() {
-            link_or_repair(&target_dir, canonical_dir)?;
-            continue;
-        }
-        recreate_dir(&target_dir)?;
-        let bytes = fs::read(canonical_dir.join("SKILL.md")).map_err(|error| UzeError::Read {
-            path: canonical_dir.join("SKILL.md"),
-            source: error,
-        })?;
-        let document = super::skills::claude_wrapper_skill_document(&bytes, &policy, &skill_name);
-        write_file(&target_dir.join("SKILL.md"), document.as_bytes())?;
-        link_extras(canonical_dir, &target_dir, &[])?;
-    }
-    Ok(())
+            .strip_prefix(&package.root)
+            .unwrap_or(&resource.capability.path),
+    )
 }
 
 #[cfg(test)]
 mod generated_native_tests {
     use std::collections::BTreeSet;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use uze_core::capability::Resource;
     use uze_core::capability::{Capability, CapabilityKind};
@@ -203,13 +244,17 @@ mod generated_native_tests {
             )
             .unwrap();
         }
-        let id =
-            uze_core::store::PackageId::from_plugin_name("flow", &pkg_root.join("plugin.json"))
-                .unwrap();
-        let pkg = StoredPackage {
+        let pkg = stored(&pkg_root, "flow");
+        (root, pkg)
+    }
+
+    fn stored(pkg_root: &Path, name: &str) -> StoredPackage {
+        let id = uze_core::store::PackageId::from_plugin_name(name, &pkg_root.join("plugin.json"))
+            .unwrap();
+        StoredPackage {
             active_name: id.plugin_name().to_owned(),
             id,
-            root: pkg_root.clone(),
+            root: pkg_root.to_path_buf(),
             manifest: pkg_root.join("plugin.json"),
             provenance: uze_core::acquisition::Provenance {
                 requested: uze_core::acquisition::PackageSource::Local {
@@ -219,8 +264,7 @@ mod generated_native_tests {
                     path: PathBuf::from("/tmp/fake"),
                 },
             },
-        };
-        (root, pkg)
+        }
     }
 
     fn skill_resource(pkg: &StoredPackage) -> Resource {
@@ -389,13 +433,15 @@ mod generated_native_tests {
              with the records"
         );
         assert!(dir.join(".claude-plugin/plugin.json").is_file());
-        // Default-policy skills stay byte-preserving whole-directory
-        // symlinks; `skills/` itself is now a real envelope subdirectory.
-        assert!(dir.join("skills/commit").is_symlink());
+        // The envelope is made of real files: Claude's copy into its plugin
+        // cache does not follow links, and a link into the Store would let a
+        // write into that copy reach the Store.
+        assert!(!dir.join("skills/commit").is_symlink());
         assert_eq!(
-            fs::read_link(dir.join("skills/commit")).unwrap(),
-            pkg.root.join("skills/commit")
+            fs::read(dir.join("skills/commit/SKILL.md")).unwrap(),
+            fs::read(pkg.root.join("skills/commit/SKILL.md")).unwrap()
         );
+        assert!(walk(&dir).iter().all(|path| !path.is_symlink()));
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.join(".claude-plugin/plugin.json")).unwrap())
                 .unwrap();
@@ -831,8 +877,8 @@ mod generated_native_tests {
         let uze_home = UzeHome::at(_root.join("uze"));
         let dir = materialize_generated_package(&uze_home, &pkg).unwrap();
         assert!(
-            dir.join("skills/deploy/scripts").is_symlink(),
-            "auxiliary files stay referenced, never silently dropped"
+            dir.join("skills/deploy/scripts/run.sh").is_file(),
+            "auxiliary files travel with the rewritten skill, never silently dropped"
         );
         assert!(dir.join("skills/deploy/SKILL.md").is_file());
         let _ = fs::remove_dir_all(_root);
@@ -973,5 +1019,96 @@ mod generated_native_tests {
                 .as_ref()
         );
         let _ = fs::remove_dir_all(_root);
+    }
+    #[test]
+    fn the_envelope_is_the_package_minus_what_is_not_portable() {
+        let (_root, pkg) = make_plain_package("whole-package", false);
+        for (path, body) in [
+            ("phases/plan.md", "plan"),
+            ("hooks/ensure-ui.sh", "script"),
+            ("hooks/hooks.json", "{}"),
+            ("bin/tool", "tool"),
+            ("commands/legacy.md", "legacy"),
+            (".mcp.json", "{}"),
+            ("settings.json", "{}"),
+        ] {
+            let file = pkg.root.join(path);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, body).unwrap();
+        }
+        let uze_home = UzeHome::at(_root.join("uze"));
+        let dir = materialize_generated_package(&uze_home, &pkg).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("phases/plan.md")).unwrap(),
+            "plan"
+        );
+        assert!(dir.join("hooks/ensure-ui.sh").is_file());
+        for excluded in [
+            "hooks/hooks.json",
+            "bin",
+            "commands",
+            ".mcp.json",
+            "settings.json",
+        ] {
+            assert!(
+                !dir.join(excluded).exists(),
+                "{excluded} is a Claude-only component and is never delivered"
+            );
+        }
+        let _ = fs::remove_dir_all(_root);
+    }
+
+    #[test]
+    fn agents_ride_in_the_envelope_and_the_package_root_is_resolved() {
+        let (_root, pkg) = make_plain_package("agents-and-root", false);
+        fs::create_dir_all(pkg.root.join("agents/review")).unwrap();
+        fs::write(
+            pkg.root.join("agents/review/security.md"),
+            "---\ndescription: d\n---\nRead ${PLUGIN_ROOT}/phases/plan.md\n",
+        )
+        .unwrap();
+        fs::write(
+            pkg.root.join("skills/commit/SKILL.md"),
+            "---\nname: commit\ndescription: d\n---\nRun ${PLUGIN_ROOT}/scripts/x.sh\n",
+        )
+        .unwrap();
+        let uze_home = UzeHome::at(_root.join("uze"));
+        let dir = materialize_generated_package(&uze_home, &pkg).unwrap();
+        let root = pkg.root.to_string_lossy();
+        let agent = fs::read_to_string(dir.join("agents/review/security.md")).unwrap();
+        assert_eq!(
+            agent,
+            format!("---\ndescription: d\n---\nRead {root}/phases/plan.md\n")
+        );
+        let skill = fs::read_to_string(dir.join("skills/commit/SKILL.md")).unwrap();
+        assert!(skill.contains(&format!("Run {root}/scripts/x.sh")));
+        assert!(!skill.contains("${PLUGIN_ROOT}"));
+        let canonical = fs::read_to_string(pkg.root.join("skills/commit/SKILL.md")).unwrap();
+        assert!(
+            canonical.contains("${PLUGIN_ROOT}"),
+            "the Store keeps the canonical bytes"
+        );
+        let _ = fs::remove_dir_all(_root);
+    }
+
+    #[test]
+    fn a_package_with_only_agents_is_generated_and_covers_them() {
+        let root = temp_root("agents-only");
+        let pkg_root = root.join("pkg");
+        fs::create_dir_all(pkg_root.join("agents")).unwrap();
+        fs::write(pkg_root.join("plugin.json"), r#"{"name": "crew"}"#).unwrap();
+        fs::write(
+            pkg_root.join("agents/reviewer.md"),
+            "---\ndescription: d\n---\nbody\n",
+        )
+        .unwrap();
+        let pkg = stored(&pkg_root, "crew");
+        assert!(generatable(&pkg));
+        let resources = uze_core::engine::package_resources_at(&pkg.id, &pkg.root).unwrap();
+        let refs: Vec<&Resource> = resources.iter().collect();
+        let covered = generated_exact_coverage(&pkg, &refs);
+        assert_eq!(covered.len(), 1);
+        assert!(covered.contains(&resources[0].identity()));
+        let _ = fs::remove_dir_all(root);
     }
 }

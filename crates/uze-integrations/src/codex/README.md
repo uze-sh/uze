@@ -19,7 +19,7 @@ in a second, UZE-owned marketplace (Generated Native Package, ADR-013).
 | Skill invocation policy | Supported (model=false) / Degraded (user=false) | Generated wrapper + `agents/openai.yaml` → `policy.allow_implicit_invocation: false`; no way to hide a skill from explicit `$skill` invocation — stated honestly (ADR-030) | DOCUMENTED (Codex Build skills docs) + EMPIRICAL (verified against codex-cli 0.149.0 via `codex debug prompt-input`) |
 | MCP | Supported (config), unproven behaviorally | `codex mcp add` → `~/.codex/config.toml` | EMPIRICAL (configuration), UNKNOWN (discovery), gap (behavioral) |
 | Context (AGENTS.md) | Native, out of this crate's scope | Codex reads `AGENTS.md` directly | DOCUMENTED |
-| Agents | Not implemented (also a real Codex vendor gap) | — | DOCUMENTED |
+| Agents | Supported | Generated `~/.codex/agents/<label>.toml` with `name = "<label>"`, `description`, `developer_instructions`; any other field is dropped (Codex refuses the whole file over an unknown key or a `tools` list) and reported as Degraded | EMPIRICAL (codex-cli 0.158, Lab probe) |
 | Hooks | Supported | Native — one merged entry per canonical group in `~/.codex/hooks.json`, one quoted shell line invoking the generated `hooks/exec` wrapper (ADR-033, ADR-040). The shell alias is `exec_command` with a `cmd` argument. Requires the `[features].hooks` flag in `~/.codex/config.toml`. | EMPIRICAL — the conformance vertical's `hooks` suite |
 | Runtime Integration | None | Passthrough (trait default) | CODE_FACT |
 

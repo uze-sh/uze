@@ -99,6 +99,12 @@ pub enum ManagedArtifact {
     /// to merge, so `path` is the entire artifact. The owning integration
     /// attaches, inspects and detaches it.
     ManagedHookFile { path: PathBuf },
+    /// A whole file UZE writes into a harness's own discovery directory,
+    /// whose full content the receipt carries: a harness that reads a
+    /// definition file by file (an agent) is handed the bytes themselves
+    /// rather than a link, since not every harness follows one (one lists a
+    /// linked agent file and refuses to run it).
+    GeneratedFile { path: PathBuf, content: String },
 }
 
 impl ManagedArtifact {
@@ -114,6 +120,7 @@ impl ManagedArtifact {
                 region_identity,
                 expected_content,
             } => crate::text_region::attach(target_file, region_identity, expected_content),
+            Self::GeneratedFile { path, content } => attach_generated_file(path, content),
             _ => Err(UzeError::ExposureUnavailable(
                 "this artifact is attached by its owning integration".to_owned(),
             )),
@@ -131,6 +138,7 @@ impl ManagedArtifact {
                 region_identity,
                 expected_content,
             } => crate::text_region::inspect(target_file, region_identity, expected_content),
+            Self::GeneratedFile { path, content } => inspect_generated_file(path, content),
             _ => AttachmentInspection {
                 state: AttachmentState::Blocked,
                 reason: "integration must inspect this vendor artifact".to_owned(),
@@ -164,6 +172,20 @@ impl ManagedArtifact {
                     reason: "managed artifact detached".to_owned(),
                 })
             }
+            Self::GeneratedFile { path, content } => {
+                let inspection = inspect_generated_file(path, content);
+                if inspection.state != AttachmentState::Matched {
+                    return Ok(inspection);
+                }
+                fs::remove_file(path).map_err(|source| UzeError::Write {
+                    path: path.clone(),
+                    source,
+                })?;
+                Ok(AttachmentInspection {
+                    state: AttachmentState::Missing,
+                    reason: "managed artifact detached".to_owned(),
+                })
+            }
             _ => Ok(self.inspect_standard()),
         }
     }
@@ -179,6 +201,9 @@ impl ManagedArtifact {
             }
             Self::VendorConfigEntry { entry_name, .. }
             | Self::HookConfigEntry { entry_name, .. } => Some(entry_name.clone()),
+            // The name a harness gives a file it reads one by one is the
+            // file's, without its format's extension.
+            Self::GeneratedFile { path, .. } => path.file_stem()?.to_str().map(str::to_owned),
             Self::ManagedTextRegion { .. } | Self::IntegrationOwned { .. } => None,
         }
     }
@@ -187,7 +212,9 @@ impl ManagedArtifact {
     /// the source of truth.
     pub fn location(&self) -> PathBuf {
         match self {
-            Self::SymlinkReference { path, .. } | Self::ManagedHookFile { path } => path.clone(),
+            Self::SymlinkReference { path, .. }
+            | Self::ManagedHookFile { path }
+            | Self::GeneratedFile { path, .. } => path.clone(),
             Self::VendorConfigEntry { entry_name, .. } => {
                 PathBuf::from(format!("mcp:{entry_name}"))
             }
@@ -217,6 +244,22 @@ impl ManagedArtifact {
     /// files whose locations this layer deliberately does not know, so its
     /// verdicts are bounded by TTL and mutation invalidation alone.
     pub fn fingerprint(&self) -> Option<String> {
+        if let Self::GeneratedFile { path, content } = self {
+            // A file UZE wrote is stat-able like a link: an edit moves its
+            // modification time or its length, a removal both.
+            let state = fs::metadata(path)
+                .ok()
+                .and_then(|metadata| {
+                    let modified = metadata.modified().ok()?;
+                    let nanos = modified
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()?
+                        .as_nanos();
+                    Some(format!("{nanos}:{}", metadata.len()))
+                })
+                .unwrap_or_else(|| "absent".to_owned());
+            return Some(format!("{state}:{}", content.len()));
+        }
         let Self::SymlinkReference { path, target } = self else {
             return None;
         };
@@ -233,15 +276,73 @@ impl ManagedArtifact {
     }
 
     /// Whether the artifact is still physically in place, answered only for
-    /// a symlink reference (the link exists and points where it should).
-    /// Everything else is the owning integration's verdict, so the answer is
-    /// `false` and callers fall back to receipt existence.
+    /// what carries its whole desired state: a symlink reference (the link
+    /// exists and points where it should) and a generated file (it says
+    /// exactly what the receipt does). Everything else is the owning
+    /// integration's verdict, so the answer is `false` and callers fall back
+    /// to receipt existence.
     pub fn is_in_place(&self) -> bool {
-        let Self::SymlinkReference { path, target } = self else {
-            return false;
-        };
-        fs::read_link(path).is_ok_and(|resolved| resolved == *target)
+        match self {
+            Self::SymlinkReference { path, target } => {
+                fs::read_link(path).is_ok_and(|resolved| resolved == *target)
+            }
+            Self::GeneratedFile { path, content } => {
+                fs::read(path).is_ok_and(|existing| existing == content.as_bytes())
+            }
+            _ => false,
+        }
     }
+}
+
+/// Writes the file when it is absent and accepts it when it already says
+/// exactly this; anything else at the path is not UZE's to replace.
+fn attach_generated_file(path: &Path, content: &str) -> Result<()> {
+    match fs::read(path) {
+        Ok(existing) if existing == content.as_bytes() => Ok(()),
+        Ok(_) => Err(UzeError::ManagedEntryConflict(path.to_path_buf())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|source| UzeError::Write {
+                    path: parent.to_path_buf(),
+                    source,
+                })?;
+            }
+            fs::write(path, content).map_err(|source| UzeError::Write {
+                path: path.to_path_buf(),
+                source,
+            })
+        }
+        Err(source) => Err(UzeError::Read {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+fn inspect_generated_file(path: &Path, content: &str) -> AttachmentInspection {
+    let (state, reason) = match fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.is_file() => (
+            AttachmentState::Conflict,
+            "managed path is occupied by something other than a file".to_owned(),
+        ),
+        Ok(_) => match fs::read(path) {
+            Ok(existing) if existing == content.as_bytes() => (
+                AttachmentState::Matched,
+                "managed file content matches receipt".to_owned(),
+            ),
+            Ok(_) => (
+                AttachmentState::Drifted,
+                "managed file content differs from receipt".to_owned(),
+            ),
+            Err(error) => (AttachmentState::Blocked, error.to_string()),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+            AttachmentState::Missing,
+            "managed file is missing".to_owned(),
+        ),
+        Err(error) => (AttachmentState::Blocked, error.to_string()),
+    };
+    AttachmentInspection { state, reason }
 }
 
 fn attach_symlink(path: &Path, target: &Path) -> Result<()> {
@@ -346,8 +447,20 @@ pub struct ExposurePlan {
 pub struct PackageExposurePlan {
     pub package_id: PackageId,
     pub route: CompatibilityRoute,
+    pub envelope: PackageEnvelope,
     pub provided_resource_identities: BTreeSet<String>,
     pub evidence: String,
+}
+
+/// Whose manifest a package-level delivery hands the harness: the one the
+/// author shipped, or one the integration wrote because the author shipped
+/// none. Both reach the harness as a package, and an author debugging a
+/// release needs to know which one it read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageEnvelope {
+    Own,
+    Generated,
 }
 
 impl PackageExposurePlan {
@@ -478,5 +591,46 @@ mod tests {
         assert!(matches!(error, UzeError::ManagedEntryConflict(_)));
 
         fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod generated_file_tests {
+    use super::*;
+
+    #[test]
+    fn a_generated_file_is_written_recognised_and_never_taken_from_someone_else() {
+        let root = uze_testkit::temp::scratch("generated-file");
+        let path = root.join("agents/flow:reviewer.md");
+        let artifact = ManagedArtifact::GeneratedFile {
+            path: path.clone(),
+            content: "---\nname: flow:reviewer\n---\nReview.\n".to_owned(),
+        };
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Missing);
+        artifact.attach_standard().unwrap();
+        assert!(!path.is_symlink());
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Matched);
+        assert_eq!(artifact.exposure_name().as_deref(), Some("flow:reviewer"));
+        artifact.attach_standard().unwrap();
+
+        fs::write(&path, "edited by hand").unwrap();
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Drifted);
+        assert!(matches!(
+            artifact.attach_standard(),
+            Err(UzeError::ManagedEntryConflict(_))
+        ));
+        assert_eq!(
+            artifact.detach_standard().unwrap().state,
+            AttachmentState::Drifted,
+            "a drifted file is never removed"
+        );
+        assert!(path.is_file());
+
+        fs::write(&path, "---\nname: flow:reviewer\n---\nReview.\n").unwrap();
+        assert_eq!(
+            artifact.detach_standard().unwrap().state,
+            AttachmentState::Missing
+        );
+        assert!(!path.exists());
     }
 }

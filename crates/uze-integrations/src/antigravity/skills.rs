@@ -31,6 +31,7 @@
 //! matter, verified against 1.1.19) and the canonical description/body
 //! verbatim. Always a Derived Artifact under `$UZE_HOME`, never the Store.
 
+use crate::shared::package_root::resolve_bytes;
 use std::path::{Path, PathBuf};
 
 use uze_core::{
@@ -74,7 +75,12 @@ pub(super) fn materialize_generated_skill(
     }
     write_file(
         &dir.join("SKILL.md"),
-        render_skill_wrapper(&label, &resource.capability.payload, &markers).as_bytes(),
+        render_skill_wrapper(
+            &label,
+            &resolve_bytes(&resource.capability.payload, &resource.package_root),
+            &markers,
+        )
+        .as_bytes(),
     )?;
     Ok(dir)
 }

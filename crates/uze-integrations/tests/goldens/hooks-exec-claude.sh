@@ -8,7 +8,7 @@
 # bytes of a handler's stderr become the reason a harness is handed.
 #
 #   usage: exec <plugin-root> <event> <effect> <seconds>:<handler>...
-#     event    pre_tool_use | post_tool_use | stop
+#     event    pre_tool_use | post_tool_use | stop | session_start
 #     effect   observe | allow | ask | deny
 #     seconds  this handler's own deadline; past it the handler and
 #              everything it started are stopped, and the group's effect
@@ -24,11 +24,14 @@ export PLUGIN_ROOT HOOK_EVENT HOOK_HARNESS
 # --- this harness's decision dialect ------------------------------------
 deny_native() {                                  # $1 reason, plain text
   printf '%s\n' "$1" >&2
+  # A session start decides nothing: a denial there is a report, and the
+  # session opens as if the handler had allowed.
+  [ "$HOOK_EVENT" = session_start ] && { allow_native; exit 0; }
   reason_json=$(json_string "$1")
   case $HOOK_EVENT in
     pre_tool_use) name=PreToolUse ;;
     post_tool_use) name=PostToolUse ;;
-    *) name=Stop ;;
+    stop) name=Stop ;;
   esac
   printf '{"hookSpecificOutput":{"hookEventName":"%s","permissionDecision":"deny","permissionDecisionReason":%s}}' "$name" "$reason_json"
   exit 2                                # this harness's block signal
@@ -69,6 +72,9 @@ printf '%s' "$payload" | "$JQ" -e . >/dev/null 2>&1 \
 HOOK_TOOL_NATIVE=$(printf '%s' "$payload" | "$JQ" -r '.tool_name // empty')
 HOOK_CWD=$(printf '%s' "$payload" | "$JQ" -r '.cwd // .context.cwd // empty')
 HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '.tool_input // {}')
+HOOK_SOURCE=
+[ "$HOOK_EVENT" = session_start ] \
+  && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '.source // empty')
 HOOK_TOOL= HOOK_COMMAND= HOOK_PATH= HOOK_QUERY=
 case "$HOOK_TOOL_NATIVE" in                       # the portable vocabulary
     Bash) HOOK_TOOL=shell; HOOK_COMMAND=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.command // empty'); ;;
@@ -80,7 +86,7 @@ case "$HOOK_TOOL_NATIVE" in                       # the portable vocabulary
     WebSearch) HOOK_TOOL=search.web; HOOK_QUERY=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.query // empty'); ;;
     Task) HOOK_TOOL=agent.spawn; ;;
 esac
-export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_COMMAND HOOK_PATH HOOK_QUERY
+export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
 
 # --- one handler, under its own deadline ---------------------------------
 # There is no portable `timeout(1)` (macOS ships none) and no job control in

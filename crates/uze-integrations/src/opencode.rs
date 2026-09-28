@@ -20,6 +20,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use uze_core::capability::agent::AgentDocument;
 use uze_core::{
     Result, UzeError,
     capability::CapabilityKind,
@@ -48,7 +49,10 @@ mod session;
 mod skills;
 
 use crate::hooks::{self as hook_projection, HookTarget};
-use crate::shared::agent::{agent_name, markdown_agent_plan};
+use crate::shared::agent::{
+    MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried,
+    markdown_agent, projection_route,
+};
 use crate::shared::json_config;
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
@@ -230,7 +234,7 @@ impl IntegrationPort for OpenCodeIntegration {
     /// the default fully-qualified policy — capability naming policies are
     /// never mixed just because all are `Resource`s.
     fn exposure_name_candidates(&self, resource: &Resource) -> Vec<String> {
-        if resource.capability.kind == CapabilityKind::AgentSkill {
+        if resource.capability.kind.is_invoked_by_label() {
             let active_name = active_plugin_name(&self.uze_home, resource);
             return qualified_exposure_name_candidates(resource, &active_name);
         }
@@ -302,6 +306,10 @@ impl IntegrationPort for OpenCodeIntegration {
                 attach_mcp_config(&self.config_path, entry_name, command, args)?;
                 true
             }
+            ManagedArtifact::GeneratedFile { .. } => {
+                artifact.attach_standard()?;
+                true
+            }
             _ => false,
         };
         Ok(attached.then_some(artifact))
@@ -359,13 +367,39 @@ impl PreferencePort for OpenCodeIntegration {
     }
 }
 
+/// OpenCode's agent file: named after the file, so no `name`; `mode:
+/// subagent`, without which OpenCode makes the agent a primary one it never
+/// offers the model to dispatch; and no authored field beyond the
+/// description, since one it cannot read drops the agent and one it does
+/// not know is forwarded to the provider as a request field (measured on
+/// 2.0.18).
+const OPENCODE_AGENT: MarkdownAgent = MarkdownAgent {
+    name_in_frontmatter: false,
+    set: &[("mode", "subagent")],
+    keep: |_| false,
+};
+
 impl OpenCodeIntegration {
+    /// OpenCode names an agent after its file and silently drops one whose
+    /// frontmatter it cannot read — a Claude-style `model: haiku` (it wants
+    /// `provider/model`) or `tools: Read, Grep` (it wants a map) makes the
+    /// agent vanish (measured on 2.0.15 and 2.0.18) — so the file is named
+    /// with the label and carries the portable fields only ([`OPENCODE_AGENT`]).
     fn agent_plan(&self, resource: &Resource) -> ExposurePlan {
-        markdown_agent_plan(
+        let not_carried = AgentDocument::parse(&resource.capability.payload)
+            .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
+            .unwrap_or_default();
+        let label = agent_label(&self.uze_home, resource);
+        let content = markdown_agent(&label, resource, &OPENCODE_AGENT);
+        agent_file_plan(
             &self.agents_dir,
-            &agent_name(resource),
-            resource,
-            "OpenCode natively discovers Markdown agents from its configuration agents directory; UZE keeps a receipt-owned symlink to the canonical Store definition.",
+            &label,
+            "md",
+            content,
+            projection_route(
+                "OpenCode natively discovers Markdown agents from its configuration agents directory and names each after its file; UZE writes the definition there under the agent's label, receipt-owned by its content.",
+                &not_carried,
+            ),
         )
     }
 
@@ -378,7 +412,7 @@ impl OpenCodeIntegration {
     fn hook_plan(&self, resource: &Resource) -> ExposurePlan {
         let path =
             hook_projection::opencode_bridge_path(self.config_root(), resource.package_id.as_str());
-        let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated Plugin.define plugin that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The V2 tool hooks carry the tool input but no block signal, and the only decision point (permission.evaluate) carries the action's resources rather than the input, so deny/ask are diagnosed Unsupported before attach — never fabricated. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice.";
+        let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated plugin module (its default export is the plugin definition, with no import the harness would have to resolve) that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The V2 tool hooks carry the tool input but no block signal, and the only decision point (permission.evaluate) carries the action's resources rather than the input, so deny/ask are diagnosed Unsupported before attach — never fabricated. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice. SessionStart is not claimed: on OpenCode 2.0.18 a plugin's event stream carries no `session.created` for a new session, and nothing in it tells a new session from a continued one (Conformance Lab, experiment opencode/session-start).";
         hook_projection::hook_plan(
             resource,
             &HookTarget::OpenCode.capabilities(),

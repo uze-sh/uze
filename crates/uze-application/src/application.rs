@@ -230,6 +230,17 @@ impl UzeApplication {
             store_path: package.root.clone(),
             capability_count: resources.len(),
             freshness: self.freshness_of(package),
+            undelivered: state::undelivered(&self.home, package.id.as_str())?
+                .into_iter()
+                .map(|(integration, error)| UndeliveredHarness {
+                    display_name: self.integration_named(&integration).map_or_else(
+                        || integration.clone(),
+                        |known| known.display_name().to_owned(),
+                    ),
+                    integration,
+                    error,
+                })
+                .collect(),
         })
     }
 

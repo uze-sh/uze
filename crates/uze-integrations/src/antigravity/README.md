@@ -57,11 +57,14 @@ it become authoritative.
 - **No runtime shim**; internal invocations always resolve the real `agy`
   outside `$UZE_HOME/shims`.
 
-## Not yet implemented (documented, never faked)
+- **Agents are a generated Markdown file** in the global agents directory,
+  named with the label and carrying `name: <label>` and `description`:
+  Antigravity 1.2.x reads the name from the frontmatter, lists no agent
+  without one, scans no subdirectory, and silently drops an agent with a
+  Claude-style `model` or string `tools`, so nothing else is carried and
+  the loss is reported as Degraded.
 
-- Subagents (`agents/` — vendor format is JSON `agent.json`) are supported
-  by the native plugin format but are a future UZE surface, exactly as
-  with every other harness.
+## Delivery notes
 
   **Hooks are delivered into the shared `~/.gemini/config/hooks.json`**
   (ADR-033/ADR-040), not into the generated plugin: one named entry per

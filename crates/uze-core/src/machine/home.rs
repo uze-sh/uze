@@ -212,6 +212,14 @@ impl UzeHome {
         self.state_dir().join("attachments.json")
     }
 
+    /// Which harnesses an installed package could not be delivered to, and
+    /// what each said. A record: the failure is known only to the command
+    /// that met it, and every listing has to go on saying so until a later
+    /// delivery succeeds.
+    pub fn undelivered_path(&self) -> PathBuf {
+        self.state_dir().join("undelivered.json")
+    }
+
     /// The process-wide mutation guard for this home (see
     /// [`crate::persistence::MutationLock`]). A lock, not a record: it
     /// carries no shape and nothing reads it across versions.
@@ -461,6 +469,7 @@ mod tests {
             home.registry_path(),
             home.marketplaces_path(),
             home.attachments_path(),
+            home.undelivered_path(),
             home.profiles_path(),
             home.client_layout_path(),
             home.provisioning_state_path(),

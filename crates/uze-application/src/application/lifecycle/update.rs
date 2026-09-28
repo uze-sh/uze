@@ -188,6 +188,7 @@ impl Plugins<'_> {
             plugin: report.plugin,
             attachments: report.attachments,
             publications: report.publications,
+            deliveries: report.deliveries,
         })
     }
 

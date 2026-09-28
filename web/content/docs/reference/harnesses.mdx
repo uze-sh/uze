@@ -61,6 +61,10 @@ Current matrix, derived from the integration implementations themselves.
 
 Each name links to that harness's own site; what follows is how uze delivers to it.
 
+Every harness offers a plugin's agents by the same name, `<plugin>:<name>` (a subdirectory
+under `agents/` joins it), and receives each agent as a file of its own, carrying only the
+fields that harness reads.
+
 - **[Claude Code](https://code.claude.com)**: plugin delivery through a UZE-managed marketplace; a skills-directory
   reference is the fallback. Project context arrives through the `CLAUDE.md` bridge
   (`@AGENTS.md`), the only bridge uze maintains. Hooks merge into its own user-scope hook

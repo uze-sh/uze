@@ -5,10 +5,12 @@ use std::collections::BTreeSet;
 
 use uze_core::{
     PackageSource, Result, UzeError,
+    integration::{AttachmentReceipt, AttachmentState},
     naming::{
         NameCollisionAuthority, NameCollisionRequest, NameCollisionResolution,
         NoNameCollisionAuthority,
     },
+    state,
     trust::TrustAuthority,
 };
 
@@ -16,7 +18,7 @@ use crate::bootstrap;
 
 use super::super::services::Plugins;
 use super::super::*;
-use super::attach::NativeDelivery;
+use super::attach::{NativeDelivery, PackageDelivery};
 
 impl Plugins<'_> {
     pub(crate) fn acquire(&self, source: &PackageSource) -> Result<uze_core::MaterializedPackage> {
@@ -107,6 +109,13 @@ impl Plugins<'_> {
         // delivery attempt.
         self.0.prepare_detected_integrations()?;
 
+        let held_before: BTreeSet<String> = self
+            .0
+            .store
+            .package_ids()?
+            .iter()
+            .map(|id| id.as_str().to_owned())
+            .collect();
         let installed = self.ingest_resolving_name_collision(
             &materialized,
             marketplace,
@@ -124,6 +133,11 @@ impl Plugins<'_> {
             .filter(|outcome| outcome.error.is_some())
             .map(|outcome| outcome.integration.as_str())
             .collect();
+
+        // The Store hands an already-held package back for the same origin,
+        // so only a package this call brought in may be taken back out.
+        let created = !held_before.contains(installed.id.as_str());
+        let receipts_before = state::receipts(&self.0.home, Some(installed.id.as_str()))?;
 
         let resources = uze_core::engine::package_resources(&installed)?;
         let resources: Vec<_> = resources.iter().collect();
@@ -194,18 +208,77 @@ impl Plugins<'_> {
         let mut attachments = Vec::new();
         let mut package_plans = Vec::new();
         let mut blocked = Vec::new();
-        for ((integration, _), delivery) in targets.iter().zip(deliveries) {
-            let delivery = delivery?;
+        let mut reports = Vec::new();
+        let mut failures = Vec::new();
+        for ((integration, native), delivery) in targets.iter().zip(deliveries) {
+            let delivery = match delivery {
+                Ok(delivery) => delivery,
+                Err(error) => {
+                    failures.push((*integration, error));
+                    continue;
+                }
+            };
+            let route = delivery_route(&delivery, *native, integration.id(), &publications);
+            let own_blocked: Vec<BlockedCapability> = delivery
+                .blocked
+                .into_iter()
+                .map(|one| BlockedCapability {
+                    integration: one.integration,
+                    capability: one.capability,
+                    reason: one.reason,
+                })
+                .collect();
+            reports.push(HarnessDeliveryReport {
+                integration: integration.id().to_owned(),
+                display_name: integration.display_name().to_owned(),
+                outcome: HarnessDeliveryOutcome::Delivered {
+                    route,
+                    attachments: delivery
+                        .attachments
+                        .iter()
+                        .map(|attachment| attachment.location.clone())
+                        .collect(),
+                    blocked: own_blocked.clone(),
+                    shortfalls: delivery
+                        .shortfalls
+                        .iter()
+                        .map(|one| CapabilityShortfallReport {
+                            capability: one.capability.clone(),
+                            route: one.route,
+                            evidence: one.evidence.clone(),
+                        })
+                        .collect(),
+                },
+            });
             if let Some(plan) = delivery.plan {
                 package_plans.push((integration.id().to_owned(), plan));
             }
             attachments.extend(delivery.attachments);
-            blocked.extend(delivery.blocked.into_iter().map(|one| BlockedCapability {
-                integration: one.integration,
-                capability: one.capability,
-                reason: one.reason,
-            }));
+            blocked.extend(own_blocked);
         }
+        let delivered: Vec<String> = reports
+            .iter()
+            .map(|report| report.integration.clone())
+            .collect();
+        for integration in &delivered {
+            state::forget_undelivered(&self.0.home, installed.id.as_str(), Some(integration))?;
+        }
+        if !failures.is_empty() {
+            self.answer_for_failed_deliveries(
+                &installed,
+                created,
+                !delivered.is_empty(),
+                &receipts_before,
+                failures,
+                &mut reports,
+            )?;
+        }
+        // Reported in the registry's order, whichever harness failed.
+        reports.sort_by_key(|report| {
+            targets
+                .iter()
+                .position(|(integration, _)| integration.id() == report.integration)
+        });
         Ok(AddPluginReport {
             plugin: self.0.plugin_summary(&installed)?,
             package_plans,
@@ -213,7 +286,145 @@ impl Plugins<'_> {
             publications,
             blocked,
             declared: false,
+            deliveries: reports,
         })
+    }
+
+    /// Settles an install whose delivery failed on at least one harness.
+    ///
+    /// Each failing harness first loses what the attempt attached to it: a
+    /// harness is delivered or it is not, never half. Then, when no harness
+    /// took the package at all, a package this install brought into the
+    /// Store leaves it again and the whole install fails — a failed install
+    /// is not an installed package. Otherwise the package stays — it was
+    /// there before, another harness took it, or part of the attempt could
+    /// not be taken back — and each
+    /// failing harness is recorded against it so every listing says so
+    /// until a later delivery succeeds.
+    fn answer_for_failed_deliveries(
+        &self,
+        installed: &uze_core::StoredPackage,
+        created: bool,
+        delivered_somewhere: bool,
+        receipts_before: &[AttachmentReceipt],
+        failures: Vec<(&dyn IntegrationPort, UzeError)>,
+        reports: &mut Vec<HarnessDeliveryReport>,
+    ) -> Result<()> {
+        let package_id = installed.id.as_str();
+        let mut lines = Vec::new();
+        let mut left_behind = Vec::new();
+        for (integration, error) in &failures {
+            let label = integration.display_name();
+            lines.push(format!("  {label}: {error}"));
+            left_behind.extend(
+                self.take_back_attempt(package_id, *integration, receipts_before)
+                    .into_iter()
+                    .map(|what| format!("  {label}: {what}")),
+            );
+        }
+        let failed = lines.join("\n");
+        // UZE's own plugin is the exception: it re-seeds itself whenever it
+        // is absent, so taking it back out would retry the refusing harness
+        // on every command rather than say once that it was refused.
+        let removable = created
+            && !delivered_somewhere
+            && left_behind.is_empty()
+            && !Self::is_protected_package(installed);
+        if removable {
+            self.0.store.remove_package(&installed.id)?;
+            state::forget_undelivered(&self.0.home, package_id, None)?;
+            self.0.republish_all_reporting();
+            return Err(UzeError::DeliveryFailed(format!(
+                "`{package_id}` could not be delivered:\n{failed}\nNothing was installed."
+            )));
+        }
+        for (integration, error) in &failures {
+            state::record_undelivered(
+                &self.0.home,
+                package_id,
+                integration.id(),
+                &error.to_string(),
+            )?;
+        }
+        if !left_behind.is_empty() {
+            return Err(UzeError::DeliveryFailed(format!(
+                "`{package_id}` could not be delivered:\n{failed}\nWhat the attempt attached \
+                 could not all be taken back off, so the package stays installed:\n{}",
+                left_behind.join("\n")
+            )));
+        }
+        if !delivered_somewhere {
+            return Err(UzeError::DeliveryFailed(format!(
+                "`{package_id}` could not be delivered:\n{failed}\nThe package stays \
+                 installed, recorded as not delivered to the harnesses above."
+            )));
+        }
+        reports.extend(
+            failures
+                .into_iter()
+                .map(|(integration, error)| HarnessDeliveryReport {
+                    integration: integration.id().to_owned(),
+                    display_name: integration.display_name().to_owned(),
+                    outcome: HarnessDeliveryOutcome::Failed {
+                        error: error.to_string(),
+                    },
+                }),
+        );
+        Ok(())
+    }
+
+    /// Takes off everything `integration` holds for `package_id` that
+    /// `before` did not, under the same inspection any removal obeys, and
+    /// says what it could not.
+    fn take_back_attempt(
+        &self,
+        package_id: &str,
+        integration: &dyn IntegrationPort,
+        before: &[AttachmentReceipt],
+    ) -> Vec<String> {
+        let recorded = match state::receipts(&self.0.home, Some(package_id)) {
+            Ok(recorded) => recorded,
+            Err(error) => return vec![format!("the attachment ledger could not be read: {error}")],
+        };
+        let mut left = Vec::new();
+        // What this attempt attached is what `before` held no receipt for:
+        // judged by what a receipt is about, not by its bytes, since a
+        // delivery the person already had may have been rewritten by this
+        // build and is still theirs.
+        let held_before = |receipt: &AttachmentReceipt| {
+            before.iter().any(|earlier| {
+                earlier.package_id == receipt.package_id
+                    && earlier.integration == receipt.integration
+                    && earlier.resource_identity == receipt.resource_identity
+            })
+        };
+        for receipt in recorded
+            .iter()
+            .filter(|receipt| receipt.integration == integration.id() && !held_before(receipt))
+        {
+            let location = receipt.artifact.location();
+            let gone = match integration.inspect_receipt(receipt).state {
+                AttachmentState::Missing => Ok(true),
+                AttachmentState::Matched => integration
+                    .detach_receipt(receipt)
+                    .map(|inspection| inspection.state == AttachmentState::Missing),
+                other => {
+                    left.push(format!("{} is {other:?}", location.display()));
+                    continue;
+                }
+            };
+            match gone.and_then(|gone| {
+                if gone {
+                    state::forget_receipt(&self.0.home, receipt)?;
+                }
+                Ok(gone)
+            }) {
+                Ok(true) => {}
+                Ok(false) => left.push(format!("{} is still there", location.display())),
+                Err(error) => left.push(format!("{}: {error}", location.display())),
+            }
+        }
+        left
     }
 
     /// Ingests `materialized` under `requested_active_name` (or its own bare
@@ -335,5 +546,40 @@ impl UzeApplication {
                     .join("; "),
             }),
         }
+    }
+}
+
+/// Why a delivery took the route it did — the one question an author
+/// debugging a release cannot answer from the harness side.
+fn delivery_route(
+    delivery: &PackageDelivery,
+    native: NativeDelivery,
+    integration: &str,
+    publications: &[PublicationOutcome],
+) -> DeliveryRoute {
+    if native == NativeDelivery::Skipped {
+        let error = publications
+            .iter()
+            .find(|outcome| outcome.integration == integration)
+            .and_then(|outcome| outcome.error.as_deref())
+            .unwrap_or("unknown error");
+        return DeliveryRoute::CapabilityByCapability {
+            reason: format!("the package view could not be published: {error}"),
+        };
+    }
+    match &delivery.plan {
+        Some(_) if delivery.plan_set_aside => DeliveryRoute::CapabilityByCapability {
+            reason: "capabilities already delivered one by one could not be safely replaced by \
+                     the package"
+                .to_owned(),
+        },
+        Some(plan) => DeliveryRoute::Package {
+            envelope: plan.envelope,
+            route: plan.route,
+            evidence: plan.evidence.clone(),
+        },
+        None => DeliveryRoute::CapabilityByCapability {
+            reason: "the harness has no package-level delivery for this package".to_owned(),
+        },
     }
 }

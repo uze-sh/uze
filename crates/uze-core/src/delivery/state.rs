@@ -33,7 +33,7 @@ fn read_json_or_default<T: uze_document::Shaped + Default>(path: &Path) -> Resul
 /// that has never changed carries no field. The field appears in the bytes
 /// on the release that first needs a rung, as the attachment ledger's did.
 mod shapes {
-    use super::{AttachmentLedger, MarketplaceRegistry, ProvisioningRegistry};
+    use super::{AttachmentLedger, MarketplaceRegistry, ProvisioningRegistry, UndeliveredRegistry};
 
     macro_rules! first_shape {
         ($($record:ty => $kind:literal),* $(,)?) => {
@@ -47,29 +47,40 @@ mod shapes {
     first_shape! {
         ProvisioningRegistry => "provisioning",
         MarketplaceRegistry => "marketplaces",
+        UndeliveredRegistry => "undelivered packages",
     }
 
     /// Shape 1 keyed its receipts by a string built from three of their own
     /// fields. Shape 2 drops the key and keeps the values, in the order
-    /// the map had them.
+    /// the map had them. Shape 3 is shape 2 with receipts a shape-2 build
+    /// cannot read — a whole generated file, a session-start hook entry — so
+    /// that build refuses the ledger as newer than itself rather than as
+    /// unreadable; the step up carries every shape-2 receipt unchanged.
     impl uze_document::Shaped for AttachmentLedger {
-        const SHAPE: u32 = 2;
+        const SHAPE: u32 = 3;
         const KIND: &'static str = "attachments";
 
         fn ladder() -> uze_document::Ladder {
-            &[uze_document::Step {
-                from: 1,
-                to: 2,
-                climb: |mut document| {
-                    if let Some(receipts) = document.get_mut("receipts")
-                        && let Some(keyed) = receipts.as_object()
-                    {
-                        let values: Vec<serde_json::Value> = keyed.values().cloned().collect();
-                        *receipts = serde_json::Value::Array(values);
-                    }
-                    Ok(document)
+            &[
+                uze_document::Step {
+                    from: 1,
+                    to: 2,
+                    climb: |mut document| {
+                        if let Some(receipts) = document.get_mut("receipts")
+                            && let Some(keyed) = receipts.as_object()
+                        {
+                            let values: Vec<serde_json::Value> = keyed.values().cloned().collect();
+                            *receipts = serde_json::Value::Array(values);
+                        }
+                        Ok(document)
+                    },
                 },
-            }]
+                uze_document::Step {
+                    from: 2,
+                    to: 3,
+                    climb: Ok,
+                },
+            ]
         }
     }
 }
@@ -173,6 +184,69 @@ fn update_receipts(home: &UzeHome, change: impl FnOnce(&mut Vec<AttachmentReceip
     let mut ledger: AttachmentLedger = read_json_or_default(&path)?;
     change(&mut ledger.receipts);
     write_json(&path, &ledger)
+}
+
+/// The harnesses each installed package failed to reach, keyed by package
+/// id and then by integration, with the error each delivery ended in.
+///
+/// Only a package that stayed installed appears: an install that reached no
+/// harness takes the package back off instead. An entry goes when a later
+/// delivery to that harness succeeds, or with the package.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+struct UndeliveredRegistry {
+    packages: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+/// Every harness `package_id` is recorded as undelivered to, with the error.
+pub fn undelivered(home: &UzeHome, package_id: &str) -> Result<BTreeMap<String, String>> {
+    let mut registry: UndeliveredRegistry = read_json_or_default(&home.undelivered_path())?;
+    Ok(registry.packages.remove(package_id).unwrap_or_default())
+}
+
+pub fn record_undelivered(
+    home: &UzeHome,
+    package_id: &str,
+    integration: &str,
+    error: &str,
+) -> Result<()> {
+    home.ensure_layout()?;
+    let path = home.undelivered_path();
+    let mut registry: UndeliveredRegistry = read_json_or_default(&path)?;
+    registry
+        .packages
+        .entry(package_id.to_owned())
+        .or_default()
+        .insert(integration.to_owned(), error.to_owned());
+    write_json(&path, &registry)
+}
+
+/// Forgets `package_id`'s failure on `integration`, or on every harness
+/// when `None`. Writes nothing when nothing was recorded, which is every
+/// ordinary delivery.
+pub fn forget_undelivered(
+    home: &UzeHome,
+    package_id: &str,
+    integration: Option<&str>,
+) -> Result<()> {
+    let path = home.undelivered_path();
+    let mut registry: UndeliveredRegistry = read_json_or_default(&path)?;
+    let Some(harnesses) = registry.packages.get_mut(package_id) else {
+        return Ok(());
+    };
+    match integration {
+        Some(integration) => {
+            if harnesses.remove(integration).is_none() {
+                return Ok(());
+            }
+            if harnesses.is_empty() {
+                registry.packages.remove(package_id);
+            }
+        }
+        None => {
+            registry.packages.remove(package_id);
+        }
+    }
+    write_json(&path, &registry)
 }
 
 /// Operational facts about one harness's machine-level UZE integration.
@@ -426,6 +500,35 @@ mod tests {
             version: Some(version.to_owned()),
             strategy: "managed-user-scope-skills-dir".to_owned(),
         }
+    }
+
+    #[test]
+    fn an_undelivered_harness_is_remembered_until_it_is_forgotten() {
+        let home = temp_home("undelivered");
+        assert!(undelivered(&home, "flow@market").unwrap().is_empty());
+        forget_undelivered(&home, "flow@market", None).unwrap();
+        assert!(
+            !home.undelivered_path().exists(),
+            "forgetting nothing writes nothing"
+        );
+
+        record_undelivered(&home, "flow@market", "left", "refused").unwrap();
+        record_undelivered(&home, "flow@market", "right", "also refused").unwrap();
+        let recorded = undelivered(&home, "flow@market").unwrap();
+        assert_eq!(recorded.get("left").map(String::as_str), Some("refused"));
+        assert_eq!(recorded.len(), 2);
+
+        forget_undelivered(&home, "flow@market", Some("left")).unwrap();
+        assert_eq!(
+            undelivered(&home, "flow@market")
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>(),
+            ["right"]
+        );
+        forget_undelivered(&home, "flow@market", None).unwrap();
+        assert!(undelivered(&home, "flow@market").unwrap().is_empty());
+        fs::remove_dir_all(home.root()).unwrap();
     }
 
     #[test]
