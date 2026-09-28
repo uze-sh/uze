@@ -3883,27 +3883,6 @@ impl WorkspaceModel {
         self.tab(tab).and_then(launched_agent_id)
     }
 
-    /// The subagents of the agent on `tab` that still hold a checkout of
-    /// their own, as the last evaluation listed them: what the column
-    /// draws under that agent.
-    pub(super) fn subagents_of(&self, tab: TabId) -> Vec<&AgentView> {
-        let Some(id) = self.tab_agent_id(tab) else {
-            return Vec::new();
-        };
-        self.remembered
-            .tasks
-            .values()
-            .flatten()
-            .filter(|task| {
-                task.parent.as_deref() == Some(id)
-                    && !matches!(
-                        task.state,
-                        WorkStateView::Integrated | WorkStateView::Closed
-                    )
-            })
-            .collect()
-    }
-
     /// The task listed for an identity, whichever repository listed it.
     fn task_with_id(&self, id: &str) -> Option<(&PathBuf, &AgentView)> {
         self.remembered.tasks.iter().find_map(|(primary, tasks)| {

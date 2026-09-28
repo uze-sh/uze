@@ -2961,63 +2961,6 @@ mod workspace_tests {
     /// two tasks at once. The row belongs to whoever is in it now; reading
     /// the first match handed the new agent the previous one's delivered
     /// arrow, which is the mark this reads for.
-    /// A subagent's checkout is its agent's work: it hangs under that
-    /// agent's item by its topic, and a joined one is gone from it.
-    #[test]
-    fn a_subagent_is_drawn_under_the_agent_it_belongs_to() {
-        let mut model = agent_with_task(WorkStateView::Running, 0);
-        let child = |id: &str, topic: &str, state, ahead| AgentView {
-            id: id.into(),
-            parent: Some("t1".into()),
-            ..task_in("/repo/.worktrees/sub", topic, state, ahead)
-        };
-        model
-            .remembered
-            .tasks
-            .get_mut(Path::new("/repo"))
-            .unwrap()
-            .extend([
-                child("c1", "lexer", WorkStateView::Running, 2),
-                child("c2", "parser", WorkStateView::Parked, 0),
-                child("c3", "joined", WorkStateView::Closed, 0),
-            ]);
-
-        let drawn = sidebar(&model, &identities_fixture());
-        let row = |text: &str| {
-            drawn
-                .rows
-                .iter()
-                .position(|row| row.contains(text))
-                .unwrap_or_else(|| panic!("{text:?} in:\n{}", drawn.rows.join("\n")))
-        };
-        let agent = row("Agent");
-        let lexer = row("lexer");
-        let parser = row("parser");
-        assert!(agent < lexer && lexer < parser, "{}", drawn.rows.join("\n"));
-        assert!(
-            drawn.rows[lexer].contains("2 ahead"),
-            "{}",
-            drawn.rows[lexer]
-        );
-        assert!(
-            drawn.rows[parser].contains("parked"),
-            "{}",
-            drawn.rows[parser]
-        );
-        assert!(
-            !drawn.rows.iter().any(|row| row.contains("joined")),
-            "a subagent that gave its checkout back is not drawn"
-        );
-        let tab = first_tab(&model).id;
-        assert!(
-            drawn
-                .hits
-                .iter()
-                .any(|(rect, hit)| rect.y == lexer as u16 && *hit == WorkspaceHit::SelectTab(tab)),
-            "a click on it lands on its agent"
-        );
-    }
-
     #[test]
     fn a_reused_slot_reads_the_task_in_it_now_not_the_one_before() {
         let mut model = agent_session_in("/repo/.worktrees/ai");
