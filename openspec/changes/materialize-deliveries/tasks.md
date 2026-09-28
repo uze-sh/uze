@@ -19,11 +19,12 @@
   shared-aware retirement.
 - [x] 1.6 A receipt in an earlier shape is retired before the current shape is
   attached (inspect-before-detach); CLI test upgrading a symlinked skill.
-- [ ] 1.7 Lab: OpenCode `<skill_files>` non-empty for a delivered skill with
-  references, as a contract check.
+- [x] 1.7 Lab: OpenCode `<skill_files>` non-empty for a delivered skill with
+  references, as a contract check. `experiments/opencode/skill_files`: 2/2
+  on opencode 2.0.18 (2026-09-28), run in the OpenCode vertical.
 - [x] 1.8 Docs: integration READMEs and the web delivery page describe the
   materialized routes.
-- [ ] 1.9 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+- [x] 1.9 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test --workspace --no-fail-fast`,
   `openspec validate materialize-deliveries --strict`.
 

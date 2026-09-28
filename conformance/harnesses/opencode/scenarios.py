@@ -526,3 +526,9 @@ def run(cfg, prov_ip):
         for kind in ("deny", "allow", "order"):
             with describe(kind):
                 phase_hooks(cfg, prov_ip, kind)
+    # Promoted from `experiments/opencode/skill_files`; imported here
+    # because the experiment imports this module for its container helper.
+    from experiments.opencode import skill_files
+
+    with describe("skill-files"):
+        skill_files.run(cfg, prov_ip)
