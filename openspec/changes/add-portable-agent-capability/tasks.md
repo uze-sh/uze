@@ -37,8 +37,12 @@
   the commented field documentation the other templates have.
 - [x] 3.6 `uze:author` skill and `plugins/uze/README.md` document agents:
   format, portable fields, qualified label, what each harness keeps.
-- [ ] 3.7 Correct the per-integration READMEs (agents are routed — done) and the
-  README/web matrix to the proven routes (not "Native" everywhere).
+- [x] 3.7 Correct the per-integration READMEs (agents are routed — done) and the
+  README/web matrix to the proven routes (not "Native" everywhere). The
+  matrix is generated from the integrations (`uze-harness-matrix --check`
+  passes); every harness now has a native agent surface (Claude plugin
+  agents, Codex TOML, OpenCode `agents/`, Antigravity's agents directory),
+  and a field a harness drops is reported per agent as Degraded at install.
 
 - [x] 3.1 Add the Agents capability to TUI compatibility rows and verify
   native/adapted status rendering.

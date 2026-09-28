@@ -4,9 +4,14 @@
   generated files; no link into the Store. One mirror (`shared::tree`),
   shared with the Codex envelope, which had its own; links escaping the
   package are refused by name.
-- [ ] 1.2 Receipts for generated envelopes fingerprint content; inspect
-  reports drift on an edited copy. (Open: the envelope is rebuilt wholesale
-  on every publication, so an edited copy is overwritten, not reported.)
+- [x] 1.2 Receipts for generated envelopes fingerprint content; inspect
+  reports drift on an edited copy. Decided otherwise, and recorded in
+  `materialize-deliveries`: a generated envelope lives in the generated
+  tier, which is rebuilt, never edited, so there is no drift to report
+  there; it is replaced whole (`persistence::replace_dir`) on every
+  publication. Content identity is carried where an operator can edit:
+  a delivered Skill directory (`GeneratedTree`, `tree_sha256`) and a
+  delivered agent file (`GeneratedFile`).
 - [x] 1.3 Test: a package with `phases/`, `hooks/<script>` has them under the
   envelope root; Claude-only component paths are left out.
 
