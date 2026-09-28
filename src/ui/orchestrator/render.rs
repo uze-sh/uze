@@ -987,7 +987,7 @@ fn tree_rows(
             } else if agents == 0 {
                 1
             } else {
-                agent_rows(agents) + subagent_rows(model, space, identities)
+                agent_rows(agents)
             };
             let margin = rearranging
                 || !model.space_folded(space)
@@ -1096,15 +1096,6 @@ fn agent_rows(agents: u16) -> u16 {
     (agents * 3).saturating_sub(1)
 }
 
-/// The rows a space's subagents take, one under the agent each belongs
-/// to.
-fn subagent_rows(model: &WorkspaceModel, space: &Space, identities: &[AgentIdentity]) -> u16 {
-    agent_tabs_of(space, identities)
-        .iter()
-        .map(|tab| model.subagents_of(tab.id).len() as u16)
-        .sum()
-}
-
 /// One agent of a space, resolved once: what its two rows say and
 /// which of its states are on.
 struct SidebarAgent<'a> {
@@ -1134,9 +1125,6 @@ struct TreeCaption {
     /// is gone.
     detail: String,
     detail_color: Color,
-    /// The agent's subagents holding a checkout, each as its topic and
-    /// what is worth saying about it.
-    subagents: Vec<(String, Option<String>)>,
 }
 
 impl TreeCaption {
@@ -1179,24 +1167,11 @@ impl TreeCaption {
         } else {
             caption_color(agent.is_current)
         };
-        let subagents = model
-            .subagents_of(tab.id)
-            .into_iter()
-            .map(|child| {
-                let said = match child.state {
-                    WorkStateView::Parked => Some("parked".to_owned()),
-                    _ if child.ahead > 0 => Some(format!("{} ahead", child.ahead)),
-                    _ => None,
-                };
-                (child.label.clone(), said)
-            })
-            .collect();
         Self {
             task_mark,
             resumable,
             detail,
             detail_color,
-            subagents,
         }
     }
 }
@@ -1567,52 +1542,6 @@ fn draw_tree(
             // item — clicking the caption line must select the tab too, not
             // just the label text above it.
             hits.push((detail_rect, WorkspaceHit::SelectTab(tab.id)));
-        }
-
-        // A subagent works in a checkout of its own, but its work is its
-        // agent's: it hangs under that agent's item, one level in, rather
-        // than standing as an agent of the space.
-        for (index, (topic, said)) in caption.subagents.iter().enumerate() {
-            let Some(child_rect) = rows.slot(1).visible() else {
-                continue;
-            };
-            let last = index + 1 == caption.subagents.len();
-            let mut spans = vec![
-                space_gutter(is_active_space, lit),
-                branch.stem(),
-                Span::raw(" "),
-                Branch::drawn(if last {
-                    Symbol::TreeLast
-                } else {
-                    Symbol::TreeBranch
-                }),
-                Span::raw(" "),
-            ];
-            let taken: u16 = spans.iter().map(|span| span.width() as u16).sum::<u16>()
-                + said
-                    .as_ref()
-                    .map_or(0, |said| text::columns(said) as u16 + 1)
-                + TRAILING_PAD;
-            spans.push(Span::styled(
-                text::elide(
-                    topic,
-                    usize::from(child_rect.width.saturating_sub(taken).max(1)),
-                ),
-                Style::default().fg(caption_color(agent.is_current)),
-            ));
-            if let Some(said) = said {
-                row::push_trailing(
-                    &mut spans,
-                    child_rect.width,
-                    said.clone(),
-                    theme::color(Token::TextDim),
-                );
-            }
-            if let Some(surface) = surface {
-                row::pad_to(&mut spans, child_rect.width, surface);
-            }
-            frame.render_widget(Paragraph::new(Line::from(spans)), child_rect);
-            hits.push((child_rect, WorkspaceHit::SelectTab(tab.id)));
         }
     }
 }
