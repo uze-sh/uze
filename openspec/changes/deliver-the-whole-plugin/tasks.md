@@ -6,7 +6,7 @@
   package are refused by name.
 - [x] 1.2 Receipts for generated envelopes fingerprint content; inspect
   reports drift on an edited copy. Decided otherwise, and recorded in
-  `materialize-deliveries`: a generated envelope lives in the generated
+  section 8 below: a generated envelope lives in the generated
   tier, which is rebuilt, never edited, so there is no drift to report
   there; it is replaced whole (`persistence::replace_dir`) on every
   publication. Content identity is carried where an operator can edit:
@@ -73,3 +73,60 @@
 - [x] 7.2 Integration READMEs corrected (agents routed; routes and coverage).
 - [x] 7.3 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test --workspace --no-fail-fast`.
+
+## 8. Materialization, part 1: physical, whole, and never into the Store
+
+- [x] 8.1 `persistence::replace_dir`: stage beside the destination, swap with
+  `RENAME_EXCHANGE` on Linux and two renames elsewhere; clean a failed or
+  stale staging directory. Tests for success, failure and a stale stage.
+- [x] 8.2 Every generated directory goes through it: `materialize_generated_package`,
+  Antigravity's `materialize_generated_plugin`, the skill wrappers.
+- [x] 8.3 Supporting files are copied through the envelope mirror; `link_extras`
+  and the Claude shim's `SKILL.md` link are removed. No path under a harness
+  root or the generated tier resolves into `store/` (test walks both).
+- [x] 8.4 `ManagedArtifact::GeneratedTree { path, digest }`: attach, inspect,
+  detach, fingerprint, `is_in_place`, `exposure_name`, `location`;
+  `same_name_space`; maintenance and repair treat it as integration-attached.
+- [x] 8.5 Loose skills on all four integrations are planned and attached as
+  `GeneratedTree`, each in its harness's own global root (OpenCode moves to
+  `~/.config/opencode/skills`).
+- [x] 8.5a Remove the shared-root machinery: `shared_agent_skill_root`,
+  `resolved_artifact_target`, the two-vendor wrapper, `verify_reused_wrapper`,
+  shared-aware retirement.
+- [x] 8.6 A receipt in an earlier shape is retired before the current shape is
+  attached (inspect-before-detach); CLI test upgrading a symlinked skill.
+- [x] 8.7 Lab: OpenCode `<skill_files>` non-empty for a delivered skill with
+  references, as a contract check. `experiments/opencode/skill_files`: 2/2
+  on opencode 2.0.18 (2026-09-28), run in the OpenCode vertical.
+- [x] 8.8 Docs: integration READMEs and the web delivery page describe the
+  materialized routes.
+- [x] 8.9 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test --workspace --no-fail-fast`,
+  `openspec validate deliver-the-whole-plugin --strict`.
+
+## 9. Materialization, part 2: no harness reads the Store
+
+- [x] 9.1 Explicit envelopes mirrored into the generated tier; the explicit
+  catalogue rooted there; Codex's relative `source.path` rule kept. A
+  Store-rooted `uze-local` from an earlier build is re-pointed: measured
+  2026-09-28, Claude 2.1.283 takes a second `marketplace add` of the same
+  name as the new source, Codex 0.158.0 refuses it until `marketplace remove`
+  (which uninstalls its plugins); the attach does the second when the first
+  fails, and the old receipts are retired by `package_receipt_serves`.
+- [x] 9.2 Reference-driven pruning of the generated tier; report-only audit of
+  `store/`.
+- [x] 9.3 Measure clone/reflink on the Lab filesystem; decide whether a
+  hardlink materializer from a read-only generated copy is worth offering.
+  Measured 2026-09-28: WSL's ext4 (`cp --reflink=always`: not supported) and
+  Docker's overlayfs have no clone, so a copy costs its bytes there. The
+  bytes a copy adds are the supporting files of loose Skills only (see
+  design); no hardlink materializer until a measurement shows those bytes
+  matter.
+
+## 10. Materialization, part 3
+
+- [x] 10.1 Moved to its own change, `harness-dialect-table`: the per-harness
+  table, canonical `harness:` frontmatter, Agent Plugins 1.0 conformance and
+  project `.agents/` are one design that waits on product decisions (the
+  frontmatter shape, who owns a UZE-written file in a repository), not on
+  this change's materialization.

@@ -5,7 +5,7 @@ OpenCode answers a `skill` tool call with the Skill's body and a
 does not descend a skill root that is a symbolic link: measured on 2.0.18
 (`experiments/opencode/study_mechanics`), a linked root delivers the body
 and an empty `<skill_files>`. UZE delivered every loose Skill that way until
-`materialize-deliveries`; it now writes a real directory.
+`deliver-the-whole-plugin`; it now writes a real directory.
 
 This installs the Lab's `flow` plugin with the UZE under test, scripts one
 `skill` call for `flow:locate` (whose directory carries

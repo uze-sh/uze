@@ -1,6 +1,6 @@
 ## Why
 
-`materialize-deliveries` settled *how* bytes reach a harness. What each
+`deliver-the-whole-plugin` settled *how* bytes reach a harness. What each
 harness *accepts* is still spread through the integrations as constants,
 comments and branches: which frontmatter fields it honours or drops (OpenCode
 silently drops an agent with `model: haiku` or a string `tools`; Codex refuses
