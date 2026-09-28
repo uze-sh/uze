@@ -1807,6 +1807,7 @@ fn run_market(app: &UzeApplication, action: MarketAction) -> Result<()> {
             } else {
                 progress::success(&format!("Marketplace from {identity} is already added"));
             }
+            println!("  {}", registration.reads());
             if registration.resolves_here_only {
                 progress::warn(
                     "It has no origin: a project declaring it resolves on this machine only",

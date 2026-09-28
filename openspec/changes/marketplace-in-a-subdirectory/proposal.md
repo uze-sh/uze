@@ -47,8 +47,8 @@ remote were what gets read.
 - `crates/uze-application/src/application/{marketplace,marketplace_catalogue}.rs`:
   `materialize_plugin`, `materialize_from_link`, `refill`/`adopt`/`manifest_at`
   resolve under the subpath.
-- `state::marketplace_link` stores the subpath with the checkout; the
-  marketplace record gains a field (record tier: additive, the ladder carries
-  shapes without it as "root").
+- `state::marketplace_link` checks the linked directory against the
+  registered subpath; the record's source already carries the subpath, so
+  the registry keeps its shape.
 - `agents.lock` marketplace entries carry the subpath.
 - `src/main.rs:1800` and `src/ui/worker.rs:522` report text.

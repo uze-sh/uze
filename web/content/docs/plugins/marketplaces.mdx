@@ -18,6 +18,21 @@ uze market list            # what is registered
 uze market remove <name>   # take it and its plugins off this machine
 ```
 
+## A marketplace inside a larger repository
+
+The catalogue does not have to sit at the repository's root. Point at the
+directory holding `marketplace.json`, or name it after a `#` for a remote:
+
+```bash
+uze market add ./monorepo/aikit
+uze market add gitlab:team/monorepo#aikit
+```
+
+The repository stays the marketplace's identity, and every plugin is read
+below that directory, from a mirror, from a linked checkout and from
+`agents.lock` alike. `market add` says which directory it reads and whether
+installs follow its commits (mirrored) or your working tree (linked).
+
 ## Private marketplaces
 
 Nothing to configure. uze tries public access first, then your Git credential

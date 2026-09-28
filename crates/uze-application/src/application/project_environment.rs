@@ -177,6 +177,9 @@ impl Project<'_> {
         let mut repository = uze_core::acquisition::marketplace::MarketplaceRepository {
             fetch: locked.git.clone(),
             identity: locked.git.clone(),
+            subpath: uze_core::acquisition::marketplace::MarketplaceSubpath::of(
+                locked.subdirectory.as_deref(),
+            )?,
         };
         if let Ok(Some(registered)) = uze_core::state::marketplace_get(&self.0.home, marketplace)
             && let Ok(local) = uze_core::acquisition::marketplace::repository_of(&registered.source)
@@ -187,7 +190,6 @@ impl Project<'_> {
         MarketplaceRequest {
             repository,
             reference: Some(locked.revision.clone()),
-            subdirectory: locked.subdirectory.clone(),
         }
         .materialize_plugin(
             plugin,
@@ -293,13 +295,17 @@ impl Project<'_> {
         tracing::info!(target: uze_core::acquisition::git::STEP, step = "lock");
         // A linked marketplace pins nothing, so the lock has no entry —
         // the declaration names the checkout the registry link carries.
-        let checkout =
-            uze_core::state::marketplace_get(&self.0.home, marketplace)?.and_then(|record| {
-                record.link.or(match record.source {
-                    uze_core::PackageSource::Local { path } => Some(path),
-                    _ => None,
-                })
-            });
+        let checkout = uze_core::state::marketplace_get(&self.0.home, marketplace)?.and_then(
+            |record| match (record.link, &record.source) {
+                (Some(link), source) => Some(
+                    uze_core::acquisition::marketplace::repository_of(source)
+                        .and_then(|repository| repository.subpath.directory_in(&link))
+                        .unwrap_or(link),
+                ),
+                (None, uze_core::PackageSource::Local { path }) => Some(path.clone()),
+                (None, _) => None,
+            },
+        );
         manifest::declare_plugin(
             &canonical,
             plugin,
@@ -735,9 +741,12 @@ impl Project<'_> {
                         repository: uze_core::acquisition::marketplace::MarketplaceRepository {
                             fetch: recorded.git.clone(),
                             identity: recorded.git.clone(),
+                            subpath: uze_core::acquisition::marketplace::MarketplaceSubpath::of(
+                                recorded.subdirectory.as_deref(),
+                            )
+                            .ok()?,
                         },
                         reference: Some(recorded.revision.clone()),
-                        subdirectory: recorded.subdirectory.clone(),
                     },
                 ))
             })
@@ -1045,7 +1054,7 @@ impl Project<'_> {
             LockedMarketplace {
                 git: request.repository.identity.clone(),
                 r#ref: request.reference.clone(),
-                subdirectory: request.subdirectory.clone(),
+                subdirectory: request.repository.subpath.as_path(),
                 revision: commit.clone(),
             },
         );

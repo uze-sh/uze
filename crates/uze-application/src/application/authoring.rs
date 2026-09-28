@@ -145,14 +145,16 @@ impl Project<'_> {
     fn marketplace_checkout(&self, market: &str) -> Result<PathBuf> {
         let record = uze_core::state::marketplace_get(&self.0.home, market)?
             .ok_or_else(|| UzeError::UnknownMarketplace(market.to_owned()))?;
-        let linked = record.link.clone().ok_or_else(|| {
+        let checkout = record.link.clone().ok_or_else(|| {
             UzeError::MarketplaceScaffold(format!(
                 "`{market}` is not linked to a checkout on this machine — authoring needs the \
                  marketplace the author edits, so scaffold a marketplace or `uze market link \
                  {market} <checkout>` first"
             ))
         })?;
-        Ok(linked)
+        uze_core::acquisition::marketplace::repository_of(&record.source)?
+            .subpath
+            .directory_in(&checkout)
     }
 
     /// The offline check: what the authored artifact would deliver, and

@@ -449,6 +449,17 @@ pub fn marketplace_link(home: &UzeHome, name: &str, checkout: &std::path::Path) 
             requested: local.identity,
         });
     }
+    // The link records the checkout and reads it at the registered
+    // subpath, so linking the checkout or its marketplace directory are the
+    // same link. A different directory of the same repository is another
+    // marketplace.
+    if !local.subpath.is_root() && local.subpath != registered.subpath {
+        return Err(crate::UzeError::MarketplaceConflict {
+            name: name.to_owned(),
+            existing: format!("{} at {}", registered.identity, registered.subpath),
+            requested: format!("{} at {}", local.identity, local.subpath),
+        });
+    }
 
     record.link = Some(local.fetch.into());
     write_json(&path, &registry)

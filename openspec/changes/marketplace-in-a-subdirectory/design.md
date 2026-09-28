@@ -27,9 +27,14 @@ function that keeps a future reader from reintroducing the root.
 
 ### Record shape
 
-The marketplace record and the link gain `subpath`, absent meaning the root,
-so an older shape reads as root without a ladder rung; a newer record is
-never taken by an older build (uze-document rule).
+No record gains a field. The registered source already carries the subpath
+(a local `path` is the marketplace directory itself, a Git source its
+`subdirectory`), and the link keeps recording the checkout's top level: a
+linked read is `<checkout>/<registered subpath>`. Linking the checkout or
+its marketplace directory is therefore the same link, and linking another
+directory of the same repository is refused as a different marketplace.
+Keeping the subpath in one place is what keeps two copies of it from
+disagreeing, and the marketplace registry stays at shape 1.
 
 ## Risks / Trade-offs
 

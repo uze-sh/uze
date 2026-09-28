@@ -124,6 +124,11 @@ pub enum UzeError {
          still the bytes there, and whether anything newer exists."
     )]
     MarketplaceNotARepository { path: PathBuf },
+    #[error(
+        "the marketplace directory `{subpath}` leaves its repository; a marketplace below a \
+         repository's root is named by a relative path inside it"
+    )]
+    MarketplaceSubpathEscapes { subpath: String },
     #[error("unknown UZE package `{0}`")]
     UnknownPackage(String),
     #[error(

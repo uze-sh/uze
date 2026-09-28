@@ -846,3 +846,42 @@ fn two_spellings_of_one_name_are_one_package() {
     assert_eq!(from_test, 1, "one package, one registration: {report}");
     let _ = std::fs::remove_dir_all(home);
 }
+
+/// A marketplace kept in a directory of a larger repository: adding it
+/// names the remote as its identity and says that the local directory, not
+/// the remote, is what is read, and how.
+#[test]
+fn market_add_of_a_subdirectory_says_what_it_reads() {
+    let home = temporary_home("market-add-subdirectory");
+    let repository = uze_testkit::git::Repository::new("market-add-subdirectory-repo");
+    repository.commit_file(
+        "aikit/marketplace.json",
+        r#"{"name": "aikit", "plugins": []}"#,
+    );
+    repository.git(&[
+        "remote",
+        "add",
+        "origin",
+        "https://gitlab.com/team/monorepo.git",
+    ]);
+    let marketplace = repository.root().join("aikit");
+
+    let output = uze(&home)
+        .args(["market", "add", marketplace.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(output.status.success(), "{said}");
+    assert!(said.contains("gitlab.com/team/monorepo"), "{said}");
+    assert!(
+        said.contains(&marketplace.canonicalize().unwrap().display().to_string()),
+        "{said}"
+    );
+    assert!(said.contains("mirrored"), "{said}");
+    let _ = std::fs::remove_dir_all(home);
+}

@@ -517,11 +517,12 @@ fn add_marketplace(
         model.context_root.clone(),
         move |app| {
             app.marketplace().register(&source).map(|registration| {
-                let identity = registration.identity;
+                let identity = &registration.identity;
+                let reads = registration.reads();
                 if registration.added {
-                    format!("Added marketplace from {identity}")
+                    format!("Added marketplace from {identity}. {reads}")
                 } else {
-                    format!("Marketplace from {identity} is already added")
+                    format!("Marketplace from {identity} is already added. {reads}")
                 }
             })
         },

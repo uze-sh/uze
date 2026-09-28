@@ -201,6 +201,32 @@ pub struct MarketplaceRegistration {
     /// A local checkout with no `origin`: a project declaring it resolves
     /// on this machine and nowhere else.
     pub resolves_here_only: bool,
+    /// The checkout on this machine its reads come from, `None` for a
+    /// marketplace read from its remote. The identity alone reads as if
+    /// the remote were what is read.
+    pub checkout: Option<PathBuf>,
+    /// The directory of the repository its catalogue sits in, `None` at the
+    /// root.
+    pub subpath: Option<PathBuf>,
+    /// Reads follow the checkout's working tree rather than its commits.
+    pub linked: bool,
+}
+
+impl MarketplaceRegistration {
+    /// What is read, and whether it follows a working tree or commits.
+    pub fn reads(&self) -> String {
+        let place = match (&self.checkout, &self.subpath) {
+            (Some(checkout), Some(subpath)) => checkout.join(subpath).display().to_string(),
+            (Some(checkout), None) => checkout.display().to_string(),
+            (None, Some(subpath)) => format!("{}/{}", self.identity, subpath.display()),
+            (None, None) => self.identity.clone(),
+        };
+        if self.linked {
+            format!("Reads the working tree at {place} (linked)")
+        } else {
+            format!("Reads {place} at its commits (mirrored)")
+        }
+    }
 }
 
 /// A marketplace teardown's answer: what came off, what was blocked, and

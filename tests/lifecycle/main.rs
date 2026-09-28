@@ -3,3 +3,4 @@
 
 mod install;
 mod manifest_and_lock;
+mod subdirectory_marketplace;
