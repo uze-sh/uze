@@ -1,5 +1,7 @@
 """How Antigravity CLI is driven. No assertions live here."""
 
+import json
+import shlex
 import time
 
 from contract import continuity
@@ -95,6 +97,62 @@ class AntigravityBindings(Bindings):
         time.sleep(1.0)
         tui.submit()
         return tui.collect(reads=10)
+
+    #: The agent a delegating turn runs as. agy offers `invoke_subagent` and
+    #: the roster of agents only to an agent that lists the tool — the
+    #: default one gets neither in a headless turn (measured on 1.2.12,
+    #: `experiments/antigravity/agents`). A driver, not a fixture: it is the
+    #: seat the model delegates from, and names nothing UZE delivers.
+    DISPATCHER = "lab-dispatcher"
+    DISPATCHER_PRELUDE = f"""
+mkdir -p /work/home/.gemini/antigravity-cli/agents
+cat > /work/home/.gemini/antigravity-cli/agents/{DISPATCHER}.md <<'AGENT_EOF'
+---
+name: {DISPATCHER}
+description: Delegates the lab's work to subagents
+tools:
+  - invoke_subagent
+---
+Delegate as asked.
+AGENT_EOF
+"""
+
+    def headless(
+        self, cfg, prov_ip, prelude, prompt, cwd, plugins="", delegating=False
+    ):
+        """`agy --print`, as the dispatcher when the turn delegates."""
+        agent = f"--agent {self.DISPATCHER} " if delegating else ""
+        setup = agy_setup(
+            cfg,
+            prov_ip,
+            include_mcp=False,
+            plugins=plugins,
+            prelude=self.DISPATCHER_PRELUDE if delegating else "",
+            final_cmd=f"""{prelude}
+cd {cwd}
+set +e
+timeout 240 agy {agent}--print {shlex.quote(prompt)} --dangerously-skip-permissions \\
+  --print-timeout 120s 2>&1
+""",
+        )
+        return docker_base(cfg, prov_ip, setup, tty=False)
+
+    def dispatch(self, label, prompt):
+        """agy dispatches with `invoke_subagent`, naming the agent in a
+        `Subagents[].TypeName`; the schema also requires a role, a prompt
+        and the tool summary/action every agy tool carries."""
+        args = {
+            "Subagents": [
+                {
+                    "TypeName": label,
+                    "Role": "Lab Dispatch",
+                    "Prompt": "Run your checks.",
+                }
+            ],
+            "toolSummary": "Lab dispatch",
+            "toolAction": "Dispatching agent",
+        }
+        return "toolcall", {"TOOL_NAME": "invoke_subagent", "FC_ARGS": json.dumps(args)}
 
     def mcp_inventory(self, tui):
         """`/mcp` lists every configured server and enumerates its tools."""

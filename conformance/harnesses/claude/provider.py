@@ -32,6 +32,7 @@ import ssl
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import capture
+import markers
 import variation
 
 STRUCT_PATH = os.environ.get("PROVIDER_STRUCT", "/tmp/claude-struct.json")
@@ -48,6 +49,9 @@ LEAF_KEY = os.environ.get("LEAF_KEY", "/app/leaf.key")
 # hook's normalized ABI payload will carry.
 TOOL_NAME = os.environ.get("TOOL_NAME", MCP_TOOL)
 TOOL_ARGS = json.loads(os.environ.get("TOOL_ARGS", "{}"))
+#: When set, the call is scripted only for a request carrying this text: a
+#: subagent's first request is a user turn too.
+TOOL_TRIGGER = os.environ.get("TOOL_TRIGGER", "")
 
 ISOLATION_MARKERS = ["already isolated", "UZE_CONFORMANCE_REBASE"]
 #: One turn each. A single request carrying both is what proves a relaunched
@@ -96,6 +100,7 @@ def structural_summary(body_text):
     has_tool_use = "tool_use" in body
     has_tool_result = "tool_result" in body
     return {
+        **markers.summary(body),
         "content_types": [c.get("type") for c in b.get("content", [])],
         "tools": tools,
         "skill_markers": {m: (m in body) for m in SKILL_MARKERS},
@@ -258,7 +263,11 @@ class H(BaseHTTPRequestHandler):
             msgs = json.dumps(b.get("messages", []))
             if "tool_result" in msgs:
                 payload = sse(text_events(FINAL_TEXT))
-            elif MODE == "toolcall" and '"type": "text"' in msgs:
+            elif (
+                MODE == "toolcall"
+                and '"type": "text"' in msgs
+                and (not TOOL_TRIGGER or TOOL_TRIGGER in msgs)
+            ):
                 payload = sse(tool_use_events())
             else:
                 payload = sse(text_events(RESPONSE_TEXT))

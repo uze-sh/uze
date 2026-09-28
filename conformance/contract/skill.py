@@ -12,6 +12,10 @@ The `flow` fixture carries one Skill of each shape:
     analyze   model, not user      → discovered, not user-invocable
     review    user, not model      → user-invocable, not discovered
 
+and one that names a file of its plugin outside `skills/` through
+`${PLUGIN_ROOT}` (`locate`), which the model must receive as a path that
+leads to that file.
+
 Every absence assertion here is conditional on a presence assertion.
 "`review` is not offered to the model" and "nothing was offered to the
 model" are the same observation unless something proves the surface was
@@ -19,15 +23,23 @@ populated — and for months they were, on three harnesses, which is exactly
 how a Skill that never reached the model read as a policy working.
 """
 
+import subprocess
 import time
 
 from shared.common import (
+    HARNESS_IMAGE,
     check,
     check_absence,
     describe,
     observed_markers,
     provider_struct,
     start_provider,
+)
+from shared.markers import (
+    PLACEHOLDERS,
+    ROOT_FILE_MARKER,
+    ROOT_SKILL,
+    ROOT_SKILL_BODY,
 )
 
 #: The fixture's three shapes, by canonical name.
@@ -226,4 +238,111 @@ def _assert_invocation(cfg, prov_ip, bindings):
                 "must not reach the model",
             )
 
+        _assert_plugin_root(cfg, tui, invoke)
+
     start_provider(cfg, "static")
+
+
+def _harness_container(cfg):
+    """The id of this run's harness container: the one on the run's own
+    network that is not the provider."""
+    out = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-q",
+            "--filter",
+            f"network={cfg.net}",
+            "--filter",
+            f"ancestor={HARNESS_IMAGE}",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    return out[0] if len(out) == 1 else None
+
+
+def _read_in_harness(cfg, path):
+    """What `path` holds inside the running harness container, or `None`."""
+    container = _harness_container(cfg)
+    if container is None:
+        return None
+    out = subprocess.run(
+        ["docker", "exec", container, "cat", path],
+        capture_output=True,
+        text=True,
+        errors="replace",
+    )
+    return out.stdout if out.returncode == 0 else None
+
+
+def _assert_plugin_root(cfg, tui, invoke):
+    """A Skill that names a file of its plugin through the plugin root.
+
+    The canonical Skill writes `${PLUGIN_ROOT}`; what a harness hands its
+    model has to be a path, because a model cannot expand a placeholder and
+    no harness but one does it for UZE. And the path has to lead somewhere:
+    the file sits outside `skills/`, which is exactly the part of a plugin
+    a delivery that copied only the Skill directories would leave behind.
+
+    Read off the request that carried the Skill's body — the only one the
+    placeholder could be in — and off the harness's own filesystem, in the
+    container the turn ran in, never off UZE's report.
+    """
+    rendered = invoke(tui, ROOT_SKILL)
+    tui.snapshot("invoke-root", rendered)
+    delivered = _await_root_body(cfg)
+    check(
+        "skill-root-skill-is-invocable",
+        bool(delivered),
+        f"`{ROOT_SKILL}`'s body reached the model"
+        if delivered
+        else f"invoked `{ROOT_SKILL}`, but its body never reached the model: "
+        f"{rendered[-160:]}".replace("\n", " "),
+    )
+    if not delivered:
+        return
+
+    literal = sorted(
+        {
+            placeholder
+            for summary in delivered
+            for placeholder in PLACEHOLDERS
+            if summary["root_markers"].get(placeholder)
+        }
+    )
+    check(
+        "skill-root-placeholder-resolved",
+        not literal,
+        "the body the model received names no placeholder"
+        if not literal
+        else f"the model received {', '.join(literal)} literally",
+    )
+
+    refs = sorted({ref for summary in delivered for ref in summary["root_refs"]})
+    reachable = [
+        ref for ref in refs if ROOT_FILE_MARKER in (_read_in_harness(cfg, ref) or "")
+    ]
+    check(
+        "skill-root-file-reachable",
+        bool(refs) and reachable == refs,
+        f"{refs} holds the plugin's file outside skills/"
+        if refs and reachable == refs
+        else f"the path the model was given does not hold the plugin's file: "
+        f"{refs or 'no path'}",
+    )
+
+
+def _await_root_body(cfg, timeout=45.0, gap=2.0):
+    """The summaries of every request that carried the root Skill's body,
+    waiting for the first one the way `_await_marker` does."""
+    deadline = time.time() + timeout
+    while True:
+        delivered = [
+            request["summary"]
+            for request in provider_struct(cfg)
+            if request.get("summary", {}).get("root_markers", {}).get(ROOT_SKILL_BODY)
+        ]
+        if delivered or time.time() >= deadline:
+            return delivered
+        time.sleep(gap)

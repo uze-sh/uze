@@ -34,6 +34,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import capture
+import markers
 import variation
 import websocket
 
@@ -80,6 +81,45 @@ RECORD_LOCK = threading.Lock()
 # payload will carry.
 TOOL_NAME = os.environ.get("TOOL_NAME", "Bash")
 TOOL_ARGS = os.environ.get("TOOL_ARGS", "{}")
+#: Codex 0.158 groups its tools into namespaces (`functions`, `collaboration`,
+#: ...) inside an `additional_tools` input item, and a call to a namespaced
+#: tool names its namespace: `spawn_agent` without one is answered
+#: `unsupported call: spawn_agent`.
+TOOL_NAMESPACE = os.environ.get("TOOL_NAMESPACE", "")
+#: When set, the first call is scripted only for a request carrying this
+#: text. A subagent's own turn is a real turn too, and answering it with the
+#: same `spawn_agent` call spawns agents recursively until the slots run out.
+TOOL_TRIGGER = os.environ.get("TOOL_TRIGGER", "")
+#: Several calls, one per model step, as a JSON list of
+#: `{"name", "namespace"?, "args"}`. Step N+1 answers the request carrying the
+#: output of step N's call id: a follow-up is sent with `previous_response_id`
+#: and only the new output, so the trigger text is not in it. Dispatching a
+#: subagent needs two — `codex exec` ends the process, and the subagent with
+#: it, as soon as the root turn answers, so the root has to `wait_agent`.
+TOOL_SEQUENCE = json.loads(os.environ.get("TOOL_SEQUENCE", "null") or "null") or [
+    {"name": TOOL_NAME, "namespace": TOOL_NAMESPACE, "args": TOOL_ARGS}
+]
+
+
+def call_id(step):
+    return f"fc_uze_{step + 1}"
+
+
+def scripted_step(body):
+    """The index of the scripted call `body` is answered with, or None."""
+    has_turn = '"input"' in body or '"inputs"' in body
+    if MODE != "toolcall" or not has_turn:
+        return None
+    for step in range(len(TOOL_SEQUENCE) - 1, -1, -1):
+        if f'"call_id":"{call_id(step)}"' in body.replace(" ", ""):
+            following = step + 1
+            return following if following < len(TOOL_SEQUENCE) else None
+    if '"function_call_output"' in body:
+        return None
+    if TOOL_TRIGGER and TOOL_TRIGGER not in body:
+        return None
+    return 0
+
 
 # Conformance evidence markers carried by portable-hook denial reasons
 # (ADR-033): presence/absence in the structural summary proves what the real
@@ -120,6 +160,7 @@ def structural_summary(body_text):
     except Exception:
         tools = []
     return {
+        **markers.summary(body),
         "skill_markers": {m: (m in body) for m in SKILL_MARKERS},
         "isolation_markers": {m: (m in body) for m in ISOLATION_MARKERS},
         "continuity_markers": {m: (m in body) for m in CONTINUITY_MARKERS},
@@ -252,21 +293,26 @@ def responses_sse(text):
     return sse_bytes(text_events(text))
 
 
-def function_call_events():
+def function_call_events(step=0):
     """A tool-call response's event list (Responses API): one `function_call`
-    output item naming TOOL_NAME with TOOL_ARGS as its arguments. The
-    harness executes the tool (through the UZE hook wrapper); the follow-up
-    request carries the `function_call_output`, which the handler answers
-    with the final text."""
-    rid, fid = "resp_uze_2", "fc_uze_1"
+    output item naming the step's tool with its arguments (TOOL_NAME with
+    TOOL_ARGS unless a TOOL_SEQUENCE says otherwise). The harness executes
+    the tool (through the UZE hook wrapper); the follow-up request carries
+    the `function_call_output`, which the handler answers with the next
+    step, or with the final text."""
+    call = TOOL_SEQUENCE[step]
+    args = call["args"] if isinstance(call["args"], str) else json.dumps(call["args"])
+    rid, fid = f"resp_uze_{step + 2}", call_id(step)
     item = {
         "type": "function_call",
         "id": fid,
         "call_id": fid,
-        "name": TOOL_NAME,
+        "name": call["name"],
         "arguments": "",
         "status": "in_progress",
     }
+    if call.get("namespace"):
+        item["namespace"] = call["namespace"]
     evs = [
         (
             "response.created",
@@ -293,7 +339,7 @@ def function_call_events():
                 "type": "response.function_call_arguments.delta",
                 "item_id": fid,
                 "output_index": 0,
-                "delta": TOOL_ARGS,
+                "delta": args,
             },
         ),
         (
@@ -302,7 +348,7 @@ def function_call_events():
                 "type": "response.function_call_arguments.done",
                 "item_id": fid,
                 "output_index": 0,
-                "arguments": TOOL_ARGS,
+                "arguments": args,
             },
         ),
         (
@@ -310,7 +356,7 @@ def function_call_events():
             {
                 "type": "response.output_item.done",
                 "output_index": 0,
-                "item": {**item, "arguments": TOOL_ARGS, "status": "completed"},
+                "item": {**item, "arguments": args, "status": "completed"},
             },
         ),
         (
@@ -323,7 +369,7 @@ def function_call_events():
                     "created_at": 1750000000,
                     "status": "completed",
                     "model": "gpt-5.6-sol",
-                    "output": [{**item, "arguments": TOOL_ARGS, "status": "completed"}],
+                    "output": [{**item, "arguments": args, "status": "completed"}],
                     "usage": {
                         "input_tokens": 10,
                         "output_tokens": 3,
@@ -336,8 +382,8 @@ def function_call_events():
     return evs
 
 
-def function_call_sse():
-    return sse_bytes(function_call_events())
+def function_call_sse(step=0):
+    return sse_bytes(function_call_events(step))
 
 
 #: What a schema-constrained side call is answered with. Deliberately not
@@ -378,12 +424,12 @@ def respond(body, path):
         # A tool call is only scripted for a real turn: the TUI also
         # sends a boot/connectivity request without `input`/`inputs`,
         # and answering that with a function call hangs its model load.
-        has_turn = '"input"' in body or '"inputs"' in body
         side_call = schema_answer(body)
         if side_call is not None:
             return responses_sse(side_call)
-        if MODE == "toolcall" and has_turn and '"function_call_output"' not in body:
-            return function_call_sse()
+        step = scripted_step(body)
+        if step is not None:
+            return function_call_sse(step)
         return responses_sse(RESPONSE_TEXT)
     if path.startswith("/v1/models"):
         return json.dumps(
@@ -451,12 +497,11 @@ def ws_loop(conn, path):
             except OSError:
                 pass
         record(text, path, "WS")
-        has_turn = '"input"' in text or '"inputs"' in text
         side_call = schema_answer(text)
         if side_call is not None:
             events = text_events(side_call)
-        elif MODE == "toolcall" and has_turn and '"function_call_output"' not in text:
-            events = function_call_events()
+        elif scripted_step(text) is not None:
+            events = function_call_events(scripted_step(text))
         else:
             events = text_events(RESPONSE_TEXT)
         for _name, payload in events:

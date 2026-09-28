@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-session-plugin",
+  "description": "Conformance fixture: an observational SessionStart hook beside a PreToolUse one, proving the session-start event where a harness has it and its Unsupported report where it does not."
+}

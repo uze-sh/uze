@@ -1,5 +1,7 @@
 """How Claude Code is driven. No assertions live here."""
 
+import json
+import shlex
 import time
 
 from contract import continuity
@@ -75,6 +77,33 @@ class ClaudeBindings(Bindings):
         tui.submit()
         inventory, _ = tui.until(["uze-conformance", "MCP"], tries=8)
         return inventory
+
+    def headless(
+        self, cfg, prov_ip, prelude, prompt, cwd, plugins="", delegating=False
+    ):
+        """`claude -p`: every session's `Agent` tool lists the agent types
+        it may dispatch, so `delegating` needs nothing more."""
+        final = f"""{prelude}
+cd {cwd}
+set +e
+timeout 240 claude -p {shlex.quote(prompt)} --permission-mode bypassPermissions \\
+  --output-format json 2>&1
+"""
+        return claude_container(cfg, prov_ip, final, plugins=plugins, tty=False)
+
+    def dispatch(self, label, prompt):
+        """Claude dispatches through its `Agent` tool, naming the agent in
+        `subagent_type` (measured on 2.1.283, `experiments/claude/parity`)."""
+        args = {
+            "subagent_type": label,
+            "description": "lab dispatch",
+            "prompt": "Run your checks.",
+        }
+        return "toolcall", {
+            "TOOL_NAME": "Agent",
+            "TOOL_ARGS": json.dumps(args),
+            "TOOL_TRIGGER": prompt,
+        }
 
     def unsupported(self, prop):
         """Claude Code documents both halves of the invocation policy:

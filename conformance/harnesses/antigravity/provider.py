@@ -85,6 +85,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 
 import capture
+import markers
 import variation
 
 LEAF_CERT = os.environ.get("LEAF_CERT", "/app/leaf.crt")
@@ -188,6 +189,7 @@ def structural_summary(body_text):
     has_fc = "functionCall" in body
     has_fr = "functionResponse" in body
     return {
+        **markers.summary(body),
         "content_roles": [c.get("role") for c in b.get("contents", [])],
         # Every declaration across every `tools` entry: signed in, the
         # harness sends one entry per tool, so reading only the first left

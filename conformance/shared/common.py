@@ -16,6 +16,8 @@ import time
 
 import pexpect
 
+from shared import markers
+
 PROVIDER_IMG = "python:3.12-slim"
 # `UZE_LAB_IMAGE` pins an older build of the image — the way to tell a
 # vendor regression from a lab change is to run the same scenario against
@@ -324,6 +326,7 @@ def validate_marketplace(cfg):
         "hook-allow-plugin": "./plugins/hook-allow-plugin",
         "hook-order-plugin": "./plugins/hook-order-plugin",
         "hook-fail-plugin": "./plugins/hook-fail-plugin",
+        "hook-session-plugin": "./plugins/hook-session-plugin",
     }
     if plugins != expected:
         raise RuntimeError(f"invalid conformance marketplace inventory: {plugins}")
@@ -332,7 +335,12 @@ def validate_marketplace(cfg):
         "plugins/flow/skills/commit/SKILL.md",
         "plugins/flow/skills/review/SKILL.md",
         "plugins/flow/skills/analyze/SKILL.md",
-        "plugins/flow/agents/reviewer.md",
+        "plugins/flow/skills/locate/SKILL.md",
+        "plugins/flow/guides/locate.md",
+        "plugins/flow/agents/auditor.md",
+        "plugins/flow/agents/checks/security.md",
+        "plugins/flow/agents/style.md",
+        "plugins/flow/agents/scout.md",
         "plugins/mcp-plugin/mcp.json",
         "plugins/mcp-plugin/scripts/server",
         "plugins/hook-plugin/hooks.json",
@@ -345,6 +353,8 @@ def validate_marketplace(cfg):
         "plugins/hook-order-plugin/scripts/order-2",
         "plugins/hook-fail-plugin/hooks.json",
         "plugins/hook-fail-plugin/plugin.json",
+        "plugins/hook-session-plugin/hooks.json",
+        "plugins/hook-session-plugin/scripts/opened",
     )
     for relative_path in required:
         path = os.path.join(cfg.marketplace_source, relative_path)
@@ -352,6 +362,8 @@ def validate_marketplace(cfg):
             raise RuntimeError(
                 f"missing conformance marketplace resource: {relative_path}"
             )
+
+    _validate_flow_shapes(os.path.join(cfg.marketplace_source, "plugins/flow"))
 
     with open(os.path.join(cfg.marketplace_source, "plugins/mcp-plugin/mcp.json")) as f:
         mcp = json.load(f)
@@ -363,6 +375,42 @@ def validate_marketplace(cfg):
         "__UZE_MCP_CONFORMANCE_PROOF__",
     ]:
         raise RuntimeError("invalid conformance MCP fixture placeholders")
+
+
+def _validate_flow_shapes(flow):
+    """The `agent` and plugin-root checks are only as good as the shapes the
+    fixture carries: an agent whose name stopped differing from its file, or
+    a Skill that stopped naming the placeholder, would turn a check into one
+    that passes without asking its question."""
+
+    def read(relative):
+        with open(os.path.join(flow, relative)) as f:
+            return f.read()
+
+    files = {
+        "flat": "agents/auditor.md",
+        "nested": "agents/checks/security.md",
+        "renamed": "agents/style.md",
+        "vendor-fields": "agents/scout.md",
+    }
+    for shape, (label, body) in markers.AGENTS.items():
+        text = read(files[shape])
+        name = label.split(":")[-1]
+        if f"name: {name}\n" not in text or body not in text:
+            raise RuntimeError(f"flow agent `{shape}` no longer names {label}")
+    renamed = markers.AGENTS["renamed"][0].split(":")[-1]
+    if os.path.basename(files["renamed"]) == f"{renamed}.md":
+        raise RuntimeError("flow's renamed agent must differ from its file")
+    scout = read(files["vendor-fields"])
+    if "\nmodel: haiku\n" not in scout or "\ntools: Read, Grep\n" not in scout:
+        raise RuntimeError("flow's vendor-fields agent lost its Claude-only fields")
+    skill = read(f"skills/{markers.ROOT_SKILL}/SKILL.md")
+    if (
+        "UZE_ROOT_REF=${PLUGIN_ROOT}/guides/locate.md" not in skill
+        or markers.ROOT_SKILL_BODY not in skill
+        or markers.ROOT_FILE_MARKER not in read("guides/locate.md")
+    ):
+        raise RuntimeError("flow's plugin-root Skill no longer names its guide")
 
 
 def generate_certs(cfg):
@@ -486,6 +534,8 @@ def start_provider(cfg, mode, extra_env=None):
         f"{cfg.repo}/shared/capture.py:/app/capture.py:ro",
         "-v",
         f"{cfg.repo}/shared/websocket.py:/app/websocket.py:ro",
+        "-v",
+        f"{cfg.repo}/shared/markers.py:/app/markers.py:ro",
     ]
     if cfg.harness == "antigravity":
         # The Gemini plane stays plain HTTP on 9999; the same process also
@@ -871,6 +921,22 @@ def ca_mount(cfg):
     return ["-v", f"{ca_crt}:/app/ca.crt:ro"]
 
 
+def marketplace_mount():
+    """Overlays a host marketplace onto the in-image fixture path.
+
+    The image bakes `conformance/_fixtures` at build time, so a fixture edit
+    reaches a run only through a rebuild — or through this. Compatibility-
+    matrix cells (matrix.py) overlay a host-built variant market; pointing
+    it at `conformance/_fixtures/marketplace` runs the working tree's
+    fixture against an image built from an older one. Canonical runs never
+    set it.
+    """
+    source = os.environ.get("UZE_MARKETPLACE_MOUNT")
+    if not source:
+        return []
+    return ["-v", f"{source}:/opt/uze-conformance-fixtures/marketplace:ro"]
+
+
 def docker_base(cfg, prov_ip, final_cmd, tty=True):
     cmd = (
         [
@@ -892,11 +958,7 @@ def docker_base(cfg, prov_ip, final_cmd, tty=True):
     )
     for h in HARNESS_HOSTS.get(cfg.harness, []):
         cmd += ["--add-host", f"{h}:{prov_ip}"]
-    # Compatibility-matrix cells (matrix.py) overlay a host-built variant
-    # market onto the in-image fixture path; canonical runs never set this.
-    matrix_mount = os.environ.get("UZE_MARKETPLACE_MOUNT")
-    if matrix_mount:
-        cmd += ["-v", f"{matrix_mount}:/opt/uze-conformance-fixtures/marketplace:ro"]
+    cmd += marketplace_mount()
     cmd += ca_mount(cfg)
     cmd += [
         "--tmpfs",

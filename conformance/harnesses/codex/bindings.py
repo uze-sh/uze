@@ -1,5 +1,7 @@
 """How Codex is driven. No assertions live here."""
 
+import json
+import shlex
 import time
 
 from contract import continuity
@@ -79,6 +81,48 @@ class CodexBindings(Bindings):
         tui.submit()
         inventory, _ = tui.until(["uze-conformance", "MCP"], tries=8)
         return inventory
+
+    def headless(
+        self, cfg, prov_ip, prelude, prompt, cwd, plugins="", delegating=False
+    ):
+        """`codex exec`: every session's `spawn_agent` tool lists the custom
+        agents in its `agent_type` parameter, so `delegating` needs nothing
+        more."""
+        final = f"""{prelude}
+cd {cwd}
+set +e
+timeout 240 codex exec --skip-git-repo-check {shlex.quote(prompt)} 2>&1
+"""
+        return codex_container(cfg, prov_ip, final, plugins=plugins, tty=False)
+
+    def dispatch(self, label, prompt):
+        """Codex 0.158 dispatches with `spawn_agent` in its `collaboration`
+        tool namespace, naming the agent in `agent_type`; the call has to
+        carry the namespace or it is answered `unsupported call`. `codex
+        exec` ends — and the child with it — as soon as the root turn
+        answers, so the root waits for the child first (measured,
+        `experiments/codex/agents`)."""
+        sequence = [
+            {
+                "name": "spawn_agent",
+                "namespace": "collaboration",
+                "args": {
+                    "task_name": "lab_dispatch",
+                    "message": "Run your checks.",
+                    "agent_type": label,
+                    "fork_turns": "none",
+                },
+            },
+            {
+                "name": "wait_agent",
+                "namespace": "collaboration",
+                "args": {"timeout_ms": 30000},
+            },
+        ]
+        return "toolcall", {
+            "TOOL_SEQUENCE": json.dumps(sequence),
+            "TOOL_TRIGGER": prompt,
+        }
 
     def unsupported(self, prop):
         """Codex documents no way to disable explicit `$skill` invocation, so

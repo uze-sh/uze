@@ -1,5 +1,7 @@
 """How OpenCode is driven. No assertions live here."""
 
+import json
+import shlex
 import time
 
 from contract import continuity
@@ -116,6 +118,32 @@ export PATH=/tmp/lab-bin:$PATH
         time.sleep(1)
         tui.submit()
         return tui.collect(reads=6)
+
+    def headless(
+        self, cfg, prov_ip, prelude, prompt, cwd, plugins="", delegating=False
+    ):
+        """`opencode run`: every session's `subagent` tool lists the agents
+        whose mode lets them be one, so `delegating` needs nothing more."""
+        final = f"""{prelude}
+cd {cwd}
+set +e
+timeout 240 opencode run {shlex.quote(prompt)} 2>&1
+"""
+        return opencode_container(cfg, prov_ip, final, plugins=plugins, tty=False)
+
+    def dispatch(self, label, prompt):
+        """OpenCode 2.0.18 dispatches with its `subagent` tool (not `task`),
+        naming the agent in `agent` (measured, `experiments/opencode/agents`)."""
+        args = {
+            "agent": label,
+            "description": "lab dispatch",
+            "prompt": "Run your checks.",
+        }
+        return "toolcall", {
+            "TOOL_NAME": "subagent",
+            "TOOL_ARGS": json.dumps(args),
+            "TOOL_TRIGGER": prompt,
+        }
 
     def unsupported(self, prop):
         """`/skills` lists every delivered Skill, whatever `slash` says.

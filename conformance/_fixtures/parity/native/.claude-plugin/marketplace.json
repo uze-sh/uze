@@ -1,0 +1,1 @@
+{"name": "parity-native", "owner": {"name": "UZE Lab"}, "plugins": [{"name": "kit", "source": "./plugins/kit", "description": "Parity reference plugin"}]}

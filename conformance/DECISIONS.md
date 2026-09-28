@@ -282,19 +282,23 @@ the shared expectation is now known on all four harnesses.
 
 ---
 
-## No Agent contract yet
+## An Agent contract, asserted on the wire
 
-**Context.** Two verticals assert `agent-visible-in-tui`; two do not. The
-canonical Agent capability is delivered on all four.
+**Context.** Two verticals asserted `agent-visible-in-tui` by a bare name;
+two did not. A real marketplace migrated on 1.0.0-beta.3 found agents
+offered under the wrong name on every harness, dropped silently on
+OpenCode, and listed but unrunnable on Codex when linked — none of which a
+listing check on one screen could see.
 
-**Chosen.** Deferred. `skill` and `mcp` establish the seam and prove it
-across four harnesses; a third capability adds coverage but no new
-structure, and the remaining budget was better spent proving the seam works
-than widening it.
+**Chosen.** `contract.agent`, on all four: each fixture agent (flat,
+nested, renamed by its frontmatter, carrying Claude-only fields) is offered
+to the model under `<plugin>:<subdirs>:<name>`, and dispatching it puts its
+body in a model request. Claude's `agent-visible-in-tui` is retired: from
+2.1.283 `/agents` manages background agents, and the contract asserts the
+same property at the wire. Antigravity keeps its TUI check beside it.
 
-**Discarded.** A partial Agent contract covering only the two harnesses
-that already assert it — that is the per-vertical divergence this change
-exists to remove.
+**Discarded.** Declaring Claude's TUI check ADAPTED: the property it held
+is still measurable, just no longer on that screen.
 
 ---
 

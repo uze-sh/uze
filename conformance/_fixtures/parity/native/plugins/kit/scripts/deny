@@ -1,0 +1,7 @@
+#!/bin/sh
+# Canonical contract: HOOK_* environment in, exit 3 denies. Native: stdin JSON, exit 2 blocks.
+if [ -n "$HOOK_EVENT" ]; then input="$HOOK_COMMAND$HOOK_INPUT"; code=3; else input=$(cat); code=2; fi
+case "$input" in
+  *PARITY_DENY_ME*) echo "PARITY_HOOK_DENIED" >&2; exit $code ;;
+esac
+exit 0

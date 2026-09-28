@@ -49,9 +49,9 @@ for p in {plugins}; do uze install $p@uze-lab -m >/dev/null 2>&1; done
 """
 
 
-def claude_container(cfg, prov_ip, final_cmd, plugins="flow mcp-plugin"):
+def claude_container(cfg, prov_ip, final_cmd, plugins="flow mcp-plugin", tty=True):
     cmd = docker_base(
-        cfg, prov_ip, claude_setup(cfg, prov_ip, final_cmd, plugins=plugins)
+        cfg, prov_ip, claude_setup(cfg, prov_ip, final_cmd, plugins=plugins), tty=tty
     )
     ca_crt, _, _ = generate_certs(cfg)
     i = cmd.index(common.HARNESS_IMAGE)
@@ -222,23 +222,11 @@ def phase_tui(cfg, prov_ip):
     child.send("\x1b")
     time.sleep(1.0)
 
-    # /agents is Claude's native custom-subagent manager. This proves the
-    # harness consumes the canonical Agent, not merely that UZE wrote a path.
-    for ch in "/agents":
-        child.send(ch)
-        time.sleep(0.06)
-    child.send("\r")
-    t, p, _ = wait_for(["reviewer", "Agents"], tries=10, stop_on_death=True)
-    snap("02a_agents", t)
-    check(
-        "agent-visible-in-tui",
-        "reviewer" in p,
-        "Claude /agents lists the UZE reviewer agent"
-        if "reviewer" in p
-        else p[-200:].replace("\n", " "),
-    )
-    child.send("\x1b")
-    time.sleep(1.0)
+    # No TUI check for agents: since 2.1.283 `/agents` (and `claude agents`)
+    # manage *background* agents, and the subagent roster is no longer a
+    # screen of its own. What a person relied on it for — Claude offers the
+    # delivered agent under its label and runs it — is asserted where it
+    # happens, on the wire, by `contract.agent` (exposure and dispatch).
 
     # /mcp
     for ch in "/mcp":

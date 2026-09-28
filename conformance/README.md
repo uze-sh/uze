@@ -237,9 +237,19 @@ nothing is committed, nothing is reused across runs.
 vertical starts from a fresh copy and selects the plugins it needs, so the
 same `flow` Skills, MCP resources, and portable-hook plugins (`hook-plugin`,
 `hook-order-plugin`, `hook-fail-plugin` — the fail-closed contract fixture —
+and `hook-session-plugin`, a `SessionStart` group beside a `PreToolUse` one;
 ADR-033) are exercised across harnesses without each scenario rebuilding
-them by hand. `lab.py` validates
+them by hand. `flow` also carries one agent of each shape the `agent`
+contract asks about (flat, nested, renamed by its frontmatter, and written
+with Claude-only fields) and a `locate` Skill that names a file outside
+`skills/` through `${PLUGIN_ROOT}`; the labels and markers both sides read
+are in `shared/markers.py`. `lab.py` validates
 the inventory and the MCP runtime placeholders before it starts Docker.
+
+The image bakes this tree at build time. To run a fixture edit against an
+image built before it, overlay the working tree:
+`UZE_MARKETPLACE_MOUNT=$PWD/conformance/_fixtures/marketplace python3
+conformance/lab.py ...`.
 
 This is intentionally separate from `tests/_fixtures/`: those fixtures are
 small, stable inputs for deterministic Rust tests, while this marketplace is

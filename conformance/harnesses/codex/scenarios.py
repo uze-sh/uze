@@ -62,9 +62,9 @@ for p in {plugins}; do uze install $p@uze-lab -m >/dev/null 2>&1; done
 """
 
 
-def codex_container(cfg, prov_ip, final_cmd, plugins="flow mcp-plugin"):
+def codex_container(cfg, prov_ip, final_cmd, plugins="flow mcp-plugin", tty=True):
     cmd = docker_base(
-        cfg, prov_ip, codex_setup(cfg, prov_ip, final_cmd, plugins=plugins)
+        cfg, prov_ip, codex_setup(cfg, prov_ip, final_cmd, plugins=plugins), tty=tty
     )
     ca_crt, _, _ = generate_certs(cfg)
     i = cmd.index(common.HARNESS_IMAGE)
