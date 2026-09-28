@@ -51,5 +51,13 @@
       creation, and shim bypass without network access.
 - [x] Cover the OpenCode legacy `opencode2` route: it must use the official
       installer instead of passing the stable-only `upgrade` subcommand.
+- [x] Verify OpenCode at its documented install location when the
+      installer's own `PATH` edit is not live in this process: the official
+      installer writes `~/.opencode/bin/opencode` and edits the shell rc, so
+      `uze setup opencode` reported "installer finished but `opencode` could
+      not be verified" (migration report, 2026-09-28). Done: the installer's
+      destinations are searched in its own order when `PATH` has no
+      `opencode`. Still open: the setup report naming the location found and
+      that a new shell is needed for `PATH`.
 - [ ] Run cargo test, cargo clippy -- -D warnings, cargo fmt --check,
       openspec validate --all --strict, and git diff --check.
