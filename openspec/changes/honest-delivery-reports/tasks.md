@@ -45,6 +45,6 @@
 
 ## 7. Verification
 
-- [ ] 7.1 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+- [x] 7.1 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test --workspace --no-fail-fast`,
   `openspec validate honest-delivery-reports --strict`.
