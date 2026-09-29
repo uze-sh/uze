@@ -52,7 +52,9 @@ use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::package_root::resolve_text;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
-use crate::shared::provision::{OfficialRoute, official_installer, provision_cli};
+use crate::shared::provision::{
+    OfficialRoute, native_installer_destination, official_installer, provision_cli,
+};
 use mcp::attach_mcp_entry;
 use plugin::CodexMarketplace;
 use uze_core::capability::harness::Findings;
@@ -119,7 +121,11 @@ impl CodexIntegration {
     }
 
     fn provisioning_executable(&self) -> String {
-        real_executable("codex", &self.uze_home.shims_dir(), None)
+        real_executable(
+            "codex",
+            &self.uze_home.shims_dir(),
+            native_installer_destination("codex"),
+        )
     }
 }
 

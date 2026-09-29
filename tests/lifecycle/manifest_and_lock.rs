@@ -609,6 +609,13 @@ fn a_linked_marketplace_follows_the_checkout_and_pins_nothing() {
         !report.moved(),
         "nothing was pinned, so nothing moved: {report:?}"
     );
+    assert!(
+        matches!(
+            report.outcomes.as_slice(),
+            [uze_application::application::UpdateOutcome::FollowedLink { .. }]
+        ),
+        "the ingest a project update made is reported, not held silently: {report:?}"
+    );
 
     // UZE performed no Git on the operator's checkout: their edit is still
     // uncommitted, and their branch is untouched.
@@ -657,8 +664,12 @@ fn a_machine_update_of_a_linked_edit_reports_the_package_updated() {
         .update(&root, Some("flow@mkt"), true, &AlwaysTrust)
         .unwrap();
     assert!(
-        matches!(edited.outcomes.as_slice(), [UpdateOutcome::Moved { .. }]),
-        "the Store took the edit in, so the package was updated: {edited:?}"
+        matches!(
+            edited.outcomes.as_slice(),
+            [UpdateOutcome::FollowedLink { checkout, .. }]
+                if checkout.canonicalize().ok() == market.canonicalize().ok()
+        ),
+        "the Store took the edit in from the working tree, and says so: {edited:?}"
     );
 }
 

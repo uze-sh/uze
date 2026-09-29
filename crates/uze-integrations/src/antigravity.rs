@@ -93,7 +93,9 @@ use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
 use crate::shared::process::real_executable;
-use crate::shared::provision::{OfficialRoute, official_installer, provision_cli};
+use crate::shared::provision::{
+    OfficialRoute, native_installer_destination, official_installer, provision_cli,
+};
 use generate::remove_generated_plugin_by_id;
 use mcp::attach_mcp_entry;
 use plugin::{
@@ -204,7 +206,7 @@ impl AntigravityIntegration {
         real_executable(
             "agy",
             &self.uze_home.shims_dir(),
-            provision::documented_install_path("agy"),
+            native_installer_destination("agy"),
         )
     }
 }

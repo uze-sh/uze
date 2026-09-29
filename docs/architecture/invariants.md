@@ -829,7 +829,12 @@ nothing instead of failing, so a revision taken from unpublished work never
 becomes a pin a collaborator cannot reach. UZE performs no Git on the
 checkout: the operator's branch and uncommitted work stay theirs.
 
+An update that takes a changed working tree into the Store says so, in
+project and machine scope alike, and names the checkout: an ingest reported
+as "held" left the next update calling the edit "already current".
+
 > `tests/lifecycle/manifest_and_lock.rs::a_linked_marketplace_follows_the_checkout_and_pins_nothing`
+> `tests/cli/machine.rs::a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree`
 > `crates/uze-core/src/package/acquisition/mirror.rs::linked_tests::a_file_the_checkout_ignores_is_not_package_content`
 > `crates/uze-core/src/package/acquisition/mirror.rs::linked_tests::a_file_written_and_not_yet_committed_is_package_content`
 

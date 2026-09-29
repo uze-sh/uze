@@ -72,6 +72,15 @@ pub(crate) fn unsupported_platform(label: &str, manual_route: &str) -> Provision
     ))
 }
 
+/// `~/.local/bin/<program>`, where the Claude Code, Codex and Antigravity
+/// CLI Unix installers place their binary. A fresh install only edits the
+/// person's rc files, which no running shell has read again, so the binary
+/// is looked for here before the bare name a `PATH` search would miss.
+pub(crate) fn native_installer_destination(program: &str) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join(".local/bin").join(program))
+}
+
 /// The verified `executable` when a shell searching `PATH` for `programs`
 /// would not reach it: an installer that only edited the shell's rc files
 /// has not reached the shell this setup runs in.

@@ -2171,7 +2171,7 @@ fn runtime_shim_repairs_an_rc_file_when_the_shims_dir_is_already_shadowed() {
 
     let app = UzeApplication::new(home, Vec::new());
     let setup = app
-        .ensure_runtime_shim(&ShimConflictingIntegration {})
+        .ensure_runtime_shim(&ShimConflictingIntegration {}, None)
         .unwrap()
         .expect("runtime-enabled integration creates a shim");
     assert_eq!(setup.rc_file_updated, Some(rc_file.clone()));

@@ -2941,6 +2941,21 @@ fn render_update_report(report: &uze_application::application::UpdateReport) -> 
                 progress::title(plugin),
                 progress::label(format!("moved to {}", &revision[..revision.len().min(12)])),
             ],
+            UpdateOutcome::FollowedLink {
+                plugin, checkout, ..
+            } => vec![
+                progress::title(plugin),
+                progress::label(match report.scope {
+                    UpdateScope::Machine => format!(
+                        "updated from the linked working tree at {}",
+                        checkout.display()
+                    ),
+                    UpdateScope::Project => format!(
+                        "updated from the linked working tree at {}, which pins nothing",
+                        checkout.display()
+                    ),
+                }),
+            ],
             UpdateOutcome::AlreadyCurrent { plugin, .. } => {
                 vec![progress::title(plugin), progress::label("already current")]
             }
@@ -2959,6 +2974,9 @@ fn render_update_report(report: &uze_application::application::UpdateReport) -> 
         .iter()
         .filter_map(|outcome| match outcome {
             UpdateOutcome::Moved {
+                plugin, deliveries, ..
+            }
+            | UpdateOutcome::FollowedLink {
                 plugin, deliveries, ..
             }
             | UpdateOutcome::AlreadyCurrent { plugin, deliveries }

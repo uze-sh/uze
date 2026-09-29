@@ -3,20 +3,9 @@
 //! shelled installer / `agy update` (wired in `super::provision`, not here
 //! — this module only owns the binary probe and the version parse).
 
-use std::path::PathBuf;
-
 use uze_core::integration::HarnessDetection;
 
 use crate::shared::process::{VersionToken, detect_version};
-
-/// The official installer's documented Unix destination
-/// (`~/.local/bin/<program>`), used as a lookup fallback when the binary is
-/// present but not on the current `PATH` (a fresh install only updates the
-/// user's rc files, which no already-running shell has re-sourced).
-pub(super) fn documented_install_path(program: &str) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".local/bin").join(program))
-}
 
 /// `agy --version` prints a bare "1.1.19" — one token either way (verified
 /// against 1.1.19).

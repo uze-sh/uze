@@ -56,7 +56,9 @@ use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
-use crate::shared::provision::{OfficialRoute, official_installer, provision_cli};
+use crate::shared::provision::{
+    OfficialRoute, native_installer_destination, official_installer, provision_cli,
+};
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
 use uze_core::capability::harness::Findings;
@@ -127,7 +129,11 @@ impl ClaudeIntegration {
     }
 
     fn provisioning_executable(&self) -> String {
-        real_executable("claude", &self.uze_home.shims_dir(), None)
+        real_executable(
+            "claude",
+            &self.uze_home.shims_dir(),
+            native_installer_destination("claude"),
+        )
     }
 }
 

@@ -466,6 +466,7 @@ impl Project<'_> {
             // origin, so installing again hands back what is already held.
             // `replace_with` is the path that replaces, and it puts the
             // installed revision back if the new one cannot be delivered.
+            let content_before = self.installed_revision(&qualified).content;
             let (installed_id, deliveries) = if self.0.package_by_name(&qualified).is_ok() {
                 let materialized = request.materialize_plugin(
                     &name,
@@ -518,9 +519,20 @@ impl Project<'_> {
             let pinned =
                 self.record_in_lock(&mut lock, &name, &marketplace, &request, &installed_id)?;
             if !pinned {
-                outcomes.push(UpdateOutcome::Held {
-                    plugin: name,
-                    reason: "linked to a checkout on this machine, which pins nothing".to_owned(),
+                let followed = self
+                    .linked_checkout(&marketplace)
+                    .filter(|_| self.installed_revision(&installed_id).content != content_before);
+                outcomes.push(match followed {
+                    Some(checkout) => UpdateOutcome::FollowedLink {
+                        plugin: name,
+                        checkout,
+                        deliveries,
+                    },
+                    None => UpdateOutcome::Held {
+                        plugin: name,
+                        reason: "linked to a checkout on this machine, which pins nothing"
+                            .to_owned(),
+                    },
                 });
                 continue;
             }
@@ -558,7 +570,7 @@ impl Project<'_> {
             reconciled: false,
             outcomes,
         };
-        let reconciled = if report.moved() {
+        let reconciled = if report.changed_content() {
             self.0.context().reconcile(&canonical)?;
             true
         } else {
@@ -600,17 +612,26 @@ impl Project<'_> {
             match self.0.plugins().update(&id, authority) {
                 Ok(UpdatePluginReport::Updated { deliveries, .. }) => {
                     let after = self.installed_revision(&id);
-                    outcomes.push(if after.content == before.content {
-                        UpdateOutcome::AlreadyCurrent {
+                    let linked = self
+                        .0
+                        .package_by_name(&id)
+                        .ok()
+                        .and_then(|package| self.linked_checkout(package.id.marketplace()));
+                    outcomes.push(match linked {
+                        _ if after.content == before.content => UpdateOutcome::AlreadyCurrent {
                             plugin: id,
                             deliveries,
-                        }
-                    } else {
-                        UpdateOutcome::Moved {
+                        },
+                        Some(checkout) => UpdateOutcome::FollowedLink {
+                            plugin: id,
+                            checkout,
+                            deliveries,
+                        },
+                        None => UpdateOutcome::Moved {
                             plugin: id,
                             revision: after.named_against(&before),
                             deliveries,
-                        }
+                        },
                     });
                 }
                 Ok(UpdatePluginReport::Blocked { plan, .. }) => {
@@ -636,6 +657,14 @@ impl Project<'_> {
             reconciled: false,
             outcomes,
         })
+    }
+
+    /// The checkout `marketplace` is linked to on this machine, if any.
+    fn linked_checkout(&self, marketplace: &str) -> Option<std::path::PathBuf> {
+        uze_core::state::marketplace_get(&self.0.home, marketplace)
+            .ok()
+            .flatten()
+            .and_then(|record| record.link)
     }
 
     /// What decides whether an update changed a package is its content: a
@@ -1200,8 +1229,8 @@ struct InstalledRevision {
 
 impl InstalledRevision {
     /// The name a moved package's new revision reads under: where it came
-    /// from when that moved too, else its content digest, since a linked
-    /// checkout's path says nothing about what changed.
+    /// from when that moved too, else its content digest, since a source
+    /// path that stayed put says nothing about what changed.
     fn named_against(self, before: &Self) -> String {
         if self.provenance != before.provenance {
             return self.provenance;
@@ -1227,6 +1256,15 @@ pub enum UpdateOutcome {
     /// The declared ref resolves to the revision already locked.
     AlreadyCurrent {
         plugin: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        deliveries: Vec<HarnessDeliveryReport>,
+    },
+    /// The package's marketplace is linked to a checkout on this machine,
+    /// and the Store took in what its working tree holds now. Nothing was
+    /// pinned: a working tree is not a revision a lock can name.
+    FollowedLink {
+        plugin: String,
+        checkout: std::path::PathBuf,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         deliveries: Vec<HarnessDeliveryReport>,
     },
@@ -1264,12 +1302,25 @@ impl UpdateReport {
             .any(|outcome| matches!(outcome, UpdateOutcome::Moved { .. }))
     }
 
+    /// Whether any package's content changed, pinned or not — which is what
+    /// the project's context has to follow.
+    pub fn changed_content(&self) -> bool {
+        self.moved()
+            || self
+                .outcomes
+                .iter()
+                .any(|outcome| matches!(outcome, UpdateOutcome::FollowedLink { .. }))
+    }
+
     /// Every harness an updated package stayed installed without reaching,
     /// with the package it is about.
     pub fn undelivered(&self) -> impl Iterator<Item = (&str, &HarnessDeliveryReport)> {
         self.outcomes.iter().flat_map(|outcome| {
             let (plugin, deliveries) = match outcome {
                 UpdateOutcome::Moved {
+                    plugin, deliveries, ..
+                }
+                | UpdateOutcome::FollowedLink {
                     plugin, deliveries, ..
                 }
                 | UpdateOutcome::AlreadyCurrent { plugin, deliveries } => {

@@ -679,6 +679,100 @@ fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
     let _ = std::fs::remove_dir_all(fake_bin);
 }
 
+/// A fresh Claude Code or Codex install lands where its native installer
+/// puts it, `~/.local/bin/<program>`, which the shell `uze setup` runs in
+/// does not reach yet: setup verifies it there, says where it is, puts the
+/// shim in front of it, and warns about nothing.
+#[cfg(unix)]
+fn assert_fresh_native_install_found_outside_path(
+    program: &str,
+    integration: &str,
+    installer: &str,
+    version_line: &str,
+) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = temporary_home(&format!("cli-setup-{program}-fresh-home"));
+    let uze_home = temporary_home(&format!("cli-setup-{program}-fresh-uze-home"));
+    let fake_bin = temporary_home(&format!("cli-setup-{program}-fresh-bin"));
+    std::fs::create_dir_all(&fake_bin).unwrap();
+    let installed = home.join(".local/bin").join(program);
+    // Stands in for the vendor's `curl ... | sh` route: it records the
+    // route it was handed and installs where the real one does.
+    let sh = fake_bin.join("sh");
+    std::fs::write(
+        &sh,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> \"{log}\"\nmkdir -p \"{dir}\"\nprintf '#!/bin/sh\\necho \"$0|$*\" >> \"{log}\"\\nif [ \"$1\" = --version ]; then echo \"{version_line}\"; fi\\n' > \"{bin}\"\nchmod 755 \"{bin}\"\n",
+            log = fake_bin.join("commands.log").display(),
+            dir = installed.parent().unwrap().display(),
+            bin = installed.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &uze_home)
+        .env("HOME", &home)
+        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .args(["setup", program])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}{stderr}");
+    let commands = std::fs::read_to_string(fake_bin.join("commands.log")).unwrap();
+    assert!(commands.contains(installer), "{commands}");
+    assert!(
+        commands.contains(&format!("{}|--version", installed.display())),
+        "verified at the installer's destination: {commands}"
+    );
+    assert!(
+        stdout.contains(&format!("{integration}: ready (install; version 9.9.9")),
+        "{stdout}{stderr}"
+    );
+    assert!(
+        stdout.contains(&format!("found at {}", installed.display()))
+            && stdout.contains("open a new shell"),
+        "{stdout}"
+    );
+    assert!(
+        !format!("{stdout}{stderr}").contains("warning"),
+        "a fresh install warns about nothing: {stdout}{stderr}"
+    );
+    assert!(
+        uze_home.join("shims").join(program).exists(),
+        "the shim stands in front of the binary the next shell reaches"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(uze_home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+#[test]
+#[cfg(unix)]
+fn setup_claude_reports_where_a_fresh_install_landed_outside_path() {
+    assert_fresh_native_install_found_outside_path(
+        "claude",
+        "claude-code",
+        "claude.ai/install.sh",
+        "9.9.9 (Claude Code)",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn setup_codex_reports_where_a_fresh_install_landed_outside_path() {
+    assert_fresh_native_install_found_outside_path(
+        "codex",
+        "codex",
+        "chatgpt.com/codex/install.sh",
+        "codex-cli 9.9.9",
+    );
+}
+
 /// Deterministic end-to-end: `uze setup` against fake, PATH-resolvable
 /// `claude`/`codex` executables (so no real harness install is required to
 /// run this test), then `uze add` alone attaching the shared fixture skill
@@ -1293,6 +1387,141 @@ fn a_machine_update_with_nothing_new_says_already_current() {
 
     let _ = std::fs::remove_dir_all(home);
     let _ = std::fs::remove_dir_all(uze_home);
+}
+
+/// An author edits a skill in the checkout a marketplace is linked to and
+/// asks the machine to update the plugin: the Store takes the edit, and the
+/// report says it moved and where from — never "already current" over bytes
+/// that just changed.
+#[cfg(unix)]
+#[test]
+fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
+    let home = temporary_home("cli-update-linked-home");
+    let uze_home = home.join("uze");
+    let market = home.join("market");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(
+        home.join(".gitconfig"),
+        "[user]\n\tname = Test\n\temail = t@example.invalid\n",
+    )
+    .unwrap();
+    let uze = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+            .env("UZE_HOME", &uze_home)
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "uze {args:?}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    uze(&[
+        "agent",
+        "market",
+        "create",
+        "tools",
+        "--at",
+        market.to_str().unwrap(),
+    ]);
+    uze(&["agent", "plugin", "create", "greet", "--market", "tools"]);
+    uze(&["install", "-m", "greet@tools"]);
+    let stored_skill = || {
+        let store = uze_home.join("store/plugins");
+        [store.join("tools/greet"), store.join("greet")]
+            .iter()
+            .map(|root| root.join("skills/greet/SKILL.md"))
+            .find_map(|skill| std::fs::read_to_string(skill).ok())
+            .expect("the Store carries greet@tools")
+    };
+    assert!(!stored_skill().contains("edited, never committed"));
+
+    let skill = market.join("plugins/greet/skills/greet/SKILL.md");
+    let edited = format!(
+        "{}\nedited, never committed\n",
+        std::fs::read_to_string(&skill).unwrap()
+    );
+    std::fs::write(&skill, edited).unwrap();
+
+    let update = uze(&["update", "greet", "-m"]);
+    assert!(
+        stored_skill().contains("edited, never committed"),
+        "a linked marketplace follows the working tree"
+    );
+    assert!(
+        !update.contains("already current") && update.contains("linked working tree"),
+        "the Store took the edit in, and the report must say so: {update}"
+    );
+
+    let again = uze(&["update", "greet", "-m"]);
+    assert!(
+        again.contains("already current"),
+        "nothing was edited since: {again}"
+    );
+
+    // A project declaring the plugin re-ingests the working tree on its own
+    // update: that ingest is what left a later machine update with nothing
+    // to do, so it is the one that has to say it happened.
+    let project = home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let in_project = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+            .current_dir(&project)
+            .env("UZE_HOME", &uze_home)
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "uze {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    for git in [
+        &["init", "-q"][..],
+        &["commit", "-q", "--allow-empty", "-m", "init"],
+    ] {
+        assert!(
+            Command::new("git")
+                .current_dir(&project)
+                .env("HOME", &home)
+                .args(git)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    in_project(&["install", "greet@tools"]);
+    std::fs::write(
+        &skill,
+        format!(
+            "{}\nedited again\n",
+            std::fs::read_to_string(&skill).unwrap()
+        ),
+    )
+    .unwrap();
+    let project_update = in_project(&["update"]);
+    assert!(stored_skill().contains("edited again"));
+    assert!(
+        project_update.contains("updated from the linked working tree")
+            && project_update.contains("pins nothing"),
+        "the project update ingested the edit and must say so: {project_update}"
+    );
+    let after_project = uze(&["update", "greet", "-m"]);
+    assert!(
+        after_project.contains("already current"),
+        "the edit was taken in, and reported, by the project update: {after_project}"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
 }
 
 /// A bin directory whose `agy` is detected and refuses every plugin install,
