@@ -129,8 +129,10 @@ vocabulary! {
 
         // ── command groups ─────────────────────────────────────────────
         // The root help lists commands flat, and each group is told apart
-        // by its hue as well as by the blank line above it. Aliases of state
-        // hues by default, so every theme already has an answer.
+        // by its hue as well as by the blank line above it. The package
+        // manager takes the theme's accent and the machine its secondary
+        // text, so both follow any theme; the workspace's warm hue is the
+        // one a theme names for itself.
         /// Commands of the package manager: install, update, market, ….
         CommandPackages = "command.packages",
         /// The command that opens the workspace.
