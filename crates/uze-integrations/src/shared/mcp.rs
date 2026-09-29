@@ -25,7 +25,33 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
         .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|value| value.get("mcpServers").cloned())
-        .map(|servers| resolve_json(&servers, &package.root))
+        .map(|servers| match servers {
+            serde_json::Value::Object(servers) => serde_json::Value::Object(
+                servers
+                    .into_iter()
+                    .map(|(name, server)| (name, resolve_server(&server, &package.root)))
+                    .collect(),
+            ),
+            other => resolve_json(&other, &package.root),
+        })
+}
+
+/// One server with the package root resolved: `${PLUGIN_ROOT}` wherever it
+/// is written, and the `./` form Agent Plugins 1.0 gives `command` and
+/// `cwd`, which a harness would otherwise resolve against a directory of
+/// its own choosing.
+fn resolve_server(server: &serde_json::Value, package_root: &Path) -> serde_json::Value {
+    let mut server = resolve_json(server, package_root);
+    if let Some(entries) = server.as_object_mut() {
+        for key in ["command", "cwd"] {
+            if let Some(serde_json::Value::String(value)) = entries.get_mut(key)
+                && let Some(relative) = value.strip_prefix("./")
+            {
+                *value = package_root.join(relative).to_string_lossy().into_owned();
+            }
+        }
+    }
+    server
 }
 
 /// `{"command": "...", "args": [...]}` from one server's canonical config
@@ -34,7 +60,7 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
 /// argument that is not a string: an entry that runs something other than
 /// what the author declared is not a delivery of it.
 pub(crate) fn stdio_command(payload: &[u8], package_root: &Path) -> Option<(PathBuf, Vec<String>)> {
-    let value = resolve_json(&serde_json::from_slice(payload).ok()?, package_root);
+    let value = resolve_server(&serde_json::from_slice(payload).ok()?, package_root);
     let command = value.get("command")?.as_str()?;
     let args = match value.get("args") {
         None | Some(serde_json::Value::Null) => Vec::new(),
@@ -289,6 +315,29 @@ mod tests {
                 "command": "/store/plugins/mk/pm/bin/server",
                 "args": ["--data", "/store/plugins/mk/pm/data", 3],
                 "env": { "HOME_OF": "/store/plugins/mk/pm" },
+            })
+        );
+    }
+
+    #[test]
+    fn an_agent_plugins_relative_command_runs_from_the_package() {
+        let root = Path::new("/store/plugins/mk/pm");
+        let declared = br#"{"type":"stdio","command":"./bin/server","args":["./not-a-path"]}"#;
+        assert_eq!(
+            stdio_command(declared, root),
+            Some((
+                PathBuf::from("/store/plugins/mk/pm/bin/server"),
+                vec!["./not-a-path".to_owned()]
+            ))
+        );
+        assert_eq!(
+            resolve_server(
+                &serde_json::json!({"command": "./bin/s", "cwd": "./data"}),
+                root
+            ),
+            serde_json::json!({
+                "command": "/store/plugins/mk/pm/bin/s",
+                "cwd": "/store/plugins/mk/pm/data",
             })
         );
     }

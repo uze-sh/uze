@@ -50,11 +50,29 @@ fn every_scaffold_passes_its_own_check() -> Result<()> {
             "{caps:?}: {:?}",
             plugin_report.findings
         );
+        let standard = plugin_report
+            .agent_plugins
+            .as_ref()
+            .expect("a plugin check judges the standard");
+        assert!(
+            standard.conformant && plugin_report.warnings.is_empty(),
+            "{caps:?}: {:?} {:?}",
+            standard.divergences,
+            plugin_report.warnings
+        );
         let market_report = check_marketplace(&market)?;
         assert!(
             market_report.is_clean(),
             "{caps:?}: {:?}",
             market_report.findings
+        );
+        assert!(
+            market_report
+                .agent_plugins
+                .as_ref()
+                .is_some_and(|standard| standard.conformant),
+            "{caps:?}: {:?}",
+            market_report.agent_plugins
         );
         assert!(market_report.delivers.iter().any(|d| d == "greet"));
 
@@ -579,5 +597,68 @@ fn check_names_an_agent_a_harness_would_drop_or_rename() -> Result<()> {
             .any(|finding| finding.contains("`Review` in the agent's label `Review:audit`")),
         "{nested:?}"
     );
+    Ok(())
+}
+
+/// A package uze installs today but a client of Agent Plugins 1.0 would
+/// refuse or read short: every divergence is named, and none of them is a
+/// finding, because uze's own format decides what installs.
+#[test]
+fn check_names_what_keeps_a_package_from_agent_plugins_without_refusing_it() -> Result<()> {
+    let root = scratch("authoring-check-agent-plugins");
+    let plugin = root.join("legacy");
+    fs::create_dir_all(plugin.join("skills/review/deep/nested")).unwrap();
+    fs::write(
+        plugin.join("plugin.json"),
+        r#"{"name":"legacy","author":"me","skills":"./skills","extensions":{"sh.uze":{"future":true}}}"#,
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews\n---\nbody\n",
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("skills/review/deep/nested/SKILL.md"),
+        "---\nname: nested\ndescription: Nested\n---\nbody\n",
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("mcp.json"),
+        r#"{"//":"notes","mcpServers":{"s":{"command":"${PLUGIN_ROOT}/bin/s","args":["${PLUGIN_DATA}/x"]}}}"#,
+    )
+    .unwrap();
+
+    let report = check_plugin(&plugin)?;
+    assert!(report.is_clean(), "{:?}", report.findings);
+    let standard = report.agent_plugins.expect("judged");
+    assert!(!standard.conformant);
+    for expected in [
+        "plugin.json: no `$schema`",
+        "plugin.json: `author` must be an object",
+        "plugin.json: `skills` is not a manifest field",
+        "deep/nested/SKILL.md: the standard discovers only `skills/<name>/SKILL.md`",
+        "mcp.json: no `$schema`",
+        "mcp.json: `//` is not allowed",
+        "server `s` has no `type`",
+        "server `s` names `${PLUGIN_ROOT}/bin/s`",
+    ] {
+        assert!(
+            standard.divergences.iter().any(|d| d.contains(expected)),
+            "{expected}: {:?}",
+            standard.divergences
+        );
+    }
+    for expected in [
+        "`extensions[\"sh.uze\"].future` is not a setting uze reads",
+        "uze does not provide `${PLUGIN_DATA}` yet",
+    ] {
+        assert!(
+            report.warnings.iter().any(|w| w.contains(expected)),
+            "{expected}: {:?}",
+            report.warnings
+        );
+    }
+    fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }

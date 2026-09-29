@@ -23,6 +23,11 @@ use crate::package::acquisition::marketplace;
 use crate::package::store;
 use crate::{PackageId, Result, UzeError};
 
+mod agent_plugins;
+pub use agent_plugins::{
+    MCP_SCHEMA, PLUGIN_SCHEMA, STANDARD as AGENT_PLUGINS, StandardConformance, UZE_NAMESPACE,
+};
+
 /// The optional capability files a scaffold writes, one flag each.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ScaffoldCapabilities {
@@ -304,7 +309,7 @@ fn write_plugin_files(
     write_json(
         &plugin_root.join("plugin.json"),
         &serde_json::json!({
-            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "$schema": PLUGIN_SCHEMA,
             "name": name,
             "description": description.unwrap_or("What this plugin offers."),
         }),
@@ -486,6 +491,10 @@ pub struct ValidationReport {
     /// What still installs but reaches a harness short of what the author
     /// wrote: located like a finding, never a reason to refuse.
     pub warnings: Vec<String>,
+    /// Whether the artifact is also a valid Agent Plugins 1.0 plugin. Advice
+    /// only: uze's own format is what decides whether it installs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_plugins: Option<StandardConformance>,
 }
 
 impl ValidationReport {
@@ -507,8 +516,11 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
             delivers: Vec::new(),
             findings,
             warnings: Vec::new(),
+            agent_plugins: None,
         });
     }
+    let (conformance, mut warnings) = agent_plugins::judge(root);
+    let agent_plugins = Some(conformance);
     let manifest = match store::read_plugin_manifest(root) {
         Ok(manifest) => manifest,
         Err(error) => {
@@ -516,7 +528,8 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
             return Ok(ValidationReport {
                 delivers: Vec::new(),
                 findings,
-                warnings: Vec::new(),
+                warnings,
+                agent_plugins,
             });
         }
     };
@@ -527,12 +540,12 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
             return Ok(ValidationReport {
                 delivers: Vec::new(),
                 findings,
-                warnings: Vec::new(),
+                warnings,
+                agent_plugins,
             });
         }
     };
     let mut delivers = Vec::new();
-    let mut warnings = Vec::new();
     match crate::engine::package_resources_at(&id, root) {
         Ok(resources) => {
             for resource in &resources {
@@ -602,6 +615,7 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
         delivers,
         findings,
         warnings,
+        agent_plugins,
     })
 }
 
@@ -808,6 +822,7 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
             delivers,
             findings,
             warnings: Vec::new(),
+            agent_plugins: None,
         });
     }
     let bytes = fs::read(&manifest_path).map_err(|source| UzeError::Read {
@@ -822,9 +837,11 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
                 delivers,
                 findings,
                 warnings: Vec::new(),
+                agent_plugins: None,
             });
         }
     };
+    let mut divergences = Vec::new();
     for entry in &manifest.plugins {
         if !store::is_valid_package_name(&entry.name) {
             findings.push(format!(
@@ -843,6 +860,13 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
                         .into_iter()
                         .map(|finding| format!("{}: {finding}", entry.name)),
                 );
+                divergences.extend(
+                    plugin
+                        .agent_plugins
+                        .into_iter()
+                        .flat_map(|conformance| conformance.divergences)
+                        .map(|divergence| format!("{}: {divergence}", entry.name)),
+                );
             }
             Err(error) => findings.push(format!("{}: {error}", entry.name)),
         }
@@ -851,6 +875,7 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
         delivers,
         findings,
         warnings: Vec::new(),
+        agent_plugins: Some(StandardConformance::from_divergences(divergences)),
     })
 }
 

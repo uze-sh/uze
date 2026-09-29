@@ -34,6 +34,32 @@ The [Agent Plugins](https://agent-plugins.org) 1.0 manifest:
 }
 ```
 
+uze reads `name`. The standard also allows `version`, `description`,
+`author` (`name`, `email`, `url`), `homepage`, `repository`, `license`,
+`keywords` and `extensions`, and nothing else at the top level. Settings for
+one tool go under `extensions`, keyed by that tool's namespace; uze's is
+`sh.uze`, which holds no settings yet.
+
+## Agent Plugins 1.0
+
+A uze plugin is also a valid Agent Plugins 1.0 plugin, the open standard
+that Codex, GitHub Copilot, VS Code, Cursor and Kiro load unchanged, as long
+as it keeps to the standard in the three places it covers:
+
+- `plugin.json` carries the `$schema` above and only the standard's fields.
+- Each skill sits at `skills/<name>/SKILL.md`, one level deep.
+- `mcp.json` carries its own `$schema` and a `type` on every server.
+
+Agents, hooks, `AGENTS.md`, a skill's `invoke` and `harness` blocks, and
+`${PLUGIN_ROOT}` outside `mcp.json` are uze's additions. The standard leaves
+these to each tool, so its clients ignore them rather than reject the plugin.
+
+`uze agent plugin check` says whether a plugin is valid under the standard,
+or names what keeps it from being one. That is advice: uze's own format
+decides what installs, and a plugin written before the standard installs as
+it always did. `uze agent plugin create` writes a plugin that is valid under
+both.
+
 ## Skills
 
 `skills/<name>/SKILL.md`, an [Agent Skill](https://agentskills.io). The optional
@@ -133,15 +159,22 @@ what every harness shares.
 
 ## MCP servers
 
-`mcp.json`, the standard `mcpServers` shape:
+`mcp.json`, the Agent Plugins 1.0 shape:
 
 ```json
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
-    "search": { "command": "my-mcp-server", "args": ["--stdio"] }
+    "search": { "type": "stdio", "command": "my-mcp-server", "args": ["--stdio"] },
+    "local": { "type": "stdio", "command": "./bin/server", "args": ["${PLUGIN_ROOT}/config.json"] }
   }
 }
 ```
+
+`command` is one executable: a name found on `PATH`, or a `./` path to one
+the plugin ships. A server without `type` or `$schema` still installs.
+uze does not provide `${PLUGIN_DATA}` yet, and says so when it checks a
+plugin that uses it.
 
 Each agent receives it through its own mechanism (`claude mcp add`,
 `codex mcp add`, OpenCode's config, …).

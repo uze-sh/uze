@@ -35,8 +35,14 @@
 
 ## 3. Standards
 
-- [ ] 3.1 Canonical package conformant with Agent Plugins 1.0, UZE-only
-  surfaces under `extensions["sh.uze"]`.
+- [x] 3.1 Canonical package conformant with Agent Plugins 1.0, UZE-only
+  surfaces under `extensions["sh.uze"]`. `plugin check` judges the standard
+  as advice, never as a finding (`uze_core::authoring::agent_plugins`);
+  the scaffold is valid under both; a `./` MCP `command`/`cwd` resolves to
+  the package (`every_scaffold_passes_its_own_check`,
+  `check_names_what_keeps_a_package_from_agent_plugins_without_refusing_it`,
+  `an_agent_plugins_relative_command_runs_from_the_package`,
+  `tests/packages/authoring.rs::check_names_what_keeps_a_plugin_from_agent_plugins_and_still_passes`).
 
 ## 4. Project `.agents/`, read and mounted
 

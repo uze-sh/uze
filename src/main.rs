@@ -3589,6 +3589,29 @@ fn render_check(report: &uze_application::ValidationReport, as_marketplace: bool
     for identity in &report.delivers {
         text.push_str(&format!("  {identity}\n"));
     }
+    if let Some(standard) = &report.agent_plugins {
+        text.push('\n');
+        text.push_str(&progress::report_section(standard.standard));
+        let subject = if as_marketplace {
+            "every plugin is"
+        } else {
+            "this is"
+        };
+        if standard.conformant {
+            text.push_str(&format!(
+                "  {subject} a valid {} plugin\n",
+                standard.standard
+            ));
+        } else {
+            text.push_str(&format!(
+                "  not yet a valid {} plugin; uze installs it all the same:\n",
+                standard.standard
+            ));
+            for divergence in &standard.divergences {
+                text.push_str(&format!("  {divergence}\n"));
+            }
+        }
+    }
     if !report.findings.is_empty() {
         text.push('\n');
         text.push_str(&progress::report_section("Findings"));

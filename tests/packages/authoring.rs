@@ -160,6 +160,11 @@ fn a_scaffolded_plugin_is_installable_before_any_second_commit() {
         String::from_utf8_lossy(&check.stdout),
         String::from_utf8_lossy(&check.stderr)
     );
+    assert!(
+        String::from_utf8_lossy(&check.stdout).contains("this is a valid Agent Plugins 1.0 plugin"),
+        "the scaffold is valid under the standard too: {}",
+        String::from_utf8_lossy(&check.stdout)
+    );
 
     // And it installs: the linked marketplace reads the working tree, so
     // nothing has been committed since the scaffold's initial commit.
@@ -648,5 +653,32 @@ fn a_block_may_not_redefine_what_every_harness_reads() {
         text.contains("`harness.claude-code.name` redefines"),
         "{text}"
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn check_names_what_keeps_a_plugin_from_agent_plugins_and_still_passes() {
+    let root = uze_testkit::temp::scratch("check-agent-plugins");
+    let plugin = root.join("legacy");
+    fs::create_dir_all(plugin.join("skills/review")).unwrap();
+    fs::write(plugin.join("plugin.json"), r#"{"name":"legacy"}"#).unwrap();
+    fs::write(
+        plugin.join("skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews\n---\nbody\n",
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("mcp.json"),
+        r#"{"mcpServers":{"s":{"command":"server"}}}"#,
+    )
+    .unwrap();
+    let (clean, text) = check(&root, &plugin);
+    assert!(clean, "uze's own format stays authoritative: {text}");
+    assert!(
+        text.contains("not yet a valid Agent Plugins 1.0 plugin"),
+        "{text}"
+    );
+    assert!(text.contains("plugin.json: no `$schema`"), "{text}");
+    assert!(text.contains("server `s` has no `type`"), "{text}");
     let _ = fs::remove_dir_all(root);
 }

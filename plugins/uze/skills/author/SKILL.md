@@ -73,8 +73,8 @@ Every name here (the marketplace's, the plugin's, each skill's) is
 lowercase kebab-case: `a-z`, `0-9` and single `-` between them, at most
 64 characters, the one spelling every harness accepts. A skill's `name`
 equals its directory. The verbs and both checks refuse anything else and
-say the name you meant; a display casing belongs in `plugin.json`'s
-`interface.displayName`, never in the name.
+say the name you meant; a display casing never goes in the name, and
+`plugin.json` has no field for one, so say it in `description`.
 
 The default is a skill plugin: `plugin.json` plus
 `skills/<name>/SKILL.md` — edit the skill body, and choose the
@@ -89,6 +89,15 @@ documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
 `hooks.json`, `mcp.json`, a `SKILL.md` and an agent definition alike — UZE
 resolves it to the installed copy for every harness; anything else is
 reached through `PATH`.
+
+The scaffold is also a valid Agent Plugins 1.0 plugin, the open standard
+Codex, Copilot, Cursor and Kiro load unchanged: keep `plugin.json`'s
+`$schema`, only the standard's manifest fields at its top level (uze's
+own namespace is `extensions["sh.uze"]`), and in `mcp.json` its
+`$schema` and a `type` on every server. In `mcp.json` a bundled
+executable is `"command": "./bin/server"`, never `${PLUGIN_ROOT}` in
+`command`. `agents/`, `hooks.json`, `AGENTS.md`, `invoke:` and `harness:`
+are uze's own surfaces, which the standard's clients ignore.
 
 An agent is `agents/<name>.md`: frontmatter with `name` and `description`,
 and its prompt as the body. Every harness offers it as
@@ -121,7 +130,10 @@ uze agent market check <market directory>
 This runs the same parsers an install runs, offline. A clean check is the
 licence to install; a finding names the file and the reason — fix the file,
 check again. Never skip it: the feedback an install would have surfaced
-arrives here, before anything is delivered.
+arrives here, before anything is delivered. Its `Agent Plugins 1.0`
+section says whether the plugin is a valid plugin of the standard or names
+what keeps it from being one; that is advice, never a reason the check
+fails.
 
 ## 4. Install and iterate
 
