@@ -35,6 +35,17 @@ export const metadata: Metadata = {
     template: `%s · ${appName}`,
   },
   description: appDescription,
+  openGraph: {
+    type: 'website',
+    siteName: appName,
+    title: `${appName} · ${appTagline}`,
+    description: appDescription,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${appName} · ${appTagline}`,
+    description: appDescription,
+  },
 };
 
 export default function Layout({ children }: LayoutProps<'/'>) {

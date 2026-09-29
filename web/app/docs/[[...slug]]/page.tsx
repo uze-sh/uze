@@ -1,3 +1,4 @@
+import { appName } from '@/lib/shared';
 import { getPageImageUrl, getPageMarkdownUrl, source } from '@/lib/source';
 import {
   DocsBody,
@@ -56,7 +57,17 @@ export async function generateMetadata(props: PageProps<'/docs/[[...slug]]'>): P
   return {
     title: page.data.title,
     description: page.data.description,
+    // A page's `openGraph` replaces the layout's rather than merging into it,
+    // so the title and description are restated or the unfurl loses them.
     openGraph: {
+      title: `${page.data.title} · ${appName}`,
+      description: page.data.description,
+      images: getPageImageUrl(page).url,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${page.data.title} · ${appName}`,
+      description: page.data.description,
       images: getPageImageUrl(page).url,
     },
   };
