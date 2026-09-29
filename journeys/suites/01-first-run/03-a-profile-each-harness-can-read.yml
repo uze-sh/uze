@@ -27,7 +27,7 @@ scenes:
           printf '%s\n' '# the operator keeps this' 'approval_policy = "untrusted"' > {home}/.codex/config.toml
           printf '%s' '{"agentMode":"default","trustedWorkspaces":["{project}"]}' > {home}/.gemini/antigravity-cli/settings.json
         say: leave the harnesses as an earlier uze left them
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: uze opens on the project
         expect: demo-app
         expect_timeout: 20

@@ -39,6 +39,10 @@
     "state.diff-added": "@state.success/1a",
     "state.diff-removed": "@state.danger/1a",
 
+    "command.packages": "@state.info",
+    "command.workspace": "@state.landed",
+    "command.machine": "@state.in-flight",
+
     "ansi.0": "@surface.background",
     "ansi.1": "#e0765f",
     "ansi.2": "#8fd19e",

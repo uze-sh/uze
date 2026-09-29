@@ -76,7 +76,7 @@ scenes:
 
   - scene: this build opens on the same machine and hands the work back
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: this build opens where the release left off
         expect: demo-app
         expect_timeout: 30

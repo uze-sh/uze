@@ -612,7 +612,7 @@ impl WorkspaceLock {
 /// one, and `flock` names no holder. A client that cannot reach the
 /// endpoint then has no way to end what is holding the workspace — the
 /// state an operator lands in whenever the endpoint's own rules change
-/// between builds, where `uze terminal stop` looked at the new endpoint,
+/// between builds, where `uze workspace stop` looked at the new endpoint,
 /// found nothing, and reported nothing to stop while the old server held
 /// the workspace shut. Restarting the machine was the only way out.
 ///
@@ -1407,7 +1407,7 @@ impl Server {
         let attached = match first {
             // Stopping needs no client and no session: the workspace claim
             // makes a live server refuse every replacement of the same
-            // build, so `uze terminal stop` failing to be heard by one
+            // build, so `uze workspace stop` failing to be heard by one
             // nobody attached to left no way back in but a manual `kill`.
             Ok(Some(ClientRequest::Stop)) => {
                 // Answered on the socket rather than through the writer
@@ -3245,7 +3245,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&deep);
     }
 
-    /// "Nothing is running" is the ordinary state of `uze terminal stop`,
+    /// "Nothing is running" is the ordinary state of `uze workspace stop`,
     /// and it used to exit non-zero: a machine that has not opened the TUI
     /// since boot has no socket, and a `/tmp` cleaner taking the socket out
     /// from under a live server leaves one nobody answers. Both reached the
@@ -6248,7 +6248,7 @@ mod tests {
         writing.join().unwrap();
     }
 
-    /// `uze terminal stop` is the documented way out of a server that has
+    /// `uze workspace stop` is the documented way out of a server that has
     /// to go — and, since the workspace lock makes a survivor refuse every
     /// replacement, the only one short of a manual `kill`. It has to be
     /// heard by a server no client has ever attached to, which is where it

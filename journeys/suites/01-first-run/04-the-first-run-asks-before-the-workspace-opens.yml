@@ -18,7 +18,7 @@ world:
 scenes:
   - scene: the first run asks before anything is set up
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: run uze on a machine where nothing was set up
         expect: Harnesses to provision
         expect_timeout: 20

@@ -1,5 +1,0 @@
-{
-  "title": "Advanced",
-  "icon": "Wrench",
-  "pages": ["terminal", "themes", "keyboard", "agent-cli"]
-}

@@ -26,7 +26,7 @@ world:
 scenes:
   - scene: an agent whose work the project's checks will reject
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         expect: demo-app
         expect_timeout: 20
         pause: 1.0

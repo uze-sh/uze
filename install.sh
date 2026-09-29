@@ -237,7 +237,7 @@ fi
 # what "latest" currently means.
 printf '%s%s%s\n' "$BRIGHT" "$(centred UZE)" "$RESET"
 printf '%s%s%s\n' "$MUTED" "$(centred "$platform")" "$RESET"
-printf '%s%s%s\n' "$MUTED" "$(centred 'Agent environment manager')" "$RESET"
+printf '%s%s%s\n' "$MUTED" "$(centred 'Plugins for every agent, and a workspace to run them')" "$RESET"
 say ""
 note "${base_url}/${path}/${archive}"
 
@@ -329,7 +329,7 @@ record_receipt || warn "could not record this install; it will not update itself
 case ":$PATH:" in
   *":$bin_dir:"*) ;;
   *)
-    warn "$bin_dir is not on your PATH — add it with:"
+    warn "$bin_dir is not on your PATH, add it with:"
     note "export PATH=\"${bin_dir}:\$PATH\""
     ;;
 esac
@@ -343,8 +343,8 @@ section "Next"
 # else — the gutter belongs to the row, not to the word before it.
 next() {
   printf '  %s%s%s' "$ACCENT" "$1" "$RESET"
-  pad $((13 - ${#1}))
+  pad $((16 - ${#1}))
   printf '%s\n' "$2"
 }
 next "uze setup" "Detect and provision your harnesses"
-next "uze" "Open the terminal workspace"
+next "uze workspace" "Open the terminal workspace"

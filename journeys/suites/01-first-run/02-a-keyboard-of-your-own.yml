@@ -1,6 +1,6 @@
 journey: a keyboard the operator wrote is the one in force
 tags: [gate, tui, keys]
-proves: web/content/docs/configuration/keys.mdx
+proves: web/content/docs/workspace/keys.mdx
 about: |
   Keys are configurable, and the configuration is a file the machine keeps
   — so the claim is not that a screen accepted a rebinding, it is that the
@@ -24,7 +24,7 @@ scenes:
           mkdir -p {uze_home}
           printf '%s' '{"bindings":{"workspace":{"new-shell-tab":["f4"]}}}' > {uze_home}/keys.json
         say: write a keyboard that moves "new shell" off its default
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: uze opens on the project
         expect: demo-app
         expect_timeout: 20

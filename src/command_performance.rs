@@ -158,11 +158,11 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     // Diagnostics.
     ("doctor", PerformanceClass::Budgeted),
     (
-        "terminal attach",
+        "workspace",
         PerformanceClass::JustifiedSlow("starts or attaches an interactive local terminal client"),
     ),
     (
-        "terminal stop",
+        "workspace stop",
         PerformanceClass::JustifiedSlow(
             "terminates the explicitly requested persistent terminal session",
         ),
@@ -294,10 +294,13 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
 /// enums, so the two cannot silently drift apart.
 fn leaf_command_paths(command: &clap::Command, prefix: &str, out: &mut Vec<String>) {
     let subcommands: Vec<&clap::Command> = command.get_subcommands().collect();
+    // A command whose subcommand is optional runs on its own too
+    // (`uze workspace` opens it, `uze workspace stop` stops it).
+    let runs_on_its_own = subcommands.is_empty() || !command.is_subcommand_required_set();
+    if runs_on_its_own && !prefix.is_empty() {
+        out.push(prefix.to_owned());
+    }
     if subcommands.is_empty() {
-        if !prefix.is_empty() {
-            out.push(prefix.to_owned());
-        }
         return;
     }
     for sub in subcommands {

@@ -21,7 +21,7 @@ world:
 scenes:
   - scene: a drag over a shell's output copies what it covered
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         tap: "{world}/terminal.bytes"
         expect: demo-app
         expect_timeout: 20

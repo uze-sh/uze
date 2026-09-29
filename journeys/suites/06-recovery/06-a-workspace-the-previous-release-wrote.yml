@@ -49,7 +49,7 @@ scenes:
 
   - scene: uze opens on the workspace it was left, not on the seat it was given
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: uze opens, carries the document across, and restores what it held
         expect: from-before
         expect_timeout: 25

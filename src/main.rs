@@ -30,7 +30,7 @@ use uze_application::{
 #[command(
     name = "uze",
     version,
-    about = "Manage one local agent plugin environment",
+    about = "One setup for every coding agent: plugins delivered to each, and a workspace to run them in",
     after_help = "Scope: a project is the nearest agents.yaml, repository root or AGENTS.md. \
                   Project verbs maintain this project's agents.yaml when one is here, and \
                   act on this machine only when there is none — they always say which they \
@@ -176,7 +176,20 @@ enum Command {
         #[arg(value_name = "HARNESS", num_args = 0..)]
         arguments: Vec<String>,
     },
-    /// Experimental persistent local terminal workspace
+    /// Open the terminal workspace where your agents run
+    ///
+    /// Its sessions belong to a local server, so closing the workspace stops
+    /// no agent. Run inside one of its own panes, it opens a space for this
+    /// directory in the workspace already running.
+    Workspace {
+        #[command(subcommand)]
+        action: Option<WorkspaceAction>,
+    },
+    /// The workspace's local server, spelled apart from `workspace` because
+    /// the client that spawns it may be an older build than the binary now
+    /// on disk: a running client that self-updated still starts its server
+    /// with the words it was built with.
+    #[command(hide = true)]
     Terminal {
         #[command(subcommand)]
         action: TerminalAction,
@@ -347,13 +360,14 @@ enum AgentArtifactsAction {
 }
 
 #[derive(Debug, Subcommand)]
-enum TerminalAction {
-    /// Attach the workspace client, starting its local server when needed
-    Attach,
-    /// Stop this workspace's persistent terminal session
+enum WorkspaceAction {
+    /// Stop this workspace's server and every process in it
     Stop,
+}
+
+#[derive(Debug, Subcommand)]
+enum TerminalAction {
     /// Local server entry point; started only by the workspace runtime
-    #[command(hide = true)]
     Serve {
         #[arg(long)]
         root: PathBuf,
@@ -658,6 +672,14 @@ fn removed_spelling(argv: &[String]) -> Option<String> {
             &["theme"],
             "appearance is this machine's configuration now: use `uze config theme`",
         ),
+        (
+            &["terminal", "attach"],
+            "the workspace opens with `uze workspace`",
+        ),
+        (
+            &["terminal", "stop"],
+            "the workspace stops with `uze workspace stop`",
+        ),
     ];
     let spoken = |words: &[&str]| {
         argv.len() >= words.len()
@@ -683,10 +705,6 @@ enum HelpTopic {
     /// A command's own page, drawn from its clap definition.
     Command(Box<clap::Command>),
 }
-
-/// The commands the root help lists under "Project:" — the project-scoped
-/// half of ADR-019's grammar. Every other visible command is the machine's.
-const PROJECT_COMMANDS: &[&str] = &["install", "update", "remove", "status"];
 
 /// Whether clap reads `arguments` as a command to run — which makes a
 /// `help` among them one of its values rather than a request for a page.
@@ -757,7 +775,8 @@ fn summary(command: &clap::Command) -> String {
 }
 
 /// `name <arg> [arg]` — how a command is spelled with its positional
-/// arguments, and `<command>` where it only groups others.
+/// arguments, `<command>` where it only groups others, and `[command]`
+/// where it also runs on its own.
 fn spelling(command: &clap::Command) -> String {
     let mut spelled = command.get_name().to_owned();
     for argument in command.get_positionals() {
@@ -769,7 +788,11 @@ fn spelling(command: &clap::Command) -> String {
         }
     }
     if command.has_subcommands() {
-        spelled.push_str(" <command>");
+        if command.is_subcommand_required_set() {
+            spelled.push_str(" <command>");
+        } else {
+            spelled.push_str(" [command]");
+        }
     }
     spelled
 }
@@ -780,9 +803,71 @@ fn command_rows(commands: impl Iterator<Item = clap::Command>) -> Vec<Vec<String
         .collect()
 }
 
+/// The root help's commands, flat and in the order a reader meets them:
+/// the package manager, the workspace, then what looks after the machine.
+/// A group is told apart by its hue and the blank line above it, never by a
+/// heading: a heading such as "Project" would claim a scope the command
+/// reports for itself (ADR-054). Each row is a name, an example of what
+/// follows it, and a line short enough to fit an 80-column terminal; the
+/// command's own `--help` holds the rest.
+/// A root help row: the command, an example of what follows it, one line.
+type RootCommand = (&'static str, &'static str, &'static str);
+
+const ROOT_COMMANDS: &[(progress::CommandGroup, &[RootCommand])] = &[
+    (
+        progress::CommandGroup::Packages,
+        &[
+            (
+                "install",
+                "plugin@market",
+                "Install a plugin, or all this project declares",
+            ),
+            ("update", "[plugin]", "Move plugins to their newest version"),
+            (
+                "remove",
+                "plugin",
+                "Take a plugin out of this project; -m: the machine",
+            ),
+            (
+                "status",
+                "",
+                "What this project has, and what is still owed",
+            ),
+            ("inspect", "plugin", "How your agents receive a plugin"),
+            ("market", "add owner/repo", "Manage where plugins come from"),
+        ],
+    ),
+    (
+        progress::CommandGroup::Workspace,
+        &[(
+            "workspace",
+            "",
+            "Open the terminal workspace where agents run",
+        )],
+    ),
+    (
+        progress::CommandGroup::Machine,
+        &[
+            ("setup", "[agent...]", "Install and set up your agents"),
+            (
+                "config",
+                "theme dracula",
+                "Appearance, icons and notifications",
+            ),
+            ("doctor", "", "Diagnose, and repair what is safe to"),
+            ("upgrade", "", "Install the latest uze"),
+        ],
+    ),
+];
+
+const DOCUMENTATION_URL: &str = "https://uze.sh/docs";
+/// The same documentation as one plain-text index, the form an agent
+/// reading this help can fetch and follow without rendering a site.
+const DOCUMENTATION_FOR_AGENTS_URL: &str = "https://uze.sh/llms.txt";
+
 fn print_root_help() {
     let version = env!("CARGO_PKG_VERSION");
-    let desc = "Agent environment manager";
+    let desc = "Plugins for every agent, and a workspace to run them";
     // Center within the commands block width (indent 2 + cmd 12 + gap 2 + longest desc ~44 = 60)
     const CW: usize = 60;
     let center = |s: &str| {
@@ -798,43 +883,42 @@ fn print_root_help() {
     println!("{}", progress::label(center(&format!("v{version}"))));
     println!("{}", progress::label(center(desc)));
     println!();
-    println!("{}", progress::section("Usage"));
-    println!("  uze <plugin>@<market>");
-    println!("  uze <command> [options]");
+    println!("{} uze <command> [...args]", progress::section("Usage:"));
     println!();
-    let cli = Cli::command();
-    let (project, machine): (Vec<_>, Vec<_>) = visible_subcommands(&cli)
-        .partition(|command| PROJECT_COMMANDS.contains(&command.get_name()));
-    let name_rows = |commands: Vec<clap::Command>| {
-        commands
-            .iter()
-            .map(|command| vec![progress::accent(command.get_name()), summary(command)])
-            .collect::<Vec<_>>()
-    };
-    // One shared table across both groups: they're both plain command
-    // lists, so they must land in the same gutter even though they're
-    // printed under separate headings.
-    let [project_rows, machine_rows] =
-        progress::aligned_groups(vec![name_rows(project), name_rows(machine)])
-            .try_into()
-            .expect("aligned_groups preserves the number of groups passed in");
-    println!("{}", progress::section("Project:"));
-    println!("{project_rows}");
-    println!();
-    println!("{}", progress::section("Machine:"));
-    println!("{machine_rows}");
-    println!();
-    println!("{}", progress::section("Options"));
+    let groups = ROOT_COMMANDS
+        .iter()
+        .map(|(group, commands)| {
+            commands
+                .iter()
+                .map(|(name, example, line)| {
+                    vec![
+                        progress::command_name(name, *group),
+                        progress::label(example),
+                        (*line).to_owned(),
+                    ]
+                })
+                .collect()
+        })
+        .chain(std::iter::once(vec![vec![
+            progress::label("<command>"),
+            progress::accent("--help"),
+            "Help for one command".to_owned(),
+        ]]))
+        .collect();
+    for group in progress::aligned_groups(groups) {
+        println!("{group}");
+        println!();
+    }
     println!(
         "{}",
         progress::aligned_rows(vec![
             vec![
-                progress::success_text("-h, --help"),
-                "Print help".to_owned(),
+                progress::section("Documentation:"),
+                progress::accent(DOCUMENTATION_URL),
             ],
             vec![
-                progress::success_text("-V, --version"),
-                "Print version".to_owned(),
+                progress::section("For agents:"),
+                progress::accent(DOCUMENTATION_FOR_AGENTS_URL),
             ],
         ])
     );
@@ -882,7 +966,7 @@ fn run(cli: Cli) -> Result<()> {
     // because they are where a person is working when something goes
     // wrong, and a switch nobody turned on beforehand is a switch that was
     // off when it mattered.
-    let opens_the_tui = cli.command.is_none()
+    let opens_the_tui = matches!(cli.command, Some(Command::Workspace { action: None }))
         && std::env::var_os("UZE_PANE").is_none()
         && std::io::stdout().is_terminal()
         && std::io::stdin().is_terminal();
@@ -925,7 +1009,7 @@ fn run(cli: Cli) -> Result<()> {
 
 /// The leaf command path `argv` names, spelled the way a person types it
 /// (`agent context inspect`); the first argument when it names no subcommand
-/// (a `plugin@marketplace` shorthand), and `tui` when there is none.
+/// (a `plugin@marketplace` shorthand), and `help` when there is none.
 /// Parsed again from the grammar rather than derived from `Cli`'s
 /// variants, so a renamed subcommand renames its span with it.
 fn leaf_command_of(argv: &[String]) -> String {
@@ -944,7 +1028,7 @@ fn leaf_command_of(argv: &[String]) -> String {
     argv.iter()
         .find(|argument| !argument.starts_with('-'))
         .cloned()
-        .unwrap_or_else(|| "tui".to_owned())
+        .unwrap_or_else(|| "help".to_owned())
 }
 
 fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
@@ -962,48 +1046,21 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
     }
     let verbose = cli.verbose;
     let Some(command) = cli.command else {
-        // Started inside one of the running client's own panes: a client
-        // inside a client is never what that means. Open a space for this
-        // directory in the uze already running, and leave.
-        if std::env::var_os("UZE_PANE").is_some() {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            let root = uze_application::space_root(&cwd);
-            let label = uze_terminal::open_space(uze_terminal::SpaceSeat { root: root.clone() })
-                .map_err(terminal_error)?;
-            println!(
-                "opened space `{label}` at {} in the running uze",
-                root.display()
-            );
-            return Ok(());
-        }
-        if std::io::stdout().is_terminal() && std::io::stdin().is_terminal() {
-            // Seeding default marketplace plugins now happens inside the
-            // TUI's own startup worker (see `ui::spawn_startup`), off the
-            // terminal-takeover path — running it here, synchronously,
-            // before the alternate screen is even entered, left the
-            // terminal looking frozen for however long harness detection
-            // took.
-            set_up_on_first_run(&home, verbose)?;
-            return uze::ui::run(home);
-        }
         die_quietly_on_a_closed_pipe();
-        Cli::command()
-            .print_help()
-            .map_err(|source| uze_application::UzeError::Write {
-                path: PathBuf::from("stdout"),
-                source,
-            })?;
-        println!();
+        print_root_help();
         return Ok(());
     };
-    if let Command::Terminal { action } = command {
+    if let Command::Workspace { action } = command {
         return match action {
-            TerminalAction::Attach => uze::ui::run(home),
-            TerminalAction::Stop => uze_terminal::stop().map_err(terminal_error),
-            TerminalAction::Serve { root } => {
-                uze_terminal::serve(uze_terminal::SpaceSeat { root }).map_err(terminal_error)
-            }
+            None => open_workspace(home, verbose),
+            Some(WorkspaceAction::Stop) => uze_terminal::stop().map_err(terminal_error),
         };
+    }
+    if let Command::Terminal {
+        action: TerminalAction::Serve { root },
+    } = command
+    {
+        return uze_terminal::serve(uze_terminal::SpaceSeat { root }).map_err(terminal_error);
     }
     // Ahead of the application: a check running detached from the command
     // that started it has no business seeding plugins on the way.
@@ -1207,8 +1264,8 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         }
         Command::Setup { arguments } => run_setup_command(&app, &home, &arguments, verbose)?,
         Command::External(args) => run_shorthand(&app, args, verbose)?,
-        Command::Terminal { .. } => {
-            unreachable!("terminal commands return before application setup")
+        Command::Workspace { .. } | Command::Terminal { .. } => {
+            unreachable!("workspace commands return before application setup")
         }
         Command::Upgrade { .. } => {
             unreachable!("the release check returns before application setup")
@@ -1223,7 +1280,10 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
 fn tells_about_releases(command: &Command) -> bool {
     !matches!(
         command,
-        Command::Agent { .. } | Command::Terminal { .. } | Command::Upgrade { .. }
+        Command::Agent { .. }
+            | Command::Workspace { .. }
+            | Command::Terminal { .. }
+            | Command::Upgrade { .. }
     )
 }
 
@@ -1284,6 +1344,32 @@ fn run_upgrade(home: &UzeHome) -> Result<()> {
 /// screen: its report — a harness that failed, the line that reloads the
 /// shell's `PATH` — is only worth printing if it can be read.
 #[tracing::instrument(name = "tui.first_run_setup", skip_all)]
+fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
+    // Started inside one of the running client's own panes: a client
+    // inside a client is never what that means. Open a space for this
+    // directory in the uze already running, and leave.
+    if std::env::var_os("UZE_PANE").is_some() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let root = uze_application::space_root(&cwd);
+        let label = uze_terminal::open_space(uze_terminal::SpaceSeat { root: root.clone() })
+            .map_err(terminal_error)?;
+        println!(
+            "opened space `{label}` at {} in the running uze",
+            root.display()
+        );
+        return Ok(());
+    }
+    if std::io::stdout().is_terminal() && std::io::stdin().is_terminal() {
+        // Seeding default marketplace plugins happens inside the TUI's own
+        // startup worker (see `ui::spawn_startup`), off the
+        // terminal-takeover path — running it here, synchronously, before
+        // the alternate screen is even entered, left the terminal looking
+        // frozen for however long harness detection took.
+        set_up_on_first_run(&home, verbose)?;
+    }
+    uze::ui::run(home)
+}
+
 fn set_up_on_first_run(home: &UzeHome, verbose: bool) -> Result<()> {
     let app = UzeApplication::from_env(home.clone())?;
     if !app.health().first_run() {
@@ -5301,5 +5387,54 @@ mod status_output_tests {
     #[test]
     fn a_healthy_project_is_owed_nothing() {
         assert!(status_next_step(&report(present(), Portability::Portable)).is_none());
+    }
+}
+
+#[cfg(test)]
+mod root_help_tests {
+    use clap::CommandFactory;
+
+    use super::{Cli, ROOT_COMMANDS, visible_subcommands};
+
+    #[test]
+    fn every_visible_command_is_listed_once_in_the_root_help() {
+        let listed: Vec<&str> = ROOT_COMMANDS
+            .iter()
+            .flat_map(|(_, commands)| commands.iter().map(|(name, _, _)| *name))
+            .collect();
+        let mut visible: Vec<String> = visible_subcommands(&Cli::command())
+            .map(|command| command.get_name().to_owned())
+            .filter(|name| name != "help")
+            .collect();
+        visible.sort();
+        let mut sorted = listed.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            sorted, visible,
+            "the root help lists exactly the visible commands"
+        );
+    }
+
+    #[test]
+    fn every_root_help_row_fits_an_80_column_terminal() {
+        let name = ROOT_COMMANDS
+            .iter()
+            .flat_map(|(_, commands)| commands.iter())
+            .map(|(name, _, _)| name.len())
+            .max()
+            .unwrap_or_default();
+        let example = ROOT_COMMANDS
+            .iter()
+            .flat_map(|(_, commands)| commands.iter())
+            .map(|(_, example, _)| example.len())
+            .max()
+            .unwrap_or_default();
+        for (command, _, line) in ROOT_COMMANDS
+            .iter()
+            .flat_map(|(_, commands)| commands.iter())
+        {
+            let width = 2 + name + 2 + example + 2 + line.chars().count();
+            assert!(width <= 80, "`{command}` is {width} columns wide");
+        }
     }
 }

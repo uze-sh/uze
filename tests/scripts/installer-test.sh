@@ -149,7 +149,7 @@ check "and the release it placed there" $?
 # step's own generic wording — the fixture binary prints "uze 9.9.9-glibc".
 grep -q "9.9.9-glibc" "$work/out1.log"
 check "the last step settles on the version installed" $?
-grep -q "Agent environment manager" "$work/out1.log"
+grep -q "Plugins for every agent, and a workspace to run them" "$work/out1.log"
 check "the installer opens with the CLI's own header" $?
 grep -q "uze setup" "$work/out1.log"
 check "and closes on what to run next" $?

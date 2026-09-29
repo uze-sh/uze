@@ -29,7 +29,7 @@ world:
 scenes:
   - scene: this build records an agent
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: this build opens on the project
         expect: demo-app
         expect_timeout: 30
@@ -49,7 +49,7 @@ scenes:
           set -e
           cat {uze_home}/state/projects/*/agents.json > {world}/recorded-before
         say: keep the record exactly as this build wrote it
-      - shell: "{uze} terminal stop"
+      - shell: "{uze} workspace stop"
         say: this build lets go of the workspace
         check: false
     then:

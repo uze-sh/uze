@@ -31,7 +31,7 @@ world:
 scenes:
   - scene: the target moves under an agent, and UZE says so without being asked
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         expect: demo-app
         expect_timeout: 20
         pause: 1.0

@@ -66,7 +66,7 @@ crash-avoidance measure. If a session still dies mid-run, look for a kill
 by signal in `journalctl` (`user@1000.service: ... status=9/KILL` at the
 same second as `Session N logged out`) before assuming memory pressure.
 
-Run the CLI itself with `cargo run --bin uze -- <args>` or `./target/debug/uze <args>` after a build; `uze` with no args launches the terminal UI.
+Run the CLI itself with `cargo run --bin uze -- <args>` or `./target/debug/uze <args>` after a build; `uze workspace` launches the terminal UI; `uze` with no args prints help.
 
 ## Code style
 
