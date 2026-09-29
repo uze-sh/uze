@@ -157,7 +157,7 @@ scenes:
       - shell: "GIT_CONFIG_NOSYSTEM=1 {uze} install"
         say: install what agents.yaml declares, with no key anywhere
     then:
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: the plugin reached the harness
       - file: "{world}/forge/ssh.log"

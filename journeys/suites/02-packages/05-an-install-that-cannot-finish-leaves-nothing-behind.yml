@@ -11,7 +11,7 @@ about: |
 
   So this journey asks for two things it cannot have, and both times reads
   the whole machine against a snapshot taken when it was last known good:
-  the Store, the records, and the shared skill root every harness reads.
+  the Store, the records, and the skill roots the harnesses read.
   Not "the new plugin is absent" — *nothing moved at all*.
 
   It also asks the marketplace to become unreachable after the fact, which
@@ -60,15 +60,16 @@ scenes:
       - file: "{uze_home}/store/plugins/demo/flow/plugin.json"
         exists: true
         about: the Store holds the plugin's bytes
-      - link: "{home}/.agents/skills/flow:commit"
-        resolves_to: flow
-        about: and a harness can reach its skill through the shared root
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
+        exists: true
+        about: and a harness reads its skill from its own root
       - capture:
           name: settled
           tree:
             - "{uze_home}/store"
             - "{uze_home}/state"
             - "{home}/.agents"
+            - "{home}/.config/opencode"
           # Every command takes and drops this, so its mtime is about the
           # command having run, never about what the command left behind.
           except: ["state/mutation.lock"]
@@ -95,6 +96,7 @@ scenes:
             - "{uze_home}/store"
             - "{uze_home}/state"
             - "{home}/.agents"
+            - "{home}/.config/opencode"
         except: ["state/mutation.lock"]
         same_as: settled
         about: |
@@ -119,13 +121,14 @@ scenes:
         about: |
           while what was already delivered is untouched — the Store is the
           copy every harness reads, and it stands without its source
-      - link: "{home}/.agents/skills/flow:commit"
-        resolves_to: flow
-        about: and still reachable, which is the whole point of keeping it here
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
+        exists: true
+        about: and still delivered, which is the whole point of keeping it here
       - tree:
             - "{uze_home}/store"
             - "{uze_home}/state"
             - "{home}/.agents"
+            - "{home}/.config/opencode"
         except: ["state/mutation.lock"]
         same_as: settled
         about: |

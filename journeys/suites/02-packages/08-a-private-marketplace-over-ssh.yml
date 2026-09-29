@@ -171,7 +171,7 @@ scenes:
       - shell: "GIT_CONFIG_NOSYSTEM=1 SSH_AUTH_SOCK={world}/agent.sock {uze} flow@demo"
         say: add its plugin to the project
     then:
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: the plugin reached the harness from a repository only SSH could read
       - file: "{world}/forge/ssh.log"

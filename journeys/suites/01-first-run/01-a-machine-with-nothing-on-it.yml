@@ -53,7 +53,7 @@ scenes:
       - file: "{uze_home}/store/plugins/uze-official/uze/plugin.json"
         exists: true
         about: and the official plugin is seeded, so the machine is never empty of UZE itself
-      - file: "{home}/.agents/skills/uze:init/SKILL.md"
+      - file: "{home}/.config/opencode/skills/uze:init/SKILL.md"
         exists: true
       - file: "{home}/.gemini/config/plugins/uze/plugin.json"
         exists: true

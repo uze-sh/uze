@@ -57,6 +57,6 @@ scenes:
         about: |
           the project is byte-identical across the command — a scripted
           install declared nothing, exactly as -m stated
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: the machine half happened; only the declaring did not

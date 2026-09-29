@@ -45,7 +45,7 @@ scenes:
           run: "{uze} agent plugin check {project}/plugins/greet"
           exit: 0
         about: the check is the licence to install, answered offline
-      - file: "{home}/.agents/skills/greet:greet/SKILL.md"
+      - file: "{home}/.config/opencode/skills/greet:greet/SKILL.md"
         exists: true
         about: delivered before anything was ever committed
 
