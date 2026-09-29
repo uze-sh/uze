@@ -3,22 +3,36 @@
 //!
 //! An author names a file of their own package through it in every file UZE
 //! reads — `mcp.json`, `hooks.json`, a `SKILL.md`, an agent definition —
-//! and it resolves to the Store package root in all of them. No harness
-//! expands the portable token, and the ones that stage their own copy of a
-//! plugin do not follow the symlinks some deliveries are made of, so the
-//! one path that holds in every harness and on every route is the Store's.
+//! and it resolves to the delivered package root in all of them: the whole
+//! package, copied into the generated tier before any harness receives it
+//! (`uze_core::delivered_root`). No harness expands the portable token, and
+//! not every harness stages a whole copy of its own, so this is the one
+//! path that holds in every harness and on every route. It is never the
+//! Store's: a hook that builds into its root would write into the bytes the
+//! lock pins.
 
-use std::{borrow::Cow, path::Path};
+use std::{
+    borrow::Cow,
+    path::{Path, PathBuf},
+};
+
+use uze_core::home::UzeHome;
 
 /// How a package names its own root.
 pub(crate) const TOKEN: &str = "${PLUGIN_ROOT}";
+
+/// The root a harness is handed for the package whose Store root is
+/// `package_root`; a root outside the Store is its own.
+pub(crate) fn delivered(package_root: &Path) -> PathBuf {
+    UzeHome::delivered_package_dir_of(package_root).unwrap_or_else(|| package_root.to_path_buf())
+}
 
 /// `text` with every placeholder resolved to `package_root`; borrowed when
 /// there is nothing to resolve, so a caller can tell a text that needs a
 /// rewritten copy from one that can be delivered as it is.
 pub(crate) fn resolve_text<'a>(text: &'a str, package_root: &Path) -> Cow<'a, str> {
     if text.contains(TOKEN) {
-        Cow::Owned(text.replace(TOKEN, &package_root.to_string_lossy()))
+        Cow::Owned(text.replace(TOKEN, &delivered(package_root).to_string_lossy()))
     } else {
         Cow::Borrowed(text)
     }

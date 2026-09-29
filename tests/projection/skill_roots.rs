@@ -540,3 +540,147 @@ fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
     });
     fs::remove_dir_all(&root).ok();
 }
+
+/// `${PLUGIN_ROOT}` in a delivered skill names the whole package, copied
+/// out of the Store: the file it points at exists, and a write through it —
+/// a hook building into its root — leaves the bytes the lock pins alone.
+#[test]
+#[cfg(unix)]
+fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
+    let root = temp("skill-root-plugin-root");
+    with_fake_codex(&root, || {
+        let (application, _, opencode_skills, uze_home) = codex_and_opencode(&root);
+        let fixture = review_fixture(&root);
+        fs::create_dir_all(fixture.join("phases")).unwrap();
+        fs::write(fixture.join("phases/plan.md"), "Plan.\n").unwrap();
+        fs::create_dir_all(fixture.join("skills/run")).unwrap();
+        fs::write(
+            fixture.join("skills/run/SKILL.md"),
+            "---\nname: run\ndescription: Runs the plan\n---\nRead ${PLUGIN_ROOT}/phases/plan.md\n",
+        )
+        .unwrap();
+        application
+            .plugins()
+            .add(PackageSource::local(fixture), &uze_core::trust::AlwaysTrust)
+            .expect("installs");
+
+        let skill = fs::read_to_string(opencode_skills.join("flow:run/SKILL.md")).unwrap();
+        let named = skill
+            .lines()
+            .find_map(|line| line.strip_prefix("Read "))
+            .map(PathBuf::from)
+            .expect("the body names the plan");
+        assert!(
+            named.starts_with(uze_home.runtime_dir()),
+            "{}",
+            named.display()
+        );
+        assert!(
+            !named.starts_with(uze_home.store_dir()),
+            "{}",
+            named.display()
+        );
+        assert_eq!(fs::read_to_string(&named).unwrap(), "Plan.\n");
+
+        fs::write(&named, "built over\n").unwrap();
+        let stored = uze_home.plugins_dir().join("local/flow/phases/plan.md");
+        assert_eq!(fs::read_to_string(stored).unwrap(), "Plan.\n");
+    });
+    fs::remove_dir_all(&root).ok();
+}
+
+/// An MCP entry an earlier build wrote with the Store as `${PLUGIN_ROOT}`
+/// is UZE's own, by its receipt: the next install replaces it with the
+/// delivered root rather than refusing it as somebody else's.
+#[test]
+#[cfg(unix)]
+fn an_mcp_entry_an_earlier_build_rooted_in_the_store_is_restated() {
+    let root = temp("skill-root-mcp-restated");
+    with_fake_codex(&root, || {
+        let (application, _, _, uze_home) = codex_and_opencode(&root);
+        let fixture = root.join("mcp-fixture");
+        fs::create_dir_all(fixture.join("bin")).unwrap();
+        fs::write(
+            fixture.join("plugin.json"),
+            r#"{"name":"served","version":"1.0.0","description":"mcp fixture"}"#,
+        )
+        .unwrap();
+        fs::write(
+            fixture.join("mcp.json"),
+            r#"{"mcpServers":{"rtc":{"type":"stdio","command":"${PLUGIN_ROOT}/bin/server","args":[]}}}"#,
+        )
+        .unwrap();
+        fs::write(fixture.join("bin/server"), "#!/bin/sh\n").unwrap();
+        let install = || {
+            application
+                .plugins()
+                .add(
+                    PackageSource::local(fixture.clone()),
+                    &uze_core::trust::AlwaysTrust,
+                )
+                .expect("installs")
+        };
+        install();
+
+        let config_path = root.join("opencode/opencode.json");
+        let receipt = uze_core::state::receipts(&uze_home, Some("served@local"))
+            .unwrap()
+            .into_iter()
+            .find(|r| {
+                r.integration == "opencode"
+                    && matches!(
+                        r.artifact,
+                        uze_core::integration::ManagedArtifact::VendorConfigEntry { .. }
+                    )
+            })
+            .expect("OpenCode holds the server as a config entry");
+        let delivered = uze_home
+            .runtime_dir()
+            .join("packages/served@local")
+            .to_string_lossy()
+            .into_owned();
+        let stored = uze_home
+            .plugins_dir()
+            .join("local/served")
+            .to_string_lossy()
+            .into_owned();
+        let config = fs::read_to_string(&config_path).unwrap();
+        assert!(config.contains(&delivered), "{config}");
+        fs::write(&config_path, config.replace(&delivered, &stored)).unwrap();
+        let mut earlier = receipt.clone();
+        if let uze_core::integration::ManagedArtifact::VendorConfigEntry { command, .. } =
+            &mut earlier.artifact
+        {
+            *command = PathBuf::from(command.to_string_lossy().replace(&delivered, &stored));
+        }
+        uze_core::state::record_receipt(&uze_home, earlier).unwrap();
+
+        install();
+
+        let config = fs::read_to_string(&config_path).unwrap();
+        assert!(config.contains(&delivered), "restated: {config}");
+        assert!(!config.contains(&stored), "{config}");
+        let receipt = uze_core::state::receipts(&uze_home, Some("served@local"))
+            .unwrap()
+            .into_iter()
+            .find(|r| {
+                r.integration == "opencode"
+                    && matches!(
+                        r.artifact,
+                        uze_core::integration::ManagedArtifact::VendorConfigEntry { .. }
+                    )
+            })
+            .unwrap();
+        let uze_core::integration::ManagedArtifact::VendorConfigEntry { command, .. } =
+            &receipt.artifact
+        else {
+            unreachable!("found as a config entry");
+        };
+        assert!(
+            command.starts_with(&delivered),
+            "the ledger records the entry as written: {}",
+            command.display()
+        );
+    });
+    fs::remove_dir_all(&root).ok();
+}

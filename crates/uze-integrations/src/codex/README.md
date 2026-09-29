@@ -65,7 +65,8 @@ $UZE_HOME/runtime/attachments/codex/generated/<id>/.codex-plugin/plugin.json
     both mirrored as real bytes from the Store — `codex plugin add` stages
     the envelope into ~/.codex/plugins/cache without following symlinks,
     verified 0.149.0–0.152.1, so a symlinked entry would never reach Codex;
-    `.mcp.json` carries `${PLUGIN_ROOT}` resolved to the Store path)
+    `.mcp.json` carries `${PLUGIN_ROOT}` resolved to the delivered package
+    root, runtime/packages/<id>)
         │
         ▼
 $UZE_HOME/.../generated/.agents/plugins/marketplace.json  ("uze-store",

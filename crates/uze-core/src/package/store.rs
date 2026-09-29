@@ -692,11 +692,15 @@ impl UzeStore {
         if registry.packages.remove(id).is_none() {
             return Err(UzeError::UnknownPackage(id.as_str().to_owned()));
         }
-        let root = self.home.plugin_dir(id);
-        if let Err(source) = fs::remove_dir_all(&root)
-            && source.kind() != std::io::ErrorKind::NotFound
-        {
-            return Err(UzeError::Write { path: root, source });
+        for root in [
+            self.home.plugin_dir(id),
+            self.home.delivered_package_dir(id),
+        ] {
+            if let Err(source) = fs::remove_dir_all(&root)
+                && source.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(UzeError::Write { path: root, source });
+            }
         }
         self.save_registry(&registry)
     }
@@ -896,7 +900,7 @@ fn resolve_lexically(link: &Path, target: &Path) -> Option<PathBuf> {
     Some(resolved)
 }
 
-fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
+pub(crate) fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     fs::create_dir_all(destination).map_err(|source_error| UzeError::Write {
         path: destination.to_path_buf(),
         source: source_error,

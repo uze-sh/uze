@@ -1267,6 +1267,7 @@ pub(crate) fn wrapper_arguments(
     package_root: &Path,
     handlers: &[CommandHook],
 ) -> Vec<String> {
+    let package_root = &crate::shared::package_root::delivered(package_root);
     let mut arguments = vec![
         package_root.display().to_string(),
         hook.event.abi_name().to_owned(),
@@ -1618,6 +1619,7 @@ pub(crate) fn opencode_bridge_path(config_root: &Path, package_id: &str) -> Path
 /// matchers (matched against the runtime native tool name), abi event name,
 /// effect, and the authored handlers with `${PLUGIN_ROOT}` resolved.
 fn bridge_hooks(hooks: &[&PortableHook], package_root: &Path) -> serde_json::Value {
+    let package_root = &crate::shared::package_root::delivered(package_root);
     serde_json::Value::Array(
         hooks
             .iter()

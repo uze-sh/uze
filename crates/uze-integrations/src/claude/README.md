@@ -64,7 +64,7 @@ $UZE_HOME/runtime/attachments/claude/generated/<id>/.claude-plugin/plugin.json
     the whole package mirrored as real files, rebuilt beside the live
     directory and swapped in with one rename because Claude reads this
     directory live, mcp.json's mcpServers inline with `${PLUGIN_ROOT}`
-    resolved to the Store path)
+    resolved to the delivered package root, runtime/packages/<id>)
         │
         ▼
 $UZE_HOME/.../generated/.claude-plugin/marketplace.json   ("uze-store")

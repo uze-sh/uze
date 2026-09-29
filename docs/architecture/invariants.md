@@ -188,6 +188,17 @@ linked there is retired before the directory takes its place.
 > `tests/projection/skill_roots.rs::an_entry_an_earlier_build_linked_is_replaced_by_a_directory`
 > `tests/integrations/lifecycle_conformance.rs::every_integration_owns_its_skill_root`
 
+### `${PLUGIN_ROOT}` names a delivered copy, never the Store
+
+Every `${PLUGIN_ROOT}` a harness receives, in a skill, an agent, an MCP
+server or a hook, names `runtime/packages/<id>`: the whole package, copied
+from the Store before any harness is handed it. A hook that builds into its
+root writes that copy, which the next delivery restores, and never the bytes
+`agents.lock` pins.
+
+> `tests/projection/skill_roots.rs::the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store`
+> `crates/uze-core/src/delivery/delivered_root.rs::the_delivered_root_is_a_copy_a_write_cannot_carry_into_the_store`
+
 ### A generated directory is replaced whole
 
 A directory a harness reads is built beside its destination and swapped in

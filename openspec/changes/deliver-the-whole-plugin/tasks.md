@@ -49,9 +49,11 @@
 
 ## 5. `${PLUGIN_ROOT}` in text
 
-- [x] 5.1 Resolved to the Store package root in every delivered `SKILL.md`
-  (Claude envelope and shim, Codex envelope and wrapper, OpenCode and
-  Antigravity wrappers) and agent definition (all four), through one
+- [x] 5.1 Resolved to the delivered package root (`runtime/packages/<id>`,
+  the whole package copied from the Store before any harness is handed it,
+  `uze_core::delivered_root`) in every delivered `SKILL.md` (Claude envelope
+  and shim, Codex envelope and wrapper, OpenCode and Antigravity wrappers),
+  agent definition (all four), `mcp.json` and `hooks.json`, through one
   resolver (`shared::package_root`).
 - [x] 5.2 Documented in the web plugin-format page and the `uze:author` skill.
 

@@ -152,6 +152,10 @@ plugin, such as a script, a template or a reference page. Name it with
 Read the checklist in ${PLUGIN_ROOT}/phases/plan.md before you start.
 ```
 
+That copy holds the whole plugin and is rebuilt whenever the plugin changes,
+so a hook may build into it, and the build is redone after an update. Your
+plugin's installed files are never changed by it.
+
 Relative paths inside a skill's own directory (`scripts/`, `references/`) keep
 working as well. Folders a single harness would load as a feature of its own,
 such as Claude Code's `commands/` or `bin/`, are not delivered: uze delivers

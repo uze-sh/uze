@@ -277,6 +277,36 @@ impl UzeHome {
         self.runtime_dir().join("attachments").join(vendor)
     }
 
+    /// One installed package, whole, as every harness is handed it: the
+    /// directory `${PLUGIN_ROOT}` names. Generated from the Store, so a
+    /// harness or a hook writing into its own package root never writes the
+    /// Store, and deleting it costs one copy on the next delivery.
+    pub fn delivered_package_dir(&self, id: &PackageId) -> PathBuf {
+        self.runtime_dir().join("packages").join(id.as_str())
+    }
+
+    /// [`Self::delivered_package_dir`] of the package whose Store root is
+    /// `plugin_dir`, read back from the Store's own layout
+    /// ([`Self::plugin_dir`]); `None` for a directory that is not one.
+    ///
+    /// Everything that resolves `${PLUGIN_ROOT}` is handed a package's Store
+    /// root, and a harness must be handed the delivered copy instead; this
+    /// is the one place the two layouts meet.
+    pub fn delivered_package_dir_of(plugin_dir: &Path) -> Option<PathBuf> {
+        let name = plugin_dir.file_name()?.to_str()?;
+        let marketplace_dir = plugin_dir.parent()?;
+        let marketplace = marketplace_dir.file_name()?.to_str()?;
+        let plugins = marketplace_dir.parent()?;
+        let home = Self::at(plugins.parent()?.parent()?);
+        if home.plugins_dir() != plugins {
+            return None;
+        }
+        let id =
+            PackageId::from_marketplace_plugin(marketplace, name, &plugin_dir.join("plugin.json"))
+                .ok()?;
+        (home.plugin_dir(&id) == plugin_dir).then(|| home.delivered_package_dir(&id))
+    }
+
     pub fn cache_dir(&self) -> PathBuf {
         self.root.join("cache")
     }

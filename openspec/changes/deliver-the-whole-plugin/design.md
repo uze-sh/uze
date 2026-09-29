@@ -104,11 +104,17 @@ unambiguous. Existing receipts that recorded an `@` label were never attached
 ### `${PLUGIN_ROOT}` in skill and agent text
 
 Resolved at materialization for every delivered `SKILL.md` and agent
-definition, on every route and harness, to the Store package root — the
-same root `mcp.json` and `hooks.json` already resolve to, through one
-resolver (`shared::package_root`). The Store root holds the whole package on
-every harness and every route, including the ones that link a skill
-directory rather than copy it, which an envelope root would not. A skill
+definition, on every route and harness, to the delivered package root — the
+same root `mcp.json` and `hooks.json` resolve to, through one resolver
+(`shared::package_root`). That root is `runtime/packages/<id>`: the whole
+package, copied from the Store before any harness is handed it and copied
+again only when the two differ. Only Claude's envelope holds the whole
+package (Codex's and Antigravity's carry `skills/`, OpenCode has no package
+tree), so no envelope can be the root; and the Store cannot either, because
+a hook that builds into its root (`bun install` in `${PLUGIN_ROOT}/ui`, as
+the aikit migration's forge hook did) would write the bytes `agents.lock`
+pins. A write into the copy is undone by the next delivery that finds it
+different, which is what a harness's own plugin cache does too. A skill
 whose text carries the placeholder is always a rewritten skill; Store bytes
 keep the canonical text. Only the exact token is replaced; a vendor's own
 placeholder is left to the vendor.

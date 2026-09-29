@@ -41,6 +41,7 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
 /// `cwd`, which a harness would otherwise resolve against a directory of
 /// its own choosing.
 fn resolve_server(server: &serde_json::Value, package_root: &Path) -> serde_json::Value {
+    let package_root = &crate::shared::package_root::delivered(package_root);
     let mut server = resolve_json(server, package_root);
     if let Some(entries) = server.as_object_mut() {
         for key in ["command", "cwd"] {
@@ -302,7 +303,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_package_root_resolves_in_every_string_a_server_carries() {
+    fn the_package_root_resolves_in_every_string_a_server_carries_to_the_delivered_copy() {
         let root = Path::new("/store/plugins/mk/pm");
         let declared = serde_json::json!({
             "command": "${PLUGIN_ROOT}/bin/server",
@@ -312,9 +313,9 @@ mod tests {
         assert_eq!(
             resolve_json(&declared, root),
             serde_json::json!({
-                "command": "/store/plugins/mk/pm/bin/server",
-                "args": ["--data", "/store/plugins/mk/pm/data", 3],
-                "env": { "HOME_OF": "/store/plugins/mk/pm" },
+                "command": "/runtime/packages/pm@mk/bin/server",
+                "args": ["--data", "/runtime/packages/pm@mk/data", 3],
+                "env": { "HOME_OF": "/runtime/packages/pm@mk" },
             })
         );
     }
@@ -326,7 +327,7 @@ mod tests {
         assert_eq!(
             stdio_command(declared, root),
             Some((
-                PathBuf::from("/store/plugins/mk/pm/bin/server"),
+                PathBuf::from("/runtime/packages/pm@mk/bin/server"),
                 vec!["./not-a-path".to_owned()]
             ))
         );
@@ -336,8 +337,8 @@ mod tests {
                 root
             ),
             serde_json::json!({
-                "command": "/store/plugins/mk/pm/bin/s",
-                "cwd": "/store/plugins/mk/pm/data",
+                "command": "/runtime/packages/pm@mk/bin/s",
+                "cwd": "/runtime/packages/pm@mk/data",
             })
         );
     }

@@ -151,6 +151,9 @@ impl UzeApplication {
             package = %package.id.as_str()
         )
         .entered();
+        // Before any harness is handed a path into it: `${PLUGIN_ROOT}`
+        // names this copy, never the Store.
+        uze_core::delivered_root::materialize(&self.home, package)?;
         let mut delivery = PackageDelivery::default();
         let mut provided = BTreeSet::new();
         if let Some(plan) = integration
@@ -388,7 +391,8 @@ impl UzeApplication {
             .exposure_name_candidates(resource)
             .into_iter()
             .collect();
-        let planned = planned_kind(integration, resource);
+        let planned_artifact = planned_artifact(integration, resource);
+        let planned = planned_artifact.as_ref().map(std::mem::discriminant);
         let identity = resource.identity();
         let receipts = state::receipts(&self.home, Some(resource.package_id.as_str()))?;
         for receipt in &receipts {
@@ -403,7 +407,10 @@ impl UzeApplication {
                 .is_some_and(|name| !current.contains(&name));
             let reshaped =
                 planned.is_some_and(|kind| std::mem::discriminant(&receipt.artifact) != kind);
-            if !(renamed || reshaped) {
+            let restated = planned_artifact
+                .as_ref()
+                .is_some_and(|planned| config_entry_restated(&receipt.artifact, planned));
+            if !(renamed || reshaped || restated) {
                 continue;
             }
             if reshaped {
@@ -443,8 +450,10 @@ impl UzeApplication {
                 .integrations
                 .iter()
                 .find(|candidate| candidate.id() == other.integration)
-                .and_then(|candidate| planned_kind(candidate.as_ref(), resource))
-                .is_some_and(|kind| std::mem::discriminant(&other.artifact) != kind);
+                .and_then(|candidate| planned_artifact(candidate.as_ref(), resource))
+                .is_some_and(|planned| {
+                    std::mem::discriminant(&other.artifact) != std::mem::discriminant(&planned)
+                });
             if moved_on {
                 state::forget_receipt(&self.home, other)?;
             }
@@ -672,13 +681,54 @@ impl UzeApplication {
 }
 
 /// The kind of artifact `integration` now plans for `resource`, if any.
-fn planned_kind(
+fn planned_artifact(
     integration: &dyn IntegrationPort,
     resource: &Resource,
-) -> Option<std::mem::Discriminant<ManagedArtifact>> {
+) -> Option<ManagedArtifact> {
     match integration.exposure_plan(resource).mechanism {
-        ExposureMechanism::Managed(artifact) => Some(std::mem::discriminant(&artifact)),
+        ExposureMechanism::Managed(artifact) => Some(artifact),
         ExposureMechanism::Unsupported { .. } => None,
+    }
+}
+
+/// Whether a config entry UZE wrote now says something else under the same
+/// name — a server whose package root moved, say. A harness's config entry
+/// is written only where nothing or the identical entry stands, so the one
+/// UZE owns has to come off first. The name is left out: which candidate an
+/// entry holds is the rename rule's question.
+fn config_entry_restated(recorded: &ManagedArtifact, planned: &ManagedArtifact) -> bool {
+    match (recorded, planned) {
+        (
+            ManagedArtifact::VendorConfigEntry {
+                transport,
+                command,
+                args,
+                cwd,
+                environment,
+                enabled,
+                ..
+            },
+            ManagedArtifact::VendorConfigEntry {
+                transport: planned_transport,
+                command: planned_command,
+                args: planned_args,
+                cwd: planned_cwd,
+                environment: planned_environment,
+                enabled: planned_enabled,
+                ..
+            },
+        ) => {
+            (transport, command, args, cwd, environment, enabled)
+                != (
+                    planned_transport,
+                    planned_command,
+                    planned_args,
+                    planned_cwd,
+                    planned_environment,
+                    planned_enabled,
+                )
+        }
+        _ => false,
     }
 }
 
