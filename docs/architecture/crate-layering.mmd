@@ -14,15 +14,15 @@ flowchart TD
   app[uze-application<br/>UzeApplication facade]
   subgraph core [uze-core · domain]
     package[package<br/>acquisition · trust · store]
-    capability[capability<br/>skill · hook]
-    delivery[delivery<br/>router · engine · receipts]
+    capability[capability<br/>skill · agent · hook · harness block]
+    delivery[delivery<br/>router · engine · receipts · replace_dir]
     project[project<br/>lock · context · worktrees]
     machine[machine<br/>home · subprocess · PATH]
   end
   subgraph integrations [uze-integrations]
     registry[registry<br/>composition root]
     verticals[harness verticals<br/>one module per harness]
-    shared[shared<br/>process · path helpers]
+    shared[shared<br/>dialect · tree mirror · process · path]
   end
   git[uze-git<br/>the one Git transport]
   document[uze-document<br/>the shape a record declares]

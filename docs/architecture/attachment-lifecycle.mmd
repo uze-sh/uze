@@ -2,11 +2,15 @@
 title: Attachment lifecycle
 ---
 flowchart TD
-  plan([Exposure plan]) --> kinds[One ManagedArtifact per side effect<br/>a symlink, a vendor config entry,<br/>a region of a shared file, a hook entry,<br/>or one only its integration can read]
-  kinds --> occupied{Is the name already taken?}
-  occupied -->|no| attach[Attach: the owning integration writes it]
-  occupied -->|taken, and it resolves to nothing| adopt[Adopt it: it delivers no capability,<br/>so refusing it preserves no work]
-  occupied -->|taken, and it resolves| held[Preserve it, report the capability,<br/>and deliver the rest]
+  plan([Exposure plan]) --> kinds[One ManagedArtifact per side effect<br/>a directory or file UZE generated, proven by its content,<br/>a vendor config entry, a region of a shared file,<br/>a hook entry, or one only its integration can read]
+  kinds --> earlier{A receipt this build<br/>would make in another shape?}
+  earlier -->|yes, still as made| retire[Retire it first:<br/>detach, forget the receipt]
+  earlier -->|yes, changed since| held
+  earlier -->|no| occupied
+  retire --> occupied{Is the name already taken?}
+  occupied -->|no| attach[Attach: build beside it,<br/>swap it in with one rename]
+  occupied -->|taken, and it resolves to nothing,<br/>or already holds exactly this| adopt[Adopt it: refusing it<br/>preserves no work]
+  occupied -->|taken by something else| held[Preserve it, report the capability,<br/>and deliver the rest]
   adopt --> attach
   attach --> receipt[(A typed receipt in the ledger)]
   receipt --> inspect{Inspect the harness as it is now}
