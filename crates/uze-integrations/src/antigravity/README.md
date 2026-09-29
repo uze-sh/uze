@@ -104,13 +104,11 @@ it become authoritative.
   relayed, tool blocked, first-deny-wins, allow executes), and asserts the
   vendor-format control hook on the API-key mode as well, so a return of
   #893 is a red check, not a silent mode dependency.
-- Workspace-level `.agents/mcp_config.json` discovery is a project-scope
-  concern outside UZE's machine-scope integration; it was not observable
-  headlessly (`agy mcp list` shows global only). `.agents/skills/` is a
-  separate case: official docs (antigravity.google/docs/cli/plugins, 2026)
-  now confirm `agy` reads it directly per-workspace, no UZE involvement
-  needed — see `AntigravityIntegration::discovers_project_agents_directory`.
-  Measured on 1.2.12 by the Lab contract `context-project-skill-reaches-model`;
-  the same release also reads `./.agents/agents`, `./.agents/mcp_config.json`
-  and `./.agents/hooks.json`. The project authors that directory, and UZE
-  writes nothing into it.
+- A project's `.agents/` is read by agy itself, per workspace, with no UZE
+  involvement (`AntigravityIntegration::discovers_project_agents_directory`).
+  Measured on 1.2.12: `.agents/skills` by the Lab contract
+  `context-project-skill-reaches-model`, and `.agents/agents`,
+  `.agents/mcp_config.json` and `.agents/hooks.json` by the discovery study
+  of 2026-09-28 (read off the requests the harness sent; `agy mcp list` shows
+  only the global servers, so it is not the place to look). The project
+  authors that directory, and UZE writes nothing into it.
