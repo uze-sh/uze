@@ -47,17 +47,21 @@ Each fact is proved by a Conformance Lab check against the real harness; the che
 
 | Harness | About | Fact | Measured on |
 | --- | --- | --- | --- |
+| Claude Code | project agents | reads no `./.agents/agents`, and offers an agent linked into an `--add-dir` target's `.claude/agents` | 2.1.283 |
 | Claude Code | agents | offers a plugin's agent as `<plugin>:<subdirectories>:<name>` | 2.1.283 |
 | Claude Code | agents | runs an agent on the model its `harness.claude-code` block names | 2.1.283 |
 | Claude Code | plugins | reads a directory-marketplace plugin live from its source; its cache copy drops linked files | 2.1.283 |
 | Claude Code | placeholders | expands only `${CLAUDE_PLUGIN_ROOT}`, so UZE resolves `${PLUGIN_ROOT}` itself | 2.1.283 |
 | Claude Code | skills | honours `disable-model-invocation` and `user-invocable` | 2.1.283 |
 | Claude Code | hooks | fires `SessionStart` once per new session, with its source | 2.1.283 |
+| Codex | project agents | reads no `./.agents/agents`, and offers the roles a `-c agents={...}` layer declares beside the user's own | 0.158.0 |
+| Codex | project agents | takes a launch's `-c` layer into a session served by an app-server daemon started without it | 0.158.0 |
 | Codex | agents | runs a role file from `~/.codex/agents/` by its `name`, which carries the label | 0.158.0 |
 | Codex | agents | honours `model` in a role file and refuses one with a key it does not know | 0.158.0 |
 | Codex | skills | hides a skill from the model with `agents/openai.yaml` `allow_implicit_invocation: false` | 0.158.0 |
 | Codex | placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 0.158.0 |
 | Codex | hooks | fires `SessionStart` once per new session, with its source | 0.158.0 |
+| OpenCode | project agents | reads no `./.agents/agents`, and its extra-configuration environment reaches only the shared service a launch starts, which serves it to every project | 2.0.18 |
 | OpenCode | agents | names an agent after its file and runs it on a `provider/model` its block names | 2.0.18 |
 | OpenCode | skills | lists a skill's supporting files only when its directory is not a link | 2.0.18 |
 | OpenCode | placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 2.0.18 |
