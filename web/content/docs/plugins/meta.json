@@ -1,11 +1,12 @@
 {
-  "title": "Plugins",
+  "title": "Package manager",
   "icon": "Puzzle",
   "pages": [
     "index",
-    "skills",
     "marketplaces",
     "context",
-    "creating"
+    "creating",
+    "skills",
+    "delivery"
   ]
 }

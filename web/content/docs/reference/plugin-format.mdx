@@ -5,17 +5,17 @@ description: Every file a plugin can ship, and how each one reaches each agent
 
 <Files>
   <Folder name="my-plugin" defaultOpen>
-    <File name="plugin.json" />
-    <Folder name="skills" defaultOpen>
-      <Folder name="<name>" defaultOpen>
+    <Folder name="agents">
+      <File name="<name>.md" />
+    </Folder>
+    <Folder name="skills">
+      <Folder name="<name>">
         <File name="SKILL.md" />
       </Folder>
     </Folder>
-    <Folder name="agents" defaultOpen>
-      <File name="<name>.md" />
-    </Folder>
-    <File name="mcp.json" />
     <File name="hooks.json" />
+    <File name="mcp.json" />
+    <File name="plugin.json" />
   </Folder>
 </Files>
 

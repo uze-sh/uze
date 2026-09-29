@@ -3,11 +3,16 @@ title: Overview
 description: The terminal workspace where your agents run, in spaces, tabs and panes that survive closing it
 ---
 
-Run `uze` with no arguments and you get the **workspace**: one terminal that
-holds all your agents.
+The workspace is the half of uze that runs your agents. Run `uze workspace`
+and you get one terminal that holds all of them, each in a tab, on a
+branch and, if you want, in a checkout of its own.
+
+It runs the agents you already have, set up by `uze setup`. It does not need
+any plugin: whatever [the package manager](/docs/plugins) delivered is there
+in every agent it starts.
 
 ```bash
-uze
+uze workspace
 ```
 
 <Callout type="info">
@@ -28,8 +33,9 @@ the agent's checkout and closes with it.
 ## Nothing is lost when you close it
 
 Your agents keep running when you quit the workspace, and are exactly where you
-left them the next time you run `uze`. After a reboot, uze starts each agent
-again in the checkout it was working in, back in the conversation it was having.
+left them the next time you run `uze workspace`. After a reboot, uze starts
+each agent again in the checkout it was working in, back in the conversation it
+was having.
 
 ## When an agent finishes
 
@@ -49,5 +55,5 @@ setup, appearance and shortcuts, all with the mouse.
 <Cards>
   <Card title="Running agents" href="/docs/workspace/agents" />
   <Card title="Extensions" href="/docs/workspace/extensions" />
-  <Card title="Keys" href="/docs/configuration/keys" />
+  <Card title="Shortcuts" href="/docs/workspace/keys" />
 </Cards>

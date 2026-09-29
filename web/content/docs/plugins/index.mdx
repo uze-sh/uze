@@ -1,11 +1,20 @@
 ---
-title: Installing plugins
-description: Add a plugin to a project once, and every agent receives it
+title: Overview
+description: The package manager for coding agents. Add a plugin to a project once, and every agent receives it
 ---
+
+The package manager is the half of uze that gets your tooling into your
+agents: plugins, and the project instructions in `AGENTS.md`. It is a plain
+CLI and does not need [the workspace](/docs/workspace). It serves the agents
+you start yourself, in a terminal, an editor or CI, and the ones the workspace
+starts.
 
 A plugin bundles skills, MCP servers, agents and hooks. You install it once;
 uze delivers it to Claude Code, Codex, OpenCode and Antigravity, each through
-its own native mechanism.
+its own native mechanism. [How delivery works](/docs/plugins/delivery) explains
+the routes and what keeps them safe.
+
+## Installing a plugin
 
 ```bash
 uze <plugin>@<marketplace>    # add it to this project
@@ -51,5 +60,5 @@ uze remove <plugin> -m
 
 <Cards>
   <Card title="Marketplaces" href="/docs/plugins/marketplaces" />
-  <Card title="uze Skills" href="/docs/plugins/skills" />
+  <Card title="Skills" href="/docs/plugins/skills" />
 </Cards>

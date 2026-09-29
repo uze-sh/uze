@@ -3,6 +3,7 @@
   "icon": "BookOpen",
   "pages": [
     "cli",
+    "agent-cli",
     "project-files",
     "plugin-format",
     "harnesses",

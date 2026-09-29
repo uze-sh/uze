@@ -1,5 +1,5 @@
 ---
-title: The terminal session
+title: Terminal
 description: The server behind the workspace, resuming after a reboot, prompt history and logs
 ---
 
@@ -7,19 +7,19 @@ The workspace's panes belong to a local server, not to the window you look at.
 That is why closing the workspace never stops an agent.
 
 ```bash
-uze                    # attach the workspace, starting its server when needed
-uze terminal attach    # the same, explicitly
-uze terminal stop      # stop this workspace's server and every process in it
+uze workspace          # attach the workspace, starting its server when needed
+uze workspace stop     # stop this workspace's server and every process in it
 ```
 
-Running `uze` inside one of the workspace's own panes does not nest a second
-workspace: it opens a space for that directory in the one already running.
+Running `uze workspace` inside one of the workspace's own panes does not nest a
+second workspace: it opens a space for that directory in the one already
+running.
 
 ## Resuming after a reboot
 
-The server does not survive a reboot, but your work does. The next `uze` brings
-back the spaces, tabs and agents, each relaunched in its checkout and resuming
-the conversation it was in.
+The server does not survive a reboot, but your work does. The next
+`uze workspace` brings back the spaces, tabs and agents, each relaunched in its
+checkout and resuming the conversation it was in.
 
 That resume is done by the **shim** `uze setup` installs for each agent in
 `~/.uze/shims/`, which your shell's `PATH` reaches first. It records which

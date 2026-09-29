@@ -1,5 +1,5 @@
 ---
-title: Creating a plugin
+title: Authoring
 description: Write a plugin once and it works in every agent
 ---
 
@@ -19,17 +19,17 @@ agents with `uze update <plugin> -m`.
 
 <Files>
   <Folder name="my-plugin" defaultOpen>
-    <File name="plugin.json" />
-    <Folder name="skills" defaultOpen>
-      <Folder name="release-notes" defaultOpen>
-        <File name="SKILL.md" />
-      </Folder>
-    </Folder>
     <Folder name="agents">
       <File name="planner.md" />
     </Folder>
-    <File name="mcp.json" />
+    <Folder name="skills">
+      <Folder name="release-notes">
+        <File name="SKILL.md" />
+      </Folder>
+    </Folder>
     <File name="hooks.json" />
+    <File name="mcp.json" />
+    <File name="plugin.json" />
   </Folder>
 </Files>
 

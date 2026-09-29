@@ -36,7 +36,7 @@ vendor-specific lives there.
 
 **Delivery route.** How a capability reaches a harness. uze takes the first that
 works, in this order: native, generated native, safe adaptation, unsupported.
-See [Concepts](/docs/concepts/delivery#the-most-native-route-wins).
+See [How delivery works](/docs/plugins/delivery#the-most-native-route-wins).
 
 **Envelope.** A harness's own plugin format. uze uses the one a plugin ships, or
 generates one when it is missing.
@@ -46,7 +46,7 @@ directory, a config entry, a bridge. A projection can always be deleted and
 rebuilt.
 
 **Receipt.** uze's record of an artifact it placed. uze only changes or removes
-what a receipt says it owns. See [Concepts](/docs/concepts/delivery#nothing-is-touched-blindly).
+what a receipt says it owns. See [How delivery works](/docs/plugins/delivery#nothing-is-touched-blindly).
 
 **Drift.** An owned artifact that no longer matches its receipt. uze reports it
 and stops, instead of overwriting.
@@ -54,7 +54,7 @@ and stops, instead of overwriting.
 **Shim.** A link in `~/.uze/shims` that starts the real harness binary. It
 brings an agent back to its conversation after a reboot, and can project
 `AGENTS.md` without writing into the project. Experimental. See
-[The terminal session](/docs/advanced/terminal#resuming-after-a-reboot).
+[The terminal session](/docs/workspace/terminal#resuming-after-a-reboot).
 
 ## Projects
 
@@ -78,8 +78,8 @@ that file natively. See [Project context](/docs/plugins/context).
 
 ## Workspace
 
-**Workspace.** The terminal UI that opens when you run `uze` with no arguments.
-See [The agent workspace](/docs/workspace).
+**Workspace.** The terminal UI that opens when you run `uze workspace`.
+See [Workspace](/docs/workspace).
 
 **Terminal runtime.** A local server that owns the terminals, so an agent keeps
 running after you close the UI.

@@ -48,8 +48,8 @@ uze setup
 ```
 
 uze finds the coding agents on your machine and offers to install the missing
-ones through each vendor's official installer. Pick the ones you use. Running
-`uze` for the first time asks the same question.
+ones through each vendor's official installer. Pick the ones you use. Opening
+the workspace for the first time asks the same question.
 
 Some installers put the agent in a directory your current shell does not
 search yet. `uze setup` still verifies it there, tells you where it is, and
@@ -75,7 +75,7 @@ every hour after, and tells you when one is installed; restart to use it.
    uze remove <plugin> -m # once per plugin
    ```
 
-2. Stop the workspace in each project where you opened it: `uze terminal stop`.
+2. Stop the workspace in each project where you opened it: `uze workspace stop`.
 3. In each project, delete `agents.yaml`, `agents.lock` and `.worktrees/` if you
    no longer want them, and the `uze:begin … uze:end` blocks in `AGENTS.md`.
 4. Delete the `# >>> uze shims path >>>` block from your shell's rc file.
