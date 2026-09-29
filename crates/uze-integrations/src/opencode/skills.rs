@@ -88,6 +88,7 @@ pub(super) fn rendered_skill(uze_home: &UzeHome, resource: &Resource) -> String 
         &label,
         &resolve_bytes(&resource.capability.payload, &resource.package_root),
         &markers,
+        &["opencode"],
     )
 }
 

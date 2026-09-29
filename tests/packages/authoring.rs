@@ -556,3 +556,97 @@ fn a_name_outside_the_rule_is_refused_before_the_scaffold() {
     assert!(!tools.join("plugins/my-plugin").exists());
     let _ = fs::remove_dir_all(root);
 }
+
+/// A plugin whose one agent speaks to each harness through its `harness:`
+/// block, written into `root/kit` with the given block.
+fn agent_plugin(root: &std::path::Path, frontmatter: &str) -> std::path::PathBuf {
+    let plugin = root.join("kit");
+    fs::create_dir_all(plugin.join("agents/review")).unwrap();
+    fs::write(
+        plugin.join("plugin.json"),
+        r#"{"name":"kit","description":"harness block fixture"}"#,
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("agents/review/security.md"),
+        format!("---\n{frontmatter}\n---\nReview the diff for security flaws.\n"),
+    )
+    .unwrap();
+    plugin
+}
+
+fn check(root: &std::path::Path, plugin: &std::path::Path) -> (bool, String) {
+    let output = uze(root)
+        .args(["agent", "plugin", "check"])
+        .arg(plugin)
+        .output()
+        .unwrap();
+    (
+        output.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    )
+}
+
+#[test]
+fn a_harness_block_every_harness_accepts_checks_clean() {
+    let root = uze_testkit::temp::scratch("check-harness-clean");
+    let plugin = agent_plugin(
+        &root,
+        "name: security\ndescription: Reviews the diff\nharness:\n  claude-code: { model: haiku, tools: [Read, Grep] }\n  codex: { model: gpt-5-codex, model_reasoning_effort: high }\n  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true } }",
+    );
+    let (clean, text) = check(&root, &plugin);
+    assert!(clean, "{text}");
+    assert!(!text.contains("Delivered short"), "{text}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn each_harness_adds_its_own_layer_to_the_check() {
+    let root = uze_testkit::temp::scratch("check-harness-layers");
+    let plugin = agent_plugin(
+        &root,
+        "name: security\ndescription: Reviews the diff\nmodel: haiku\nharness:\n  opencode: { model: haiku }\n  codex: { nickname: sec }\n  cursor: { model: x }",
+    );
+    let (clean, text) = check(&root, &plugin);
+    assert!(
+        !clean,
+        "a value OpenCode drops the agent over fails the check: {text}"
+    );
+    assert!(
+        text.contains("OpenCode: `harness.opencode.model` must be `provider/model`"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Codex: `harness.codex.nickname` is not a field this harness reads"),
+        "{text}"
+    );
+    assert!(
+        text.contains("`harness.cursor` names no harness this build delivers to"),
+        "{text}"
+    );
+    assert!(
+        text.contains("`model` at the root is spelled differently by each harness"),
+        "{text}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_block_may_not_redefine_what_every_harness_reads() {
+    let root = uze_testkit::temp::scratch("check-harness-identity");
+    let plugin = agent_plugin(
+        &root,
+        "name: security\ndescription: Reviews the diff\nharness:\n  claude-code: { name: other }",
+    );
+    let (clean, text) = check(&root, &plugin);
+    assert!(!clean, "{text}");
+    assert!(
+        text.contains("`harness.claude-code.name` redefines"),
+        "{text}"
+    );
+    let _ = fs::remove_dir_all(root);
+}

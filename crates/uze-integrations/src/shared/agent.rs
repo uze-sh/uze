@@ -37,7 +37,7 @@ pub(crate) fn fields_not_carried(document: &AgentDocument, carried: &[&str]) -> 
         .frontmatter
         .keys()
         .map(|key| key.as_str())
-        .filter(|key| !carried.contains(key))
+        .filter(|key| *key != uze_core::capability::harness::BLOCK && !carried.contains(key))
         .map(str::to_owned)
         .collect()
 }
@@ -91,15 +91,23 @@ pub(crate) struct MarkdownAgent<'a> {
     pub(crate) name_in_frontmatter: bool,
     pub(crate) set: &'a [(&'a str, &'a str)],
     pub(crate) keep: fn(&str) -> bool,
+    /// What the harness reads under its `harness:` block.
+    pub(crate) dialect: &'a crate::shared::dialect::AgentDialect,
 }
 
 /// The Markdown definition a harness receives for `resource`, its body with
 /// the package root resolved.
-pub(crate) fn markdown_agent(label: &str, resource: &Resource, shape: &MarkdownAgent) -> String {
+pub(crate) fn markdown_agent(
+    label: &str,
+    resource: &Resource,
+    shape: &MarkdownAgent,
+    keys: &[&str],
+) -> String {
     let document = AgentDocument::parse(&resource.capability.payload).unwrap_or_default();
     let body = resolve_text(&document.body, &resource.package_root);
     let name = shape.name_in_frontmatter.then_some(label);
-    document.render(name, shape.set, shape.keep, &body)
+    let (block, _) = crate::shared::dialect::agent_block(shape.dialect, keys, &document);
+    document.render(name, shape.set, shape.keep, &block, &body)
 }
 
 /// The definition a harness reads at `path`, or why it reads none.

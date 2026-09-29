@@ -24,7 +24,6 @@ use uze_core::{Result, UzeError, capability::Resource, home::UzeHome, store::Sto
 
 use crate::shared::marketplace::remove_generated_dir;
 use crate::shared::mcp::delivered_mcp_servers;
-use crate::shared::package_root::resolve_bytes;
 use crate::shared::skill::write_file;
 use crate::shared::tree::mirror_tree;
 
@@ -204,9 +203,11 @@ pub(super) fn materialize_generated_plugin(
                 if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {
                     continue;
                 }
-                if let std::borrow::Cow::Owned(resolved) =
-                    resolve_bytes(&resource.capability.payload, &resource.package_root)
-                    && let Ok(relative) = resource.capability.path.strip_prefix(&package.root)
+                if let std::borrow::Cow::Owned(resolved) = crate::shared::dialect::delivered_skill(
+                    &resource.capability.payload,
+                    &resource.package_root,
+                    super::skills::ANTIGRAVITY_KEYS,
+                ) && let Ok(relative) = resource.capability.path.strip_prefix(&package.root)
                 {
                     write_file(&staging.join(relative), &resolved)?;
                 }

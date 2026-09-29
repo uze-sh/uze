@@ -47,6 +47,7 @@ use crate::hooks::{HookEntry, HookTarget};
 use crate::shared::agent::{
     PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried, projection_route,
 };
+use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::package_root::resolve_text;
@@ -54,6 +55,7 @@ use crate::shared::process::{VersionToken, detect_version, real_executable};
 use crate::shared::provision::{OfficialRoute, official_installer, provision_cli};
 use mcp::attach_mcp_entry;
 use plugin::CodexMarketplace;
+use uze_core::capability::harness::Findings;
 
 /// Codex peer integration. Its transparent-attachment strategy is a
 /// UZE-managed reference at `<agents_home>/skills/<name>` (see ADR-006):
@@ -215,6 +217,14 @@ impl IntegrationPort for CodexIntegration {
 
     fn detect(&self) -> HarnessDetection {
         codex_version(&self.provisioning_executable())
+    }
+
+    fn check_capability(&self, resource: &Resource) -> Findings {
+        if resource.capability.kind == CapabilityKind::Agent {
+            codex_agent_findings(&self.harness_keys(), resource)
+        } else {
+            Findings::default()
+        }
     }
 
     fn skill_discovery_root(&self) -> Option<PathBuf> {
@@ -482,7 +492,7 @@ impl CodexIntegration {
             .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
             .unwrap_or_default();
         let label = agent_label(&self.uze_home, resource);
-        let content = codex_agent_toml(resource, &label);
+        let content = codex_agent_toml(resource, &label, &self.harness_keys());
         agent_file_plan(
             &self.agents_dir,
             &label,
@@ -530,19 +540,67 @@ impl PreferencePort for CodexIntegration {
 
 /// The agent's Codex role file: its label as `name`, the portable
 /// description, and the body — package root resolved — as its instructions.
-fn codex_agent_toml(resource: &Resource, label: &str) -> String {
+/// What Codex reads under `harness.codex` on an agent: the role file's own
+/// keys (custom agents reference). Codex refuses a role file carrying a key
+/// it does not know and drops the agent over it, so nothing outside this
+/// list is written.
+const CODEX_AGENT_DIALECT: AgentDialect = AgentDialect {
+    known: &[
+        ("model", Shape::Text),
+        (
+            "model_reasoning_effort",
+            Shape::OneOf(&["minimal", "low", "medium", "high"]),
+        ),
+        (
+            "sandbox_mode",
+            Shape::OneOf(&["read-only", "workspace-write", "danger-full-access"]),
+        ),
+    ],
+    carries_unknown: false,
+};
+
+fn codex_agent_toml(resource: &Resource, label: &str, keys: &[&str]) -> String {
     let document = AgentDocument::parse(&resource.capability.payload).unwrap_or_default();
     let description = document
         .description
         .as_deref()
         .unwrap_or("Portable UZE custom agent.");
     let instructions = resolve_text(&document.body, &resource.package_root);
-    format!(
+    let mut toml = format!(
         "name = {}\ndescription = {}\ndeveloper_instructions = {}\n",
         toml_string(label),
         toml_string(description),
         toml_string(instructions.trim()),
-    )
+    );
+    let (block, _) = agent_block(&CODEX_AGENT_DIALECT, keys, &document);
+    for (key, value) in &block {
+        if let Some(text) = value.as_str() {
+            toml.push_str(&format!("{} = {}\n", key.as_str(), toml_string(text)));
+        }
+    }
+    toml
+}
+
+/// The fields an agent loses on Codex, and what its `harness.codex` block
+/// would do there.
+fn codex_agent_findings(keys: &[&str], resource: &Resource) -> Findings {
+    let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
+        return Findings::default();
+    };
+    let (_, mut findings) = agent_block(&CODEX_AGENT_DIALECT, keys, &document);
+    // The common layer already speaks for `model` and `tools`.
+    for field in fields_not_carried(&document, PORTABLE_AGENT_FIELDS)
+        .into_iter()
+        .filter(|field| {
+            !uze_core::capability::harness::PER_HARNESS_FIELDS.contains(&field.as_str())
+        })
+    {
+        findings.warnings.push(format!(
+            "`{field}` at the root is not carried to Codex, which refuses a role file with a \
+             key it does not know; write what Codex should get under `harness.codex`"
+        ));
+    }
+    findings
 }
 
 /// A TOML basic string. JSON's escaping is TOML's for every character but

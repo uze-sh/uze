@@ -16,7 +16,13 @@ The `flow` fixture carries one agent of each shape (`shared.markers.AGENTS`):
     nested         agents/checks/security.md          → flow:checks:security
     renamed        agents/style.md, `name: linter`    → flow:linter
     vendor-fields  agents/scout.md, `model: haiku`,
-                   `tools: Read, Grep`                → flow:scout
+                   `tools: Read, Grep`, and a
+                   `harness:` block with a model
+                   per harness                        → flow:scout
+
+The vendor-fields agent's dispatch must also run on the model its
+`harness.<id>` block gives this harness (`shared.markers.BLOCK_MODELS`),
+read off the request the harness sent for it.
 
 Both halves are read off the model's own requests, never off a screen and
 never off UZE's report. *Exposed* means the label is in a request the
@@ -32,6 +38,7 @@ a harness that never started reads as that, not as a missing agent.
 """
 
 import os
+import re
 import subprocess
 
 from shared.common import (
@@ -41,7 +48,7 @@ from shared.common import (
     provider_struct,
     start_provider,
 )
-from shared.markers import AGENT_PROBE, AGENTS
+from shared.markers import AGENT_PROBE, AGENTS, BLOCK_MODELS
 
 #: Where every headless turn of this contract runs.
 PROJECT = "/work/agents-project"
@@ -69,6 +76,40 @@ def assert_contract(cfg, prov_ip, bindings):
         exposed = _assert_exposure(cfg, bindings)
         _assert_dispatch(cfg, bindings, exposed)
     start_provider(cfg, "static")
+
+
+def _assert_block_model(cfg, bindings, label, body):
+    """The agent ran on the model its `harness.<id>` block gave this harness.
+
+    Read off the request that carried its body: the model is what the
+    harness asked the provider for, never what UZE says it delivered.
+    """
+    if _declined(bindings, "vendor-fields-block-model"):
+        return
+    expected = BLOCK_MODELS[bindings.harness]
+    models = sorted(
+        {
+            request_model(request)
+            for request in provider_struct(cfg)
+            if request.get("summary", {}).get("agent_markers", {}).get(body)
+        }
+        - {None}
+    )
+    check(
+        "agent-vendor-fields-block-model",
+        any(expected in model for model in models),
+        f"`{label}` ran on {models} (its `harness` block asks for `{expected}`)",
+    )
+
+
+def request_model(request):
+    """The model a recorded request asked for: named in its body, or in its
+    path where the API puts it there (`/models/<id>:generateContent`)."""
+    model = request.get("summary", {}).get("model")
+    if model:
+        return model
+    found = re.search(r"/models/([^:/?]+)", request.get("path", ""))
+    return found.group(1) if found else None
 
 
 def _turn(cfg, prov_ip, bindings, tag, prompt):
@@ -152,3 +193,5 @@ def _assert_dispatch(cfg, bindings, exposed):
             else f"dispatched `{label}`, but its body never reached the model: "
             f"{output[-200:]}".replace("\n", " "),
         )
+        if shape == "vendor-fields" and arrived:
+            _assert_block_model(cfg, bindings, label, body)

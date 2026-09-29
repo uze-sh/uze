@@ -83,13 +83,34 @@ pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Resul
         match resource.capability.kind {
             CapabilityKind::AgentSkill => rewrite_skill(package, resource, dir)?,
             CapabilityKind::Agent => rewrite_definition(package, resource, dir, |text| {
-                resolve_text(text, &package.root).into_owned()
+                plugin_agent(&resolve_text(text, &package.root))
             })?,
             _ => {}
         }
     }
     Ok(())
 }
+
+/// A plugin agent as Claude reads it: every authored field, the
+/// `harness:` block taken out and Claude's own fields from it merged in.
+fn plugin_agent(text: &str) -> String {
+    let Some(document) = uze_core::capability::agent::AgentDocument::parse(text.as_bytes()) else {
+        return text.to_owned();
+    };
+    if !document
+        .frontmatter
+        .contains_key(uze_core::capability::harness::BLOCK)
+    {
+        return text.to_owned();
+    }
+    let (block, _) =
+        crate::shared::dialect::agent_block(&super::CLAUDE_AGENT_DIALECT, &CLAUDE_KEYS, &document);
+    let name = document.name.clone();
+    document.render(name.as_deref(), &[], |_| true, &block, &document.body)
+}
+
+/// What a `harness:` block names Claude Code by.
+pub(super) const CLAUDE_KEYS: [&str; 2] = ["claude-code", "claude"];
 
 /// Name/version/description come from the package's own canonical
 /// `plugin.json`, never invented; `mcpServers` is declared only when the
@@ -136,7 +157,11 @@ fn rewrite_skill(package: &StoredPackage, resource: &Resource, dir: &Path) -> Re
     rewrite_definition(package, resource, dir, |text| {
         let text = resolve_text(text, &package.root);
         if policy.is_default() {
-            text.into_owned()
+            String::from_utf8_lossy(&uze_core::capability::harness::skill_for(
+                text.as_bytes(),
+                &CLAUDE_KEYS,
+            ))
+            .into_owned()
         } else {
             super::skills::claude_wrapper_skill_document(text.as_bytes(), &policy, &skill_name)
         }
@@ -413,6 +438,37 @@ mod generated_native_tests {
         };
         assert!(!generatable(&pkg));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_plugin_carries_claudes_block_and_never_the_block_itself() {
+        let (_root, pkg) = make_plain_package("claude-harness-block", false);
+        fs::write(
+            pkg.root.join("skills/commit/SKILL.md"),
+            "---\nname: commit\ndescription: Commits\nharness:\n  claude-code: { allowed-tools: [Bash] }\n  codex: { x: 1 }\n---\nCommit.\n",
+        )
+        .unwrap();
+        fs::create_dir_all(pkg.root.join("agents")).unwrap();
+        fs::write(
+            pkg.root.join("agents/reviewer.md"),
+            "---\nname: reviewer\ndescription: Reviews\nharness:\n  claude-code: { model: haiku }\n  opencode: { model: a/b }\n---\nReview.\n",
+        )
+        .unwrap();
+        let uze_home = UzeHome::at(_root.join("uze"));
+        let dir = materialize_generated_package(&uze_home, &pkg).unwrap();
+        let skill = fs::read_to_string(dir.join("skills/commit/SKILL.md")).unwrap();
+        assert!(skill.contains("allowed-tools"), "{skill}");
+        assert!(
+            !skill.contains("harness") && !skill.contains("x: 1"),
+            "{skill}"
+        );
+        let agent = fs::read_to_string(dir.join("agents/reviewer.md")).unwrap();
+        assert!(agent.contains("model: haiku"), "{agent}");
+        assert!(
+            !agent.contains("harness") && !agent.contains("a/b"),
+            "{agent}"
+        );
+        let _ = fs::remove_dir_all(_root);
     }
 
     #[test]

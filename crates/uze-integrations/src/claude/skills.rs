@@ -18,7 +18,6 @@ use uze_core::{
 };
 
 use super::ClaudeIntegration;
-use crate::shared::package_root::resolve_bytes;
 use crate::shared::skill::{
     attach_skill_tree, entry_name, frontmatter_value, invalid_policy_plan, render_skill_wrapper,
     setup_pending_plan, skill_tree_plan,
@@ -58,7 +57,11 @@ impl ClaudeIntegration {
             .path
             .parent()
             .expect("SKILL.md has a parent");
-        let delivered = resolve_bytes(&resource.capability.payload, &resource.package_root);
+        let delivered = crate::shared::dialect::delivered_skill(
+            &resource.capability.payload,
+            &resource.package_root,
+            &super::generate::CLAUDE_KEYS,
+        );
         attach_skill_tree(
             &self.uze_home,
             path,
@@ -170,7 +173,12 @@ pub(super) fn claude_wrapper_skill_document(
     if !policy.user {
         markers.push("user-invocable: false");
     }
-    render_skill_wrapper(&name, canonical_bytes, &markers)
+    render_skill_wrapper(
+        &name,
+        canonical_bytes,
+        &markers,
+        &super::generate::CLAUDE_KEYS,
+    )
 }
 
 #[cfg(test)]

@@ -154,3 +154,74 @@ fn opencode_receives_only_the_fields_it_reads_and_says_what_it_left() {
     assert!(!definition.contains("name:"), "{definition}");
     assert!(definition.contains(&format!("Audit {}/x.", package_root.display())));
 }
+
+/// An agent that tells each harness its own model, and names a root
+/// `model` only Claude spells this way.
+const PER_HARNESS: &[u8] = b"---\nname: reviewer\ndescription: Reviews\nmodel: haiku\nharness:\n  claude-code: { model: sonnet, permissionMode: plan }\n  codex: { model: gpt-5-codex, model_reasoning_effort: high, nickname: rev }\n  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true }, temperature: 0.1 }\n  agy: { model: gemini-3-pro }\n---\nReview.\n";
+
+fn agent_with(root: &std::path::Path, payload: &[u8]) -> Resource {
+    let mut resource = agent(root);
+    resource.capability.payload = payload.to_vec();
+    resource
+}
+
+fn generated_content(plan: uze_core::exposure::ExposurePlan) -> String {
+    match plan.mechanism {
+        uze_core::exposure::ExposureMechanism::Managed(
+            uze_core::integration::ManagedArtifact::GeneratedFile { content, .. },
+        ) => content,
+        other => panic!("an agent is a generated file, got {other:?}"),
+    }
+}
+
+#[test]
+fn each_harness_receives_its_own_block_and_never_the_block_itself() {
+    let root = uze_testkit::temp::scratch("agent-harness-block");
+    let home = UzeHome::at(root.join("uze"));
+    let resource = agent_with(&root, PER_HARNESS);
+
+    let claude = generated_content(
+        ClaudeIntegration::new(root.join("claude"), home.clone()).exposure_plan(&resource),
+    );
+    assert!(claude.contains("model: sonnet"), "{claude}");
+    assert!(claude.contains("permissionMode: plan"), "{claude}");
+
+    let codex = generated_content(
+        CodexIntegration::new(root.join("agents"), home.clone()).exposure_plan(&resource),
+    );
+    assert!(codex.contains("model = \"gpt-5-codex\""), "{codex}");
+    assert!(
+        codex.contains("model_reasoning_effort = \"high\""),
+        "{codex}"
+    );
+    assert!(
+        !codex.contains("nickname") && !codex.contains("haiku"),
+        "Codex refuses a key it does not know: {codex}"
+    );
+
+    let opencode = generated_content(
+        OpenCodeIntegration::new(
+            root.join("agents"),
+            root.join("config/opencode.json"),
+            home.clone(),
+        )
+        .exposure_plan(&resource),
+    );
+    assert!(
+        opencode.contains("model: anthropic/claude-haiku-4-5"),
+        "{opencode}"
+    );
+    assert!(opencode.contains("mode: subagent"), "{opencode}");
+    assert!(opencode.contains("temperature: 0.1"), "{opencode}");
+    assert!(!opencode.contains("model: haiku"), "{opencode}");
+
+    let antigravity = generated_content(
+        AntigravityIntegration::new(root.join("agents"), home).exposure_plan(&resource),
+    );
+    assert!(antigravity.contains("model: gemini-3-pro"), "{antigravity}");
+
+    for delivered in [&claude, &opencode, &antigravity, &codex] {
+        assert!(!delivered.contains("harness"), "{delivered}");
+    }
+    let _ = std::fs::remove_dir_all(root);
+}

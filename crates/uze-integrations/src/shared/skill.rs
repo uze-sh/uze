@@ -91,9 +91,15 @@ pub(crate) fn skill_wrapper_root(uze_home: &UzeHome, vendor: &str) -> PathBuf {
 }
 
 /// A generated SKILL.md: `name`, the canonical description re-quoted (never
-/// raw-interpolated), the vendor's own `markers` as frontmatter lines, then
-/// the canonical body verbatim.
-pub fn render_skill_wrapper(name: &str, canonical_bytes: &[u8], markers: &[&str]) -> String {
+/// raw-interpolated), the vendor's own `markers` as frontmatter lines, the
+/// fields `keys` are given under the canonical `harness:` block, then the
+/// canonical body verbatim.
+pub fn render_skill_wrapper(
+    name: &str,
+    canonical_bytes: &[u8],
+    markers: &[&str],
+    keys: &[&str],
+) -> String {
     let (description, body) = parse_skill_body(canonical_bytes);
     let mut document = format!("---\nname: {name}\n");
     if let Some(description) = description {
@@ -102,6 +108,10 @@ pub fn render_skill_wrapper(name: &str, canonical_bytes: &[u8], markers: &[&str]
     }
     for marker in markers {
         document.push_str(marker);
+        document.push('\n');
+    }
+    for line in crate::shared::dialect::skill_block_lines(canonical_bytes, keys) {
+        document.push_str(&line);
         document.push('\n');
     }
     document.push_str("---\n");
@@ -354,6 +364,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_wrapper_carries_the_harness_block_fields_for_its_harness_only() {
+        let bytes = b"---\nname: deploy\ndescription: Deploys\nharness:\n  opencode: { temperature: 0.2 }\n  codex: { y: 2 }\n---\nRun.\n";
+        let rendered = render_skill_wrapper("flow:deploy", bytes, &["slash: false"], &["opencode"]);
+        assert!(
+            rendered.contains("slash: false\ntemperature: 0.2\n"),
+            "{rendered}"
+        );
+        assert!(
+            !rendered.contains("harness") && !rendered.contains("y: 2"),
+            "{rendered}"
+        );
+        assert!(rendered.ends_with("---\nRun.\n"));
+    }
+
+    #[test]
     fn reads_description_and_preserves_body_verbatim() {
         let bytes = b"---\ndescription: Review code\nothers: ignored\n---\n\nBody line one.\nBody line two.\n";
         let (description, body) = parse_skill_body(bytes);
@@ -400,7 +425,8 @@ mod tests {
                 "{declared}"
             );
         }
-        let rendered = render_skill_wrapper("n", b"---\ndescription: \"quoted\"\n---\nbody\n", &[]);
+        let rendered =
+            render_skill_wrapper("n", b"---\ndescription: \"quoted\"\n---\nbody\n", &[], &[]);
         assert!(rendered.contains("description: \"quoted\"\n"), "{rendered}");
     }
 

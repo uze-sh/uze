@@ -13,6 +13,7 @@
 //! only thing `uze-application` or any downstream crate ever names.
 
 pub(crate) mod agent;
+pub(crate) mod dialect;
 pub(crate) mod json_config;
 pub(crate) mod marketplace;
 pub(crate) mod mcp;

@@ -52,12 +52,14 @@ use crate::hooks::{HookEntry, HookTarget};
 use crate::shared::agent::{
     MarkdownAgent, agent_file_plan, agent_label, delivered_agent, markdown_agent, projection_route,
 };
+use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
 use crate::shared::provision::{OfficialRoute, official_installer, provision_cli};
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
+use uze_core::capability::harness::Findings;
 /// Claude Code peer integration. Its transparent-attachment strategy is a
 /// UZE-managed "skills-dir plugin" reference at `<claude_home>/skills/<name>`
 /// (see ADR-006): Claude auto-loads any directory there containing
@@ -347,6 +349,16 @@ impl IntegrationPort for ClaudeIntegration {
     /// honours (plugin components reference: "Ignored fields:
     /// `permissionMode`, `hooks`, `mcpServers`, and `initialPrompt`"), so an
     /// agent that declares one reaches it without that part.
+    fn check_capability(&self, resource: &Resource) -> Findings {
+        if resource.capability.kind != CapabilityKind::Agent {
+            return Findings::default();
+        }
+        let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
+            return Findings::default();
+        };
+        agent_block(&CLAUDE_AGENT_DIALECT, &self.harness_keys(), &document).1
+    }
+
     fn packaged_shortfall(
         &self,
         _package: &StoredPackage,
@@ -584,6 +596,24 @@ const CLAUDE_USER_AGENT: MarkdownAgent = MarkdownAgent {
     name_in_frontmatter: true,
     set: &[],
     keep: |_| true,
+    dialect: &CLAUDE_AGENT_DIALECT,
+};
+
+/// What Claude Code reads under `harness.claude-code` on an agent (subagents
+/// reference). Claude tolerates a field it does not know, so one outside
+/// this list is carried, unverified.
+pub(crate) const CLAUDE_AGENT_DIALECT: AgentDialect = AgentDialect {
+    known: &[
+        ("model", Shape::Text),
+        ("tools", Shape::TextOrList),
+        ("disallowedTools", Shape::TextOrList),
+        ("color", Shape::Text),
+        (
+            "permissionMode",
+            Shape::OneOf(&["default", "acceptEdits", "plan", "bypassPermissions"]),
+        ),
+    ],
+    carries_unknown: true,
 };
 
 impl ClaudeIntegration {
@@ -593,7 +623,7 @@ impl ClaudeIntegration {
     /// Claude's own format being the canonical one.
     fn agent_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
         let label = agent_label(&self.uze_home, resource);
-        let content = markdown_agent(&label, resource, &CLAUDE_USER_AGENT);
+        let content = markdown_agent(&label, resource, &CLAUDE_USER_AGENT, &self.harness_keys());
         agent_file_plan(
             &self.agents_dir,
             &label,

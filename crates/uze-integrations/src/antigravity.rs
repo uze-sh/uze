@@ -89,6 +89,7 @@ use crate::shared::agent::{
     MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried,
     markdown_agent, projection_route,
 };
+use crate::shared::dialect::{AgentDialect, agent_block};
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
 use crate::shared::process::real_executable;
@@ -99,6 +100,7 @@ use plugin::{
     GENERATED_PLUGIN_KIND, PLUGIN_KIND, attach_generated_plugin, inspect_installed_plugin,
     installed_plugins, plugin_manifest_name, run_agy,
 };
+use uze_core::capability::harness::Findings;
 
 /// Antigravity CLI's stable integration id. Never changes in receipts.
 pub const ID: &str = "antigravity";
@@ -365,6 +367,30 @@ impl IntegrationPort for AntigravityIntegration {
                 strategy: "managed-user-scope-skills-dir".to_owned(),
             },
         )
+    }
+
+    fn check_capability(&self, resource: &Resource) -> Findings {
+        if resource.capability.kind != CapabilityKind::Agent {
+            return Findings::default();
+        }
+        let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
+            return Findings::default();
+        };
+        let (_, mut findings) =
+            agent_block(&ANTIGRAVITY_AGENT_DIALECT, &self.harness_keys(), &document);
+        // The common layer already speaks for `model` and `tools`.
+        for field in fields_not_carried(&document, PORTABLE_AGENT_FIELDS)
+            .into_iter()
+            .filter(|field| {
+                !uze_core::capability::harness::PER_HARNESS_FIELDS.contains(&field.as_str())
+            })
+        {
+            findings.warnings.push(format!(
+                "`{field}` at the root is not carried to Antigravity; write what it should get \
+                 under `harness.antigravity`"
+            ));
+        }
+        findings
     }
 
     fn skill_discovery_root(&self) -> Option<PathBuf> {
@@ -638,6 +664,15 @@ const ANTIGRAVITY_AGENT: MarkdownAgent = MarkdownAgent {
     name_in_frontmatter: true,
     set: &[],
     keep: |_| false,
+    dialect: &ANTIGRAVITY_AGENT_DIALECT,
+};
+
+/// No agent field beyond the portable ones has been measured on
+/// Antigravity yet, so everything under `harness.antigravity` is carried as
+/// written and reported unverified.
+const ANTIGRAVITY_AGENT_DIALECT: AgentDialect = AgentDialect {
+    known: &[],
+    carries_unknown: true,
 };
 
 impl AntigravityIntegration {
@@ -646,7 +681,7 @@ impl AntigravityIntegration {
             .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
             .unwrap_or_default();
         let label = agent_label(&self.uze_home, resource);
-        let content = markdown_agent(&label, resource, &ANTIGRAVITY_AGENT);
+        let content = markdown_agent(&label, resource, &ANTIGRAVITY_AGENT, &self.harness_keys());
         agent_file_plan(
             &self.agents_dir,
             &label,

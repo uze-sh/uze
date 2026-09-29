@@ -48,6 +48,9 @@ use crate::shared::skill::{
     render_skill_wrapper, setup_pending_plan, skill_label, skill_tree_plan, skill_wrapper_root,
 };
 
+/// What a `harness:` block names Codex by.
+pub(super) const CODEX_KEYS: &[&str] = &["codex"];
+
 /// What UZE writes for one Skill beside its copied supporting files:
 /// `SKILL.md` carrying the stable namespaced label as its `name` (Codex
 /// derives the model-visible name from frontmatter, verified against
@@ -63,6 +66,7 @@ pub(super) fn rendered_skill_files(
         &label,
         &resolve_bytes(&resource.capability.payload, &resource.package_root),
         &[],
+        CODEX_KEYS,
     );
     let mut files = vec![("SKILL.md", skill.into_bytes())];
     if !resource.skill_invocation().model {

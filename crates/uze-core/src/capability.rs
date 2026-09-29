@@ -8,6 +8,7 @@
 //! surface (ADR-033). Neither is a harness's own mechanism: they are the
 //! vendor-neutral statement of intent that `delivery` projects outward.
 pub mod agent;
+pub mod harness;
 pub mod hook;
 pub mod skill;
 

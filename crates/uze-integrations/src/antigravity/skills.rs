@@ -52,6 +52,9 @@ use crate::shared::skill::{
     skill_tree_plan, skill_wrapper_root,
 };
 
+/// What a `harness:` block names Antigravity by.
+pub(super) const ANTIGRAVITY_KEYS: &[&str] = &["antigravity", "agy", "antigravity-cli"];
+
 /// The SKILL.md UZE writes for one Skill: the stable namespaced label as its
 /// `name` (so the model-visible and slash-invocable name is `flow:review`,
 /// never a bare alias: the vendor derives the identity from front matter,
@@ -72,6 +75,7 @@ pub(super) fn rendered_skill(uze_home: &UzeHome, resource: &Resource) -> String 
         &label,
         &resolve_bytes(&resource.capability.payload, &resource.package_root),
         &markers,
+        ANTIGRAVITY_KEYS,
     )
 }
 

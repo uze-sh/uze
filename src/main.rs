@@ -3596,6 +3596,15 @@ fn render_check(report: &uze_application::ValidationReport, as_marketplace: bool
             text.push_str(&format!("  {}\n", progress::warning_text(finding)));
         }
     }
+    if !report.warnings.is_empty() {
+        text.push('\n');
+        text.push_str(&progress::report_section(
+            "Delivered short of what is written",
+        ));
+        for warning in &report.warnings {
+            text.push_str(&format!("  {warning}\n"));
+        }
+    }
     text
 }
 

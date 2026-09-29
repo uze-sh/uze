@@ -53,11 +53,13 @@ use crate::shared::agent::{
     MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, delivered_agent,
     fields_not_carried, markdown_agent, projection_route,
 };
+use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::json_config;
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
 use mcp::attach_mcp_config;
 use provision::{provision_opencode, resolve_opencode_binary};
+use uze_core::capability::harness::Findings;
 
 /// OpenCode does not consume the external plugin envelope. It natively
 /// discovers user Agent Skills in its own `~/.config/opencode/skills` and
@@ -245,6 +247,14 @@ impl IntegrationPort for OpenCodeIntegration {
         default_exposure_name_candidates(resource)
     }
 
+    fn check_capability(&self, resource: &Resource) -> Findings {
+        if resource.capability.kind == CapabilityKind::Agent {
+            opencode_agent_findings(&self.harness_keys(), resource)
+        } else {
+            Findings::default()
+        }
+    }
+
     fn skill_discovery_root(&self) -> Option<PathBuf> {
         Some(self.skills_dir.clone())
     }
@@ -424,7 +434,47 @@ const OPENCODE_AGENT: MarkdownAgent = MarkdownAgent {
     name_in_frontmatter: false,
     set: &[("mode", "subagent")],
     keep: |_| false,
+    dialect: &OPENCODE_AGENT_DIALECT,
 };
+
+/// What OpenCode reads under `harness.opencode` on an agent (agents
+/// reference). A `model` it cannot resolve or a `tools` that is not a map
+/// makes it drop the agent silently (measured on 2.0.15 and 2.0.18), so
+/// both are checked; a field outside this list is carried, unverified.
+const OPENCODE_AGENT_DIALECT: AgentDialect = AgentDialect {
+    known: &[
+        ("model", Shape::Qualified),
+        ("tools", Shape::Map),
+        ("permission", Shape::Map),
+        ("temperature", Shape::Number),
+        ("top_p", Shape::Number),
+        ("color", Shape::Text),
+        ("mode", Shape::OneOf(&["subagent", "all"])),
+    ],
+    carries_unknown: true,
+};
+
+/// The fields an agent loses on OpenCode, and what its `harness.opencode`
+/// block would do there.
+fn opencode_agent_findings(keys: &[&str], resource: &Resource) -> Findings {
+    let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
+        return Findings::default();
+    };
+    let (_, mut findings) = agent_block(&OPENCODE_AGENT_DIALECT, keys, &document);
+    // The common layer already speaks for `model` and `tools`.
+    for field in fields_not_carried(&document, PORTABLE_AGENT_FIELDS)
+        .into_iter()
+        .filter(|field| {
+            !uze_core::capability::harness::PER_HARNESS_FIELDS.contains(&field.as_str())
+        })
+    {
+        findings.warnings.push(format!(
+            "`{field}` at the root is not carried to OpenCode; write what OpenCode should get \
+             under `harness.opencode`"
+        ));
+    }
+    findings
+}
 
 impl OpenCodeIntegration {
     /// OpenCode names an agent after its file and silently drops one whose
@@ -437,7 +487,7 @@ impl OpenCodeIntegration {
             .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
             .unwrap_or_default();
         let label = agent_label(&self.uze_home, resource);
-        let content = markdown_agent(&label, resource, &OPENCODE_AGENT);
+        let content = markdown_agent(&label, resource, &OPENCODE_AGENT, &self.harness_keys());
         agent_file_plan(
             &self.agents_dir,
             &label,

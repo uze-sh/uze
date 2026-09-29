@@ -69,11 +69,15 @@ impl AgentDocument {
     /// (`description` is always carried), with `body` as its prompt. What a
     /// projection into a harness's own Markdown agent directory writes;
     /// which fields it keeps is the harness's decision.
+    ///
+    /// `block` is the harness's own `harness:` fields, merged over the
+    /// authored ones; the `harness:` block itself is never written.
     pub fn render(
         &self,
         name: Option<&str>,
         set: &[(&str, &str)],
         keep: impl Fn(&str) -> bool,
+        block: &serde_yaml::Mapping,
         body: &str,
     ) -> String {
         let mut frontmatter = serde_yaml::Mapping::new();
@@ -99,11 +103,15 @@ impl AgentDocument {
             let key = key.as_str();
             if key != "name"
                 && key != "description"
+                && key != crate::capability::harness::BLOCK
                 && !set.iter().any(|(fixed, _)| *fixed == key)
                 && keep(key)
             {
                 frontmatter.insert(key.to_owned(), value.clone());
             }
+        }
+        for (key, value) in block {
+            frontmatter.insert(key.clone(), value.clone());
         }
         let head = serde_yaml::to_string(&serde_yaml::Value::Mapping(frontmatter))
             .expect("a mapping of parsed YAML values serializes");
@@ -184,6 +192,7 @@ mod tests {
             Some("kit:reviewer"),
             &[],
             |key| key == "model",
+            &serde_yaml::Mapping::new(),
             "\nPrompt\n",
         );
         let reparsed = AgentDocument::parse(rendered.as_bytes()).unwrap();

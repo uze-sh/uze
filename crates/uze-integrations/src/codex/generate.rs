@@ -115,7 +115,11 @@ fn materialize_generated_skills(
         let target_dir = envelope_dir.join("skills").join(&skill_name);
         if policy.is_default() {
             mirror_tree(canonical_dir, &target_dir, package_root, &[])?;
-            let delivered = resolve_bytes(&resource.capability.payload, &resource.package_root);
+            let delivered = crate::shared::dialect::delivered_skill(
+                &resource.capability.payload,
+                &resource.package_root,
+                super::skills::CODEX_KEYS,
+            );
             if let Cow::Owned(resolved) = delivered {
                 crate::shared::skill::write_file(&target_dir.join("SKILL.md"), &resolved)?;
             }
@@ -153,7 +157,8 @@ fn materialize_user_only_skill_dir(
         .unwrap_or_else(|| skill_name.to_owned());
     crate::shared::skill::write_file(
         &target_dir.join("SKILL.md"),
-        crate::shared::skill::render_skill_wrapper(&name, &bytes, &[]).as_bytes(),
+        crate::shared::skill::render_skill_wrapper(&name, &bytes, &[], super::skills::CODEX_KEYS)
+            .as_bytes(),
     )?;
     if !policy.model {
         crate::shared::skill::write_explicit_only_sidecar(target_dir)?;

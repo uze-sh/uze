@@ -563,6 +563,27 @@ pub trait IntegrationPort: Send + Sync {
         Ok(None)
     }
 
+    /// This harness's own layer of `plugin check`, above the rules every
+    /// harness shares: what it would refuse, drop or not recognise in
+    /// `resource` as authored, including its `harness.<id>` block. Offline
+    /// and read-only, answered from what the integration knows of the
+    /// harness's format, never from its binary; the same knowledge its
+    /// delivery applies, so the check says what the install would do.
+    fn check_capability(
+        &self,
+        _resource: &crate::capability::Resource,
+    ) -> crate::capability::harness::Findings {
+        crate::capability::harness::Findings::default()
+    }
+
+    /// The keys a `harness:` block names this integration by: its id and
+    /// every alias.
+    fn harness_keys(&self) -> Vec<&'static str> {
+        std::iter::once(self.id())
+            .chain(self.aliases().iter().copied())
+            .collect()
+    }
+
     /// Additional names `uze setup <harness>` accepts for this integration.
     /// Kept beside the integration so the Application never holds a manual
     /// catalogue of vendors.

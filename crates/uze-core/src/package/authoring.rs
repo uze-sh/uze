@@ -483,6 +483,9 @@ pub struct ValidationReport {
     pub delivers: Vec<String>,
     /// Where and why, one per finding. Empty is clean.
     pub findings: Vec<String>,
+    /// What still installs but reaches a harness short of what the author
+    /// wrote: located like a finding, never a reason to refuse.
+    pub warnings: Vec<String>,
 }
 
 impl ValidationReport {
@@ -503,6 +506,7 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
         return Ok(ValidationReport {
             delivers: Vec::new(),
             findings,
+            warnings: Vec::new(),
         });
     }
     let manifest = match store::read_plugin_manifest(root) {
@@ -512,6 +516,7 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
             return Ok(ValidationReport {
                 delivers: Vec::new(),
                 findings,
+                warnings: Vec::new(),
             });
         }
     };
@@ -522,10 +527,12 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
             return Ok(ValidationReport {
                 delivers: Vec::new(),
                 findings,
+                warnings: Vec::new(),
             });
         }
     };
     let mut delivers = Vec::new();
+    let mut warnings = Vec::new();
     match crate::engine::package_resources_at(&id, root) {
         Ok(resources) => {
             for resource in &resources {
@@ -569,13 +576,33 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
                             .map(|reason| format!("{path}: {reason}")),
                     );
                 }
+                if matches!(
+                    resource.capability.kind,
+                    CapabilityKind::AgentSkill | CapabilityKind::Agent
+                ) && let Some((frontmatter, _)) =
+                    std::str::from_utf8(&resource.capability.payload)
+                        .ok()
+                        .and_then(crate::capability::harness::frontmatter_of)
+                {
+                    let path = resource.capability.path.display();
+                    let common = crate::capability::harness::common_findings(&frontmatter);
+                    findings.extend(common.errors.into_iter().map(|e| format!("{path}: {e}")));
+                    if resource.capability.kind == CapabilityKind::Agent {
+                        warnings
+                            .extend(common.warnings.into_iter().map(|w| format!("{path}: {w}")));
+                    }
+                }
                 delivers.push(resource.identity());
             }
         }
         Err(error) => findings.push(error.to_string()),
     }
     findings.extend(escaping_references(root));
-    Ok(ValidationReport { delivers, findings })
+    Ok(ValidationReport {
+        delivers,
+        findings,
+        warnings,
+    })
 }
 
 /// What a harness reading this `SKILL.md`, from the directory named
@@ -777,7 +804,11 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
         findings.push(format!(
             "{MARKETPLACE_MANIFEST} is missing — this directory is not a marketplace"
         ));
-        return Ok(ValidationReport { delivers, findings });
+        return Ok(ValidationReport {
+            delivers,
+            findings,
+            warnings: Vec::new(),
+        });
     }
     let bytes = fs::read(&manifest_path).map_err(|source| UzeError::Read {
         path: manifest_path.clone(),
@@ -787,7 +818,11 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
         Ok(manifest) => manifest,
         Err(error) => {
             findings.push(error.to_string());
-            return Ok(ValidationReport { delivers, findings });
+            return Ok(ValidationReport {
+                delivers,
+                findings,
+                warnings: Vec::new(),
+            });
         }
     };
     for entry in &manifest.plugins {
@@ -812,7 +847,11 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
             Err(error) => findings.push(format!("{}: {error}", entry.name)),
         }
     }
-    Ok(ValidationReport { delivers, findings })
+    Ok(ValidationReport {
+        delivers,
+        findings,
+        warnings: Vec::new(),
+    })
 }
 
 #[cfg(test)]

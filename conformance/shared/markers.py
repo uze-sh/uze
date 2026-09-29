@@ -29,6 +29,17 @@ AGENTS = {
     "vendor-fields": ("flow:scout", "UZE_AGENT_BODY_SCOUT"),
 }
 
+#: The model each harness's `harness:` block gives the vendor-fields agent
+#: (`agents/scout.md`), which a dispatch of it must run on. Set per harness
+#: in the fixture, and matched as a substring of the model the request
+#: named: Claude resolves `haiku` to a dated id.
+BLOCK_MODELS = {
+    "claude": "haiku",
+    "codex": "uze-scout",
+    "opencode": "uze-scout",
+    "antigravity": "uze-scout",
+}
+
 #: Carried by the prompt of every turn the agent contract drives, so a turn
 #: that reached the model can be told from one that never started.
 AGENT_PROBE = "UZE_AGENT_PROBE"
@@ -47,6 +58,7 @@ ROOT_FILE_MARKER = "UZE_PLUGIN_FILE_LOCATE"
 PLACEHOLDERS = ("${PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}")
 
 _ROOT_REF = re.compile(r"UZE_ROOT_REF=([^\s\"'\\`]+)")
+_MODEL = re.compile(r'"model"\s*:\s*"([^"]+)"')
 
 
 def summary(body):
@@ -64,4 +76,7 @@ def summary(body):
             **{p: p in body for p in PLACEHOLDERS},
         },
         "root_refs": sorted(set(_ROOT_REF.findall(body))),
+        # The model a request asked for, where the body names it (Gemini
+        # names it in the path instead, which the request record keeps).
+        "model": next(iter(_MODEL.findall(body)), None),
     }
