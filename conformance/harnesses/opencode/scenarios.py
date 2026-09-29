@@ -53,7 +53,7 @@ const fs=require("fs");
 const p="/work/home/.config/opencode/opencode.json";
 let d={{}};
 try {{ d=JSON.parse(fs.readFileSync(p,"utf8")); }} catch (e) {{ d={{}}; }}
-d.providers={{"uze-conformance":{{"name":"UZE Conformance","env":["UZE_CONFORMANCE_KEY"],"package":"@opencode-ai/ai/providers/openai-compatible","settings":{{"baseURL":"http://{prov_ip}:9999/v1","apiKey":"{{env:UZE_CONFORMANCE_KEY}}"}},"models":{{"uze-model":{{"modelID":"uze-model","name":"UZE Conformance Model"}},"uze-scout":{{"modelID":"uze-scout","name":"UZE Conformance Scout"}}}}}}}};
+d.providers={{"uze-conformance":{{"name":"UZE Conformance","env":["UZE_CONFORMANCE_KEY"],"package":"@opencode-ai/ai/providers/openai-compatible","settings":{{"baseURL":"http://{prov_ip}:9999/v1","apiKey":"{{env:UZE_CONFORMANCE_KEY}}"}},"models":{{"uze-model":{{"modelID":"uze-model","name":"UZE Conformance Model"}},"claude-haiku-4-5":{{"modelID":"claude-haiku-4-5","name":"Claude Haiku 4.5"}}}}}}}};
 d.model="uze-conformance/uze-model";
 d.agents={{"build":{{"model":"uze-conformance/uze-model"}}}};
 fs.writeFileSync(p, JSON.stringify(d,null,1));

@@ -1,6 +1,8 @@
 ## 0. Decisions
 
-- [ ] 0.1 The `harness:` block's name and shape, approved.
+- [x] 0.1 The `harness:` block's name and shape, approved 2026-09-28: keyed
+  by harness id or alias; `name`, `description` and `invoke` are root-only;
+  `model` and `tools` at the root warn; the block is never delivered.
 - [x] 0.2 Ownership of files inside a repository. Decided 2026-09-28: UZE
   writes nothing into `./.agents/`; the project authors it and UZE reads and
   mounts it.
@@ -15,10 +17,14 @@
 
 ## 2. Canonical frontmatter
 
-- [ ] 2.1 `harness:` block for skills and agents, keyed by harness id,
-  rendered through the table, never delivered.
-- [ ] 2.2 `plugin check` validates it and names the harness that would drop
-  a field.
+- [x] 2.1 `harness:` block for skills and agents, keyed by harness id,
+  rendered through the table, never delivered
+  (`uze_core::capability::harness`, `shared::dialect`; each integration
+  declares its agent dialect as data).
+- [x] 2.2 `plugin check` validates it and names the harness that would drop
+  a field: a common layer in the Core, and one layer per integration through
+  `IntegrationPort::check_capability`, the same declaration the delivery
+  renders from (`tests/packages/authoring.rs`).
 
 ## 3. Standards
 

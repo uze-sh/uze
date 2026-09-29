@@ -89,7 +89,7 @@ use crate::shared::agent::{
     MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried,
     markdown_agent, projection_route,
 };
-use crate::shared::dialect::{AgentDialect, agent_block};
+use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
 use crate::shared::process::real_executable;
@@ -667,11 +667,13 @@ const ANTIGRAVITY_AGENT: MarkdownAgent = MarkdownAgent {
     dialect: &ANTIGRAVITY_AGENT_DIALECT,
 };
 
-/// No agent field beyond the portable ones has been measured on
-/// Antigravity yet, so everything under `harness.antigravity` is carried as
-/// written and reported unverified.
+/// What Antigravity reads under `harness.antigravity` on an agent. `model`
+/// is honoured, and one it does not know makes it drop the agent silently
+/// (measured on 1.2.12: `uze-scout` dropped it, a model from its own
+/// catalogue ran it), which no shape check can tell apart, so the model id
+/// is the author's to get right. Anything else is carried, unverified.
 const ANTIGRAVITY_AGENT_DIALECT: AgentDialect = AgentDialect {
-    known: &[],
+    known: &[("model", Shape::Text)],
     carries_unknown: true,
 };
 

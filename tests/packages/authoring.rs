@@ -596,7 +596,7 @@ fn a_harness_block_every_harness_accepts_checks_clean() {
     let root = uze_testkit::temp::scratch("check-harness-clean");
     let plugin = agent_plugin(
         &root,
-        "name: security\ndescription: Reviews the diff\nharness:\n  claude-code: { model: haiku, tools: [Read, Grep] }\n  codex: { model: gpt-5-codex, model_reasoning_effort: high }\n  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true } }",
+        "name: security\ndescription: Reviews the diff\nharness:\n  claude-code: { model: haiku, tools: [Read, Grep] }\n  codex: { model: gpt-6-luna, model_reasoning_effort: high }\n  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true } }",
     );
     let (clean, text) = check(&root, &plugin);
     assert!(clean, "{text}");

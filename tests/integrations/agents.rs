@@ -157,7 +157,7 @@ fn opencode_receives_only_the_fields_it_reads_and_says_what_it_left() {
 
 /// An agent that tells each harness its own model, and names a root
 /// `model` only Claude spells this way.
-const PER_HARNESS: &[u8] = b"---\nname: reviewer\ndescription: Reviews\nmodel: haiku\nharness:\n  claude-code: { model: sonnet, permissionMode: plan }\n  codex: { model: gpt-5-codex, model_reasoning_effort: high, nickname: rev }\n  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true }, temperature: 0.1 }\n  agy: { model: gemini-3-pro }\n---\nReview.\n";
+const PER_HARNESS: &[u8] = b"---\nname: reviewer\ndescription: Reviews\nmodel: haiku\nharness:\n  claude-code: { model: sonnet, permissionMode: plan }\n  codex: { model: gpt-6-luna, model_reasoning_effort: high, nickname: rev }\n  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true }, temperature: 0.1 }\n  agy: { model: gemini-3.1-flash-lite-preview }\n---\nReview.\n";
 
 fn agent_with(root: &std::path::Path, payload: &[u8]) -> Resource {
     let mut resource = agent(root);
@@ -189,7 +189,7 @@ fn each_harness_receives_its_own_block_and_never_the_block_itself() {
     let codex = generated_content(
         CodexIntegration::new(root.join("agents"), home.clone()).exposure_plan(&resource),
     );
-    assert!(codex.contains("model = \"gpt-5-codex\""), "{codex}");
+    assert!(codex.contains("model = \"gpt-6-luna\""), "{codex}");
     assert!(
         codex.contains("model_reasoning_effort = \"high\""),
         "{codex}"
@@ -218,7 +218,10 @@ fn each_harness_receives_its_own_block_and_never_the_block_itself() {
     let antigravity = generated_content(
         AntigravityIntegration::new(root.join("agents"), home).exposure_plan(&resource),
     );
-    assert!(antigravity.contains("model: gemini-3-pro"), "{antigravity}");
+    assert!(
+        antigravity.contains("model: gemini-3.1-flash-lite-preview"),
+        "{antigravity}"
+    );
 
     for delivered in [&claude, &opencode, &antigravity, &codex] {
         assert!(!delivered.contains("harness"), "{delivered}");

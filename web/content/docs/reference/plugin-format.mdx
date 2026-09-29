@@ -81,11 +81,39 @@ joins the name: `agents/review/security.md` in plugin `flow` is
 part, so `name: audit` in that file is `flow:review:audit`. Dispatch an agent by
 that full name.
 
-`name` and `description` are read the same way by every harness. Anything else,
-such as a model or a tool list, belongs to one harness: Claude Code keeps it,
-and the other harnesses receive the agent without it. The install names what
-each harness did not receive. Codex has no Markdown agent format, so uze
-generates its TOML file from yours.
+`name` and `description` are read the same way by every harness. A model, a
+tool list or a reasoning effort is written differently by each one, so it goes
+under `harness`, one entry per harness:
+
+```markdown
+---
+name: security
+description: Reviews the diff for security flaws.
+harness:
+  claude-code: { model: haiku, tools: [Read, Grep] }
+  codex: { model: gpt-6-luna, model_reasoning_effort: high }
+  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true } }
+---
+```
+
+Each harness receives its own entry in its own format, and never the
+`harness` block itself. A harness with no entry receives `name`, `description`
+and the instructions. The same block works in a skill's `SKILL.md`.
+
+`uze agent plugin check` validates the block in two layers:
+
+- **Common rules:** `harness` must be a map of harness names, and it may not
+  redefine `name`, `description` or `invoke`. A `model` or `tools` at the top
+  level is a warning, because only the harness that writes it that way can
+  use it.
+- **Each harness's rules:** a value the harness would reject is an error, such
+  as an OpenCode `model` that is not `provider/model`. A field Codex does not
+  read is left out with a warning, because Codex refuses an agent that carries
+  one. A field no test has confirmed on a harness is delivered as written,
+  with a warning.
+
+The install names what each harness did not receive. Codex has no Markdown
+agent format, so uze generates its TOML file from yours.
 
 ## Files your plugin ships
 

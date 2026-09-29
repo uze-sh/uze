@@ -5,9 +5,9 @@ model: haiku
 tools: Read, Grep
 harness:
   claude-code: { model: haiku }
-  codex: { model: uze-scout }
-  opencode: { model: uze-conformance/uze-scout }
-  antigravity: { model: uze-scout }
+  codex: { model: gpt-6-luna }
+  opencode: { model: uze-conformance/claude-haiku-4-5 }
+  antigravity: { model: gemini-3.1-flash-lite-preview }
 ---
 
 Answer questions about where things live in the codebase.

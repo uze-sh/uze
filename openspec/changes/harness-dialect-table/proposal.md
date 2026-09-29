@@ -37,11 +37,15 @@ harnesses drop or refuse.
   outside the repository, the way it already projects `AGENTS.md`. The table
   says which harness reads which kind there.
 
-## Decisions this waits on
+## Decisions
 
-- The `harness:` block's name and shape (validated with a second model on
-  2026-09-28: a block keyed by harness id, opaque to the Core, rendered by the
-  integration; root `model` reserved).
+- The `harness:` block (approved 2026-09-28): keyed by harness id or alias,
+  opaque to the Core, rendered by the integration; `name`, `description` and
+  `invoke` root-only; `model` and `tools` at the root warn.
+- `plugin check` is layered: the Core validates what every harness shares,
+  and each integration adds its own layer from the same dialect its delivery
+  renders with, so the check says what the install would do.
+- Project `.agents/` is read and mounted, never written.
 
 ## Capabilities
 

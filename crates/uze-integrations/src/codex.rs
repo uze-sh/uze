@@ -547,9 +547,11 @@ impl PreferencePort for CodexIntegration {
 const CODEX_AGENT_DIALECT: AgentDialect = AgentDialect {
     known: &[
         ("model", Shape::Text),
+        // The levels codex-cli 0.158's model catalogue offers
+        // (`codex debug models`); each model supports a subset.
         (
             "model_reasoning_effort",
-            Shape::OneOf(&["minimal", "low", "medium", "high"]),
+            Shape::OneOf(&["low", "medium", "high", "xhigh", "max", "ultra"]),
         ),
         (
             "sandbox_mode",

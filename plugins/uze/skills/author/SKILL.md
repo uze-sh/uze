@@ -95,10 +95,21 @@ and its prompt as the body. Every harness offers it as
 `<plugin>:<subdirectories>:<name>` — `agents/review/security.md` in plugin
 `flow` is `flow:review:security`, and the frontmatter `name` replaces only
 the last part — so a skill that dispatches it names it that way. `name`
-and `description` are what every harness reads the same way; anything else
-(`model`, `tools`) is one harness's vocabulary: Claude Code keeps it, the
-others receive the agent without it, and the install names what each one
-did not receive.
+and `description` are what every harness reads the same way. A model, a tool
+list or a reasoning effort is one harness's vocabulary, so write it under
+`harness`, one entry per harness (`claude-code`, `codex`, `opencode`,
+`antigravity`), in that harness's own spelling:
+
+```yaml
+harness:
+  claude-code: { model: haiku, tools: [Read, Grep] }
+  opencode: { model: anthropic/claude-haiku-4-5 }
+```
+
+Each harness receives only its own entry; the block is never delivered. The
+same block works in a `SKILL.md`. The check below validates it for every
+harness: a value a harness would reject fails it, and a field a harness
+would not receive is named.
 
 ## 3. Check, always before install
 

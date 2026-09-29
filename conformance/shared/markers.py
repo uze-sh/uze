@@ -35,9 +35,12 @@ AGENTS = {
 #: named: Claude resolves `haiku` to a dated id.
 BLOCK_MODELS = {
     "claude": "haiku",
-    "codex": "uze-scout",
-    "opencode": "uze-scout",
-    "antigravity": "uze-scout",
+    "codex": "gpt-6-luna",
+    # Served by the Lab's own OpenCode provider under this real model id.
+    "opencode": "claude-haiku-4-5",
+    # A model id Antigravity does not know makes it drop the agent
+    # (measured on 1.2.12), so this one is from its own catalogue.
+    "antigravity": "gemini-3.1-flash-lite-preview",
 }
 
 #: Carried by the prompt of every turn the agent contract drives, so a turn
