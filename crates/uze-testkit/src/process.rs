@@ -1,7 +1,35 @@
 //! Executables a test runs without ever having held a descriptor to them.
 
+use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, Stdio};
+
+/// The base directories a harness derives from `HOME` unless they are set.
+/// A test's `HOME` isolates nothing while these still name the machine's
+/// own: a CI runner sets `XDG_CONFIG_HOME`, and OpenCode's skills, agents
+/// and `opencode.json` follow it there.
+pub const XDG_BASE_DIRS: [&str; 4] = [
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
+];
+
+/// Points a child process at a test's own `HOME`, and every XDG base
+/// directory with it.
+pub trait IsolatedHome {
+    fn isolated_home(&mut self, home: impl AsRef<OsStr>) -> &mut Self;
+}
+
+impl IsolatedHome for Command {
+    fn isolated_home(&mut self, home: impl AsRef<OsStr>) -> &mut Self {
+        self.env("HOME", home);
+        for key in XDG_BASE_DIRS {
+            self.env_remove(key);
+        }
+        self
+    }
+}
 
 /// Writes `bytes` to `path` as an executable, through a process that has
 /// exited before this returns.

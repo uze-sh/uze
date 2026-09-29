@@ -8,6 +8,7 @@
 //! what the machine registry and the Store carry once the verbs have run.
 
 use std::{fs, process::Command};
+use uze_testkit::process::IsolatedHome;
 
 fn uze_bin() -> &'static str {
     env!("CARGO_BIN_EXE_uze")
@@ -28,7 +29,7 @@ fn uze(root: &std::path::Path) -> Command {
     let mut command = Command::new(uze_bin());
     command
         .env("UZE_HOME", root.join("uze"))
-        .env("HOME", root)
+        .isolated_home(root)
         .env("PATH", "/usr/bin:/bin");
     command
 }

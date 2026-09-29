@@ -6,6 +6,7 @@
 //! the change was reviewed against.
 
 use std::{path::PathBuf, process::Command};
+use uze_testkit::process::IsolatedHome;
 
 fn temporary_home(label: &str) -> PathBuf {
     uze_testkit::temp::scratch(label)
@@ -15,7 +16,7 @@ fn uze(home: &PathBuf) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_uze"));
     command
         .env("UZE_HOME", home)
-        .env("HOME", home)
+        .isolated_home(home)
         .env("PATH", "/usr/bin:/bin")
         // Isolates project-root resolution from this repo's own real
         // `agents.lock` — see `root_remove_no_longer_falls_back_to_global_removal`

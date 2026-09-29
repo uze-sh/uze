@@ -12,6 +12,7 @@
 //! the ambient `PATH`) use [`TestEnvironment::apply`], which serializes on
 //! the crate-wide process-env lock and restores everything on drop.
 
+use crate::process::IsolatedHome;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -372,7 +373,7 @@ impl TestEnvironment {
     pub fn command(&self, program: impl AsRef<std::ffi::OsStr>) -> Command {
         let mut command = Command::new(program);
         command
-            .env("HOME", &self.home)
+            .isolated_home(&self.home)
             .env("UZE_HOME", &self.uze_home)
             .env("PATH", self.scoped_path())
             .current_dir(&self.project);
@@ -433,6 +434,9 @@ impl TestEnvironment {
             .set("HOME", &self.home)
             .set("UZE_HOME", &self.uze_home)
             .set("PATH", self.scoped_path());
+        for key in crate::process::XDG_BASE_DIRS {
+            scope.remove(key);
+        }
         scope
     }
 }

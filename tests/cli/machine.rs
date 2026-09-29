@@ -1,4 +1,5 @@
 use std::{path::PathBuf, process::Command};
+use uze_testkit::process::IsolatedHome;
 
 fn package_fixture() -> PathBuf {
     uze_testkit::fixtures::canonical("skill-plugin")
@@ -30,7 +31,7 @@ fn install_via_marketplace_json(
     let base = || {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", uze_home)
-            .env("HOME", home)
+            .isolated_home(home)
             .env("PATH", path)
             .args(&market_args)
             .output()
@@ -46,7 +47,7 @@ fn install_via_marketplace_json(
     with_json.push("json".to_owned());
     Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", uze_home)
-        .env("HOME", home)
+        .isolated_home(home)
         .env("PATH", path)
         .args(&with_json)
         .output()
@@ -64,7 +65,7 @@ fn install_via_marketplace(
     let base = || {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", uze_home)
-            .env("HOME", home)
+            .isolated_home(home)
             .env("PATH", path)
             .args(&market_args)
             .output()
@@ -77,7 +78,7 @@ fn install_via_marketplace(
     );
     Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", uze_home)
-        .env("HOME", home)
+        .isolated_home(home)
         .env("PATH", path)
         .args(&install_args)
         .output()
@@ -118,7 +119,7 @@ fn no_subcommand_stays_headless_when_stdout_is_not_a_terminal() {
     // reading the developer's real `~/.uze`.
     let home = temporary_home("cli-no-subcommand");
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("UZE_HOME", home.join(".uze"))
         .env_remove("UZE_PANE")
         .output()
@@ -274,7 +275,7 @@ fn inspect_reports_an_installed_plugin_without_vendor_writes() {
     let before = std::fs::read(home.join("state/attachments.json")).ok();
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "/usr/bin:/bin")
         .args(["inspect", "uze-agent-skill-conformance", "--format", "json"])
         .output()
@@ -305,7 +306,7 @@ fn add_and_inspect_use_the_same_injected_uze_home() {
 
     let inspect = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "/usr/bin:/bin")
         .args(["inspect", "uze-agent-skill-conformance", "--format", "json"])
         .output()
@@ -340,7 +341,7 @@ fn setup_reports_absent_harnesses_as_failure_without_writing_state() {
     let home = temporary_home("cli-setup-absent");
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "")
         .arg("setup")
         .output()
@@ -375,7 +376,7 @@ fn doctor_reports_package_bytes_no_install_records_and_keeps_them() {
     std::fs::write(stray.join("plugin.json"), r#"{"name":"stray"}"#).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "")
         .arg("doctor")
         .output()
@@ -399,7 +400,7 @@ fn doctor_reports_not_configured_before_any_setup() {
     let home = temporary_home("cli-doctor-before-setup");
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "")
         .arg("doctor")
         .output()
@@ -459,7 +460,7 @@ fn setup_conformance_matrix_covers_every_registered_harness() {
     for (harness, executable, update_command) in SETUP_CONFORMANCE_HARNESSES {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", &path)
             .args(["setup", harness])
             .output()
@@ -503,7 +504,7 @@ fn setup_opencode_legacy_binary_uses_installer_not_stable_upgrade() {
 
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", &path)
         .args(["setup", "opencode"])
         .output()
@@ -567,7 +568,7 @@ fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
     let setup = || {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
             .args(["setup", "claude-code"])
             .output()
@@ -644,7 +645,7 @@ fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
 
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
         .env_remove("OPENCODE_INSTALL_DIR")
         .env_remove("XDG_BIN_DIR")
@@ -714,7 +715,7 @@ fn assert_fresh_native_install_found_outside_path(
 
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
         .args(["setup", program])
         .output()
@@ -789,7 +790,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     let run = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", &path)
             .args(args)
             .output()
@@ -956,7 +957,7 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     let run = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", &path)
             .args(args)
             .output()
@@ -1080,7 +1081,7 @@ fn plugin_remove_uses_the_package_centric_application_flow() {
     assert!(add.status.success());
     let remove = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "/usr/bin:/bin")
         .args([
             "remove",
@@ -1129,7 +1130,7 @@ fn a_name_typed_in_another_case_resolves_to_the_one_on_record() {
     let uze = |args: &[String]| {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", "/usr/bin:/bin")
             .current_dir(&home)
             .args(args)
@@ -1192,7 +1193,7 @@ fn root_remove_no_longer_falls_back_to_global_removal() {
     // `AGENTS.md`, or `.git` anywhere in its ancestry.
     let remove = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "/usr/bin:/bin")
         .current_dir(&home)
         .args(["remove", "uze-agent-skill-conformance"])
@@ -1270,7 +1271,7 @@ fn a_blocked_removal_reports_and_fails() {
     for format in ["text", "json"] {
         let removal = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", &path)
             .args([
                 "remove",
@@ -1317,7 +1318,7 @@ fn a_blocked_update_reports_and_fails() {
 
     let update = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", &path)
         .args([
             "update",
@@ -1370,7 +1371,7 @@ fn a_machine_update_with_nothing_new_says_already_current() {
     for _ in 0..2 {
         let update = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", path)
             // The scope and each plugin's own line are the detailed report's.
             .args(["update", "-m", "--verbose"])
@@ -1415,7 +1416,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
     let uze = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", "/usr/bin:/bin")
             .args(args)
             .output()
@@ -1480,7 +1481,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .current_dir(&project)
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", "/usr/bin:/bin")
             .args(args)
             .output()
@@ -1499,7 +1500,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
         assert!(
             Command::new("git")
                 .current_dir(&project)
-                .env("HOME", &home)
+                .isolated_home(&home)
                 .args(git)
                 .status()
                 .unwrap()
@@ -1569,7 +1570,7 @@ echo 'agy 9.9.9'
 fn machine_json(home: &std::path::Path, path: &str, args: &[&str]) -> serde_json::Value {
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", home)
-        .env("HOME", home)
+        .isolated_home(home)
         .env("PATH", path)
         .args(args)
         .args(["--format", "json"])
@@ -1669,7 +1670,7 @@ fn an_install_one_harness_refuses_is_listed_as_partially_delivered() {
 
     let status = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", &path)
         .args(["status", "-m"])
         .output()
@@ -1855,7 +1856,7 @@ fn a_project_install_one_harness_refuses_fails_and_names_it() {
     let install = Command::new(env!("CARGO_BIN_EXE_uze"))
         .current_dir(&project)
         .env("UZE_HOME", home.join(".uze"))
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", &path)
         .args(["install"])
         .output()
@@ -1900,7 +1901,7 @@ fn composed_package(home: &std::path::Path) -> PathBuf {
 fn uze_at(home: &std::path::Path, path: &str, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", home.join(".uze"))
-        .env("HOME", home)
+        .isolated_home(home)
         .env("PATH", path)
         .env_remove("CLAUDE_CONFIG_DIR")
         .args(args)
