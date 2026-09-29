@@ -39,6 +39,21 @@ def _proof_dir():
     return os.path.join(cache, "uze", "lab-proofs")
 
 
+def _durations_path():
+    return os.path.join(_proof_dir(), "durations.json")
+
+
+def _durations():
+    """How long each leg last took, so the longest start first: the run
+    ends when its slowest leg does, and one that starts in the second wave
+    ends that much later."""
+    try:
+        with open(_durations_path()) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
 def _uncommitted(pathspecs):
     listing = subprocess.run(
         ["git", "-C", REPO, "status", "--porcelain", "--", *pathspecs],
@@ -110,7 +125,11 @@ def run_all(jobs, fresh):
     proof = _proof_module()
     plan = _plan(proof, fresh)
     root = os.path.join("/tmp/harness-conformance", f"all-{os.getpid()}")
-    pending = [leg for leg in plan if not leg["reused"]]
+    durations = _durations()
+    pending = sorted(
+        (leg for leg in plan if not leg["reused"]),
+        key=lambda leg: -durations.get(f"{leg['harness']}-{leg['part']}", 0),
+    )
     for leg in plan:
         label = f"{leg['harness']}-{leg['part']}"
         if leg["reused"]:
@@ -129,6 +148,10 @@ def run_all(jobs, fresh):
             print(f"{verdict} {label} in {seconds}s ({log})", flush=True)
             if code != 0:
                 failed.append(label)
+            durations[label] = seconds
+    os.makedirs(_proof_dir(), exist_ok=True)
+    with open(_durations_path(), "w") as f:
+        json.dump(durations, f, indent=1)
     print(
         f"=== {len(plan) - len(failed)}/{len(plan)} legs green"
         + (f"; failed: {', '.join(failed)}" if failed else ""),
