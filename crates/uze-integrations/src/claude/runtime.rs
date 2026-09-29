@@ -1,7 +1,8 @@
 //! `EXPERIMENTAL RUNTIME DELIVERY STRATEGY` for Claude Code — projecting a
 //! project's `AGENTS.md`, `.agents/skills/`, and `.agents/agents/` into the
 //! session via `--add-dir`, entirely outside the project's own working
-//! tree. See `ClaudeIntegration::runtime_contribution`.
+//! tree. Claude Code is the one harness that reads none of `.agents/`
+//! itself; see `project_resource_projection`. See `ClaudeIntegration::runtime_contribution`.
 //!
 //! Which project this is, and which of those resources it actually has,
 //! is `uze_core::project_context`'s single answer — never an upward walk of
@@ -97,19 +98,20 @@ fn project_instruction_projection(
     Ok(())
 }
 
-/// Codex, OpenCode, and Antigravity each read a project's `.agents/skills/`
-/// (and, per the same convention, `.agents/agents/` for subagents) directly,
-/// on their own (see `IntegrationPort::discovers_project_agents_directory`
-/// for the vendor-doc citations); Claude Code has no such convention of its
-/// own. What it does have, confirmed against its current behavior, is
-/// automatic discovery of `.claude/skills/` *and* `.claude/agents/` inside
-/// any `--add-dir` target — the same flag this module already passes for
-/// `CLAUDE.md`, no extra flag or env var needed for either. So this mirrors
-/// the project's `.agents/<resource>/` at `<runtime_dir>/.claude/<resource>`
-/// as a single directory symlink per resource kind, refreshed idempotently:
-/// Claude Code ends up discovering the same Skills and Subagents the other
-/// three harnesses already do, without UZE ever writing into the project
-/// itself.
+/// The project authors `.agents/`; UZE reads it and never writes into the
+/// repository. Codex 0.158, OpenCode 2.0.18 and Antigravity 1.2.12 read
+/// `./.agents/skills` on their own (Antigravity also `./.agents/agents`);
+/// Claude Code 2.1.283 reads neither: its project roots are `.claude/skills`
+/// and `.claude/agents`, and its binary names `.agents/skills` only in
+/// `claude import`. It does discover both `.claude/` roots inside any
+/// `--add-dir` target, the flag this module already passes for `CLAUDE.md`.
+/// So each `.agents/<resource>/` is mirrored at
+/// `<runtime_dir>/.claude/<resource>` as one directory link per resource.
+/// A linked root is enough here: Claude follows it for Skills and agents
+/// alike, and nothing is copied, so a Skill's supporting files stay beside
+/// its `SKILL.md` exactly as the project wrote them. Measured without the launcher (neither reaches the model) and with
+/// it (both do): the Lab's `context-project-skill-reaches-model` and
+/// Claude's `project-agent-reaches-model`.
 fn project_resource_projection(
     context: &ProjectContext,
     runtime_dir: &Path,

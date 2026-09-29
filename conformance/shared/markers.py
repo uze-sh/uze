@@ -51,6 +51,11 @@ AGENT_PROBE = "UZE_AGENT_PROBE"
 CONTEXT = "UZE_CONTEXT_MARKER_AGENTS_MD"
 #: Carried by the context scene's prompt, for the same reason as above.
 CONTEXT_PROBE = "UZE_CONTEXT_PROBE"
+#: The description of a Skill the project authored under `.agents/skills/`,
+#: which a harness's catalog carries to the model.
+PROJECT_SKILL = "UZE_CONTEXT_MARKER_PROJECT_SKILL"
+#: The same, for an agent the project authored under `.agents/agents/`.
+PROJECT_AGENT = "UZE_CONTEXT_MARKER_PROJECT_AGENT"
 
 #: The Skill that names a file outside `skills/` through the plugin root.
 ROOT_SKILL = "locate"
@@ -73,7 +78,9 @@ def summary(body):
         agent_markers[marker] = marker in body
     return {
         "agent_markers": agent_markers,
-        "context_markers": {m: m in body for m in (CONTEXT, CONTEXT_PROBE)},
+        "context_markers": {
+            m: m in body for m in (CONTEXT, CONTEXT_PROBE, PROJECT_SKILL, PROJECT_AGENT)
+        },
         "root_markers": {
             ROOT_SKILL_BODY: ROOT_SKILL_BODY in body,
             **{p: p in body for p in PLACEHOLDERS},

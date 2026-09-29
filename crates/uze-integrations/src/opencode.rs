@@ -164,7 +164,9 @@ impl IntegrationPort for OpenCodeIntegration {
     /// loading `.agents/skills/*/SKILL.md` "along the way" walking up from
     /// cwd — a project-local convention read directly by the `opencode`
     /// binary, with no UZE involvement, independent of the user-scope skills
-    /// this integration writes elsewhere.
+    /// this integration writes elsewhere. Measured on 2.0.18 (Lab
+    /// `context-project-skill-reaches-model`); it does not read
+    /// `./.agents/agents`.
     fn discovers_project_agents_directory(&self) -> bool {
         true
     }

@@ -259,7 +259,10 @@ impl IntegrationPort for AntigravityIntegration {
     /// (.agents/skills/)" — the latter read directly by `agy` from the
     /// project, with no UZE involvement (superseding this crate's own
     /// earlier "not yet implemented/unverified" note, written before that
-    /// documentation existed).
+    /// documentation existed). Measured on 1.2.12 (Lab
+    /// `context-project-skill-reaches-model`), which also reads
+    /// `./.agents/agents`, `./.agents/mcp_config.json` and
+    /// `./.agents/hooks.json` there.
     fn discovers_project_agents_directory(&self) -> bool {
         true
     }

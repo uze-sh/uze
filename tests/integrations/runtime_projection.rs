@@ -15,6 +15,7 @@ use uze_core::UzeHome;
 use uze_core::harness_runtime::{self, RuntimeContext};
 use uze_core::integration::IntegrationPort;
 use uze_integrations::claude::ClaudeIntegration;
+use uze_integrations::registry::IntegrationRegistry;
 use uze_testkit::temp::TestEnvironment;
 
 /// A project carrying portable context, which is the only condition that
@@ -122,4 +123,84 @@ fn sweeping_a_dead_projection_never_touches_the_project_it_pointed_at() {
         project.join(".agents/skills/demo/SKILL.md").is_file(),
         "the project's own Skills must survive their projection being swept"
     );
+}
+
+/// Every path under `root` with its bytes (a link as its target), so two
+/// listings compare equal only when nothing was added, removed or changed.
+fn tree(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut entries = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            let relative = path.strip_prefix(root).unwrap().to_path_buf();
+            if path.is_symlink() {
+                let target = fs::read_link(&path).unwrap();
+                entries.push((relative, target.into_os_string().into_encoded_bytes()));
+            } else if path.is_dir() {
+                pending.push(path);
+            } else {
+                entries.push((relative, fs::read(&path).unwrap()));
+            }
+        }
+    }
+    entries.sort();
+    entries
+}
+
+/// A project's `.agents/` is the project's own: a harness that reads it
+/// natively is left alone, one that does not is handed it through its
+/// runtime projection, and in neither case does the checkout gain a byte.
+#[test]
+fn a_project_agents_directory_reaches_every_harness_without_a_write_into_the_checkout() {
+    let env = TestEnvironment::isolated();
+    let home = UzeHome::at(&env.uze_home);
+    let project = project_at(&env.root().join("project"));
+    fs::create_dir_all(project.join(".agents/skills/demo/references")).unwrap();
+    fs::write(
+        project.join(".agents/skills/demo/references/notes.md"),
+        "notes\n",
+    )
+    .unwrap();
+    fs::create_dir_all(project.join(".agents/agents")).unwrap();
+    fs::write(project.join(".agents/agents/reviewer.md"), "reviewer\n").unwrap();
+    let before = tree(&project);
+
+    let registry = IntegrationRegistry::isolated(&env.root().join("harnesses"), &home);
+    for integration in registry.iter() {
+        let contribution = integration.runtime_contribution(&RuntimeContext {
+            cwd: &project,
+            home: &home,
+        });
+        if integration.discovers_project_agents_directory() {
+            assert!(
+                contribution.is_passthrough(),
+                "{} reads .agents/ itself and must be left alone: {contribution:?}",
+                integration.id()
+            );
+            continue;
+        }
+        assert!(
+            !contribution.is_passthrough(),
+            "{} reads no .agents/ and must be handed it: {contribution:?}",
+            integration.id()
+        );
+        let projection = PathBuf::from(&contribution.extra_args[1]);
+        assert!(projection.starts_with(home.runtime_dir()));
+        let skills = fs::read_dir(projection.join(".claude/skills"))
+            .unwrap()
+            .count();
+        assert_eq!(skills, 1, "the project's one Skill is discoverable");
+        assert_eq!(
+            fs::read_to_string(projection.join(".claude/skills/demo/references/notes.md")).unwrap(),
+            "notes\n",
+            "a Skill keeps its supporting files"
+        );
+        assert_eq!(
+            fs::read_to_string(projection.join(".claude/agents/reviewer.md")).unwrap(),
+            "reviewer\n"
+        );
+    }
+
+    assert_eq!(tree(&project), before, "the checkout must not change");
 }

@@ -176,6 +176,8 @@ impl IntegrationPort for CodexIntegration {
     /// — a project-local convention read directly by the `codex` binary,
     /// with no UZE involvement, independent of the UZE-managed
     /// `$HOME/.agents/skills` symlink this integration writes elsewhere.
+    /// Measured on 0.158 (Lab `context-project-skill-reaches-model`); it does
+    /// not read `./.agents/agents`.
     fn discovers_project_agents_directory(&self) -> bool {
         true
     }

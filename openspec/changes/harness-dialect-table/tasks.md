@@ -46,8 +46,18 @@
 
 ## 4. Project `.agents/`, read and mounted
 
-- [ ] 4.1 Read the project's `./.agents/` and mount what a harness does not
+- [x] 4.1 Read the project's `./.agents/` and mount what a harness does not
   read there natively into its runtime projection (outside the repository);
-  a harness that reads it natively is left alone.
-- [ ] 4.2 Lab: a project `.agents/skills` skill reaches every harness, with
-  nothing written into the checkout.
+  a harness that reads it natively is left alone. Codex, OpenCode and
+  Antigravity read `./.agents/skills` themselves and get no contribution;
+  Claude Code reads neither `.agents/skills` nor `.agents/agents`, and its
+  launcher links both into `.claude/` of the runtime projection it adds with
+  `--add-dir` (`tests/integrations/runtime_projection.rs::a_project_agents_directory_reaches_every_harness_without_a_write_into_the_checkout`,
+  `claude::runtime::runtime_projection_tests`). Codex and OpenCode do not
+  read `./.agents/agents` either, and nothing mounts it for them yet.
+- [x] 4.2 Lab: a project `.agents/skills` skill reaches every harness, with
+  nothing written into the checkout (contract `context`:
+  `context-project-skill-reaches-model`,
+  `context-project-skill-checkout-untouched`, launched through UZE's
+  launcher; Claude vendor `project-agent-reaches-model` for
+  `.agents/agents`).

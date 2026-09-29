@@ -322,7 +322,11 @@ pub trait IntegrationPort: Send + Sync {
     /// (distinct from any UZE-managed global `~/.agents/skills` delivery,
     /// which is a `CapabilityKind::AgentSkill` route, not this). Default
     /// `false`: an integration overrides this only against its own vendor's
-    /// documented behavior.
+    /// documented behavior. The answer is about Skills, the one kind every
+    /// harness that reads `.agents/` shares; which other kinds it reads
+    /// there is the integration's own record. A harness answering `false`
+    /// is given the directory through its runtime projection, outside the
+    /// repository, when it has one: UZE never writes into `.agents/`.
     fn discovers_project_agents_directory(&self) -> bool {
         false
     }

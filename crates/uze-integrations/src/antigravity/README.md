@@ -110,3 +110,7 @@ it become authoritative.
   separate case: official docs (antigravity.google/docs/cli/plugins, 2026)
   now confirm `agy` reads it directly per-workspace, no UZE involvement
   needed — see `AntigravityIntegration::discovers_project_agents_directory`.
+  Measured on 1.2.12 by the Lab contract `context-project-skill-reaches-model`;
+  the same release also reads `./.agents/agents`, `./.agents/mcp_config.json`
+  and `./.agents/hooks.json`. The project authors that directory, and UZE
+  writes nothing into it.

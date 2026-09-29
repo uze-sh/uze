@@ -470,6 +470,40 @@ def phase_hooks(cfg, prov_ip, kind):
     child.close(force=True)
 
 
+def phase_project_agent(cfg):
+    """An agent the project authored in `.agents/agents/` reaches Claude.
+
+    Claude Code reads agents from `.claude/agents/` and never from
+    `.agents/agents/` (2.1.283, measured with the launcher left out), so
+    this is the one harness UZE's runtime projection carries project agents
+    to. The turn is the context contract's, launched through the launcher;
+    the contract already proves the checkout stays untouched by it.
+    """
+    from contract import context
+    from shared.markers import CONTEXT_PROBE, PROJECT_AGENT
+
+    from .bindings import ClaudeBindings
+
+    seen, output = context.authored_turn(cfg, ClaudeBindings(), "project-agent")
+    reached = seen.get(CONTEXT_PROBE, False)
+    check(
+        "project-agent-turn-reached-model",
+        reached,
+        "claude sent the probe turn to the model"
+        if reached
+        else f"the probe turn never reached the model: {output[-200:]}".replace(
+            "\n", " "
+        ),
+    )
+    if not reached:
+        return
+    check(
+        "project-agent-reaches-model",
+        seen.get(PROJECT_AGENT, False),
+        "the agent the project authored in .agents/agents is offered to the model",
+    )
+
+
 def run(cfg, prov_ip):
     with describe("tui"):
         phase_tui(cfg, prov_ip)
@@ -486,3 +520,5 @@ def run(cfg, prov_ip):
         session_start(cfg, prov_ip)
     with describe("parity"):
         parity.run(cfg, prov_ip)
+    with describe("project"):
+        phase_project_agent(cfg)
