@@ -369,12 +369,14 @@ def validate_marketplace(cfg):
     with open(os.path.join(cfg.marketplace_source, "plugins/mcp-plugin/mcp.json")) as f:
         mcp = json.load(f)
     server = mcp.get("mcpServers", {}).get("uze-conformance", {})
-    if server.get("command") != "${PLUGIN_ROOT}/scripts/server" or server.get(
-        "args"
-    ) != [
-        "--proof",
-        "__UZE_MCP_CONFORMANCE_PROOF__",
-    ]:
+    # The Agent Plugins 1.0 shape: a typed server whose command is relative to
+    # the plugin, which every harness must receive resolved to an absolute
+    # path. The `${PLUGIN_ROOT}` form stays proved by the parity fixture.
+    if (
+        server.get("type") != "stdio"
+        or server.get("command") != "./scripts/server"
+        or server.get("args") != ["--proof", "__UZE_MCP_CONFORMANCE_PROOF__"]
+    ):
         raise RuntimeError("invalid conformance MCP fixture placeholders")
 
 
