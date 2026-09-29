@@ -63,10 +63,13 @@
 
 ## 7. Evidence
 
-- [ ] 7.1 `conformance/experiments/claude/parity.py`: 15/16 on the build
+- [x] 7.1 `conformance/experiments/claude/parity.py`: 15/16 on the build
   before SessionStart (the one gap), native vs UZE-format and native vs the
   author's own manifest (`dual`). Promote into the Claude vertical after 3
   clean runs (ADR-035).
+  Promoted into the Claude vertical's vendor part after three clean runs on
+  2026-09-28 (the experiment, the sequential vertical, the parallel
+  `lab-all` leg): 32/32 each, Claude Code 2.1.283.
 - [x] 7.1a Parity fixture gains the `dual` form (native plugin plus UZE's
   manifests, installed through UZE): the report's first round.
 - [x] 7.1b Claude-only component paths are excluded from the envelope.
