@@ -330,14 +330,33 @@ impl Project<'_> {
                 plugin: plugin.to_owned(),
             }
         })?;
-        let undeclared = manifest::undeclare_plugin(&canonical, plugin)?;
+        // `name@marketplace` is how the plugin was added, so it is also how
+        // it is taken out; the project itself names it by `name` alone.
+        let (name, marketplace) = plugin
+            .split_once('@')
+            .map_or((plugin, None), |(name, marketplace)| {
+                (name, Some(marketplace))
+            });
+        let declared_elsewhere = marketplace.is_some_and(|marketplace| {
+            manifest::load(&canonical)
+                .ok()
+                .flatten()
+                .and_then(|manifest| manifest.marketplace_of(name).map(str::to_owned))
+                .is_some_and(|declared| declared != marketplace)
+        });
+        if declared_elsewhere {
+            return Ok(RemoveProjectPluginReport::NotInLock {
+                plugin: plugin.to_owned(),
+            });
+        }
+        let undeclared = manifest::undeclare_plugin(&canonical, name)?;
         let mut lock = match project_lock::load_lock(&canonical)? {
             Some(lock) => lock,
             None if undeclared => ProjectLock::default(),
             None => return Ok(RemoveProjectPluginReport::NoLock),
         };
 
-        if lock.plugins.remove(plugin).is_none() && !undeclared {
+        if lock.plugins.remove(name).is_none() && !undeclared {
             return Ok(RemoveProjectPluginReport::NotInLock {
                 plugin: plugin.to_owned(),
             });
