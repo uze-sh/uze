@@ -137,6 +137,20 @@ timeout 240 agy {agent}--print {shlex.quote(prompt)} --dangerously-skip-permissi
         )
         return docker_base(cfg, prov_ip, setup, tty=False)
 
+    def unsupported(self, prop):
+        """An agent's model is not Antigravity's to choose here: its shipped
+        docs (1.2.12) describe no agent field, and an agent carrying `model`
+        is dropped silently, with an id from its own catalogue as much as
+        without one. UZE leaves `harness.antigravity.model` out, so the agent
+        still arrives, on the session's model."""
+        if prop == "agent-vendor-fields-block-model":
+            return (
+                "Antigravity drops an agent that carries `model` (measured on "
+                "1.2.12), so UZE leaves it out and the agent runs on the "
+                "session's model"
+            )
+        return None
+
     def dispatch(self, label, prompt):
         """agy dispatches with `invoke_subagent`, naming the agent in a
         `Subagents[].TypeName`; the schema also requires a role, a prompt

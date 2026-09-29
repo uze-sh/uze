@@ -31,6 +31,10 @@ pub(crate) enum Shape {
     OneOf(&'static [&'static str]),
     /// `provider/model`.
     Qualified,
+    /// Read by the harness in a way that loses the agent: whatever the value,
+    /// the harness drops an agent carrying the field. It is left out, and
+    /// the reason is the warning.
+    Refused(&'static str),
 }
 
 pub(crate) struct AgentDialect {
@@ -54,6 +58,10 @@ pub(crate) fn agent_block(
             continue;
         }
         match dialect.known.iter().find(|(known, _)| *known == field) {
+            Some((_, Shape::Refused(reason))) => findings.warnings.push(format!(
+                "`harness.{}.{field}` is left out: {reason}",
+                keys[0]
+            )),
             Some((_, shape)) => match conforms(*shape, &value) {
                 Ok(()) => {
                     carried.insert(key, value);
@@ -98,6 +106,7 @@ fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
             .as_str()
             .and_then(|text| text.split_once('/'))
             .is_some_and(|(provider, model)| !provider.is_empty() && !model.is_empty()),
+        Shape::Refused(_) => false,
     };
     if ok {
         return Ok(());
@@ -109,6 +118,7 @@ fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
         Shape::TextOrList => "text or a list of text".to_owned(),
         Shape::OneOf(choices) => format!("one of {}", choices.join(", ")),
         Shape::Qualified => "`provider/model`".to_owned(),
+        Shape::Refused(reason) => reason.to_owned(),
     })
 }
 
@@ -207,6 +217,22 @@ mod tests {
         let (carried, findings) = agent_block(&tolerant, &["codex"], &doc);
         assert_eq!(carried.len(), 1);
         assert!(findings.warnings[0].contains("delivered as written"));
+    }
+
+    #[test]
+    fn a_refused_field_is_left_out_with_its_reason() {
+        let dialect = AgentDialect {
+            known: &[("model", Shape::Refused("the harness drops the agent"))],
+            carries_unknown: true,
+        };
+        let (carried, findings) = agent_block(
+            &dialect,
+            &["agy"],
+            &document("name: a\ndescription: d\nharness:\n  agy: { model: gemini }"),
+        );
+        assert!(carried.is_empty());
+        assert!(findings.errors.is_empty());
+        assert!(findings.warnings[0].contains("the harness drops the agent"));
     }
 
     #[test]

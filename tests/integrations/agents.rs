@@ -219,8 +219,8 @@ fn each_harness_receives_its_own_block_and_never_the_block_itself() {
         AntigravityIntegration::new(root.join("agents"), home).exposure_plan(&resource),
     );
     assert!(
-        antigravity.contains("model: gemini-3.1-flash-lite-preview"),
-        "{antigravity}"
+        !antigravity.contains("model"),
+        "Antigravity drops an agent carrying `model`, so it is left out: {antigravity}"
     );
 
     for delivered in [&claude, &opencode, &antigravity, &codex] {

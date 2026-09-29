@@ -667,13 +667,16 @@ const ANTIGRAVITY_AGENT: MarkdownAgent = MarkdownAgent {
     dialect: &ANTIGRAVITY_AGENT_DIALECT,
 };
 
-/// What Antigravity reads under `harness.antigravity` on an agent. `model`
-/// is honoured, and one it does not know makes it drop the agent silently
-/// (measured on 1.2.12: `uze-scout` dropped it, a model from its own
-/// catalogue ran it), which no shape check can tell apart, so the model id
-/// is the author's to get right. Anything else is carried, unverified.
+/// What Antigravity reads under `harness.antigravity` on an agent. Its
+/// shipped docs (1.2.12) describe no agent fields, and an agent carrying
+/// `model` is dropped silently whatever the value (measured on 1.2.12, with
+/// an id outside its catalogue and with one from it), so `model` is left
+/// out. Anything else is carried, unverified.
 const ANTIGRAVITY_AGENT_DIALECT: AgentDialect = AgentDialect {
-    known: &[("model", Shape::Text)],
+    known: &[(
+        "model",
+        Shape::Refused("Antigravity drops an agent that carries `model`, whatever the value"),
+    )],
     carries_unknown: true,
 };
 

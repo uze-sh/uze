@@ -50,6 +50,16 @@
         "*"
       ],
       "observed_at": "2026-09-02"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-vendor-fields-block-model",
+      "suite": "agent",
+      "reason": "Antigravity drops an agent that carries `model`, whatever the value (measured with an id outside its catalogue and one from it); UZE leaves `harness.antigravity.model` out, so the agent arrives on the session's model.",
+      "versions": [
+        "1.2.12"
+      ],
+      "observed_at": "2026-09-28"
     }
   ]
 }

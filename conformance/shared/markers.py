@@ -38,8 +38,8 @@ BLOCK_MODELS = {
     "codex": "gpt-6-luna",
     # Served by the Lab's own OpenCode provider under this real model id.
     "opencode": "claude-haiku-4-5",
-    # A model id Antigravity does not know makes it drop the agent
-    # (measured on 1.2.12), so this one is from its own catalogue.
+    # Declared unsupported by its bindings: Antigravity drops an agent that
+    # carries `model`, so UZE leaves the field out.
     "antigravity": "gemini-3.1-flash-lite-preview",
 }
 
