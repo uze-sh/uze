@@ -84,12 +84,11 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     match delivery {
         ResourceDelivery::Native => (State::Ready, "native"),
         ResourceDelivery::Projected => (State::Ready, "loaded (shim)"),
-        ResourceDelivery::Bridged => (State::Ready, "loaded (bridge)"),
         ResourceDelivery::AbsentFromProject => (State::Neutral, "none in project"),
         ResourceDelivery::Undelivered(reason) => match reason {
             UndeliveredReason::HarnessAbsent => (State::Error, "harness not installed"),
             UndeliveredReason::ShimShadowed => (State::Warning, "shim not on PATH"),
-            UndeliveredReason::Bridge(_) => (State::Warning, "not loaded"),
+            UndeliveredReason::ShadowedBy { .. } => (State::Warning, "vendor file wins"),
             UndeliveredReason::Unsupported => (State::Error, "not supported"),
         },
     }
@@ -371,10 +370,11 @@ pub(crate) fn capability_label(kind: CapabilityKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use uze_application::application::{
         AgentContextStatus, ContextMechanism, HarnessContextSupport, HarnessHealth,
     };
-    use uze_core::integration::{AttachmentState, HarnessDetection, PublicationStatus};
+    use uze_core::integration::{HarnessDetection, PublicationStatus};
 
     fn health(present: bool) -> HarnessHealth {
         HarnessHealth {
@@ -495,29 +495,22 @@ mod tests {
     }
 
     #[test]
-    fn a_native_reader_and_a_matched_bridge_both_read_as_delivered() {
+    fn a_native_reader_reads_as_delivered() {
         let native = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
         assert_eq!(native.instructions_label, "native");
         assert!(matches!(native.instructions, State::Ready));
-
-        let bridged = support(
-            true,
-            ResourceDelivery::Bridged,
-            ResourceDelivery::Undelivered(UndeliveredReason::Unsupported),
-        );
-        assert_eq!(bridged.instructions_label, "loaded (bridge)");
-        assert!(matches!(bridged.instructions, State::Ready));
-        assert_eq!(bridged.project_skills_label, "not supported");
     }
 
     #[test]
-    fn a_broken_bridge_is_a_warning_naming_the_missing_delivery() {
+    fn a_vendor_file_read_in_place_of_agents_md_is_a_warning() {
         let support = support(
             true,
-            ResourceDelivery::Undelivered(UndeliveredReason::Bridge(AttachmentState::Missing)),
+            ResourceDelivery::Undelivered(UndeliveredReason::ShadowedBy {
+                file: PathBuf::from("/project/CLAUDE.md"),
+            }),
             ResourceDelivery::AbsentFromProject,
         );
-        assert_eq!(support.instructions_label, "not loaded");
+        assert_eq!(support.instructions_label, "vendor file wins");
         assert!(matches!(support.instructions, State::Warning));
     }
 }

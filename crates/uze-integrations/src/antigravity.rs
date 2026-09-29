@@ -251,6 +251,7 @@ impl IntegrationPort for AntigravityIntegration {
     fn context_delivery(&self) -> ContextDelivery {
         ContextDelivery::Native {
             files: &["GEMINI.md"],
+            shadowed_by: &[],
         }
     }
 

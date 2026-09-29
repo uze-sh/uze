@@ -247,10 +247,10 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
     .filter_map(|(action, verb)| key(action).map(|chord| format!("{chord} to {verb}")))
     .collect();
     let reconcile_note = if reconcile_keys.is_empty() {
-        "AGENTS.md bridge needs reconciliation.".to_owned()
+        "A managed region of AGENTS.md needs reconciliation.".to_owned()
     } else {
         format!(
-            "AGENTS.md bridge needs reconciliation — {}.",
+            "A managed region of AGENTS.md needs reconciliation — {}.",
             reconcile_keys.join(", ")
         )
     };
@@ -302,12 +302,6 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
             "Works directly, no adaptation needed.",
         ),
         entry(
-            Symbol::MarkNative,
-            "Bridged",
-            theme::color(Token::Accent),
-            "Routed through UZE's managed AGENTS.md bridge file.",
-        ),
-        entry(
             Symbol::MarkAttention,
             "Missing/Drifted",
             theme::color(Token::StateWarning),
@@ -317,7 +311,7 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
             Symbol::MarkClose,
             "Conflict/Blocked",
             theme::color(Token::StateDanger),
-            "AGENTS.md bridge has unresolved content UZE won't overwrite.",
+            "A managed region has content UZE won't overwrite.",
         ),
         entry(
             Symbol::MarkAdapted,

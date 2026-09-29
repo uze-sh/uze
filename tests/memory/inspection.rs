@@ -6,6 +6,10 @@
 //! states UZE never created (Fase 6 — a project that already has its own
 //! CLAUDE.md/AGENTS.md, written entirely by hand, long before UZE ever
 //! touched it).
+//!
+//! The harness here stands in for Claude Code: it reads `AGENTS.md` itself
+//! unless the project's own `CLAUDE.md` carries content, which it then
+//! reads instead — a gap UZE reports and never writes its way out of.
 
 use std::{
     fs,
@@ -40,7 +44,7 @@ fn status_reports_healthy_with_zero_issues_once_reconciled() {
 }
 
 #[test]
-fn status_surfaces_a_missing_bridge_as_an_issue_before_reconcile() {
+fn status_surfaces_an_unreconciled_contribution_as_an_issue() {
     let root = temp("status-issue");
     let application = app(&root, true);
     install(&application, fixture_a());
@@ -50,6 +54,27 @@ fn status_surfaces_a_missing_bridge_as_an_issue_before_reconcile() {
     let status = application.health().status(&project).unwrap();
     assert!(!status.issues.is_empty());
     assert!(status.issues.iter().any(|issue| issue.contains("Missing")));
+}
+
+#[test]
+fn status_surfaces_a_claude_md_read_in_place_of_agents_md() {
+    let root = temp("status-shadowed");
+    let application = app(&root, true);
+    install(&application, fixture_a());
+    let project = root.join("project");
+    fs::create_dir_all(project.join(".git")).unwrap();
+    fs::write(project.join("CLAUDE.md"), "## My Claude workflow notes\n").unwrap();
+    application.context().reconcile(&project).unwrap();
+
+    let status = application.health().status(&project).unwrap();
+    assert!(
+        status
+            .issues
+            .iter()
+            .any(|issue| issue.contains("reads CLAUDE.md instead of AGENTS.md")),
+        "{:?}",
+        status.issues
+    );
 }
 
 #[test]
@@ -80,22 +105,22 @@ fn fixture_a() -> PathBuf {
     uze_testkit::fixtures::canonical("instructions-a")
 }
 
-struct StubBridgeHarness {
+struct StubShadowableHarness {
     stub_id: &'static str,
     present: bool,
 }
 
-impl IntegrationPort for StubBridgeHarness {
+impl IntegrationPort for StubShadowableHarness {
     fn id(&self) -> &'static str {
         self.stub_id
     }
 
-    /// The one bridged harness in v0 declares its bridge like any real
-    /// integration would — the Application reads `context_delivery`, never
-    /// a vendor name.
+    /// Declared like any real integration would — the Application reads
+    /// `context_delivery`, never a vendor name.
     fn context_delivery(&self) -> uze_core::integration::ContextDelivery {
-        uze_core::integration::ContextDelivery::Bridge {
-            file_name: "CLAUDE.md",
+        uze_core::integration::ContextDelivery::Native {
+            files: &[],
+            shadowed_by: &["CLAUDE.md"],
         }
     }
 
@@ -122,12 +147,10 @@ impl IntegrationPort for StubBridgeHarness {
     }
 }
 
-/// Claude Code is the one bridged harness in v0 (every other v0 harness
-/// reads `AGENTS.md` natively); this stub stands in for it.
 fn app(root: &Path, claude_present: bool) -> UzeApplication {
     UzeApplication::new(
         UzeHome::at(root.join("uze-home")),
-        vec![Box::new(StubBridgeHarness {
+        vec![Box::new(StubShadowableHarness {
             stub_id: "claude-code",
             present: claude_present,
         })],
@@ -242,7 +265,7 @@ fn a_project_with_only_claude_md_is_vendor_locked() {
 }
 
 #[test]
-fn agents_md_plus_a_bridging_claude_md_is_portable() {
+fn agents_md_alone_is_read_natively_and_reconcile_writes_no_claude_md() {
     let root = temp("portable");
     let application = app(&root, true);
     install(&application, fixture_a());
@@ -250,14 +273,30 @@ fn agents_md_plus_a_bridging_claude_md_is_portable() {
     fs::create_dir_all(project.join(".git")).unwrap();
     application.context().reconcile(&project).unwrap();
 
+    assert!(!project.join("CLAUDE.md").exists());
     let status = application.context().inspect(&project).unwrap();
     assert!(matches!(status.portability, Portability::Portable));
     assert!(matches!(
         harness_delivery(&status, "claude-code"),
-        HarnessContextDelivery::Bridge {
-            needed: true,
-            state: AttachmentState::Matched
-        }
+        HarnessContextDelivery::Native
+    ));
+}
+
+/// An empty file is no instructions at all: it takes nothing's place.
+#[test]
+fn an_empty_claude_md_does_not_shadow_agents_md() {
+    let root = temp("empty-claude-md");
+    let application = app(&root, true);
+    install(&application, fixture_a());
+    let project = root.join("project");
+    fs::create_dir_all(project.join(".git")).unwrap();
+    fs::write(project.join("CLAUDE.md"), "\n").unwrap();
+    application.context().reconcile(&project).unwrap();
+
+    let status = application.context().inspect(&project).unwrap();
+    assert!(matches!(
+        harness_delivery(&status, "claude-code"),
+        HarnessContextDelivery::Native
     ));
 }
 
@@ -386,9 +425,10 @@ fn scenario_e_manual_agents_md_plus_uze_region_coexist() {
     assert_eq!(agents_source.managed_region_identities.len(), 1);
 }
 
-/// F) CLAUDE.md manual + UZE bridge coexisting.
+/// F) CLAUDE.md manual + AGENTS.md: the harness reads CLAUDE.md in its
+/// place, and nothing UZE runs writes into it or moves its prose.
 #[test]
-fn scenario_f_manual_claude_md_content_plus_bridge_coexist() {
+fn scenario_f_a_claude_md_with_content_shadows_agents_md_and_stays_untouched() {
     let root = temp("scenario-f");
     let application = app(&root, true);
     install(&application, fixture_a());
@@ -400,48 +440,49 @@ fn scenario_f_manual_claude_md_content_plus_bridge_coexist() {
     )
     .unwrap();
 
+    let before = fs::read(project.join("CLAUDE.md")).unwrap();
     application.context().reconcile(&project).unwrap();
-    let content = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
-    assert!(content.starts_with("## My personal Claude workflow notes\n"));
-    assert!(content.contains("@AGENTS.md"));
-
-    let status = application.context().inspect(&project).unwrap();
-    let claude_source = status
-        .sources
-        .iter()
-        .find(|s| s.file_name == "CLAUDE.md")
-        .unwrap();
-    assert!(
-        claude_source.has_user_content,
-        "the hand-written notes are still there, outside the bridge region"
-    );
-    assert_eq!(
-        claude_source.managed_region_identities,
-        vec!["instruction-bridge".to_owned()]
-    );
-    // And no automatic migration ever happened: CLAUDE.md's own prose was
-    // never copied into AGENTS.md, and AGENTS.md holds only the package's
-    // own contribution.
+    assert_eq!(fs::read(project.join("CLAUDE.md")).unwrap(), before);
     let agents_content = fs::read_to_string(project.join("AGENTS.md")).unwrap();
     assert!(!agents_content.contains("personal Claude workflow"));
+
+    let status = application.context().inspect(&project).unwrap();
+    assert!(matches!(
+        harness_delivery(&status, "claude-code"),
+        HarnessContextDelivery::ShadowedBy { file } if file == &project.join("CLAUDE.md")
+    ));
+    let Portability::PartiallyPortable { gaps } = &status.portability else {
+        panic!("expected a gap, got {:?}", status.portability);
+    };
+    assert_eq!(gaps, &["claude-code: reads CLAUDE.md instead of AGENTS.md"]);
+    // The gap is said once, as a gap — never again as "expected and
+    // supported" vendor content.
+    assert!(status.warnings.is_empty(), "{:?}", status.warnings);
 }
 
-/// Both recognized files present at once, fully reconciled: exactly the
-/// "everything together" state Fase 10 asks for, on top of the
-/// per-scenario A–F coverage above.
+/// A CLAUDE.md that imports AGENTS.md delivers it: vendor-specific notes
+/// beside the portable baseline are supported, and disclosed, not a gap.
 #[test]
-fn all_recognized_files_together_are_fully_portable() {
+fn a_claude_md_importing_agents_md_is_fully_portable() {
     let root = temp("all-recognized");
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
-    fs::write(project.join("CLAUDE.md"), "## My Claude workflow notes\n").unwrap();
+    fs::write(
+        project.join("CLAUDE.md"),
+        "## My Claude workflow notes\n\n@AGENTS.md\n",
+    )
+    .unwrap();
 
     application.context().reconcile(&project).unwrap();
     let status = application.context().inspect(&project).unwrap();
 
     assert!(matches!(status.portability, Portability::Portable));
+    assert!(matches!(
+        harness_delivery(&status, "claude-code"),
+        HarnessContextDelivery::Native
+    ));
     for file_name in ["AGENTS.md", "CLAUDE.md"] {
         let source = status
             .sources
@@ -450,14 +491,31 @@ fn all_recognized_files_together_are_fully_portable() {
             .unwrap();
         assert!(source.exists);
     }
-    assert!(
-        fs::read_to_string(project.join("CLAUDE.md"))
-            .unwrap()
-            .contains("My Claude workflow notes")
-    );
-    // One warning expected: CLAUDE.md carries content beyond its bridge,
-    // which is legitimate and disclosed, not a gap.
     assert_eq!(status.warnings.len(), 1);
+}
+
+/// The region earlier builds wrote into CLAUDE.md is an import like any
+/// other: a project still carrying it keeps its context delivered.
+#[test]
+fn a_claude_md_holding_an_earlier_builds_import_region_still_delivers() {
+    let root = temp("legacy-import-region");
+    let application = app(&root, true);
+    install(&application, fixture_a());
+    let project = root.join("project");
+    fs::create_dir_all(project.join(".git")).unwrap();
+    fs::write(
+        project.join("CLAUDE.md"),
+        "<!-- uze:begin instruction-bridge -->\n@AGENTS.md\n<!-- uze:end instruction-bridge -->\n",
+    )
+    .unwrap();
+
+    application.context().reconcile(&project).unwrap();
+    let status = application.context().inspect(&project).unwrap();
+    assert!(matches!(status.portability, Portability::Portable));
+    assert!(matches!(
+        harness_delivery(&status, "claude-code"),
+        HarnessContextDelivery::Native
+    ));
 }
 
 // --- context operations never touch the Store -------------------------------

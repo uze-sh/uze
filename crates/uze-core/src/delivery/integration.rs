@@ -110,12 +110,15 @@ pub enum ContextDelivery {
     /// writes nothing for this harness. `files` names any *additional*
     /// native context files the harness reads (e.g. a hand-written vendor
     /// instructions file), observed for portability reporting only — never
-    /// written by UZE.
-    Native { files: &'static [&'static str] },
-    /// Reaches the shared context only through a delimited bridge region
-    /// (an `@AGENTS.md` import) inside the harness's own native file, which
-    /// `agent context inspect|plan|reconcile` maintain.
-    Bridge { file_name: &'static str },
+    /// written by UZE. `shadowed_by` names the harness's own instructions
+    /// files that, carrying content of their own, are read *instead of*
+    /// `AGENTS.md`: a gap UZE reports and never closes by writing into
+    /// them, since moving vendor content into the shared baseline is a
+    /// judgement, not a projection.
+    Native {
+        files: &'static [&'static str],
+        shadowed_by: &'static [&'static str],
+    },
     /// No project-context delivery is modeled for this harness; `context`
     /// commands never report it.
     None,

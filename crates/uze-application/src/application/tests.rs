@@ -2463,10 +2463,15 @@ impl IntegrationPort for DeclaringIntegration {
     }
 }
 
+const NATIVE: ContextDelivery = ContextDelivery::Native {
+    files: &[],
+    shadowed_by: &[],
+};
+
 #[test]
 fn a_harness_reading_the_project_itself_declares_native_context_support() {
     let integration = DeclaringIntegration {
-        context_delivery: ContextDelivery::Native { files: &[] },
+        context_delivery: NATIVE,
         skills: ProjectResourceRoute::Native,
         agents: ProjectResourceRoute::Native,
         projects_at_runtime: false,
@@ -2477,18 +2482,18 @@ fn a_harness_reading_the_project_itself_declares_native_context_support() {
     assert_eq!(support.project_agents, ContextMechanism::Native);
 }
 
+/// Claude Code's shape: `AGENTS.md` read natively, `.agents/` only through
+/// the shim — the two resources answered independently.
 #[test]
-fn a_runtime_projection_outranks_the_persistent_bridge() {
+fn a_native_reader_of_agents_md_can_still_need_the_shim_for_agents_directory() {
     let integration = DeclaringIntegration {
-        context_delivery: ContextDelivery::Bridge {
-            file_name: "BRIDGE.md",
-        },
+        context_delivery: NATIVE,
         skills: ProjectResourceRoute::RuntimeProjection,
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
     };
     let support = HarnessContextSupport::declared(&integration, true);
-    assert_eq!(support.instructions, ContextMechanism::RuntimeShim);
+    assert_eq!(support.instructions, ContextMechanism::Native);
     assert_eq!(support.project_skills, ContextMechanism::RuntimeShim);
     assert_eq!(support.project_agents, ContextMechanism::RuntimeShim);
 }
@@ -2496,33 +2501,15 @@ fn a_runtime_projection_outranks_the_persistent_bridge() {
 #[test]
 fn a_shadowed_shim_is_reported_instead_of_the_projection_it_defeats() {
     let integration = DeclaringIntegration {
-        context_delivery: ContextDelivery::Bridge {
-            file_name: "BRIDGE.md",
-        },
+        context_delivery: NATIVE,
         skills: ProjectResourceRoute::RuntimeProjection,
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
     };
     let support = HarnessContextSupport::declared(&integration, false);
-    assert_eq!(support.instructions, ContextMechanism::ShimShadowed);
+    assert_eq!(support.instructions, ContextMechanism::Native);
     assert_eq!(support.project_skills, ContextMechanism::ShimShadowed);
     assert_eq!(support.project_agents, ContextMechanism::ShimShadowed);
-}
-
-#[test]
-fn a_bridge_without_a_runtime_projection_stays_a_bridge() {
-    let integration = DeclaringIntegration {
-        context_delivery: ContextDelivery::Bridge {
-            file_name: "BRIDGE.md",
-        },
-        skills: ProjectResourceRoute::RuntimeProjection,
-        agents: ProjectResourceRoute::Unsupported,
-        projects_at_runtime: false,
-    };
-    let support = HarnessContextSupport::declared(&integration, true);
-    assert_eq!(support.instructions, ContextMechanism::Bridge);
-    assert_eq!(support.project_skills, ContextMechanism::Unsupported);
-    assert_eq!(support.project_agents, ContextMechanism::Unsupported);
 }
 
 #[test]
@@ -2542,7 +2529,7 @@ fn a_harness_declaring_no_delivery_is_unsupported_regardless_of_the_shim() {
 #[test]
 fn each_kind_of_the_agents_directory_is_answered_apart() {
     let integration = DeclaringIntegration {
-        context_delivery: ContextDelivery::Native { files: &[] },
+        context_delivery: NATIVE,
         skills: ProjectResourceRoute::Native,
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,

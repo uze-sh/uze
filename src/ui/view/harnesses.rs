@@ -394,10 +394,6 @@ fn context_row(mechanism: ContextMechanism) -> (String, Style) {
             format!("{} Runtime shim", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::Accent),
         ),
-        ContextMechanism::Bridge => (
-            format!("{} Bridged", theme::glyph(Symbol::MarkNative)),
-            theme::fg(Token::Accent),
-        ),
         ContextMechanism::ShimShadowed => (
             format!("{} PATH shadowed", theme::glyph(Symbol::MarkAttention)),
             theme::fg(Token::StateWarning),
@@ -543,16 +539,19 @@ mod tests {
 
     #[test]
     fn each_resource_is_answered_independently() {
-        // A harness may discover `.agents/` on its own while still needing
-        // a bridge file for `AGENTS.md`.
-        let rows = context_rows(&support(ContextMechanism::Bridge, ContextMechanism::Native));
+        // A harness may read `AGENTS.md` on its own while still needing
+        // the shim for `.agents/`.
+        let rows = context_rows(&support(
+            ContextMechanism::Native,
+            ContextMechanism::RuntimeShim,
+        ));
         assert_eq!(
             rows[0].1,
-            format!("{} Bridged", theme::glyph(Symbol::MarkNative))
+            format!("{} Native", theme::glyph(Symbol::MarkNative))
         );
         assert_eq!(
             rows[1].1,
-            format!("{} Native", theme::glyph(Symbol::MarkNative))
+            format!("{} Runtime shim", theme::glyph(Symbol::MarkNative))
         );
     }
 

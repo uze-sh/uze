@@ -1,15 +1,14 @@
 //! `EXPERIMENTAL RUNTIME DELIVERY STRATEGY` for Claude Code — projecting a
-//! project's `AGENTS.md`, `.agents/skills/`, and `.agents/agents/` into the
-//! session via `--add-dir`, entirely outside the project's own working
-//! tree. Claude Code is the one harness that reads none of `.agents/`
-//! itself; see `project_resource_projection` and
+//! project's `.agents/skills/` and `.agents/agents/` into the session via
+//! `--add-dir`, entirely outside the project's own working tree. Claude
+//! Code is the one harness that reads none of `.agents/` itself; see
+//! `project_resource_projection` and
 //! `ClaudeIntegration::runtime_contribution`.
 //!
-//! Which project this is, and which of those resources it actually has,
-//! is `uze_core::project_context`'s single answer — never an upward walk of
-//! this module's own. Each resource projects independently: a project with
-//! only `.agents/skills/` and no `AGENTS.md` still gets its Skills
-//! delivered.
+//! `AGENTS.md` is not projected: Claude Code reads it natively
+//! (`ClaudeIntegration::context_delivery`). Which project this is, and
+//! whether it has an `.agents/` directory, is `uze_core::project_context`'s
+//! single answer — never an upward walk of this module's own.
 
 use std::{
     ffi::OsString,
@@ -24,79 +23,29 @@ use uze_core::{
     project_context::{self, AgentsDirectoryResource, ProjectContext},
 };
 
-/// The vendor-documented (but undocumented-in-`--help`, empirically
-/// confirmed) environment variable that makes
-/// Claude Code treat a `--add-dir` directory's `CLAUDE.md` as loaded
-/// instructions rather than only granting tool/file access to it.
-pub(super) const RUNTIME_PROJECTION_ENV_VAR: &str = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
-
-/// `EXPERIMENTAL RUNTIME DELIVERY STRATEGY` — see `CONTEXT DELIVERY POLICY`
-/// note on `runtime_contribution` below. This is intentionally not wired
-/// into `exposure_plan`/`attach` (the persistent, project-root `CLAUDE.md`
-/// bridge that `uze agent context reconcile` still owns — that remains the
-/// `LEGACY/PERSISTENT CONTEXT DELIVERY STRATEGY` until an empirical
-/// interactive comparison decides otherwise).
-///
-/// Builds (or refreshes) `$UZE_HOME/runtime/projects/<id>/claude-code/
-/// CLAUDE.md` importing the current project's `AGENTS.md`, entirely outside
+/// Builds (or refreshes) `$UZE_HOME/runtime/projects/<id>/claude-code/`
+/// mirroring the current project's `.agents/` resources, entirely outside
 /// the project's own working tree. Returns `Ok(None)` when `ctx.cwd` is not
-/// inside a project carrying any portable context at all — that is not an
-/// error, it is the correct passthrough case. Every fallible step returns `Err`
-/// with a short, human-readable reason instead of a typed `UzeError`,
-/// because the only thing the caller (`runtime_contribution`) ever does
-/// with it is fold it into a fail-open passthrough note.
+/// inside a project with an `.agents/` directory — that is not an error, it
+/// is the correct passthrough case. Every fallible step returns `Err` with
+/// a short, human-readable reason instead of a typed `UzeError`, because
+/// the only thing the caller (`runtime_contribution`) ever does with it is
+/// fold it into a fail-open passthrough note.
 pub(super) fn claude_runtime_projection(
     ctx: &RuntimeContext,
 ) -> std::result::Result<Option<PathBuf>, String> {
     let context = project_context::resolve(ctx.cwd);
-    if !context.has_any() {
+    if context.agents_directory.is_none() {
         return Ok(None);
     }
     let runtime_dir = harness_runtime::prepare_projection(ctx.home, "claude-code", &context.root)
         .map_err(|error| error.to_string())?;
 
-    project_instruction_projection(&context, &runtime_dir)?;
     for resource in AgentsDirectoryResource::ALL {
         project_resource_projection(&context, &runtime_dir, resource.directory_name())?;
     }
 
     Ok(Some(runtime_dir))
-}
-
-/// Writes (or clears) the projected `CLAUDE.md` that imports the project's
-/// `AGENTS.md`. Independent of the `.agents/` projection below: a project
-/// carrying only Skills still gets a runtime directory, it just gets one
-/// with no instruction import in it.
-fn project_instruction_projection(
-    context: &ProjectContext,
-    runtime_dir: &Path,
-) -> std::result::Result<(), String> {
-    let claude_md = runtime_dir.join("CLAUDE.md");
-    let Some(agents_md) = context.agents_md.as_ref() else {
-        // A project that dropped its AGENTS.md must stop importing the
-        // path that used to hold it, rather than leave a dangling `@`
-        // import Claude Code would report as a missing file every launch.
-        match fs::remove_file(&claude_md) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
-        }
-        return Ok(());
-    };
-    let desired = format!("@{}\n", agents_md.display());
-    // Idempotent: two concurrent sessions on the same project compute the
-    // same `project_id`, the same `runtime_dir`, and the same content —
-    // there is nothing to reference-count or coordinate. A same-content
-    // write is skipped entirely so a second session never even touches the
-    // file the first one is using.
-    let already_current = fs::read_to_string(&claude_md)
-        .map(|current| current == desired)
-        .unwrap_or(false);
-    if !already_current {
-        uze_core::persistence::write_atomic(&claude_md, desired.as_bytes())
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(())
 }
 
 /// The project authors `.agents/`; UZE reads it and never writes into the
@@ -106,7 +55,7 @@ fn project_instruction_projection(
 /// Claude Code 2.1.283 reads neither: its project roots are `.claude/skills`
 /// and `.claude/agents`, and its binary names `.agents/skills` only in
 /// `claude import`. It does discover both `.claude/` roots inside any
-/// `--add-dir` target, the flag this module already passes for `CLAUDE.md`.
+/// `--add-dir` target, with no extra flag or env var.
 /// So each `.agents/<resource>/` is mirrored at
 /// `<runtime_dir>/.claude/<resource>` as one directory link per resource.
 /// A linked root is enough here: Claude follows it for Skills and agents
@@ -160,7 +109,7 @@ fn project_resource_projection(
     // pass the `already_current` check above and collide on `symlink`
     // (EEXIST), which degrades the whole contribution to passthrough — the
     // support popup then reports the harness as unavailable, and a real
-    // launch drops `--add-dir` along with `AGENTS.md`. `rename` replaces
+    // launch drops `--add-dir` along with the Skills. `rename` replaces
     // the previous link atomically and both writers converge on the same
     // target either way. Same nonce pattern `write_atomic` uses.
     let temporary = temporary_projection_path(parent, resource);
@@ -209,14 +158,14 @@ fn attempt_path(parent: &Path, resource: &str, nonce: u128) -> PathBuf {
 }
 
 /// Pure read-only predicate backing `runtime_contribution_would_activate`:
-/// whether the project carries any portable context is the only condition
+/// whether the project has an `.agents/` directory is the only condition
 /// deciding whether `claude_runtime_projection` produces a contribution —
 /// the writes that follow are idempotent refreshes, not part of it. Kept
 /// separate so a status computation (the agent-support popup) never
 /// touches the projection directory, which is exactly where the
 /// launch-path races lived.
 pub(super) fn projection_would_activate(ctx: &RuntimeContext) -> bool {
-    project_context::resolve(ctx.cwd).has_any()
+    project_context::resolve(ctx.cwd).agents_directory.is_some()
 }
 
 /// Builds the `HarnessRuntimeContribution` from a `claude_runtime_projection`
@@ -225,10 +174,7 @@ pub(super) fn runtime_contribution(ctx: &RuntimeContext) -> HarnessRuntimeContri
     match claude_runtime_projection(ctx) {
         Ok(Some(runtime_dir)) => HarnessRuntimeContribution {
             extra_args: vec![OsString::from("--add-dir"), runtime_dir.into_os_string()],
-            extra_env: vec![(
-                OsString::from(RUNTIME_PROJECTION_ENV_VAR),
-                OsString::from("1"),
-            )],
+            extra_env: Vec::new(),
             note: None,
         },
         Ok(None) => HarnessRuntimeContribution::passthrough(),
@@ -245,15 +191,14 @@ mod runtime_projection_tests {
     use uze_core::integration::IntegrationPort;
 
     use super::super::ClaudeIntegration;
-    use super::RUNTIME_PROJECTION_ENV_VAR;
 
     #[test]
-    fn no_agents_md_is_pure_passthrough() {
-        let root = uze_testkit::temp::scratch("no-agents-md");
+    fn no_agents_directory_is_pure_passthrough() {
+        let root = uze_testkit::temp::scratch("no-agents-directory");
         // A `.git` boundary inside the scratch root: discovery must stop at
         // the first `.git` it finds walking up, so the test's outcome can
         // never depend on what else happens to live above the shared temp
-        // dir (e.g. a stray `AGENTS.md` in `/tmp` from unrelated tooling).
+        // dir (e.g. a stray `.agents/` in `/tmp` from unrelated tooling).
         std::fs::create_dir_all(root.join(".git")).unwrap();
         let home = UzeHome::at(root.join("uze-home"));
         let ctx = RuntimeContext {
@@ -267,45 +212,24 @@ mod runtime_projection_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Claude Code reads `AGENTS.md` on its own, so a project carrying
+    /// only that has nothing left for the shim to add.
     #[test]
-    fn agents_md_projects_an_import_and_the_project_working_tree_stays_untouched() {
-        let root = uze_testkit::temp::scratch("with-agents-md");
+    fn agents_md_alone_is_passthrough_because_claude_reads_it_natively() {
+        let root = uze_testkit::temp::scratch("agents-md-only");
         let project = root.join("project");
-        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(project.join(".git")).unwrap();
         std::fs::write(project.join("AGENTS.md"), "canary content\n").unwrap();
         let home = UzeHome::at(root.join("uze-home"));
         let ctx = RuntimeContext {
             cwd: &project,
             home: &home,
         };
+        let integration = ClaudeIntegration::new(root.join("claude-home"), home.clone());
 
-        let contribution = ClaudeIntegration::new(root.join("claude-home"), home.clone())
-            .runtime_contribution(&ctx);
-        assert!(contribution.note.is_none(), "{:?}", contribution.note);
-        assert_eq!(
-            contribution.extra_env,
-            vec![(
-                std::ffi::OsString::from(RUNTIME_PROJECTION_ENV_VAR),
-                std::ffi::OsString::from("1"),
-            )]
-        );
-        assert_eq!(
-            contribution.extra_args[0],
-            std::ffi::OsString::from("--add-dir")
-        );
-        let runtime_dir = PathBuf::from(&contribution.extra_args[1]);
-        assert!(runtime_dir.starts_with(home.runtime_dir()));
-
-        let claude_md = std::fs::read_to_string(runtime_dir.join("CLAUDE.md")).unwrap();
-        let canonical_agents_md = project.join("AGENTS.md").canonicalize().unwrap();
-        assert_eq!(claude_md, format!("@{}\n", canonical_agents_md.display()));
-
-        // The project's own working tree must never gain a file from this.
-        let project_entries: Vec<_> = std::fs::read_dir(&project)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect();
-        assert_eq!(project_entries, vec![std::ffi::OsString::from("AGENTS.md")]);
+        assert!(integration.runtime_contribution(&ctx).is_passthrough());
+        assert!(!integration.runtime_contribution_would_activate(&ctx));
+        assert!(!home.runtime_projects_dir().exists());
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -314,8 +238,7 @@ mod runtime_projection_tests {
     fn repeated_projection_for_the_same_project_is_idempotent() {
         let root = uze_testkit::temp::scratch("idempotent");
         let project = root.join("project");
-        std::fs::create_dir_all(&project).unwrap();
-        std::fs::write(project.join("AGENTS.md"), "v1\n").unwrap();
+        std::fs::create_dir_all(project.join(".agents").join("skills")).unwrap();
         let home = UzeHome::at(root.join("uze-home"));
         let ctx = RuntimeContext {
             cwd: &project,
@@ -341,8 +264,7 @@ mod runtime_projection_tests {
     fn project_path_containing_spaces_is_handled_safely() {
         let root = uze_testkit::temp::scratch("spaces");
         let project = root.join("a project with spaces");
-        std::fs::create_dir_all(&project).unwrap();
-        std::fs::write(project.join("AGENTS.md"), "canary\n").unwrap();
+        std::fs::create_dir_all(project.join(".agents").join("skills")).unwrap();
         let home = UzeHome::at(root.join("uze-home"));
         let ctx = RuntimeContext {
             cwd: &project,
@@ -353,8 +275,8 @@ mod runtime_projection_tests {
             .runtime_contribution(&ctx);
         assert!(contribution.note.is_none(), "{:?}", contribution.note);
         let runtime_dir = PathBuf::from(&contribution.extra_args[1]);
-        let claude_md = std::fs::read_to_string(runtime_dir.join("CLAUDE.md")).unwrap();
-        assert!(claude_md.contains("a project with spaces"));
+        let target = std::fs::read_link(runtime_dir.join(".claude").join("skills")).unwrap();
+        assert!(target.to_string_lossy().contains("a project with spaces"));
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -363,15 +285,13 @@ mod runtime_projection_tests {
     fn unwritable_runtime_dir_falls_open_to_passthrough_with_a_note() {
         let root = uze_testkit::temp::scratch("unwritable");
         let project = root.join("project");
-        std::fs::create_dir_all(&project).unwrap();
-        std::fs::write(project.join("AGENTS.md"), "canary\n").unwrap();
+        std::fs::create_dir_all(project.join(".agents").join("skills")).unwrap();
         let home = UzeHome::at(root.join("uze-home"));
 
         // Occupy the exact path the projection needs as a *file* instead of
         // a directory, so `create_dir_all` fails deterministically without
         // needing real permission games.
-        let agents_md = project.join("AGENTS.md").canonicalize().unwrap();
-        let project_id = harness_runtime::project_id_for(agents_md.parent().unwrap());
+        let project_id = harness_runtime::project_id_for(&project.canonicalize().unwrap());
         let blocked_path = home.runtime_projection_dir("claude-code", &project_id);
         std::fs::create_dir_all(blocked_path.parent().unwrap()).unwrap();
         std::fs::write(&blocked_path, b"not a directory").unwrap();
@@ -437,6 +357,10 @@ mod runtime_projection_tests {
         let agent_body = std::fs::read_to_string(projected_agents.join("reviewer.md")).unwrap();
         assert_eq!(agent_body, "canary agent\n");
 
+        // Instructions are Claude's own to read: no import, no switch.
+        assert!(contribution.extra_env.is_empty());
+        assert!(!runtime_dir.join("CLAUDE.md").exists());
+
         // The project's own working tree must never gain a file from this.
         let project_entries = std::fs::read_dir(&project)
             .unwrap()
@@ -449,28 +373,6 @@ mod runtime_projection_tests {
                 .map(std::ffi::OsString::from)
                 .collect::<std::collections::BTreeSet<_>>()
         );
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn no_project_agents_directory_projects_no_symlinks() {
-        let root = uze_testkit::temp::scratch("no-agents-dir");
-        let project = root.join("project");
-        std::fs::create_dir_all(&project).unwrap();
-        std::fs::write(project.join("AGENTS.md"), "canary\n").unwrap();
-        let home = UzeHome::at(root.join("uze-home"));
-        let ctx = RuntimeContext {
-            cwd: &project,
-            home: &home,
-        };
-
-        let contribution = ClaudeIntegration::new(root.join("claude-home"), home.clone())
-            .runtime_contribution(&ctx);
-        assert!(contribution.note.is_none(), "{:?}", contribution.note);
-        let runtime_dir = PathBuf::from(&contribution.extra_args[1]);
-        assert!(!runtime_dir.join(".claude").join("skills").exists());
-        assert!(!runtime_dir.join(".claude").join("agents").exists());
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -500,7 +402,10 @@ mod runtime_projection_tests {
         assert!(projected_skills.is_symlink());
         assert!(projected_agents.is_symlink());
 
-        std::fs::remove_dir_all(project.join(".agents")).unwrap();
+        // `.agents/` itself stays, so the next launch still projects and
+        // is the one that must clear what no longer exists.
+        std::fs::remove_dir_all(project.join(".agents").join("skills")).unwrap();
+        std::fs::remove_dir_all(project.join(".agents").join("agents")).unwrap();
         let second = integration.runtime_contribution(&ctx);
         assert!(second.note.is_none(), "{:?}", second.note);
         assert!(!projected_skills.exists() && !projected_skills.is_symlink());
@@ -532,7 +437,7 @@ mod runtime_projection_tests {
         assert!(integration.runtime_contribution_would_activate(&ctx));
 
         // ...but a status *read* performs no writes: no projection
-        // directory, no CLAUDE.md, no links — nothing the popup does may
+        // directory, no links — nothing the popup does may
         // ever touch the runtime tree (that was the launch-path race
         // source: status recomputation writing the projection). The
         // read-only assertion must come before the real contribution,
@@ -542,18 +447,12 @@ mod runtime_projection_tests {
         assert!(!runtime_dir.exists());
         assert!(!integration.runtime_contribution(&ctx).is_passthrough());
 
-        // Losing AGENTS.md does not switch the projection off: `.agents/`
-        // is delivered on its own terms, so the Skills this project has
-        // keep reaching the session. Only the instruction import goes away,
-        // and the stale `CLAUDE.md` importing the removed file is cleared
-        // rather than left behind as a dangling `@` import.
+        // Losing AGENTS.md changes nothing here: it was never projected.
         std::fs::remove_file(project.join("AGENTS.md")).unwrap();
         assert!(integration.runtime_contribution_would_activate(&ctx));
-        assert!(!integration.runtime_contribution(&ctx).is_passthrough());
-        assert!(!runtime_dir.join("CLAUDE.md").exists());
         assert!(runtime_dir.join(".claude").join("skills").is_symlink());
 
-        // Nothing portable left at all → inactive, matching the real
+        // No `.agents/` left → inactive, matching the real
         // contribution's passthrough.
         std::fs::remove_dir_all(project.join(".agents")).unwrap();
         assert!(!integration.runtime_contribution_would_activate(&ctx));
