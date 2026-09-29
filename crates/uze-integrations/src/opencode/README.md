@@ -86,25 +86,21 @@ collision-safe (ADR-013), but the specific justification "no CLI exists"
 is not itself sourced anywhere. Treat this as an unverified assumption
 carried by the implementation, not a disproven one.
 
-## Runtime binary aliasing (Provisioning)
+## Provisioning and the `opencode2` name
 
-OpenCode's v2 installer produces a binary named `opencode2`; UZE's
-canonical invocation is `opencode` with no suffix. `provision()`:
+The V2 installer is OpenCode's standard channel and places `opencode`; the
+V2 beta placed only `opencode2`, which it now leaves as a compatibility
+script. `provision()`:
 
-1. `resolve_opencode_binary()` — tries `opencode --version` first, falls
-   back to `opencode2 --version`.
-2. Runs the official install/upgrade script (or `<binary> upgrade` if
-   already present) through the injected `ProcessRunner`.
-3. `ensure_opencode_alias()` — if `opencode` still doesn't resolve, creates
-   a symlink from either `opencode2`'s own directory or `~/.local/bin`
-   pointing `opencode → opencode2`. Idempotent and non-destructive: a
-   correct symlink is left alone, a stale one is repaired, a real
-   (non-symlink) file at the alias path is never touched.
-4. Only reports `Verified` once `opencode --version` itself succeeds — not
-   merely `opencode2`.
+1. `resolve_opencode_binary()` looks for `opencode`, then `opencode2`, on
+   `PATH` outside the shims, and in the installer's documented directories.
+2. Runs `opencode upgrade`, or the official V2 installer when only the beta
+   `opencode2` is there (it takes a positional project path, not
+   `upgrade`), through the injected `ProcessRunner`, and reports `Verified`
+   once the version answers.
 
-No other integration in this crate has an equivalent binary-name-migration
-workaround.
+UZE creates no alias for either name; its runtime shim is what keeps
+`opencode` stable.
 
 ## Limitations
 
