@@ -513,11 +513,11 @@ fn a_package_install_outside_a_project_reports_the_machine_scope() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(
-            stdout.contains("Scope") && stdout.contains("this machine only"),
+            stdout.contains("Installed on this machine only"),
             "`uze {rendered}` must end with the scope it touched: {stdout}"
         );
         assert!(
-            !stdout.contains("Added to project") && !stdout.contains("this project"),
+            !stdout.contains("Added to this project") && !stdout.contains("this project"),
             "`uze {rendered}` declared nothing and must not claim a project: {stdout}"
         );
     }
@@ -637,7 +637,7 @@ fn a_marketplace_removed_whole_says_its_registry_entry_went() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(stdout.contains("registry entry removed"), "got: {stdout}");
+    assert!(stdout.contains(" removed · "), "got: {stdout}");
     let _ = std::fs::remove_dir_all(home);
 }
 

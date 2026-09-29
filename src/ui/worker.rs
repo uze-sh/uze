@@ -604,6 +604,7 @@ fn install_project_environment(
                 })
                 .map(|report| match report {
                     InstallReport::NoChanges => "Project environment already up to date".to_owned(),
+                    InstallReport::NoProject => "No project here; nothing was declared".to_owned(),
                     InstallReport::Installed {
                         plugins,
                         reconciled,
@@ -1572,6 +1573,7 @@ mod tests {
                 active_name: (*id).to_owned(),
                 source: "embedded:example".to_owned(),
                 store_path: PathBuf::from("/store/example"),
+                commit: None,
                 capability_count: 1,
                 freshness: uze_application::application::Freshness::not_checked(),
                 undelivered: Vec::new(),

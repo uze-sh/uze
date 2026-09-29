@@ -146,9 +146,11 @@ impl OpenCodeIntegration {
             // the `/` catalog, and a mention (`@id`) still expands its body —
             // V2's picker offers every discovered Skill that way. Half the
             // policy is carried; half is not.
+            // The loss leads, so a report that shows one sentence shows it.
             route = CompatibilityRoute::Adaptable;
-            evidence.push_str(
-                " invoke.user=false degrades on OpenCode V2: `slash: false` withholds the Skill from the `/` catalog, but a mention (`@<label>`) still invokes it, so a user can reach it anyway — ADAPTED per ADR-030, reported rather than claimed.",
+            evidence.insert_str(
+                0,
+                "A user can still invoke it with a mention (`@<label>`). invoke.user=false degrades on OpenCode V2: `slash: false` withholds the Skill from the `/` catalog, but a mention still invokes it — ADAPTED per ADR-030, reported rather than claimed. ",
             );
         }
         ExposurePlan {

@@ -332,6 +332,7 @@ fn install_project_environment_with_no_lock_installs_nothing_and_settles() {
     match report {
         InstallReport::Installed { plugins, .. } => assert!(plugins.is_empty()),
         InstallReport::NoChanges => {}
+        InstallReport::NoProject => panic!("the fixture is a project"),
     }
     // The second has nothing left to do, which is the property that
     // actually matters: installing twice is installing once.

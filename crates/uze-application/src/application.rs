@@ -228,6 +228,10 @@ impl UzeApplication {
             active_name: package.active_name.clone(),
             source: package.provenance.requested.display(),
             store_path: package.root.clone(),
+            commit: match &package.provenance.resolved {
+                uze_core::ResolvedSource::Git { commit, .. } => Some(commit.clone()),
+                _ => None,
+            },
             capability_count: resources.len(),
             freshness: self.freshness_of(package),
             undelivered: state::undelivered(&self.home, package.id.as_str())?

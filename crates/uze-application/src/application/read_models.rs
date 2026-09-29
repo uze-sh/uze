@@ -100,6 +100,9 @@ pub struct PluginSummary {
     /// this back.
     pub source: String,
     pub store_path: PathBuf,
+    /// The commit the package was installed from, when it came from one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
     pub capability_count: usize,
     /// Whether the one installed is the one that exists, and when that was
     /// last established.
@@ -227,14 +230,19 @@ pub struct MarketplaceRegistration {
 }
 
 impl MarketplaceRegistration {
-    /// What is read, and whether it follows a working tree or commits.
-    pub fn reads(&self) -> String {
-        let place = match (&self.checkout, &self.subpath) {
+    /// Where its catalogue is read from on this machine.
+    pub fn place(&self) -> String {
+        match (&self.checkout, &self.subpath) {
             (Some(checkout), Some(subpath)) => checkout.join(subpath).display().to_string(),
             (Some(checkout), None) => checkout.display().to_string(),
             (None, Some(subpath)) => format!("{}/{}", self.identity, subpath.display()),
             (None, None) => self.identity.clone(),
-        };
+        }
+    }
+
+    /// What is read, and whether it follows a working tree or commits.
+    pub fn reads(&self) -> String {
+        let place = self.place();
         if self.linked {
             format!("Reads the working tree at {place} (linked)")
         } else {

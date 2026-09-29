@@ -829,7 +829,10 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     let (market_args, install_args) =
         uze_testkit::marketplace::marketplace_install_args(&home, &package_fixture());
     run(&market_args.iter().map(String::as_str).collect::<Vec<_>>());
-    let add = run(&install_args.iter().map(String::as_str).collect::<Vec<_>>());
+    // The route each harness took is the detailed report's to say.
+    let mut add_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
+    add_args.push("--verbose");
+    let add = run(&add_args);
     assert!(
         add.contains("Claude Code  native package, generated manifest"),
         "{add}"
@@ -977,7 +980,10 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     let (market_args, install_args) =
         uze_testkit::marketplace::marketplace_install_args(&home, &package);
     run(&market_args.iter().map(String::as_str).collect::<Vec<_>>());
-    let add = run(&install_args.iter().map(String::as_str).collect::<Vec<_>>());
+    // The route each harness took is the detailed report's to say.
+    let mut add_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
+    add_args.push("--verbose");
+    let add = run(&add_args);
     assert!(
         add.contains("Claude Code  native package, generated manifest"),
         "{add}"
@@ -1047,7 +1053,7 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     // Idempotent: `install -m` a second time does not fail. Both
     // integrations' package delivery re-resolves to the same
     // already-installed selector — no reinstall, no resource-level replay.
-    let second_add = run(&install_args.iter().map(String::as_str).collect::<Vec<_>>());
+    let second_add = run(&add_args);
     assert!(
         second_add.contains("Claude Code  native package, generated manifest"),
         "{second_add}"
@@ -1366,7 +1372,8 @@ fn a_machine_update_with_nothing_new_says_already_current() {
             .env("UZE_HOME", &uze_home)
             .env("HOME", &home)
             .env("PATH", path)
-            .args(["update", "-m"])
+            // The scope and each plugin's own line are the detailed report's.
+            .args(["update", "-m", "--verbose"])
             .output()
             .unwrap();
         let stdout = String::from_utf8_lossy(&update.stdout);
@@ -1460,7 +1467,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
 
     let again = uze(&["update", "greet", "-m"]);
     assert!(
-        again.contains("already current"),
+        again.contains("Already up to date"),
         "nothing was edited since: {again}"
     );
 
@@ -1517,7 +1524,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
     );
     let after_project = uze(&["update", "greet", "-m"]);
     assert!(
-        after_project.contains("already current"),
+        after_project.contains("Already up to date"),
         "the edit was taken in, and reported, by the project update: {after_project}"
     );
 

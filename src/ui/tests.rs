@@ -26,6 +26,7 @@ fn plugin(id: &str) -> PluginSummary {
         active_name: id.to_owned(),
         source: "embedded:example".to_owned(),
         store_path: PathBuf::from("/store/example"),
+        commit: None,
         capability_count: 2,
         freshness: uze_application::application::Freshness::not_checked(),
         undelivered: Vec::new(),

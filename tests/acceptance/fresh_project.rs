@@ -88,7 +88,7 @@ fn fresh_clone_with_lock_install_marks_environment_ready() {
 
     let install = env.run_ok(uze_bin(), &["install"]);
     assert!(
-        String::from_utf8_lossy(&install.stdout).contains("Installed"),
+        String::from_utf8_lossy(&install.stdout).contains("installed"),
         "install must report success"
     );
 

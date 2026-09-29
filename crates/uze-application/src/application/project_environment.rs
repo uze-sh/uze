@@ -736,10 +736,10 @@ impl Project<'_> {
         // No project here: there is nothing declared to bring about, and
         // creating an `agents.yaml` would turn the directory into a project
         // by being stood in — the exact thing the resolution above refuses.
-        // The answer is an empty report the verb reports as "nothing was
-        // declared".
+        // The answer is a report of its own, which the verb reports as
+        // "nothing was declared".
         let Some(canonical) = canonical else {
-            return Ok(InstallReport::NoChanges);
+            return Ok(InstallReport::NoProject);
         };
         // `install` is an explicit act of setting this project up, so it is
         // the right moment to create the file a person edits — unlike
@@ -1369,6 +1369,8 @@ pub enum InstallReport {
     /// The declared environment, the lock and the machine already agreed,
     /// and the projection was current; nothing to do.
     NoChanges,
+    /// There is no project here, so nothing was declared to bring about.
+    NoProject,
     /// The project's environment moved: plugins resolved or reproduced,
     /// plugins the manifest no longer declares removed, and the project
     /// context left reconciled.

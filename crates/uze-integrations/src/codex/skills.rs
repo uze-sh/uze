@@ -136,7 +136,8 @@ impl CodexIntegration {
                 " The canonical invoke.model=false is translated into Codex's own agents/openai.yaml → policy.allow_implicit_invocation: false (explicit `$skill` invocation still works) — NATIVE.",
             );
         } else if !policy.user {
-            evidence.push_str(" Codex has no documented way to disable explicit `$skill` invocation, so the canonical invoke.user=false cannot be enforced — DEGRADED, reported honestly rather than invented.");
+            // The loss leads, so a report that shows one sentence shows it.
+            evidence.insert_str(0, "A user can still invoke it with `$skill`. Codex has no documented way to disable explicit invocation, so the canonical invoke.user=false cannot be enforced — DEGRADED, reported honestly rather than invented. ");
         }
         ExposurePlan {
             route,

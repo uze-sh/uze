@@ -193,6 +193,62 @@ pub fn report_title(name: &str, detail: Option<&str>) -> String {
     output
 }
 
+/// When the command began, for the time its closing line reports.
+static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// What happened to one thing a command changed. Every command that
+/// changes the machine or the project reports in these, one line each,
+/// the way a package manager does: the mark says what happened and the
+/// rest of the line what it happened to.
+#[derive(Clone, Copy)]
+pub enum Change {
+    Added,
+    Removed,
+    Updated,
+    /// Done, but short of whole: something the reader should know.
+    Attention,
+    Failed,
+}
+
+/// One line of a change report: `+ flow@market 3f2a91c`.
+pub fn change(kind: Change, subject: &str, detail: Option<&str>) -> String {
+    let mark = match kind {
+        Change::Added => success_text("+"),
+        Change::Removed => label("-"),
+        Change::Updated => accent(glyph(Symbol::ArrowUp)),
+        Change::Attention => warning_icon(),
+        Change::Failed => error_icon(),
+    };
+    match detail {
+        Some(detail) => format!("{mark} {subject}  {}\n", label(detail)),
+        None => format!("{mark} {subject}\n"),
+    }
+}
+
+/// A line under the change it qualifies, indented beneath it.
+pub fn change_detail(kind: Change, subject: &str, detail: Option<&str>) -> String {
+    format!("  {}", change(kind, subject, detail))
+}
+
+/// A whole change report: which UZE is speaking, a line per thing changed,
+/// and one closing line with the outcome and how long it took.
+pub fn change_report(lines: &str, outcome: &str) -> String {
+    let took = STARTED
+        .get()
+        .map(|began| format!(" {}", label(format!("[{}]", took_to_say(began.elapsed())))))
+        .unwrap_or_default();
+    let header = format!(
+        "{} {}\n",
+        title("uze"),
+        label(format!("v{}", env!("CARGO_PKG_VERSION")))
+    );
+    if lines.is_empty() {
+        format!("{header}\n{outcome}{took}\n")
+    } else {
+        format!("{header}\n{lines}\n{outcome}{took}\n")
+    }
+}
+
 pub fn key_value(key: &str, value: impl AsRef<str>) -> String {
     format!("  {:<16} {}", label(key), value.as_ref())
 }
@@ -218,19 +274,20 @@ pub fn spinner(message: &str) -> ProgressBar {
     pb
 }
 
-/// Whether an attempt that failed — HTTPS before the SSH that answered — is
-/// printed too. Finished steps always are.
+/// Whether finished steps, and an attempt that failed before another
+/// answered, stay on screen. Without it a step lives on the spinner's line
+/// only, and the one that failed is the only one left behind.
 static VERBOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// The step the spinner is showing, and when it began.
 static CURRENT: Mutex<Option<(String, std::time::Instant)>> = Mutex::new(None);
 
 /// Shows what an operation is doing on the spinner drawing now: every step
-/// the domain reports takes the spinner's line, and the one it replaces
-/// stays above it, checked, with how long it took — the account a
-/// thirteen-second command owes the person waiting on it. With `verbose`,
-/// an attempt that failed and was followed by another is printed as well.
+/// the domain reports takes the spinner's line. With `verbose`, the one it
+/// replaces stays above it, checked, with how long it took, and so does an
+/// attempt that failed and was followed by another.
 pub fn follow_steps(verbose: bool) {
+    STARTED.get_or_init(std::time::Instant::now);
     VERBOSE.store(verbose, std::sync::atomic::Ordering::Relaxed);
     uze::steps::listen(on_step);
 }
@@ -275,8 +332,8 @@ fn on_step(step: &uze::steps::Step) {
     }
 }
 
-/// Prints the step still showing as finished — or as where the operation
-/// failed.
+/// Prints the step still showing as where the operation failed, or, with
+/// `verbose`, as finished.
 pub fn settle_steps(bar: &ProgressBar, succeeded: bool) {
     settle(bar, succeeded);
 }
@@ -285,6 +342,9 @@ fn settle(bar: &ProgressBar, succeeded: bool) {
     let Some((line, at)) = CURRENT.lock().ok().and_then(|mut current| current.take()) else {
         return;
     };
+    if succeeded && !VERBOSE.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     let icon = if succeeded {
         success_icon()
     } else {

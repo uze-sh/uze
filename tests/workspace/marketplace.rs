@@ -90,7 +90,7 @@ fn removing_a_marketplace_takes_its_packages_with_it() {
     let remove = env.run_ok(uze_bin(), &["market", "remove", "stale-ledger-market"]);
     let stdout = String::from_utf8_lossy(&remove.stdout);
     assert!(
-        stdout.contains("Removed"),
+        stdout.contains("- flow@stale-ledger-market"),
         "the purge names what it took off: {stdout}"
     );
 
@@ -217,7 +217,7 @@ fn removing_a_marketplace_that_installs_nothing_removes_in_one_step() {
     let remove = env.run_ok(uze_bin(), &["market", "remove", "empty-market"]);
     let stdout = String::from_utf8_lossy(&remove.stdout);
     assert!(
-        stdout.contains("Marketplace removed"),
+        stdout.contains("Marketplace empty-market removed"),
         "the record removal alone: {stdout}"
     );
     let list = env.run_ok(uze_bin(), &["market", "list"]);
