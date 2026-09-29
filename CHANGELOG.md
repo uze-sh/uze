@@ -4,6 +4,16 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.4](https://github.com/uze-sh/uze/compare/v1.0.0-beta.3...v1.0.0-beta.4) - 2026-09-29
+
+### Features
+
+- **delivery:** Deliver the whole plugin to every harness in its own dialect ([#155](https://github.com/uze-sh/uze/pull/155)) ([10e5878](https://github.com/uze-sh/uze/commit/10e5878e7bbcd6ddc92029b5dd37a61674a95f93))
+
+### Refactor
+
+- **ui:** Remove the subagent rows from the workspace sidebar ([#153](https://github.com/uze-sh/uze/pull/153)) ([a7abdac](https://github.com/uze-sh/uze/commit/a7abdac071b9dc3c0392e6fa1a0a7f1d70213f55))
+
 ## [1.0.0-beta.3](https://github.com/uze-sh/uze/compare/v1.0.0-beta.2...v1.0.0-beta.3) - 2026-09-28
 
 ### Features
