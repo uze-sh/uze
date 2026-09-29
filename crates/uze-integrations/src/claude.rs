@@ -62,7 +62,8 @@ use crate::shared::provision::{
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
 use uze_core::capability::harness::Findings;
-use uze_core::integration::HarnessFact;
+use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::project_context::AgentsDirectoryResource;
 /// Claude Code peer integration. Its transparent-attachment strategy is a
 /// UZE-managed "skills-dir plugin" reference at `<claude_home>/skills/<name>`
 /// (see ADR-006): Claude auto-loads any directory there containing
@@ -264,6 +265,12 @@ impl IntegrationPort for ClaudeIntegration {
 
     fn runtime_projects_project_context(&self) -> bool {
         true
+    }
+
+    /// Claude Code reads neither `.agents/` kind; its launcher links both
+    /// into the `--add-dir` target (see `runtime::project_resource_projection`).
+    fn project_resource_route(&self, _resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        ProjectResourceRoute::RuntimeProjection
     }
 
     fn provision(&self, runner: &dyn ProcessRunner) -> Result<ProvisioningResult> {
@@ -740,6 +747,12 @@ fn mcp_registry_names(uze_home: &UzeHome, resource: &Resource) -> Vec<String> {
 
 /// What claude was measured to do, each fact with the Lab check proving it.
 const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "project agents",
+        fact: "reads no `./.agents/agents`, and offers an agent linked into an `--add-dir` target's `.claude/agents`",
+        measured_on: VERSION,
+        proven_by: "contract/context.py::_assert_project_agent",
+    },
     HarnessFact {
         subject: "agents",
         fact: "offers a plugin's agent as `<plugin>:<subdirectories>:<name>`",

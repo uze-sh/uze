@@ -10,6 +10,7 @@ use crate::{
     exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan},
     harness_runtime::{HarnessRuntimeContribution, RuntimeContext},
     home::UzeHome,
+    project_context::AgentsDirectoryResource,
     provisioning::ProvisionStatus,
     router::HarnessCapabilities,
     state,
@@ -315,20 +316,17 @@ pub trait IntegrationPort: Send + Sync {
         ContextDelivery::None
     }
 
-    /// Whether this harness's own binary natively discovers Agent Skills
-    /// from a project-local `.agents/skills/` directory, walking up from
-    /// cwd, entirely on its own — a vendor convention some harnesses
-    /// converged on independently, requiring no UZE involvement at all
-    /// (distinct from any UZE-managed global `~/.agents/skills` delivery,
-    /// which is a `CapabilityKind::AgentSkill` route, not this). Default
-    /// `false`: an integration overrides this only against its own vendor's
-    /// documented behavior. The answer is about Skills, the one kind every
-    /// harness that reads `.agents/` shares; which other kinds it reads
-    /// there is the integration's own record. A harness answering `false`
-    /// is given the directory through its runtime projection, outside the
-    /// repository, when it has one: UZE never writes into `.agents/`.
-    fn discovers_project_agents_directory(&self) -> bool {
-        false
+    /// How one kind of a project's own `.agents/` reaches this harness:
+    /// read by its binary straight out of the project (a convention some
+    /// harnesses converged on, distinct from any UZE-managed global
+    /// `~/.agents/skills` delivery, which is a `CapabilityKind::AgentSkill`
+    /// route), handed to it by its runtime projection from outside the
+    /// repository, or not at all. UZE never writes into `.agents/`, so
+    /// there is no fourth answer. The kinds are asked apart because
+    /// harnesses read them apart. Default `Unsupported`: an integration
+    /// answers only from its own vendor's measured behavior.
+    fn project_resource_route(&self, _resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        ProjectResourceRoute::Unsupported
     }
 
     /// The prefix a human types to explicitly invoke an exposed capability
@@ -676,6 +674,19 @@ pub trait IntegrationPort: Send + Sync {
             _ => Ok(false),
         }
     }
+}
+
+/// How one kind of a project's `.agents/` reaches a harness
+/// (`IntegrationPort::project_resource_route`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectResourceRoute {
+    /// The harness's binary reads it out of the project itself.
+    Native,
+    /// The harness's runtime projection hands it over at launch, from
+    /// outside the repository.
+    RuntimeProjection,
+    /// Neither; the integration's facts say why.
+    Unsupported,
 }
 
 /// One measured fact about a harness that a delivery depends on.

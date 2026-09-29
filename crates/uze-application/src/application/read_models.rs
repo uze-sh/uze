@@ -6,7 +6,8 @@
 
 use uze_core::{
     Result,
-    integration::{ContextDelivery, IntegrationPort},
+    integration::{ContextDelivery, IntegrationPort, ProjectResourceRoute},
+    project_context::AgentsDirectoryResource,
     provisioning::ProvisioningResult,
 };
 
@@ -689,12 +690,16 @@ pub enum ContextMechanism {
 }
 
 /// One harness's declared context support, one mechanism per portable
-/// resource — the two are answered independently because a harness may
-/// discover `.agents/` natively while needing help with `AGENTS.md`.
+/// resource — answered independently because a harness may read
+/// `.agents/skills` natively while needing help with `AGENTS.md`, or with
+/// `.agents/agents`, or getting none for it at all.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct HarnessContextSupport {
     pub instructions: ContextMechanism,
-    pub agents_directory: ContextMechanism,
+    /// `.agents/skills`.
+    pub project_skills: ContextMechanism,
+    /// `.agents/agents`.
+    pub project_agents: ContextMechanism,
 }
 
 impl HarnessContextSupport {
@@ -704,7 +709,16 @@ impl HarnessContextSupport {
         let projection = RuntimeProjection::of(integration, runtime_shim_active);
         Self {
             instructions: ContextMechanism::for_instructions(integration, projection),
-            agents_directory: ContextMechanism::for_agents_directory(integration, projection),
+            project_skills: ContextMechanism::for_project_resource(
+                integration,
+                AgentsDirectoryResource::Skills,
+                projection,
+            ),
+            project_agents: ContextMechanism::for_project_resource(
+                integration,
+                AgentsDirectoryResource::Agents,
+                projection,
+            ),
         }
     }
 }
@@ -753,17 +767,21 @@ impl ContextMechanism {
         }
     }
 
-    pub(crate) fn for_agents_directory(
+    pub(crate) fn for_project_resource(
         integration: &dyn IntegrationPort,
+        resource: AgentsDirectoryResource,
         projection: RuntimeProjection,
     ) -> Self {
-        if integration.discovers_project_agents_directory() {
-            return Self::Native;
-        }
-        match projection {
-            RuntimeProjection::Active => Self::RuntimeShim,
-            RuntimeProjection::Shadowed => Self::ShimShadowed,
-            RuntimeProjection::Inactive => Self::Unsupported,
+        match (integration.project_resource_route(resource), projection) {
+            (ProjectResourceRoute::Native, _) => Self::Native,
+            (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Active) => {
+                Self::RuntimeShim
+            }
+            (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Shadowed) => {
+                Self::ShimShadowed
+            }
+            (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Inactive)
+            | (ProjectResourceRoute::Unsupported, _) => Self::Unsupported,
         }
     }
 }

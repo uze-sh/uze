@@ -38,6 +38,7 @@ mod generate;
 mod mcp;
 mod plugin;
 mod preferences;
+mod runtime;
 mod session;
 mod skills;
 
@@ -58,7 +59,9 @@ use crate::shared::provision::{
 use mcp::attach_mcp_entry;
 use plugin::CodexMarketplace;
 use uze_core::capability::harness::Findings;
-use uze_core::integration::HarnessFact;
+use uze_core::harness_runtime::{HarnessRuntimeContribution, RuntimeContext};
+use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::project_context::AgentsDirectoryResource;
 
 /// Codex peer integration. Its transparent-attachment strategy is a
 /// UZE-managed reference at `<agents_home>/skills/<name>` (see ADR-006):
@@ -176,9 +179,28 @@ impl IntegrationPort for CodexIntegration {
     /// — a project-local convention read directly by the `codex` binary,
     /// with no UZE involvement, independent of the UZE-managed
     /// `$HOME/.agents/skills` symlink this integration writes elsewhere.
-    /// Measured on 0.158 (Lab `context-project-skill-reaches-model`); it does
-    /// not read `./.agents/agents`.
-    fn discovers_project_agents_directory(&self) -> bool {
+    /// Measured on 0.158 (Lab `context-project-skill-reaches-model`).
+    ///
+    /// It does not read `./.agents/agents` (its project root for agents is
+    /// `.codex/agents`, in a trusted project only), so its launcher hands
+    /// the project's agents over as a `-c` configuration layer; see
+    /// `runtime`.
+    fn project_resource_route(&self, resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        match resource {
+            AgentsDirectoryResource::Skills => ProjectResourceRoute::Native,
+            AgentsDirectoryResource::Agents => ProjectResourceRoute::RuntimeProjection,
+        }
+    }
+
+    fn runtime_contribution(&self, ctx: &RuntimeContext) -> HarnessRuntimeContribution {
+        runtime::runtime_contribution(ctx, &self.harness_keys())
+    }
+
+    fn runtime_contribution_would_activate(&self, ctx: &RuntimeContext) -> bool {
+        runtime::projection_would_activate(ctx)
+    }
+
+    fn runtime_projects_project_context(&self) -> bool {
         true
     }
 
@@ -576,18 +598,32 @@ const CODEX_AGENT_DIALECT: AgentDialect = AgentDialect {
 
 fn codex_agent_toml(resource: &Resource, label: &str, keys: &[&str]) -> String {
     let document = AgentDocument::parse(&resource.capability.payload).unwrap_or_default();
-    let description = document
+    let instructions = resolve_text(&document.body, &resource.package_root);
+    format!(
+        "name = {}\ndescription = {}\n{}",
+        toml_string(label),
+        toml_string(codex_agent_description(&document)),
+        codex_role_config(&document, &instructions, keys),
+    )
+}
+
+fn codex_agent_description(document: &AgentDocument) -> &str {
+    document
         .description
         .as_deref()
-        .unwrap_or("Portable UZE custom agent.");
-    let instructions = resolve_text(&document.body, &resource.package_root);
+        .unwrap_or("Portable UZE custom agent.")
+}
+
+/// What a Codex role runs with: its instructions and the fields its
+/// `harness.codex` block gives it. A standalone agent file carries this
+/// under its name and description; a role declared in configuration
+/// points at it alone, since Codex refuses a role file naming either.
+fn codex_role_config(document: &AgentDocument, instructions: &str, keys: &[&str]) -> String {
     let mut toml = format!(
-        "name = {}\ndescription = {}\ndeveloper_instructions = {}\n",
-        toml_string(label),
-        toml_string(description),
-        toml_string(instructions.trim()),
+        "developer_instructions = {}\n",
+        toml_string(instructions.trim())
     );
-    let (block, _) = agent_block(&CODEX_AGENT_DIALECT, keys, &document);
+    let (block, _) = agent_block(&CODEX_AGENT_DIALECT, keys, document);
     for (key, value) in &block {
         if let Some(text) = value.as_str() {
             toml.push_str(&format!("{} = {}\n", key.as_str(), toml_string(text)));
@@ -630,6 +666,18 @@ fn toml_string(value: &str) -> String {
 
 /// What codex was measured to do, each fact with the Lab check proving it.
 const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "project agents",
+        fact: "reads no `./.agents/agents`, and offers the roles a `-c agents={...}` layer declares beside the user's own",
+        measured_on: VERSION,
+        proven_by: "contract/context.py::_assert_project_agent",
+    },
+    HarnessFact {
+        subject: "project agents",
+        fact: "takes a launch's `-c` layer into a session served by an app-server daemon started without it",
+        measured_on: VERSION,
+        proven_by: "experiments/codex/project-agents.py::run",
+    },
     HarnessFact {
         subject: "agents",
         fact: "runs a role file from `~/.codex/agents/` by its `name`, which carries the label",

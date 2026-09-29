@@ -165,6 +165,18 @@ timeout 240 opencode run {shlex.quote(prompt)} 2>&1
         browser, and proving on the same capture that a default Skill is
         listed there while the model-only one is not.
         """
+        if prop == "context-project-agent-reaches-model":
+            # Measured, `experiments/opencode/project-agents`: the project
+            # roots are inside the checkout, `OPENCODE_CONFIG_DIR` replaces
+            # the user's configuration, and the additive variables reach
+            # only the server a launch starts, which by default is the
+            # shared service every project is served from.
+            return (
+                "OpenCode 2.0.18 reads no `.agents/agents`, and a launch cannot "
+                "hand it one project's agents: its extra-configuration "
+                "environment reaches only the background service a launch "
+                "starts, which then serves them to every other project"
+            )
         if prop == "model-only-is-not-user-invocable":
             return (
                 "OpenCode honours `slash: false` in its `/` palette builders but "

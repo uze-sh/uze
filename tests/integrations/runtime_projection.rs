@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 
 use uze_core::UzeHome;
 use uze_core::harness_runtime::{self, RuntimeContext};
-use uze_core::integration::IntegrationPort;
+use uze_core::integration::{IntegrationPort, ProjectResourceRoute};
+use uze_core::project_context::AgentsDirectoryResource;
 use uze_integrations::claude::ClaudeIntegration;
 use uze_integrations::registry::IntegrationRegistry;
 use uze_testkit::temp::TestEnvironment;
@@ -148,9 +149,10 @@ fn tree(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     entries
 }
 
-/// A project's `.agents/` is the project's own: a harness that reads it
-/// natively is left alone, one that does not is handed it through its
-/// runtime projection, and in neither case does the checkout gain a byte.
+/// A project's `.agents/` is the project's own. Each kind is answered on its
+/// own: a harness that reads it natively is left alone for it, one that
+/// does not is handed it through its runtime projection, a harness offering
+/// neither is handed nothing, and in no case does the checkout gain a byte.
 #[test]
 fn a_project_agents_directory_reaches_every_harness_without_a_write_into_the_checkout() {
     let env = TestEnvironment::isolated();
@@ -163,7 +165,8 @@ fn a_project_agents_directory_reaches_every_harness_without_a_write_into_the_che
     )
     .unwrap();
     fs::create_dir_all(project.join(".agents/agents")).unwrap();
-    fs::write(project.join(".agents/agents/reviewer.md"), "reviewer\n").unwrap();
+    let reviewer = "---\nname: house-reviewer\ndescription: Reviews the house\n---\nReview it.\n";
+    fs::write(project.join(".agents/agents/reviewer.md"), reviewer).unwrap();
     let before = tree(&project);
 
     let registry = IntegrationRegistry::isolated(&env.root().join("harnesses"), &home);
@@ -172,35 +175,87 @@ fn a_project_agents_directory_reaches_every_harness_without_a_write_into_the_che
             cwd: &project,
             home: &home,
         });
-        if integration.discovers_project_agents_directory() {
+        let projected: Vec<_> = AgentsDirectoryResource::ALL
+            .into_iter()
+            .filter(|kind| {
+                integration.project_resource_route(*kind) == ProjectResourceRoute::RuntimeProjection
+            })
+            .collect();
+        if projected.is_empty() {
             assert!(
                 contribution.is_passthrough(),
-                "{} reads .agents/ itself and must be left alone: {contribution:?}",
+                "{} is handed no part of .agents/ and must be left alone: {contribution:?}",
                 integration.id()
             );
             continue;
         }
         assert!(
             !contribution.is_passthrough(),
-            "{} reads no .agents/ and must be handed it: {contribution:?}",
+            "{} must be handed {projected:?}: {contribution:?}",
             integration.id()
         );
-        let projection = PathBuf::from(&contribution.extra_args[1]);
-        assert!(projection.starts_with(home.runtime_dir()));
-        let skills = fs::read_dir(projection.join(".claude/skills"))
-            .unwrap()
-            .count();
-        assert_eq!(skills, 1, "the project's one Skill is discoverable");
-        assert_eq!(
-            fs::read_to_string(projection.join(".claude/skills/demo/references/notes.md")).unwrap(),
-            "notes\n",
-            "a Skill keeps its supporting files"
-        );
-        assert_eq!(
-            fs::read_to_string(projection.join(".claude/agents/reviewer.md")).unwrap(),
-            "reviewer\n"
-        );
+        for kind in projected {
+            assert_projected(integration.id(), kind, &contribution, &home, reviewer);
+        }
     }
 
     assert_eq!(tree(&project), before, "the checkout must not change");
+}
+
+/// What a projected kind looks like in the one shape each launcher uses:
+/// an `--add-dir` target mirroring `.agents/`, or a `-c` configuration
+/// layer declaring the project's agents as roles.
+fn assert_projected(
+    harness: &str,
+    kind: AgentsDirectoryResource,
+    contribution: &uze_core::harness_runtime::HarnessRuntimeContribution,
+    home: &UzeHome,
+    reviewer: &str,
+) {
+    let flag = contribution.extra_args[0].to_string_lossy();
+    let value = contribution.extra_args[1].to_string_lossy();
+    match (flag.as_ref(), kind) {
+        ("--add-dir", AgentsDirectoryResource::Skills) => {
+            let projection = PathBuf::from(value.as_ref());
+            assert!(projection.starts_with(home.runtime_dir()));
+            let skills = fs::read_dir(projection.join(".claude/skills"))
+                .unwrap()
+                .count();
+            assert_eq!(skills, 1, "the project's one Skill is discoverable");
+            assert_eq!(
+                fs::read_to_string(projection.join(".claude/skills/demo/references/notes.md"))
+                    .unwrap(),
+                "notes\n",
+                "a Skill keeps its supporting files"
+            );
+        }
+        ("--add-dir", AgentsDirectoryResource::Agents) => {
+            let projection = PathBuf::from(value.as_ref());
+            assert_eq!(
+                fs::read_to_string(projection.join(".claude/agents/reviewer.md")).unwrap(),
+                reviewer,
+                "linked as written, so the harness names it `house-reviewer` itself"
+            );
+        }
+        ("-c", AgentsDirectoryResource::Agents) => {
+            assert!(
+                value.starts_with("agents={")
+                    && value.contains("\"house-reviewer\" = { description = \"Reviews the house\""),
+                "the agent is a role under its logical name: {value}"
+            );
+            let role = value
+                .split_once("config_file = \"")
+                .and_then(|(_, rest)| rest.split_once('"'))
+                .map(|(path, _)| PathBuf::from(path))
+                .expect("the role names its configuration file");
+            assert!(role.starts_with(home.runtime_dir()));
+            assert_eq!(
+                fs::read_to_string(role).unwrap(),
+                "developer_instructions = \"Review it.\"\n"
+            );
+        }
+        other => {
+            panic!("{harness} projects {kind:?} in a shape this test does not know: {other:?}")
+        }
+    }
 }

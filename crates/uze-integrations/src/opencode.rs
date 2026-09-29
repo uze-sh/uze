@@ -60,7 +60,8 @@ use crate::shared::plan::{blocked, unsupported};
 use mcp::attach_mcp_config;
 use provision::{provision_opencode, resolve_opencode_binary};
 use uze_core::capability::harness::Findings;
-use uze_core::integration::HarnessFact;
+use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::project_context::AgentsDirectoryResource;
 
 /// OpenCode does not consume the external plugin envelope. It natively
 /// discovers user Agent Skills in its own `~/.config/opencode/skills` and
@@ -165,10 +166,23 @@ impl IntegrationPort for OpenCodeIntegration {
     /// cwd — a project-local convention read directly by the `opencode`
     /// binary, with no UZE involvement, independent of the user-scope skills
     /// this integration writes elsewhere. Measured on 2.0.18 (Lab
-    /// `context-project-skill-reaches-model`); it does not read
-    /// `./.agents/agents`.
-    fn discovers_project_agents_directory(&self) -> bool {
-        true
+    /// `context-project-skill-reaches-model`).
+    ///
+    /// It does not read `./.agents/agents`, and no launch can hand it a
+    /// project's agents: `OPENCODE_CONFIG_DIR` replaces the user's
+    /// configuration directory, and the additive `OPENCODE_CONFIG` and
+    /// `OPENCODE_CONFIG_CONTENT` are read by the process that starts the
+    /// server. A default launch attaches to the shared background service,
+    /// which keeps the environment of whichever launch started it and
+    /// serves every project from it: one project's agents would reach the
+    /// next, and a later launch's would reach none (measured,
+    /// `experiments/opencode/project-agents`). The one path left,
+    /// `.opencode/agents` inside the checkout, is a write UZE never makes.
+    fn project_resource_route(&self, resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        match resource {
+            AgentsDirectoryResource::Skills => ProjectResourceRoute::Native,
+            AgentsDirectoryResource::Agents => ProjectResourceRoute::Unsupported,
+        }
     }
 
     fn capabilities(&self) -> HarnessCapabilities {
@@ -701,6 +715,12 @@ impl OpenCodeIntegration {
 
 /// What opencode was measured to do, each fact with the Lab check proving it.
 const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "project agents",
+        fact: "reads no `./.agents/agents`, and its extra-configuration environment reaches only the shared service a launch starts, which serves it to every project",
+        measured_on: VERSION,
+        proven_by: "experiments/opencode/project-agents.py::run",
+    },
     HarnessFact {
         subject: "agents",
         fact: "names an agent after its file and runs it on a `provider/model` its block names",

@@ -117,3 +117,54 @@ pub(crate) fn delivered_agent(path: &Path) -> Result<AgentDocument, String> {
     AgentDocument::parse(&bytes)
         .ok_or_else(|| format!("the frontmatter of {} does not parse", path.display()))
 }
+
+/// One agent a project authored in its own `.agents/agents/`.
+pub(crate) struct ProjectAgent {
+    /// Its logical name: the frontmatter `name`, else the file stem. No
+    /// plugin prefix, since it belongs to no plugin; this is the name
+    /// Claude Code gives the same file read as written, and the one rule
+    /// every harness is handed a project agent under.
+    pub(crate) label: String,
+    pub(crate) document: AgentDocument,
+}
+
+/// The agents under `directory`, every `*.md` at any depth, in path order.
+/// A second file claiming a label already taken is left out: a harness
+/// holds one agent per name. A file that does not parse is left out as
+/// well, since it has no name or description anyone could be handed.
+pub(crate) fn project_agents(directory: &Path) -> Vec<ProjectAgent> {
+    let mut files = Vec::new();
+    let mut pending = vec![directory.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for path in entries.flatten().map(|entry| entry.path()) {
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "md") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    let mut agents: Vec<ProjectAgent> = Vec::new();
+    for path in files {
+        let Some(document) = std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| AgentDocument::parse(&bytes))
+        else {
+            continue;
+        };
+        let Some(label) = document.name.clone().or_else(|| {
+            path.file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+        }) else {
+            continue;
+        };
+        if agents.iter().all(|agent| agent.label != label) {
+            agents.push(ProjectAgent { label, document });
+        }
+    }
+    agents
+}

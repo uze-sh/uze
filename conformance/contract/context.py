@@ -15,11 +15,13 @@ project is what a person has: an `AGENTS.md`, an `agents.yaml`, and
 harness that reads no `AGENTS.md` and gets no bridge from UZE fails here.
 
 The project's `.agents/` is authored the same way and read the same way: a
-Skill under `.agents/skills/` must reach the model on every harness,
-launched the way a person launches it, through UZE's launcher. Some
-harnesses read that directory themselves; one that does not is given it
-through its runtime projection, outside the repository. Either way the
-checkout is the project's, so the scene also proves nothing appeared in it.
+Skill under `.agents/skills/` and an agent under `.agents/agents/` must
+reach the model on every harness, launched the way a person launches it,
+through UZE's launcher. Some harnesses read a kind themselves; one that
+does not is given it through its runtime projection, outside the
+repository; a harness that can be given it no other way declares so, with
+the measured reason. Either way the checkout is the project's, so the
+scene also proves nothing appeared in it.
 """
 
 import os
@@ -64,7 +66,7 @@ uze install >/work/context-install.log 2>&1 || true
 def assert_contract(cfg, prov_ip, bindings):
     with describe("context"):
         _assert_agents_md(cfg, bindings)
-        _assert_project_skill(cfg, bindings)
+        _assert_project_directory(cfg, bindings)
     start_provider(cfg, "static")
 
 
@@ -154,12 +156,14 @@ def authored_turn(cfg, bindings, evidence):
     """One headless turn in the project that authored its `.agents/`,
     launched through UZE's launcher. Returns the context markers the model
     requests carried and the container's output; the output is kept as
-    `<evidence>.out`. Shared with a vendor vertical that asserts a kind only
-    its own harness needs UZE for."""
+    `<evidence>.out`. The turn is a delegating one, so a harness that offers
+    agents only to a dispatcher offers the project's here."""
     prov_ip = start_provider(cfg, "static")
     prompt = f"{CONTEXT_PROBE} which notes does this project keep?"
     prelude = _authored_prelude(bindings.launcher_name())
-    cmd = bindings.headless(cfg, prov_ip, prelude, prompt, AUTHORED_PROJECT)
+    cmd = bindings.headless(
+        cfg, prov_ip, prelude, prompt, AUTHORED_PROJECT, delegating=True
+    )
     proc = subprocess.run(
         cmd, capture_output=True, text=True, errors="replace", timeout=480
     )
@@ -169,7 +173,7 @@ def authored_turn(cfg, bindings, evidence):
     return observed_markers(provider_struct(cfg), "context_markers"), output
 
 
-def _assert_project_skill(cfg, bindings):
+def _assert_project_directory(cfg, bindings):
     seen, output = authored_turn(cfg, bindings, "context-project-skill")
     reached = seen.get(CONTEXT_PROBE, False)
     check(
@@ -197,4 +201,20 @@ def _assert_project_skill(cfg, bindings):
         else f"the checkout changed: {written}"
         if written
         else "the checkout's status was never printed",
+    )
+    _assert_project_agent(bindings, seen)
+
+
+def _assert_project_agent(bindings, seen):
+    """The agent the project authored is offered to the model by every
+    harness that is claimed to receive it."""
+    name = "context-project-agent-reaches-model"
+    reason = bindings.unsupported(name)
+    if reason:
+        check(name, True, f"{bindings.harness} cannot: {reason}", kind="adapt")
+        return
+    check(
+        name,
+        seen.get(PROJECT_AGENT, False),
+        "the agent the project authored in .agents/agents is offered to the model",
     )

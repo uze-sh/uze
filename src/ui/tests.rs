@@ -119,7 +119,8 @@ fn model_with_data() -> TuiModel {
                 runtime_shim_active: true,
                 context_support: HarnessContextSupport {
                     instructions: ContextMechanism::RuntimeShim,
-                    agents_directory: ContextMechanism::RuntimeShim,
+                    project_skills: ContextMechanism::RuntimeShim,
+                    project_agents: ContextMechanism::RuntimeShim,
                 },
             },
             HarnessHealth {
@@ -138,7 +139,8 @@ fn model_with_data() -> TuiModel {
                 runtime_shim_active: true,
                 context_support: HarnessContextSupport {
                     instructions: ContextMechanism::RuntimeShim,
-                    agents_directory: ContextMechanism::RuntimeShim,
+                    project_skills: ContextMechanism::RuntimeShim,
+                    project_agents: ContextMechanism::RuntimeShim,
                 },
             },
         ],

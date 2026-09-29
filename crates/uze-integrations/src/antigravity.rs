@@ -103,7 +103,8 @@ use plugin::{
     installed_plugins, plugin_manifest_name, run_agy,
 };
 use uze_core::capability::harness::Findings;
-use uze_core::integration::HarnessFact;
+use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::project_context::AgentsDirectoryResource;
 
 /// Antigravity CLI's stable integration id. Never changes in receipts.
 pub const ID: &str = "antigravity";
@@ -263,8 +264,8 @@ impl IntegrationPort for AntigravityIntegration {
     /// `context-project-skill-reaches-model`), which also reads
     /// `./.agents/agents`, `./.agents/mcp_config.json` and
     /// `./.agents/hooks.json` there.
-    fn discovers_project_agents_directory(&self) -> bool {
-        true
+    fn project_resource_route(&self, _resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        ProjectResourceRoute::Native
     }
 
     fn capabilities(&self) -> HarnessCapabilities {

@@ -105,7 +105,7 @@ it become authoritative.
   vendor-format control hook on the API-key mode as well, so a return of
   #893 is a red check, not a silent mode dependency.
 - A project's `.agents/` is read by agy itself, per workspace, with no UZE
-  involvement (`AntigravityIntegration::discovers_project_agents_directory`).
+  involvement (`AntigravityIntegration::project_resource_route`).
   Measured on 1.2.12: `.agents/skills` by the Lab contract
   `context-project-skill-reaches-model`, and `.agents/agents`,
   `.agents/mcp_config.json` and `.agents/hooks.json` by the discovery study

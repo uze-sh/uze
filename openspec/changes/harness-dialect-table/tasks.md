@@ -53,11 +53,21 @@
   Claude Code reads neither `.agents/skills` nor `.agents/agents`, and its
   launcher links both into `.claude/` of the runtime projection it adds with
   `--add-dir` (`tests/integrations/runtime_projection.rs::a_project_agents_directory_reaches_every_harness_without_a_write_into_the_checkout`,
-  `claude::runtime::runtime_projection_tests`). Codex and OpenCode do not
-  read `./.agents/agents` either, and nothing mounts it for them yet.
+  `claude::runtime::runtime_projection_tests`). `./.agents/agents` is
+  answered per harness (`IntegrationPort::project_resource_route`, one row
+  per kind in the status views): Antigravity reads it itself; Claude Code
+  gets it linked into the same `--add-dir` target; Codex, which reads only
+  `.codex/agents`, gets each agent as a role in a `-c agents={...}` layer
+  its launcher adds, a role file per agent under the runtime projection
+  (`codex::runtime::tests`); OpenCode is Unsupported, measured: its only
+  outside-the-checkout mechanisms either replace the user's configuration
+  (`OPENCODE_CONFIG_DIR`) or reach the shared background service, which
+  would offer one project's agents in every other
+  (`experiments/opencode/project-agents`). A project agent is labelled by
+  its logical name on every harness.
 - [x] 4.2 Lab: a project `.agents/skills` skill reaches every harness, with
   nothing written into the checkout (contract `context`:
   `context-project-skill-reaches-model`,
   `context-project-skill-checkout-untouched`, launched through UZE's
-  launcher; Claude vendor `project-agent-reaches-model` for
-  `.agents/agents`).
+  launcher; `context-project-agent-reaches-model` for `.agents/agents` on
+  every harness claimed to receive it, declared unsupported on OpenCode).
