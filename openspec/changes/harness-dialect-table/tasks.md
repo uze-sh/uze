@@ -9,11 +9,18 @@
 
 ## 1. Dialect table
 
-- [ ] 1.1 Per (harness, artifact kind, fact) table, version-stamped, each
+- [x] 1.1 Per (harness, artifact kind, fact) table, version-stamped, each
   fact naming its Lab check; delivery derives roots, link-following,
-  placeholders and field acceptance from it.
-- [ ] 1.2 Lab: one contract check per fact; the nightly fails on a fact that
-  stops holding.
+  placeholders and field acceptance from it. `IntegrationPort::facts` and
+  each integration's `FACTS`; field acceptance is data the delivery renders
+  from (each integration's agent dialect); link-following needs no switch
+  since every delivery is physical; placeholders are resolved by UZE on
+  every route because no harness expands the portable one. The table is
+  published on the harness page (`uze-harness-matrix`).
+- [x] 1.2 Lab: one contract check per fact; the nightly fails on a fact that
+  stops holding. Each fact names its Lab function, and
+  `tests/integrations/facts.rs` fails a fact whose function the Lab does not
+  define.
 
 ## 2. Canonical frontmatter
 

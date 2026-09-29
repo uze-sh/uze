@@ -101,6 +101,7 @@ use plugin::{
     installed_plugins, plugin_manifest_name, run_agy,
 };
 use uze_core::capability::harness::Findings;
+use uze_core::integration::HarnessFact;
 
 /// Antigravity CLI's stable integration id. Never changes in receipts.
 pub const ID: &str = "antigravity";
@@ -391,6 +392,10 @@ impl IntegrationPort for AntigravityIntegration {
             ));
         }
         findings
+    }
+
+    fn facts(&self) -> &'static [HarnessFact] {
+        FACTS
     }
 
     fn skill_discovery_root(&self) -> Option<PathBuf> {
@@ -732,3 +737,33 @@ impl PreferencePort for AntigravityIntegration {
         preferences::plan(&self.preferences_config_path(), preferences)
     }
 }
+
+/// What antigravity was measured to do, each fact with the Lab check proving it.
+const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "agents",
+        fact: "offers an agent from its global agents directory by its frontmatter `name`",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_dispatch",
+    },
+    HarnessFact {
+        subject: "agents",
+        fact: "drops an agent that carries `model`, whatever the value",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_block_model",
+    },
+    HarnessFact {
+        subject: "placeholders",
+        fact: "expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_plugin_root",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "reads hooks from its shared `hooks.json`, never from a plugin's",
+        measured_on: VERSION,
+        proven_by: "harnesses/antigravity/scenarios.py::phase_hooks_delivery",
+    },
+];
+/// The version the facts above were measured on.
+const VERSION: &str = "1.2.12";

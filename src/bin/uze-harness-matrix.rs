@@ -391,6 +391,27 @@ fn matrix_block() -> String {
             user_only_name,
         ));
     }
+    // What each harness was measured to do: the facts delivery depends on,
+    // each with the Lab check that fails the nightly when it stops holding.
+    out.push_str("\n### What each harness was measured to do\n\n");
+    out.push_str(
+        "Each fact is proved by a Conformance Lab check against the real harness; the \
+         check fails when a release changes it.\n\n\
+         | Harness | About | Fact | Measured on |\n\
+         | --- | --- | --- | --- |\n",
+    );
+    for harness in harnesses() {
+        let integration = harness.integration.as_ref();
+        for fact in integration.facts() {
+            out.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                integration.display_name(),
+                fact.subject,
+                fact.fact.replace('|', "\\|"),
+                fact.measured_on,
+            ));
+        }
+    }
     out.push_str(&format!("\n{MARKER_END}\n"));
     out
 }

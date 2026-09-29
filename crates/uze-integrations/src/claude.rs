@@ -60,6 +60,7 @@ use crate::shared::provision::{OfficialRoute, official_installer, provision_cli}
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
 use uze_core::capability::harness::Findings;
+use uze_core::integration::HarnessFact;
 /// Claude Code peer integration. Its transparent-attachment strategy is a
 /// UZE-managed "skills-dir plugin" reference at `<claude_home>/skills/<name>`
 /// (see ADR-006): Claude auto-loads any directory there containing
@@ -304,6 +305,10 @@ impl IntegrationPort for ClaudeIntegration {
                 "Claude Code attachment is only modeled for Agent Skills, Agents, MCP servers, and portable Hooks.",
             ),
         }
+    }
+
+    fn facts(&self) -> &'static [HarnessFact] {
+        FACTS
     }
 
     fn skill_discovery_root(&self) -> Option<std::path::PathBuf> {
@@ -726,6 +731,48 @@ fn mcp_registry_names(uze_home: &UzeHome, resource: &Resource) -> Vec<String> {
     })
     .collect()
 }
+
+/// What claude was measured to do, each fact with the Lab check proving it.
+const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "agents",
+        fact: "offers a plugin's agent as `<plugin>:<subdirectories>:<name>`",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_dispatch",
+    },
+    HarnessFact {
+        subject: "agents",
+        fact: "runs an agent on the model its `harness.claude-code` block names",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_block_model",
+    },
+    HarnessFact {
+        subject: "plugins",
+        fact: "reads a directory-marketplace plugin live from its source; its cache copy drops linked files",
+        measured_on: VERSION,
+        proven_by: "experiments/claude/parity.py::observed",
+    },
+    HarnessFact {
+        subject: "placeholders",
+        fact: "expands only `${CLAUDE_PLUGIN_ROOT}`, so UZE resolves `${PLUGIN_ROOT}` itself",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_plugin_root",
+    },
+    HarnessFact {
+        subject: "skills",
+        fact: "honours `disable-model-invocation` and `user-invocable`",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_invocation",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "fires `SessionStart` once per new session, with its source",
+        measured_on: VERSION,
+        proven_by: "experiments/session_start_probe.py::run",
+    },
+];
+/// The version the facts above were measured on.
+const VERSION: &str = "2.1.283";
 
 #[cfg(test)]
 mod lifecycle_tests {

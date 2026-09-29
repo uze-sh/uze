@@ -60,6 +60,7 @@ use crate::shared::plan::{blocked, unsupported};
 use mcp::attach_mcp_config;
 use provision::{provision_opencode, resolve_opencode_binary};
 use uze_core::capability::harness::Findings;
+use uze_core::integration::HarnessFact;
 
 /// OpenCode does not consume the external plugin envelope. It natively
 /// discovers user Agent Skills in its own `~/.config/opencode/skills` and
@@ -253,6 +254,10 @@ impl IntegrationPort for OpenCodeIntegration {
         } else {
             Findings::default()
         }
+    }
+
+    fn facts(&self) -> &'static [HarnessFact] {
+        FACTS
     }
 
     fn skill_discovery_root(&self) -> Option<PathBuf> {
@@ -691,6 +696,36 @@ impl OpenCodeIntegration {
         })
     }
 }
+
+/// What opencode was measured to do, each fact with the Lab check proving it.
+const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "agents",
+        fact: "names an agent after its file and runs it on a `provider/model` its block names",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_block_model",
+    },
+    HarnessFact {
+        subject: "skills",
+        fact: "lists a skill's supporting files only when its directory is not a link",
+        measured_on: VERSION,
+        proven_by: "experiments/opencode/skill_files.py::run",
+    },
+    HarnessFact {
+        subject: "placeholders",
+        fact: "expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_plugin_root",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs a plugin's tool hooks but cannot block a tool from them",
+        measured_on: VERSION,
+        proven_by: "harnesses/opencode/scenarios.py::phase_hooks",
+    },
+];
+/// The version the facts above were measured on.
+const VERSION: &str = "2.0.18";
 
 #[cfg(test)]
 mod lifecycle_tests {

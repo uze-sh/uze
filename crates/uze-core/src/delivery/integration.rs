@@ -576,6 +576,13 @@ pub trait IntegrationPort: Send + Sync {
         crate::capability::harness::Findings::default()
     }
 
+    /// What this harness was measured to do, fact by fact: the delivery
+    /// depends on each, and each names the Lab check that proves it, so a
+    /// harness release that breaks one fails a check rather than a user.
+    fn facts(&self) -> &'static [HarnessFact] {
+        &[]
+    }
+
     /// The keys a `harness:` block names this integration by: its id and
     /// every alias.
     fn harness_keys(&self) -> Vec<&'static str> {
@@ -665,6 +672,18 @@ pub trait IntegrationPort: Send + Sync {
             _ => Ok(false),
         }
     }
+}
+
+/// One measured fact about a harness that a delivery depends on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HarnessFact {
+    /// What it is about: `agents`, `skills`, `placeholders`, `hooks`.
+    pub subject: &'static str,
+    pub fact: &'static str,
+    /// The harness version it was measured on.
+    pub measured_on: &'static str,
+    /// The Lab function that proves it, as `<path under conformance/>::<fn>`.
+    pub proven_by: &'static str,
 }
 
 /// The naming default every integration inherits unless it overrides

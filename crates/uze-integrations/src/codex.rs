@@ -56,6 +56,7 @@ use crate::shared::provision::{OfficialRoute, official_installer, provision_cli}
 use mcp::attach_mcp_entry;
 use plugin::CodexMarketplace;
 use uze_core::capability::harness::Findings;
+use uze_core::integration::HarnessFact;
 
 /// Codex peer integration. Its transparent-attachment strategy is a
 /// UZE-managed reference at `<agents_home>/skills/<name>` (see ADR-006):
@@ -225,6 +226,10 @@ impl IntegrationPort for CodexIntegration {
         } else {
             Findings::default()
         }
+    }
+
+    fn facts(&self) -> &'static [HarnessFact] {
+        FACTS
     }
 
     fn skill_discovery_root(&self) -> Option<PathBuf> {
@@ -614,6 +619,42 @@ fn toml_string(value: &str) -> String {
         .expect("strings are JSON serializable")
         .replace('\u{7f}', "\\u007F")
 }
+
+/// What codex was measured to do, each fact with the Lab check proving it.
+const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "agents",
+        fact: "runs a role file from `~/.codex/agents/` by its `name`, which carries the label",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_dispatch",
+    },
+    HarnessFact {
+        subject: "agents",
+        fact: "honours `model` in a role file and refuses one with a key it does not know",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_block_model",
+    },
+    HarnessFact {
+        subject: "skills",
+        fact: "hides a skill from the model with `agents/openai.yaml` `allow_implicit_invocation: false`",
+        measured_on: VERSION,
+        proven_by: "harnesses/codex/scenarios.py::phase_skill_invocation_policy",
+    },
+    HarnessFact {
+        subject: "placeholders",
+        fact: "expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_plugin_root",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "fires `SessionStart` once per new session, with its source",
+        measured_on: VERSION,
+        proven_by: "experiments/session_start_probe.py::run",
+    },
+];
+/// The version the facts above were measured on.
+const VERSION: &str = "0.158.0";
 
 #[cfg(test)]
 mod agent_toml_tests {
