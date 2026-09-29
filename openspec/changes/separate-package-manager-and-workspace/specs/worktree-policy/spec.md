@@ -72,6 +72,35 @@ than editing tracked files silently. The workspace SHALL then bring
 - **THEN** `AGENTS.md` carries the new region without a further command
 - **AND** a region that could not be written (edited by hand) is reported by the workspace client
 
+### Requirement: A declaration stays editable
+The system SHALL key the projected region's identity on the rendered
+content, so changing the declaration supersedes one region and creates
+another rather than drifting the existing one. A region edited by hand SHALL
+be reported as drifted and left untouched.
+
+#### Scenario: Editing the declaration replaces its region
+- **WHEN** a project's declaration changes and the workspace synchronizes
+- **THEN** the superseded region is removed and the new one attached
+- **AND** exactly one region remains
+
+#### Scenario: An edited region is refused, not rewritten
+- **WHEN** the region's content has been changed by hand
+- **THEN** the synchronization reports drift and leaves the file's bytes untouched
+
+### Requirement: A policy change binds tasks created after it
+A policy change SHALL apply to tasks created after it. A task already
+running SHALL keep the policy it was launched under, because its agent was
+placed, and told how its work is delivered, under that policy.
+
+#### Scenario: A running agent keeps its launch policy
+- **WHEN** the completion behavior changes while a task is live
+- **THEN** that task is delivered the way it was launched, and the popup
+  shows the running task's behavior alongside the new project default
+
+#### Scenario: The next task takes the new policy
+- **WHEN** a task is created after the change
+- **THEN** it is delivered the new way
+
 ## ADDED Requirements
 
 ### Requirement: The workspace keeps its region in step while it runs
@@ -83,9 +112,12 @@ or by an edit to `agents.yaml`), and before an agent starts in the primary
 checkout. The system SHALL NOT write the region into an isolated checkout:
 there the file is part of the agent's branch, and what the agent reads is
 the region its branch was cut with, which the operator brings forward by
-committing the primary checkout's file like the declaration itself. A
-region edited by hand SHALL be reported and left untouched. The
-synchronization SHALL never hold up what the workspace client draws.
+committing the primary checkout's file like the declaration itself. When an
+agent is isolated with a copy of the primary checkout's changes, a change to
+`AGENTS.md` that lies only inside UZE's managed regions SHALL NOT be copied.
+A region edited by hand SHALL be reported once per client session and
+region, left untouched, and never removed. The synchronization SHALL never
+hold up what the workspace client draws.
 
 #### Scenario: An edit to agents.yaml reaches the file
 - **WHEN** the operator edits the policy in `agents.yaml` while the workspace is running
@@ -101,8 +133,13 @@ synchronization SHALL never hold up what the workspace client draws.
 - **AND** nothing the synchronization did can reach the agent's branch or its delivery
 
 #### Scenario: A committed declaration reaches the next isolated agent
-- **WHEN** the operator commits the primary checkout's `agents.yaml` and `AGENTS.md` to the target
+- **WHEN** the operator commits the primary checkout's `agents.yaml` and `AGENTS.md` on the branch isolated checkouts are cut from (the declared target, else the primary checkout's branch), and pushes it when completion is `pr`
 - **THEN** an agent placed in an isolated checkout afterwards reads the current region
+
+#### Scenario: Isolating an agent does not carry the synchronized region
+- **WHEN** an agent in the primary checkout is isolated with a copy of its changes while `AGENTS.md` differs from the last commit only inside UZE's managed regions
+- **THEN** the isolated checkout's `AGENTS.md` is the committed one
+- **AND** every other change, `agents.yaml` included, is carried as before
 
 #### Scenario: A hand-edited region
 - **WHEN** the region has been changed by hand and the workspace synchronizes

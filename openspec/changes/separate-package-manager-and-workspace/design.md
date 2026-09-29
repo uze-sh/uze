@@ -138,21 +138,42 @@ workspace half of `uze-application`, and `ContextReport` loses its
 
 While it runs, the workspace keeps the region in step itself, through a
 `spawn_*`/`absorb_*` pair like every other repository touch in the client:
-when a space opens on a project; when the declaration changes, from the
+when a space opens on a project (the point where the client first learns a
+root, `unread_named_directories`); when the declaration changes, from the
 popup or from an edit to `agents.yaml` that the client notices by the
-file's digest on its existing refresh tick (no file-watching dependency);
-and before an agent starts in the primary checkout. It writes only the
+file's digest on the existing 20-second `TASK_REFRESH` clock, inside the
+spawned thread (no file-watching dependency); and before an agent starts
+in the primary checkout, inside the existing `spawn_agent_placement`
+thread, only when the placement's root is the primary checkout (an agent
+"in place" in a pane standing in a slot is not). It writes only the
 primary checkout: in a slot, `AGENTS.md` is part of the agent's branch, and
 a region written there becomes a change the agent can commit and deliver,
 colliding with the same change still uncommitted in the primary checkout.
-An isolated agent reads the region its branch was cut with; the operator
-brings it forward by committing the primary checkout's `agents.yaml` and
-`AGENTS.md`, which the popup already presents as a versioned edit.
+An isolated agent reads the region its branch was cut with. Slots are cut
+from the local target branch after a fast-forward-only sync, so the
+operator brings the region forward by committing the primary checkout's
+`agents.yaml` and `AGENTS.md` on that branch (the declared target, else the
+primary's branch); with `pr` completion, delivery rebases onto the remote's
+target, so the commit is pushed too. The popup already presents this as a
+versioned edit. `Isolate` copies the primary's `git diff HEAD` into the new
+slot (`checkout::carry_changes`); when `AGENTS.md` differs from `HEAD` only
+inside managed regions (`text_region::same_outside_managed_regions`, which
+slot accounting already uses), the slot's `AGENTS.md` is restored from
+`HEAD` after the copy, so the synced region never rides into a branch.
 Alternatives: writing the slot and having delivery drop region-only
 changes (touches landing, the most sensitive path in the workspace), or
-telling the agent not to commit the file (relies on the model). Writes take the context service's lock, render
-deterministically so a sync with nothing new writes nothing, and a region
-edited by hand is reported once as a toast and never overwritten. When the
+telling the agent not to commit the file (relies on the model). Both owners of `AGENTS.md` take a per-project guard on the file, a new lock
+in `uze-core`'s shared foundation (the package manager may name it; the
+machine-wide `MutationLock` is not reused, being non-reentrant and held
+across whole installs), because `text_region::converge` is a whole-file
+read-modify-write and two owners interleaving would drop a region until the
+next run. Writes render deterministically, so a sync with nothing new
+writes nothing. A region edited by hand is reported once per client session
+and region identity, and is never overwritten or removed, since removal is
+structural and a drifted region fails it. Two clients on one project are
+benign: identical bytes, atomic writes. Removing the region when the
+declaration is gone is `converge` with an empty desired set, which today is
+skipped when there is no policy. When the
 workspace is not running nothing syncs, and the region catches up the next
 time it opens. The popup names both files it changes and no longer asks for
 a reconciliation.
