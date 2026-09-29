@@ -59,7 +59,9 @@
   each Claude, Codex, OpenCode, and Antigravity conformance vertical; each
   asserts the qualified label and one Claude-style agent (`model: haiku`,
   `tools: Read, Grep`) is listed.
-- [ ] 4.3 Run each conformance vertical against its real harness and fix all
-  failures before promoting matrix evidence.
+- [x] 4.3 Run each conformance vertical against its real harness and fix all
+  failures before promoting matrix evidence. 2026-09-28, image built from
+  this branch: Claude Code 2.1.283 (0 failures), codex-cli 0.158.0 (68/68),
+  OpenCode 2.0.18 (55/55), agy 1.2.12 (62/62, 0 ADAPTED).
 - [x] 4.4 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test --no-fail-fast`, and `openspec validate add-portable-agent-capability --strict`.

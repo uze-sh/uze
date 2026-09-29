@@ -22,6 +22,7 @@ Run: python3 conformance/lab.py --harness claude --experiment claude/parity
 Env: PARITY_FORMS=native,uze  PARITY_PROBES=listing,skill,...
 """
 
+import concurrent.futures
 import json
 import os
 import re
@@ -253,48 +254,70 @@ def sections(stdout):
     return {k: "\n".join(v) for k, v in out.items()}
 
 
+#: Probes running at once. Each has its own network and provider, so they
+#: share nothing but the host; the listing probes go first because the MCP
+#: probe calls the tool its form's listing found.
+JOBS = int(os.environ.get("PARITY_JOBS", "4"))
+
+
+def probe_once(cfg, form, probe, tool):
+    """One probe in a world of its own: provider, headless turn, wire."""
+    mode, _, args = PROBES[probe]
+    env = {
+        "DISCOVERY": "1",
+        "RESPONSE_TEXT": "PARITY_DONE",
+        "FINAL_TEXT": "PARITY_DONE",
+    }
+    if tool:
+        env.update({"TOOL_NAME": tool, "TOOL_ARGS": json.dumps(args)})
+    with common.isolated_world(cfg, f"{form}-{probe}") as world:
+        prov_ip = common.start_provider(world, mode, env)
+        time.sleep(1)
+        cmd = container(
+            world, prov_ip, form, f"parity {probe}", inventory=probe == "listing"
+        )
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=400)
+        rows = describe(raw_requests(world))
+    result = {"container": sections(proc.stdout + proc.stderr), "requests": rows}
+    with open(os.path.join(cfg.outdir, f"parity-{form}-{probe}.json"), "w") as f:
+        json.dump(result, f, indent=1)
+    print(f"[parity] {form}/{probe}: {len(rows)} requests", flush=True)
+    return result
+
+
 def run(cfg, prov_ip):
-    report = {}
+    common.generate_certs(cfg)
+    report = {form: {} for form in FORMS}
     mcp_tool = {}
-    for form in FORMS:
-        report[form] = {}
-        for probe in SELECTED:
-            mode, tool, args = PROBES[probe]
+    first = [(form, "listing") for form in FORMS if "listing" in SELECTED]
+    rest = [(form, probe) for form in FORMS for probe in SELECTED if probe != "listing"]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=JOBS) as pool:
+        for (form, probe), result in zip(
+            first,
+            pool.map(lambda job: probe_once(cfg, *job, PROBES[job[1]][1]), first),
+        ):
+            report[form][probe] = result
+            listed = [
+                t
+                for r in result["requests"]
+                for t in r["mcp_names"]
+                if t.endswith("uze_conformance")
+            ]
+            if listed:
+                mcp_tool[form] = listed[0]
+        runnable = []
+        for form, probe in rest:
+            tool = PROBES[probe][1]
             if tool == "@mcp":
                 tool = mcp_tool.get(form)
                 if not tool:
                     report[form][probe] = {"skipped": "no MCP tool listed"}
                     continue
-            env = {
-                "DISCOVERY": "1",
-                "RESPONSE_TEXT": "PARITY_DONE",
-                "FINAL_TEXT": "PARITY_DONE",
-            }
-            if tool:
-                env.update({"TOOL_NAME": tool, "TOOL_ARGS": json.dumps(args)})
-            prov_ip = common.start_provider(cfg, mode, env) or prov_ip
-            time.sleep(1)
-            cmd = container(
-                cfg, prov_ip, form, f"parity {probe}", inventory=probe == "listing"
-            )
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=400)
-            parts = sections(proc.stdout + proc.stderr)
-            rows = describe(raw_requests(cfg))
-            report[form][probe] = {"container": parts, "requests": rows}
-            if probe == "listing" and rows:
-                listed = [
-                    t
-                    for r in rows
-                    for t in r["mcp_names"]
-                    if t.endswith("uze_conformance")
-                ]
-                if listed:
-                    mcp_tool[form] = listed[0]
-            with open(
-                os.path.join(cfg.outdir, f"parity-{form}-{probe}.json"), "w"
-            ) as f:
-                json.dump(report[form][probe], f, indent=1)
-            print(f"[parity] {form}/{probe}: {len(rows)} requests", flush=True)
+            runnable.append((form, probe, tool))
+        for (form, probe, _), result in zip(
+            runnable, pool.map(lambda job: probe_once(cfg, *job), runnable)
+        ):
+            report[form][probe] = result
     with open(os.path.join(cfg.outdir, "parity.json"), "w") as f:
         json.dump(report, f, indent=1)
     for form in [form for form in FORMS if form != "native" and "native" in FORMS]:

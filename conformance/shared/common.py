@@ -8,6 +8,7 @@ TLS-intercepted providers, PTY screen/waiter helpers, and the evidence
 """
 
 import contextlib
+import copy
 import json
 import os
 import subprocess
@@ -477,6 +478,28 @@ def generate_certs(cfg):
             "-sha256",
         )
     return ca_crt, leaf_crt, leaf_key
+
+
+@contextlib.contextmanager
+def isolated_world(cfg, tag):
+    """A network and provider of their own for one probe, torn down after.
+
+    What lets independent probes of one run proceed at once: each gets the
+    same isolation a whole run has (an internal network nobody else joins, a
+    provider whose captures are nobody else's), named after the run's own
+    nonce so a crashed probe's leftovers are still traceable to it.
+    """
+    world = copy.copy(cfg)
+    world.net = f"{cfg.net}-{tag}"
+    world.prov_name = f"{cfg.prov_name}-{tag}"
+    subprocess.run(["docker", "rm", "-f", world.prov_name], capture_output=True)
+    subprocess.run(["docker", "network", "rm", world.net], capture_output=True)
+    sh("docker", "network", "create", "--internal", world.net)
+    try:
+        yield world
+    finally:
+        subprocess.run(["docker", "rm", "-f", world.prov_name], capture_output=True)
+        subprocess.run(["docker", "network", "rm", world.net], capture_output=True)
 
 
 def start_provider(cfg, mode, extra_env=None):

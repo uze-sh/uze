@@ -5,7 +5,7 @@ UZE_BIN ?= target/debug/uze
 RELEASE_BIN ?= target/release/uze
 INSTALL_ARGS ?= --force
 
-.PHONY: help build release install wsl-lab run test test-acceptance test-conformance test-installer harness-matrix check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
+.PHONY: help build release install wsl-lab run test test-acceptance test-conformance test-installer harness-matrix check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
 
 help: ## Show the available local-development targets.
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -162,6 +162,9 @@ lab-image: ## Build the Lab harness image (installs channel-latest harnesses).
 
 lab-run: ## Run the isolation vertical for $(HARNESS) (3x clean is the gate; gate enforced per ADR-035).
 	python3 conformance/lab.py --harness $(HARNESS)
+
+lab-all: ## Every harness's contract and vendor legs in parallel, reusing local proofs (JOBS=4, FRESH=1 to rerun all).
+	python3 conformance/lab.py --all --jobs $(or $(JOBS),4) $(if $(FRESH),--fresh,)
 
 lab-evidence: ## Record the in-repo evidence summary for $(HARNESS) (ADR-035).
 	python3 conformance/lab.py --harness $(HARNESS) --write-summary

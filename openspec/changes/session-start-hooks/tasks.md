@@ -16,9 +16,9 @@
 
 ## 3. Evidence and docs
 
-- [ ] 3.1 Lab: session-start case in Claude and Codex verticals. (Proven as
-  `experiments/{claude,codex}/session-start` with the `hook-session-plugin`
-  fixture; promotion into the verticals pending.)
+- [x] 3.1 Lab: session-start case in Claude and Codex verticals. The
+  `session_start_probe` runs in both verticals' vendor part; 4/4 on each
+  (Claude Code 2.1.283 and codex-cli 0.158.0, 2026-09-28).
 - [x] 3.2 `docs/capabilities/portable-hooks.md` and the web hooks page list
   the event, its effect rule and per-harness status.
 - [x] 3.3 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
