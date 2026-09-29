@@ -1,5 +1,5 @@
 //! OpenCode V2 does not consume the external plugin envelope. It does natively
-//! discover user Agent Skills at `~/.agents/skills` and natively reads local
+//! discover user Agent Skills in `~/.config/opencode/skills` and reads local
 //! MCP definitions from its global config, so this integration decomposes
 //! only those portable capabilities — including the canonical invocation
 //! policy, which OpenCode V2 expresses natively in SKILL.md frontmatter
@@ -175,7 +175,7 @@ impl IntegrationPort for OpenCodeIntegration {
             // explicit adapter, never a native hook file (OpenCode exposes
             // no declarative hook surface; ADR-033).
             adaptable: [CapabilityKind::Hook].into_iter().collect(),
-            evidence: "OpenCode V2 documents global Agent Skills at ~/.agents/skills and local MCP as a global `mcp.servers.<name>` entry in opencode.json, which UZE writes, inspects and detaches directly. Skills preserve invocation policy natively in SKILL.md frontmatter (metadata.opencode/autoinvoke/slash — ADR-030 §9) without Command primitive. Portable Hooks are delivered as one owned, regenerable `plugins/hooks-<package>.ts` plugin the harness auto-discovers: it is the same wrapper the other harnesses get as a shell script — handlers run sequentially against the portable HOOK_* contract, first-deny-wins, per-handler timeouts, fail-closed by effect — with this package's groups as data and no author TypeScript toolchain (ADR-033)."
+            evidence: "OpenCode V2 reads global Agent Skills from its own ~/.config/opencode/skills, where UZE delivers each as a directory of its own, and local MCP as a global `mcp.servers.<name>` entry in opencode.json, which UZE writes, inspects and detaches directly. Skills preserve invocation policy natively in SKILL.md frontmatter (metadata.opencode/autoinvoke/slash — ADR-030 §9) without Command primitive. Portable Hooks are delivered as one owned, regenerable `plugins/hooks-<package>.ts` plugin the harness auto-discovers: it is the same wrapper the other harnesses get as a shell script — handlers run sequentially against the portable HOOK_* contract, first-deny-wins, per-handler timeouts, fail-closed by effect — with this package's groups as data and no author TypeScript toolchain (ADR-033)."
                 .to_owned(),
             ..HarnessCapabilities::default()
         }
