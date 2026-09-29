@@ -43,6 +43,24 @@ body = """
 - {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
 {% endfor %}\
 {% endif %}\
+{# What a plugin author re-tests: every change to how a capability reaches a
+   harness, listed on its own before the usual groups. #}\
+{% set_global delivery = [] %}\
+{% for commit in commits %}\
+{% if commit.scope and commit.scope in ["delivery", "integrations", "claude", "codex", "opencode", "antigravity", "setup"] %}\
+{% set_global delivery = delivery | concat(with=commit) %}\
+{% endif %}\
+{% endfor %}\
+{% if delivery | length > 0 %}
+### What changes in delivery
+
+Re-test the plugins you ship on the harnesses these name:
+
+{% for commit in delivery %}\
+- **{{ commit.scope }}:** {{ commit.message | upper_first }} \
+    ([{{ commit.id | truncate(length=7, end="") }}]({{ repo }}/commit/{{ commit.id }}))
+{% endfor %}\
+{% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group | striptags | trim | upper_first }}
 
