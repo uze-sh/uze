@@ -69,9 +69,11 @@ impl UzeApplication {
         let catalogue = self
             .catalogue_as_it_stands(marketplace, &record.source)
             .ok()?;
-        let within =
-            uze_core::acquisition::marketplace::plugin_subdirectory(&catalogue.manifest, plugin)
-                .ok()?;
+        let within = uze_core::acquisition::marketplace::repository_of(&record.source)
+            .ok()?
+            .subpath
+            .plugin_path(&catalogue.manifest, plugin)
+            .ok()?;
         let repository = marketplace_catalogue::mirror_dir(&self.home, marketplace);
         let described = uze_core::acquisition::mirror::describe_path(
             &repository,

@@ -26,8 +26,10 @@ fn plugin(id: &str) -> PluginSummary {
         active_name: id.to_owned(),
         source: "embedded:example".to_owned(),
         store_path: PathBuf::from("/store/example"),
+        commit: None,
         capability_count: 2,
         freshness: uze_application::application::Freshness::not_checked(),
+        undelivered: Vec::new(),
     }
 }
 
@@ -117,7 +119,8 @@ fn model_with_data() -> TuiModel {
                 runtime_shim_active: true,
                 context_support: HarnessContextSupport {
                     instructions: ContextMechanism::RuntimeShim,
-                    agents_directory: ContextMechanism::RuntimeShim,
+                    project_skills: ContextMechanism::RuntimeShim,
+                    project_agents: ContextMechanism::RuntimeShim,
                 },
             },
             HarnessHealth {
@@ -136,7 +139,8 @@ fn model_with_data() -> TuiModel {
                 runtime_shim_active: true,
                 context_support: HarnessContextSupport {
                     instructions: ContextMechanism::RuntimeShim,
-                    agents_directory: ContextMechanism::RuntimeShim,
+                    project_skills: ContextMechanism::RuntimeShim,
+                    project_agents: ContextMechanism::RuntimeShim,
                 },
             },
         ],
@@ -152,6 +156,7 @@ fn model_with_data() -> TuiModel {
                 ledger_error: None,
             },
         }],
+        deliveries: Vec::new(),
         ledger_error: None,
         provisioning_state_error: None,
         leftovers: Default::default(),
@@ -1707,6 +1712,7 @@ fn overview_alerts_classify_conflicts_as_high_and_missing_as_low() {
                 },
             },
         ],
+        deliveries: Vec::new(),
         ledger_error: None,
         provisioning_state_error: None,
         leftovers: Default::default(),
@@ -2229,6 +2235,7 @@ fn attachment_health_is_never_unknown_after_a_refresh() {
                 ledger_error: None,
             },
         }],
+        deliveries: Vec::new(),
         ledger_error: None,
         provisioning_state_error: None,
         leftovers: Default::default(),

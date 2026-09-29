@@ -21,6 +21,15 @@ additional runtime contribution.
 - **AND** reports an actionable provision failure without claiming the
   integration was prepared.
 
+#### Scenario: Installer places the executable outside the running shell's PATH
+
+- **WHEN** `uze setup opencode` installs OpenCode and its official installer
+  places `opencode` in a documented directory the current `PATH` does not
+  reach, having only edited the shell's rc files
+- **THEN** UZE verifies the executable at that documented location
+- **AND** the setup report names that location and says a new shell is
+  needed to run it by name.
+
 #### Scenario: Harness executable already exists
 
 - **WHEN** `uze setup codex` is invoked and Codex is detected

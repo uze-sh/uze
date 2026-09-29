@@ -20,5 +20,7 @@ flowchart LR
   router -->|generated| generated[Generated package]
   router -->|adapter| adapter[Safe adaptation]
   router -.->|none| unsupported[Unsupported]
-  native & generated & adapter --> receipts[(Receipts)]
+  native & generated & adapter --> runtime[(runtime/<br/>plugins and skill directories,<br/>each harness's harness block rendered,<br/>replaced whole)]
+  runtime --> receipts[(Receipts in state/)]
   receipts ==> context[Reconcile AGENTS.md]
+  receipts -.->|a harness short of the plan| report[Report per harness,<br/>roll back or record it undelivered,<br/>exit non-zero]

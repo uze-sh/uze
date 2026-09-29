@@ -1,0 +1,3 @@
+#!/bin/sh
+touch /work/parity-post-tool.marker
+exit 0

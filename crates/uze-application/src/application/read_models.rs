@@ -6,7 +6,8 @@
 
 use uze_core::{
     Result,
-    integration::{ContextDelivery, IntegrationPort},
+    integration::{ContextDelivery, IntegrationPort, ProjectResourceRoute},
+    project_context::AgentsDirectoryResource,
     provisioning::ProvisioningResult,
 };
 
@@ -26,34 +27,48 @@ impl Plugins<'_> {
 
     #[tracing::instrument(name = "plugins.inspect", skip_all, fields(id = %id), err)]
     pub fn inspect(&self, id: &str) -> Result<PluginInspection> {
+        self.inspect_on(id, None)
+    }
+
+    /// [`inspect`](Self::inspect) narrowed to one harness, named any way
+    /// [`UzeApplication::integration_named`] accepts. Attaches nothing and
+    /// starts no harness: the plans are computed from the Store and the
+    /// ledger alone.
+    #[tracing::instrument(name = "plugins.inspect_on", skip_all, fields(id = %id), err)]
+    pub fn inspect_on(&self, id: &str, harness: Option<&str>) -> Result<PluginInspection> {
         let package = self.0.package_by_name(id)?;
+        let only = harness
+            .map(|name| {
+                self.0
+                    .integration_named(name)
+                    .map(|integration| integration.id())
+                    .ok_or_else(|| {
+                        uze_core::UzeError::UnknownPackage(format!("harness `{name}` not found"))
+                    })
+            })
+            .transpose()?;
         let resources = uze_core::engine::package_resources(&package)?;
         let resources: Vec<_> = resources.iter().collect();
         let deliveries = self
             .0
             .integrations
             .iter()
+            .filter(|integration| only.is_none_or(|only| integration.id() == only))
             .map(|integration| {
-                let package_plan = integration.package_exposure_plan(&package, &resources);
-                let provided = package_plan
-                    .as_ref()
-                    .map(|plan| plan.provided_resource_identities.clone())
-                    .unwrap_or_default();
-                let capabilities = resources
-                    .iter()
-                    .map(|resource| CapabilityDelivery {
-                        identity: resource.identity(),
-                        kind: resource.capability.kind,
-                        plan: (!provided.contains(&resource.identity()))
-                            .then(|| integration.exposure_plan(resource)),
-                        provided_by_package: provided.contains(&resource.identity()),
-                    })
-                    .collect();
+                let integration = integration.as_ref();
+                let planned = self.0.plan_delivery_to(&package, &resources, integration);
                 HarnessDelivery {
                     integration: integration.id().to_owned(),
                     display_name: integration.display_name().to_owned(),
-                    package_plan,
-                    capabilities,
+                    detected: self.0.detect_cached(integration).present,
+                    package_plan: planned.package_plan,
+                    route: planned.route,
+                    capabilities: planned.capabilities,
+                    shortfalls: planned
+                        .shortfalls
+                        .into_iter()
+                        .map(CapabilityShortfallReport::from)
+                        .collect(),
                 }
             })
             .collect();
@@ -86,10 +101,26 @@ pub struct PluginSummary {
     /// this back.
     pub source: String,
     pub store_path: PathBuf,
+    /// The commit the package was installed from, when it came from one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
     pub capability_count: usize,
     /// Whether the one installed is the one that exists, and when that was
     /// last established.
     pub freshness: Freshness,
+    /// Every harness the package is installed for and could not be
+    /// delivered to. Empty for a package every harness received.
+    pub undelivered: Vec<UndeliveredHarness>,
+}
+
+/// One harness a package stayed installed without reaching, and the error
+/// its delivery ended in.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UndeliveredHarness {
+    pub integration: String,
+    /// The harness's own name, for a person reading the listing.
+    pub display_name: String,
+    pub error: String,
 }
 
 /// What UZE can say about whether an installed package is current.
@@ -188,6 +219,37 @@ pub struct MarketplaceRegistration {
     /// A local checkout with no `origin`: a project declaring it resolves
     /// on this machine and nowhere else.
     pub resolves_here_only: bool,
+    /// The checkout on this machine its reads come from, `None` for a
+    /// marketplace read from its remote. The identity alone reads as if
+    /// the remote were what is read.
+    pub checkout: Option<PathBuf>,
+    /// The directory of the repository its catalogue sits in, `None` at the
+    /// root.
+    pub subpath: Option<PathBuf>,
+    /// Reads follow the checkout's working tree rather than its commits.
+    pub linked: bool,
+}
+
+impl MarketplaceRegistration {
+    /// Where its catalogue is read from on this machine.
+    pub fn place(&self) -> String {
+        match (&self.checkout, &self.subpath) {
+            (Some(checkout), Some(subpath)) => checkout.join(subpath).display().to_string(),
+            (Some(checkout), None) => checkout.display().to_string(),
+            (None, Some(subpath)) => format!("{}/{}", self.identity, subpath.display()),
+            (None, None) => self.identity.clone(),
+        }
+    }
+
+    /// What is read, and whether it follows a working tree or commits.
+    pub fn reads(&self) -> String {
+        let place = self.place();
+        if self.linked {
+            format!("Reads the working tree at {place} (linked)")
+        } else {
+            format!("Reads {place} at its commits (mirrored)")
+        }
+    }
 }
 
 /// A marketplace teardown's answer: what came off, what was blocked, and
@@ -256,12 +318,29 @@ pub struct MarketplacePluginDetail {
     pub revision: Option<Revision>,
 }
 
+/// One capability as a harness would receive it: the effective view
+/// `uze inspect` shows, built by the same routing an install takes and
+/// attaching nothing.
 #[derive(Clone, Debug, Serialize)]
 pub struct CapabilityDelivery {
     pub identity: String,
     pub kind: CapabilityKind,
     pub provided_by_package: bool,
+    /// The capability's own plan, for one not provided by the package.
     pub plan: Option<ExposurePlan>,
+    /// The name a session sees it under. `None` for a capability the
+    /// harness gives no name of its own.
+    pub exposed_name: Option<String>,
+    /// How it reaches the harness: `Unsupported` when nothing would be
+    /// attached for it.
+    pub route: CompatibilityRoute,
+    /// Where it lands: the artifact its own delivery writes, or the
+    /// package entry that carries it.
+    pub location: Option<PathBuf>,
+    pub evidence: String,
+    /// Why it would not be delivered at all: a name something UZE does not
+    /// own already holds.
+    pub blocked: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -270,8 +349,17 @@ pub struct HarnessDelivery {
     /// The name a person recognizes (`IntegrationPort::display_name`) —
     /// display only, mirrors `HarnessHealth::display_name`.
     pub display_name: String,
+    /// Whether the harness is on this machine. An install delivers only to
+    /// one that is; the plan of one that is not is what it would receive.
+    pub detected: bool,
     pub package_plan: Option<PackageExposurePlan>,
+    /// The route an install takes to this harness, in the words the
+    /// install report uses.
+    pub route: DeliveryRoute,
     pub capabilities: Vec<CapabilityDelivery>,
+    /// Every capability that reaches the harness short of native, exactly
+    /// as the install report lists it.
+    pub shortfalls: Vec<CapabilityShortfallReport>,
 }
 
 /// When a plugin was last written, as something a person can place in
@@ -349,6 +437,64 @@ pub struct BlockedCapability {
     pub reason: String,
 }
 
+/// What one harness received of a package, or why it received nothing.
+#[derive(Clone, Debug, Serialize)]
+pub struct HarnessDeliveryReport {
+    pub integration: String,
+    pub display_name: String,
+    #[serde(flatten)]
+    pub outcome: HarnessDeliveryOutcome,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum HarnessDeliveryOutcome {
+    Delivered {
+        route: DeliveryRoute,
+        /// Every artifact recorded for this harness, the package's own
+        /// entry and each capability delivered beside it alike.
+        attachments: Vec<PathBuf>,
+        blocked: Vec<BlockedCapability>,
+        /// Capabilities the harness received short of their canonical
+        /// meaning, each saying what it lost.
+        shortfalls: Vec<CapabilityShortfallReport>,
+    },
+    /// The delivery stopped with `error`, and whatever it had attached to
+    /// this harness was taken back off.
+    Failed { error: String },
+}
+
+/// A capability delivered on a route less than native.
+#[derive(Clone, Debug, Serialize)]
+pub struct CapabilityShortfallReport {
+    pub capability: String,
+    pub route: uze_core::router::CompatibilityRoute,
+    pub evidence: String,
+}
+
+/// How a package reached a harness, and why that way rather than another.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeliveryRoute {
+    /// As one package, through the harness's own plugin mechanism.
+    Package {
+        envelope: uze_core::exposure::PackageEnvelope,
+        route: uze_core::router::CompatibilityRoute,
+        evidence: String,
+    },
+    /// Each capability attached on its own.
+    CapabilityByCapability { reason: String },
+}
+
+impl HarnessDeliveryReport {
+    pub fn error(&self) -> Option<&str> {
+        match &self.outcome {
+            HarnessDeliveryOutcome::Failed { error } => Some(error),
+            HarnessDeliveryOutcome::Delivered { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct AddPluginReport {
     pub plugin: PluginSummary,
@@ -363,6 +509,17 @@ pub struct AddPluginReport {
     /// project, or from the marketplace built into UZE, installs on the
     /// machine alone — and the scope it reports has to say so.
     pub declared: bool,
+    /// One entry per detected harness, in the registry's order.
+    pub deliveries: Vec<HarnessDeliveryReport>,
+}
+
+impl AddPluginReport {
+    /// The harnesses this install failed on, while the package stayed.
+    pub fn undelivered(&self) -> impl Iterator<Item = &HarnessDeliveryReport> {
+        self.deliveries
+            .iter()
+            .filter(|delivery| delivery.error().is_some())
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -371,6 +528,7 @@ pub enum UpdatePluginReport {
         plugin: PluginSummary,
         attachments: Vec<AttachmentSummary>,
         publications: Vec<PublicationOutcome>,
+        deliveries: Vec<HarnessDeliveryReport>,
     },
     /// The installed package could not be safely detached, so nothing was
     /// replaced. The newly resolved revision is discarded with its scratch
@@ -532,12 +690,16 @@ pub enum ContextMechanism {
 }
 
 /// One harness's declared context support, one mechanism per portable
-/// resource — the two are answered independently because a harness may
-/// discover `.agents/` natively while needing help with `AGENTS.md`.
+/// resource — answered independently because a harness may read
+/// `.agents/skills` natively while needing help with `AGENTS.md`, or with
+/// `.agents/agents`, or getting none for it at all.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct HarnessContextSupport {
     pub instructions: ContextMechanism,
-    pub agents_directory: ContextMechanism,
+    /// `.agents/skills`.
+    pub project_skills: ContextMechanism,
+    /// `.agents/agents`.
+    pub project_agents: ContextMechanism,
 }
 
 impl HarnessContextSupport {
@@ -547,7 +709,16 @@ impl HarnessContextSupport {
         let projection = RuntimeProjection::of(integration, runtime_shim_active);
         Self {
             instructions: ContextMechanism::for_instructions(integration, projection),
-            agents_directory: ContextMechanism::for_agents_directory(integration, projection),
+            project_skills: ContextMechanism::for_project_resource(
+                integration,
+                AgentsDirectoryResource::Skills,
+                projection,
+            ),
+            project_agents: ContextMechanism::for_project_resource(
+                integration,
+                AgentsDirectoryResource::Agents,
+                projection,
+            ),
         }
     }
 }
@@ -596,17 +767,21 @@ impl ContextMechanism {
         }
     }
 
-    pub(crate) fn for_agents_directory(
+    pub(crate) fn for_project_resource(
         integration: &dyn IntegrationPort,
+        resource: AgentsDirectoryResource,
         projection: RuntimeProjection,
     ) -> Self {
-        if integration.discovers_project_agents_directory() {
-            return Self::Native;
-        }
-        match projection {
-            RuntimeProjection::Active => Self::RuntimeShim,
-            RuntimeProjection::Shadowed => Self::ShimShadowed,
-            RuntimeProjection::Inactive => Self::Unsupported,
+        match (integration.project_resource_route(resource), projection) {
+            (ProjectResourceRoute::Native, _) => Self::Native,
+            (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Active) => {
+                Self::RuntimeShim
+            }
+            (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Shadowed) => {
+                Self::ShimShadowed
+            }
+            (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Inactive)
+            | (ProjectResourceRoute::Unsupported, _) => Self::Unsupported,
         }
     }
 }
@@ -920,6 +1095,55 @@ pub struct PackageManagedState {
     pub hooks: Vec<HookHealth>,
 }
 
+/// One package's delivery checked against its intent on every detected
+/// harness it was delivered to.
+#[derive(Clone, Debug, Serialize)]
+pub struct PackageDeliveryHealth {
+    pub plugin: String,
+    pub harnesses: Vec<HarnessDeliveryHealth>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct HarnessDeliveryHealth {
+    pub integration: String,
+    pub display_name: String,
+    /// The capabilities the delivery plan says this harness holds.
+    pub expected: usize,
+    /// How many of those are present under the expected name and readable
+    /// by the harness.
+    pub present: usize,
+    pub findings: Vec<DeliveryFinding>,
+}
+
+impl HarnessDeliveryHealth {
+    pub fn healthy(&self) -> bool {
+        self.findings.is_empty()
+    }
+}
+
+/// One expected capability a harness does not hold the way the plan says.
+#[derive(Clone, Debug, Serialize)]
+pub struct DeliveryFinding {
+    /// The name the harness should show it under, or its identity when it
+    /// has none.
+    pub capability: String,
+    pub kind: DeliveryFindingKind,
+    pub detail: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryFindingKind {
+    /// Nothing delivers it: no receipt records it, or the artifact is gone.
+    Missing,
+    /// Delivered under a different name than the plan gives it.
+    Renamed,
+    /// Its artifact no longer matches what UZE delivered.
+    Unhealthy,
+    /// In place, and the harness would still not load it.
+    Unreadable,
+}
+
 /// Per-(hook group, harness) diagnostic row in the doctor report. `weakened`
 /// is `Some` exactly when the route is Degraded/Unsupported — a semantic
 /// loss is always stated, never hidden. `artifact`/`state` are `Some` only
@@ -957,6 +1181,11 @@ pub struct UpgradeLeftovers {
     /// receipt claims — `uze doctor` removes these, unlike `set_aside`,
     /// whose bytes only a person can judge.
     pub dangling: Vec<DanglingReferenceRecord>,
+    /// Package directories under the Store that its registry does not
+    /// list: bytes an interrupted install or a hand copy left. Reported,
+    /// never removed, because a package's bytes are the one thing UZE
+    /// cannot always acquire again.
+    pub unregistered_packages: Vec<PathBuf>,
     /// How many there are in all, including the ones not listed: a report
     /// that names forty is one nobody reads.
     pub total: usize,
@@ -988,6 +1217,9 @@ pub struct DoctorReport {
     pub plugins: Vec<PluginSummary>,
     pub harnesses: Vec<HarnessHealth>,
     pub attachments: Vec<PackageManagedState>,
+    /// Per package and detected harness, what its delivery plan expects
+    /// against what is present and readable there.
+    pub deliveries: Vec<PackageDeliveryHealth>,
     pub ledger_error: Option<String>,
     pub provisioning_state_error: Option<String>,
     /// What a previous version left behind that this one did not adopt.

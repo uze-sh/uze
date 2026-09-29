@@ -53,7 +53,7 @@ scenes:
       - file: "{project}/agents.lock"
         contains: flow
         about: the lock records what resolving the declaration produced
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: and the plugin's skill is where a harness reads it
 
@@ -73,7 +73,7 @@ scenes:
         about: |
           reporting is not applying — the lock still carries it until an
           install is run
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: and the harness still reads it
 
@@ -92,7 +92,7 @@ scenes:
         about: |
           and it keeps the marketplace the manifest still declares: this is
           convergence, not truncation
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: |
           the machine keeps the package and every harness keeps reading it.

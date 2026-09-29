@@ -14,41 +14,9 @@ use uze_core::{
     store::StoredPackage,
 };
 
+use crate::shared::package_root::resolve_json;
 use crate::shared::plan::unsupported;
 use crate::shared::process::{capture, failed_message, is_cli_safe_token, succeeds};
-
-/// How a canonical `mcp.json` names the root of its own package — the token
-/// the portable hook contract already speaks.
-const PACKAGE_ROOT_TOKEN: &str = "${PLUGIN_ROOT}";
-
-/// Resolves [`PACKAGE_ROOT_TOKEN`] to `package_root` in every string a
-/// server declaration carries. No harness expands the portable token, and
-/// the ones that stage their own copy of a plugin do not follow the
-/// symlinks an envelope is made of, so the one path that holds in every
-/// harness is the Store's.
-pub(crate) fn resolve_package_root(
-    value: &serde_json::Value,
-    package_root: &Path,
-) -> serde_json::Value {
-    match value {
-        serde_json::Value::String(text) => serde_json::Value::String(
-            text.replace(PACKAGE_ROOT_TOKEN, &package_root.to_string_lossy()),
-        ),
-        serde_json::Value::Array(items) => serde_json::Value::Array(
-            items
-                .iter()
-                .map(|item| resolve_package_root(item, package_root))
-                .collect(),
-        ),
-        serde_json::Value::Object(entries) => serde_json::Value::Object(
-            entries
-                .iter()
-                .map(|(key, value)| (key.clone(), resolve_package_root(value, package_root)))
-                .collect(),
-        ),
-        other => other.clone(),
-    }
-}
 
 /// The `mcpServers` value of the package's canonical `mcp.json`, resolved
 /// into the grammar every harness runs: what an envelope carries.
@@ -57,7 +25,34 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
         .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|value| value.get("mcpServers").cloned())
-        .map(|servers| resolve_package_root(&servers, &package.root))
+        .map(|servers| match servers {
+            serde_json::Value::Object(servers) => serde_json::Value::Object(
+                servers
+                    .into_iter()
+                    .map(|(name, server)| (name, resolve_server(&server, &package.root)))
+                    .collect(),
+            ),
+            other => resolve_json(&other, &package.root),
+        })
+}
+
+/// One server with the package root resolved: `${PLUGIN_ROOT}` wherever it
+/// is written, and the `./` form Agent Plugins 1.0 gives `command` and
+/// `cwd`, which a harness would otherwise resolve against a directory of
+/// its own choosing.
+fn resolve_server(server: &serde_json::Value, package_root: &Path) -> serde_json::Value {
+    let package_root = &crate::shared::package_root::delivered(package_root);
+    let mut server = resolve_json(server, package_root);
+    if let Some(entries) = server.as_object_mut() {
+        for key in ["command", "cwd"] {
+            if let Some(serde_json::Value::String(value)) = entries.get_mut(key)
+                && let Some(relative) = value.strip_prefix("./")
+            {
+                *value = package_root.join(relative).to_string_lossy().into_owned();
+            }
+        }
+    }
+    server
 }
 
 /// `{"command": "...", "args": [...]}` from one server's canonical config
@@ -66,7 +61,7 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
 /// argument that is not a string: an entry that runs something other than
 /// what the author declared is not a delivery of it.
 pub(crate) fn stdio_command(payload: &[u8], package_root: &Path) -> Option<(PathBuf, Vec<String>)> {
-    let value = resolve_package_root(&serde_json::from_slice(payload).ok()?, package_root);
+    let value = resolve_server(&serde_json::from_slice(payload).ok()?, package_root);
     let command = value.get("command")?.as_str()?;
     let args = match value.get("args") {
         None | Some(serde_json::Value::Null) => Vec::new(),
@@ -308,7 +303,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_package_root_resolves_in_every_string_a_server_carries() {
+    fn the_package_root_resolves_in_every_string_a_server_carries_to_the_delivered_copy() {
         let root = Path::new("/store/plugins/mk/pm");
         let declared = serde_json::json!({
             "command": "${PLUGIN_ROOT}/bin/server",
@@ -316,11 +311,34 @@ mod tests {
             "env": { "HOME_OF": "${PLUGIN_ROOT}" },
         });
         assert_eq!(
-            resolve_package_root(&declared, root),
+            resolve_json(&declared, root),
             serde_json::json!({
-                "command": "/store/plugins/mk/pm/bin/server",
-                "args": ["--data", "/store/plugins/mk/pm/data", 3],
-                "env": { "HOME_OF": "/store/plugins/mk/pm" },
+                "command": "/runtime/packages/pm@mk/bin/server",
+                "args": ["--data", "/runtime/packages/pm@mk/data", 3],
+                "env": { "HOME_OF": "/runtime/packages/pm@mk" },
+            })
+        );
+    }
+
+    #[test]
+    fn an_agent_plugins_relative_command_runs_from_the_package() {
+        let root = Path::new("/store/plugins/mk/pm");
+        let declared = br#"{"type":"stdio","command":"./bin/server","args":["./not-a-path"]}"#;
+        assert_eq!(
+            stdio_command(declared, root),
+            Some((
+                PathBuf::from("/runtime/packages/pm@mk/bin/server"),
+                vec!["./not-a-path".to_owned()]
+            ))
+        );
+        assert_eq!(
+            resolve_server(
+                &serde_json::json!({"command": "./bin/s", "cwd": "./data"}),
+                root
+            ),
+            serde_json::json!({
+                "command": "/runtime/packages/pm@mk/bin/s",
+                "cwd": "/runtime/packages/pm@mk/data",
             })
         );
     }

@@ -228,8 +228,23 @@ impl UzeApplication {
             active_name: package.active_name.clone(),
             source: package.provenance.requested.display(),
             store_path: package.root.clone(),
+            commit: match &package.provenance.resolved {
+                uze_core::ResolvedSource::Git { commit, .. } => Some(commit.clone()),
+                _ => None,
+            },
             capability_count: resources.len(),
             freshness: self.freshness_of(package),
+            undelivered: state::undelivered(&self.home, package.id.as_str())?
+                .into_iter()
+                .map(|(integration, error)| UndeliveredHarness {
+                    display_name: self.integration_named(&integration).map_or_else(
+                        || integration.clone(),
+                        |known| known.display_name().to_owned(),
+                    ),
+                    integration,
+                    error,
+                })
+                .collect(),
         })
     }
 
@@ -340,6 +355,8 @@ impl UzeApplication {
     }
 }
 
+#[cfg(test)]
+mod setup_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

@@ -332,6 +332,7 @@ fn install_project_environment_with_no_lock_installs_nothing_and_settles() {
     match report {
         InstallReport::Installed { plugins, .. } => assert!(plugins.is_empty()),
         InstallReport::NoChanges => {}
+        InstallReport::NoProject => panic!("the fixture is a project"),
     }
     // The second has nothing left to do, which is the property that
     // actually matters: installing twice is installing once.
@@ -704,6 +705,42 @@ fn remove_project_plugin_removes_from_lock_but_not_from_the_store() {
             .any(|p| p.id == "flow@test-market"),
         "remove_project_plugin must NOT touch the Store -- only the lock"
     );
+}
+
+/// A plugin is taken out of a project by the spelling it was added with,
+/// `name@marketplace`, and a marketplace the project does not draw it from
+/// is refused rather than read past.
+#[test]
+fn remove_project_plugin_accepts_the_spelling_it_was_added_with() {
+    let fx = Fixture::new("remove-qualified");
+    fx.add_marketplace_to_global_registry();
+    let app = fx.app();
+    app.project()
+        .add(
+            "flow",
+            "test-market",
+            &fx.project_root,
+            &AlwaysTrust,
+            &uze_application::NoNameCollisionAuthority,
+        )
+        .unwrap();
+
+    let elsewhere = app
+        .project()
+        .remove("flow@another-market", &fx.project_root)
+        .unwrap();
+    assert!(matches!(
+        elsewhere,
+        RemoveProjectPluginReport::NotInLock { .. }
+    ));
+
+    let report = app
+        .project()
+        .remove("flow@test-market", &fx.project_root)
+        .unwrap();
+    assert!(matches!(report, RemoveProjectPluginReport::Removed { .. }));
+    let lock = project_lock::load_lock(&fx.project_root).unwrap();
+    assert!(lock.is_none_or(|lock| !lock.plugins.contains_key("flow")));
 }
 
 #[test]

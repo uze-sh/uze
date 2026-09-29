@@ -3,19 +3,22 @@
 OpenCode does not consume any external plugin envelope — there is no
 `.opencode-plugin/plugin.json` equivalent UZE reads. It decomposes every
 package into individual Agent Skill / MCP capability attachments, delivered
-through two native OpenCode surfaces: the shared `~/.agents/skills`
-discovery directory and the global `mcp` object in `opencode.json`.
+through native OpenCode surfaces: its own `~/.config/opencode/skills`
+discovery directory, `agents/`, `plugins/` and the global `mcp` object in
+`opencode.json`.
 
 ## Support
 
 | Capability | Status | Delivery | Evidence |
 |---|---|---|---|
 | Plugin (package-level) | Unsupported (by design) | — no native envelope exists to consume | CODE_FACT |
-| Skills | Supported | Native — managed symlink in `~/.agents/skills` | EMPIRICAL (OpenCode 1.18.18, 2026-08-20, real behavioral proof-token run — see ADR-006) |
+| Skills | Supported | Native: a directory of its own in `~/.config/opencode/skills/<label>` (rendered SKILL.md, supporting files copied, never a link: OpenCode's walker does not descend a linked skill root, so its `<skill_files>` came out empty) | EMPIRICAL (OpenCode 2.0.18, Lab `experiments/opencode/study_mechanics`, `experiments/opencode/skill_files`) |
 | Skill invocation policy | Supported, native for every combination | Generated wrapper SKILL.md with `metadata.opencode/autoinvoke: false` (model=false) / `slash: false` (user=false); the vendor Command primitive is never needed (ADR-030) | DOCUMENTED (OpenCode V2 skills docs); wrapper syntax follows the documented `metadata: { opencode/autoinvoke: <bool> }` shape |
 | MCP | Supported | Adapted — direct write to `opencode.json`'s `mcp.<name>` | TESTED (config-level); no behavioral/CLI-discovery probe recorded for OpenCode in any ADR |
 | Instructions/Context | Native (outside this crate) | Reads `AGENTS.md` directly, no bridge needed | DOCUMENTED (ADR-014) |
-| Agents | Not implemented | `CapabilityKind::Agent` is import-only, routed to no integration | CODE_FACT |
+| Project `.agents/skills` | Native | OpenCode reads the project's `./.agents/skills` itself; UZE writes nothing into the repository | EMPIRICAL (OpenCode 2.0.18, Lab contract `context-project-skill-reaches-model`) |
+| Project `.agents/agents` | Unsupported | OpenCode does not read `./.agents/agents`; its project roots are `.opencode/agent(s)`, inside the checkout, where UZE never writes. No launch can hand them over from outside: `OPENCODE_CONFIG_DIR` replaces the user's configuration directory (the user's provider is lost), and the additive `OPENCODE_CONFIG`/`OPENCODE_CONFIG_CONTENT` are read by the process that starts the server. A default launch attaches to the shared background service, which keeps whichever environment started it: one project's agents are then offered in every other project it serves, and a launch finding it already running has its own ignored. Only `--standalone` holds them per launch, and that mode is the person's choice, not UZE's | EMPIRICAL (OpenCode 2.0.18, `experiments/opencode/project-agents`; the contract's `context-project-agent-reaches-model` declares it) |
+| Agents | Supported | Generated `~/.config/opencode/agents/<label>.md` (the file name is the agent id) with `description` and `mode: subagent`; any other field is dropped (a Claude-style `model`/`tools` makes OpenCode drop the agent silently) and reported as Degraded | EMPIRICAL (OpenCode 2.0.15/2.0.18, Lab probe) |
 | Hooks | Adapted (`observe`/`allow`) | One generated `Plugin.define` plugin at `<config root>/plugins/hooks-<package>.ts`, auto-discovered: the plugin *is* the wrapper (same `HOOK_*`/exit-code contract, package groups as data) — ADR-033, ADR-040. `deny`/`ask` are Unsupported: the V2 tool hooks see the input but cannot block, and `permission.evaluate` carries the action's resources rather than the tool input. | EMPIRICAL (Lab, registered ADAPTED for the blocking checks) + TESTED (a Bun runtime check drives the generated plugin) |
 | Runtime projection | None | `runtime_contribution`/`supports_runtime_integration` never overridden — inherits passthrough default | CODE_FACT |
 
@@ -24,7 +27,7 @@ discovery directory and the global `mcp` object in `opencode.json`.
 ```
 Store plugin
    │
-   ├── Skill → managed symlink in ~/.agents/skills/<name>   (route: Native, once `uze setup` ran)
+   ├── Skill → directory ~/.config/opencode/skills/<label>/  (route: Native, once `uze setup` ran)
    │           └── before `uze setup`: Unsupported, naming `uze setup`
    │
    └── MCP   → direct write into opencode.json's `mcp.<name>` object (route: Adaptable)
@@ -61,7 +64,7 @@ with it today (ADR-014 explicitly anticipates this).
 
 | Receipt | Inspect | Detach | Drift-safe |
 |---|---|---|---|
-| `VendorConfigEntry` (MCP only — Skills use the shared `SymlinkReference` path via `ManagedArtifact::attach_standard`/`detach_standard`) | Reads `opencode.json`, checks `mcp.<name>` against the receipt's recorded command/args/transport/cwd/env/enabled | Re-inspects immediately before mutating (ADR-009); removes only the matched key, preserves every other `mcp` entry and top-level config key | Yes — `mcp_inspection_tolerates_unrelated_fields_and_detaches_only_owned_entry` asserts a `foreign` entry and an `unrelated` top-level key both survive detach |
+| `VendorConfigEntry` (MCP; Skills are `GeneratedTree` receipts, inspected by the directory's `tree_sha256`) | Reads `opencode.json`, checks `mcp.<name>` against the receipt's recorded command/args/transport/cwd/env/enabled | Re-inspects immediately before mutating (ADR-009); removes only the matched key, preserves every other `mcp` entry and top-level config key | Yes — `mcp_inspection_tolerates_unrelated_fields_and_detaches_only_owned_entry` asserts a `foreign` entry and an `unrelated` top-level key both survive detach |
 
 OpenCode is the only integration that writes its vendor config file
 **directly** (`attach_mcp_config`/`detach_receipt` parse-and-rewrite JSON)
@@ -83,25 +86,21 @@ collision-safe (ADR-013), but the specific justification "no CLI exists"
 is not itself sourced anywhere. Treat this as an unverified assumption
 carried by the implementation, not a disproven one.
 
-## Runtime binary aliasing (Provisioning)
+## Provisioning and the `opencode2` name
 
-OpenCode's v2 installer produces a binary named `opencode2`; UZE's
-canonical invocation is `opencode` with no suffix. `provision()`:
+The V2 installer is OpenCode's standard channel and places `opencode`; the
+V2 beta placed only `opencode2`, which it now leaves as a compatibility
+script. `provision()`:
 
-1. `resolve_opencode_binary()` — tries `opencode --version` first, falls
-   back to `opencode2 --version`.
-2. Runs the official install/upgrade script (or `<binary> upgrade` if
-   already present) through the injected `ProcessRunner`.
-3. `ensure_opencode_alias()` — if `opencode` still doesn't resolve, creates
-   a symlink from either `opencode2`'s own directory or `~/.local/bin`
-   pointing `opencode → opencode2`. Idempotent and non-destructive: a
-   correct symlink is left alone, a stale one is repaired, a real
-   (non-symlink) file at the alias path is never touched.
-4. Only reports `Verified` once `opencode --version` itself succeeds — not
-   merely `opencode2`.
+1. `resolve_opencode_binary()` looks for `opencode`, then `opencode2`, on
+   `PATH` outside the shims, and in the installer's documented directories.
+2. Runs `opencode upgrade`, or the official V2 installer when only the beta
+   `opencode2` is there (it takes a positional project path, not
+   `upgrade`), through the injected `ProcessRunner`, and reports `Verified`
+   once the version answers.
 
-No other integration in this crate has an equivalent binary-name-migration
-workaround.
+UZE creates no alias for either name; its runtime shim is what keeps
+`opencode` stable.
 
 ## Limitations
 
@@ -120,12 +119,10 @@ workaround.
 - The binary-alias mechanism (`ensure_opencode_alias`) is only exercised in
   tests when `opencode`/`opencode2` genuinely exists on the test machine's
   real `PATH` — see Evidence.
-- Skill naming policy (bare-name-first, like Claude) is deliberately
-  claimed for Codex too, since the two share the same
-  `~/.agents/skills` discovery root — see
-  `shared_agent_skill_root`/`exposure_name_candidates`'s doc comments. A
-  bug in that shared-claim logic would manifest as a naming collision
-  across two integrations at once, not just here.
+- OpenCode also reads Codex's `~/.agents/skills`. A skill both harnesses
+  receive therefore exists twice on disk, and OpenCode resolves the name
+  by its own precedence, in which `~/.config/opencode` wins: the copy it
+  shows is the one encoded for it.
 
 ## Evidence
 

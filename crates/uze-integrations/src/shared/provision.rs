@@ -11,6 +11,8 @@
 //! to diverge in real, load-bearing ways — not merely different constants —
 //! so it was not folded in here.
 
+use std::path::{Path, PathBuf};
+
 use uze_core::{
     Result,
     integration::HarnessDetection,
@@ -35,31 +37,88 @@ pub(crate) fn official_installer(url: &str, interpreter: &str) -> ProcessSpec {
     .with_inherited_output()
 }
 
+/// One harness's documented provisioning route, as its integration knows
+/// it. Everything vendor-specific `provision_cli` needs arrives here.
+pub(crate) struct OfficialRoute<'a> {
+    /// The product's name as a person reads it in a report.
+    pub label: &'a str,
+    /// The name a shell resolves the executable by.
+    pub program: &'a str,
+    pub install: ProcessSpec,
+    pub update: ProcessSpec,
+    /// The secret-free label recorded as the provisioning method.
+    pub method: &'a str,
+    /// The vendor's own installation page, named whenever UZE has no
+    /// official automated route to run on this platform.
+    pub manual_route: &'a str,
+}
+
+/// Whether this platform has an automated route UZE runs. The vendors'
+/// Unix installers cover Linux, macOS and WSL; the Windows routes they
+/// document are PowerShell scripts whose command contract has never been
+/// exercised by a Windows runner here, so Windows is reported rather than
+/// guessed at (see the change's `research.md`).
+pub(crate) fn platform_has_automated_route() -> bool {
+    cfg!(unix)
+}
+
+/// The actionable answer for a platform with no automated route: it names
+/// the vendor's own page and runs nothing, never an unofficial installer.
+pub(crate) fn unsupported_platform(label: &str, manual_route: &str) -> ProvisioningResult {
+    ProvisioningResult::blocked(format!(
+        "UZE has no official automated {label} install route for {os}; install it by \
+         following {manual_route}, then run `uze setup` again",
+        os = std::env::consts::OS
+    ))
+}
+
+/// `~/.local/bin/<program>`, where the Claude Code, Codex and Antigravity
+/// CLI Unix installers place their binary. A fresh install only edits the
+/// person's rc files, which no running shell has read again, so the binary
+/// is looked for here before the bare name a `PATH` search would miss.
+pub(crate) fn native_installer_destination(program: &str) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join(".local/bin").join(program))
+}
+
+/// The verified `executable` when a shell searching `PATH` for `programs`
+/// would not reach it: an installer that only edited the shell's rc files
+/// has not reached the shell this setup runs in.
+pub(crate) fn found_outside_path(
+    programs: &[&str],
+    shims_dir: &Path,
+    executable: &Path,
+) -> Option<PathBuf> {
+    let reachable = uze_core::harness_runtime::resolve_real_executable(programs, shims_dir);
+    (reachable.is_none() && executable.is_absolute() && executable.is_file())
+        .then(|| executable.to_path_buf())
+}
+
 /// `detect` re-probes the executable to capture its version string once
 /// installation/update has been confirmed successful; where the version sits
 /// in `--version` output is the vendor's (`process::VersionToken`).
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn provision_cli(
     runner: &dyn ProcessRunner,
+    route: OfficialRoute<'_>,
     executable: &str,
-    label: &str,
+    shims_dir: &Path,
     before: HarnessDetection,
-    install: ProcessSpec,
-    update: ProcessSpec,
-    method: &str,
     detect: impl Fn(&str) -> HarnessDetection,
 ) -> Result<ProvisioningResult> {
-    if !cfg!(unix) {
-        return Ok(ProvisioningResult::blocked(format!(
-            "{label} automatic provisioning is currently supported on Unix and WSL only"
-        )));
+    if !platform_has_automated_route() {
+        return Ok(unsupported_platform(route.label, route.manual_route));
     }
+    let method = route.method;
     let action = if before.present {
         ProvisionAction::Update
     } else {
         ProvisionAction::Install
     };
-    let command = if before.present { update } else { install };
+    let command = if before.present {
+        route.update
+    } else {
+        route.install
+    };
     let outcome = match runner.run(&command) {
         Ok(outcome) => outcome,
         Err(_) => {
@@ -86,11 +145,11 @@ pub(crate) fn provision_cli(
             "installer finished but the executable could not be verified",
         ));
     }
-    Ok(ProvisioningResult::verified(
-        action,
-        method,
-        detect(executable),
-    ))
+    Ok(
+        ProvisioningResult::verified(action, method, detect(executable)).found_outside_path(
+            found_outside_path(&[route.program], shims_dir, Path::new(executable)),
+        ),
+    )
 }
 
 #[cfg(all(test, unix))]
@@ -161,6 +220,61 @@ mod provision_cli_tests {
         }
     }
 
+    fn route() -> OfficialRoute<'static> {
+        OfficialRoute {
+            label: "Test Harness",
+            program: "does-not-exist-on-this-machine",
+            install: ProcessSpec::new("sh", ["-c", "install"]),
+            update: ProcessSpec::new("sh", ["-c", "update"]),
+            method: "official-test-installer",
+            manual_route: "https://example.invalid/install",
+        }
+    }
+
+    #[test]
+    fn a_platform_without_an_automated_route_names_the_manual_one_and_runs_nothing() {
+        let result = unsupported_platform("Test Harness", "https://example.invalid/install");
+        assert_eq!(
+            result.status,
+            uze_core::provisioning::ProvisionStatus::Blocked
+        );
+        assert_eq!(result.action, ProvisionAction::None);
+        let reason = result.reason.unwrap();
+        assert!(
+            reason.contains("https://example.invalid/install"),
+            "{reason}"
+        );
+        assert!(reason.contains(std::env::consts::OS), "{reason}");
+        assert!(reason.contains("uze setup"), "{reason}");
+    }
+
+    #[test]
+    fn an_executable_no_path_directory_reaches_is_reported_where_it_was_found() {
+        let root = uze_testkit::temp::scratch("provision-outside-path");
+        let bin = root.join(".local/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let executable = bin.join("does-not-exist-on-this-machine");
+        std::fs::write(&executable, "#!/bin/sh\n").unwrap();
+        assert_eq!(
+            found_outside_path(
+                &["does-not-exist-on-this-machine"],
+                &root.join("shims"),
+                &executable
+            ),
+            Some(executable.clone())
+        );
+        assert_eq!(
+            found_outside_path(
+                &["does-not-exist-on-this-machine"],
+                &root.join("shims"),
+                Path::new("does-not-exist-on-this-machine")
+            ),
+            None,
+            "a bare name was resolved through PATH, so there is no location to report"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn absent_before_dispatches_install_then_verifies() {
         let runner = RecordingRunner {
@@ -169,12 +283,10 @@ mod provision_cli_tests {
         };
         let result = provision_cli(
             &runner,
+            route(),
             "does-not-exist-on-this-machine",
-            "Test Harness",
+            Path::new("/nonexistent-shims"),
             HarnessDetection::default(),
-            ProcessSpec::new("sh", ["-c", "install"]),
-            ProcessSpec::new("sh", ["-c", "update"]),
-            "official-test-installer",
             |_| HarnessDetection::default(),
         )
         .unwrap();
@@ -194,15 +306,13 @@ mod provision_cli_tests {
         };
         let result = provision_cli(
             &runner,
+            route(),
             "does-not-exist-on-this-machine",
-            "Test Harness",
+            Path::new("/nonexistent-shims"),
             HarnessDetection {
                 present: true,
                 version: Some("1.0.0".to_owned()),
             },
-            ProcessSpec::new("sh", ["-c", "install"]),
-            ProcessSpec::new("sh", ["-c", "update"]),
-            "official-test-installer",
             |_| HarnessDetection::default(),
         )
         .unwrap();
@@ -221,12 +331,10 @@ mod provision_cli_tests {
         };
         let result = provision_cli(
             &runner,
+            route(),
             "does-not-exist-on-this-machine",
-            "Test Harness",
+            Path::new("/nonexistent-shims"),
             HarnessDetection::default(),
-            ProcessSpec::new("sh", ["-c", "install"]),
-            ProcessSpec::new("sh", ["-c", "update"]),
-            "official-test-installer",
             |_| HarnessDetection::default(),
         )
         .unwrap();

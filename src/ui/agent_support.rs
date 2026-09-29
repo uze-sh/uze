@@ -27,8 +27,10 @@ pub(super) struct AgentSupport {
     capabilities: HarnessCapabilities,
     instructions: State,
     instructions_label: &'static str,
-    agents_directory: State,
-    agents_directory_label: &'static str,
+    project_skills: State,
+    project_skills_label: &'static str,
+    project_agents: State,
+    project_agents_label: &'static str,
     profile: String,
 }
 
@@ -51,7 +53,8 @@ impl AgentSupport {
         profile: Option<&ProfileSummary>,
     ) -> Self {
         let (instructions, instructions_label) = describe(&context.instructions);
-        let (agents_directory, agents_directory_label) = describe(&context.agents_directory);
+        let (project_skills, project_skills_label) = describe(&context.project_skills);
+        let (project_agents, project_agents_label) = describe(&context.project_agents);
         Self {
             // Identity and presence come from the resolution itself, not
             // from `health`, so the popup can never label one harness's
@@ -61,8 +64,10 @@ impl AgentSupport {
             capabilities: health.capabilities,
             instructions,
             instructions_label,
-            agents_directory,
-            agents_directory_label,
+            project_skills,
+            project_skills_label,
+            project_agents,
+            project_agents_label,
             profile: profile
                 .map(|profile| profile.id.clone())
                 .unwrap_or_else(|| "default".to_owned()),
@@ -125,9 +130,15 @@ pub(super) fn render(
         inner_width,
     ));
     lines.push(fact_line(
-        support.agents_directory,
-        ".agents",
-        support.agents_directory_label,
+        support.project_skills,
+        ".agents/skills",
+        support.project_skills_label,
+        inner_width,
+    ));
+    lines.push(fact_line(
+        support.project_agents,
+        ".agents/agents",
+        support.project_agents_label,
         inner_width,
     ));
     lines.push(fact_line(
@@ -210,7 +221,7 @@ fn styled_row(
     width: usize,
 ) -> Line<'static> {
     let (icon, icon_color) = icon_for(state);
-    let value = text::elide(value, width.saturating_sub(3));
+    let value = text::elide(value, width.saturating_sub(3 + label.chars().count()));
     let gap = width
         .saturating_sub(2 + label.chars().count() + value.chars().count())
         .max(1);
@@ -382,7 +393,8 @@ mod tests {
             runtime_shim_active: true,
             context_support: HarnessContextSupport {
                 instructions: ContextMechanism::RuntimeShim,
-                agents_directory: ContextMechanism::RuntimeShim,
+                project_skills: ContextMechanism::RuntimeShim,
+                project_agents: ContextMechanism::RuntimeShim,
             },
         }
     }
@@ -392,13 +404,15 @@ mod tests {
         instructions: ResourceDelivery,
         agents_directory: ResourceDelivery,
     ) -> AgentSupport {
+        let project_agents = agents_directory.clone();
         let context = AgentContextStatus {
             integration: "claude-code".to_owned(),
             display_name: "Claude Code".to_owned(),
             present,
             root: std::path::PathBuf::from("/project"),
             instructions,
-            agents_directory,
+            project_skills: agents_directory,
+            project_agents,
         };
         AgentSupport::resolve(health(present), &context, None)
     }
@@ -412,8 +426,8 @@ mod tests {
         );
         assert_eq!(support.instructions_label, "loaded (shim)");
         assert!(matches!(support.instructions, State::Ready));
-        assert_eq!(support.agents_directory_label, "loaded (shim)");
-        assert!(matches!(support.agents_directory, State::Ready));
+        assert_eq!(support.project_skills_label, "loaded (shim)");
+        assert!(matches!(support.project_skills, State::Ready));
     }
 
     #[test]
@@ -430,8 +444,8 @@ mod tests {
         );
         assert_eq!(support.instructions_label, "none in project");
         assert!(matches!(support.instructions, State::Neutral));
-        assert_eq!(support.agents_directory_label, "loaded (shim)");
-        assert!(matches!(support.agents_directory, State::Ready));
+        assert_eq!(support.project_skills_label, "loaded (shim)");
+        assert!(matches!(support.project_skills, State::Ready));
     }
 
     #[test]
@@ -447,8 +461,26 @@ mod tests {
         );
         assert_eq!(support.instructions_label, "shim not on PATH");
         assert!(matches!(support.instructions, State::Warning));
-        assert_eq!(support.agents_directory_label, "shim not on PATH");
-        assert!(matches!(support.agents_directory, State::Warning));
+        assert_eq!(support.project_skills_label, "shim not on PATH");
+        assert!(matches!(support.project_skills, State::Warning));
+    }
+
+    #[test]
+    fn skills_and_agents_of_the_agents_directory_are_answered_apart() {
+        let context = AgentContextStatus {
+            integration: "opencode".to_owned(),
+            display_name: "OpenCode".to_owned(),
+            present: true,
+            root: std::path::PathBuf::from("/project"),
+            instructions: ResourceDelivery::Native,
+            project_skills: ResourceDelivery::Native,
+            project_agents: ResourceDelivery::Undelivered(UndeliveredReason::Unsupported),
+        };
+        let support = AgentSupport::resolve(health(true), &context, None);
+        assert_eq!(support.project_skills_label, "native");
+        assert!(matches!(support.project_skills, State::Ready));
+        assert_eq!(support.project_agents_label, "not supported");
+        assert!(matches!(support.project_agents, State::Error));
     }
 
     #[test]
@@ -475,7 +507,7 @@ mod tests {
         );
         assert_eq!(bridged.instructions_label, "loaded (bridge)");
         assert!(matches!(bridged.instructions, State::Ready));
-        assert_eq!(bridged.agents_directory_label, "not supported");
+        assert_eq!(bridged.project_skills_label, "not supported");
     }
 
     #[test]

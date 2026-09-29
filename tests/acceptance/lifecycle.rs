@@ -106,20 +106,18 @@ fn drift_blocks_destructive_remove_and_preserves_the_artifact() {
         &install_args.iter().map(String::as_str).collect::<Vec<_>>(),
     );
 
-    // The codex/opencode entry is UZE's managed symlink; repoint it at a
-    // foreign directory — the canonical drifted shape (a plain foreign
-    // file instead would be a Conflict, not Drift).
+    // OpenCode's entry is a directory UZE wrote; editing its SKILL.md by
+    // hand is the canonical drifted shape (a foreign file in place of the
+    // directory would be a Conflict, not Drift).
     let managed = env
         .home
-        .join(".agents/skills/uze-agent-skill-conformance:uze-e2e");
+        .join(".config/opencode/skills/uze-agent-skill-conformance:uze-e2e");
     assert!(
-        managed.is_symlink(),
-        "expected the managed codex/opencode skill symlink, got a different projection"
+        managed.is_dir() && !managed.is_symlink(),
+        "expected the managed OpenCode skill directory, got a different projection"
     );
-    let elsewhere = env.root().join("drift-target");
-    std::fs::create_dir_all(&elsewhere).unwrap();
-    std::fs::remove_file(&managed).unwrap();
-    std::os::unix::fs::symlink(&elsewhere, &managed).unwrap();
+    let skill = managed.join("SKILL.md");
+    std::fs::write(&skill, "edited by hand\n").unwrap();
 
     let doctor = env.run_ok(uze_bin(), &["doctor"]);
     let stdout = String::from_utf8_lossy(&doctor.stdout);
@@ -134,8 +132,9 @@ fn drift_blocks_destructive_remove_and_preserves_the_artifact() {
         remove_out.contains("Removal blocked") && remove_out.contains("Drift"),
         "a drifted attachment must block destructive removal, got: {remove_out}"
     );
-    assert!(
-        managed.is_symlink() && std::fs::read_link(&managed).unwrap() == elsewhere,
+    assert_eq!(
+        std::fs::read_to_string(&skill).unwrap(),
+        "edited by hand\n",
         "a blocked removal must leave the drifted artifact untouched"
     );
 }

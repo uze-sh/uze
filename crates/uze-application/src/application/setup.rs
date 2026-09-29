@@ -167,7 +167,10 @@ impl UzeApplication {
                         result.attach_error = Some(error.to_string());
                     }
                 }
-                match self.ensure_runtime_shim(integration.as_ref()) {
+                match self.ensure_runtime_shim(
+                    integration.as_ref(),
+                    result.provisioning.located_outside_path.as_deref(),
+                ) {
                     Ok(shim) => result.runtime_shim = shim,
                     Err(error) => {
                         result.shim_error = Some(error.to_string());

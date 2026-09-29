@@ -412,7 +412,7 @@ fn the_levels_are_joined_by_alias_from_the_context_down_to_the_code() {
         handle_command(&mut state, Command::Activate, SPACE),
         ArchitectOutcome::OpenPath {
             project: PathBuf::from("/project"),
-            target: PathBuf::from("/project/crates/uze-core/src/package"),
+            target: PathBuf::from("/project/crates/uze-core/src/package.rs"),
         },
         "the last level down is the code itself"
     );
@@ -937,4 +937,26 @@ fn a_diagram_already_laid_out_is_not_laid_out_again() {
     assert!(!state.laid_out.is_empty(), "the level left is kept");
     let state = filled(state);
     assert!(state.laid_out.is_empty(), "a fresh read lays out afresh");
+}
+
+/// A box's link is followed as a file, so a check says which ones open
+/// nothing: a module's directory or a file that moved looks exactly like a
+/// working link on the board.
+#[test]
+fn a_check_names_every_link_that_opens_no_file() {
+    let diagram = "flowchart TD\n  a[Kept] --> b[Moved]\n  b --> c[Outside]\n  click a href \"src/lib.rs\"\n  click b href \"src/gone.rs\"\n  click c href \"../outside.rs\"\n";
+    let Checkup::Checked { artifacts, .. } = check(
+        &Written(vec![("links.mmd", diagram), ("lib.rs", "pub fn f() {}")]),
+        declared(),
+    ) else {
+        panic!("a directory of diagrams is checked");
+    };
+    let links = &artifacts
+        .iter()
+        .find(|artifact| artifact.origin.ends_with("links.mmd"))
+        .expect("the diagram is checked")
+        .broken_links;
+    assert_eq!(links.len(), 2, "{links:?}");
+    assert!(links[0].contains("`src/gone.rs` is not a file in the project"));
+    assert!(links[1].contains("`../outside.rs` leaves the project"));
 }

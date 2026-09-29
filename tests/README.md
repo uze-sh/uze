@@ -113,7 +113,7 @@ make journey-docker                     # the same journey in the pinned contain
 cargo test --workspace --no-fail-fast   # the full suite (includes acceptance)
 cargo test -p uze --test acceptance      # L3 only (the release signal)
 cargo test -p uze --test integrations    # conformance + per-harness semantics
-cargo test -p uze --test projection      # naming/labels/shared roots
+cargo test -p uze --test projection      # naming/labels/skill roots
 make test-acceptance / make test-conformance  # same as above
 python3 conformance/lab.py --harness codex  # L2, the real binary in the Lab
 ```

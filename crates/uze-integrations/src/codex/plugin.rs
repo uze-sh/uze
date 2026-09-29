@@ -34,6 +34,7 @@ impl MarketplaceDialect for CodexMarketplace {
     const GENERATED_KIND: &'static str = "marketplace-plugin-generated";
     const EXPLICIT_EVIDENCE: &'static str = "The preserved external .codex-plugin/plugin.json is exposed through UZE's generated, standard Codex local marketplace catalog for exactly the skills/mcpServers it declares; undeclared resources fall back to individual attachment.";
     const GENERATED_EVIDENCE: &'static str = "No .codex-plugin/plugin.json was provided. UZE synthesizes one deterministically into a UZE-owned derived directory (never the Store) covering exactly the package's conventional skills/ directory and mcp.json-declared servers, published through a second, generated-only Codex marketplace.";
+    const ENVELOPE_CARRIES_AGENTS: bool = false;
 
     fn catalogue_document(
         name: &str,
@@ -144,6 +145,15 @@ impl MarketplaceDialect for CodexMarketplace {
             home,
             &format!("codex plugin remove {selector}"),
             &["plugin", "remove", selector],
+        )
+    }
+
+    fn remove_marketplace(executable: &Path, home: &Path, name: &str) -> Result<()> {
+        run_quiet(
+            executable,
+            home,
+            &format!("codex plugin marketplace remove {name}"),
+            &["plugin", "marketplace", "remove", name],
         )
     }
 }

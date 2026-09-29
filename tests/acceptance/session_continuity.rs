@@ -15,6 +15,7 @@
 //! owned by an enclosing launch, is an ordinary invocation.
 
 use std::path::{Path, PathBuf};
+use uze_testkit::process::IsolatedHome;
 
 use uze_core::{
     UzeHome,
@@ -102,7 +103,7 @@ fn launch(env: &TestEnvironment, shim: &Path, cwd: &Path, args: &[&str], launch:
     command
         .args(args)
         .current_dir(cwd)
-        .env("HOME", &env.home)
+        .isolated_home(&env.home)
         .env("UZE_HOME", &env.uze_home)
         .env(
             "PATH",
@@ -290,7 +291,7 @@ fn the_bypass_escape_hatch_still_carries_nothing() {
 
     let status = std::process::Command::new(&shim)
         .current_dir(&slot)
-        .env("HOME", &env.home)
+        .isolated_home(&env.home)
         .env("UZE_HOME", &env.uze_home)
         .env_remove(uze_terminal::launch::SHIM_PID_VARIABLE)
         .env_remove(uze_terminal::launch::SHIM_NAME_VARIABLE)

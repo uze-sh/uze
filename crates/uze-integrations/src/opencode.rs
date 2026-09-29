@@ -1,5 +1,5 @@
 //! OpenCode V2 does not consume the external plugin envelope. It does natively
-//! discover user Agent Skills at `~/.agents/skills` and natively reads local
+//! discover user Agent Skills in `~/.config/opencode/skills` and reads local
 //! MCP definitions from its global config, so this integration decomposes
 //! only those portable capabilities — including the canonical invocation
 //! policy, which OpenCode V2 expresses natively in SKILL.md frontmatter
@@ -20,6 +20,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use uze_core::capability::agent::AgentDocument;
 use uze_core::{
     Result, UzeError,
     capability::CapabilityKind,
@@ -29,7 +30,7 @@ use uze_core::{
     hook::PortableHook,
     integration::{
         AttachmentInspection, AttachmentReceipt, AttachmentState, ContextDelivery,
-        HarnessDetection, IntegrationPort, ManagedArtifact, active_plugin_name,
+        HarnessDetection, IntegrationPort, ManagedArtifact, UnreadableDelivery, active_plugin_name,
         default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
     preference::{
@@ -48,17 +49,24 @@ mod session;
 mod skills;
 
 use crate::hooks::{self as hook_projection, HookTarget};
-use crate::shared::agent::{agent_name, markdown_agent_plan};
+use crate::shared::agent::{
+    MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, delivered_agent,
+    fields_not_carried, markdown_agent, projection_route,
+};
+use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::json_config;
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
 use mcp::attach_mcp_config;
 use provision::{provision_opencode, resolve_opencode_binary};
+use uze_core::capability::harness::Findings;
+use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::project_context::AgentsDirectoryResource;
 
-/// OpenCode does not consume the external plugin envelope. It does natively
-/// discover user Agent Skills at `~/.agents/skills` and natively reads local
-/// MCP definitions from its global config, so this integration decomposes
-/// only those portable capabilities.
+/// OpenCode does not consume the external plugin envelope. It natively
+/// discovers user Agent Skills in its own `~/.config/opencode/skills` and
+/// reads local MCP definitions from its global config, so this integration
+/// decomposes only those portable capabilities.
 #[derive(Clone)]
 pub struct OpenCodeIntegration {
     skills_dir: PathBuf,
@@ -72,12 +80,16 @@ pub struct OpenCodeIntegration {
 
 impl OpenCodeIntegration {
     pub fn new(agents_home: PathBuf, config_path: PathBuf, uze_home: UzeHome) -> Self {
+        let config_dir = config_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
         Self {
-            skills_dir: agents_home.join("skills"),
-            agents_dir: config_path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join("agents"),
+            // Its own root, not the `~/.agents/skills` it also reads: that
+            // one is Codex's, and OpenCode's own root wins a name found in
+            // both, so the skill it shows is the one encoded for it.
+            skills_dir: config_dir.join("skills"),
+            agents_dir: config_dir.join("agents"),
             config_path,
             command_home: agents_home
                 .parent()
@@ -152,10 +164,25 @@ impl IntegrationPort for OpenCodeIntegration {
     /// OpenCode's own Skills docs (opencode.ai/docs/skills, 2026) document
     /// loading `.agents/skills/*/SKILL.md` "along the way" walking up from
     /// cwd — a project-local convention read directly by the `opencode`
-    /// binary, with no UZE involvement, independent of the UZE-managed
-    /// `$HOME/.agents/skills` symlink this integration writes elsewhere.
-    fn discovers_project_agents_directory(&self) -> bool {
-        true
+    /// binary, with no UZE involvement, independent of the user-scope skills
+    /// this integration writes elsewhere. Measured on 2.0.18 (Lab
+    /// `context-project-skill-reaches-model`).
+    ///
+    /// It does not read `./.agents/agents`, and no launch can hand it a
+    /// project's agents: `OPENCODE_CONFIG_DIR` replaces the user's
+    /// configuration directory, and the additive `OPENCODE_CONFIG` and
+    /// `OPENCODE_CONFIG_CONTENT` are read by the process that starts the
+    /// server. A default launch attaches to the shared background service,
+    /// which keeps the environment of whichever launch started it and
+    /// serves every project from it: one project's agents would reach the
+    /// next, and a later launch's would reach none (measured,
+    /// `experiments/opencode/project-agents`). The one path left,
+    /// `.opencode/agents` inside the checkout, is a write UZE never makes.
+    fn project_resource_route(&self, resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        match resource {
+            AgentsDirectoryResource::Skills => ProjectResourceRoute::Native,
+            AgentsDirectoryResource::Agents => ProjectResourceRoute::Unsupported,
+        }
     }
 
     fn capabilities(&self) -> HarnessCapabilities {
@@ -167,7 +194,7 @@ impl IntegrationPort for OpenCodeIntegration {
             // explicit adapter, never a native hook file (OpenCode exposes
             // no declarative hook surface; ADR-033).
             adaptable: [CapabilityKind::Hook].into_iter().collect(),
-            evidence: "OpenCode V2 documents global Agent Skills at ~/.agents/skills and local MCP as a global `mcp.servers.<name>` entry in opencode.json, which UZE writes, inspects and detaches directly. Skills preserve invocation policy natively in SKILL.md frontmatter (metadata.opencode/autoinvoke/slash — ADR-030 §9) without Command primitive. Portable Hooks are delivered as one owned, regenerable `plugins/hooks-<package>.ts` plugin the harness auto-discovers: it is the same wrapper the other harnesses get as a shell script — handlers run sequentially against the portable HOOK_* contract, first-deny-wins, per-handler timeouts, fail-closed by effect — with this package's groups as data and no author TypeScript toolchain (ADR-033)."
+            evidence: "OpenCode V2 reads global Agent Skills from its own ~/.config/opencode/skills, where UZE delivers each as a directory of its own, and local MCP as a global `mcp.servers.<name>` entry in opencode.json, which UZE writes, inspects and detaches directly. Skills preserve invocation policy natively in SKILL.md frontmatter (metadata.opencode/autoinvoke/slash — ADR-030 §9) without Command primitive. Portable Hooks are delivered as one owned, regenerable `plugins/hooks-<package>.ts` plugin the harness auto-discovers: it is the same wrapper the other harnesses get as a shell script — handlers run sequentially against the portable HOOK_* contract, first-deny-wins, per-handler timeouts, fail-closed by effect — with this package's groups as data and no author TypeScript toolchain (ADR-033)."
                 .to_owned(),
             ..HarnessCapabilities::default()
         }
@@ -230,19 +257,26 @@ impl IntegrationPort for OpenCodeIntegration {
     /// the default fully-qualified policy — capability naming policies are
     /// never mixed just because all are `Resource`s.
     fn exposure_name_candidates(&self, resource: &Resource) -> Vec<String> {
-        if resource.capability.kind == CapabilityKind::AgentSkill {
+        if resource.capability.kind.is_invoked_by_label() {
             let active_name = active_plugin_name(&self.uze_home, resource);
             return qualified_exposure_name_candidates(resource, &active_name);
         }
         default_exposure_name_candidates(resource)
     }
 
-    /// Codex also discovers Skills from this exact same
-    /// `~/.agents/skills` directory (see its own override of this
-    /// method), so a name this integration claims here must be treated as
-    /// claimed for it too — every member derives the same single
-    /// namespaced label, so the group always converges on one entry.
-    fn shared_agent_skill_root(&self) -> Option<PathBuf> {
+    fn check_capability(&self, resource: &Resource) -> Findings {
+        if resource.capability.kind == CapabilityKind::Agent {
+            opencode_agent_findings(&self.harness_keys(), resource)
+        } else {
+            Findings::default()
+        }
+    }
+
+    fn facts(&self) -> &'static [HarnessFact] {
+        FACTS
+    }
+
+    fn skill_discovery_root(&self) -> Option<PathBuf> {
         Some(self.skills_dir.clone())
     }
 
@@ -282,12 +316,8 @@ impl IntegrationPort for OpenCodeIntegration {
             return Ok(None);
         };
         let attached = match &artifact {
-            ManagedArtifact::SymlinkReference { .. } => {
-                if resource.capability.kind == CapabilityKind::AgentSkill {
-                    self.materialize_or_verify_skill(resource)?;
-                }
-                artifact.attach_standard()?;
-                true
+            ManagedArtifact::GeneratedTree { path, .. } => {
+                return self.attach_skill(resource, path).map(Some);
             }
             ManagedArtifact::ManagedHookFile { path } => {
                 self.attach_hook_bridge(resource, path)?;
@@ -302,9 +332,37 @@ impl IntegrationPort for OpenCodeIntegration {
                 attach_mcp_config(&self.config_path, entry_name, command, args)?;
                 true
             }
+            ManagedArtifact::GeneratedFile { .. } => {
+                artifact.attach_standard()?;
+                true
+            }
             _ => false,
         };
         Ok(attached.then_some(artifact))
+    }
+
+    /// An agent file OpenCode cannot read is dropped without a word, so a
+    /// definition an earlier build wrote, or one edited since, is read the
+    /// way OpenCode reads it.
+    fn unreadable(
+        &self,
+        _package: &uze_core::store::StoredPackage,
+        receipt: &AttachmentReceipt,
+        served: &[&Resource],
+    ) -> Vec<UnreadableDelivery> {
+        let ManagedArtifact::GeneratedFile { path, .. } = &receipt.artifact else {
+            return Vec::new();
+        };
+        served
+            .iter()
+            .filter(|resource| resource.capability.kind == CapabilityKind::Agent)
+            .filter_map(|resource| {
+                opencode_agent_unreadable(path).map(|reason| UnreadableDelivery {
+                    capability: resource.identity(),
+                    reason,
+                })
+            })
+            .collect()
     }
 
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
@@ -359,13 +417,107 @@ impl PreferencePort for OpenCodeIntegration {
     }
 }
 
+/// Why OpenCode would not offer the agent at `path` to the model: the
+/// fields it refuses (measured on 2.0.15 and 2.0.18) and the `mode` without
+/// which the agent is a primary one it never dispatches.
+fn opencode_agent_unreadable(path: &Path) -> Option<String> {
+    let document = match delivered_agent(path) {
+        Ok(document) => document,
+        Err(reason) => return Some(reason),
+    };
+    let field = |name: &str| document.frontmatter.get(name);
+    let mut problems = Vec::new();
+    if field("mode").and_then(|mode| mode.as_str()) != Some("subagent") {
+        problems
+            .push("`mode` is not `subagent`, so OpenCode never offers it to the model".to_owned());
+    }
+    if let Some(model) = field("model")
+        && model.as_str().is_none_or(|model| !model.contains('/'))
+    {
+        problems.push(
+            "`model` is not the `provider/model` form OpenCode reads, so it drops the agent"
+                .to_owned(),
+        );
+    }
+    if field("tools").is_some_and(|tools| !tools.is_mapping()) {
+        problems.push("`tools` is not a map, so OpenCode drops the agent".to_owned());
+    }
+    (!problems.is_empty()).then(|| format!("{}: {}", path.display(), problems.join("; ")))
+}
+
+/// OpenCode's agent file: named after the file, so no `name`; `mode:
+/// subagent`, without which OpenCode makes the agent a primary one it never
+/// offers the model to dispatch; and no authored field beyond the
+/// description, since one it cannot read drops the agent and one it does
+/// not know is forwarded to the provider as a request field (measured on
+/// 2.0.18).
+const OPENCODE_AGENT: MarkdownAgent = MarkdownAgent {
+    name_in_frontmatter: false,
+    set: &[("mode", "subagent")],
+    keep: |_| false,
+    dialect: &OPENCODE_AGENT_DIALECT,
+};
+
+/// What OpenCode reads under `harness.opencode` on an agent (agents
+/// reference). A `model` it cannot resolve or a `tools` that is not a map
+/// makes it drop the agent silently (measured on 2.0.15 and 2.0.18), so
+/// both are checked; a field outside this list is carried, unverified.
+const OPENCODE_AGENT_DIALECT: AgentDialect = AgentDialect {
+    known: &[
+        ("model", Shape::Qualified),
+        ("tools", Shape::Map),
+        ("permission", Shape::Map),
+        ("temperature", Shape::Number),
+        ("top_p", Shape::Number),
+        ("color", Shape::Text),
+        ("mode", Shape::OneOf(&["subagent", "all"])),
+    ],
+    carries_unknown: true,
+};
+
+/// The fields an agent loses on OpenCode, and what its `harness.opencode`
+/// block would do there.
+fn opencode_agent_findings(keys: &[&str], resource: &Resource) -> Findings {
+    let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
+        return Findings::default();
+    };
+    let (_, mut findings) = agent_block(&OPENCODE_AGENT_DIALECT, keys, &document);
+    // The common layer already speaks for `model` and `tools`.
+    for field in fields_not_carried(&document, PORTABLE_AGENT_FIELDS)
+        .into_iter()
+        .filter(|field| {
+            !uze_core::capability::harness::PER_HARNESS_FIELDS.contains(&field.as_str())
+        })
+    {
+        findings.warnings.push(format!(
+            "`{field}` at the root is not carried to OpenCode; write what OpenCode should get \
+             under `harness.opencode`"
+        ));
+    }
+    findings
+}
+
 impl OpenCodeIntegration {
+    /// OpenCode names an agent after its file and silently drops one whose
+    /// frontmatter it cannot read — a Claude-style `model: haiku` (it wants
+    /// `provider/model`) or `tools: Read, Grep` (it wants a map) makes the
+    /// agent vanish (measured on 2.0.15 and 2.0.18) — so the file is named
+    /// with the label and carries the portable fields only ([`OPENCODE_AGENT`]).
     fn agent_plan(&self, resource: &Resource) -> ExposurePlan {
-        markdown_agent_plan(
+        let not_carried = AgentDocument::parse(&resource.capability.payload)
+            .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
+            .unwrap_or_default();
+        let label = agent_label(&self.uze_home, resource);
+        let content = markdown_agent(&label, resource, &OPENCODE_AGENT, &self.harness_keys());
+        agent_file_plan(
             &self.agents_dir,
-            &agent_name(resource),
-            resource,
-            "OpenCode natively discovers Markdown agents from its configuration agents directory; UZE keeps a receipt-owned symlink to the canonical Store definition.",
+            &label,
+            "md",
+            content,
+            projection_route(
+                "OpenCode natively discovers Markdown agents from its configuration agents directory and names each after its file; UZE writes the definition there under the agent's label, receipt-owned by its content.",
+                &not_carried,
+            ),
         )
     }
 
@@ -378,7 +530,7 @@ impl OpenCodeIntegration {
     fn hook_plan(&self, resource: &Resource) -> ExposurePlan {
         let path =
             hook_projection::opencode_bridge_path(self.config_root(), resource.package_id.as_str());
-        let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated Plugin.define plugin that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The V2 tool hooks carry the tool input but no block signal, and the only decision point (permission.evaluate) carries the action's resources rather than the input, so deny/ask are diagnosed Unsupported before attach — never fabricated. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice.";
+        let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated plugin module (its default export is the plugin definition, with no import the harness would have to resolve) that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The V2 tool hooks carry the tool input but no block signal, and the only decision point (permission.evaluate) carries the action's resources rather than the input, so deny/ask are diagnosed Unsupported before attach — never fabricated. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice. SessionStart is not claimed: on OpenCode 2.0.18 a plugin's event stream carries no `session.created` for a new session, and nothing in it tells a new session from a continued one (Conformance Lab, experiment opencode/session-start).";
         hook_projection::hook_plan(
             resource,
             &HookTarget::OpenCode.capabilities(),
@@ -560,6 +712,42 @@ impl OpenCodeIntegration {
         })
     }
 }
+
+/// What opencode was measured to do, each fact with the Lab check proving it.
+const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "project agents",
+        fact: "reads no `./.agents/agents`, and its extra-configuration environment reaches only the shared service a launch starts, which serves it to every project",
+        measured_on: VERSION,
+        proven_by: "experiments/opencode/project-agents.py::run",
+    },
+    HarnessFact {
+        subject: "agents",
+        fact: "names an agent after its file and runs it on a `provider/model` its block names",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_block_model",
+    },
+    HarnessFact {
+        subject: "skills",
+        fact: "lists a skill's supporting files only when its directory is not a link",
+        measured_on: VERSION,
+        proven_by: "experiments/opencode/skill_files.py::run",
+    },
+    HarnessFact {
+        subject: "placeholders",
+        fact: "expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_plugin_root",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs a plugin's tool hooks but cannot block a tool from them",
+        measured_on: VERSION,
+        proven_by: "harnesses/opencode/scenarios.py::phase_hooks",
+    },
+];
+/// The version the facts above were measured on.
+const VERSION: &str = "2.0.18";
 
 #[cfg(test)]
 mod lifecycle_tests {

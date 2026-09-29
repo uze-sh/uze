@@ -7,6 +7,8 @@
 //! [`skill`] is the canonical capability; [`hook`] is the portable Hook
 //! surface (ADR-033). Neither is a harness's own mechanism: they are the
 //! vendor-neutral statement of intent that `delivery` projects outward.
+pub mod agent;
+pub mod harness;
 pub mod hook;
 pub mod skill;
 
@@ -39,6 +41,15 @@ pub enum CapabilityKind {
     Mcp,
     Agent,
     Hook,
+}
+
+impl CapabilityKind {
+    /// Whether a harness exposes this kind to people and models under the
+    /// plugin-qualified label `<plugin>:<name>` (ADR-026): what a Skill is
+    /// invoked by and what an Agent is dispatched by.
+    pub fn is_invoked_by_label(self) -> bool {
+        matches!(self, Self::AgentSkill | Self::Agent)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,11 +102,6 @@ pub struct Resource {
     /// first-choice `exposure_name_candidates` entry — correct for preview
     /// calls that never attach anything.
     pub resolved_exposure_name: Option<String>,
-    /// The artifact target (e.g. a shim directory) from an existing
-    /// `SymlinkReference` receipt, when `resolved_exposure_name` came from
-    /// reusing it, so `exposure_plan` reuses the exact same artifact rather
-    /// than materializing a new one at a different path.
-    pub resolved_artifact_target: Option<PathBuf>,
 }
 
 impl Resource {
@@ -112,7 +118,6 @@ impl Resource {
             resource_name: None,
             skill_policy,
             resolved_exposure_name: None,
-            resolved_artifact_target: None,
         }
     }
 
@@ -135,8 +140,8 @@ impl Resource {
     }
 
     /// The bare, harness-agnostic logical name of this capability within
-    /// its package — a Skill's directory name, or a named MCP server's
-    /// name. No package qualification and no vendor exposure semantics:
+    /// its package — a Skill's directory name, a named MCP server's name,
+    /// or an Agent's `agent::logical_name`. No package qualification and no vendor exposure semantics:
     /// what a harness's discovery location calls it is
     /// `IntegrationPort::exposure_name_candidates`' decision, built from
     /// this name. `None` for a capability kind with no logical name.
@@ -149,12 +154,14 @@ impl Resource {
                 Some(skill_name.to_owned())
             }
             CapabilityKind::Mcp | CapabilityKind::Hook => self.resource_name.clone(),
-            CapabilityKind::Agent => self
-                .capability
-                .path
-                .file_stem()
-                .and_then(|name| name.to_str())
-                .map(str::to_owned),
+            CapabilityKind::Agent => {
+                let relative = self
+                    .capability
+                    .path
+                    .strip_prefix(self.package_root.join("agents"))
+                    .unwrap_or(&self.capability.path);
+                agent::logical_name(relative, &self.capability.payload)
+            }
             CapabilityKind::Instruction => None,
         }
     }

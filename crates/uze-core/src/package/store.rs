@@ -608,6 +608,42 @@ impl UzeStore {
         Ok(self.load_registry()?.packages.into_keys().collect())
     }
 
+    /// Package directories under the Store that its registry does not
+    /// list: bytes an interrupted install or a hand copy left, which
+    /// nothing installs, updates or removes. Reported, never deleted: a
+    /// package's bytes are the one thing UZE cannot always acquire again.
+    pub fn unregistered_directories(&self) -> Result<Vec<PathBuf>> {
+        let registered: std::collections::BTreeSet<PathBuf> = self
+            .package_ids()?
+            .iter()
+            .map(|id| self.home.plugin_dir(id))
+            .collect();
+        let mut found = Vec::new();
+        let Ok(markets) = fs::read_dir(self.home.plugins_dir()) else {
+            return Ok(found);
+        };
+        for market in markets.flatten() {
+            if !market.file_type().is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            let Ok(plugins) = fs::read_dir(market.path()) else {
+                continue;
+            };
+            for plugin in plugins.flatten() {
+                let path = plugin.path();
+                let hidden = plugin.file_name().to_string_lossy().starts_with('.');
+                if !hidden
+                    && plugin.file_type().is_ok_and(|kind| kind.is_dir())
+                    && !registered.contains(&path)
+                {
+                    found.push(path);
+                }
+            }
+        }
+        found.sort();
+        Ok(found)
+    }
+
     /// Removes registry entries whose backing directory is gone — a
     /// registration that survived whatever stopped writing its bytes (an
     /// interrupted install, manual cleanup).
@@ -656,11 +692,15 @@ impl UzeStore {
         if registry.packages.remove(id).is_none() {
             return Err(UzeError::UnknownPackage(id.as_str().to_owned()));
         }
-        let root = self.home.plugin_dir(id);
-        if let Err(source) = fs::remove_dir_all(&root)
-            && source.kind() != std::io::ErrorKind::NotFound
-        {
-            return Err(UzeError::Write { path: root, source });
+        for root in [
+            self.home.plugin_dir(id),
+            self.home.delivered_package_dir(id),
+        ] {
+            if let Err(source) = fs::remove_dir_all(&root)
+                && source.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(UzeError::Write { path: root, source });
+            }
         }
         self.save_registry(&registry)
     }
@@ -860,7 +900,7 @@ fn resolve_lexically(link: &Path, target: &Path) -> Option<PathBuf> {
     Some(resolved)
 }
 
-fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
+pub(crate) fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     fs::create_dir_all(destination).map_err(|source_error| UzeError::Write {
         path: destination.to_path_buf(),
         source: source_error,
@@ -1078,6 +1118,22 @@ mod tests {
         assert!(PackageId::from_plugin_name("--force", &manifest).is_err());
         // A dash elsewhere in the name remains fine.
         assert!(PackageId::from_plugin_name("my-plugin", &manifest).is_ok());
+    }
+
+    #[test]
+    fn bytes_the_registry_does_not_list_are_reported_and_kept() {
+        let root = uze_testkit::temp::scratch("store-unregistered");
+        let home = UzeHome::at(&root);
+        let store = UzeStore::new(home.clone());
+        let stray = home.plugins_dir().join("local/stray");
+        fs::create_dir_all(&stray).unwrap();
+        fs::create_dir_all(home.plugins_dir().join("local/.staging")).unwrap();
+        assert_eq!(
+            store.unregistered_directories().unwrap(),
+            vec![stray.clone()]
+        );
+        assert!(stray.is_dir(), "an audit never deletes bytes");
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

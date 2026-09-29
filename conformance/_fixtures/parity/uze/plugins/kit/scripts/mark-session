@@ -1,0 +1,3 @@
+#!/bin/sh
+touch /work/parity-session-start.marker
+exit 0

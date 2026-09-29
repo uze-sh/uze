@@ -3,16 +3,6 @@
   "adaptive": [
     {
       "harness": "opencode",
-      "check": "mcp-tool-executed-in-tui",
-      "suite": "mcp",
-      "reason": "OpenCode V2 beta: the real runtime answers a scripted call to the delivered tool name with `Unknown tool` \u2014 the tool message exists but the MCP server never ran.",
-      "versions": [
-        "*"
-      ],
-      "observed_at": "2026-08-26"
-    },
-    {
-      "harness": "opencode",
       "check": "hooks-deny-v2-limitation",
       "suite": "hooks > deny",
       "reason": "OpenCode V2 exposes no input-based block (spec: the action-level deny lives in the permission hook, which carries no tool input); the guard handler runs via the owned bridge and the tool still executes.",

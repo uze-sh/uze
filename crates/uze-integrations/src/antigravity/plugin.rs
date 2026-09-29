@@ -20,7 +20,6 @@ use std::{
 
 use uze_core::{
     Result, UzeError,
-    capability::Resource,
     integration::{AttachmentInspection, AttachmentReceipt, AttachmentState, IntegrationPort},
     store::StoredPackage,
 };
@@ -74,40 +73,6 @@ pub(super) fn declared_servers(path: &Path) -> BTreeSet<String> {
                 .map(|servers| servers.keys().cloned().collect())
         })
         .unwrap_or_default()
-}
-
-/// Computes which of `resources` are actually covered by an explicit
-/// Antigravity plugin — the intersection ADR-013 §2 requires
-/// (`provided = discovered ∩ declared`), mirroring the other
-/// integrations' exact-coverage functions. Antigravity's schema declares
-/// no `skills` paths at all: coverage is structural — a Skill is covered iff
-/// its directory lives under the fixed `skills/` subdirectory. Only a
-/// package whose Skills all carry the default policy reaches here
-/// (`package_exposure_plan` decomposes any other), because a plugin stages
-/// its `skills/` tree unchanged. An MCP server is covered iff its name is declared in the
-/// root `mcp_config.json` (a missing or malformed file contributes no
-/// coverage; it never errors).
-pub(super) fn exact_coverage(package: &StoredPackage, resources: &[&Resource]) -> BTreeSet<String> {
-    let declared_mcp = author_mcp_config_servers(package);
-    let mut provided = BTreeSet::new();
-    for resource in resources {
-        match resource.capability.kind {
-            uze_core::capability::CapabilityKind::AgentSkill => {
-                if under_skills_dir(package, &resource.capability.path) {
-                    provided.insert(resource.identity());
-                }
-            }
-            uze_core::capability::CapabilityKind::Mcp => {
-                if let Some(name) = &resource.resource_name
-                    && declared_mcp.contains(name)
-                {
-                    provided.insert(resource.identity());
-                }
-            }
-            _ => {}
-        }
-    }
-    provided
 }
 
 /// Whether a resource lives under the package's conventional `skills/`
@@ -266,49 +231,8 @@ pub(super) fn inspect_installed_plugin(
 
 // --- Attachment --------------------------------------------------------------
 
-/// Attaches a package whose canonical `plugin.json` is itself a valid
-/// Antigravity plugin manifest, straight from the Store.
-pub(super) fn attach_explicit_plugin(
-    executable: &str,
-    integration: &AntigravityIntegration,
-    package: &StoredPackage,
-) -> Result<Option<AttachmentReceipt>> {
-    let name = plugin_manifest_name(package).ok_or_else(|| {
-        UzeError::ExposureUnavailable("package has no usable plugin name".to_owned())
-    })?;
-    if !preflight_name_free(executable, integration, &name) {
-        return Ok(None);
-    }
-    let args: Vec<&Path> = vec![Path::new("plugin"), Path::new("install"), &package.root];
-    run_quiet(
-        Path::new(executable),
-        &integration.command_home,
-        &format!("agy plugin install `{name}`"),
-        &args,
-    )?;
-    let staged_dir = integration.plugins_dir.join(&name);
-    let fingerprint = fingerprint_dir(&staged_dir)?;
-    Ok(Some(AttachmentReceipt {
-        package_id: package.id.as_str().to_owned(),
-        resource_identity: None,
-        integration: integration.id().to_owned(),
-        artifact: uze_core::integration::ManagedArtifact::IntegrationOwned {
-            kind: PLUGIN_KIND.to_owned(),
-            selector: name,
-            detail: [
-                ("source_path".to_owned(), serde_json::json!(package.root)),
-                ("staged_path".to_owned(), serde_json::json!(staged_dir)),
-                ("package_root".to_owned(), serde_json::json!(package.root)),
-                ("fingerprint".to_owned(), serde_json::json!(fingerprint)),
-            ]
-            .into_iter()
-            .collect(),
-        },
-    }))
-}
-
-/// Attaches a package that needs a generated envelope (canonical MCP
-/// translation) through a UZE-owned derived directory.
+/// Attaches a package through the plugin UZE generates for it in a
+/// UZE-owned derived directory.
 pub(super) fn attach_generated_plugin(
     executable: &str,
     integration: &AntigravityIntegration,
@@ -331,7 +255,7 @@ pub(super) fn attach_generated_plugin(
     )?;
     // Antigravity stages a copy named after the plugin's own declared
     // manifest name, not the source directory it was given (verified
-    // against real agy 1.1.22) — the same convention `attach_explicit_plugin`
+    // against real agy 1.1.22) — the same convention the Store-tree route
     // above already relies on. `derived_dir`'s own basename is the qualified
     // Store id, never `name` (`generated_package_dir_for_id`), so it cannot
     // be used to predict the staged path.
@@ -604,7 +528,7 @@ mod plugin_tests {
         let r_out = skill_resource(&pkg, "extra", "outside");
         let r_mcp = mcp_resource(&pkg, "mcp-a");
         let resources = vec![&r_skill, &r_out, &r_mcp];
-        let covered = exact_coverage(&pkg, &resources);
+        let covered = super::super::generate::generated_exact_coverage(&pkg, &resources);
         assert_eq!(
             covered,
             BTreeSet::from([r_skill.identity(), r_mcp.identity()])
@@ -619,7 +543,7 @@ mod plugin_tests {
         let (_root, pkg) = make_package("explicit-no-mcp", r#"{"name":"flow"}"#);
         let r_m = mcp_resource(&pkg, "mcp-a");
         let resources = vec![&r_m];
-        assert!(exact_coverage(&pkg, &resources).is_empty());
+        assert!(super::super::generate::generated_exact_coverage(&pkg, &resources).is_empty());
         let _ = fs::remove_dir_all(_root);
     }
 
@@ -629,7 +553,7 @@ mod plugin_tests {
         let (_root, pkg) = make_package("explicit-malformed", r#"{"name":"flow"}"#);
         fs::write(pkg.root.join("mcp_config.json"), "{not json").unwrap();
         let r_m = mcp_resource(&pkg, "mcp-a");
-        let covered = exact_coverage(&pkg, &[&r_m]);
+        let covered = super::super::generate::generated_exact_coverage(&pkg, &[&r_m]);
         assert!(covered.is_empty());
         let _ = fs::remove_dir_all(_root);
     }

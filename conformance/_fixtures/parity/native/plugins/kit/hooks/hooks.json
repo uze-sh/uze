@@ -1,0 +1,5 @@
+{"hooks": {
+  "SessionStart": [{"hooks": [{"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/mark-session\""}]}],
+  "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/deny\""}]}],
+  "PostToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/mark-post\""}]}]
+}}

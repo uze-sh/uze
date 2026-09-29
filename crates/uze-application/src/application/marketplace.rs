@@ -19,11 +19,11 @@ use super::services::Marketplace;
 use super::*;
 
 /// A marketplace resolved far enough to read from: the repository behind
-/// it, and the narrowing the declaration asked for.
+/// it, the directory of it the catalogue sits in, and the ref the
+/// declaration asked for.
 pub(crate) struct MarketplaceRequest {
     pub(crate) repository: marketplace::MarketplaceRepository,
     pub(crate) reference: Option<String>,
-    pub(crate) subdirectory: Option<PathBuf>,
 }
 
 /// Names the marketplace and the URL on an access refusal.
@@ -134,18 +134,13 @@ impl MarketplaceRequest {
     /// that is not a repository is refused here.
     pub(crate) fn of(source: &PackageSource) -> Result<Self> {
         let repository = marketplace::repository_of(source)?;
-        let (reference, subdirectory) = match source {
-            PackageSource::Git {
-                reference,
-                subdirectory,
-                ..
-            } => (reference.clone(), subdirectory.clone()),
-            _ => (None, None),
+        let reference = match source {
+            PackageSource::Git { reference, .. } => reference.clone(),
+            _ => None,
         };
         Ok(Self {
             repository,
             reference,
-            subdirectory,
         })
     }
 
@@ -179,15 +174,16 @@ impl MarketplaceRequest {
     /// point, since a pin taken from unpublished work is one a
     /// collaborator cannot reach.
     fn materialize_from_link(&self, plugin: &str, checkout: &Path) -> Result<MaterializedPackage> {
-        let manifest_bytes = std::fs::read(
-            checkout.join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME),
-        )
-        .map_err(|source| UzeError::Read {
-            path: checkout.join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME),
+        let subpath = &self.repository.subpath;
+        let manifest_path = subpath
+            .directory_in(checkout)?
+            .join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME);
+        let manifest_bytes = std::fs::read(&manifest_path).map_err(|source| UzeError::Read {
+            path: manifest_path.clone(),
             source,
         })?;
         let manifest = marketplace::parse_manifest(&manifest_bytes)?;
-        let within = marketplace::plugin_subdirectory(&manifest, plugin)?;
+        let within = subpath.plugin_path(&manifest, plugin)?;
 
         let scratch = acquisition::scratch_directory()?;
         let within_marketplace = (within != ".").then(|| PathBuf::from(&within));
@@ -253,13 +249,11 @@ impl MarketplaceRequest {
         }
         let commit = acquisition::mirror::resolve(&repository, self.reference.as_deref())?;
 
-        let manifest_bytes = acquisition::mirror::read_file(
-            &repository,
-            &commit,
-            uze_core::workspace::MARKETPLACE_MANIFEST_NAME,
-        )?;
+        let subpath = &self.repository.subpath;
+        let manifest_bytes =
+            acquisition::mirror::read_file(&repository, &commit, &subpath.manifest_path())?;
         let manifest = marketplace::parse_manifest(&manifest_bytes)?;
-        let within = marketplace::plugin_subdirectory(&manifest, plugin)?;
+        let within = subpath.plugin_path(&manifest, plugin)?;
 
         // Scratch the package owns: the bytes live until the Store has
         // ingested them and go with it afterwards. Only the plugin's own
@@ -331,17 +325,38 @@ impl Marketplace<'_> {
         };
         // A local directory that is not a repository yet still registers —
         // its installs will say what it lacks — and names only itself.
-        let identity = marketplace::repository_of(&source)
-            .map(|repository| repository.identity)
-            .unwrap_or_else(|_| source.display());
-        let resolves_here_only = match &source {
-            PackageSource::Local { path } => identity == path.display().to_string(),
-            _ => false,
+        let repository = marketplace::repository_of(&source).ok();
+        let identity = repository.as_ref().map_or_else(
+            || source.display(),
+            |repository| repository.identity.clone(),
+        );
+        let link = uze_core::state::marketplace_list(&self.0.home)?
+            .into_values()
+            .find(|record| record.source.same_source(&source))
+            .and_then(|record| record.link);
+        let (checkout, subpath) = match (&source, &repository) {
+            (_, Some(repository)) => (
+                link.clone().or_else(|| {
+                    matches!(source, PackageSource::Local { .. })
+                        .then(|| PathBuf::from(&repository.fetch))
+                }),
+                repository.subpath.as_path(),
+            ),
+            (PackageSource::Local { path }, None) => (Some(path.clone()), None),
+            _ => (None, None),
         };
+        // No `origin`: the identity is the checkout itself.
+        let resolves_here_only = matches!(source, PackageSource::Local { .. })
+            && repository
+                .as_ref()
+                .is_none_or(|repository| repository.identity == repository.fetch);
         Ok(MarketplaceRegistration {
             added,
             resolves_here_only,
             identity,
+            checkout,
+            subpath,
+            linked: link.is_some(),
         })
     }
 
@@ -376,7 +391,8 @@ impl Marketplace<'_> {
                 PackageSource::Git {
                     url: acquisition::forge::canonical(&url),
                     reference,
-                    subdirectory,
+                    subdirectory: marketplace::MarketplaceSubpath::of(subdirectory.as_deref())?
+                        .as_path(),
                 },
                 short,
             )),

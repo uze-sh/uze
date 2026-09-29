@@ -6,9 +6,9 @@
 
 | Surface | Status | Mechanism | Evidence |
 |---|---|---|---|
-| Plugin (explicit) | SUPPORTED, exact coverage | `agy plugin install <Store package path>` — the canonical `plugin.json` (name + description) **is** the vendor manifest (extra fields tolerated) | PROVEN — real-binary dogfood: attach → `agy plugin list` shows import → inspect MATCHED → remove → unregistered → reinstall MATCHED |
+| Plugin (explicit) | SUPPORTED, exact coverage | Superseded: every package is installed from a plugin UZE generates (`$UZE_HOME/runtime/attachments/antigravity/generated/<id>/`), because agy staged a Store tree with `${PLUGIN_ROOT}` unresolved and its agents under bare names; an earlier Store-tree receipt is retired | PROVEN — real-binary dogfood: attach → `agy plugin list` shows import → inspect MATCHED → remove → unregistered → reinstall MATCHED |
 | Plugin (generated) | SUPPORTED, exact coverage | canonical `mcp.json` → generated envelope (`mcp_config.json` translation: `url`/`httpUrl` → `serverUrl`) installed from `$UZE_HOME/runtime/attachments/antigravity/plugins/<id>/` | PROVEN — real-binary dogfood + `agy plugin validate` (skills + mcpServers processed) |
-| Skills | SUPPORTED, native (default policy) | via plugin (package-level) or a managed `SymlinkReference` → `~/.gemini/antigravity-cli/skills/<label>` (CLI-documented global skills root) | DOCUMENTED (root) + TESTED (lifecycle/drift) |
+| Skills | SUPPORTED, native (default policy) | via plugin (package-level) or a managed directory `~/.gemini/antigravity-cli/skills/<label>` (CLI-documented global skills root, which agy 1.2 moves to `~/.gemini/config/skills` and links back): SKILL.md and the supporting files, copied; receipt `GeneratedTree` | DOCUMENTED (root) + TESTED (lifecycle/drift) |
 | Skill invocation policy | NATIVE model-only; ADAPTED user-only | `disable-slash-command: true` preserves `model=true,user=false`; no model-discovery suppression exists for `model=false,user=true` | PROVEN (agy 1.1.21) + TESTED |
 | MCP | SUPPORTED, adapted | `agy mcp add <name> <command> [args…]` → `~/.gemini/config/mcp_config.json` | PROVEN (add/list/remove/disable) + TESTED (inspection) |
 
@@ -57,11 +57,14 @@ it become authoritative.
 - **No runtime shim**; internal invocations always resolve the real `agy`
   outside `$UZE_HOME/shims`.
 
-## Not yet implemented (documented, never faked)
+- **Agents are a generated Markdown file** in the global agents directory,
+  named with the label and carrying `name: <label>` and `description`:
+  Antigravity 1.2.x reads the name from the frontmatter, lists no agent
+  without one, scans no subdirectory, and silently drops an agent with a
+  Claude-style `model` or string `tools`, so nothing else is carried and
+  the loss is reported as Degraded.
 
-- Subagents (`agents/` — vendor format is JSON `agent.json`) are supported
-  by the native plugin format but are a future UZE surface, exactly as
-  with every other harness.
+## Delivery notes
 
   **Hooks are delivered into the shared `~/.gemini/config/hooks.json`**
   (ADR-033/ADR-040), not into the generated plugin: one named entry per
@@ -101,9 +104,11 @@ it become authoritative.
   relayed, tool blocked, first-deny-wins, allow executes), and asserts the
   vendor-format control hook on the API-key mode as well, so a return of
   #893 is a red check, not a silent mode dependency.
-- Workspace-level `.agents/mcp_config.json` discovery is a project-scope
-  concern outside UZE's machine-scope integration; it was not observable
-  headlessly (`agy mcp list` shows global only). `.agents/skills/` is a
-  separate case: official docs (antigravity.google/docs/cli/plugins, 2026)
-  now confirm `agy` reads it directly per-workspace, no UZE involvement
-  needed — see `AntigravityIntegration::discovers_project_agents_directory`.
+- A project's `.agents/` is read by agy itself, per workspace, with no UZE
+  involvement (`AntigravityIntegration::project_resource_route`).
+  Measured on 1.2.12: `.agents/skills` by the Lab contract
+  `context-project-skill-reaches-model`, and `.agents/agents`,
+  `.agents/mcp_config.json` and `.agents/hooks.json` by the discovery study
+  of 2026-09-28 (read off the requests the harness sent; `agy mcp list` shows
+  only the global servers, so it is not the place to look). The project
+  authors that directory, and UZE writes nothing into it.

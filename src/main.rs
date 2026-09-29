@@ -9,7 +9,6 @@ mod prompt;
 mod shim;
 
 use std::{
-    collections::BTreeMap,
     io::IsTerminal,
     path::{Path, PathBuf},
 };
@@ -20,9 +19,9 @@ use uze_application::{
     UzeApplication,
     application::{
         AddPluginReport, ContextPlan, ContextReconciliationReport, DoctorReport,
-        HarnessContextDelivery, HarnessHealth, InstallReport, MachineStatusReport,
-        MarketplaceRemovalReport, MarketplaceSummary, PluginInspection, Portability,
-        ProjectContextStatus, RemovePluginReport, RemoveProjectPluginReport, StatusReport,
+        HarnessContextDelivery, HarnessHealth, MachineStatusReport, MarketplaceRemovalReport,
+        MarketplaceSummary, PluginInspection, Portability, ProjectContextStatus,
+        RemovePluginReport, RemoveProjectPluginReport, StatusReport,
     },
 };
 // `Chime` arrives through the facade's own re-export (see uze-application).
@@ -35,7 +34,8 @@ use uze_application::{
     after_help = "Scope: a project is the nearest agents.yaml, repository root or AGENTS.md. \
                   Project verbs maintain this project's agents.yaml when one is here, and \
                   act on this machine only when there is none — they always say which they \
-                  touched. -m states machine scope on the verbs that have two.",
+                  touched. -m states machine scope on the verbs that have two.\n\n\
+                  Documentation: https://uze.sh/docs",
     styles = progress::clap_styles()
 )]
 struct Cli {
@@ -121,9 +121,16 @@ enum Command {
         format: OutputFormat,
     },
     /// Inspect one installed package's delivery
+    ///
+    /// What each harness receives of it: the route, the name every
+    /// capability is exposed under, where it lands, and what it loses.
+    /// Computed from local state alone, attaching nothing.
     Inspect {
         #[arg(value_parser = typed_name)]
         plugin: String,
+        /// Only this harness, by the name `uze doctor` shows or its id
+        #[arg(long)]
+        harness: Option<String>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
@@ -1063,10 +1070,8 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                         },
                     )?;
                     emit(format, &report, render_install);
-                    if matches!(format, OutputFormat::Text)
-                        && matches!(report, InstallReport::NoChanges)
-                    {
-                        report_scope("no project here — nothing was declared");
+                    if let Some(failure) = undelivered_failure(report.undelivered()) {
+                        return Err(failure);
                     }
                 }
             }
@@ -1087,7 +1092,16 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                     authority.as_ref(),
                 )
             })?;
-            emit(format, &report, render_update_report);
+            emit(format, &report, |report| {
+                if verbose {
+                    render_update_report(report)
+                } else {
+                    render_update_summary(report)
+                }
+            });
+            if let Some(failure) = undelivered_failure(report.undelivered()) {
+                return Err(failure);
+            }
             let blocked: Vec<&str> = report.blocked().collect();
             if !blocked.is_empty() {
                 return Err(uze_application::UzeError::LifecycleBlocked(format!(
@@ -1122,9 +1136,9 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
             )?;
             match report {
                 RemoveProjectPluginReport::Removed { .. } => {
-                    let message = format!(
-                        "{} Removed {plugin} from project\n",
-                        progress::success_icon()
+                    let message = progress::change_report(
+                        &progress::change(progress::Change::Removed, &plugin, None),
+                        "Removed from this project",
                     );
                     emit(
                         format,
@@ -1145,9 +1159,13 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                 }
             }
         }
-        Command::Inspect { plugin, format } => {
-            let report = app.plugins().inspect(&plugin)?;
-            emit(format, &report, render_inspection);
+        Command::Inspect {
+            plugin,
+            harness,
+            format,
+        } => {
+            let report = app.plugins().inspect_on(&plugin, harness.as_deref())?;
+            emit(format, &report, |report| render_inspection(report, verbose));
         }
         Command::Status {
             path,
@@ -1795,17 +1813,38 @@ fn run_market(app: &UzeApplication, action: MarketAction) -> Result<()> {
                 with_spinner("Adding marketplace...", "Failed to add marketplace", || {
                     app.marketplace().register(&source)
                 })?;
-            let identity = &registration.identity;
-            if registration.added {
-                progress::success(&format!("Added marketplace from {identity}"));
+            let kind_of_read = if registration.linked {
+                "linked"
             } else {
-                progress::success(&format!("Marketplace from {identity} is already added"));
-            }
+                "mirrored"
+            };
+            // Said only when it is not the identity itself: a checkout
+            // somewhere else, or a catalogue in a subdirectory.
+            let place = registration.place();
+            let read = if place == registration.identity {
+                kind_of_read.to_owned()
+            } else {
+                format!("{kind_of_read}, reads {place}")
+            };
+            let kind = if registration.added {
+                progress::Change::Added
+            } else {
+                progress::Change::Attention
+            };
+            let mut lines = progress::change(kind, &registration.identity, Some(&read));
             if registration.resolves_here_only {
-                progress::warn(
-                    "It has no origin: a project declaring it resolves on this machine only",
-                );
+                lines.push_str(&progress::change_detail(
+                    progress::Change::Attention,
+                    "no origin",
+                    Some("a project declaring it resolves on this machine only"),
+                ));
             }
+            let outcome = if registration.added {
+                "Marketplace added"
+            } else {
+                "Marketplace already added"
+            };
+            print!("{}", progress::change_report(&lines, outcome));
         }
         MarketAction::Host {
             alias,
@@ -1856,29 +1895,30 @@ fn run_market(app: &UzeApplication, action: MarketAction) -> Result<()> {
         MarketAction::Link { name, checkout } => {
             let cloned = app.marketplace().link(&name, &checkout)?;
             let checkout = checkout.canonicalize().unwrap_or(checkout);
-            if cloned {
-                println!(
-                    "{} {name} cloned into {}",
-                    progress::success_icon(),
-                    checkout.display()
-                );
-            }
-            println!(
-                "{} {name} is read from {}\n  Its plugins follow your working tree; \
-                 agents.lock is not pinned from it.",
-                progress::success_icon(),
-                checkout.display()
+            let read = if cloned {
+                format!("cloned into {}", checkout.display())
+            } else {
+                checkout.display().to_string()
+            };
+            print!(
+                "{}",
+                progress::change_report(
+                    &progress::change(progress::Change::Updated, &name, Some(&read)),
+                    "Linked · its plugins follow your working tree, and agents.lock is not \
+                     pinned from it",
+                )
             );
         }
         MarketAction::Unlink { name } => {
-            if app.marketplace().unlink(&name)? {
-                println!(
-                    "{} {name} is read from its source again",
-                    progress::success_icon()
-                );
+            let report = if app.marketplace().unlink(&name)? {
+                progress::change_report(
+                    &progress::change(progress::Change::Updated, &name, Some("its source")),
+                    "Unlinked · read from its source again",
+                )
             } else {
-                println!("{name} was not linked");
-            }
+                progress::change_report("", &format!("Nothing to unlink: {name} was not linked"))
+            };
+            print!("{report}");
         }
         MarketAction::Inspect { name, format } => {
             let detail = app.marketplace().inspect(&name)?;
@@ -2066,6 +2106,12 @@ fn run_setup(
                     pb.finish_and_clear();
                 }
                 println!("{}", summary);
+                if let Some(found) = &result.provisioning.located_outside_path {
+                    println!(
+                        "  ↳ found at {}, which this shell's PATH does not reach yet; open a new shell to run it by name",
+                        progress::accent(found.display().to_string())
+                    );
+                }
                 if let Some(shim) = &result.runtime_shim {
                     println!(
                         "  ↳ shim: {}",
@@ -2588,16 +2634,23 @@ fn install_package(app: &UzeApplication, install: PackageInstall<'_>) -> Result<
             "this machine only — nothing was declared",
         )
     };
-    emit(install.format, &report, |report| {
-        format!(
-            "{}\n{}\n{}",
-            progress::report_title(title, Some(&report.plugin.id)),
-            progress::key_value("Store path", report.plugin.store_path.display().to_string()),
-            render_add_report(report, install.verbose, app)
-        )
-    });
-    if matches!(install.format, OutputFormat::Text) {
-        report_scope(scope);
+    let text = matches!(install.format, OutputFormat::Text);
+    if text && !install.verbose {
+        print!("{}", render_add_summary(&report));
+    } else {
+        emit(install.format, &report, |report| {
+            format!(
+                "{}\n{}\n{}",
+                progress::report_title(title, Some(&report.plugin.id)),
+                progress::key_value("Store path", report.plugin.store_path.display().to_string()),
+                render_add_report(report, install.verbose)
+            )
+        });
+    }
+    if text {
+        if install.verbose {
+            report_scope(scope);
+        }
         for publication in &report.publications {
             if let Some(error) = &publication.error {
                 progress::warn(&format!(
@@ -2607,8 +2660,18 @@ fn install_package(app: &UzeApplication, install: PackageInstall<'_>) -> Result<
             }
         }
     }
-    warn_blocked(&report, app);
-    Ok(())
+    if !text || install.verbose {
+        warn_blocked(&report, app);
+    }
+    let package = report.plugin.id.clone();
+    match undelivered_failure(
+        report
+            .undelivered()
+            .map(|delivery| (package.as_str(), delivery)),
+    ) {
+        Some(failure) => Err(failure),
+        None => Ok(()),
+    }
 }
 
 /// One `name@marketplace` package installed and delivered on this machine,
@@ -2886,6 +2949,89 @@ fn freshness_label(freshness: &uze_application::application::Freshness) -> Strin
 /// out: "nothing moved" and "this plugin was not considered" are different
 /// answers, and a report that shows only what changed cannot tell them
 /// apart.
+/// An update as a line per plugin that moved or could not, with the ones
+/// already current counted rather than listed.
+fn render_update_summary(report: &uze_application::application::UpdateReport) -> String {
+    use progress::Change;
+    use uze_application::application::{UpdateOutcome, UpdateScope};
+    let mut lines = String::new();
+    let (mut moved, mut current) = (0, 0);
+    for outcome in &report.outcomes {
+        match outcome {
+            UpdateOutcome::Moved {
+                plugin,
+                revision,
+                deliveries,
+            } => {
+                moved += 1;
+                lines.push_str(&progress::change(
+                    Change::Updated,
+                    plugin,
+                    Some(short_commit(revision)),
+                ));
+                lines.push_str(&delivery_issues(deliveries).0);
+            }
+            UpdateOutcome::FollowedLink {
+                plugin,
+                checkout,
+                deliveries,
+            } => {
+                moved += 1;
+                let detail = match report.scope {
+                    UpdateScope::Machine => {
+                        format!(
+                            "updated from the linked working tree at {}",
+                            checkout.display()
+                        )
+                    }
+                    UpdateScope::Project => format!(
+                        "updated from the linked working tree at {}, which pins nothing",
+                        checkout.display()
+                    ),
+                };
+                lines.push_str(&progress::change(Change::Updated, plugin, Some(&detail)));
+                lines.push_str(&delivery_issues(deliveries).0);
+            }
+            // What a current plugin lacks on a harness is not news: its
+            // install said so, and `uze status -m` still does.
+            UpdateOutcome::AlreadyCurrent { .. } => current += 1,
+            UpdateOutcome::Held { plugin, reason } => {
+                lines.push_str(&progress::change(Change::Attention, plugin, Some(reason)));
+            }
+            UpdateOutcome::Blocked { plugin, reason } => {
+                lines.push_str(&progress::change(
+                    Change::Failed,
+                    plugin,
+                    Some(&format!("blocked: {reason}")),
+                ));
+            }
+        }
+    }
+    let mut outcome = Vec::new();
+    if report.outcomes.is_empty() {
+        outcome.push(
+            match report.scope {
+                UpdateScope::Project => "This project declares no plugins",
+                UpdateScope::Machine => "No packages installed on this machine",
+            }
+            .to_owned(),
+        );
+    } else if moved == 0 && current == report.outcomes.len() {
+        outcome.push("Already up to date".to_owned());
+    } else {
+        if moved > 0 {
+            outcome.push(format!("{} updated", count(moved, "plugin")));
+        }
+        if current > 0 {
+            outcome.push(format!("{current} already current"));
+        }
+    }
+    if report.reconciled {
+        outcome.push("AGENTS.md reconciled".to_owned());
+    }
+    progress::change_report(&lines, &outcome.join(" · "))
+}
+
 fn render_update_report(report: &uze_application::application::UpdateReport) -> String {
     use uze_application::application::{UpdateOutcome, UpdateScope};
     let (scope, nothing_considered) = match report.scope {
@@ -2903,11 +3049,28 @@ fn render_update_report(report: &uze_application::application::UpdateReport) -> 
         .outcomes
         .iter()
         .map(|outcome| match outcome {
-            UpdateOutcome::Moved { plugin, revision } => vec![
+            UpdateOutcome::Moved {
+                plugin, revision, ..
+            } => vec![
                 progress::title(plugin),
                 progress::label(format!("moved to {}", &revision[..revision.len().min(12)])),
             ],
-            UpdateOutcome::AlreadyCurrent { plugin } => {
+            UpdateOutcome::FollowedLink {
+                plugin, checkout, ..
+            } => vec![
+                progress::title(plugin),
+                progress::label(match report.scope {
+                    UpdateScope::Machine => format!(
+                        "updated from the linked working tree at {}",
+                        checkout.display()
+                    ),
+                    UpdateScope::Project => format!(
+                        "updated from the linked working tree at {}, which pins nothing",
+                        checkout.display()
+                    ),
+                }),
+            ],
+            UpdateOutcome::AlreadyCurrent { plugin, .. } => {
                 vec![progress::title(plugin), progress::label("already current")]
             }
             UpdateOutcome::Held { plugin, reason } => {
@@ -2920,6 +3083,31 @@ fn render_update_report(report: &uze_application::application::UpdateReport) -> 
         })
         .collect();
     let mut text = format!("{title}\n{}\n", progress::aligned_rows(rows));
+    let delivered: Vec<_> = report
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match outcome {
+            UpdateOutcome::Moved {
+                plugin, deliveries, ..
+            }
+            | UpdateOutcome::FollowedLink {
+                plugin, deliveries, ..
+            }
+            | UpdateOutcome::AlreadyCurrent { plugin, deliveries }
+                if !deliveries.is_empty() =>
+            {
+                Some((plugin, deliveries))
+            }
+            _ => None,
+        })
+        .collect();
+    if !delivered.is_empty() {
+        text.push_str(&format!("\n{}", progress::report_section("Delivery")));
+        for (plugin, deliveries) in delivered {
+            text.push_str(&format!("  {}\n", progress::title(plugin)));
+            text.push_str(&render_deliveries(deliveries, false, "    "));
+        }
+    }
     if report.reconciled {
         text.push_str("  Project context reconciled\n");
     }
@@ -2939,22 +3127,54 @@ fn render_plugin_list(plugins: &[uze_application::application::PluginSummary]) -
             } else {
                 progress::label(format!("origin: {}", plugin.id))
             };
+            let delivery = if plugin.undelivered.is_empty() {
+                String::new()
+            } else {
+                progress::warning_text("partially delivered")
+            };
             vec![
                 progress::title(&plugin.active_name),
                 origin,
                 format!("{} capabilities", plugin.capability_count),
                 progress::label(freshness_label(&plugin.freshness)),
+                delivery,
             ]
         })
         .collect();
-    format!("{title}\n{}\n", progress::aligned_rows(rows))
+    let mut text = format!("{title}\n{}\n", progress::aligned_rows(rows));
+    text.push_str(&render_undelivered(plugins));
+    text
 }
 
-fn render_inspection(report: &PluginInspection) -> String {
+/// Each package the listing calls partially delivered, with the harness it
+/// did not reach and why — a word in a table row names the state, and
+/// this is what a person acts on.
+fn render_undelivered(plugins: &[uze_application::application::PluginSummary]) -> String {
+    let mut text = String::new();
+    for plugin in plugins {
+        for harness in &plugin.undelivered {
+            text.push_str(&format!(
+                "  {} {} not delivered to {}: {}\n",
+                progress::warning_icon(),
+                progress::title(&plugin.active_name),
+                harness.display_name,
+                harness.error
+            ));
+        }
+    }
+    text
+}
+
+fn render_inspection(report: &PluginInspection, verbose: bool) -> String {
     let mut text = progress::report_title(&report.plugin.id, Some("Plugin inspection"));
     text.push('\n');
     text.push_str(&progress::report_section("Source"));
     text.push_str(&format!("  {}\n\n", report.plugin.source));
+    if !report.plugin.undelivered.is_empty() {
+        text.push_str(&progress::report_section("Partially delivered"));
+        text.push_str(&render_undelivered(std::slice::from_ref(&report.plugin)));
+        text.push('\n');
+    }
     text.push_str(&progress::report_section("Capabilities"));
     for capability in &report.capabilities {
         text.push_str(&format!("  {:?}  {}\n", capability.kind, capability.name));
@@ -2962,25 +3182,7 @@ fn render_inspection(report: &PluginInspection) -> String {
     text.push('\n');
     text.push_str(&progress::report_section("Delivery"));
     for delivery in &report.deliveries {
-        let package = delivery
-            .package_plan
-            .as_ref()
-            .map_or("decomposed".to_owned(), |plan| format!("{:?}", plan.route));
-        text.push_str(&format!(
-            "\n{}\n  Package  {package}\n",
-            delivery.display_name
-        ));
-        for capability in &delivery.capabilities {
-            let status = if capability.provided_by_package {
-                "provided by package".to_owned()
-            } else {
-                capability
-                    .plan
-                    .as_ref()
-                    .map_or("not exposed".to_owned(), |plan| format!("{:?}", plan.route))
-            };
-            text.push_str(&format!("  {:?}  {status}\n", capability.kind));
-        }
+        text.push_str(&render_effective_delivery(delivery, verbose));
     }
     let state = &report.managed_state;
     text.push('\n');
@@ -2993,6 +3195,77 @@ fn render_inspection(report: &PluginInspection) -> String {
         text.push_str(&format!("  ledger blocked: {error}\n"));
     }
     text
+}
+
+/// One harness's effective view: the route the install report would name,
+/// then every capability with the name a session sees it under, its route
+/// and where it lands, and what a capability short of native loses.
+fn render_effective_delivery(
+    delivery: &uze_application::application::HarnessDelivery,
+    verbose: bool,
+) -> String {
+    use uze_application::CompatibilityRoute;
+    let mut out = String::new();
+    let (headline, why) = describe_route(&delivery.route);
+    let detected = if delivery.detected {
+        String::new()
+    } else {
+        format!("  {}", progress::label("(not detected)"))
+    };
+    out.push_str(&format!(
+        "\n{}  {headline}{detected}\n",
+        progress::title(&delivery.display_name)
+    ));
+    out.push_str(&format!("  {}\n", progress::label(format!("why: {why}"))));
+    for capability in &delivery.capabilities {
+        let kind = format!("{:?}", capability.kind);
+        let name = capability
+            .exposed_name
+            .as_deref()
+            .unwrap_or(capability.identity.as_str());
+        if capability.kind == uze_application::CapabilityKind::Instruction {
+            out.push_str(&format!(
+                "  {kind:<10}  {name}  {}\n",
+                progress::label("through the project context")
+            ));
+            continue;
+        }
+        if let Some(reason) = &capability.blocked {
+            out.push_str(&format!(
+                "  {kind:<10}  {name}  {}\n",
+                progress::warning_text(format!("blocked — {reason}"))
+            ));
+            continue;
+        }
+        let route = route_word(capability.route);
+        let route = if capability.route == CompatibilityRoute::Native {
+            progress::success_text(route)
+        } else {
+            progress::warning_text(route)
+        };
+        let carrier = if capability.provided_by_package {
+            " in the package"
+        } else {
+            ""
+        };
+        let location = capability
+            .location
+            .as_ref()
+            .map(|location| format!("  {}", progress::label(location.display().to_string())))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "  {kind:<10}  {name}  {route}{carrier}{location}\n"
+        ));
+        if capability.route != CompatibilityRoute::Native || verbose {
+            let evidence = if verbose {
+                capability.evidence.as_str()
+            } else {
+                leading_sentence(&capability.evidence)
+            };
+            out.push_str(&format!("              {}\n", progress::label(evidence)));
+        }
+    }
+    out
 }
 
 /// Compact per-harness report for an install/add: one line per harness with
@@ -3018,72 +3291,264 @@ fn warn_blocked(report: &AddPluginReport, app: &UzeApplication) {
     }
 }
 
-fn render_add_report(report: &AddPluginReport, verbose: bool, app: &UzeApplication) -> String {
-    let mut out = format!("\n{}", progress::report_section("Delivery"));
-    let attachments: BTreeMap<&str, &PathBuf> = report
-        .attachments
+/// An install as a line per package and a closing count, the way a package
+/// manager reports one: a harness is named only when it did not receive the
+/// whole package. Everything else waits for `--verbose` and `uze inspect`.
+fn render_add_summary(report: &AddPluginReport) -> String {
+    use progress::Change;
+    let commit = report.plugin.commit.as_deref().map(short_commit);
+    let mut lines = progress::change(Change::Added, &report.plugin.id, commit);
+    let (issues, harnesses) = delivery_issues(&report.deliveries);
+    lines.push_str(&issues);
+    let scope = if report.declared {
+        "Added to this project"
+    } else {
+        "Installed on this machine only"
+    };
+    progress::change_report(&lines, &format!("{scope} · {harnesses}"))
+}
+
+/// A commit as a person compares two of them.
+fn short_commit(commit: &str) -> &str {
+    &commit[..commit.len().min(7)]
+}
+
+/// Each harness that did not receive a package whole, one line per thing
+/// it lacks, and how many harnesses the package reached out of those it
+/// was delivered to.
+fn delivery_issues(
+    deliveries: &[uze_application::application::HarnessDeliveryReport],
+) -> (String, String) {
+    use progress::Change;
+    use uze_application::application::HarnessDeliveryOutcome;
+    let width = deliveries
         .iter()
-        .map(|attachment| (attachment.integration.as_str(), &attachment.location))
-        .collect();
-    for (harness, plan) in &report.package_plans {
-        let route = format!("{:?}", plan.route).to_lowercase();
-        let attached = attachments
-            .get(harness.as_str())
-            .map(|location| format!(" ({})", location.display()))
-            .unwrap_or_default();
-        out.push_str(&format!(
-            "  {}: {route}{attached}\n",
-            app.health().integration_label(harness)
-        ));
-        if verbose {
-            out.push_str(&format!("    {}\n", plan.evidence));
+        .map(|delivery| delivery.display_name.chars().count())
+        .max()
+        .unwrap_or_default();
+    let mut lines = String::new();
+    let mut reached = 0;
+    for delivery in deliveries {
+        let harness = format!("{:<width$}", delivery.display_name);
+        match &delivery.outcome {
+            HarnessDeliveryOutcome::Delivered {
+                blocked,
+                shortfalls,
+                ..
+            } => {
+                reached += 1;
+                for one in blocked {
+                    lines.push_str(&progress::change_detail(
+                        Change::Attention,
+                        &harness,
+                        Some(&format!("{} not delivered: {}", one.capability, one.reason)),
+                    ));
+                }
+                for one in shortfalls {
+                    lines.push_str(&progress::change_detail(
+                        Change::Attention,
+                        &harness,
+                        Some(&format!(
+                            "{} {}: {}",
+                            one.capability,
+                            route_word(one.route),
+                            leading_sentence(&one.evidence)
+                        )),
+                    ));
+                }
+            }
+            HarnessDeliveryOutcome::Failed { .. } => {
+                lines.push_str(&progress::change_detail(
+                    Change::Failed,
+                    &harness,
+                    Some("not delivered"),
+                ));
+            }
         }
     }
-    // Attachments that are not package delivery (e.g. an Agent Skill
-    // symlink in the shared skills root) still belong in the summary.
-    for attachment in &report.attachments {
-        if !report
-            .package_plans
-            .iter()
-            .any(|(harness, _)| harness == &attachment.integration)
-        {
-            out.push_str(&format!(
-                "  {}: attached at {}\n",
-                app.health().integration_label(&attachment.integration),
-                attachment.location.display()
-            ));
-        }
-    }
-    // A name held by something UZE does not own stops that one capability
-    // and nothing else. Said here rather than raised as a failure: the
-    // package is installed and the rest of it is delivered, so what the
-    // operator needs is the name and the reason, not an aborted command.
-    for one in &report.blocked {
+    let harnesses = match (reached, deliveries.len()) {
+        (_, 0) => "no harness detected".to_owned(),
+        (1, 1) => "1 harness".to_owned(),
+        (reached, total) if reached == total => format!("{total} harnesses"),
+        (reached, total) => format!("{reached} of {total} harnesses"),
+    };
+    (lines, harnesses)
+}
+
+fn render_add_report(report: &AddPluginReport, verbose: bool) -> String {
+    let mut out = format!("\n{}", progress::report_section("Delivery"));
+    if report.deliveries.is_empty() {
         out.push_str(&format!(
-            "  {}: {} not delivered — {}\n",
-            app.health().integration_label(&one.integration),
-            one.capability,
-            one.reason
+            "  {}\n",
+            progress::label("no harness detected; nothing was delivered")
         ));
+    }
+    out.push_str(&render_deliveries(&report.deliveries, verbose, "  "));
+    out
+}
+
+/// Every harness a delivery reached or failed on: one header line each —
+/// its route — with why that route and every artifact recorded under it.
+/// Nothing is collapsed per harness: a package entry and the capabilities
+/// delivered beside it are all listed, since a duplicate delivery is
+/// exactly what a collapsed report used to hide.
+fn render_deliveries(
+    deliveries: &[uze_application::application::HarnessDeliveryReport],
+    verbose: bool,
+    indent: &str,
+) -> String {
+    use uze_application::application::HarnessDeliveryOutcome;
+    let mut out = String::new();
+    for delivery in deliveries {
+        let harness = progress::title(&delivery.display_name);
+        match &delivery.outcome {
+            HarnessDeliveryOutcome::Delivered {
+                route,
+                attachments,
+                blocked,
+                shortfalls,
+            } => {
+                let (headline, why) = describe_route(route);
+                out.push_str(&format!("{indent}{harness}  {headline}\n"));
+                out.push_str(&format!(
+                    "{indent}  {}\n",
+                    progress::label(format!("why: {why}"))
+                ));
+                if verbose
+                    && let uze_application::application::DeliveryRoute::Package { evidence, .. } =
+                        route
+                {
+                    out.push_str(&format!("{indent}  {}\n", progress::label(evidence)));
+                }
+                for location in attachments {
+                    out.push_str(&format!("{indent}  {}\n", location.display()));
+                }
+                for one in blocked {
+                    out.push_str(&format!(
+                        "{indent}  {}\n",
+                        progress::warning_text(format!(
+                            "{} not delivered — {}",
+                            one.capability, one.reason
+                        ))
+                    ));
+                }
+                for one in shortfalls {
+                    let evidence = if verbose {
+                        one.evidence.as_str()
+                    } else {
+                        leading_sentence(&one.evidence)
+                    };
+                    out.push_str(&format!(
+                        "{indent}  {}\n",
+                        progress::warning_text(format!(
+                            "{} {} — {evidence}",
+                            one.capability,
+                            route_word(one.route),
+                        ))
+                    ));
+                }
+            }
+            HarnessDeliveryOutcome::Failed { error } => {
+                out.push_str(&format!(
+                    "{indent}{harness}  {}\n",
+                    progress::error_text("failed")
+                ));
+                out.push_str(&format!("{indent}  {error}\n"));
+                out.push_str(&format!(
+                    "{indent}  {}\n",
+                    progress::label("nothing was left attached to this harness")
+                ));
+            }
+        }
     }
     out
 }
 
+/// A shortfall's evidence leads with what the capability lost; the rest
+/// explains the mechanism and waits for `--verbose`.
+fn leading_sentence(evidence: &str) -> &str {
+    evidence
+        .find(". ")
+        .map_or(evidence, |end| &evidence[..=end])
+}
+
+/// How a capability's route reads beside it when it is less than native.
+fn route_word(route: uze_application::CompatibilityRoute) -> &'static str {
+    use uze_application::CompatibilityRoute;
+    match route {
+        CompatibilityRoute::Native => "native",
+        CompatibilityRoute::Adaptable => "adapted",
+        CompatibilityRoute::Degraded => "degraded",
+        CompatibilityRoute::Unsupported => "unsupported",
+    }
+}
+
+/// A route as its header reads, and the reason it was taken.
+fn describe_route(route: &uze_application::application::DeliveryRoute) -> (String, String) {
+    use uze_application::{PackageEnvelope, application::DeliveryRoute};
+    match route {
+        DeliveryRoute::Package {
+            envelope, route, ..
+        } => {
+            let route = format!("{route:?}").to_lowercase();
+            match envelope {
+                PackageEnvelope::Own => (
+                    format!("{route} package, its own manifest"),
+                    "the plugin ships a manifest this harness reads".to_owned(),
+                ),
+                PackageEnvelope::Generated => (
+                    format!("{route} package, generated manifest"),
+                    "the plugin ships no manifest this harness reads, so UZE wrote one from \
+                     its capabilities"
+                        .to_owned(),
+                ),
+            }
+        }
+        DeliveryRoute::CapabilityByCapability { reason } => {
+            ("capability by capability".to_owned(), reason.clone())
+        }
+    }
+}
+
+/// The ending an install that stayed installed on some harnesses and not
+/// others deserves: the report is on screen, and the exit status says the
+/// install did not do everything it was asked.
+fn undelivered_failure<'a>(
+    undelivered: impl Iterator<
+        Item = (
+            &'a str,
+            &'a uze_application::application::HarnessDeliveryReport,
+        ),
+    >,
+) -> Option<uze_application::UzeError> {
+    let lines: Vec<String> = undelivered
+        .map(|(package, delivery)| {
+            format!(
+                "  `{package}` to {}: {}",
+                delivery.display_name,
+                delivery.error().unwrap_or_default()
+            )
+        })
+        .collect();
+    (!lines.is_empty()).then(|| {
+        uze_application::UzeError::DeliveryFailed(format!(
+            "installed, but not delivered everywhere:\n{}\n`uze status -m` lists each as \
+             partially delivered until a later install or update reaches every harness",
+            lines.join("\n")
+        ))
+    })
+}
+
 fn render_remove(report: &RemovePluginReport) -> String {
     match report {
-        RemovePluginReport::AlreadyAbsent { plugin } => {
-            format!(
-                "{} No UZE state remains for {plugin}\n",
-                progress::success_icon()
-            )
-        }
-        RemovePluginReport::Removed { plugin, .. } => {
-            format!(
-                "{} Removed {}\n",
-                progress::success_icon(),
-                progress::title(plugin)
-            )
-        }
+        RemovePluginReport::AlreadyAbsent { plugin } => progress::change_report(
+            "",
+            &format!("Nothing to remove: no UZE state remains for {plugin}"),
+        ),
+        RemovePluginReport::Removed { plugin, .. } => progress::change_report(
+            &progress::change(progress::Change::Removed, plugin, None),
+            "Removed from this machine",
+        ),
         RemovePluginReport::Blocked { report, plan } => {
             let mut text = progress::report_title("Removal blocked", Some(&report.package_id));
             text.push_str(&format!(
@@ -3106,50 +3571,62 @@ fn render_remove(report: &RemovePluginReport) -> String {
     }
 }
 
+/// A project install as a line per plugin it moved, `+` placed, `-` taken
+/// out, and one it could not reach named with why — never merely absent,
+/// since an environment missing a plugin that says nothing looks complete.
 fn render_install(report: &uze_application::application::InstallReport) -> String {
+    use progress::Change;
     use uze_application::application::InstallReport;
     match report {
-        InstallReport::NoChanges => format!(
-            "{} Project environment is already up to date.\n",
-            progress::success_icon()
-        ),
+        InstallReport::NoChanges => progress::change_report("", "Already up to date"),
+        InstallReport::NoProject => {
+            progress::change_report("", "No project here, so nothing was declared to install")
+        }
         InstallReport::Installed {
             plugins,
             removed,
             skipped,
             reconciled,
+            ..
         } => {
-            let mut text = progress::report_title("Installed environment", None);
-            text.push_str(&format!(
-                "{} plugin(s) are ready\n\n",
-                progress::success_text(plugins.len().to_string())
-            ));
+            let mut lines = String::new();
+            for plugin in plugins {
+                lines.push_str(&progress::change(Change::Added, plugin, None));
+            }
+            for plugin in removed {
+                lines.push_str(&progress::change(Change::Removed, plugin, None));
+            }
+            for one in skipped {
+                lines.push_str(&progress::change(
+                    Change::Attention,
+                    &one.plugin,
+                    Some(&one.reason),
+                ));
+            }
+            let mut outcome = Vec::new();
             if !plugins.is_empty() {
-                text.push_str(&progress::report_section("Packages"));
-                for plugin in plugins {
-                    text.push_str(&format!("  {plugin}\n"));
-                }
+                outcome.push(format!("{} installed", count(plugins.len(), "plugin")));
             }
             if !removed.is_empty() {
-                text.push_str(&progress::report_section("Removed"));
-                for plugin in removed {
-                    text.push_str(&format!("  {plugin}\n"));
-                }
-            }
-            // Named, never merely absent: an environment that is missing
-            // a plugin and says nothing about it looks complete.
-            if !skipped.is_empty() {
-                text.push_str(&progress::report_section("Not installed here"));
-                for one in skipped {
-                    text.push_str(&format!("  {} — {}\n", one.plugin, one.reason));
-                }
+                outcome.push(format!("{} removed", count(removed.len(), "plugin")));
             }
             if *reconciled {
-                text.push_str(&progress::report_section("Context"));
-                text.push_str("  AGENTS.md and the harness bridges are reconciled\n");
+                outcome.push("AGENTS.md reconciled".to_owned());
             }
-            text
+            if outcome.is_empty() {
+                outcome.push("Nothing to install".to_owned());
+            }
+            progress::change_report(&lines, &outcome.join(" · "))
         }
+    }
+}
+
+/// `1 plugin`, `3 plugins`.
+fn count(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
     }
 }
 
@@ -3334,11 +3811,43 @@ fn render_check(report: &uze_application::ValidationReport, as_marketplace: bool
     for identity in &report.delivers {
         text.push_str(&format!("  {identity}\n"));
     }
+    if let Some(standard) = &report.agent_plugins {
+        text.push('\n');
+        text.push_str(&progress::report_section(standard.standard));
+        let subject = if as_marketplace {
+            "every plugin is"
+        } else {
+            "this is"
+        };
+        if standard.conformant {
+            text.push_str(&format!(
+                "  {subject} a valid {} plugin\n",
+                standard.standard
+            ));
+        } else {
+            text.push_str(&format!(
+                "  not yet a valid {} plugin; uze installs it all the same:\n",
+                standard.standard
+            ));
+            for divergence in &standard.divergences {
+                text.push_str(&format!("  {divergence}\n"));
+            }
+        }
+    }
     if !report.findings.is_empty() {
         text.push('\n');
         text.push_str(&progress::report_section("Findings"));
         for finding in &report.findings {
             text.push_str(&format!("  {}\n", progress::warning_text(finding)));
+        }
+    }
+    if !report.warnings.is_empty() {
+        text.push('\n');
+        text.push_str(&progress::report_section(
+            "Delivered short of what is written",
+        ));
+        for warning in &report.warnings {
+            text.push_str(&format!("  {warning}\n"));
         }
     }
     text
@@ -3512,6 +4021,8 @@ struct ArtifactsCheckReport {
     /// How many draw with edges missing — counted apart because the board
     /// still looks finished, which is the failure nobody sees by looking.
     unrouted: usize,
+    /// How many have a box whose link opens nothing.
+    unlinked: usize,
     artifacts: Vec<CheckedArtifactReport>,
     /// Why there was nothing to check, where there was not.
     nothing: Option<String>,
@@ -3532,6 +4043,8 @@ struct CheckedArtifactReport {
     unrouted: usize,
     /// Why it is not drawn at all, quoted from the parser.
     reason: Option<String>,
+    /// Every box link that opens nothing, and why.
+    broken_links: Vec<String>,
 }
 
 impl ArtifactsCheckReport {
@@ -3540,9 +4053,13 @@ impl ArtifactsCheckReport {
         if let Some(unusable) = &self.unusable {
             return Some(unusable.clone());
         }
-        match self.undrawable + self.unrouted {
-            0 => None,
-            failed => Some(format!(
+        match (self.undrawable + self.unrouted, self.unlinked) {
+            (0, 0) => None,
+            (0, unlinked) => Some(format!(
+                "{unlinked} of {} artifacts link a box to nothing",
+                self.checked
+            )),
+            (failed, _) => Some(format!(
                 "{failed} of {} artifacts do not draw as written",
                 self.checked
             )),
@@ -3558,6 +4075,7 @@ impl From<&uze_extensions::architect::Checkup> for ArtifactsCheckReport {
             checked: 0,
             undrawable: 0,
             unrouted: 0,
+            unlinked: 0,
             artifacts: Vec::new(),
             nothing: None,
             unusable: None,
@@ -3588,6 +4106,10 @@ impl From<&uze_extensions::architect::Checkup> for ArtifactsCheckReport {
                     .iter()
                     .filter(|artifact| matches!(artifact.verdict, Verdict::Unrouted { .. }))
                     .count(),
+                unlinked: artifacts
+                    .iter()
+                    .filter(|artifact| !artifact.broken_links.is_empty())
+                    .count(),
                 artifacts: artifacts
                     .iter()
                     .map(|artifact| CheckedArtifactReport {
@@ -3607,6 +4129,7 @@ impl From<&uze_extensions::architect::Checkup> for ArtifactsCheckReport {
                             Verdict::Undrawable(reason) => Some(reason.clone()),
                             _ => None,
                         },
+                        broken_links: artifact.broken_links.clone(),
                     })
                     .collect(),
                 ..empty
@@ -3635,6 +4158,10 @@ fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
         .iter()
         .map(|artifact| {
             let (icon, note) = match artifact.verdict {
+                "drawn" if !artifact.broken_links.is_empty() => (
+                    progress::error_icon(),
+                    progress::error_text(artifact.broken_links.join("; ")),
+                ),
                 "drawn" => (progress::success_icon(), artifact.name.clone()),
                 "unrouted" => (
                     progress::warning_icon(),
@@ -3665,7 +4192,9 @@ fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
     if report.verdict().is_none() {
         out.push_str(&format!(
             "\n  {}\n",
-            progress::success_text("Every artifact draws, with every edge routed.")
+            progress::success_text(
+                "Every artifact draws, with every edge routed and every link leading to a file."
+            )
         ));
     }
     out
@@ -3684,7 +4213,9 @@ fn render_doctor(report: &DoctorReport) -> String {
     text.push_str(&progress::report_section("Store"));
     text.push_str(&format!("  {}\n\n", report.store));
     text.push_str(&progress::report_section("Plugins"));
-    text.push_str(&format!("  {} installed\n\n", report.plugins.len()));
+    text.push_str(&format!("  {} installed\n", report.plugins.len()));
+    text.push_str(&render_undelivered(&report.plugins));
+    text.push('\n');
     text.push_str(&progress::report_section("Harnesses"));
     text.push_str(&progress::aligned_rows(
         report
@@ -3717,6 +4248,7 @@ fn render_doctor(report: &DoctorReport) -> String {
         }
     }
     text.push('\n');
+    text.push_str(&render_delivery_health(report));
     text.push_str(&progress::report_section("Attachments"));
     for attachment in &report.attachments {
         let state = &attachment.state;
@@ -3787,12 +4319,77 @@ fn render_doctor(report: &DoctorReport) -> String {
             ));
         }
     }
+    if !report.leftovers.unregistered_packages.is_empty() {
+        text.push_str("\nPackage bytes no install records\n");
+        for path in &report.leftovers.unregistered_packages {
+            text.push_str(&format!("  {}\n", path.display()));
+        }
+        text.push_str(
+            "  nothing installs, updates or removes them; delete one once you no longer want it\n",
+        );
+    }
     if !report.maintenance.outcomes.is_empty() {
         text.push_str("\nMaintenance\n");
         for outcome in &report.maintenance.outcomes {
             text.push_str(&format!("  {outcome}\n"));
         }
     }
+    text.push_str(&format!(
+        "\n{}\n",
+        progress::label("Documentation: https://uze.sh/docs")
+    ));
+    text
+}
+
+/// Each package's delivery against its plan, per detected harness: how
+/// many expected capabilities are there and readable, and each one that is
+/// not with why. Absent when nothing was delivered to a detected harness.
+fn render_delivery_health(report: &DoctorReport) -> String {
+    let checked: Vec<_> = report
+        .deliveries
+        .iter()
+        .filter(|package| !package.harnesses.is_empty())
+        .collect();
+    if checked.is_empty() {
+        return String::new();
+    }
+    let mut text = progress::report_section("Delivery");
+    for package in checked {
+        text.push_str(&format!("  {}\n", package.plugin));
+        for harness in &package.harnesses {
+            let count = format!("{} of {} present", harness.present, harness.expected);
+            let count = if harness.healthy() {
+                progress::success_text(count)
+            } else {
+                progress::warning_text(count)
+            };
+            text.push_str(&format!(
+                "    {}  {count}\n",
+                progress::title(&harness.display_name)
+            ));
+            // A package entry that fails fails every capability it carries
+            // for one reason: said once, naming them all.
+            for group in harness
+                .findings
+                .chunk_by(|left, right| left.kind == right.kind && left.detail == right.detail)
+            {
+                let names: Vec<&str> = group
+                    .iter()
+                    .map(|finding| finding.capability.as_str())
+                    .collect();
+                let kind = format!("{:?}", group[0].kind).to_lowercase();
+                text.push_str(&format!(
+                    "      {}\n",
+                    progress::warning_text(format!(
+                        "{} {kind} — {}",
+                        names.join(", "),
+                        group[0].detail
+                    ))
+                ));
+            }
+        }
+    }
+    text.push('\n');
     text
 }
 
@@ -3843,39 +4440,31 @@ fn render_market_list(marketplaces: &[MarketplaceSummary]) -> String {
 /// The marketplace teardown's answer, in product terms: each package it
 /// took off the machine, each block, and where the registry entry ended.
 fn render_market_removal(report: &MarketplaceRemovalReport) -> String {
-    let mut text = progress::report_title(
-        "Marketplace removed",
-        Some(&format!(
-            "{} — {} package(s) taken off the machine",
-            report.marketplace,
-            report.removed.len()
-        )),
-    );
-    text.push('\n');
+    use progress::Change;
+    let mut lines = String::new();
     for package in &report.removed {
-        text.push_str(&format!(
-            "{} Removed {}\n",
-            progress::success_icon(),
-            progress::title(package)
+        lines.push_str(&progress::change(Change::Removed, package, None));
+    }
+    for block in &report.blocked {
+        lines.push_str(&progress::change(
+            Change::Failed,
+            &block.package,
+            Some(&block.reason),
         ));
     }
-    if report.record_removed {
-        text.push_str(&progress::label("registry entry removed\n"));
-    }
-    if !report.blocked.is_empty() {
-        text.push_str(&progress::report_section("Blocked"));
-        for block in &report.blocked {
-            text.push_str(&format!(
-                "  {}\n",
-                progress::warning_text(format!("{}: {}", block.package, block.reason))
-            ));
-        }
-        text.push_str(&progress::label(
-            "the marketplace stays registered until these come off\n",
-        ));
-    }
-    text.push('\n');
-    text
+    let outcome = if report.record_removed {
+        format!(
+            "Marketplace {} removed · {} taken off the machine",
+            report.marketplace,
+            count(report.removed.len(), "plugin")
+        )
+    } else {
+        format!(
+            "Marketplace {} stays registered until these come off",
+            report.marketplace
+        )
+    };
+    progress::change_report(&lines, &outcome)
 }
 
 fn render_market_hosts(hosts: &[HostEntry]) -> String {

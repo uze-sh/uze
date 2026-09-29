@@ -1,13 +1,8 @@
 {
-  "//": [
-    "One server per key, keyed by the name a harness will address it under.",
-    "`command` runs locally (stdio); a `url` server speaks a remote protocol.",
-    "`${PLUGIN_ROOT}` is this plugin's own directory; UZE resolves it for every harness.",
-    "The stub below is a complete stdio server with no dependencies and one tool —",
-    "swap it for your real server or delete the key."
-  ],
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
     "example": {
+      "type": "stdio",
       "command": "python3",
       "args": ["${PLUGIN_ROOT}/scripts/example_server.py"]
     }

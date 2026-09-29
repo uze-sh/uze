@@ -1,0 +1,6 @@
+#!/bin/sh
+# One line per run, so a count is the evidence: the session-start case reads
+# how many times it fired and with which source, never just that it did.
+printf '%s|%s|%s|%s\n' "$HOOK_HARNESS" "$HOOK_EVENT" "${HOOK_SOURCE:-}" "${HOOK_TOOL:-}" \
+  >> /work/session-hooks.log
+exit 0

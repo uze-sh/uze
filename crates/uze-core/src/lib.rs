@@ -79,8 +79,8 @@ pub mod extensions;
 // reader looks first.
 pub use capability::{hook, skill};
 pub use delivery::{
-    continuity, engine, exposure, integration, leftovers, persistence, reconciliation, router,
-    state,
+    continuity, delivered_root, engine, exposure, integration, leftovers, persistence,
+    reconciliation, router, state,
 };
 pub use machine::{
     detection_cache, features, harness_runtime, home, process_cwd, provisioning, shell_path,

@@ -491,17 +491,35 @@ fn set_up(harness: String, home: &UzeHome, sender: &Sender<WorkerResult>, model:
                 results
                     .into_iter()
                     .find(|r| r.integration == harness)
-                    .map(|r| {
-                        if r.configured {
-                            format!("{harness} ready")
-                        } else {
-                            format!("{harness} setup {:?}", r.provisioning.status)
-                        }
-                    })
+                    .map(|r| setup_outcome(&harness, &r))
                     .unwrap_or_else(|| format!("{harness} setup attempted"))
             })
         },
     );
+}
+
+/// What one `uze setup` did, in the words the CLI reports it with: the
+/// action taken, the version verified, where an executable off `PATH` was
+/// found, and why a harness that is not ready is not.
+fn setup_outcome(harness: &str, result: &uze_application::application::SetupResult) -> String {
+    if !result.configured {
+        let reason = result
+            .provisioning
+            .reason
+            .as_deref()
+            .unwrap_or("executable was not verified");
+        return format!("{harness} setup {:?}: {reason}", result.provisioning.status);
+    }
+    let action = format!("{:?}", result.provisioning.action).to_lowercase();
+    let version = result.detection.version.as_deref().unwrap_or("unknown");
+    let mut outcome = format!("{harness} ready ({action}; version {version})");
+    if let Some(found) = &result.provisioning.located_outside_path {
+        outcome.push_str(&format!(
+            "; found at {}, open a new shell to run it by name",
+            found.display()
+        ));
+    }
+    outcome
 }
 
 fn add_marketplace(
@@ -517,11 +535,12 @@ fn add_marketplace(
         model.context_root.clone(),
         move |app| {
             app.marketplace().register(&source).map(|registration| {
-                let identity = registration.identity;
+                let identity = &registration.identity;
+                let reads = registration.reads();
                 if registration.added {
-                    format!("Added marketplace from {identity}")
+                    format!("Added marketplace from {identity}. {reads}")
                 } else {
-                    format!("Marketplace from {identity} is already added")
+                    format!("Marketplace from {identity} is already added. {reads}")
                 }
             })
         },
@@ -567,8 +586,25 @@ fn install_project_environment(
             // CLI's `uze install`; the TUI adds no install logic.
             app.project()
                 .install(&root, &uze_application::NoTrustAuthority)
+                .and_then(|report| {
+                    // Installed but not delivered everywhere is a failure
+                    // to say, exactly as the CLI exits non-zero on it.
+                    let missed: Vec<String> = report
+                        .undelivered()
+                        .map(|(plugin, delivery)| format!("{plugin} to {}", delivery.display_name))
+                        .collect();
+                    if missed.is_empty() {
+                        Ok(report)
+                    } else {
+                        Err(uze_application::UzeError::DeliveryFailed(format!(
+                            "installed, but not delivered: {}",
+                            missed.join(", ")
+                        )))
+                    }
+                })
                 .map(|report| match report {
                     InstallReport::NoChanges => "Project environment already up to date".to_owned(),
+                    InstallReport::NoProject => "No project here; nothing was declared".to_owned(),
                     InstallReport::Installed {
                         plugins,
                         reconciled,
@@ -660,7 +696,20 @@ fn install(
         move |app, authority| {
             app.marketplace()
                 .install_plugin(&spec, authority)
-                .map(|report| format!("Installed {}", report.plugin.id))
+                .and_then(|report| {
+                    let missed: Vec<&str> = report
+                        .undelivered()
+                        .map(|delivery| delivery.display_name.as_str())
+                        .collect();
+                    if missed.is_empty() {
+                        return Ok(format!("Installed {}", report.plugin.id));
+                    }
+                    Err(uze_application::UzeError::DeliveryFailed(format!(
+                        "{} installed, but not delivered to {}",
+                        report.plugin.id,
+                        missed.join(", ")
+                    )))
+                })
         },
         TrustedRetry::Install {
             name: retry_name,
@@ -1396,6 +1445,7 @@ mod tests {
                 plugins: Vec::new(),
                 harnesses: Vec::new(),
                 attachments: Vec::new(),
+                deliveries: Vec::new(),
                 ledger_error: None,
                 provisioning_state_error: None,
                 leftovers: Default::default(),
@@ -1523,8 +1573,10 @@ mod tests {
                 active_name: (*id).to_owned(),
                 source: "embedded:example".to_owned(),
                 store_path: PathBuf::from("/store/example"),
+                commit: None,
                 capability_count: 1,
                 freshness: uze_application::application::Freshness::not_checked(),
+                undelivered: Vec::new(),
             })
             .collect();
         model
@@ -1674,6 +1726,46 @@ mod tests {
         assert_eq!(
             model.status,
             Status::Error("No browser to open file:///etc/passwd with".to_owned())
+        );
+    }
+
+    fn setup_result(
+        provisioning: uze_application::ProvisioningResult,
+    ) -> uze_application::application::SetupResult {
+        uze_application::application::SetupResult {
+            integration: "example".to_owned(),
+            detection: provisioning.detection.clone(),
+            configured: provisioning.status == uze_application::ProvisionStatus::Verified,
+            provisioning,
+            runtime_shim: None,
+            attach_error: None,
+            shim_error: None,
+        }
+    }
+
+    #[test]
+    fn a_setup_outcome_says_what_was_done_and_where_the_executable_is() {
+        let verified = uze_application::ProvisioningResult::verified(
+            uze_application::ProvisionAction::Install,
+            "official-test-route",
+            uze_application::HarnessDetection {
+                present: true,
+                version: Some("v1.2.3".to_owned()),
+            },
+        )
+        .found_outside_path(Some(PathBuf::from("/home/u/.example/bin/example")));
+        assert_eq!(
+            setup_outcome("example", &setup_result(verified)),
+            "example ready (install; version v1.2.3); found at \
+             /home/u/.example/bin/example, open a new shell to run it by name"
+        );
+
+        let blocked = uze_application::ProvisioningResult::blocked(
+            "install it by following https://example.invalid/install",
+        );
+        assert_eq!(
+            setup_outcome("example", &setup_result(blocked)),
+            "example setup Blocked: install it by following https://example.invalid/install"
         );
     }
 }

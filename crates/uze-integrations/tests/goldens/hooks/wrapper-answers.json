@@ -152,6 +152,30 @@
     },
     {
       "harness": "claude",
+      "event": "session_start",
+      "effect": "observe",
+      "handlers": [
+        "refuse"
+      ],
+      "command": null,
+      "exit": 0,
+      "stdout": null,
+      "stderr": "refused on session_start from startup"
+    },
+    {
+      "harness": "claude",
+      "event": "session_start",
+      "effect": "observe",
+      "handlers": [
+        "absent"
+      ],
+      "command": null,
+      "exit": 0,
+      "stdout": null,
+      "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
+    },
+    {
+      "harness": "claude",
       "event": "pre_tool_use",
       "effect": "deny",
       "handlers": [
@@ -406,6 +430,30 @@
       "exit": 0,
       "stdout": {},
       "stderr": ""
+    },
+    {
+      "harness": "codex",
+      "event": "session_start",
+      "effect": "observe",
+      "handlers": [
+        "refuse"
+      ],
+      "command": null,
+      "exit": 0,
+      "stdout": null,
+      "stderr": "refused on session_start from startup"
+    },
+    {
+      "harness": "codex",
+      "event": "session_start",
+      "effect": "observe",
+      "handlers": [
+        "absent"
+      ],
+      "command": null,
+      "exit": 0,
+      "stdout": null,
+      "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
     },
     {
       "harness": "codex",

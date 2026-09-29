@@ -5,8 +5,10 @@
 //! directory is automatically imported as a global slash command whenever
 //! you launch agy in any directory" — official CLI docs; the binary's own
 //! builtin skills live beside it under
-//! `~/.gemini/antigravity-cli/builtin/skills/`), so a UZE-managed reference
-//! there is consumed natively.
+//! `~/.gemini/antigravity-cli/builtin/skills/`), so a UZE-managed directory
+//! there is consumed natively. The first session of agy 1.2 renames that
+//! root to `~/.gemini/config/skills` and leaves a link behind, which the
+//! delivered directory follows unchanged.
 //!
 //! Invocation-policy reality (agy 1.1.27): both halves are controls the
 //! CLI reads from a Skill's own front matter — `disable-slash-command:
@@ -29,9 +31,10 @@
 //! The generated wrapper carries the stable namespaced label as its front
 //! matter `name` (agy derives the invoked name from the SKILL.md front
 //! matter, verified against 1.1.19) and the canonical description/body
-//! verbatim. Always a Derived Artifact under `$UZE_HOME`, never the Store.
+//! verbatim, beside the canonical supporting files, copied.
 
-use std::path::{Path, PathBuf};
+use crate::shared::package_root::resolve_bytes;
+use std::path::Path;
 
 use uze_core::{
     Result,
@@ -45,24 +48,20 @@ use uze_core::{
 
 use super::AntigravityIntegration;
 use crate::shared::skill::{
-    entry_name, generated_skill_dir, invalid_policy_plan, recreate_dir, render_skill_wrapper,
-    skill_label, skill_wrapper_root, write_file,
+    attach_skill_tree, entry_name, invalid_policy_plan, render_skill_wrapper, skill_label,
+    skill_tree_plan, skill_wrapper_root,
 };
 
-/// Deterministically materializes (or refreshes) one Skill's delivered
-/// wrapper: `SKILL.md` carrying the stable namespaced label as its `name`
-/// and the canonical description/body preserved — so the model-visible and
-/// slash-invocable name is `flow:review`, never a bare alias or a
-/// collision-prone `review` (the vendor derives the identity from front
-/// matter, and `agy plugin validate` accepts `:` in skill names, verified
-/// against 1.1.19). Idempotent and rebuilt wholesale — the directory is
-/// entirely UZE-owned and non-authoritative (ADR-013 §5).
-pub(super) fn materialize_generated_skill(
-    uze_home: &UzeHome,
-    resource: &Resource,
-) -> Result<PathBuf> {
-    let dir = generated_skill_dir(uze_home, "antigravity", resource);
-    recreate_dir(&dir)?;
+/// What a `harness:` block names Antigravity by.
+pub(super) const ANTIGRAVITY_KEYS: &[&str] = &["antigravity", "agy", "antigravity-cli"];
+
+/// The SKILL.md UZE writes for one Skill: the stable namespaced label as its
+/// `name` (so the model-visible and slash-invocable name is `flow:review`,
+/// never a bare alias: the vendor derives the identity from front matter,
+/// and `agy plugin validate` accepts `:` in skill names, verified against
+/// 1.1.19), the canonical description and body, and the CLI's own
+/// invocation controls for a non-default policy.
+pub(super) fn rendered_skill(uze_home: &UzeHome, resource: &Resource) -> String {
     let label = skill_label(uze_home, resource).unwrap_or_else(|| resource.name());
     let policy = resource.skill_invocation();
     let mut markers = Vec::new();
@@ -72,16 +71,17 @@ pub(super) fn materialize_generated_skill(
     if !policy.model {
         markers.push("disable-model-invocation: true");
     }
-    write_file(
-        &dir.join("SKILL.md"),
-        render_skill_wrapper(&label, &resource.capability.payload, &markers).as_bytes(),
-    )?;
-    Ok(dir)
+    render_skill_wrapper(
+        &label,
+        &resolve_bytes(&resource.capability.payload, &resource.package_root),
+        &markers,
+        ANTIGRAVITY_KEYS,
+    )
 }
 
 impl AntigravityIntegration {
-    /// Removes a generated wrapper directory once nothing references it —
-    /// called when a resource leaves the managed skills root.
+    /// Removes the generated-tier directory an earlier build linked a Skill
+    /// entry to, once nothing links to it any more.
     pub(super) fn cleanup_unused_wrapper(&self, target: &Path) -> Result<()> {
         crate::shared::path::cleanup_unused_wrapper(
             target,
@@ -89,6 +89,19 @@ impl AntigravityIntegration {
             &self.skills_dir,
             &skill_wrapper_root(&self.uze_home, "antigravity"),
             &|wrapper| wrapper.join("SKILL.md").is_file(),
+        )
+    }
+
+    pub(super) fn attach_skill(&self, resource: &Resource, path: &Path) -> Result<ManagedArtifact> {
+        attach_skill_tree(
+            &self.uze_home,
+            path,
+            resource,
+            &[(
+                "SKILL.md",
+                rendered_skill(&self.uze_home, resource).into_bytes(),
+            )],
+            &[],
         )
     }
 
@@ -100,12 +113,8 @@ impl AntigravityIntegration {
         if state::is_installed(&self.uze_home, self.id())
             && let Some(entry_name) = entry_name(self, resource)
         {
-            let source = resource
-                .resolved_artifact_target
-                .clone()
-                .unwrap_or_else(|| generated_skill_dir(&self.uze_home, "antigravity", resource));
             let evidence = if policy.is_default() {
-                "Antigravity CLI imports every markdown skill under ~/.gemini/antigravity-cli/skills as a global slash command, so a UZE-managed reference there is consumed natively. The generated wrapper carries the stable namespaced label and the canonical name/description/body."
+                "Antigravity CLI imports every markdown skill under ~/.gemini/antigravity-cli/skills as a global slash command, so a UZE-managed directory there is consumed natively. Its SKILL.md carries the stable namespaced label and the canonical description and body; the supporting files are copied beside it."
             } else if !policy.model {
                 "Antigravity natively preserves invoke.model=false with disable-model-invocation: true: the Skill stays `/`-invocable while the model is not offered it."
             } else {
@@ -113,10 +122,9 @@ impl AntigravityIntegration {
             };
             return ExposurePlan {
                 route: CompatibilityRoute::Native,
-                mechanism: ExposureMechanism::Managed(ManagedArtifact::SymlinkReference {
-                    path: self.skills_dir.join(entry_name),
-                    target: source,
-                }),
+                mechanism: ExposureMechanism::Managed(skill_tree_plan(
+                    self.skills_dir.join(entry_name),
+                )),
                 evidence: evidence.to_owned(),
             };
         }
@@ -135,7 +143,7 @@ impl AntigravityIntegration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use std::path::PathBuf;
     use uze_core::capability::{Capability, CapabilityKind};
     use uze_core::store::PackageId;
 
@@ -153,39 +161,29 @@ mod tests {
     }
 
     #[test]
-    fn generated_skill_preserves_body_and_carries_the_stable_label() {
-        let root = uze_testkit::temp::scratch("antigravity-skill");
-        let home = UzeHome::at(root.join("uze"));
+    fn the_skill_carries_the_stable_label_and_its_body() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("antigravity-skill").join("uze"));
         let resource = skill_resource(
             "flow",
             "/store/packages/flow/skills/review/SKILL.md",
             b"---\nname: review\ndescription: Review code\n---\n\nReview this diff.\n",
         );
-        let dir = materialize_generated_skill(&home, &resource).unwrap();
-        let skill = fs::read_to_string(dir.join("SKILL.md")).unwrap();
+        let skill = rendered_skill(&home, &resource);
         assert!(skill.starts_with("---\nname: flow:review\ndescription: \"Review code\"\n---\n"));
         assert!(skill.ends_with("\nReview this diff.\n"));
-        assert!(
-            !dir.join("agents/openai.yaml").exists(),
-            "Antigravity has no policy sidecar; the wrapper carries only SKILL.md"
-        );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn adaptation_is_deterministic_across_rebuilds() {
-        let root = uze_testkit::temp::scratch("antigravity-skill-det");
-        let home = UzeHome::at(root.join("uze"));
+    fn rendering_is_deterministic() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("antigravity-skill-det").join("uze"));
         let resource = skill_resource(
             "flow",
             "/store/packages/flow/skills/review/SKILL.md",
             b"body only\n",
         );
-        let a = materialize_generated_skill(&home, &resource).unwrap();
-        let first = fs::read(a.join("SKILL.md")).unwrap();
-        let b = materialize_generated_skill(&home, &resource).unwrap();
-        let second = fs::read(b.join("SKILL.md")).unwrap();
-        assert_eq!(first, second);
-        let _ = fs::remove_dir_all(root);
+        assert_eq!(
+            rendered_skill(&home, &resource),
+            rendered_skill(&home, &resource)
+        );
     }
 }

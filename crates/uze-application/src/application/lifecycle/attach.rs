@@ -32,8 +32,40 @@ pub(crate) enum NativeDelivery {
 #[derive(Default)]
 pub(crate) struct PackageDelivery {
     pub plan: Option<uze_core::exposure::PackageExposurePlan>,
+    /// The plan was offered and not used: capability receipts it would
+    /// replace are not safe to detach, so they stay and nothing is added
+    /// beside them.
+    pub plan_set_aside: bool,
     pub attachments: Vec<AttachmentSummary>,
     pub blocked: Vec<BlockedDelivery>,
+    /// Capabilities that reached the harness short of their canonical
+    /// meaning, with the route and the evidence saying what was lost.
+    pub shortfalls: Vec<CapabilityShortfall>,
+}
+
+/// One capability delivered on a route less than native.
+#[derive(Clone, Debug)]
+pub(crate) struct CapabilityShortfall {
+    pub capability: String,
+    pub route: uze_core::router::CompatibilityRoute,
+    pub evidence: String,
+}
+
+impl CapabilityShortfall {
+    pub(crate) fn of(
+        resource: &Resource,
+        (route, evidence): (uze_core::router::CompatibilityRoute, String),
+    ) -> Option<Self> {
+        (route != uze_core::router::CompatibilityRoute::Native).then(|| Self {
+            capability: resource
+                .resolved_exposure_name
+                .clone()
+                .or_else(|| resource.logical_capability_name())
+                .unwrap_or_else(|| resource.identity()),
+            route,
+            evidence,
+        })
+    }
 }
 
 /// One capability that could not be delivered because the name it needs is
@@ -53,7 +85,7 @@ pub(crate) struct BlockedDelivery {
 
 /// Whether `error` refuses one name, or says something is wrong with the
 /// machine. See [`BlockedDelivery`].
-fn refuses_one_name(error: &uze_core::UzeError) -> bool {
+pub(crate) fn refuses_one_name(error: &uze_core::UzeError) -> bool {
     matches!(
         error,
         uze_core::UzeError::ManagedEntryDrift(_)
@@ -98,7 +130,7 @@ impl UzeApplication {
         let resources = uze_core::engine::package_resources(package)?;
         let resources: Vec<_> = resources.iter().collect();
         self.deliver_package_to(package, &resources, integration, NativeDelivery::Allowed)?;
-        Ok(())
+        state::forget_undelivered(&self.home, package.id.as_str(), Some(integration.id()))
     }
 
     /// The one receipt-safe delivery of a package to a single integration:
@@ -119,6 +151,9 @@ impl UzeApplication {
             package = %package.id.as_str()
         )
         .entered();
+        // Before any harness is handed a path into it: `${PLUGIN_ROOT}`
+        // names this copy, never the Store.
+        uze_core::delivered_root::materialize(&self.home, package)?;
         let mut delivery = PackageDelivery::default();
         let mut provided = BTreeSet::new();
         if let Some(plan) = integration
@@ -134,14 +169,38 @@ impl UzeApplication {
             // truthful `agy plugin list` would turn every second
             // `setup`/attach into a hard failure (found by the acceptance
             // suite with a truthful fake CLI).
-            let already_attached = state::receipts(&self.home, Some(package.id.as_str()))?
-                .into_iter()
-                .any(|receipt| {
-                    receipt.integration == integration.id()
-                        && receipt.resource_identity.is_none()
-                        && integration.inspect_receipt(&receipt).state == AttachmentState::Matched
+            let package_receipts: Vec<uze_core::integration::AttachmentReceipt> =
+                state::receipts(&self.home, Some(package.id.as_str()))?
+                    .into_iter()
+                    .filter(|receipt| {
+                        receipt.integration == integration.id()
+                            && receipt.resource_identity.is_none()
+                    })
+                    .collect();
+            // A route an earlier build took and this one no longer does is
+            // taken back off before the current one is attached.
+            for receipt in package_receipts
+                .iter()
+                .filter(|receipt| !integration.package_receipt_serves(receipt))
+            {
+                self.retire_receipt(integration, receipt)?;
+            }
+            let already_attached = package_receipts.into_iter().find(|receipt| {
+                integration.package_receipt_serves(receipt)
+                    && integration.inspect_receipt(receipt).state == AttachmentState::Matched
+            });
+            if let Some(receipt) = already_attached {
+                delivery.attachments.push(AttachmentSummary {
+                    integration: integration.id().to_owned(),
+                    location: receipt.artifact.location(),
                 });
-            if already_attached {
+                // A plan that grew since the package was attached (agents
+                // joining the plugin) covers capabilities still delivered
+                // on their own beside it: each safely detachable one goes,
+                // so no capability is offered twice.
+                for receipt in self.covered_receipts(package, integration, &plan)? {
+                    self.retire_receipt(integration, &receipt)?;
+                }
                 provided = plan.provided_resource_identities;
             } else {
                 // The package was delivered capability-by-capability before
@@ -150,22 +209,7 @@ impl UzeApplication {
                 // every one of them is safely detachable: a single
                 // Drifted/Conflict/Blocked leaves decomposed delivery in
                 // place rather than adding a native copy beside it.
-                let existing: Vec<uze_core::integration::AttachmentReceipt> =
-                    state::receipts(&self.home, Some(package.id.as_str()))?
-                        .into_iter()
-                        .filter(|receipt| {
-                            receipt.integration == integration.id()
-                                && receipt.resource_identity.is_some()
-                        })
-                        .collect();
-                let mut covered_existing = Vec::new();
-                for receipt in &existing {
-                    if let Some(identity) = &receipt.resource_identity
-                        && plan.provided_resource_identities.contains(identity)
-                    {
-                        covered_existing.push(receipt.clone());
-                    }
-                }
+                let covered_existing = self.covered_receipts(package, integration, &plan)?;
                 let native_blocked = covered_existing.iter().any(|receipt| {
                     matches!(
                         integration.inspect_receipt(receipt).state,
@@ -176,18 +220,11 @@ impl UzeApplication {
                 });
                 if native_blocked {
                     // Keep decomposed delivery; do not attach native to avoid duplication.
+                    delivery.plan_set_aside = true;
                     provided = BTreeSet::new();
                 } else {
                     for receipt in covered_existing {
-                        let inspection = integration.inspect_receipt(&receipt);
-                        if inspection.state == AttachmentState::Matched {
-                            let detached = integration.detach_receipt(&receipt)?;
-                            if detached.state == AttachmentState::Missing {
-                                state::forget_receipt(&self.home, &receipt)?;
-                            }
-                        } else if inspection.state == AttachmentState::Missing {
-                            state::forget_receipt(&self.home, &receipt)?;
-                        }
+                        self.retire_receipt(integration, &receipt)?;
                     }
                     if let Some(receipt) = integration.attach_package(package, &plan)? {
                         let location = receipt.artifact.location();
@@ -207,10 +244,43 @@ impl UzeApplication {
             }
         }
         for resource in resources {
-            if !provided.contains(&resource.identity()) {
-                let attached = self
-                    .resolve_exposure_name(resource, integration)
-                    .and_then(|resolved| integration.attach_receipt(&resolved));
+            if provided.contains(&resource.identity()) {
+                delivery.shortfalls.extend(
+                    integration
+                        .packaged_shortfall(package, resource)
+                        .and_then(|plan| CapabilityShortfall::of(resource, plan)),
+                );
+            } else {
+                if let Some(held) = self.retire_superseded_receipts(resource, integration)? {
+                    delivery.blocked.push(held);
+                    continue;
+                }
+                let attached =
+                    self.resolve_exposure_name(resource, integration)
+                        .and_then(|resolved| {
+                            let receipt = integration.attach_receipt(&resolved)?;
+                            // Delivered short of native, or not delivered at
+                            // all because the harness has nothing for it: both
+                            // are said. Project instructions reach a harness
+                            // through the context, never through this path.
+                            if resolved.capability.kind != CapabilityKind::Instruction {
+                                let plan = integration.exposure_plan(&resolved);
+                                let route = if receipt.is_none()
+                                    && matches!(
+                                        plan.mechanism,
+                                        uze_core::exposure::ExposureMechanism::Unsupported { .. }
+                                    ) {
+                                    uze_core::router::CompatibilityRoute::Unsupported
+                                } else {
+                                    plan.route
+                                };
+                                delivery.shortfalls.extend(CapabilityShortfall::of(
+                                    &resolved,
+                                    (route, plan.evidence),
+                                ));
+                            }
+                            Ok(receipt)
+                        });
                 let receipt = match attached {
                     Ok(receipt) => receipt,
                     Err(error) if refuses_one_name(&error) => {
@@ -242,6 +312,155 @@ impl UzeApplication {
         Ok(delivery)
     }
 
+    /// The capability receipts this integration holds for the package that
+    /// `plan` now provides.
+    pub(crate) fn covered_receipts(
+        &self,
+        package: &StoredPackage,
+        integration: &dyn IntegrationPort,
+        plan: &uze_core::exposure::PackageExposurePlan,
+    ) -> Result<Vec<uze_core::integration::AttachmentReceipt>> {
+        Ok(state::receipts(&self.home, Some(package.id.as_str()))?
+            .into_iter()
+            .filter(|receipt| {
+                receipt.integration == integration.id()
+                    && receipt.resource_identity.as_ref().is_some_and(|identity| {
+                        plan.provided_resource_identities.contains(identity)
+                    })
+            })
+            .collect())
+    }
+
+    /// Takes one receipt's artifact back off, inspecting first: a matched
+    /// artifact is detached and forgotten, a missing one only forgotten, and
+    /// anything else is left exactly where it is. Returns whether the
+    /// receipt is gone.
+    fn retire_receipt(
+        &self,
+        integration: &dyn IntegrationPort,
+        receipt: &uze_core::integration::AttachmentReceipt,
+    ) -> Result<bool> {
+        // An entry another integration also holds a receipt for (a skills
+        // root two harnesses share) is still that one's: only this receipt
+        // goes.
+        let shared = state::receipts(&self.home, None)?.iter().any(|other| {
+            other.integration != receipt.integration
+                && other.artifact.location() == receipt.artifact.location()
+        });
+        if shared {
+            state::forget_receipt(&self.home, receipt)?;
+            return Ok(true);
+        }
+        match integration.inspect_receipt(receipt).state {
+            AttachmentState::Matched => {
+                let detached = integration.detach_receipt(receipt)?;
+                if detached.state == AttachmentState::Missing {
+                    state::forget_receipt(&self.home, receipt)?;
+                    return Ok(true);
+                }
+                Ok(false)
+            }
+            AttachmentState::Missing => {
+                state::forget_receipt(&self.home, receipt)?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// Retires what an earlier build attached for `resource` in a form this
+    /// build no longer gives it: under another name (an agent named after
+    /// its file before it carried its plugin's label, an MCP server
+    /// registered under a name its harness refuses), or as another kind of
+    /// artifact (a skill linked into the generated tier before it was a
+    /// directory of its own). Without this, "an existing receipt wins" would
+    /// keep the old form forever. One someone changed since is left in
+    /// place and the capability is held back, never offered a second time
+    /// beside it.
+    fn retire_superseded_receipts(
+        &self,
+        resource: &Resource,
+        integration: &dyn IntegrationPort,
+    ) -> Result<Option<BlockedDelivery>> {
+        let named_by_candidates = resource.capability.kind.is_invoked_by_label()
+            || resource.capability.kind == CapabilityKind::Mcp;
+        if !named_by_candidates || integration.exposure_name_candidates(resource).is_empty() {
+            return Ok(None);
+        }
+        let current: BTreeSet<String> = integration
+            .exposure_name_candidates(resource)
+            .into_iter()
+            .collect();
+        let planned_artifact = planned_artifact(integration, resource);
+        let planned = planned_artifact.as_ref().map(std::mem::discriminant);
+        let identity = resource.identity();
+        let receipts = state::receipts(&self.home, Some(resource.package_id.as_str()))?;
+        for receipt in &receipts {
+            if receipt.integration != integration.id()
+                || receipt.resource_identity.as_deref() != Some(identity.as_str())
+            {
+                continue;
+            }
+            let renamed = receipt
+                .artifact
+                .exposure_name()
+                .is_some_and(|name| !current.contains(&name));
+            let reshaped =
+                planned.is_some_and(|kind| std::mem::discriminant(&receipt.artifact) != kind);
+            let restated = planned_artifact
+                .as_ref()
+                .is_some_and(|planned| config_entry_restated(&receipt.artifact, planned));
+            if !(renamed || reshaped || restated) {
+                continue;
+            }
+            if reshaped {
+                self.release_obsolete_co_holders(resource, receipt, &receipts)?;
+            }
+            if !self.retire_receipt(integration, receipt)? {
+                return Ok(Some(BlockedDelivery {
+                    integration: integration.id().to_owned(),
+                    capability: identity,
+                    reason: format!(
+                        "an earlier delivery at {} changed since it was made; it is left in \
+                         place, and this capability waits until it is removed",
+                        receipt.artifact.location().display()
+                    ),
+                }));
+            }
+        }
+        Ok(None)
+    }
+
+    /// An earlier build let two harnesses share one skill entry, each with
+    /// its own receipt. When the entry is being replaced by another kind of
+    /// artifact, a co-holder whose own plan also moved on no longer holds
+    /// it, so its receipt is forgotten and the entry can be taken off.
+    fn release_obsolete_co_holders(
+        &self,
+        resource: &Resource,
+        receipt: &AttachmentReceipt,
+        receipts: &[AttachmentReceipt],
+    ) -> Result<()> {
+        for other in receipts.iter().filter(|other| {
+            other.integration != receipt.integration
+                && other.resource_identity == receipt.resource_identity
+                && other.artifact.location() == receipt.artifact.location()
+        }) {
+            let moved_on = self
+                .integrations
+                .iter()
+                .find(|candidate| candidate.id() == other.integration)
+                .and_then(|candidate| planned_artifact(candidate.as_ref(), resource))
+                .is_some_and(|planned| {
+                    std::mem::discriminant(&other.artifact) != std::mem::discriminant(&planned)
+                });
+            if moved_on {
+                state::forget_receipt(&self.home, other)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Resolves `resource`'s physical exposure name for `integration`,
     /// immediately before an attach call — the one place a naming decision
     /// happens. Returns a clone of `resource` with `resolved_exposure_name`
@@ -249,16 +468,13 @@ impl UzeApplication {
     ///
     /// "Existing receipt wins": a receipt for this exact
     /// `resource.identity()` hands back its already-recorded physical name
-    /// verbatim, which is what makes re-add/setup idempotent. The same
-    /// reuse extends to a *different* integration's receipt for the same
-    /// resource when both report the same `shared_agent_skill_root` (Codex
-    /// and OpenCode both read `~/.agents/skills`), so the second attach
-    /// writes the very same entry instead of a second one beside it.
+    /// verbatim, which is what makes re-add/setup idempotent. Every
+    /// discovery directory has one owner, so only this integration's
+    /// receipts are consulted.
     ///
-    /// Only a resource with no reusable receipt anywhere asks the
-    /// integration for ordered candidates (`exposure_name_candidates`) and
-    /// takes the first not already claimed — by this integration or by one
-    /// sharing its skill root. It resolves purely from the ledger, never
+    /// Only a resource with no receipt asks the integration for ordered
+    /// candidates (`exposure_name_candidates`) and takes the first this
+    /// integration has not already claimed. It resolves purely from the ledger, never
     /// the filesystem, so it never decides a foreign-artifact conflict;
     /// attach's own structural check remains the last word on that.
     pub(crate) fn resolve_exposure_name(
@@ -266,10 +482,9 @@ impl UzeApplication {
         resource: &Resource,
         integration: &dyn IntegrationPort,
     ) -> Result<Resource> {
-        if !matches!(
-            resource.capability.kind,
-            CapabilityKind::AgentSkill | CapabilityKind::Mcp
-        ) {
+        if !resource.capability.kind.is_invoked_by_label()
+            && resource.capability.kind != CapabilityKind::Mcp
+        {
             return Ok(resource.clone());
         }
         let mut resolved = resource.clone();
@@ -277,61 +492,35 @@ impl UzeApplication {
             return Ok(resolved);
         };
         let resource_id = resource.identity();
-        // Only Agent Skills live in a directory shared across integrations
-        // (Codex, OpenCode all read `~/.agents/skills`).
-        let shared_root = (resource.capability.kind == CapabilityKind::AgentSkill)
-            .then(|| integration.shared_agent_skill_root())
-            .flatten();
-        let shares_root = |other_id: &str| -> bool {
-            let Some(root) = &shared_root else {
-                return false;
-            };
-            self.integrations.iter().any(|other| {
-                other.id() == other_id && other.shared_agent_skill_root().as_ref() == Some(root)
-            })
-        };
         // Existing receipt wins: a resource already attached keeps the
         // physical entry it was given, so re-running attach never renames
         // or duplicates it.
         if let Some(existing) = all_receipts.iter().find(|receipt| {
             receipt.resource_identity.as_deref() == Some(resource_id.as_str())
-                && (receipt.integration == integration.id() || shares_root(&receipt.integration))
+                && receipt.integration == integration.id()
         }) {
             resolved.resolved_exposure_name = existing.artifact.exposure_name();
-            resolved.resolved_artifact_target = match &existing.artifact {
-                ManagedArtifact::SymlinkReference { target, .. } => Some(target.clone()),
-                _ => None,
-            };
             return Ok(resolved);
         }
+        // A name is taken only where this resource would be written: a skill
+        // directory and an agent file of the same label live side by side in
+        // two different places and never contend.
+        let planned = match integration.exposure_plan(resource).mechanism {
+            uze_core::exposure::ExposureMechanism::Managed(artifact) => Some(artifact),
+            _ => None,
+        };
+        let contends = |receipt: &uze_core::integration::AttachmentReceipt| {
+            planned
+                .as_ref()
+                .is_none_or(|planned| same_name_space(planned, &receipt.artifact))
+        };
         let claimed: BTreeSet<String> = all_receipts
             .iter()
-            .filter(|receipt| {
-                receipt.integration == integration.id() || shares_root(&receipt.integration)
-            })
+            .filter(|receipt| receipt.integration == integration.id())
+            .filter(|receipt| contends(receipt))
             .filter_map(|receipt| receipt.artifact.exposure_name())
             .collect();
-        // A shared root must converge on the same physical name no matter
-        // which member happens to attach first. If any integration sharing
-        // `shared_root` prefers the resource's bare logical name first (only
-        // OpenCode does today, for its V2 slash-command UX), that preference
-        // governs for the whole group — otherwise whichever of
-        // Codex/OpenCode attaches before OpenCode would lock the
-        // group onto the always-qualified fallback via the reuse check
-        // above, even though the bare name was free.
-        let candidates = shared_root
-            .as_ref()
-            .and_then(|root| {
-                self.integrations
-                    .iter()
-                    .filter(|other| other.shared_agent_skill_root().as_ref() == Some(root))
-                    .map(|other| other.exposure_name_candidates(resource))
-                    .find(|list| {
-                        list.first().map(String::as_str)
-                            == resource.logical_capability_name().as_deref()
-                    })
-            })
-            .unwrap_or_else(|| integration.exposure_name_candidates(resource));
+        let candidates = integration.exposure_name_candidates(resource);
         if let Some(free) = candidates
             .iter()
             .find(|candidate| !claimed.contains(*candidate))
@@ -341,9 +530,8 @@ impl UzeApplication {
             return Ok(resolved);
         }
         // Every candidate is already claimed. The reuse path above already
-        // returned for the same-resource case (identical canonical identity
-        // sharing one physical entry across shared-root harnesses), so a
-        // claimed name here belongs to a DIFFERENT canonical resource: two
+        // returned for the same resource, so a claimed name here belongs to
+        // a DIFFERENT canonical resource: two
         // distinct resources converging on one label — one physical entry,
         // incompatible representations. That is a projection ownership
         // conflict, not drift; report it deterministically before any
@@ -362,9 +550,8 @@ impl UzeApplication {
         };
         let claimant = all_receipts
             .iter()
-            .filter(|receipt| {
-                receipt.integration == integration.id() || shares_root(&receipt.integration)
-            })
+            .filter(|receipt| receipt.integration == integration.id())
+            .filter(|receipt| contends(receipt))
             .find(|receipt| receipt.artifact.exposure_name().as_deref() == Some(entry.as_str()));
         let Some(claimant) = claimant else {
             // Defensive fallback (should be unreachable): retain the
@@ -372,15 +559,17 @@ impl UzeApplication {
             resolved.resolved_exposure_name = Some(entry);
             return Ok(resolved);
         };
-        let requested_target = match integration.exposure_plan(resource).mechanism {
-            ExposureMechanism::Managed(ManagedArtifact::SymlinkReference { target, .. }) => target,
+        let requested_target = match &planned {
+            Some(ManagedArtifact::SymlinkReference { target, .. }) => target.clone(),
             _ => resource.capability.path.clone(),
         };
+        let entry_path = planned
+            .as_ref()
+            .and_then(|artifact| artifact.location().parent().map(|dir| dir.join(&entry)))
+            .unwrap_or_else(|| PathBuf::from(&entry));
         Err(UzeError::ProjectionConflict(Box::new(
             uze_core::error::ProjectionConflictDetails {
-                entry: integration
-                    .shared_agent_skill_root()
-                    .map_or_else(|| PathBuf::from(&entry), |root| root.join(&entry)),
+                entry: entry_path,
                 requested: resource.identity(),
                 requested_integration: integration.id().to_owned(),
                 requested_target,
@@ -488,5 +677,83 @@ impl UzeApplication {
                 }
             })
             .collect()
+    }
+}
+
+/// The kind of artifact `integration` now plans for `resource`, if any.
+fn planned_artifact(
+    integration: &dyn IntegrationPort,
+    resource: &Resource,
+) -> Option<ManagedArtifact> {
+    match integration.exposure_plan(resource).mechanism {
+        ExposureMechanism::Managed(artifact) => Some(artifact),
+        ExposureMechanism::Unsupported { .. } => None,
+    }
+}
+
+/// Whether a config entry UZE wrote now says something else under the same
+/// name — a server whose package root moved, say. A harness's config entry
+/// is written only where nothing or the identical entry stands, so the one
+/// UZE owns has to come off first. The name is left out: which candidate an
+/// entry holds is the rename rule's question.
+fn config_entry_restated(recorded: &ManagedArtifact, planned: &ManagedArtifact) -> bool {
+    match (recorded, planned) {
+        (
+            ManagedArtifact::VendorConfigEntry {
+                transport,
+                command,
+                args,
+                cwd,
+                environment,
+                enabled,
+                ..
+            },
+            ManagedArtifact::VendorConfigEntry {
+                transport: planned_transport,
+                command: planned_command,
+                args: planned_args,
+                cwd: planned_cwd,
+                environment: planned_environment,
+                enabled: planned_enabled,
+                ..
+            },
+        ) => {
+            (transport, command, args, cwd, environment, enabled)
+                != (
+                    planned_transport,
+                    planned_command,
+                    planned_args,
+                    planned_cwd,
+                    planned_environment,
+                    planned_enabled,
+                )
+        }
+        _ => false,
+    }
+}
+
+/// Whether two artifacts compete for one name: an entry in the same place —
+/// one discovery directory, one vendor registry, one hook file. A link and a
+/// directory of the same name in one directory are one name.
+fn same_name_space(
+    a: &uze_core::integration::ManagedArtifact,
+    b: &uze_core::integration::ManagedArtifact,
+) -> bool {
+    use uze_core::integration::ManagedArtifact as Artifact;
+    match (a, b) {
+        (
+            Artifact::SymlinkReference { path: a, .. } | Artifact::GeneratedTree { path: a, .. },
+            Artifact::SymlinkReference { path: b, .. } | Artifact::GeneratedTree { path: b, .. },
+        )
+        | (Artifact::GeneratedFile { path: a, .. }, Artifact::GeneratedFile { path: b, .. })
+        | (Artifact::ManagedHookFile { path: a }, Artifact::ManagedHookFile { path: b }) => {
+            a.parent() == b.parent()
+        }
+        (Artifact::VendorConfigEntry { .. }, Artifact::VendorConfigEntry { .. }) => true,
+        (
+            Artifact::HookConfigEntry { config_file: a, .. },
+            Artifact::HookConfigEntry { config_file: b, .. },
+        ) => a == b,
+        _ => false,
     }
 }

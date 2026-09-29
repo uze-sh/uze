@@ -16,6 +16,7 @@
 //! [`integration::IntegrationPort`].
 
 pub mod continuity;
+pub mod delivered_root;
 pub mod engine;
 pub mod exposure;
 pub mod integration;

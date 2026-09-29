@@ -107,7 +107,7 @@ It reads every declared file and **draws** it the way the surface would,
 then reports each one. It exits non-zero when any of them fails, so it is
 a gate and not a report to skim.
 
-Run it after every change to a diagram. Three things it catches that
+Run it after every change to a diagram. Four things it catches that
 reading the file does not:
 
 1. **A diagram type that is listed but not drawn.** The surface draws the
@@ -120,6 +120,11 @@ reading the file does not:
    relationship simply absent. This is the only failure here that nobody
    catches by looking, and it usually means the view is carrying more
    relationships than it can show. Split it, or raise its altitude.
+4. **A link that opens nothing.** A box's `$link` or `click … href` is
+   opened as a file: a module's directory, a file that moved or a path
+   that leaves the project looks like a working link on the board and
+   opens nothing. Link a Rust module by its file (`src/delivery.rs`), not
+   its directory.
 
 **Never describe the accepted syntax from memory, including from this
 page.** The parser is the only authority on what draws, it moves, and a

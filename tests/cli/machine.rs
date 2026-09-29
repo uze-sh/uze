@@ -1,16 +1,17 @@
 use std::{path::PathBuf, process::Command};
+use uze_testkit::process::IsolatedHome;
 
 fn package_fixture() -> PathBuf {
     uze_testkit::fixtures::canonical("skill-plugin")
 }
 
-fn contains_fixture_skill_wrapper(entries: &[PathBuf], uze_home: &std::path::Path) -> bool {
+/// Whether one of `entries` is the fixture's skill as UZE delivers it
+/// loose: a real directory whose SKILL.md carries the qualified label.
+fn contains_fixture_skill(entries: &[PathBuf]) -> bool {
     entries.iter().any(|entry| {
-        let Ok(target) = std::fs::read_link(entry) else {
-            return false;
-        };
-        target.starts_with(uze_home.join("runtime/attachments"))
-            && std::fs::read_to_string(target.join("SKILL.md")).is_ok_and(|skill| {
+        entry.is_dir()
+            && !entry.is_symlink()
+            && std::fs::read_to_string(entry.join("SKILL.md")).is_ok_and(|skill| {
                 skill.starts_with("---\nname: uze-agent-skill-conformance:uze-e2e\n")
             })
     })
@@ -30,7 +31,7 @@ fn install_via_marketplace_json(
     let base = || {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", uze_home)
-            .env("HOME", home)
+            .isolated_home(home)
             .env("PATH", path)
             .args(&market_args)
             .output()
@@ -46,7 +47,7 @@ fn install_via_marketplace_json(
     with_json.push("json".to_owned());
     Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", uze_home)
-        .env("HOME", home)
+        .isolated_home(home)
         .env("PATH", path)
         .args(&with_json)
         .output()
@@ -64,7 +65,7 @@ fn install_via_marketplace(
     let base = || {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", uze_home)
-            .env("HOME", home)
+            .isolated_home(home)
             .env("PATH", path)
             .args(&market_args)
             .output()
@@ -77,7 +78,7 @@ fn install_via_marketplace(
     );
     Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", uze_home)
-        .env("HOME", home)
+        .isolated_home(home)
         .env("PATH", path)
         .args(&install_args)
         .output()
@@ -118,7 +119,7 @@ fn no_subcommand_stays_headless_when_stdout_is_not_a_terminal() {
     // reading the developer's real `~/.uze`.
     let home = temporary_home("cli-no-subcommand");
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("UZE_HOME", home.join(".uze"))
         .env_remove("UZE_PANE")
         .output()
@@ -202,6 +203,16 @@ if [ "$1" = "mcp" ]; then
           *) name="$1"; shift ;;
         esac
       done
+      # Claude's own rule: a registry name outside it is refused, and the
+      # stand-in refusing it too is what keeps a label the real CLI would
+      # reject from passing here.
+      if [ "$(basename "$0")" = claude ]; then
+        case "$name" in
+          *[!A-Za-z0-9_-]*)
+            echo "Invalid name $name. Names can only contain letters, numbers, hyphens, and underscores." >&2
+            exit 1 ;;
+        esac
+      fi
       touch "{state}/$name"
       exit 0
       ;;
@@ -264,7 +275,7 @@ fn inspect_reports_an_installed_plugin_without_vendor_writes() {
     let before = std::fs::read(home.join("state/attachments.json")).ok();
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "/usr/bin:/bin")
         .args(["inspect", "uze-agent-skill-conformance", "--format", "json"])
         .output()
@@ -295,7 +306,7 @@ fn add_and_inspect_use_the_same_injected_uze_home() {
 
     let inspect = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "/usr/bin:/bin")
         .args(["inspect", "uze-agent-skill-conformance", "--format", "json"])
         .output()
@@ -330,7 +341,7 @@ fn setup_reports_absent_harnesses_as_failure_without_writing_state() {
     let home = temporary_home("cli-setup-absent");
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "")
         .arg("setup")
         .output()
@@ -358,11 +369,38 @@ fn setup_reports_absent_harnesses_as_failure_without_writing_state() {
 /// harness is detected, therefore both remain "not configured" even after
 /// the default plugin's store entry is seeded.
 #[test]
+fn doctor_reports_package_bytes_no_install_records_and_keeps_them() {
+    let home = temporary_home("cli-doctor-unregistered-bytes");
+    let stray = home.join("store/plugins/local/stray");
+    std::fs::create_dir_all(&stray).unwrap();
+    std::fs::write(stray.join("plugin.json"), r#"{"name":"stray"}"#).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &home)
+        .isolated_home(&home)
+        .env("PATH", "")
+        .arg("doctor")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Package bytes no install records"),
+        "{stdout}"
+    );
+    assert!(stdout.contains(&stray.display().to_string()), "{stdout}");
+    assert!(
+        stray.join("plugin.json").is_file(),
+        "doctor never deletes bytes"
+    );
+    let _ = std::fs::remove_dir_all(home);
+}
+
+#[test]
 fn doctor_reports_not_configured_before_any_setup() {
     let home = temporary_home("cli-doctor-before-setup");
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "")
         .arg("doctor")
         .output()
@@ -422,7 +460,7 @@ fn setup_conformance_matrix_covers_every_registered_harness() {
     for (harness, executable, update_command) in SETUP_CONFORMANCE_HARNESSES {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", &path)
             .args(["setup", harness])
             .output()
@@ -466,7 +504,7 @@ fn setup_opencode_legacy_binary_uses_installer_not_stable_upgrade() {
 
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", &path)
         .args(["setup", "opencode"])
         .output()
@@ -489,6 +527,253 @@ fn setup_opencode_legacy_binary_uses_installer_not_stable_upgrade() {
     let _ = std::fs::remove_dir_all(fake_bin);
 }
 
+/// A plugin installed while no harness exists reaches Claude Code when a
+/// later `uze setup claude-code` finds one, as the one native package
+/// Claude is handed: no capability-level copy beside it, and nothing
+/// delivered twice by a second setup.
+#[test]
+#[cfg(unix)]
+fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
+    let home = temporary_home("cli-setup-after-add-home");
+    let uze_home = temporary_home("cli-setup-after-add-uze-home");
+    let fake_bin = fake_harness_bin_dir("cli-setup-after-add-bin");
+    let claude_receipts = || -> Vec<serde_json::Value> {
+        let ledger: serde_json::Value = std::fs::read(uze_home.join("state/attachments.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        ledger["receipts"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|receipt| {
+                receipt["integration"] == "claude-code"
+                    && receipt["package_id"] == "uze-agent-skill-conformance@test"
+            })
+            .collect()
+    };
+
+    let add = install_via_marketplace(&home, &uze_home, &package_fixture(), "/usr/bin:/bin");
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    assert!(
+        claude_receipts().is_empty(),
+        "no harness existed, so nothing was delivered"
+    );
+
+    let setup = || {
+        let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+            .env("UZE_HOME", &uze_home)
+            .isolated_home(&home)
+            .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+            .args(["setup", "claude-code"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    setup();
+    let delivered = claude_receipts();
+    assert_eq!(
+        delivered.len(),
+        1,
+        "one package-level delivery: {delivered:?}"
+    );
+    assert_eq!(
+        delivered[0]["artifact"]["INTEGRATION_OWNED"]["kind"], "claude-plugin-generated",
+        "{delivered:?}"
+    );
+    assert!(
+        delivered[0]["resource_identity"].is_null(),
+        "the package is delivered whole, not capability by capability: {delivered:?}"
+    );
+    let skills = std::fs::read_dir(home.join(".claude/skills"))
+        .unwrap()
+        .count();
+    assert_eq!(
+        skills, 0,
+        "no capability-level copy beside the native package"
+    );
+
+    setup();
+    assert_eq!(
+        claude_receipts(),
+        delivered,
+        "a second setup delivers nothing twice"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(uze_home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// A fresh OpenCode install lands where its official installer puts it,
+/// `~/.opencode/bin`, and only edits the shell's rc files: `uze setup
+/// opencode` verifies it there and says where it is, and that the shell it
+/// runs in does not reach it until a new one starts.
+#[test]
+#[cfg(unix)]
+fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = temporary_home("cli-setup-opencode-fresh-home");
+    let uze_home = temporary_home("cli-setup-opencode-fresh-uze-home");
+    let fake_bin = temporary_home("cli-setup-opencode-fresh-bin");
+    std::fs::create_dir_all(&fake_bin).unwrap();
+    let installed = home.join(".opencode/bin/opencode");
+    // Stands in for `sh -c "installer=$(curl ...) && ... | bash"`: it
+    // records the route it was handed and installs where the real one does.
+    let sh = fake_bin.join("sh");
+    std::fs::write(
+        &sh,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> \"{log}\"\nmkdir -p \"{dir}\"\nprintf '#!/bin/sh\\necho opencode v9.9.9\\n' > \"{bin}\"\nchmod 755 \"{bin}\"\n",
+            log = fake_bin.join("commands.log").display(),
+            dir = installed.parent().unwrap().display(),
+            bin = installed.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &uze_home)
+        .isolated_home(&home)
+        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .env_remove("OPENCODE_INSTALL_DIR")
+        .env_remove("XDG_BIN_DIR")
+        .args(["setup", "opencode"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let commands = std::fs::read_to_string(fake_bin.join("commands.log")).unwrap();
+    assert!(commands.contains("opencode.ai/v2/install"), "{commands}");
+    assert!(installed.is_file());
+    assert!(
+        stdout.contains("opencode: ready (install; version v9.9.9"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("found at {}", installed.display()))
+            && stdout.contains("open a new shell"),
+        "{stdout}"
+    );
+    assert!(
+        home.join(".config/opencode/skills").is_dir(),
+        "prepared after verification"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(uze_home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// A fresh Claude Code or Codex install lands where its native installer
+/// puts it, `~/.local/bin/<program>`, which the shell `uze setup` runs in
+/// does not reach yet: setup verifies it there, says where it is, puts the
+/// shim in front of it, and warns about nothing.
+#[cfg(unix)]
+fn assert_fresh_native_install_found_outside_path(
+    program: &str,
+    integration: &str,
+    installer: &str,
+    version_line: &str,
+) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = temporary_home(&format!("cli-setup-{program}-fresh-home"));
+    let uze_home = temporary_home(&format!("cli-setup-{program}-fresh-uze-home"));
+    let fake_bin = temporary_home(&format!("cli-setup-{program}-fresh-bin"));
+    std::fs::create_dir_all(&fake_bin).unwrap();
+    let installed = home.join(".local/bin").join(program);
+    // Stands in for the vendor's `curl ... | sh` route: it records the
+    // route it was handed and installs where the real one does.
+    let sh = fake_bin.join("sh");
+    std::fs::write(
+        &sh,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> \"{log}\"\nmkdir -p \"{dir}\"\nprintf '#!/bin/sh\\necho \"$0|$*\" >> \"{log}\"\\nif [ \"$1\" = --version ]; then echo \"{version_line}\"; fi\\n' > \"{bin}\"\nchmod 755 \"{bin}\"\n",
+            log = fake_bin.join("commands.log").display(),
+            dir = installed.parent().unwrap().display(),
+            bin = installed.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &uze_home)
+        .isolated_home(&home)
+        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .args(["setup", program])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}{stderr}");
+    let commands = std::fs::read_to_string(fake_bin.join("commands.log")).unwrap();
+    assert!(commands.contains(installer), "{commands}");
+    assert!(
+        commands.contains(&format!("{}|--version", installed.display())),
+        "verified at the installer's destination: {commands}"
+    );
+    assert!(
+        stdout.contains(&format!("{integration}: ready (install; version 9.9.9")),
+        "{stdout}{stderr}"
+    );
+    assert!(
+        stdout.contains(&format!("found at {}", installed.display()))
+            && stdout.contains("open a new shell"),
+        "{stdout}"
+    );
+    assert!(
+        !format!("{stdout}{stderr}").contains("warning"),
+        "a fresh install warns about nothing: {stdout}{stderr}"
+    );
+    assert!(
+        uze_home.join("shims").join(program).exists(),
+        "the shim stands in front of the binary the next shell reaches"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(uze_home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+#[test]
+#[cfg(unix)]
+fn setup_claude_reports_where_a_fresh_install_landed_outside_path() {
+    assert_fresh_native_install_found_outside_path(
+        "claude",
+        "claude-code",
+        "claude.ai/install.sh",
+        "9.9.9 (Claude Code)",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn setup_codex_reports_where_a_fresh_install_landed_outside_path() {
+    assert_fresh_native_install_found_outside_path(
+        "codex",
+        "codex",
+        "chatgpt.com/codex/install.sh",
+        "codex-cli 9.9.9",
+    );
+}
+
 /// Deterministic end-to-end: `uze setup` against fake, PATH-resolvable
 /// `claude`/`codex` executables (so no real harness install is required to
 /// run this test), then `uze add` alone attaching the shared fixture skill
@@ -505,7 +790,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     let run = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", &path)
             .args(args)
             .output()
@@ -545,9 +830,18 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     let (market_args, install_args) =
         uze_testkit::marketplace::marketplace_install_args(&home, &package_fixture());
     run(&market_args.iter().map(String::as_str).collect::<Vec<_>>());
-    let add = run(&install_args.iter().map(String::as_str).collect::<Vec<_>>());
-    assert!(add.contains("Claude Code: native"));
-    assert!(add.contains("Codex: native"));
+    // The route each harness took is the detailed report's to say.
+    let mut add_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
+    add_args.push("--verbose");
+    let add = run(&add_args);
+    assert!(
+        add.contains("Claude Code  native package, generated manifest"),
+        "{add}"
+    );
+    assert!(
+        add.contains("Codex  native package, generated manifest"),
+        "{add}"
+    );
 
     // `.claude/skills` is prepared (by `install`) but stays empty: neither
     // package decomposes into it anymore. The generated envelope directory
@@ -568,13 +862,12 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
             .is_file(),
         "the fixture's generated Claude envelope should exist"
     );
-    // Default-policy skills stay byte-preserving per-skill symlinks inside
-    // the envelope's own `skills/` directory (ADR-030).
+    // The envelope is a copy of the package: Claude's own copy into its
+    // plugin cache does not follow links, so a linked skill arrived empty.
+    let skill = generated_root.join("uze-agent-skill-conformance@test/skills/uze-e2e");
     assert!(
-        generated_root
-            .join("uze-agent-skill-conformance@test/skills/uze-e2e")
-            .is_symlink(),
-        "the generated envelope should reference the Store's skills/ by symlink, not a copy"
+        !skill.is_symlink() && skill.join("SKILL.md").is_file(),
+        "the generated envelope should carry the skill as real files"
     );
     assert!(
         generated_root
@@ -583,18 +876,20 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
         "the default uze package's generated Claude envelope should exist too"
     );
 
-    let codex_entries: Vec<_> = std::fs::read_dir(home.join(".agents/skills"))
+    // OpenCode has no plugin, so each skill lands in its own root as a
+    // directory of its own.
+    let opencode_entries: Vec<_> = std::fs::read_dir(home.join(".config/opencode/skills"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .collect();
     assert!(
-        codex_entries.len() >= 2,
-        "codex/opencode should have default + fixture"
+        opencode_entries.len() >= 2,
+        "OpenCode should have default + fixture, got {opencode_entries:?}"
     );
-    assert!(codex_entries.iter().any(|p| p.is_symlink()));
+    assert!(opencode_entries.iter().all(|p| !p.is_symlink()));
     assert!(
-        contains_fixture_skill_wrapper(&codex_entries, &uze_home),
-        "codex should contain the qualified fixture skill wrapper"
+        contains_fixture_skill(&opencode_entries),
+        "OpenCode should contain the qualified fixture skill"
     );
 
     let _ = std::fs::remove_dir_all(home);
@@ -620,9 +915,9 @@ fn add_prepares_a_detected_opencode_and_attaches_without_prior_setup() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let skills_dir = home.join(".agents/skills");
+    let skills_dir = home.join(".config/opencode/skills");
     let entries: Vec<_> = std::fs::read_dir(&skills_dir)
-        .expect("detected OpenCode should have a prepared global skills dir")
+        .expect("detected OpenCode should have its skills delivered")
         .map(|entry| entry.unwrap().path())
         .collect();
     // Default `uze` (`uze-uze`) plus the fixture.
@@ -630,10 +925,10 @@ fn add_prepares_a_detected_opencode_and_attaches_without_prior_setup() {
         entries.len() >= 2,
         "should have default + fixture, got {entries:?}"
     );
-    assert!(entries.iter().any(|p| p.is_symlink()));
+    assert!(entries.iter().all(|p| !p.is_symlink()));
     assert!(
-        contains_fixture_skill_wrapper(&entries, &uze_home),
-        "the qualified fixture skill wrapper should be present alongside the default plugin"
+        contains_fixture_skill(&entries),
+        "the qualified fixture skill should be present alongside the default plugin"
     );
 
     let integrations = std::fs::read_to_string(uze_home.join("cache/harnesses.json")).unwrap();
@@ -662,7 +957,7 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     let run = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", &path)
             .args(args)
             .output()
@@ -686,9 +981,18 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     let (market_args, install_args) =
         uze_testkit::marketplace::marketplace_install_args(&home, &package);
     run(&market_args.iter().map(String::as_str).collect::<Vec<_>>());
-    let add = run(&install_args.iter().map(String::as_str).collect::<Vec<_>>());
-    assert!(add.contains("Claude Code: native"));
-    assert!(add.contains("Codex: native"));
+    // The route each harness took is the detailed report's to say.
+    let mut add_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
+    add_args.push("--verbose");
+    let add = run(&add_args);
+    assert!(
+        add.contains("Claude Code  native package, generated manifest"),
+        "{add}"
+    );
+    assert!(
+        add.contains("Codex  native package, generated manifest"),
+        "{add}"
+    );
 
     // Opencode is resource-level native (no package envelope): UZE writes
     // the `mcp.servers` entry itself, and the receipt is the source of truth.
@@ -750,9 +1054,15 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     // Idempotent: `install -m` a second time does not fail. Both
     // integrations' package delivery re-resolves to the same
     // already-installed selector — no reinstall, no resource-level replay.
-    let second_add = run(&install_args.iter().map(String::as_str).collect::<Vec<_>>());
-    assert!(second_add.contains("Claude Code: native"));
-    assert!(second_add.contains("Codex: native"));
+    let second_add = run(&add_args);
+    assert!(
+        second_add.contains("Claude Code  native package, generated manifest"),
+        "{second_add}"
+    );
+    assert!(
+        second_add.contains("Codex  native package, generated manifest"),
+        "{second_add}"
+    );
 
     let _ = std::fs::remove_dir_all(home);
     let _ = std::fs::remove_dir_all(uze_home);
@@ -771,7 +1081,7 @@ fn plugin_remove_uses_the_package_centric_application_flow() {
     assert!(add.status.success());
     let remove = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "/usr/bin:/bin")
         .args([
             "remove",
@@ -820,7 +1130,7 @@ fn a_name_typed_in_another_case_resolves_to_the_one_on_record() {
     let uze = |args: &[String]| {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", "/usr/bin:/bin")
             .current_dir(&home)
             .args(args)
@@ -883,7 +1193,7 @@ fn root_remove_no_longer_falls_back_to_global_removal() {
     // `AGENTS.md`, or `.git` anywhere in its ancestry.
     let remove = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", "/usr/bin:/bin")
         .current_dir(&home)
         .args(["remove", "uze-agent-skill-conformance"])
@@ -923,22 +1233,19 @@ fn root_remove_no_longer_falls_back_to_global_removal() {
     let _ = std::fs::remove_dir_all(home);
 }
 
-/// Repoints one managed symlink this package owns at foreign content, so
-/// reconciliation reports `Drifted` and the removal plan refuses to touch
-/// it — the lifecycle-safety outcome `Blocked` reports.
+/// Edits the SKILL.md of one skill directory this package owns by hand,
+/// so reconciliation reports `Drifted` and the removal plan refuses to
+/// touch it — the lifecycle-safety outcome `Blocked` reports.
 #[cfg(unix)]
-fn drift_a_managed_attachment(home: &std::path::Path, uze_home: &std::path::Path) {
-    let skills = home.join(".agents/skills");
+fn drift_a_managed_attachment(home: &std::path::Path) {
+    let skills = home.join(".config/opencode/skills");
     let managed = std::fs::read_dir(&skills)
         .unwrap()
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .find(|entry| contains_fixture_skill_wrapper(std::slice::from_ref(entry), uze_home))
-        .expect("the fixture attaches at least one managed symlink");
-    let foreign = home.join("foreign");
-    std::fs::create_dir_all(&foreign).unwrap();
-    std::fs::remove_file(&managed).unwrap();
-    std::os::unix::fs::symlink(&foreign, &managed).unwrap();
+        .find(|entry| contains_fixture_skill(std::slice::from_ref(entry)))
+        .expect("the fixture attaches at least one managed skill directory");
+    std::fs::write(managed.join("SKILL.md"), "edited by hand\n").unwrap();
 }
 
 /// `Blocked` means the safety check refused and nothing was removed. The
@@ -959,12 +1266,12 @@ fn a_blocked_removal_reports_and_fails() {
         "install failed: {}",
         String::from_utf8_lossy(&add.stderr)
     );
-    drift_a_managed_attachment(&home, &uze_home);
+    drift_a_managed_attachment(&home);
 
     for format in ["text", "json"] {
         let removal = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", &path)
             .args([
                 "remove",
@@ -1007,11 +1314,11 @@ fn a_blocked_update_reports_and_fails() {
         "install failed: {}",
         String::from_utf8_lossy(&add.stderr)
     );
-    drift_a_managed_attachment(&home, &uze_home);
+    drift_a_managed_attachment(&home);
 
     let update = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
-        .env("HOME", &home)
+        .isolated_home(&home)
         .env("PATH", &path)
         .args([
             "update",
@@ -1064,9 +1371,10 @@ fn a_machine_update_with_nothing_new_says_already_current() {
     for _ in 0..2 {
         let update = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
-            .env("HOME", &home)
+            .isolated_home(&home)
             .env("PATH", path)
-            .args(["update", "-m"])
+            // The scope and each plugin's own line are the detailed report's.
+            .args(["update", "-m", "--verbose"])
             .output()
             .unwrap();
         let stdout = String::from_utf8_lossy(&update.stdout);
@@ -1087,4 +1395,757 @@ fn a_machine_update_with_nothing_new_says_already_current() {
 
     let _ = std::fs::remove_dir_all(home);
     let _ = std::fs::remove_dir_all(uze_home);
+}
+
+/// An author edits a skill in the checkout a marketplace is linked to and
+/// asks the machine to update the plugin: the Store takes the edit, and the
+/// report says it moved and where from — never "already current" over bytes
+/// that just changed.
+#[cfg(unix)]
+#[test]
+fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
+    let home = temporary_home("cli-update-linked-home");
+    let uze_home = home.join("uze");
+    let market = home.join("market");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(
+        home.join(".gitconfig"),
+        "[user]\n\tname = Test\n\temail = t@example.invalid\n",
+    )
+    .unwrap();
+    let uze = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+            .env("UZE_HOME", &uze_home)
+            .isolated_home(&home)
+            .env("PATH", "/usr/bin:/bin")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "uze {args:?}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    uze(&[
+        "agent",
+        "market",
+        "create",
+        "tools",
+        "--at",
+        market.to_str().unwrap(),
+    ]);
+    uze(&["agent", "plugin", "create", "greet", "--market", "tools"]);
+    uze(&["install", "-m", "greet@tools"]);
+    let stored_skill = || {
+        let store = uze_home.join("store/plugins");
+        [store.join("tools/greet"), store.join("greet")]
+            .iter()
+            .map(|root| root.join("skills/greet/SKILL.md"))
+            .find_map(|skill| std::fs::read_to_string(skill).ok())
+            .expect("the Store carries greet@tools")
+    };
+    assert!(!stored_skill().contains("edited, never committed"));
+
+    let skill = market.join("plugins/greet/skills/greet/SKILL.md");
+    let edited = format!(
+        "{}\nedited, never committed\n",
+        std::fs::read_to_string(&skill).unwrap()
+    );
+    std::fs::write(&skill, edited).unwrap();
+
+    let update = uze(&["update", "greet", "-m"]);
+    assert!(
+        stored_skill().contains("edited, never committed"),
+        "a linked marketplace follows the working tree"
+    );
+    assert!(
+        !update.contains("already current") && update.contains("linked working tree"),
+        "the Store took the edit in, and the report must say so: {update}"
+    );
+
+    let again = uze(&["update", "greet", "-m"]);
+    assert!(
+        again.contains("Already up to date"),
+        "nothing was edited since: {again}"
+    );
+
+    // A project declaring the plugin re-ingests the working tree on its own
+    // update: that ingest is what left a later machine update with nothing
+    // to do, so it is the one that has to say it happened.
+    let project = home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let in_project = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+            .current_dir(&project)
+            .env("UZE_HOME", &uze_home)
+            .isolated_home(&home)
+            .env("PATH", "/usr/bin:/bin")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "uze {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    for git in [
+        &["init", "-q"][..],
+        &["commit", "-q", "--allow-empty", "-m", "init"],
+    ] {
+        assert!(
+            Command::new("git")
+                .current_dir(&project)
+                .isolated_home(&home)
+                .args(git)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    in_project(&["install", "greet@tools"]);
+    std::fs::write(
+        &skill,
+        format!(
+            "{}\nedited again\n",
+            std::fs::read_to_string(&skill).unwrap()
+        ),
+    )
+    .unwrap();
+    let project_update = in_project(&["update"]);
+    assert!(stored_skill().contains("edited again"));
+    assert!(
+        project_update.contains("updated from the linked working tree")
+            && project_update.contains("pins nothing"),
+        "the project update ingested the edit and must say so: {project_update}"
+    );
+    let after_project = uze(&["update", "greet", "-m"]);
+    assert!(
+        after_project.contains("Already up to date"),
+        "the edit was taken in, and reported, by the project update: {after_project}"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// A bin directory whose `agy` is detected and refuses every plugin install,
+/// optionally beside an `opencode` that delivers.
+#[cfg(unix)]
+fn refusing_harness_bin_dir(label: &str, with_opencode: bool) -> PathBuf {
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let dir = temporary_home(label);
+    fs::create_dir_all(&dir).unwrap();
+    let mut scripts = vec![(
+        "agy",
+        r#"#!/bin/sh
+if [ "$1" = "plugin" ]; then
+  case "$2" in
+    list) echo '{"imports":[]}'; exit 0 ;;
+    install) echo "the plugin cache is read-only" >&2; exit 1 ;;
+    *) exit 0 ;;
+  esac
+fi
+echo 'agy 9.9.9'
+"#,
+    )];
+    if with_opencode {
+        scripts.push(("opencode", "#!/bin/sh\necho 'opencode v9.9.9'\n"));
+    }
+    for (name, script) in scripts {
+        let path = dir.join(name);
+        fs::write(&path, script).unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+    }
+    dir
+}
+
+#[cfg(unix)]
+fn machine_json(home: &std::path::Path, path: &str, args: &[&str]) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", home)
+        .isolated_home(home)
+        .env("PATH", path)
+        .args(args)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "{args:?} must answer in JSON ({error}): {}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    })
+}
+
+/// "Failed to install" used to leave the package installed: `status -m`
+/// listed it and `doctor` counted its receipts as matched.
+#[cfg(unix)]
+#[test]
+fn an_install_the_only_harness_refuses_is_not_installed() {
+    let home = temporary_home("cli-install-refused");
+    let fake_bin = refusing_harness_bin_dir("cli-install-refused-bin", false);
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+
+    let add = install_via_marketplace(&home, &home, &package_fixture(), &path);
+    let stderr = String::from_utf8_lossy(&add.stderr);
+    assert!(!add.status.success(), "a refused install reported success");
+    assert!(
+        stderr.contains("the plugin cache is read-only")
+            && stderr.contains("Nothing was installed"),
+        "the harness's refusal is named: {stderr}"
+    );
+
+    // UZE's own plugin re-seeds itself, so it stays — recorded as not
+    // delivered — and the package that was asked for is the one that must
+    // be gone.
+    let asked_for = "uze-agent-skill-conformance@test";
+    let status = machine_json(&home, &path, &["status", "-m"]);
+    let listed = status["packages"].as_array().expect("packages");
+    assert!(
+        listed.iter().all(|package| package["id"] != asked_for),
+        "{status}"
+    );
+    assert!(
+        listed
+            .iter()
+            .all(|package| !package["undelivered"].as_array().unwrap().is_empty()),
+        "what stays says it was not delivered: {status}"
+    );
+    let doctor = machine_json(&home, &path, &["doctor"]);
+    assert!(
+        doctor["attachments"]
+            .as_array()
+            .expect("attachments")
+            .iter()
+            .all(|package| package["plugin"] != asked_for),
+        "{doctor}"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// One harness takes the package and the other refuses: the install
+/// fails, the package stays, and the listing names what it did not reach.
+#[cfg(unix)]
+#[test]
+fn an_install_one_harness_refuses_is_listed_as_partially_delivered() {
+    let home = temporary_home("cli-install-partial");
+    let fake_bin = refusing_harness_bin_dir("cli-install-partial-bin", true);
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+
+    let add = install_via_marketplace_json(&home, &home, &package_fixture(), &path);
+    assert!(!add.status.success(), "a partial install reported success");
+    let report: serde_json::Value = serde_json::from_slice(&add.stdout).unwrap_or_else(|error| {
+        panic!(
+            "the report is still printed ({error}): {}",
+            String::from_utf8_lossy(&add.stdout)
+        )
+    });
+    let deliveries = report["deliveries"].as_array().expect("deliveries");
+    let failed: Vec<&serde_json::Value> = deliveries
+        .iter()
+        .filter(|delivery| delivery["outcome"] == "failed")
+        .collect();
+    assert_eq!(failed.len(), 1, "{report}");
+    assert!(
+        failed[0]["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("read-only")),
+        "{report}"
+    );
+    assert!(
+        deliveries
+            .iter()
+            .any(|delivery| delivery["outcome"] == "delivered"),
+        "{report}"
+    );
+
+    let status = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &home)
+        .isolated_home(&home)
+        .env("PATH", &path)
+        .args(["status", "-m"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&status.stdout);
+    assert!(
+        text.contains("partially delivered") && text.contains("read-only"),
+        "{text}"
+    );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// An agent an earlier build delivered under its bare file name — a link
+/// named `reviewer.md` in OpenCode's agents directory — is taken back off
+/// on the next install and replaced by the file carrying its plugin's
+/// label, so an upgrade never leaves the old name answering beside the new.
+#[cfg(unix)]
+#[test]
+fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    use uze_core::{UzeHome, exposure::ManagedArtifact, state};
+
+    let home = temporary_home("cli-agent-rename");
+    let package = home.join("crew");
+    fs::create_dir_all(package.join("agents")).unwrap();
+    fs::write(package.join("plugin.json"), r#"{"name": "crew"}"#).unwrap();
+    fs::write(
+        package.join("agents/reviewer.md"),
+        "---\nname: reviewer\ndescription: Reviews a change.\n---\nReview.\n",
+    )
+    .unwrap();
+    let bin = home.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let opencode = bin.join("opencode");
+    fs::write(&opencode, "#!/bin/sh\necho 'opencode v9.9.9'\n").unwrap();
+    fs::set_permissions(&opencode, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    let uze_home = home.join(".uze");
+
+    let first = install_via_marketplace_json(&home, &uze_home, &package, &path);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let agents = home.join(".config/opencode/agents");
+    let labelled = agents.join("crew:reviewer.md");
+    assert!(labelled.is_file() && !labelled.is_symlink());
+
+    // The ledger and the disk as 1.0.0-beta.3 left them.
+    let uze = UzeHome::at(&uze_home);
+    let receipt = state::receipts(&uze, None)
+        .unwrap()
+        .into_iter()
+        .find(|receipt| matches!(receipt.artifact, ManagedArtifact::GeneratedFile { .. }))
+        .expect("the agent's receipt");
+    state::forget_receipt(&uze, &receipt).unwrap();
+    fs::remove_file(&labelled).unwrap();
+    let store_definition = fs::read_dir(uze.store_dir().join("plugins"))
+        .unwrap()
+        .flat_map(|market| fs::read_dir(market.unwrap().path()).unwrap())
+        .map(|plugin| plugin.unwrap().path().join("agents/reviewer.md"))
+        .find(|definition| definition.is_file())
+        .expect("the Store holds the definition");
+    let bare = agents.join("reviewer.md");
+    uze_core::persistence::create_symlink(&store_definition, &bare).unwrap();
+    let mut legacy = receipt.clone();
+    legacy.artifact = ManagedArtifact::SymlinkReference {
+        path: bare.clone(),
+        target: store_definition,
+    };
+    state::record_receipt(&uze, legacy).unwrap();
+
+    let second = install_via_marketplace_json(&home, &uze_home, &package, &path);
+    assert!(
+        second.status.success(),
+        "{}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    assert!(
+        bare.symlink_metadata().is_err(),
+        "the old bare name no longer answers"
+    );
+    assert!(labelled.is_file() && !labelled.is_symlink());
+    let agent_receipts: Vec<_> = state::receipts(&uze, None)
+        .unwrap()
+        .into_iter()
+        .filter(|receipt| {
+            receipt
+                .resource_identity
+                .as_deref()
+                .is_some_and(|identity| identity.contains("agents/reviewer.md"))
+        })
+        .collect();
+    assert_eq!(agent_receipts.len(), 1, "{agent_receipts:?}");
+    let _ = fs::remove_dir_all(home);
+}
+
+/// A skill and an agent of one name are two different things in two
+/// different places — `~/.config/opencode/skills/crew:review/` and
+/// `~/.config/opencode/agents/crew:review.md` — so neither is refused as
+/// holding the other's name.
+#[cfg(unix)]
+#[test]
+fn a_skill_and_an_agent_of_one_name_are_both_delivered() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let home = temporary_home("cli-skill-agent-same-name");
+    let package = home.join("crew");
+    fs::create_dir_all(package.join("agents")).unwrap();
+    fs::create_dir_all(package.join("skills/review")).unwrap();
+    fs::write(package.join("plugin.json"), r#"{"name": "crew"}"#).unwrap();
+    fs::write(
+        package.join("skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews.\n---\nSkill.\n",
+    )
+    .unwrap();
+    fs::write(
+        package.join("agents/review.md"),
+        "---\nname: review\ndescription: Reviews.\n---\nAgent.\n",
+    )
+    .unwrap();
+    let bin = home.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let opencode = bin.join("opencode");
+    fs::write(&opencode, "#!/bin/sh\necho 'opencode v9.9.9'\n").unwrap();
+    fs::set_permissions(&opencode, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+
+    let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let report = String::from_utf8_lossy(&add.stdout);
+    assert!(!report.contains("not delivered"), "{report}");
+    assert!(
+        home.join(".config/opencode/skills/crew:review/SKILL.md")
+            .is_file()
+    );
+    assert!(
+        home.join(".config/opencode/agents/crew:review.md")
+            .is_file()
+    );
+    let _ = fs::remove_dir_all(home);
+}
+
+/// A project's `uze install` that places a plugin one harness refuses says
+/// so and exits non-zero, as `install -m` does: the environment it reports
+/// is not the one every harness received.
+#[cfg(unix)]
+#[test]
+fn a_project_install_one_harness_refuses_fails_and_names_it() {
+    let home = temporary_home("cli-project-install-partial");
+    let fake_bin = refusing_harness_bin_dir("cli-project-install-partial-bin", true);
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let package = package_fixture();
+    let name = uze_testkit::marketplace::package_manifest_name(&package);
+    let market = home.join("market");
+    uze_testkit::marketplace::stage(
+        &market,
+        &serde_json::json!({
+            "name": "test",
+            "plugins": [{ "name": name, "source": format!("./plugins/{name}") }],
+        })
+        .to_string(),
+        &[(name.clone(), package)],
+    );
+    let project = home.join("project");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    std::fs::write(
+        project.join("agents.yaml"),
+        format!(
+            "marketplaces:\n  test:\n    path: {}\n    plugins:\n      - {name}\n",
+            market.display()
+        ),
+    )
+    .unwrap();
+
+    let install = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .current_dir(&project)
+        .env("UZE_HOME", home.join(".uze"))
+        .isolated_home(&home)
+        .env("PATH", &path)
+        .args(["install"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&install.stderr);
+    assert!(
+        !install.status.success(),
+        "a partial install reported success"
+    );
+    assert!(
+        stderr.contains("not delivered everywhere") && stderr.contains("read-only"),
+        "{stderr}"
+    );
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// A package with a skill and an agent whose frontmatter only Claude Code
+/// reads whole, so every route a harness can take shows up somewhere.
+#[cfg(unix)]
+fn composed_package(home: &std::path::Path) -> PathBuf {
+    use std::fs;
+
+    let package = home.join("crew");
+    fs::create_dir_all(package.join("agents")).unwrap();
+    fs::create_dir_all(package.join("skills/review")).unwrap();
+    fs::write(package.join("plugin.json"), r#"{"name": "crew"}"#).unwrap();
+    fs::write(
+        package.join("skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews a change.\n---\nReview it.\n",
+    )
+    .unwrap();
+    fs::write(
+        package.join("agents/reviewer.md"),
+        "---\nname: reviewer\ndescription: Reviews a change.\nmodel: haiku\ntools: Read, Grep\n---\nReview.\n",
+    )
+    .unwrap();
+    package
+}
+
+#[cfg(unix)]
+fn uze_at(home: &std::path::Path, path: &str, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", home.join(".uze"))
+        .isolated_home(home)
+        .env("PATH", path)
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+#[cfg(unix)]
+fn uze_json_at(home: &std::path::Path, path: &str, args: &[&str]) -> serde_json::Value {
+    let mut with_json = args.to_vec();
+    with_json.extend(["--format", "json"]);
+    let output = uze_at(home, path, &with_json);
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "{args:?} must answer in JSON ({error}): {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    })
+}
+
+/// `uze inspect --harness` is computed without attaching anything, and is
+/// only worth running before a release if it says what the install says:
+/// the same route and the same capabilities short of native, harness by
+/// harness.
+#[cfg(unix)]
+#[test]
+fn inspect_and_install_report_agree_on_every_harness() {
+    let home = temporary_home("cli-inspect-agrees");
+    let fake_bin = fake_harness_bin_dir("cli-inspect-agrees-bin");
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let package = composed_package(&home);
+
+    let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let installed: serde_json::Value = serde_json::from_slice(&add.stdout).unwrap();
+    let delivered = installed["deliveries"].as_array().expect("deliveries");
+    assert_eq!(delivered.len(), 4, "every harness is detected: {installed}");
+    let attachments = std::fs::read(home.join(".uze/state/attachments.json")).ok();
+
+    let inspected = uze_json_at(&home, &path, &["inspect", "crew"]);
+    for install in delivered {
+        let integration = install["integration"].as_str().unwrap();
+        let view = inspected["deliveries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|view| view["integration"] == integration)
+            .unwrap_or_else(|| panic!("inspect names {integration}: {inspected}"));
+        assert_eq!(view["detected"], true, "{view}");
+        assert_eq!(view["route"], install["route"], "{integration} route");
+        assert_eq!(
+            view["shortfalls"], install["shortfalls"],
+            "{integration} shortfalls"
+        );
+
+        let one = uze_json_at(&home, &path, &["inspect", "crew", "--harness", integration]);
+        let only = one["deliveries"].as_array().unwrap();
+        assert_eq!(only.len(), 1, "{one}");
+        assert_eq!(only[0], *view, "narrowed to {integration}");
+        let text = uze_at(&home, &path, &["inspect", "crew", "--harness", integration]);
+        assert!(text.status.success());
+        let text = String::from_utf8_lossy(&text.stdout);
+        assert!(
+            text.contains("crew:review") && text.contains("crew:reviewer"),
+            "{integration} names each capability as a session sees it: {text}"
+        );
+    }
+    let opencode = inspected["deliveries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|view| view["integration"] == "opencode")
+        .unwrap();
+    assert!(
+        opencode["shortfalls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|one| one["capability"] == "crew:reviewer" && one["route"] == "DEGRADED"),
+        "the fields OpenCode cannot read are said: {opencode}"
+    );
+    assert_eq!(
+        std::fs::read(home.join(".uze/state/attachments.json")).ok(),
+        attachments,
+        "inspect records nothing"
+    );
+    let unknown = uze_at(&home, &path, &["inspect", "crew", "--harness", "nowhere"]);
+    assert!(!unknown.status.success(), "an unknown harness is refused");
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// Receipts that match are not a delivery a harness reads: Claude Code's
+/// cached copy of the plugin can be empty, and an agent file an earlier
+/// build wrote can carry fields OpenCode drops the agent over. Doctor
+/// compares what the plan expects with what each harness would load.
+#[cfg(unix)]
+#[test]
+fn doctor_reports_an_empty_plugin_cache_and_an_unreadable_agent() {
+    use std::fs;
+    use uze_core::{UzeHome, exposure::ManagedArtifact, state};
+
+    let home = temporary_home("cli-doctor-intent");
+    let fake_bin = fake_harness_bin_dir("cli-doctor-intent-bin");
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let package = composed_package(&home);
+    let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let uze = UzeHome::at(home.join(".uze"));
+    let receipts: Vec<_> = state::receipts(&uze, None)
+        .unwrap()
+        .into_iter()
+        .filter(|receipt| receipt.package_id.starts_with("crew@"))
+        .collect();
+
+    // Claude's records say the plugin is installed and enabled, and the copy
+    // they point at holds nothing.
+    let claude = receipts
+        .iter()
+        .find(|receipt| receipt.integration == "claude-code" && receipt.resource_identity.is_none())
+        .expect("the Claude plugin receipt");
+    let ManagedArtifact::IntegrationOwned {
+        selector, detail, ..
+    } = &claude.artifact
+    else {
+        panic!("{claude:?}");
+    };
+    let marketplace_root = detail["marketplace_root"].as_str().unwrap();
+    let marketplace = selector.rsplit_once('@').unwrap().1;
+    let cache = home.join(".claude/plugins/cache/crew");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(
+        home.join(".claude/plugins/known_marketplaces.json"),
+        serde_json::json!({ marketplace: {
+            "source": { "source": "directory", "path": marketplace_root },
+            "installLocation": marketplace_root
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        home.join(".claude/plugins/installed_plugins.json"),
+        serde_json::json!({ "version": 2, "plugins": {
+            selector.as_str(): [{ "scope": "user", "installPath": cache }]
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        home.join(".claude/settings.json"),
+        serde_json::json!({ "enabledPlugins": { selector.as_str(): true } }).to_string(),
+    )
+    .unwrap();
+
+    // The agent file as 1.0.0-beta.3 wrote it, and its receipt with it.
+    let opencode = receipts
+        .iter()
+        .find(|receipt| {
+            receipt.integration == "opencode"
+                && matches!(receipt.artifact, ManagedArtifact::GeneratedFile { .. })
+        })
+        .expect("the OpenCode agent receipt");
+    let ManagedArtifact::GeneratedFile { path: agent, .. } = &opencode.artifact else {
+        unreachable!();
+    };
+    let written =
+        "---\ndescription: Reviews a change.\nmodel: haiku\ntools: Read, Grep\n---\nReview.\n";
+    fs::write(agent, written).unwrap();
+    state::forget_receipt(&uze, opencode).unwrap();
+    let mut earlier = opencode.clone();
+    earlier.artifact = ManagedArtifact::GeneratedFile {
+        path: agent.clone(),
+        content: written.to_owned(),
+    };
+    state::record_receipt(&uze, earlier).unwrap();
+
+    let doctor = uze_json_at(&home, &path, &["doctor"]);
+    let harness = |id: &str| {
+        doctor["deliveries"]
+            .as_array()
+            .expect("deliveries")
+            .iter()
+            .find(|package| package["plugin"].as_str().unwrap().starts_with("crew@"))
+            .and_then(|package| {
+                package["harnesses"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|harness| harness["integration"] == id)
+                    .cloned()
+            })
+            .unwrap_or_else(|| panic!("doctor checks crew on {id}: {doctor}"))
+    };
+    let unreadable = |harness: &serde_json::Value, capability: &str, says: &str| {
+        harness["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| {
+                finding["kind"] == "unreadable"
+                    && finding["capability"] == capability
+                    && finding["detail"].as_str().unwrap().contains(says)
+            })
+    };
+    let claude = harness("claude-code");
+    assert!(
+        unreadable(&claude, "crew:review", "cached copy")
+            && unreadable(&claude, "crew:reviewer", "cached copy"),
+        "{claude}"
+    );
+    assert_eq!(claude["present"], 0, "{claude}");
+    let opencode = harness("opencode");
+    assert!(
+        unreadable(&opencode, "crew:reviewer", "`model`")
+            && unreadable(&opencode, "crew:reviewer", "`tools`")
+            && unreadable(&opencode, "crew:reviewer", "`mode`"),
+        "{opencode}"
+    );
+    assert!(
+        !opencode["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["capability"] == "crew:review"),
+        "the skill beside it is fine: {opencode}"
+    );
+
+    let text = uze_at(&home, &path, &["doctor"]);
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        text.contains("0 of 2 present") && text.contains("crew:reviewer unreadable"),
+        "{text}"
+    );
+
+    let _ = fs::remove_dir_all(home);
+    let _ = fs::remove_dir_all(fake_bin);
 }

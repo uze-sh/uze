@@ -34,6 +34,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import capture
+import markers
 import variation
 
 STRUCT_PATH = os.environ.get("PROVIDER_STRUCT", "/tmp/oc-struct.json")
@@ -42,15 +43,26 @@ RESPONSE_TEXT = os.environ.get("RESPONSE_TEXT", "UZE_CONFORMANCE_OK")
 FINAL_TEXT = os.environ.get("FINAL_TEXT", "UZE_CONFORMANCE_PASS")
 MCP_PROOF = os.environ.get("MCP_PROOF", "UZE_MCP_CONFORMANCE_PROOF_1")
 
-# The MCP tool name the real opencode builds from the delivered server
-# (`<server>-<tool>`), observed in the primary request.
-MCP_TOOL = "uze-mcp-conformance-uze-conformance_uze_conformance"
+# OpenCode 2.x offers MCP servers to the model through Code Mode: the
+# `execute` tool runs JavaScript against a catalog listed in the
+# instructions, one namespace per server (`<server with @ as _>`), e.g.
+# `tools["uze-mcp-conformance_uze-lab-uze-conformance"].uze_conformance()`
+# (observed on 2.0.18). The namespace in a request is what exposure means;
+# an `execute` call through it is what a model's MCP call is.
+MCP_NAMESPACE = "uze-mcp-conformance_uze-lab-uze-conformance"
+MCP_CALL = json.dumps(
+    {"code": f'return await tools["{MCP_NAMESPACE}"].uze_conformance({{}});'}
+)
 
-# The hook scenarios script a tool call to the harness's native shell tool
-# (`bash`); the MCP phases keep their own default. TOOL_ARGS mirrors the
-# `arguments` the hook's normalized ABI payload will carry.
-TOOL_NAME = os.environ.get("TOOL_NAME", MCP_TOOL)
-TOOL_ARGS = os.environ.get("TOOL_ARGS", "{}")
+# The hook scenarios pass their own tool; the MCP phases keep this default.
+# TOOL_ARGS mirrors the `arguments` the hook's normalized ABI payload will
+# carry.
+TOOL_NAME = os.environ.get("TOOL_NAME", "execute")
+TOOL_ARGS = os.environ.get("TOOL_ARGS", MCP_CALL)
+#: When set, the call is scripted only for a request carrying this text. A
+#: subagent's turn carries tools and no tool result either, and answering it
+#: with the same `task` call dispatches another subagent in turn.
+TOOL_TRIGGER = os.environ.get("TOOL_TRIGGER", "")
 
 ISOLATION_MARKERS = ["already isolated", "UZE_CONFORMANCE_REBASE"]
 #: One turn each. A single request carrying both is what proves a relaunched
@@ -95,6 +107,7 @@ COUNTER = {"n": 0}
 def structural_summary(body_text):
     body = body_text or ""
     return {
+        **markers.summary(body),
         "skill_markers": {m: (m in body) for m in SKILL_MARKERS},
         "isolation_markers": {m: (m in body) for m in ISOLATION_MARKERS},
         "continuity_markers": {m: (m in body) for m in CONTINUITY_MARKERS},
@@ -105,7 +118,7 @@ def structural_summary(body_text):
         "has_tool_result": ('"role": "tool"' in body or '"role":"tool"' in body),
         "hook_markers": {m: (m in body) for m in HOOK_MARKERS},
         "mcp_proof_present": MCP_PROOF in body,
-        "mcp_tool_present": MCP_TOOL in body,
+        "mcp_tool_present": MCP_NAMESPACE in body,
         "len": len(body),
     }
 
@@ -233,7 +246,8 @@ class H(BaseHTTPRequestHandler):
 
         has_tools = '"tools"' in body
         has_result = '"role":"tool"' in body or '"tool_result"' in body
-        if MODE == "toolcall" and has_tools and not has_result:
+        triggered = not TOOL_TRIGGER or TOOL_TRIGGER in body
+        if MODE == "toolcall" and has_tools and not has_result and triggered:
             payload = sse(tool_call_chunks())
         elif MODE == "toolcall" and has_result:
             payload = sse(text_chunks(FINAL_TEXT))

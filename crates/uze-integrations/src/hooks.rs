@@ -81,13 +81,23 @@ impl HookTarget {
     /// `transform` effect therefore degrades instead of silently attaching
     /// without its rewrite.
     ///
+    /// Both also fire `SessionStart` natively, matched on the session's
+    /// source.
+    ///
     /// Antigravity CLI's named hooks carry camelCase payloads and native
-    /// `allow`/`ask`/`deny` decisions.
+    /// `allow`/`ask`/`deny` decisions. It has no session-start event
+    /// (1.2.x fires `PreToolUse`, `PostToolUse`, `PreInvocation`,
+    /// `PostInvocation`, `Stop`); `PreInvocation` fires on every turn, and
+    /// telling the first from the rest would need per-session state the
+    /// stateless wrapper does not keep, so `SessionStart` is not claimed.
     ///
     /// OpenCode's plugin API supplies pre/post tool callbacks that see the
     /// tool input but cannot block it; there is no declarative hook file, so
     /// UZE generates an owned, rebuildable plugin instead. `Stop` has no
-    /// OpenCode equivalent and is never claimed. `deny`/`ask` live only on
+    /// OpenCode equivalent and is never claimed, and neither is
+    /// `SessionStart`: a plugin's event stream (2.0.18) never carries
+    /// `session.created` for a new session, and nothing in it tells a new
+    /// session from a continued one (Lab experiment `opencode/session-start`). `deny`/`ask` live only on
     /// `permission.evaluate`, which carries the action and its resources
     /// rather than the tool input, so they are Unsupported until the Lab
     /// proves otherwise. `transform` needs a channel for the handler to
@@ -99,6 +109,7 @@ impl HookTarget {
                     HookEvent::PreToolUse,
                     HookEvent::PostToolUse,
                     HookEvent::Stop,
+                    HookEvent::SessionStart,
                 ],
                 &[HookEffect::Observe, HookEffect::Allow, HookEffect::Deny],
             ),
@@ -510,7 +521,7 @@ const OPENCODE_TOOLS: &[ToolBinding] = &[
 /// nothing — an honest no-op rather than a fabricated tool name.
 pub(crate) fn tool_names(target: HookTarget, matcher: &HookMatcher) -> Vec<String> {
     match matcher {
-        HookMatcher::Native(name) => vec![name.clone()],
+        HookMatcher::Native(name) | HookMatcher::Source(name) => vec![name.clone()],
         HookMatcher::Portable(alias) => match vocabulary(target).binding(alias) {
             Some(binding) => {
                 let names: Vec<String> = binding
@@ -533,6 +544,12 @@ pub(crate) fn tool_names(target: HookTarget, matcher: &HookMatcher) -> Vec<Strin
 /// Translates every matcher of a group for one target; `None` for an
 /// unmatch-all group (the entry then omits the matcher key).
 pub(crate) fn matcher(target: HookTarget, hook: &PortableHook) -> Option<String> {
+    // "Every source" is the portable set, spelled out: a harness reporting
+    // a source of its own (a compaction) must not run a handler that was
+    // promised `HOOK_SOURCE` is one of these.
+    if hook.event == HookEvent::SessionStart && hook.matchers.is_empty() {
+        return Some(uze_core::hook::SESSION_SOURCES.join("|"));
+    }
     (!hook.matchers.is_empty()).then(|| {
         // Two authored matchers can translate to one native tool (a
         // portable alias plus the `native:` name it already resolves to);
@@ -631,6 +648,7 @@ const fn hook_event_name(event: HookEvent) -> &'static str {
         HookEvent::PreToolUse => "PreToolUse",
         HookEvent::PostToolUse => "PostToolUse",
         HookEvent::Stop => "Stop",
+        HookEvent::SessionStart => "SessionStart",
     }
 }
 
@@ -802,12 +820,13 @@ impl HookTarget {
                 input_filter: ".tool_input // {}",
                 cwd_filter: ".cwd // .context.cwd // empty",
                 // The event name is echoed back in `hookEventName`, which the
-                // harness matches against the event it fired.
+                // harness matches against the event it fired. Every event that
+                // can deny is named: `session_start` never gets this far.
                 deny_document: concat!(
                     "case $HOOK_EVENT in\n",
                     "    pre_tool_use) name=PreToolUse ;;\n",
                     "    post_tool_use) name=PostToolUse ;;\n",
-                    "    *) name=Stop ;;\n",
+                    "    stop) name=Stop ;;\n",
                     "  esac\n",
                     "  printf '{\"hookSpecificOutput\":{\"hookEventName\":\"%s\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$name\" \"$reason_json\"",
                 ),
@@ -923,7 +942,7 @@ pub(crate) fn wrapper_source(target: HookTarget) -> Option<String> {
 # bytes of a handler's stderr become the reason a harness is handed.
 #
 #   usage: exec <plugin-root> <event> <effect> <seconds>:<handler>...
-#     event    pre_tool_use | post_tool_use | stop
+#     event    pre_tool_use | post_tool_use | stop | session_start
 #     effect   observe | allow | ask | deny
 #     seconds  this handler's own deadline; past it the handler and
 #              everything it started are stopped, and the group's effect
@@ -939,6 +958,9 @@ export PLUGIN_ROOT HOOK_EVENT HOOK_HARNESS
 # --- this harness's decision dialect ------------------------------------
 deny_native() {{                                  # $1 reason, plain text
   printf '%s\n' "$1" >&2
+  # A session start decides nothing: a denial there is a report, and the
+  # session opens as if the handler had allowed.
+  [ "$HOOK_EVENT" = session_start ] && {{ allow_native; exit 0; }}
   reason_json=$(json_string "$1")
   {deny_document}
   exit {deny_exit}                                # this harness's block signal
@@ -979,10 +1001,13 @@ printf '%s' "$payload" | "$JQ" -e . >/dev/null 2>&1 \
 HOOK_TOOL_NATIVE=$(printf '%s' "$payload" | "$JQ" -r '{tool_filter}')
 HOOK_CWD=$(printf '%s' "$payload" | "$JQ" -r '{cwd_filter}')
 HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '{input_filter}')
+HOOK_SOURCE=
+[ "$HOOK_EVENT" = session_start ] \
+  && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '.source // empty')
 HOOK_TOOL= {field_defaults}
 case "$HOOK_TOOL_NATIVE" in                       # the portable vocabulary
 {aliases}esac
-export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT {field_exports}
+export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE {field_exports}
 
 # --- one handler, under its own deadline ---------------------------------
 # There is no portable `timeout(1)` (macOS ships none) and no job control in
@@ -1242,6 +1267,7 @@ pub(crate) fn wrapper_arguments(
     package_root: &Path,
     handlers: &[CommandHook],
 ) -> Vec<String> {
+    let package_root = &crate::shared::package_root::delivered(package_root);
     let mut arguments = vec![
         package_root.display().to_string(),
         hook.event.abi_name().to_owned(),
@@ -1593,6 +1619,7 @@ pub(crate) fn opencode_bridge_path(config_root: &Path, package_id: &str) -> Path
 /// matchers (matched against the runtime native tool name), abi event name,
 /// effect, and the authored handlers with `${PLUGIN_ROOT}` resolved.
 fn bridge_hooks(hooks: &[&PortableHook], package_root: &Path) -> serde_json::Value {
+    let package_root = &crate::shared::package_root::delivered(package_root);
     serde_json::Value::Array(
         hooks
             .iter()
@@ -1704,7 +1731,11 @@ pub(crate) fn opencode_bridge(
 // the reason on stderr, anything else is a failure that follows the group's
 // effect (fail-closed for deny/ask, fail-open for observe/allow). Each
 // handler is bounded by the deadline its author declared.
-import {{ Plugin }} from "@opencode-ai/plugin";
+//
+// The plugin is the definition object itself, with no import: OpenCode
+// 2.0.18 does not resolve `@opencode-ai/plugin` for a file in its plugin
+// directory and refuses to load one that imports it, while `Plugin.define`
+// only hands its argument back.
 
 const ROOT = {root};
 const GROUPS = {groups};
@@ -1811,7 +1842,7 @@ function matches(group, event, native) {{
   );
 }}
 
-export default Plugin.define({{
+export default {{
   id: "hooks-{package_id}",
   async setup(ctx) {{
     await ctx.tool.hook("execute.before", async (event) => {{
@@ -1829,7 +1860,7 @@ export default Plugin.define({{
       }}
     }});
   }},
-}});
+}};
 "#
     )
 }
@@ -1895,7 +1926,10 @@ pub(crate) fn hook_plan(
         return unsupported("hook resource payload is not a valid portable hook group");
     };
     let compatibility = uze_core::hook::assess(&hook, capabilities, bridged);
-    let with_compatibility = |reason: &str| format!("{evidence} Compatibility: {reason}");
+    // What the route cannot carry leads, so a report showing one sentence
+    // shows the reason; the mechanism follows.
+    let with_compatibility =
+        |reason: &str| format!("{}. {evidence}", reason.trim_end_matches('.').trim_end());
     if matches!(
         compatibility.route,
         CompatibilityRoute::Unsupported | CompatibilityRoute::Degraded
@@ -1930,7 +1964,7 @@ pub(crate) fn hook_plan(
                 rationale: NO_WRAPPER_TEMPLATE.to_owned(),
             },
             evidence: compatibility.reason.as_deref().map_or_else(
-                || format!("{evidence} Delivery: {NO_WRAPPER_TEMPLATE}."),
+                || format!("{NO_WRAPPER_TEMPLATE}. {evidence}"),
                 with_compatibility,
             ),
         },
@@ -2518,10 +2552,11 @@ mod tests {
     #[test]
     fn the_opencode_plugin_is_the_wrapper_with_the_packages_groups_as_data() {
         let plugin = opencode_bridge(&[&hook()], Path::new("/tmp/plugin root"), "hook-demo");
-        // V2 plugin API (spec: opencode.ai/v2/docs/build/plugins) — a
-        // Plugin.define module registering ctx.tool.hook callbacks.
-        assert!(plugin.contains("import { Plugin } from \"@opencode-ai/plugin\""));
-        assert!(plugin.contains("Plugin.define"));
+        // V2 plugin API (spec: opencode.ai/v2/docs/build/plugins): the
+        // default export is the definition registering ctx.tool.hook
+        // callbacks, with no import the harness would have to resolve.
+        assert!(!plugin.contains("import "), "{plugin}");
+        assert!(plugin.contains("export default {"));
         assert!(plugin.contains("id: \"hooks-hook-demo\""));
         assert!(plugin.contains("ctx.tool.hook(\"execute.before\""));
         assert!(plugin.contains("ctx.tool.hook(\"execute.after\""));
@@ -2991,6 +3026,10 @@ mod wrapper_tests {
         // own — the shape a deadline has to survive: killing the shell that
         // started it leaves the child holding the pipe.
         write_script(&scripts.join("stall"), "sh -c 'sleep 30'\nexit 0");
+        write_script(
+            &scripts.join("refuse"),
+            "echo \"refused on $HOOK_EVENT from $HOOK_SOURCE\" >&2\nexit 3",
+        );
         root
     }
 
@@ -3136,6 +3175,17 @@ mod wrapper_tests {
             HookTarget::Antigravity => serde_json::json!({"workspacePaths": ["/repo"]}).to_string(),
             _ => serde_json::json!({"cwd": "/repo"}).to_string(),
         }
+    }
+
+    /// What Claude Code and Codex hand a `SessionStart` hook: the session's
+    /// source beside the workspace, and no tool.
+    fn session_payload() -> String {
+        serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "cwd": "/repo",
+        })
+        .to_string()
     }
 
     fn payload(target: HookTarget, command: &str) -> String {
@@ -3605,6 +3655,57 @@ mod wrapper_tests {
         }
     }
 
+    #[test]
+    fn a_session_start_hands_the_handler_its_source_and_no_tool() {
+        for target in [HookTarget::Claude, HookTarget::Codex] {
+            let root = package(&format!("wrapper-session-{target}"));
+            write_script(
+                &root.join("scripts").join("probe"),
+                "printf '%s|%s|%s|%s' \"$HOOK_EVENT\" \"$HOOK_SOURCE\" \"$HOOK_TOOL\" \"$HOOK_CWD\" \
+                 > \"$PLUGIN_ROOT/seen.txt\"\nexit 0",
+            );
+            let hook = group_at(HookEvent::SessionStart, HookEffect::Observe, &["probe"], 10);
+            let answer = run_wrapper(target, &root, &hook, &session_payload(), None);
+            assert_eq!(answer.exit, 0, "{target}: the session opens");
+            assert!(
+                answer.stdout.trim().is_empty(),
+                "{target}: nothing to decide"
+            );
+            assert_eq!(
+                fs::read_to_string(root.join("seen.txt")).unwrap(),
+                "session_start|startup||/repo",
+            );
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    /// A handler answering with the denial code on a session start has
+    /// nothing to deny: the reason is reported and the session opens, with
+    /// no decision document a harness could read as one.
+    #[test]
+    fn a_denial_on_session_start_is_only_reported() {
+        for target in [HookTarget::Claude, HookTarget::Codex] {
+            let root = package(&format!("wrapper-session-deny-{target}"));
+            let hook = group_at(
+                HookEvent::SessionStart,
+                HookEffect::Observe,
+                &["refuse"],
+                10,
+            );
+            let answer = run_wrapper(target, &root, &hook, &session_payload(), None);
+            assert_eq!(answer.exit, 0, "{target}: the session opens");
+            assert!(answer.stdout.trim().is_empty(), "{target}: no decision");
+            assert!(
+                answer
+                    .stderr
+                    .contains("refused on session_start from startup"),
+                "{target}: the reason is reported: {}",
+                answer.stderr
+            );
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
     // ========================================================================
     // The recorded answers
     // ========================================================================
@@ -3689,6 +3790,22 @@ mod wrapper_tests {
                 Some("ls"),
             ),
             case(HookEvent::Stop, HookEffect::Observe, &["audit"], None),
+            // A session start decides nothing, whatever its handler answers.
+            case(
+                HookEvent::SessionStart,
+                HookEffect::Observe,
+                &["refuse"],
+                None,
+            ),
+            Fixture {
+                wrapper_owns_the_whole_reason: false,
+                ..case(
+                    HookEvent::SessionStart,
+                    HookEffect::Observe,
+                    &["absent"],
+                    None,
+                )
+            },
             // A handler that never answers is a handler failure like any
             // other: the deadline is its author's, and the group's effect
             // decides what that means.
@@ -3748,6 +3865,7 @@ mod wrapper_tests {
         } else {
             match fixture.command {
                 Some(command) => payload(target, command),
+                None if fixture.event == HookEvent::SessionStart => session_payload(),
                 None => stop_payload(target),
             }
         };
@@ -3844,6 +3962,10 @@ mod wrapper_tests {
         let mut answers = Vec::new();
         for target in TARGETS {
             for (index, fixture) in fixtures.iter().enumerate() {
+                // An event this harness never fires has no answer to record.
+                if !target.capabilities().events.contains(&fixture.event) {
+                    continue;
+                }
                 answers.push(recorded_answer(target, index, fixture));
             }
         }
@@ -3927,18 +4049,6 @@ mod opencode_runtime_tests {
         fs::write(
             root.join("hooks-demo.ts"),
             opencode_bridge(&[hook], root, "demo"),
-        )
-        .unwrap();
-        // The harness supplies this module; outside it, a stub that hands
-        // the definition straight back is enough to drive the plugin.
-        let stub = root
-            .join("node_modules")
-            .join("@opencode-ai")
-            .join("plugin");
-        fs::create_dir_all(&stub).unwrap();
-        fs::write(
-            stub.join("index.ts"),
-            "export const Plugin = { define: (definition) => definition };\n",
         )
         .unwrap();
         fs::write(

@@ -32,10 +32,10 @@ impl UzeHome {
         &self.root
     }
 
-    /// Root the package tree is published under. Several harnesses resolve a
-    /// package path relative to the root of their own catalogue, so an
-    /// integration that maintains such a catalogue places it here — but the
-    /// layout stays UZE's, and this module names no harness.
+    /// Root of the installed packages' bytes, and of nothing else: no
+    /// harness reads from here. What a harness reads is materialized into
+    /// the generated tier, so the one tier whose loss costs the packages is
+    /// never a path another program holds open.
     pub fn store_dir(&self) -> PathBuf {
         self.root.join("store")
     }
@@ -212,6 +212,14 @@ impl UzeHome {
         self.state_dir().join("attachments.json")
     }
 
+    /// Which harnesses an installed package could not be delivered to, and
+    /// what each said. A record: the failure is known only to the command
+    /// that met it, and every listing has to go on saying so until a later
+    /// delivery succeeds.
+    pub fn undelivered_path(&self) -> PathBuf {
+        self.state_dir().join("undelivered.json")
+    }
+
     /// The process-wide mutation guard for this home (see
     /// [`crate::persistence::MutationLock`]). A lock, not a record: it
     /// carries no shape and nothing reads it across versions.
@@ -267,6 +275,36 @@ impl UzeHome {
     /// apart, and the answer is opposite for each.
     pub fn generated_attachments_dir(&self, vendor: &str) -> PathBuf {
         self.runtime_dir().join("attachments").join(vendor)
+    }
+
+    /// One installed package, whole, as every harness is handed it: the
+    /// directory `${PLUGIN_ROOT}` names. Generated from the Store, so a
+    /// harness or a hook writing into its own package root never writes the
+    /// Store, and deleting it costs one copy on the next delivery.
+    pub fn delivered_package_dir(&self, id: &PackageId) -> PathBuf {
+        self.runtime_dir().join("packages").join(id.as_str())
+    }
+
+    /// [`Self::delivered_package_dir`] of the package whose Store root is
+    /// `plugin_dir`, read back from the Store's own layout
+    /// ([`Self::plugin_dir`]); `None` for a directory that is not one.
+    ///
+    /// Everything that resolves `${PLUGIN_ROOT}` is handed a package's Store
+    /// root, and a harness must be handed the delivered copy instead; this
+    /// is the one place the two layouts meet.
+    pub fn delivered_package_dir_of(plugin_dir: &Path) -> Option<PathBuf> {
+        let name = plugin_dir.file_name()?.to_str()?;
+        let marketplace_dir = plugin_dir.parent()?;
+        let marketplace = marketplace_dir.file_name()?.to_str()?;
+        let plugins = marketplace_dir.parent()?;
+        let home = Self::at(plugins.parent()?.parent()?);
+        if home.plugins_dir() != plugins {
+            return None;
+        }
+        let id =
+            PackageId::from_marketplace_plugin(marketplace, name, &plugin_dir.join("plugin.json"))
+                .ok()?;
+        (home.plugin_dir(&id) == plugin_dir).then(|| home.delivered_package_dir(&id))
     }
 
     pub fn cache_dir(&self) -> PathBuf {
@@ -461,6 +499,7 @@ mod tests {
             home.registry_path(),
             home.marketplaces_path(),
             home.attachments_path(),
+            home.undelivered_path(),
             home.profiles_path(),
             home.client_layout_path(),
             home.provisioning_state_path(),

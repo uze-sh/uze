@@ -51,6 +51,11 @@ uze finds the coding agents on your machine and offers to install the missing
 ones through each vendor's official installer. Pick the ones you use. Running
 `uze` for the first time asks the same question.
 
+Some installers put the agent in a directory your current shell does not
+search yet. `uze setup` still verifies it there, tells you where it is, and
+reminds you to open a new shell before running it by name. An agent already
+installed is updated through its own update command instead.
+
 ```bash
 uze setup list    # what is installed and ready
 ```

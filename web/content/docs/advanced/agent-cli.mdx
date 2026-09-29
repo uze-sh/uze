@@ -52,6 +52,7 @@ says which condition held.
 
 ## Checking diagrams
 
-`uze agent artifacts check` exits non-zero when a diagram does not draw, or
-draws with a relation that found no path. Put it in your project's `gate` to
+`uze agent artifacts check` exits non-zero when a diagram does not draw, draws
+with a relation that found no path, or has a box whose link opens no file in
+the project. Put it in your project's `gate` to
 catch a diagram that broke silently.

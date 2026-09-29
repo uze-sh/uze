@@ -31,6 +31,11 @@
       "name": "hook-fail-plugin",
       "source": "./plugins/hook-fail-plugin",
       "description": "Portable hooks: a declared deny whose handler cannot run \u2014 the fail-closed contract against real harnesses (ADR-033)."
+    },
+    {
+      "name": "hook-session-plugin",
+      "source": "./plugins/hook-session-plugin",
+      "description": "Portable hooks: an observational SessionStart group beside a PreToolUse one \u2014 the session-start event per harness."
     }
   ]
 }

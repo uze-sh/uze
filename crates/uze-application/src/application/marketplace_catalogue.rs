@@ -39,7 +39,10 @@ use serde::{Deserialize, Serialize};
 
 use uze_core::{
     PackageSource, Result, UzeError, UzeHome,
-    acquisition::{self, marketplace::MarketplaceManifest},
+    acquisition::{
+        self,
+        marketplace::{MarketplaceManifest, MarketplaceSubpath},
+    },
     workspace::MARKETPLACE_MANIFEST_NAME,
 };
 
@@ -79,6 +82,7 @@ pub enum Reach {
     Mirrored {
         repository: PathBuf,
         commit: String,
+        subpath: MarketplaceSubpath,
         materialized: PathBuf,
     },
 }
@@ -99,10 +103,11 @@ impl Catalogue {
             Reach::Mirrored {
                 repository,
                 commit,
+                subpath,
                 materialized,
             } => {
                 let out = materialized.join(directory_name(plugin));
-                let within = acquisition::marketplace::plugin_subdirectory(&self.manifest, plugin)?;
+                let within = subpath.plugin_path(&self.manifest, plugin)?;
                 // Asked of the plugin's own root, not of the directory that
                 // holds it. Materialization creates that directory before
                 // it writes anything, so one interrupted part-way leaves it
@@ -133,7 +138,11 @@ impl Catalogue {
                         &out,
                     )?;
                 }
-                acquisition::marketplace::resolve_plugin_source(&self.manifest, plugin, &out)
+                acquisition::marketplace::resolve_plugin_source(
+                    &self.manifest,
+                    plugin,
+                    &subpath.directory_in(&out)?,
+                )
             }
         }
     }
@@ -272,7 +281,8 @@ impl MarketplaceCatalogues {
             url,
         )?;
         let commit = acquisition::mirror::resolve(&repository, reference.as_deref())?;
-        let manifest = self.manifest_at(&repository, &commit)?;
+        let subpath = subpath_of(source)?;
+        let manifest = self.manifest_at(&repository, &commit, &subpath)?;
 
         let meta = Meta {
             source: source.clone(),
@@ -296,14 +306,20 @@ impl MarketplaceCatalogues {
             reach: Reach::Mirrored {
                 repository,
                 commit,
+                subpath,
                 materialized: entry.join(MATERIALIZED_DIR),
             },
         })
     }
 
-    fn manifest_at(&self, repository: &Path, commit: &str) -> Result<MarketplaceManifest> {
+    fn manifest_at(
+        &self,
+        repository: &Path,
+        commit: &str,
+        subpath: &MarketplaceSubpath,
+    ) -> Result<MarketplaceManifest> {
         tracing::info!(target: uze_core::acquisition::git::STEP, step = "catalogue");
-        let bytes = acquisition::mirror::read_file(repository, commit, MARKETPLACE_MANIFEST_NAME)?;
+        let bytes = acquisition::mirror::read_file(repository, commit, &subpath.manifest_path())?;
         acquisition::marketplace::parse_manifest(&bytes)
     }
 
@@ -317,6 +333,7 @@ impl MarketplaceCatalogues {
                 "only a Git marketplace is mirrored".to_owned(),
             ));
         };
+        let subpath = subpath_of(source)?;
         let staging = self.root.join(format!(
             ".adopting-{}-{}",
             std::process::id(),
@@ -325,7 +342,7 @@ impl MarketplaceCatalogues {
         let adopted = (|| {
             acquisition::mirror::ensure(url, &acquisition::forge::canonical(url), &staging)?;
             let commit = acquisition::mirror::resolve(&staging, reference.as_deref())?;
-            let manifest = self.manifest_at(&staging, &commit)?;
+            let manifest = self.manifest_at(&staging, &commit, &subpath)?;
             Ok((manifest.name.clone(), manifest, commit))
         })();
         let (name, manifest, commit) = match adopted {
@@ -374,6 +391,7 @@ impl MarketplaceCatalogues {
             reach: Reach::Mirrored {
                 repository,
                 commit,
+                subpath,
                 materialized: entry.join(MATERIALIZED_DIR),
             },
         };
@@ -406,12 +424,14 @@ impl MarketplaceCatalogues {
         // is a miss and the mirror is made.
         let commit = meta.commit?;
         let repository = entry.join(REPOSITORY_DIR);
-        let manifest = self.manifest_at(&repository, &commit).ok()?;
+        let subpath = subpath_of(source).ok()?;
+        let manifest = self.manifest_at(&repository, &commit, &subpath).ok()?;
         Some(Catalogue {
             manifest,
             reach: Reach::Mirrored {
                 repository,
                 commit,
+                subpath,
                 materialized: entry.join(MATERIALIZED_DIR),
             },
         })
@@ -420,6 +440,12 @@ impl MarketplaceCatalogues {
     fn entry_dir(&self, name: &str) -> PathBuf {
         self.root.join(directory_name(name))
     }
+}
+
+/// Where a mirrored source's catalogue sits in its repository. A Git
+/// source carries it, so answering costs no process.
+fn subpath_of(source: &PackageSource) -> Result<MarketplaceSubpath> {
+    acquisition::marketplace::repository_of(source).map(|repository| repository.subpath)
 }
 
 /// The marketplace manifest at `root`, read where it is.

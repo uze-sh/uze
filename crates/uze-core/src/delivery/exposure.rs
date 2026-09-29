@@ -99,6 +99,23 @@ pub enum ManagedArtifact {
     /// to merge, so `path` is the entire artifact. The owning integration
     /// attaches, inspects and detaches it.
     ManagedHookFile { path: PathBuf },
+    /// A whole file UZE writes into a harness's own discovery directory,
+    /// whose full content the receipt carries: a harness that reads a
+    /// definition file by file (an agent) is handed the bytes themselves
+    /// rather than a link, since not every harness follows one (one lists a
+    /// linked agent file and refuses to run it).
+    GeneratedFile { path: PathBuf, content: String },
+    /// A whole directory UZE writes into a harness's own discovery root (a
+    /// skill), proven by the `tree_sha256` of what was put there. Rendered
+    /// files and the supporting files beside them are regular files: one
+    /// harness does not walk a linked skill root, another does not list a
+    /// linked `SKILL.md`. The bytes stay out of the receipt — a skill can
+    /// carry megabytes of assets, all reproducible from the Store — so a
+    /// missing tree is restored by attaching again, never from here.
+    ///
+    /// In a plan `digest` is empty: the tree is rendered at attach time, and
+    /// what the receipt records is the digest of the tree attached.
+    GeneratedTree { path: PathBuf, digest: String },
 }
 
 impl ManagedArtifact {
@@ -114,6 +131,7 @@ impl ManagedArtifact {
                 region_identity,
                 expected_content,
             } => crate::text_region::attach(target_file, region_identity, expected_content),
+            Self::GeneratedFile { path, content } => attach_generated_file(path, content),
             _ => Err(UzeError::ExposureUnavailable(
                 "this artifact is attached by its owning integration".to_owned(),
             )),
@@ -131,6 +149,8 @@ impl ManagedArtifact {
                 region_identity,
                 expected_content,
             } => crate::text_region::inspect(target_file, region_identity, expected_content),
+            Self::GeneratedFile { path, content } => inspect_generated_file(path, content),
+            Self::GeneratedTree { path, digest } => inspect_generated_tree(path, digest),
             _ => AttachmentInspection {
                 state: AttachmentState::Blocked,
                 reason: "integration must inspect this vendor artifact".to_owned(),
@@ -164,6 +184,34 @@ impl ManagedArtifact {
                     reason: "managed artifact detached".to_owned(),
                 })
             }
+            Self::GeneratedFile { path, content } => {
+                let inspection = inspect_generated_file(path, content);
+                if inspection.state != AttachmentState::Matched {
+                    return Ok(inspection);
+                }
+                fs::remove_file(path).map_err(|source| UzeError::Write {
+                    path: path.clone(),
+                    source,
+                })?;
+                Ok(AttachmentInspection {
+                    state: AttachmentState::Missing,
+                    reason: "managed artifact detached".to_owned(),
+                })
+            }
+            Self::GeneratedTree { path, digest } => {
+                let inspection = inspect_generated_tree(path, digest);
+                if inspection.state != AttachmentState::Matched {
+                    return Ok(inspection);
+                }
+                fs::remove_dir_all(path).map_err(|source| UzeError::Write {
+                    path: path.clone(),
+                    source,
+                })?;
+                Ok(AttachmentInspection {
+                    state: AttachmentState::Missing,
+                    reason: "managed artifact detached".to_owned(),
+                })
+            }
             _ => Ok(self.inspect_standard()),
         }
     }
@@ -174,11 +222,14 @@ impl ManagedArtifact {
     /// is opaque to the Core by design.
     pub fn exposure_name(&self) -> Option<String> {
         match self {
-            Self::SymlinkReference { path, .. } | Self::ManagedHookFile { path } => {
-                path.file_name()?.to_str().map(str::to_owned)
-            }
+            Self::SymlinkReference { path, .. }
+            | Self::ManagedHookFile { path }
+            | Self::GeneratedTree { path, .. } => path.file_name()?.to_str().map(str::to_owned),
             Self::VendorConfigEntry { entry_name, .. }
             | Self::HookConfigEntry { entry_name, .. } => Some(entry_name.clone()),
+            // The name a harness gives a file it reads one by one is the
+            // file's, without its format's extension.
+            Self::GeneratedFile { path, .. } => path.file_stem()?.to_str().map(str::to_owned),
             Self::ManagedTextRegion { .. } | Self::IntegrationOwned { .. } => None,
         }
     }
@@ -187,7 +238,10 @@ impl ManagedArtifact {
     /// the source of truth.
     pub fn location(&self) -> PathBuf {
         match self {
-            Self::SymlinkReference { path, .. } | Self::ManagedHookFile { path } => path.clone(),
+            Self::SymlinkReference { path, .. }
+            | Self::ManagedHookFile { path }
+            | Self::GeneratedFile { path, .. }
+            | Self::GeneratedTree { path, .. } => path.clone(),
             Self::VendorConfigEntry { entry_name, .. } => {
                 PathBuf::from(format!("mcp:{entry_name}"))
             }
@@ -217,6 +271,25 @@ impl ManagedArtifact {
     /// files whose locations this layer deliberately does not know, so its
     /// verdicts are bounded by TTL and mutation invalidation alone.
     pub fn fingerprint(&self) -> Option<String> {
+        if let Self::GeneratedTree { path, digest } = self {
+            return Some(format!("{}:{digest}", tree_stat_signature(path)));
+        }
+        if let Self::GeneratedFile { path, content } = self {
+            // A file UZE wrote is stat-able like a link: an edit moves its
+            // modification time or its length, a removal both.
+            let state = fs::metadata(path)
+                .ok()
+                .and_then(|metadata| {
+                    let modified = metadata.modified().ok()?;
+                    let nanos = modified
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()?
+                        .as_nanos();
+                    Some(format!("{nanos}:{}", metadata.len()))
+                })
+                .unwrap_or_else(|| "absent".to_owned());
+            return Some(format!("{state}:{}", content.len()));
+        }
         let Self::SymlinkReference { path, target } = self else {
             return None;
         };
@@ -233,15 +306,208 @@ impl ManagedArtifact {
     }
 
     /// Whether the artifact is still physically in place, answered only for
-    /// a symlink reference (the link exists and points where it should).
-    /// Everything else is the owning integration's verdict, so the answer is
-    /// `false` and callers fall back to receipt existence.
+    /// what carries its whole desired state: a symlink reference (the link
+    /// exists and points where it should) and a generated file (it says
+    /// exactly what the receipt does). Everything else is the owning
+    /// integration's verdict, so the answer is `false` and callers fall back
+    /// to receipt existence.
     pub fn is_in_place(&self) -> bool {
-        let Self::SymlinkReference { path, target } = self else {
-            return false;
-        };
-        fs::read_link(path).is_ok_and(|resolved| resolved == *target)
+        match self {
+            Self::SymlinkReference { path, target } => {
+                fs::read_link(path).is_ok_and(|resolved| resolved == *target)
+            }
+            Self::GeneratedFile { path, content } => {
+                fs::read(path).is_ok_and(|existing| existing == content.as_bytes())
+            }
+            Self::GeneratedTree { path, digest } => {
+                inspect_generated_tree(path, digest).state == AttachmentState::Matched
+            }
+            _ => false,
+        }
     }
+}
+
+/// Writes the file when it is absent and accepts it when it already says
+/// exactly this; anything else at the path is not UZE's to replace.
+fn attach_generated_file(path: &Path, content: &str) -> Result<()> {
+    match fs::read(path) {
+        Ok(existing) if existing == content.as_bytes() => Ok(()),
+        Ok(_) => Err(UzeError::ManagedEntryConflict(path.to_path_buf())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|source| UzeError::Write {
+                    path: parent.to_path_buf(),
+                    source,
+                })?;
+            }
+            fs::write(path, content).map_err(|source| UzeError::Write {
+                path: path.to_path_buf(),
+                source,
+            })
+        }
+        Err(source) => Err(UzeError::Read {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// Writes the tree `build` produces at `path`, replacing it whole, and
+/// returns the digest a receipt records for it.
+///
+/// `owned` is the digest of the tree UZE's receipt says it put at `path`,
+/// if one does. A directory already there is replaced only when it is still
+/// exactly that tree; an edited one is drift, and one with no receipt is
+/// accepted only when it already holds exactly what this build writes, so
+/// attaching twice is idempotent and nobody's directory is overwritten.
+pub fn attach_generated_tree(
+    path: &Path,
+    owned: Option<&str>,
+    build: impl FnOnce(&Path) -> Result<()>,
+) -> Result<String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.is_dir() => {
+            return Err(UzeError::ManagedEntryConflict(path.to_path_buf()));
+        }
+        Ok(_) => match owned {
+            None => return adopt_identical_tree(path, build),
+            Some(digest)
+                if inspect_generated_tree(path, digest).state != AttachmentState::Matched =>
+            {
+                return Err(UzeError::ManagedEntryDrift(path.to_path_buf()));
+            }
+            Some(_) => {}
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(UzeError::Read {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    }
+    crate::persistence::replace_dir(path, build)?;
+    crate::digest::tree_sha256(path).map_err(|source| UzeError::Read {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// The digest of the directory at `path` when it holds exactly the tree
+/// `build` writes, built aside to compare and then discarded.
+fn adopt_identical_tree(path: &Path, build: impl FnOnce(&Path) -> Result<()>) -> Result<String> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("tree");
+    let probe = path.with_file_name(format!(".{name}.uze-probe-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&probe);
+    fs::create_dir_all(&probe).map_err(|source| UzeError::Write {
+        path: probe.clone(),
+        source,
+    })?;
+    let rendered = build(&probe).and_then(|()| {
+        crate::digest::tree_sha256(&probe).map_err(|source| UzeError::Read {
+            path: probe.clone(),
+            source,
+        })
+    });
+    let _ = fs::remove_dir_all(&probe);
+    let rendered = rendered?;
+    match crate::digest::tree_sha256(path) {
+        Ok(existing) if existing == rendered => Ok(rendered),
+        _ => Err(UzeError::ManagedEntryConflict(path.to_path_buf())),
+    }
+}
+
+fn inspect_generated_tree(path: &Path, digest: &str) -> AttachmentInspection {
+    let (state, reason) = match fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.is_dir() => (
+            AttachmentState::Conflict,
+            "managed path is occupied by something other than a directory".to_owned(),
+        ),
+        Ok(_) => match crate::digest::tree_sha256(path) {
+            Ok(actual) if actual == digest => (
+                AttachmentState::Matched,
+                "managed directory content matches receipt".to_owned(),
+            ),
+            Ok(_) => (
+                AttachmentState::Drifted,
+                "managed directory content differs from receipt".to_owned(),
+            ),
+            Err(error) => (AttachmentState::Blocked, error.to_string()),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+            AttachmentState::Missing,
+            "managed directory is missing".to_owned(),
+        ),
+        Err(error) => (AttachmentState::Blocked, error.to_string()),
+    };
+    AttachmentInspection { state, reason }
+}
+
+/// Every entry's relative path, length and modification time: an edit,
+/// an addition or a removal anywhere in the tree moves it, without reading
+/// a byte of content.
+fn tree_stat_signature(root: &Path) -> String {
+    let mut entries = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(children) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for child in children.flatten() {
+            let path = child.path();
+            let Ok(metadata) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if metadata.is_dir() {
+                pending.push(path.clone());
+            }
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |duration| duration.as_nanos());
+            let relative = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
+            entries.push(format!(
+                "{}:{}:{modified}",
+                relative.display(),
+                metadata.len()
+            ));
+        }
+    }
+    if entries.is_empty() && fs::symlink_metadata(root).is_err() {
+        return "absent".to_owned();
+    }
+    entries.sort();
+    crate::digest::short_hex(entries.join("\n").as_bytes())
+}
+
+fn inspect_generated_file(path: &Path, content: &str) -> AttachmentInspection {
+    let (state, reason) = match fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.is_file() => (
+            AttachmentState::Conflict,
+            "managed path is occupied by something other than a file".to_owned(),
+        ),
+        Ok(_) => match fs::read(path) {
+            Ok(existing) if existing == content.as_bytes() => (
+                AttachmentState::Matched,
+                "managed file content matches receipt".to_owned(),
+            ),
+            Ok(_) => (
+                AttachmentState::Drifted,
+                "managed file content differs from receipt".to_owned(),
+            ),
+            Err(error) => (AttachmentState::Blocked, error.to_string()),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+            AttachmentState::Missing,
+            "managed file is missing".to_owned(),
+        ),
+        Err(error) => (AttachmentState::Blocked, error.to_string()),
+    };
+    AttachmentInspection { state, reason }
 }
 
 fn attach_symlink(path: &Path, target: &Path) -> Result<()> {
@@ -346,8 +612,20 @@ pub struct ExposurePlan {
 pub struct PackageExposurePlan {
     pub package_id: PackageId,
     pub route: CompatibilityRoute,
+    pub envelope: PackageEnvelope,
     pub provided_resource_identities: BTreeSet<String>,
     pub evidence: String,
+}
+
+/// Whose manifest a package-level delivery hands the harness: the one the
+/// author shipped, or one the integration wrote because the author shipped
+/// none. Both reach the harness as a package, and an author debugging a
+/// release needs to know which one it read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageEnvelope {
+    Own,
+    Generated,
 }
 
 impl PackageExposurePlan {
@@ -360,6 +638,83 @@ impl PackageExposurePlan {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    fn write_skill(body: &'static str) -> impl FnOnce(&Path) -> Result<()> {
+        move |dir: &Path| {
+            fs::write(dir.join("SKILL.md"), body).unwrap();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_tree_is_written_replaced_while_owned_and_its_digest_proves_it() {
+        let root = uze_testkit::temp::scratch("generated-tree");
+        let path = root.join("skills/flow:review");
+        let first = attach_generated_tree(&path, None, write_skill("one")).unwrap();
+        let artifact = ManagedArtifact::GeneratedTree {
+            path: path.clone(),
+            digest: first.clone(),
+        };
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Matched);
+
+        let second = attach_generated_tree(&path, Some(&first), write_skill("two")).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(fs::read_to_string(path.join("SKILL.md")).unwrap(), "two");
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Drifted);
+    }
+
+    #[test]
+    fn an_edited_tree_is_drift_and_is_not_replaced() {
+        let root = uze_testkit::temp::scratch("generated-tree-drift");
+        let path = root.join("flow:review");
+        let digest = attach_generated_tree(&path, None, write_skill("one")).unwrap();
+        fs::write(path.join("SKILL.md"), "edited").unwrap();
+        let outcome = attach_generated_tree(&path, Some(&digest), write_skill("two"));
+        assert!(matches!(outcome, Err(UzeError::ManagedEntryDrift(_))));
+        assert_eq!(fs::read_to_string(path.join("SKILL.md")).unwrap(), "edited");
+    }
+
+    #[test]
+    fn an_unowned_directory_is_adopted_only_when_it_already_holds_the_same_tree() {
+        let root = uze_testkit::temp::scratch("generated-tree-foreign");
+        let path = root.join("flow:review");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("SKILL.md"), "theirs").unwrap();
+        let outcome = attach_generated_tree(&path, None, write_skill("ours"));
+        assert!(matches!(outcome, Err(UzeError::ManagedEntryConflict(_))));
+        assert_eq!(fs::read_to_string(path.join("SKILL.md")).unwrap(), "theirs");
+
+        let same = attach_generated_tree(&path, None, write_skill("theirs")).unwrap();
+        assert_eq!(same, crate::digest::tree_sha256(&path).unwrap());
+        assert_eq!(
+            fs::read_dir(&root).unwrap().count(),
+            1,
+            "no probe left behind"
+        );
+    }
+
+    #[test]
+    fn a_matched_tree_is_detached_and_a_drifted_one_is_kept() {
+        let root = uze_testkit::temp::scratch("generated-tree-detach");
+        let path = root.join("flow:review");
+        let digest = attach_generated_tree(&path, None, write_skill("one")).unwrap();
+        let artifact = ManagedArtifact::GeneratedTree {
+            path: path.clone(),
+            digest,
+        };
+        fs::write(path.join("SKILL.md"), "edited").unwrap();
+        assert_eq!(
+            artifact.detach_standard().unwrap().state,
+            AttachmentState::Drifted
+        );
+        assert!(path.exists());
+        fs::write(path.join("SKILL.md"), "one").unwrap();
+        assert_eq!(
+            artifact.detach_standard().unwrap().state,
+            AttachmentState::Missing
+        );
+        assert!(!path.exists());
+    }
 
     fn managed_reference(discovery_root: &Path, target: &Path) -> ManagedArtifact {
         ManagedArtifact::SymlinkReference {
@@ -478,5 +833,46 @@ mod tests {
         assert!(matches!(error, UzeError::ManagedEntryConflict(_)));
 
         fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod generated_file_tests {
+    use super::*;
+
+    #[test]
+    fn a_generated_file_is_written_recognised_and_never_taken_from_someone_else() {
+        let root = uze_testkit::temp::scratch("generated-file");
+        let path = root.join("agents/flow:reviewer.md");
+        let artifact = ManagedArtifact::GeneratedFile {
+            path: path.clone(),
+            content: "---\nname: flow:reviewer\n---\nReview.\n".to_owned(),
+        };
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Missing);
+        artifact.attach_standard().unwrap();
+        assert!(!path.is_symlink());
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Matched);
+        assert_eq!(artifact.exposure_name().as_deref(), Some("flow:reviewer"));
+        artifact.attach_standard().unwrap();
+
+        fs::write(&path, "edited by hand").unwrap();
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Drifted);
+        assert!(matches!(
+            artifact.attach_standard(),
+            Err(UzeError::ManagedEntryConflict(_))
+        ));
+        assert_eq!(
+            artifact.detach_standard().unwrap().state,
+            AttachmentState::Drifted,
+            "a drifted file is never removed"
+        );
+        assert!(path.is_file());
+
+        fs::write(&path, "---\nname: flow:reviewer\n---\nReview.\n").unwrap();
+        assert_eq!(
+            artifact.detach_standard().unwrap().state,
+            AttachmentState::Missing
+        );
+        assert!(!path.exists());
     }
 }

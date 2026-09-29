@@ -105,9 +105,9 @@ scenes:
       - file: "{home}/.gemini/config/plugins/flow/plugin.json"
         contains: '"name": "flow"'
         about: Antigravity gets a byte copy, staged by its own CLI
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         contains: The body a harness would read
-        about: the shared agent skill root carries the same skill
+        about: OpenCode's own skill root carries the same skill
       - dir: "{uze_home}/store/plugins/demo/*"
         count: 1
         about: and all of that came from one package in the Store

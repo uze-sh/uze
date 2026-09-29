@@ -23,15 +23,15 @@ running shell commands already could.
 
 ## How each harness invokes them
 
-Delivery is a managed `SymlinkReference` — the same path every Skill-only package
-uses. The label is the stable plugin-qualified name (ADR-026); the *prefix* is
+Delivery is a managed directory of its own in each harness's skill root (a
+`GeneratedTree` receipt), the same path every Skill-only package uses. The label is the stable plugin-qualified name (ADR-026); the *prefix* is
 the harness's own.
 
 | Harness | Discovery path | Explicit invocation |
 |---|---|---|
 | Claude Code | `~/.claude/skills/uze:init/` | `/uze:init` |
 | Codex | `~/.agents/skills/uze:init/` | `$uze:init` |
-| OpenCode | `~/.agents/skills/uze:init/` (shared root with Codex) | `@uze:init` — a **mention**, not a slash command |
+| OpenCode | `~/.config/opencode/skills/uze:init/` | `@uze:init` — a **mention**, not a slash command |
 | Antigravity | its global skills root | `/uze:init` |
 
 All four also select the Skill autonomously from its `description`, which is

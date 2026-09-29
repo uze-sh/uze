@@ -18,6 +18,11 @@ It ships four Skills:
 - `skills/author/SKILL.md`: creating a plugin end to end, from choosing or
   creating its marketplace to checking, installing and iterating on it.
 
+The plugin format (skills, agents, MCP servers, hooks, and the
+`${PLUGIN_ROOT}` placeholder) and what each harness receives are documented
+at [uze.sh/docs/reference/plugin-format](https://uze.sh/docs/reference/plugin-format)
+and [uze.sh/docs/reference/harnesses](https://uze.sh/docs/reference/harnesses).
+
 See [`docs/capabilities/context-manager.md`](../../docs/capabilities/context-manager.md)
 for the architecture these sit on top of, and
 [`docs/capabilities/uze-skill.md`](../../docs/capabilities/uze-skill.md) for how

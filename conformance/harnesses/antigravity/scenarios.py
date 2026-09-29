@@ -40,6 +40,7 @@ from shared.common import (
     provider_struct,
     start_provider,
 )
+from shared.markers import AGENTS
 
 #: Signed-in ("consumer") mode is how the vertical runs: it is the mode
 #: users are in, and until 1.1.24 the only one in which this harness
@@ -170,15 +171,18 @@ def phase_tui(cfg, prov_ip):
         child.send(ch)
         time.sleep(0.15)
     child.send("\r")
-    t_agents, p_agents, _ = wait_for(
-        ["reviewer", "Agents"], tries=8, stop_on_death=True
-    )
+    label = AGENTS["flat"][0]
+    t_agents, p_agents, _ = wait_for(["auditor", "Agents"], tries=8, stop_on_death=True)
     snap("02a_agents", t_agents)
+    # By the label UZE commits to on every harness (`contract.agent`); agy
+    # names an agent by its frontmatter `name`, so a bare `auditor` here is
+    # a definition delivered without it.
+    listed = label in p_agents.replace(" ", "")
     check(
         "agent-visible-in-tui",
-        "reviewer" in p_agents,
-        "Antigravity /agents lists the UZE reviewer agent"
-        if "reviewer" in p_agents
+        listed,
+        f"Antigravity /agents lists the UZE agent as `{label}`"
+        if listed
         else p_agents[-200:].replace("\n", " "),
     )
     child.send("\x1b")

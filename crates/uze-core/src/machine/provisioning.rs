@@ -4,6 +4,7 @@
 //! deliberately models only how UZE invokes and records an opaque command.
 
 use std::{
+    path::PathBuf,
     process::{Command, Stdio},
     time::Duration,
 };
@@ -152,6 +153,12 @@ pub struct ProvisioningResult {
     pub detection: HarnessDetection,
     pub method: String,
     pub reason: Option<String>,
+    /// Where a verified executable was found when no directory on this
+    /// process's `PATH` holds it: an installer that edits the shell's rc
+    /// files has not reached the shell `uze setup` runs in, so the person
+    /// needs to hear where it is and that a new shell will see it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub located_outside_path: Option<PathBuf>,
 }
 
 impl ProvisioningResult {
@@ -162,6 +169,7 @@ impl ProvisioningResult {
             detection: HarnessDetection::default(),
             method: "unsupported".to_owned(),
             reason: Some(reason.into()),
+            located_outside_path: None,
         }
     }
 
@@ -176,6 +184,7 @@ impl ProvisioningResult {
             detection: HarnessDetection::default(),
             method: method.into(),
             reason: Some(reason.into()),
+            located_outside_path: None,
         }
     }
 
@@ -190,7 +199,13 @@ impl ProvisioningResult {
             detection,
             method: method.into(),
             reason: None,
+            located_outside_path: None,
         }
+    }
+
+    pub fn found_outside_path(mut self, path: Option<PathBuf>) -> Self {
+        self.located_outside_path = path;
+        self
     }
 }
 

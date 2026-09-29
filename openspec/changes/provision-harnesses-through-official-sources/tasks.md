@@ -2,8 +2,9 @@
 
 - [x] Record ADR-010 for official, integration-owned harness provisioning.
 - [x] Record the official install/update/verification routes and platform
-      restrictions for Claude Code, Codex, OpenCode, and Gemini CLI; include
-      source links and do not infer missing Windows routes.
+      restrictions for Claude Code, Codex, OpenCode, and Antigravity CLI
+      (which replaced Gemini CLI as the Google-family harness, ADR-027);
+      include source links and do not infer missing Windows routes.
 
 ## Provisioning boundary
 
@@ -20,36 +21,50 @@
 
 ## Peer implementations
 
-- [ ] Implement and contract-test supported Unix/WSL routes for Claude Code,
-      Codex, OpenCode, and Gemini CLI.
-- [ ] Implement documented Windows/macOS routes only where the vendor exposes
+- [x] Implement and contract-test supported Unix/WSL routes for Claude Code,
+      Codex, OpenCode, and Antigravity CLI. Install routes:
+      `tests/integrations/provisioning.rs`; update routes: the setup matrix in
+      `tests/cli/machine.rs`.
+- [x] Implement documented Windows/macOS routes only where the vendor exposes
       a safe official automation path; return actionable unsupported results
-      otherwise.
-- [ ] Capture version and provision provenance without credentials or complete
-      command output.
+      otherwise. macOS takes the vendors' Unix installers; Windows has no
+      route exercised by a Windows runner, so every integration answers
+      Blocked naming the vendor's installation page (`research.md`).
+- [x] Capture version and provision provenance without credentials or complete
+      command output. The record keeps action, status, method, platform,
+      version and time; never a command, URL or output.
 
 ## Product presentation and safety
 
-- [ ] Surface install/update/verify/prepare outcomes in CLI and the existing
+- [x] Surface install/update/verify/prepare outcomes in CLI and the existing
       TUI using Application read models only.
-- [ ] Ensure provision failure never records a prepared integration or
+- [x] Ensure provision failure never records a prepared integration or
       attachment receipt, and does not remove packages or external artifacts.
-- [ ] Do not implement harness removal; document the future ownership gate.
+- [x] Do not implement harness removal; document the future ownership gate
+      (`design.md`, "Harness removal").
 
 ## Verification
 
-- [ ] Test missing → official install → verify → prepare in isolated HOME and
+- [x] Test missing → official install → verify → prepare in isolated HOME and
       UZE_HOME with a fake process runner.
-- [ ] Test present → official update → verify → prepare and update failure →
+- [x] Test present → official update → verify → prepare and update failure →
       blocked/no preparation.
-- [ ] Test package added before harness provision is delivered by later setup
+- [x] Test package added before harness provision is delivered by later setup
       without duplicate native/capability attachments.
-- [ ] Test `add` never invokes a provision command, including when all
+- [x] Test `add` never invokes a provision command, including when all
       harnesses are absent.
 - [x] Add a registry-complete CLI conformance matrix for `uze setup` that
       covers every registered harness, its official update route, default shim
       creation, and shim bypass without network access.
 - [x] Cover the OpenCode legacy `opencode2` route: it must use the official
       installer instead of passing the stable-only `upgrade` subcommand.
-- [ ] Run cargo test, cargo clippy -- -D warnings, cargo fmt --check,
+- [x] Verify OpenCode at its documented install location when the
+      installer's own `PATH` edit is not live in this process: the official
+      installer writes `~/.opencode/bin/opencode` and edits the shell rc, so
+      `uze setup opencode` reported "installer finished but `opencode` could
+      not be verified" (migration report, 2026-09-28). Done: the installer's
+      destinations are searched in its own order when `PATH` has no
+      `opencode`. The setup report (CLI and TUI) names the location found and
+      that a new shell is needed for `PATH`.
+- [x] Run cargo test, cargo clippy -- -D warnings, cargo fmt --check,
       openspec validate --all --strict, and git diff --check.

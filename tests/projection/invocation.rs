@@ -111,8 +111,8 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
     fn exposure_name_candidates(&self, resource: &ProjectResource) -> Vec<String> {
         self.0.exposure_name_candidates(resource)
     }
-    fn shared_agent_skill_root(&self) -> Option<PathBuf> {
-        self.0.shared_agent_skill_root()
+    fn skill_discovery_root(&self) -> Option<PathBuf> {
+        self.0.skill_discovery_root()
     }
     fn package_exposure_plan(
         &self,
@@ -246,6 +246,8 @@ fn skill_fixture(root: &Path, package_id: &str, skill_name: &str) -> PathBuf {
     dir
 }
 
+/// OpenCode's loose skills land in its own root beside its config:
+/// `<root>/opencode-config/skills`, returned with the application.
 fn app_with_opencode(root: &Path) -> (UzeApplication, PathBuf) {
     let agents_home = root.join("opencode-agents");
     let uze_home = UzeHome::at(root.join("uze-home"));
@@ -258,13 +260,13 @@ fn app_with_opencode(root: &Path) -> (UzeApplication, PathBuf) {
         )))],
         Box::new(NoopProcessRunner),
     );
-    (application, agents_home)
+    (application, root.join("opencode-config/skills"))
 }
 
 #[test]
 fn installing_another_plugin_never_renames_an_existing_one() {
     let root = temp("order-stability");
-    let (application, agents_home) = app_with_opencode(&root);
+    let (application, skills_dir) = app_with_opencode(&root);
 
     application
         .plugins()
@@ -273,9 +275,8 @@ fn installing_another_plugin_never_renames_an_existing_one() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    let skills_dir = agents_home.join("skills");
     let alpha_before = skills_dir.join("alpha:review");
-    assert!(alpha_before.is_symlink());
+    assert!(alpha_before.is_dir());
 
     // Installing a second plugin with the SAME logical name must not rename
     // or disturb the first.
@@ -286,12 +287,12 @@ fn installing_another_plugin_never_renames_an_existing_one() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    assert!(alpha_before.is_symlink(), "alpha:review is untouched");
-    assert!(skills_dir.join("beta:review").is_symlink());
+    assert!(alpha_before.is_dir(), "alpha:review is untouched");
+    assert!(skills_dir.join("beta:review").is_dir());
 
     // Reverse order yields the exact same labels per plugin.
     let root2 = temp("order-reverse");
-    let (application2, agents2) = app_with_opencode(&root2);
+    let (application2, skills2) = app_with_opencode(&root2);
     application2
         .plugins()
         .add(
@@ -306,9 +307,8 @@ fn installing_another_plugin_never_renames_an_existing_one() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    let skills2 = agents2.join("skills");
-    assert!(skills2.join("alpha:review").is_symlink());
-    assert!(skills2.join("beta:review").is_symlink());
+    assert!(skills2.join("alpha:review").is_dir());
+    assert!(skills2.join("beta:review").is_dir());
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(root2).unwrap();
 }
@@ -316,7 +316,7 @@ fn installing_another_plugin_never_renames_an_existing_one() {
 #[test]
 fn same_named_skills_from_two_packages_are_independently_addressable() {
     let root = temp("skill-independence");
-    let (application, agents_home) = app_with_opencode(&root);
+    let (application, skills_dir) = app_with_opencode(&root);
     application
         .plugins()
         .add(
@@ -331,9 +331,8 @@ fn same_named_skills_from_two_packages_are_independently_addressable() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    let skills_dir = agents_home.join("skills");
-    assert!(skills_dir.join("alpha:review").is_symlink());
-    assert!(skills_dir.join("beta:review").is_symlink());
+    assert!(skills_dir.join("alpha:review").is_dir());
+    assert!(skills_dir.join("beta:review").is_dir());
     assert!(
         !skills_dir.join("review").exists(),
         "no bare alias is created"
@@ -360,8 +359,8 @@ fn labels_never_touch_canonical_identity_store_or_receipts() {
         receipt.resource_identity.as_deref().unwrap(),
         canonical_identity
     );
-    let ManagedArtifact::SymlinkReference { path, .. } = &receipt.artifact else {
-        panic!("expected symlink artifact");
+    let ManagedArtifact::GeneratedTree { path, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     assert_eq!(path.file_name().unwrap(), "workflow:review");
     // Store bytes stay byte-identical.
@@ -416,8 +415,8 @@ fn claude_shim_namespace_matches_plugin_and_never_double_prefixes() {
         mark_setup(&home, &claude);
         let skill = skills_of(&resources);
         let receipt = claude.attach_receipt(skill).unwrap().expect("attaches");
-        let ManagedArtifact::SymlinkReference { path, .. } = &receipt.artifact else {
-            panic!("expected symlink artifact");
+        let ManagedArtifact::GeneratedTree { path, .. } = &receipt.artifact else {
+            panic!("expected a materialized skill directory");
         };
         assert_eq!(path.file_name().unwrap(), "workflow:review");
         let manifest: serde_json::Value =

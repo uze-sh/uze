@@ -109,6 +109,23 @@ def parse_args(argv):
         help="matrix: comma-separated harness subset (default: all four)",
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        help="every harness's contract and vendor legs as parallel processes, "
+        "reusing a local proof of a leg whose inputs did not move (see legs.py)",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=4,
+        help="--all: legs running at once (default 4)",
+    )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="--all: run every leg, reusing no proof",
+    )
+    parser.add_argument(
         "--part",
         choices=PARTS,
         help="run one half of the vertical: the common `contract` or the "
@@ -363,6 +380,7 @@ def docker_shell_cmd(cfg, prov_ip, shell_command):
     for h in common.HARNESS_HOSTS.get(cfg.harness, []):
         cmd += ["--add-host", f"{h}:{prov_ip}"]
     cmd += common.ca_mount(cfg)
+    cmd += common.marketplace_mount()
     cmd += [
         "--network",
         cfg.net,
@@ -479,6 +497,11 @@ def run_experiment(cfg, vendor, name, variation, discovery=False):
 def main(argv=None):
     argv = list(argv) if argv is not None else sys.argv[1:]
     args = parse_args(argv)
+    if args.all:
+        from legs import run_all
+
+        run_all(args.jobs, args.fresh)
+        return
     cfg = common.Config(args.harness, args.run_index)
     common.CURRENT_HARNESS = args.harness
     scenario = importlib.import_module(f"harnesses.{args.harness}.scenarios")

@@ -23,6 +23,11 @@ use crate::package::acquisition::marketplace;
 use crate::package::store;
 use crate::{PackageId, Result, UzeError};
 
+mod agent_plugins;
+pub use agent_plugins::{
+    MCP_SCHEMA, PLUGIN_SCHEMA, STANDARD as AGENT_PLUGINS, StandardConformance, UZE_NAMESPACE,
+};
+
 /// The optional capability files a scaffold writes, one flag each.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ScaffoldCapabilities {
@@ -304,7 +309,7 @@ fn write_plugin_files(
     write_json(
         &plugin_root.join("plugin.json"),
         &serde_json::json!({
-            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "$schema": PLUGIN_SCHEMA,
             "name": name,
             "description": description.unwrap_or("What this plugin offers."),
         }),
@@ -360,7 +365,15 @@ fn write_plugin_files(
         create_dir(&agents)?;
         write_file(
             &agents.join(format!("{name}.md")),
-            include_str!("authoring/agent.md.template"),
+            include_str!("authoring/agent.md.template")
+                .replace("{PLUGIN_NAME}", name)
+                .replace("{AGENT_NAME}", name)
+                .replace(
+                    "{AGENT_DESCRIPTION}",
+                    &yaml_double_quoted(
+                        "When to hand work to this agent. The model reads this to decide.",
+                    ),
+                ),
         )?;
     }
     if caps.instructions {
@@ -475,6 +488,13 @@ pub struct ValidationReport {
     pub delivers: Vec<String>,
     /// Where and why, one per finding. Empty is clean.
     pub findings: Vec<String>,
+    /// What still installs but reaches a harness short of what the author
+    /// wrote: located like a finding, never a reason to refuse.
+    pub warnings: Vec<String>,
+    /// Whether the artifact is also a valid Agent Plugins 1.0 plugin. Advice
+    /// only: uze's own format is what decides whether it installs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_plugins: Option<StandardConformance>,
 }
 
 impl ValidationReport {
@@ -495,8 +515,12 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
         return Ok(ValidationReport {
             delivers: Vec::new(),
             findings,
+            warnings: Vec::new(),
+            agent_plugins: None,
         });
     }
+    let (conformance, mut warnings) = agent_plugins::judge(root);
+    let agent_plugins = Some(conformance);
     let manifest = match store::read_plugin_manifest(root) {
         Ok(manifest) => manifest,
         Err(error) => {
@@ -504,6 +528,8 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
             return Ok(ValidationReport {
                 delivers: Vec::new(),
                 findings,
+                warnings,
+                agent_plugins,
             });
         }
     };
@@ -514,6 +540,8 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
             return Ok(ValidationReport {
                 delivers: Vec::new(),
                 findings,
+                warnings,
+                agent_plugins,
             });
         }
     };
@@ -548,13 +576,47 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
                             .map(|reason| format!("{path}: {reason}")),
                     );
                 }
+                if resource.capability.kind == CapabilityKind::Agent {
+                    let path = resource.capability.path.display();
+                    let relative = resource
+                        .capability
+                        .path
+                        .strip_prefix(root.join("agents"))
+                        .unwrap_or(&resource.capability.path);
+                    findings.extend(
+                        agent_faults(relative, &resource.capability.payload)
+                            .into_iter()
+                            .map(|reason| format!("{path}: {reason}")),
+                    );
+                }
+                if matches!(
+                    resource.capability.kind,
+                    CapabilityKind::AgentSkill | CapabilityKind::Agent
+                ) && let Some((frontmatter, _)) =
+                    std::str::from_utf8(&resource.capability.payload)
+                        .ok()
+                        .and_then(crate::capability::harness::frontmatter_of)
+                {
+                    let path = resource.capability.path.display();
+                    let common = crate::capability::harness::common_findings(&frontmatter);
+                    findings.extend(common.errors.into_iter().map(|e| format!("{path}: {e}")));
+                    if resource.capability.kind == CapabilityKind::Agent {
+                        warnings
+                            .extend(common.warnings.into_iter().map(|w| format!("{path}: {w}")));
+                    }
+                }
                 delivers.push(resource.identity());
             }
         }
         Err(error) => findings.push(error.to_string()),
     }
     findings.extend(escaping_references(root));
-    Ok(ValidationReport { delivers, findings })
+    Ok(ValidationReport {
+        delivers,
+        findings,
+        warnings,
+        agent_plugins,
+    })
 }
 
 /// What a harness reading this `SKILL.md`, from the directory named
@@ -597,6 +659,58 @@ fn skill_frontmatter_faults(payload: &[u8], directory: &str) -> Vec<String> {
         );
     }
     faults.extend(skill_name_fault(&frontmatter, directory));
+    faults
+}
+
+/// What a harness reading this agent definition would trip over. Every
+/// harness offers it under `<plugin>:<subdirectories>:<name>`, so each part
+/// of that label is held to the name rule, and the frontmatter is read as
+/// the YAML a harness parses it as: one that does not parse loses the
+/// agent on some harnesses and its name and description on the rest.
+fn agent_faults(relative_to_agents: &Path, payload: &[u8]) -> Vec<String> {
+    let Ok(text) = std::str::from_utf8(payload) else {
+        return vec!["is not UTF-8".to_owned()];
+    };
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let mut faults = Vec::new();
+    let Some((head, _)) = crate::skill::split_frontmatter(text) else {
+        return vec![
+            "has no frontmatter — it opens with a `---` line, carries `name:` and \
+             `description:`, and closes with another `---` line"
+                .to_owned(),
+        ];
+    };
+    let frontmatter: serde_yaml::Value =
+        match from_str_with_config(head, &ParserConfig::serde_yaml_compat()) {
+            Ok(frontmatter) => frontmatter,
+            Err(error) => {
+                return vec![format!(
+                    "frontmatter is not valid YAML ({error}) — quote a value that carries `: ` \
+                     or starts with a special character"
+                )];
+            }
+        };
+    let described = frontmatter
+        .get("description")
+        .and_then(serde_yaml::Value::as_str)
+        .is_some_and(|description| !description.trim().is_empty());
+    if !described {
+        faults.push(
+            "frontmatter has no `description` — it is what the model reads to decide to \
+             hand work to this agent"
+                .to_owned(),
+        );
+    }
+    if let Some(label) = crate::capability::agent::logical_name(relative_to_agents, payload) {
+        for part in label.split(':') {
+            if !store::is_valid_package_name(part) {
+                faults.push(format!(
+                    "`{part}` in the agent's label `{label}` is refused by harnesses: {}",
+                    store::name_rule(part)
+                ));
+            }
+        }
+    }
     faults
 }
 
@@ -704,7 +818,12 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
         findings.push(format!(
             "{MARKETPLACE_MANIFEST} is missing — this directory is not a marketplace"
         ));
-        return Ok(ValidationReport { delivers, findings });
+        return Ok(ValidationReport {
+            delivers,
+            findings,
+            warnings: Vec::new(),
+            agent_plugins: None,
+        });
     }
     let bytes = fs::read(&manifest_path).map_err(|source| UzeError::Read {
         path: manifest_path.clone(),
@@ -714,9 +833,15 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
         Ok(manifest) => manifest,
         Err(error) => {
             findings.push(error.to_string());
-            return Ok(ValidationReport { delivers, findings });
+            return Ok(ValidationReport {
+                delivers,
+                findings,
+                warnings: Vec::new(),
+                agent_plugins: None,
+            });
         }
     };
+    let mut divergences = Vec::new();
     for entry in &manifest.plugins {
         if !store::is_valid_package_name(&entry.name) {
             findings.push(format!(
@@ -735,11 +860,23 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
                         .into_iter()
                         .map(|finding| format!("{}: {finding}", entry.name)),
                 );
+                divergences.extend(
+                    plugin
+                        .agent_plugins
+                        .into_iter()
+                        .flat_map(|conformance| conformance.divergences)
+                        .map(|divergence| format!("{}: {divergence}", entry.name)),
+                );
             }
             Err(error) => findings.push(format!("{}: {error}", entry.name)),
         }
     }
-    Ok(ValidationReport { delivers, findings })
+    Ok(ValidationReport {
+        delivers,
+        findings,
+        warnings: Vec::new(),
+        agent_plugins: Some(StandardConformance::from_divergences(divergences)),
+    })
 }
 
 #[cfg(test)]

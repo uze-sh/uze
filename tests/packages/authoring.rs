@@ -8,6 +8,7 @@
 //! what the machine registry and the Store carry once the verbs have run.
 
 use std::{fs, process::Command};
+use uze_testkit::process::IsolatedHome;
 
 fn uze_bin() -> &'static str {
     env!("CARGO_BIN_EXE_uze")
@@ -28,7 +29,7 @@ fn uze(root: &std::path::Path) -> Command {
     let mut command = Command::new(uze_bin());
     command
         .env("UZE_HOME", root.join("uze"))
-        .env("HOME", root)
+        .isolated_home(root)
         .env("PATH", "/usr/bin:/bin");
     command
 }
@@ -159,6 +160,11 @@ fn a_scaffolded_plugin_is_installable_before_any_second_commit() {
         "the scaffold's own output must pass its check: {}{}",
         String::from_utf8_lossy(&check.stdout),
         String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&check.stdout).contains("this is a valid Agent Plugins 1.0 plugin"),
+        "the scaffold is valid under the standard too: {}",
+        String::from_utf8_lossy(&check.stdout)
     );
 
     // And it installs: the linked marketplace reads the working tree, so
@@ -554,5 +560,126 @@ fn a_name_outside_the_rule_is_refused_before_the_scaffold() {
     assert!(stderr.contains("try `my-plugin`"), "{stderr}");
     assert!(!tools.join("plugins/My_Plugin").exists());
     assert!(!tools.join("plugins/my-plugin").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A plugin whose one agent speaks to each harness through its `harness:`
+/// block, written into `root/kit` with the given block.
+fn agent_plugin(root: &std::path::Path, frontmatter: &str) -> std::path::PathBuf {
+    let plugin = root.join("kit");
+    fs::create_dir_all(plugin.join("agents/review")).unwrap();
+    fs::write(
+        plugin.join("plugin.json"),
+        r#"{"name":"kit","description":"harness block fixture"}"#,
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("agents/review/security.md"),
+        format!("---\n{frontmatter}\n---\nReview the diff for security flaws.\n"),
+    )
+    .unwrap();
+    plugin
+}
+
+fn check(root: &std::path::Path, plugin: &std::path::Path) -> (bool, String) {
+    let output = uze(root)
+        .args(["agent", "plugin", "check"])
+        .arg(plugin)
+        .output()
+        .unwrap();
+    (
+        output.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    )
+}
+
+#[test]
+fn a_harness_block_every_harness_accepts_checks_clean() {
+    let root = uze_testkit::temp::scratch("check-harness-clean");
+    let plugin = agent_plugin(
+        &root,
+        "name: security\ndescription: Reviews the diff\nharness:\n  claude-code: { model: haiku, tools: [Read, Grep] }\n  codex: { model: gpt-6-luna, model_reasoning_effort: high }\n  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true } }",
+    );
+    let (clean, text) = check(&root, &plugin);
+    assert!(clean, "{text}");
+    assert!(!text.contains("Delivered short"), "{text}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn each_harness_adds_its_own_layer_to_the_check() {
+    let root = uze_testkit::temp::scratch("check-harness-layers");
+    let plugin = agent_plugin(
+        &root,
+        "name: security\ndescription: Reviews the diff\nmodel: haiku\nharness:\n  opencode: { model: haiku }\n  codex: { nickname: sec }\n  cursor: { model: x }",
+    );
+    let (clean, text) = check(&root, &plugin);
+    assert!(
+        !clean,
+        "a value OpenCode drops the agent over fails the check: {text}"
+    );
+    assert!(
+        text.contains("OpenCode: `harness.opencode.model` must be `provider/model`"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Codex: `harness.codex.nickname` is not a field this harness reads"),
+        "{text}"
+    );
+    assert!(
+        text.contains("`harness.cursor` names no harness this build delivers to"),
+        "{text}"
+    );
+    assert!(
+        text.contains("`model` at the root is spelled differently by each harness"),
+        "{text}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_block_may_not_redefine_what_every_harness_reads() {
+    let root = uze_testkit::temp::scratch("check-harness-identity");
+    let plugin = agent_plugin(
+        &root,
+        "name: security\ndescription: Reviews the diff\nharness:\n  claude-code: { name: other }",
+    );
+    let (clean, text) = check(&root, &plugin);
+    assert!(!clean, "{text}");
+    assert!(
+        text.contains("`harness.claude-code.name` redefines"),
+        "{text}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn check_names_what_keeps_a_plugin_from_agent_plugins_and_still_passes() {
+    let root = uze_testkit::temp::scratch("check-agent-plugins");
+    let plugin = root.join("legacy");
+    fs::create_dir_all(plugin.join("skills/review")).unwrap();
+    fs::write(plugin.join("plugin.json"), r#"{"name":"legacy"}"#).unwrap();
+    fs::write(
+        plugin.join("skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews\n---\nbody\n",
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("mcp.json"),
+        r#"{"mcpServers":{"s":{"command":"server"}}}"#,
+    )
+    .unwrap();
+    let (clean, text) = check(&root, &plugin);
+    assert!(clean, "uze's own format stays authoritative: {text}");
+    assert!(
+        text.contains("not yet a valid Agent Plugins 1.0 plugin"),
+        "{text}"
+    );
+    assert!(text.contains("plugin.json: no `$schema`"), "{text}");
+    assert!(text.contains("server `s` has no `type`"), "{text}");
     let _ = fs::remove_dir_all(root);
 }

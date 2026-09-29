@@ -303,17 +303,6 @@ fn render_harness_drawer(
                 theme::fg(Token::TextTertiary),
             ),
         ]),
-        Line::from(vec![
-            label_span("Delivery", theme::fg(Token::TextMuted)),
-            Span::styled(
-                harness
-                    .strategy
-                    .as_deref()
-                    .map(friendly_delivery)
-                    .unwrap_or("Not configured yet"),
-                theme::fg(Token::TextTertiary),
-            ),
-        ]),
     ];
     if let Some(provisioning) = &harness.provisioning {
         lines.push(Line::from(vec![
@@ -342,21 +331,6 @@ fn render_harness_drawer(
 /// so every row's value starts at the same x position.
 fn label_span(label: &str, style: Style) -> Span<'static> {
     Span::styled(format!("{label:<width$}", width = LABEL_COL), style)
-}
-
-/// `harness.strategy` carries the internal identifier `install()` recorded
-/// (see each `IntegrationPort::install` impl) — meant for state/receipts,
-/// not a reader. Every identifier currently in use gets a plain-language
-/// translation here; an integration adding a new one shows up as the raw
-/// identifier rather than silently, so a gap is obvious instead of hidden.
-fn friendly_delivery(strategy: &str) -> &str {
-    match strategy {
-        "managed-user-scope-skills-dir" => "Skills folder (UZE-managed)",
-        "native-user-scope-skills-plus-managed-mcp-config" => {
-            "Native skills + MCP config (UZE-managed)"
-        }
-        other => other,
-    }
 }
 
 /// One row per capability UZE knows about, in the order a reader would care
@@ -401,10 +375,12 @@ fn compatibility_rows(harness: &HarnessHealth) -> Vec<(&'static str, String, Sty
 /// whether the harness could see a project's instructions).
 fn context_rows(support: &HarnessContextSupport) -> Vec<(&'static str, String, Style)> {
     let (instructions, instructions_style) = context_row(support.instructions);
-    let (agents_directory, agents_directory_style) = context_row(support.agents_directory);
+    let (skills, skills_style) = context_row(support.project_skills);
+    let (agents, agents_style) = context_row(support.project_agents);
     vec![
         ("AGENTS.md", instructions, instructions_style),
-        (".agents", agents_directory, agents_directory_style),
+        (".agents/skills", skills, skills_style),
+        (".agents/agents", agents, agents_style),
     ]
 }
 
@@ -478,7 +454,8 @@ mod tests {
             runtime_shim_active,
             context_support: HarnessContextSupport {
                 instructions: ContextMechanism::RuntimeShim,
-                agents_directory: ContextMechanism::RuntimeShim,
+                project_skills: ContextMechanism::RuntimeShim,
+                project_agents: ContextMechanism::RuntimeShim,
             },
         }
     }
@@ -536,7 +513,8 @@ mod tests {
     ) -> HarnessContextSupport {
         HarnessContextSupport {
             instructions,
-            agents_directory,
+            project_skills: agents_directory,
+            project_agents: agents_directory,
         }
     }
 
@@ -556,7 +534,7 @@ mod tests {
             format!("{} Runtime shim", theme::glyph(Symbol::MarkNative))
         );
         assert_eq!(rows[0].2.fg, Some(theme::color(Token::Accent)));
-        assert_eq!(rows[1].0, ".agents");
+        assert_eq!(rows[1].0, ".agents/skills");
         assert_eq!(
             rows[1].1,
             format!("{} Runtime shim", theme::glyph(Symbol::MarkNative))
@@ -576,6 +554,25 @@ mod tests {
             rows[1].1,
             format!("{} Native", theme::glyph(Symbol::MarkNative))
         );
+    }
+
+    #[test]
+    fn each_kind_of_the_agents_directory_has_a_row_of_its_own() {
+        // A harness reading `.agents/skills` itself may read no
+        // `.agents/agents` and be handed none: one `.agents` row said
+        // Native over agents that never arrived.
+        let rows = context_rows(&HarnessContextSupport {
+            instructions: ContextMechanism::Native,
+            project_skills: ContextMechanism::Native,
+            project_agents: ContextMechanism::Unsupported,
+        });
+        assert_eq!(rows[1].0, ".agents/skills");
+        assert_eq!(
+            rows[1].1,
+            format!("{} Native", theme::glyph(Symbol::MarkNative))
+        );
+        assert_eq!(rows[2].0, ".agents/agents");
+        assert_eq!(rows[2].2.fg, Some(theme::color(Token::StateDanger)));
     }
 
     #[test]
@@ -605,7 +602,7 @@ mod tests {
     // matter which directory `uze` was launched from, because nothing in
     // the rows is resolved against a project.
     #[test]
-    fn compatibility_rows_lead_with_the_two_portable_resources() {
+    fn compatibility_rows_lead_with_the_portable_resources() {
         let harness = configured_harness(true);
         let labels: Vec<_> = compatibility_rows(&harness)
             .into_iter()
@@ -613,7 +610,15 @@ mod tests {
             .collect();
         assert_eq!(
             labels,
-            ["AGENTS.md", ".agents", "Skills", "MCP", "Agents", "Hooks"]
+            [
+                "AGENTS.md",
+                ".agents/skills",
+                ".agents/agents",
+                "Skills",
+                "MCP",
+                "Agents",
+                "Hooks"
+            ]
         );
     }
 }

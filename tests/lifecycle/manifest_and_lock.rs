@@ -609,6 +609,13 @@ fn a_linked_marketplace_follows_the_checkout_and_pins_nothing() {
         !report.moved(),
         "nothing was pinned, so nothing moved: {report:?}"
     );
+    assert!(
+        matches!(
+            report.outcomes.as_slice(),
+            [uze_application::application::UpdateOutcome::FollowedLink { .. }]
+        ),
+        "the ingest a project update made is reported, not held silently: {report:?}"
+    );
 
     // UZE performed no Git on the operator's checkout: their edit is still
     // uncommitted, and their branch is untouched.
@@ -616,6 +623,53 @@ fn a_linked_marketplace_follows_the_checkout_and_pins_nothing() {
     assert!(
         status.contains("SKILL.md"),
         "the edit is still the operator's to commit: {status:?}"
+    );
+}
+
+/// A linked marketplace resolves to the same checkout path however its
+/// files change, so a machine update that compared where the bytes came
+/// from called an edit "already current" while the Store took it in.
+#[test]
+fn a_machine_update_of_a_linked_edit_reports_the_package_updated() {
+    use uze_application::application::UpdateOutcome;
+    let (application, repository) = project("linked-machine-update");
+    let root = repository.root().to_path_buf();
+    let market = root.parent().unwrap().join("market");
+    marketplace_beside(&repository, &market, "first body");
+    application
+        .marketplace()
+        .add(&format!("file://{}", market.display()))
+        .unwrap();
+    application.marketplace().link("mkt", &market).unwrap();
+    application
+        .marketplace()
+        .install_plugin("flow@mkt", &AlwaysTrust)
+        .unwrap();
+
+    let unchanged = application
+        .project()
+        .update(&root, Some("flow@mkt"), true, &AlwaysTrust)
+        .unwrap();
+    assert!(
+        matches!(
+            unchanged.outcomes.as_slice(),
+            [UpdateOutcome::AlreadyCurrent { .. }]
+        ),
+        "nothing was edited: {unchanged:?}"
+    );
+
+    write_skill(&market, "edited, never committed");
+    let edited = application
+        .project()
+        .update(&root, Some("flow@mkt"), true, &AlwaysTrust)
+        .unwrap();
+    assert!(
+        matches!(
+            edited.outcomes.as_slice(),
+            [UpdateOutcome::FollowedLink { checkout, .. }]
+                if checkout.canonicalize().ok() == market.canonicalize().ok()
+        ),
+        "the Store took the edit in from the working tree, and says so: {edited:?}"
     );
 }
 

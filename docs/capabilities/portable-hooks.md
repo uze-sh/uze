@@ -29,13 +29,19 @@ binary is removed.
 }
 ```
 
-- **Events**: the semantic events are `PreToolUse`, `PostToolUse`, and
-  `Stop`. No other event is canonical.
+- **Events**: the semantic events are `PreToolUse`, `PostToolUse`, `Stop`
+  and `SessionStart`. No other event is canonical.
 - **Matcher**: `|`-separated portable tool aliases or an explicit
   `native:<tool>` escape hatch. Omitting the matcher matches every tool.
+  A `SessionStart` group matches on how the session began instead:
+  `startup`, `resume`, `clear`, or several joined by `|`. Omitting it
+  matches all three.
 - **Effect**: `observe` (default), `allow`, `ask`, `deny`, or `transform`.
   `transform` is only valid on `PreToolUse`, and is not deliverable today
-  (see [Known limitations](#known-limitations)).
+  (see [Known limitations](#known-limitations)). `SessionStart` takes
+  `observe` only: a session has nothing to allow or deny, and a manifest
+  declaring any other effect there is refused at `uze agent plugin check`
+  and at install, naming the group.
 - **Handlers**: only `type: command`. `timeout` is seconds, bounded to
   1..300, default 30, and it is the handler's real deadline: the wrapper
   runs each handler under it and stops one that exceeds it (see
@@ -67,8 +73,9 @@ exit code. It never parses a harness payload and never writes harness JSON.
 | Variable | Meaning |
 |---|---|
 | `HOOK_HARNESS` | the delivering harness's id (`claude`, `codex`, `antigravity`, `opencode`) |
-| `HOOK_EVENT` | `pre_tool_use` \| `post_tool_use` \| `stop` |
-| `HOOK_TOOL` | the portable alias that matched; empty for a tool the vocabulary does not bind |
+| `HOOK_EVENT` | `pre_tool_use` \| `post_tool_use` \| `stop` \| `session_start` |
+| `HOOK_SOURCE` | `session_start` only: `startup`, `resume` or `clear`, when the harness reports it; empty otherwise |
+| `HOOK_TOOL` | the portable alias that matched; empty for a tool the vocabulary does not bind, and on `stop` and `session_start`, which carry no tool |
 | `HOOK_TOOL_NATIVE` | the harness's own tool name (`Bash`, `exec_command`, `run_command`, `bash`) |
 | `HOOK_CWD` | the workspace directory; may be empty |
 | `HOOK_INPUT` | the tool input, as JSON, for anything the alias does not name |
@@ -155,7 +162,7 @@ declare to the model, captured with the Lab's `--discovery` mode. A
 | Claude Code | one merged entry per group in `~/.claude/settings.json`, `command` = the generated `hooks/exec` with the group's arguments (exec form: no shell parsing) | native |
 | Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native |
 | Antigravity CLI | one named entry per group merged into the shared `~/.gemini/config/hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` — whose command is the shared `hooks/exec` wrapper by absolute path | native (shared vendor file); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures both the vendor's execution gate (`hooks > vendor`) and whether the harness loads what UZE delivered (`hooks > delivery`) live, every run |
-| OpenCode | one generated `Plugin.define` plugin, `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted (`observe`/`allow` only; `deny`/`ask` unsupported, `Stop` never claimed) |
+| OpenCode | one generated plugin module (the definition as its default export, no import), `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted (`observe`/`allow` only; `deny`/`ask` unsupported, `Stop` and `SessionStart` never claimed) |
 
 The `sh` wrapper is one file per harness, byte-identical for every package,
 and depends on `sh` and `jq`. Claude, Codex and Antigravity each keep one
@@ -186,9 +193,13 @@ fixture — decision document, exit status, reason — is recorded per harness
 in `crates/uze-integrations/tests/goldens/hooks/`, so a change to what a
 harness is told is a reviewed diff.
 
-Compatibility is semantic, per event and effect. A `Stop` hook is never
-represented as a tool callback: on OpenCode it is Degraded with the reason
-stated, and it is not attached. `deny`/`ask` are Unsupported on OpenCode V2
+Compatibility is semantic, per event and effect. An event a harness does not
+fire is never represented by one it does: a `Stop` hook is never a tool
+callback, and a `SessionStart` hook is never a per-turn callback. The group
+is reported Unsupported on that harness with the reason stated (in `uze
+doctor`, one row per group and harness), and it is not attached; the
+package's other groups are delivered there as usual, and the manifest is
+not refused for it. `deny`/`ask` are Unsupported on OpenCode V2
 — its tool hooks see the input but cannot block, and its only decision point
 (`permission.evaluate`) carries the action's resources rather than the tool
 input — so they are never fabricated.
@@ -212,9 +223,29 @@ stated) · **—** = not expressible.
 | `PreToolUse` transform | — (needs a stdout convention) | — | — | — |
 | `PostToolUse` | native, observe only | native, observe only | native (`{}`), signed-in session | native (`execute.after`) |
 | `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native, signed-in session | — |
+| `SessionStart` (observe) | native, matcher on the source | native, matcher on the source (a hook is reviewed before it runs) | — (no session-start event; `PreInvocation` fires every turn and is not used) | — (the plugin event stream carries no `session.created` for a new session, 2.0.18) |
 | a denial's exit status | 2 (the documented block signal) | 2 | **0** — the decision is the stdout document, and any non-zero exit is logged as a *failed* hook | n/a |
 | fail-closed on handler failure | via `exec` (natively, exit ≠ 2 **runs the tool**) | via `exec` | via `exec` | via the plugin |
 | handler context | `HOOK_*` environment | `HOOK_*` environment | `HOOK_*` environment | `HOOK_*` environment |
+
+### Session start
+
+A `SessionStart` group observes a session opening. Its handler gets
+`HOOK_HARNESS`, `HOOK_EVENT=session_start`, `HOOK_CWD`, `PLUGIN_ROOT` and
+`HOOK_SOURCE`, and no tool fields. Nothing it answers can keep the session
+from starting: a failure, a timeout or the deny exit code is reported on
+stderr and the session opens. Without a matcher the delivered entry names
+the three portable sources explicitly, so a harness's own further source (a
+compaction) never runs a handler promised one of these.
+
+Write the handler to be fast and idempotent: Claude Code runs a group's
+entries in parallel, and a session can start several times in a day
+(`resume`, `clear`). A handler that starts a service should check it is not
+already running.
+
+The route per harness is measured in the Lab
+(`experiments/<vendor>/session-start`): on Claude Code and Codex the handler
+runs exactly once for a new headless session, with `HOOK_SOURCE=startup`.
 
 ## Lifecycle safety
 

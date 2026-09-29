@@ -48,6 +48,7 @@ scenes:
           name: before
           tree:
             - "{home}/.agents"
+            - "{home}/.config/opencode"
             - "{home}/.gemini"
             - "{home}/.claude"
         about: remember every tree a harness reads, by digest, before anything arrives
@@ -57,7 +58,7 @@ scenes:
       - shell: "{uze} install -m flow@demo"
         say: install the plugin
     then:
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
       - file: "{home}/.gemini/config/plugins/flow/plugin.json"
         exists: true
@@ -73,9 +74,9 @@ scenes:
       - dir: "{uze_home}/store/plugins/demo/flow"
         exists: false
         about: the Store no longer holds its bytes
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: false
-        about: the shared skill root gave it back
+        about: OpenCode's skill root gave it back
       - dir: "{home}/.gemini/config/plugins/flow"
         exists: false
         about: the byte copy staged by the vendor CLI is gone
@@ -91,6 +92,7 @@ scenes:
     then:
       - tree:
           - "{home}/.agents"
+          - "{home}/.config/opencode"
           - "{home}/.gemini"
           - "{home}/.claude"
         same_as: before

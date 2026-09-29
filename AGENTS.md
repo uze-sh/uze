@@ -367,7 +367,8 @@ need to).
   routing is a red build. The one diagram source: there is no separate
   model to keep in sync. `uze agent artifacts check` (`make artifacts`,
   part of `make check`) draws every file in that directory the way the
-  surface would and fails on one that does not — the tests can only cover
+  surface would and fails on one that does not, or whose box links open no
+  file — the tests can only cover
   the eight they name, because `uze-extensions` may not read a filesystem.
   Writing one of these is the `uze:architect` Skill's subject; the accepted
   syntax is never written down anywhere, because the parser is the only

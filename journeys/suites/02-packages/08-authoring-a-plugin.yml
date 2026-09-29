@@ -62,7 +62,7 @@ scenes:
       - shell: "{uze} install -m greet@tools"
         say: install what the linked marketplace's working tree holds
     then:
-      - file: "{home}/.agents/skills/greet:greet/SKILL.md"
+      - file: "{home}/.config/opencode/skills/greet:greet/SKILL.md"
         exists: true
         about: the skill reached every harness's mechanism
       - cmd:

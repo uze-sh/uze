@@ -52,7 +52,7 @@ scenes:
       - file: "{uze_home}/store/plugins/demo/flow/plugin.json"
         exists: true
         about: the package is installed on the machine
-      - file: "{home}/.agents/skills/flow:commit/SKILL.md"
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: and delivered where every harness reads skills from
       - file: "{home}/agents.yaml"

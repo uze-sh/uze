@@ -145,14 +145,16 @@ impl Project<'_> {
     fn marketplace_checkout(&self, market: &str) -> Result<PathBuf> {
         let record = uze_core::state::marketplace_get(&self.0.home, market)?
             .ok_or_else(|| UzeError::UnknownMarketplace(market.to_owned()))?;
-        let linked = record.link.clone().ok_or_else(|| {
+        let checkout = record.link.clone().ok_or_else(|| {
             UzeError::MarketplaceScaffold(format!(
                 "`{market}` is not linked to a checkout on this machine — authoring needs the \
                  marketplace the author edits, so scaffold a marketplace or `uze market link \
                  {market} <checkout>` first"
             ))
         })?;
-        Ok(linked)
+        uze_core::acquisition::marketplace::repository_of(&record.source)?
+            .subpath
+            .directory_in(&checkout)
     }
 
     /// The offline check: what the authored artifact would deliver, and
@@ -160,9 +162,67 @@ impl Project<'_> {
     #[tracing::instrument(name = "authoring.check", skip_all, fields(path = %path.display()), err)]
     pub fn check(&self, path: &Path, as_marketplace: bool) -> Result<authoring::ValidationReport> {
         if as_marketplace {
-            authoring::check_marketplace(path)
-        } else {
-            authoring::check_plugin(path)
+            return authoring::check_marketplace(path);
+        }
+        let mut report = authoring::check_plugin(path)?;
+        self.check_per_harness(path, &mut report);
+        Ok(report)
+    }
+
+    /// Every integration's own layer over the common check, prefixed with
+    /// the harness it speaks for; and a `harness:` key that names no
+    /// harness this build knows, which is left unused rather than refused,
+    /// since the plugin may target one a later build adds.
+    fn check_per_harness(&self, path: &Path, report: &mut authoring::ValidationReport) {
+        let Ok(manifest) = uze_core::store::read_plugin_manifest(path) else {
+            return;
+        };
+        let Ok(id) =
+            uze_core::store::PackageId::from_plugin_name(&manifest.name, &path.join("plugin.json"))
+        else {
+            return;
+        };
+        let Ok(resources) = uze_core::engine::package_resources_at(&id, path) else {
+            return;
+        };
+        let known: Vec<&str> = self
+            .0
+            .integrations
+            .iter()
+            .flat_map(|integration| integration.harness_keys())
+            .collect();
+        for resource in &resources {
+            let located = resource.capability.path.display();
+            if let Some((frontmatter, _)) = std::str::from_utf8(&resource.capability.payload)
+                .ok()
+                .and_then(uze_core::capability::harness::frontmatter_of)
+                && let Ok(blocks) = uze_core::capability::harness::blocks(&frontmatter)
+            {
+                for key in blocks.keys() {
+                    if !known.contains(&key.as_str()) {
+                        report.warnings.push(format!(
+                            "{located}: `harness.{key}` names no harness this build delivers \
+                             to; it is left unused"
+                        ));
+                    }
+                }
+            }
+            for integration in &self.0.integrations {
+                let findings = integration.check_capability(resource);
+                let harness = integration.display_name();
+                report.findings.extend(
+                    findings
+                        .errors
+                        .into_iter()
+                        .map(|error| format!("{located}: {harness}: {error}")),
+                );
+                report.warnings.extend(
+                    findings
+                        .warnings
+                        .into_iter()
+                        .map(|warning| format!("{located}: {harness}: {warning}")),
+                );
+            }
         }
     }
 }

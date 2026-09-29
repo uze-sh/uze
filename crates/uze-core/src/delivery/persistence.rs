@@ -87,6 +87,155 @@ pub fn write_atomic_preserving(path: &Path, payload: &[u8]) -> Result<()> {
     replace_atomically(&destination, payload, permissions)
 }
 
+/// Replaces the directory at `destination` with the one `build` writes,
+/// in a single rename, so a reader sees the previous tree or the new one
+/// and never a mix: Claude Code reads a directory-marketplace plugin live
+/// from its source, and a tree removed and written again in place was a
+/// half-written plugin for the length of the write.
+///
+/// `build` fills a staging directory beside the destination (the same
+/// filesystem, so the rename cannot cross devices). A failed build leaves
+/// the destination as it was and removes what it staged. What occupies
+/// `destination` must be a directory or nothing; anything else is not a
+/// tree UZE generated. Staging left by a process that died is removed by
+/// the next build of the same destination.
+pub fn replace_dir(destination: &Path, build: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
+    let parent = destination
+        .parent()
+        .expect("a generated directory has a parent");
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("a generated directory has a UTF-8 name");
+    fs::create_dir_all(parent).map_err(|source| UzeError::Write {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+    remove_abandoned_swaps(parent, name);
+    let staging = swap_path(parent, name, "staging");
+    fs::create_dir(&staging).map_err(|source| UzeError::Write {
+        path: staging.clone(),
+        source,
+    })?;
+    let result = build(&staging).and_then(|()| swap_in(&staging, destination, parent, name));
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    result
+}
+
+fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Result<()> {
+    let write_error = |source| UzeError::Write {
+        path: destination.to_path_buf(),
+        source,
+    };
+    match fs::symlink_metadata(destination) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::rename(staging, destination).map_err(write_error)?;
+        }
+        Err(error) => return Err(write_error(error)),
+        Ok(metadata) if !metadata.is_dir() => {
+            return Err(UzeError::ManagedEntryConflict(destination.to_path_buf()));
+        }
+        Ok(_) => {
+            if exchange(staging, destination).is_ok() {
+                // `staging` now holds the previous tree.
+                let _ = fs::remove_dir_all(staging);
+            } else {
+                let retired = swap_path(parent, name, "retired");
+                fs::rename(destination, &retired).map_err(write_error)?;
+                if let Err(error) = fs::rename(staging, destination) {
+                    let _ = fs::rename(&retired, destination);
+                    return Err(write_error(error));
+                }
+                let _ = fs::remove_dir_all(&retired);
+            }
+        }
+    }
+    sync_directory(parent);
+    Ok(())
+}
+
+/// Swaps two directories in one step where the kernel offers it.
+#[cfg(target_os = "linux")]
+fn exchange(a: &Path, b: &Path) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    const RENAME_EXCHANGE: libc::c_uint = 1 << 1;
+    let a = CString::new(a.as_os_str().as_bytes())?;
+    let b = CString::new(b.as_os_str().as_bytes())?;
+    // A raw syscall rather than `libc::renameat2`, which the musl release
+    // targets do not all export.
+    let status = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            a.as_ptr(),
+            libc::AT_FDCWD,
+            b.as_ptr(),
+            RENAME_EXCHANGE,
+        )
+    };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn exchange(_a: &Path, _b: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+}
+
+/// A hidden sibling of `name` owned by this process: hidden, because it sits
+/// inside a harness's discovery root for as long as the build takes.
+fn swap_path(parent: &Path, name: &str, role: &str) -> PathBuf {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    parent.join(format!(
+        ".{name}.uze-{role}-{}-{}",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ))
+}
+
+/// Removes the staging and retired siblings of `name` whose process is
+/// gone. One that belongs to a live process is its build in progress.
+fn remove_abandoned_swaps(parent: &Path, name: &str) {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    let prefix = format!(".{name}.uze-");
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(rest) = file_name.to_str().and_then(|n| n.strip_prefix(&prefix)) else {
+            continue;
+        };
+        let pid = rest
+            .split_once('-')
+            .and_then(|(_, rest)| rest.split('-').next())
+            .and_then(|pid| pid.parse::<u32>().ok());
+        if pid.is_some_and(|pid| !process_is_alive(pid)) {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // Signal 0 checks existence only; EPERM still means the process exists.
+    let signalled = unsafe { libc::kill(pid, 0) } == 0;
+    signalled || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(not(unix))]
+fn process_is_alive(_pid: u32) -> bool {
+    true
+}
+
 /// Where `path` ends up once every symbolic link on the way is followed,
 /// including one that dangles: a link to a file not yet created is still
 /// the operator saying where that file lives.
@@ -323,6 +472,102 @@ pub(crate) fn try_lock_exclusive(_file: &File) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn siblings(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_replaced_directory_holds_only_the_new_tree() {
+        let root = uze_testkit::temp::scratch("replace-dir");
+        let destination = root.join("flow@market");
+        fs::create_dir_all(destination.join("skills/old")).unwrap();
+        fs::write(destination.join("skills/old/SKILL.md"), "old").unwrap();
+
+        replace_dir(&destination, |staging| {
+            fs::create_dir_all(staging.join("skills/new")).unwrap();
+            fs::write(staging.join("skills/new/SKILL.md"), "new").unwrap();
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(!destination.join("skills/old").exists());
+        assert_eq!(
+            fs::read_to_string(destination.join("skills/new/SKILL.md")).unwrap(),
+            "new"
+        );
+        assert_eq!(siblings(&root), ["flow@market"]);
+    }
+
+    #[test]
+    fn a_failed_build_keeps_the_previous_tree_and_leaves_no_staging() {
+        let root = uze_testkit::temp::scratch("replace-dir-failure");
+        let destination = root.join("flow@market");
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(destination.join("plugin.json"), "{}").unwrap();
+
+        let outcome = replace_dir(&destination, |staging| {
+            fs::write(staging.join("partial"), "x").unwrap();
+            Err(UzeError::ExposureUnavailable("refused".to_owned()))
+        });
+
+        assert!(outcome.is_err());
+        assert_eq!(
+            fs::read_to_string(destination.join("plugin.json")).unwrap(),
+            "{}"
+        );
+        assert_eq!(siblings(&root), ["flow@market"]);
+    }
+
+    #[test]
+    fn a_directory_is_created_when_nothing_was_there() {
+        let root = uze_testkit::temp::scratch("replace-dir-fresh");
+        let destination = root.join("skills/flow:review");
+        replace_dir(&destination, |staging| {
+            fs::write(staging.join("SKILL.md"), "body").unwrap();
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("SKILL.md")).unwrap(),
+            "body"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn something_other_than_a_directory_is_never_replaced() {
+        let root = uze_testkit::temp::scratch("replace-dir-conflict");
+        fs::create_dir_all(root.join("elsewhere")).unwrap();
+        let destination = root.join("flow:review");
+        std::os::unix::fs::symlink(root.join("elsewhere"), &destination).unwrap();
+
+        let outcome = replace_dir(&destination, |_| Ok(()));
+
+        assert!(matches!(outcome, Err(UzeError::ManagedEntryConflict(_))));
+        assert!(destination.is_symlink());
+        assert_eq!(siblings(&root), ["elsewhere", "flow:review"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_left_by_a_dead_process_is_removed_and_a_live_one_kept() {
+        let root = uze_testkit::temp::scratch("replace-dir-abandoned");
+        let dead = root.join(format!(".flow.uze-staging-{}-0", u32::MAX / 2));
+        let live = root.join(format!(".flow.uze-staging-{}-99", std::process::id()));
+        fs::create_dir_all(&dead).unwrap();
+        fs::create_dir_all(&live).unwrap();
+
+        replace_dir(&root.join("flow"), |_| Ok(())).unwrap();
+
+        assert!(!dead.exists());
+        assert!(live.exists());
+    }
 
     #[cfg(unix)]
     #[test]

@@ -177,6 +177,9 @@ impl Project<'_> {
         let mut repository = uze_core::acquisition::marketplace::MarketplaceRepository {
             fetch: locked.git.clone(),
             identity: locked.git.clone(),
+            subpath: uze_core::acquisition::marketplace::MarketplaceSubpath::of(
+                locked.subdirectory.as_deref(),
+            )?,
         };
         if let Ok(Some(registered)) = uze_core::state::marketplace_get(&self.0.home, marketplace)
             && let Ok(local) = uze_core::acquisition::marketplace::repository_of(&registered.source)
@@ -187,7 +190,6 @@ impl Project<'_> {
         MarketplaceRequest {
             repository,
             reference: Some(locked.revision.clone()),
-            subdirectory: locked.subdirectory.clone(),
         }
         .materialize_plugin(
             plugin,
@@ -293,13 +295,17 @@ impl Project<'_> {
         tracing::info!(target: uze_core::acquisition::git::STEP, step = "lock");
         // A linked marketplace pins nothing, so the lock has no entry —
         // the declaration names the checkout the registry link carries.
-        let checkout =
-            uze_core::state::marketplace_get(&self.0.home, marketplace)?.and_then(|record| {
-                record.link.or(match record.source {
-                    uze_core::PackageSource::Local { path } => Some(path),
-                    _ => None,
-                })
-            });
+        let checkout = uze_core::state::marketplace_get(&self.0.home, marketplace)?.and_then(
+            |record| match (record.link, &record.source) {
+                (Some(link), source) => Some(
+                    uze_core::acquisition::marketplace::repository_of(source)
+                        .and_then(|repository| repository.subpath.directory_in(&link))
+                        .unwrap_or(link),
+                ),
+                (None, uze_core::PackageSource::Local { path }) => Some(path.clone()),
+                (None, _) => None,
+            },
+        );
         manifest::declare_plugin(
             &canonical,
             plugin,
@@ -324,14 +330,33 @@ impl Project<'_> {
                 plugin: plugin.to_owned(),
             }
         })?;
-        let undeclared = manifest::undeclare_plugin(&canonical, plugin)?;
+        // `name@marketplace` is how the plugin was added, so it is also how
+        // it is taken out; the project itself names it by `name` alone.
+        let (name, marketplace) = plugin
+            .split_once('@')
+            .map_or((plugin, None), |(name, marketplace)| {
+                (name, Some(marketplace))
+            });
+        let declared_elsewhere = marketplace.is_some_and(|marketplace| {
+            manifest::load(&canonical)
+                .ok()
+                .flatten()
+                .and_then(|manifest| manifest.marketplace_of(name).map(str::to_owned))
+                .is_some_and(|declared| declared != marketplace)
+        });
+        if declared_elsewhere {
+            return Ok(RemoveProjectPluginReport::NotInLock {
+                plugin: plugin.to_owned(),
+            });
+        }
+        let undeclared = manifest::undeclare_plugin(&canonical, name)?;
         let mut lock = match project_lock::load_lock(&canonical)? {
             Some(lock) => lock,
             None if undeclared => ProjectLock::default(),
             None => return Ok(RemoveProjectPluginReport::NoLock),
         };
 
-        if lock.plugins.remove(plugin).is_none() && !undeclared {
+        if lock.plugins.remove(name).is_none() && !undeclared {
             return Ok(RemoveProjectPluginReport::NotInLock {
                 plugin: plugin.to_owned(),
             });
@@ -460,7 +485,8 @@ impl Project<'_> {
             // origin, so installing again hands back what is already held.
             // `replace_with` is the path that replaces, and it puts the
             // installed revision back if the new one cannot be delivered.
-            let installed_id = if self.0.package_by_name(&qualified).is_ok() {
+            let content_before = self.installed_revision(&qualified).content;
+            let (installed_id, deliveries) = if self.0.package_by_name(&qualified).is_ok() {
                 let materialized = request.materialize_plugin(
                     &name,
                     super::marketplace::MirrorAt {
@@ -475,7 +501,9 @@ impl Project<'_> {
                     .plugins()
                     .replace_with(&qualified, materialized, authority)
                 {
-                    Ok(UpdatePluginReport::Updated { plugin, .. }) => plugin.id,
+                    Ok(UpdatePluginReport::Updated {
+                        plugin, deliveries, ..
+                    }) => (plugin.id, deliveries),
                     Ok(UpdatePluginReport::Blocked { .. }) => {
                         outcomes.push(UpdateOutcome::Held {
                             plugin: name,
@@ -497,23 +525,33 @@ impl Project<'_> {
                 }
             } else {
                 let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
-                self.resolve_and_install(
+                let report = self.resolve_and_install(
                     &name,
                     &marketplace,
                     &request,
                     authority,
                     &uze_core::naming::NoNameCollisionAuthority,
-                )?
-                .plugin
-                .id
+                )?;
+                (report.plugin.id, report.deliveries)
             };
 
             let pinned =
                 self.record_in_lock(&mut lock, &name, &marketplace, &request, &installed_id)?;
             if !pinned {
-                outcomes.push(UpdateOutcome::Held {
-                    plugin: name,
-                    reason: "linked to a checkout on this machine, which pins nothing".to_owned(),
+                let followed = self
+                    .linked_checkout(&marketplace)
+                    .filter(|_| self.installed_revision(&installed_id).content != content_before);
+                outcomes.push(match followed {
+                    Some(checkout) => UpdateOutcome::FollowedLink {
+                        plugin: name,
+                        checkout,
+                        deliveries,
+                    },
+                    None => UpdateOutcome::Held {
+                        plugin: name,
+                        reason: "linked to a checkout on this machine, which pins nothing"
+                            .to_owned(),
+                    },
                 });
                 continue;
             }
@@ -525,11 +563,15 @@ impl Project<'_> {
             let entry_moved = lock.plugins.get(&name) != entry_before.as_ref();
             outcomes.push(
                 if before.as_deref() == Some(after.as_str()) && !entry_moved {
-                    UpdateOutcome::AlreadyCurrent { plugin: name }
+                    UpdateOutcome::AlreadyCurrent {
+                        plugin: name,
+                        deliveries,
+                    }
                 } else {
                     UpdateOutcome::Moved {
                         plugin: name,
                         revision: after,
+                        deliveries,
                     }
                 },
             );
@@ -547,7 +589,7 @@ impl Project<'_> {
             reconciled: false,
             outcomes,
         };
-        let reconciled = if report.moved() {
+        let reconciled = if report.changed_content() {
             self.0.context().reconcile(&canonical)?;
             true
         } else {
@@ -585,17 +627,30 @@ impl Project<'_> {
         };
         let mut outcomes = Vec::new();
         for id in targets {
-            let before = self.resolved_revision(&id);
+            let before = self.installed_revision(&id);
             match self.0.plugins().update(&id, authority) {
-                Ok(UpdatePluginReport::Updated { .. }) => {
-                    let after = self.resolved_revision(&id);
-                    outcomes.push(if after == before {
-                        UpdateOutcome::AlreadyCurrent { plugin: id }
-                    } else {
-                        UpdateOutcome::Moved {
+                Ok(UpdatePluginReport::Updated { deliveries, .. }) => {
+                    let after = self.installed_revision(&id);
+                    let linked = self
+                        .0
+                        .package_by_name(&id)
+                        .ok()
+                        .and_then(|package| self.linked_checkout(package.id.marketplace()));
+                    outcomes.push(match linked {
+                        _ if after.content == before.content => UpdateOutcome::AlreadyCurrent {
                             plugin: id,
-                            revision: after,
-                        }
+                            deliveries,
+                        },
+                        Some(checkout) => UpdateOutcome::FollowedLink {
+                            plugin: id,
+                            checkout,
+                            deliveries,
+                        },
+                        None => UpdateOutcome::Moved {
+                            plugin: id,
+                            revision: after.named_against(&before),
+                            deliveries,
+                        },
                     });
                 }
                 Ok(UpdatePluginReport::Blocked { plan, .. }) => {
@@ -623,11 +678,27 @@ impl Project<'_> {
         })
     }
 
-    fn resolved_revision(&self, id: &str) -> String {
-        self.0
-            .package_by_name(id)
-            .map(|package| package.provenance.resolved.display())
-            .unwrap_or_default()
+    /// The checkout `marketplace` is linked to on this machine, if any.
+    fn linked_checkout(&self, marketplace: &str) -> Option<std::path::PathBuf> {
+        uze_core::state::marketplace_get(&self.0.home, marketplace)
+            .ok()
+            .flatten()
+            .and_then(|record| record.link)
+    }
+
+    /// What decides whether an update changed a package is its content: a
+    /// linked marketplace resolves to the same checkout path however much
+    /// its files change, and a new commit can carry the same bytes.
+    fn installed_revision(&self, id: &str) -> InstalledRevision {
+        let package = self.0.package_by_name(id).ok();
+        InstalledRevision {
+            content: package
+                .as_ref()
+                .and_then(|package| uze_core::digest::tree_sha256(&package.root).ok()),
+            provenance: package
+                .map(|package| package.provenance.resolved.display())
+                .unwrap_or_default(),
+        }
     }
 
     /// Brings the project's declared environment about, in two passes over
@@ -665,10 +736,10 @@ impl Project<'_> {
         // No project here: there is nothing declared to bring about, and
         // creating an `agents.yaml` would turn the directory into a project
         // by being stood in — the exact thing the resolution above refuses.
-        // The answer is an empty report the verb reports as "nothing was
-        // declared".
+        // The answer is a report of its own, which the verb reports as
+        // "nothing was declared".
         let Some(canonical) = canonical else {
-            return Ok(InstallReport::NoChanges);
+            return Ok(InstallReport::NoProject);
         };
         // `install` is an explicit act of setting this project up, so it is
         // the right moment to create the file a person edits — unlike
@@ -681,6 +752,7 @@ impl Project<'_> {
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         let mut installed_plugins = Vec::new();
         let mut skipped: Vec<SkippedPlugin> = Vec::new();
+        let mut undelivered: Vec<(String, HarnessDeliveryReport)> = Vec::new();
 
         // Every marketplace this install is about to read, fetched at once:
         // what the manifest declares and the lock does not answer for, and
@@ -717,9 +789,12 @@ impl Project<'_> {
                         repository: uze_core::acquisition::marketplace::MarketplaceRepository {
                             fetch: recorded.git.clone(),
                             identity: recorded.git.clone(),
+                            subpath: uze_core::acquisition::marketplace::MarketplaceSubpath::of(
+                                recorded.subdirectory.as_deref(),
+                            )
+                            .ok()?,
                         },
                         reference: Some(recorded.revision.clone()),
-                        subdirectory: recorded.subdirectory.clone(),
                     },
                 ))
             })
@@ -772,7 +847,7 @@ impl Project<'_> {
             };
             let request = MarketplaceRequest::of(&fetch_source)?;
             self.register_marketplace(marketplace, fetch_source, &request.repository.identity)?;
-            self.resolve_into_lock(
+            let report = self.resolve_into_lock(
                 &mut lock,
                 &stale.plugin,
                 marketplace,
@@ -780,6 +855,11 @@ impl Project<'_> {
                 authority,
                 &uze_core::naming::NoNameCollisionAuthority,
             )?;
+            undelivered.extend(
+                report
+                    .undelivered()
+                    .map(|delivery| (stale.plugin.clone(), delivery.clone())),
+            );
             // Saved per entry, not once at the end: bytes are already in
             // the Store, and a later failure must not leave the lock
             // denying what this machine now holds.
@@ -826,13 +906,18 @@ impl Project<'_> {
             // substituted remote must stop here, not be discovered later by
             // reading what an agent was told to do.
             Self::verify_integrity_of(&name, &locked, materialized.root())?;
-            self.0.plugins().install_materialized(
+            let report = self.0.plugins().install_materialized(
                 materialized,
                 marketplace,
                 None,
                 authority,
                 &uze_core::naming::NoNameCollisionAuthority,
             )?;
+            undelivered.extend(
+                report
+                    .undelivered()
+                    .map(|delivery| (name.clone(), delivery.clone())),
+            );
             installed_plugins.push(name);
         }
 
@@ -889,6 +974,7 @@ impl Project<'_> {
             removed: removed_plugins,
             skipped,
             reconciled,
+            undelivered,
         })
     }
 
@@ -1016,7 +1102,7 @@ impl Project<'_> {
             LockedMarketplace {
                 git: request.repository.identity.clone(),
                 r#ref: request.reference.clone(),
-                subdirectory: request.subdirectory.clone(),
+                subdirectory: request.repository.subpath.as_path(),
                 revision: commit.clone(),
             },
         );
@@ -1153,15 +1239,54 @@ pub enum RemoveProjectPluginReport {
     Removed { plugin: String },
 }
 
+/// A package as an update compares it: by its content, named by where it
+/// came from.
+struct InstalledRevision {
+    content: Option<String>,
+    provenance: String,
+}
+
+impl InstalledRevision {
+    /// The name a moved package's new revision reads under: where it came
+    /// from when that moved too, else its content digest, since a source
+    /// path that stayed put says nothing about what changed.
+    fn named_against(self, before: &Self) -> String {
+        if self.provenance != before.provenance {
+            return self.provenance;
+        }
+        self.content
+            .map(|digest| digest.trim_start_matches("sha256:").to_owned())
+            .unwrap_or(self.provenance)
+    }
+}
+
 /// What `uze update` did to each plugin it considered.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "outcome", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum UpdateOutcome {
     /// The declared ref had moved, and the project now points at where it
     /// points.
-    Moved { plugin: String, revision: String },
+    Moved {
+        plugin: String,
+        revision: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        deliveries: Vec<HarnessDeliveryReport>,
+    },
     /// The declared ref resolves to the revision already locked.
-    AlreadyCurrent { plugin: String },
+    AlreadyCurrent {
+        plugin: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        deliveries: Vec<HarnessDeliveryReport>,
+    },
+    /// The package's marketplace is linked to a checkout on this machine,
+    /// and the Store took in what its working tree holds now. Nothing was
+    /// pinned: a working tree is not a revision a lock can name.
+    FollowedLink {
+        plugin: String,
+        checkout: std::path::PathBuf,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        deliveries: Vec<HarnessDeliveryReport>,
+    },
     /// Considered and deliberately not moved, with the reason — a
     /// marketplace linked to a checkout on this machine pins nothing, and a
     /// revision introducing execution waits for an explicit decision.
@@ -1196,6 +1321,39 @@ impl UpdateReport {
             .any(|outcome| matches!(outcome, UpdateOutcome::Moved { .. }))
     }
 
+    /// Whether any package's content changed, pinned or not — which is what
+    /// the project's context has to follow.
+    pub fn changed_content(&self) -> bool {
+        self.moved()
+            || self
+                .outcomes
+                .iter()
+                .any(|outcome| matches!(outcome, UpdateOutcome::FollowedLink { .. }))
+    }
+
+    /// Every harness an updated package stayed installed without reaching,
+    /// with the package it is about.
+    pub fn undelivered(&self) -> impl Iterator<Item = (&str, &HarnessDeliveryReport)> {
+        self.outcomes.iter().flat_map(|outcome| {
+            let (plugin, deliveries) = match outcome {
+                UpdateOutcome::Moved {
+                    plugin, deliveries, ..
+                }
+                | UpdateOutcome::FollowedLink {
+                    plugin, deliveries, ..
+                }
+                | UpdateOutcome::AlreadyCurrent { plugin, deliveries } => {
+                    (plugin.as_str(), deliveries.as_slice())
+                }
+                _ => ("", &[][..]),
+            };
+            deliveries
+                .iter()
+                .filter(|delivery| delivery.error().is_some())
+                .map(move |delivery| (plugin, delivery))
+        })
+    }
+
     /// The packages the safety check refused to touch.
     pub fn blocked(&self) -> impl Iterator<Item = &str> {
         self.outcomes.iter().filter_map(|outcome| match outcome {
@@ -1211,6 +1369,8 @@ pub enum InstallReport {
     /// The declared environment, the lock and the machine already agreed,
     /// and the projection was current; nothing to do.
     NoChanges,
+    /// There is no project here, so nothing was declared to bring about.
+    NoProject,
     /// The project's environment moved: plugins resolved or reproduced,
     /// plugins the manifest no longer declares removed, and the project
     /// context left reconciled.
@@ -1225,7 +1385,23 @@ pub enum InstallReport {
         skipped: Vec<SkippedPlugin>,
         #[serde(default)]
         reconciled: bool,
+        /// Harnesses a plugin installed here could not be delivered to.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        undelivered: Vec<(String, HarnessDeliveryReport)>,
     },
+}
+
+impl InstallReport {
+    /// Each harness a plugin this install placed could not reach.
+    pub fn undelivered(&self) -> impl Iterator<Item = (&str, &HarnessDeliveryReport)> {
+        let entries = match self {
+            Self::Installed { undelivered, .. } => undelivered.as_slice(),
+            _ => &[],
+        };
+        entries
+            .iter()
+            .map(|(plugin, delivery)| (plugin.as_str(), delivery))
+    }
 }
 
 /// One plugin `install` could not reach, and why.

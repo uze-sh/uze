@@ -102,6 +102,11 @@ pub enum UzeError {
     /// has to say the machine is unchanged.
     #[error("{0}")]
     LifecycleBlocked(String),
+    /// A package could not be delivered to a harness it was installed for.
+    /// The text names every harness that failed and what was left behind,
+    /// which is either nothing or a package recorded as partially delivered.
+    #[error("{0}")]
+    DeliveryFailed(String),
     /// The operator declined. Distinct from `TrustRequired`: a decision was
     /// made, and repeating the command unchanged should not change it.
     #[error("trust denied for `{0}`; nothing was installed")]
@@ -119,6 +124,11 @@ pub enum UzeError {
          still the bytes there, and whether anything newer exists."
     )]
     MarketplaceNotARepository { path: PathBuf },
+    #[error(
+        "the marketplace directory `{subpath}` leaves its repository; a marketplace below a \
+         repository's root is named by a relative path inside it"
+    )]
+    MarketplaceSubpathEscapes { subpath: String },
     #[error("unknown UZE package `{0}`")]
     UnknownPackage(String),
     #[error(

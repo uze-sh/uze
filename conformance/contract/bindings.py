@@ -162,6 +162,26 @@ class Bindings:
         screen text."""
         raise NotImplementedError
 
+    def headless(
+        self, cfg, prov_ip, prelude, prompt, cwd, plugins="", delegating=False
+    ):
+        """A non-interactive container running one turn of `prompt` in
+        `cwd`, after `plugins` were installed and `prelude` ran.
+
+        `delegating` asks for a session whose model is offered the agents it
+        may delegate to. Most harnesses offer that roster to every session;
+        one that offers it only to some agent opens the turn as such an
+        agent here — how, is this harness's business.
+        """
+        raise NotImplementedError
+
+    def dispatch(self, label, prompt):
+        """The provider mode and environment that make the next headless
+        turn — the one carrying `prompt` — dispatch the agent `label`
+        through this harness's own dispatch tool, in the shape its request
+        declared that tool."""
+        raise NotImplementedError
+
     def unsupported(self, capability):
         """A reason this harness cannot express `capability`, or `None`.
 

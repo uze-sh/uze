@@ -11,7 +11,8 @@ impl UzeApplication {
     /// is the only state this tracks. `Ok(None)` (not an error) when the
     /// integration has no runtime-integration story. Called automatically
     /// by `setup()` — running `uze setup <harness>` is the entire opt-in,
-    /// no separate flag.
+    /// no separate flag. `installed_off_path` is where provisioning just
+    /// verified the binary when this process's `PATH` does not reach it.
     ///
     /// `EXPERIMENTAL RUNTIME DELIVERY STRATEGY` (`RUNTIME INFRASTRUCTURE`,
     /// not a `CONTEXT DELIVERY POLICY` decision; see
@@ -19,6 +20,7 @@ impl UzeApplication {
     pub(crate) fn ensure_runtime_shim(
         &self,
         integration: &dyn IntegrationPort,
+        installed_off_path: Option<&Path>,
     ) -> Result<Option<RuntimeShimSetup>> {
         if !integration.supports_runtime_integration() {
             return Ok(None);
@@ -34,6 +36,7 @@ impl UzeApplication {
         let mut candidates = vec![shim_name];
         candidates.extend(integration.runtime_executable_aliases());
         let resolved = uze_core::harness_runtime::resolve_real_executable(&candidates, &shims_dir)
+            .or_else(|| installed_off_path.map(Path::to_path_buf))
             .ok_or_else(|| {
                 UzeError::ExposureUnavailable(format!(
                     "no real `{shim_name}` executable found on PATH outside {} — install it \

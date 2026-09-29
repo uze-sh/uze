@@ -17,9 +17,11 @@ sequenceDiagram
     App->>Int: plan(capabilities)
     Int-->>App: native | generated | adapter
     App->>Int: apply(plan)
-    Int->>H: write owned artifact
-    Int-->>Core: typed receipt
+    Int->>Int: render its own harness block,<br/>build beside, swap in
+    Int->>H: register or write the owned artifact
+    Int-->>Core: typed receipt, proven by content
   end
+  Note over App: short of the plan: roll back,<br/>or record it undelivered
   Note over App: reconcile AGENTS.md
-  App-->>CLI: report
+  App-->>CLI: report per harness
   CLI-->>Dev: what changed

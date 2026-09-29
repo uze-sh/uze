@@ -379,6 +379,7 @@ fn native_package_delivery_still_suppresses_individual_attachment() {
     let plan = PackageExposurePlan {
         package_id: package.id.clone(),
         route: CompatibilityRoute::Native,
+        envelope: uze_core::exposure::PackageEnvelope::Own,
         provided_resource_identities: resources
             .iter()
             .map(|resource| resource.identity())

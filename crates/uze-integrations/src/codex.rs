@@ -13,6 +13,7 @@
 use std::{fs, path::Path, path::PathBuf};
 
 use crate::shared::plan::unsupported;
+use uze_core::capability::agent::AgentDocument;
 use uze_core::{
     Result, UzeError,
     capability::CapabilityKind,
@@ -28,7 +29,7 @@ use uze_core::{
         PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
     },
     provisioning::{ProcessRunner, ProcessSpec, ProvisioningResult},
-    router::{CompatibilityRoute, HarnessCapabilities},
+    router::HarnessCapabilities,
     state,
     store::StoredPackage,
 };
@@ -37,20 +38,30 @@ mod generate;
 mod mcp;
 mod plugin;
 mod preferences;
+mod runtime;
 mod session;
 mod skills;
 
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::{HookEntry, HookTarget};
-use crate::shared::agent::agent_name;
+use crate::shared::agent::{
+    PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried, projection_route,
+};
+use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
+use crate::shared::package_root::resolve_text;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
-use crate::shared::provision::{official_installer, provision_cli};
-use crate::shared::skill::{head_value, split_frontmatter};
+use crate::shared::provision::{
+    OfficialRoute, native_installer_destination, official_installer, provision_cli,
+};
 use mcp::attach_mcp_entry;
 use plugin::CodexMarketplace;
+use uze_core::capability::harness::Findings;
+use uze_core::harness_runtime::{HarnessRuntimeContribution, RuntimeContext};
+use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::project_context::AgentsDirectoryResource;
 
 /// Codex peer integration. Its transparent-attachment strategy is a
 /// UZE-managed reference at `<agents_home>/skills/<name>` (see ADR-006):
@@ -61,7 +72,6 @@ use plugin::CodexMarketplace;
 pub struct CodexIntegration {
     skills_dir: PathBuf,
     agents_dir: PathBuf,
-    generated_agents_dir: PathBuf,
     /// `HOME` to set explicitly whenever a `codex` subcommand is shelled
     /// out to for MCP registration — see `ClaudeIntegration::command_home`
     /// for the full rationale; the same concern applies here since Codex
@@ -79,7 +89,6 @@ impl CodexIntegration {
         Self {
             skills_dir: agents_home.join("skills"),
             agents_dir: command_home.join(".codex").join("agents"),
-            generated_agents_dir: uze_home.generated_attachments_dir("codex").join("agents"),
             command_home,
             uze_home,
         }
@@ -115,33 +124,11 @@ impl CodexIntegration {
     }
 
     fn provisioning_executable(&self) -> String {
-        real_executable("codex", &self.uze_home.shims_dir(), None)
-    }
-
-    fn materialize_agent(&self, resource: &Resource) -> Result<PathBuf> {
-        let name = agent_name(resource);
-        let target = self.generated_agents_dir.join(format!("{name}.toml"));
-        fs::create_dir_all(&self.generated_agents_dir).map_err(|source| UzeError::Write {
-            path: self.generated_agents_dir.clone(),
-            source,
-        })?;
-        let content = codex_agent_toml(resource, &name);
-        match fs::read_to_string(&target) {
-            Ok(existing) if existing == content => return Ok(target),
-            Ok(_) => return Err(UzeError::ManagedEntryDrift(target)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(source) => {
-                return Err(UzeError::Read {
-                    path: target,
-                    source,
-                });
-            }
-        }
-        fs::write(&target, content).map_err(|source| UzeError::Write {
-            path: target.clone(),
-            source,
-        })?;
-        Ok(target)
+        real_executable(
+            "codex",
+            &self.uze_home.shims_dir(),
+            native_installer_destination("codex"),
+        )
     }
 }
 
@@ -192,7 +179,28 @@ impl IntegrationPort for CodexIntegration {
     /// — a project-local convention read directly by the `codex` binary,
     /// with no UZE involvement, independent of the UZE-managed
     /// `$HOME/.agents/skills` symlink this integration writes elsewhere.
-    fn discovers_project_agents_directory(&self) -> bool {
+    /// Measured on 0.158 (Lab `context-project-skill-reaches-model`).
+    ///
+    /// It does not read `./.agents/agents` (its project root for agents is
+    /// `.codex/agents`, in a trusted project only), so its launcher hands
+    /// the project's agents over as a `-c` configuration layer; see
+    /// `runtime`.
+    fn project_resource_route(&self, resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        match resource {
+            AgentsDirectoryResource::Skills => ProjectResourceRoute::Native,
+            AgentsDirectoryResource::Agents => ProjectResourceRoute::RuntimeProjection,
+        }
+    }
+
+    fn runtime_contribution(&self, ctx: &RuntimeContext) -> HarnessRuntimeContribution {
+        runtime::runtime_contribution(ctx, &self.harness_keys())
+    }
+
+    fn runtime_contribution_would_activate(&self, ctx: &RuntimeContext) -> bool {
+        runtime::projection_would_activate(ctx)
+    }
+
+    fn runtime_projects_project_context(&self) -> bool {
         true
     }
 
@@ -242,26 +250,41 @@ impl IntegrationPort for CodexIntegration {
         codex_version(&self.provisioning_executable())
     }
 
-    /// OpenCode also discovers Skills from this exact same
-    /// `~/.agents/skills` directory; see `OpenCodeIntegration`'s override
-    /// of the same method for why this must be reported.
-    fn shared_agent_skill_root(&self) -> Option<PathBuf> {
+    fn check_capability(&self, resource: &Resource) -> Findings {
+        if resource.capability.kind == CapabilityKind::Agent {
+            codex_agent_findings(&self.harness_keys(), resource)
+        } else {
+            Findings::default()
+        }
+    }
+
+    fn facts(&self) -> &'static [HarnessFact] {
+        FACTS
+    }
+
+    fn skill_discovery_root(&self) -> Option<PathBuf> {
         Some(self.skills_dir.clone())
     }
 
     fn provision(&self, runner: &dyn ProcessRunner) -> Result<ProvisioningResult> {
         let executable = self.provisioning_executable();
-        provision_cli(
-            runner,
-            &executable,
-            "Codex",
-            self.detect(),
-            official_installer("https://chatgpt.com/codex/install.sh", "sh"),
+        let route = OfficialRoute {
+            label: "Codex",
+            program: "codex",
+            install: official_installer("https://chatgpt.com/codex/install.sh", "sh"),
             // Real-CLI dogfood against codex-cli 0.148.0 found `--upgrade` is not
             // a recognized flag — `codex --help` lists `update` as a
             // subcommand instead.
-            ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
-            "official-native-installer",
+            update: ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
+            method: "official-native-installer",
+            manual_route: "https://github.com/openai/codex/blob/main/README.md",
+        };
+        provision_cli(
+            runner,
+            route,
+            &executable,
+            &self.uze_home.shims_dir(),
+            self.detect(),
             codex_version,
         )
     }
@@ -299,11 +322,15 @@ impl IntegrationPort for CodexIntegration {
     /// accepts `:` in skill names (verified against codex-cli 0.149.0). MCP
     /// stays on the default fully-qualified policy.
     fn exposure_name_candidates(&self, resource: &Resource) -> Vec<String> {
-        if resource.capability.kind == CapabilityKind::AgentSkill {
+        if resource.capability.kind.is_invoked_by_label() {
             let active_name = active_plugin_name(&self.uze_home, resource);
             return qualified_exposure_name_candidates(resource, &active_name);
         }
         default_exposure_name_candidates(resource)
+    }
+
+    fn package_receipt_serves(&self, receipt: &AttachmentReceipt) -> bool {
+        marketplace::receipt_serves::<CodexMarketplace>(&self.uze_home, receipt)
     }
 
     fn package_exposure_plan(
@@ -319,21 +346,8 @@ impl IntegrationPort for CodexIntegration {
             return Ok(None);
         };
         let attached = match &artifact {
-            ManagedArtifact::SymlinkReference { .. } => {
-                // Only materialize when this resource is the one that owns
-                // the physical entry. When the shared-root resolution reused
-                // another integration's receipt (resolved_artifact_target
-                // set), the existing artifact is authoritative and nothing
-                // new may replace it — but a user-only Skills must still
-                // carry THIS integration's encoding, or the reuse would
-                // silently drop the invocation policy (ADR-030 §25).
-                if resource.capability.kind == CapabilityKind::AgentSkill {
-                    self.materialize_or_verify_skill(resource)?;
-                } else if resource.capability.kind == CapabilityKind::Agent {
-                    self.materialize_agent(resource)?;
-                }
-                artifact.attach_standard()?;
-                true
+            ManagedArtifact::GeneratedTree { path, .. } => {
+                return self.attach_skill(resource, path).map(Some);
             }
             ManagedArtifact::VendorConfigEntry {
                 entry_name,
@@ -369,6 +383,10 @@ impl IntegrationPort for CodexIntegration {
                         wrapper,
                     },
                 )?;
+                true
+            }
+            ManagedArtifact::GeneratedFile { .. } => {
+                artifact.attach_standard()?;
                 true
             }
             _ => false,
@@ -500,13 +518,26 @@ impl IntegrationPort for CodexIntegration {
 }
 
 impl CodexIntegration {
+    /// Codex's role file refuses any key it does not know and drops the whole
+    /// agent over one (measured on codex-cli 0.158: an authored `tools` list
+    /// or an unknown key makes it ignore the file), so only the portable
+    /// fields reach it.
     fn agent_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
-        let entry_name = agent_name(resource);
-        ExposurePlan {
-            route: CompatibilityRoute::Native,
-            mechanism: ExposureMechanism::Managed(ManagedArtifact::SymlinkReference { path: self.agents_dir.clone().join(format!("{entry_name}.toml")), target: self.generated_agents_dir.join(format!("{entry_name}.toml")) }),
-            evidence: "Codex natively loads standalone custom-agent TOML files from ~/.codex/agents/. UZE deterministically generates that native TOML from the portable Markdown definition and exposes it through a receipt-owned reference.".to_owned(),
-        }
+        let not_carried = AgentDocument::parse(&resource.capability.payload)
+            .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
+            .unwrap_or_default();
+        let label = agent_label(&self.uze_home, resource);
+        let content = codex_agent_toml(resource, &label, &self.harness_keys());
+        agent_file_plan(
+            &self.agents_dir,
+            &label,
+            "toml",
+            content,
+            projection_route(
+                "Codex natively loads standalone custom-agent TOML files from ~/.codex/agents/ and offers each to the model by its `name`; UZE writes that TOML there from the portable Markdown definition, named with the agent's label and receipt-owned by its content — a regular file, since Codex lists a linked agent file but cannot run it.",
+                &not_carried,
+            ),
+        )
     }
 
     fn hook_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
@@ -514,7 +545,7 @@ impl CodexIntegration {
             &self.uze_home,
             resource,
             self.hooks_config_path(),
-            "Codex's own hooks.json command form reads PreToolUse/PostToolUse/Stop command hooks; UZE merges one group entry per canonical hook (matcher and timeout preserved) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps the exact entry receipt-owned.",
+            "Codex's own hooks.json command form reads PreToolUse/PostToolUse/Stop/SessionStart command hooks (SessionStart matched on the session's source); UZE merges one group entry per canonical hook (matcher and timeout preserved) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps the exact entry receipt-owned.",
         )
     }
 }
@@ -542,19 +573,85 @@ impl PreferencePort for CodexIntegration {
     }
 }
 
-fn codex_agent_toml(resource: &Resource, fallback_name: &str) -> String {
-    let markdown = String::from_utf8_lossy(&resource.capability.payload);
-    let (frontmatter, instructions) = split_frontmatter(&markdown).unwrap_or(("", &markdown));
-    let unquoted =
-        |key| head_value(frontmatter, key).map(|value| value.trim_matches('"').trim_matches('\''));
-    let name = unquoted("name").unwrap_or(fallback_name);
-    let description = unquoted("description").unwrap_or("Portable UZE custom agent.");
+/// The agent's Codex role file: its label as `name`, the portable
+/// description, and the body — package root resolved — as its instructions.
+/// What Codex reads under `harness.codex` on an agent: the role file's own
+/// keys (custom agents reference). Codex refuses a role file carrying a key
+/// it does not know and drops the agent over it, so nothing outside this
+/// list is written.
+const CODEX_AGENT_DIALECT: AgentDialect = AgentDialect {
+    known: &[
+        ("model", Shape::Text),
+        // The levels codex-cli 0.158's model catalogue offers
+        // (`codex debug models`); each model supports a subset.
+        (
+            "model_reasoning_effort",
+            Shape::OneOf(&["low", "medium", "high", "xhigh", "max", "ultra"]),
+        ),
+        (
+            "sandbox_mode",
+            Shape::OneOf(&["read-only", "workspace-write", "danger-full-access"]),
+        ),
+    ],
+    carries_unknown: false,
+};
+
+fn codex_agent_toml(resource: &Resource, label: &str, keys: &[&str]) -> String {
+    let document = AgentDocument::parse(&resource.capability.payload).unwrap_or_default();
+    let instructions = resolve_text(&document.body, &resource.package_root);
     format!(
-        "name = {}\ndescription = {}\ndeveloper_instructions = {}\n",
-        toml_string(name),
-        toml_string(description),
-        toml_string(instructions.trim()),
+        "name = {}\ndescription = {}\n{}",
+        toml_string(label),
+        toml_string(codex_agent_description(&document)),
+        codex_role_config(&document, &instructions, keys),
     )
+}
+
+fn codex_agent_description(document: &AgentDocument) -> &str {
+    document
+        .description
+        .as_deref()
+        .unwrap_or("Portable UZE custom agent.")
+}
+
+/// What a Codex role runs with: its instructions and the fields its
+/// `harness.codex` block gives it. A standalone agent file carries this
+/// under its name and description; a role declared in configuration
+/// points at it alone, since Codex refuses a role file naming either.
+fn codex_role_config(document: &AgentDocument, instructions: &str, keys: &[&str]) -> String {
+    let mut toml = format!(
+        "developer_instructions = {}\n",
+        toml_string(instructions.trim())
+    );
+    let (block, _) = agent_block(&CODEX_AGENT_DIALECT, keys, document);
+    for (key, value) in &block {
+        if let Some(text) = value.as_str() {
+            toml.push_str(&format!("{} = {}\n", key.as_str(), toml_string(text)));
+        }
+    }
+    toml
+}
+
+/// The fields an agent loses on Codex, and what its `harness.codex` block
+/// would do there.
+fn codex_agent_findings(keys: &[&str], resource: &Resource) -> Findings {
+    let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
+        return Findings::default();
+    };
+    let (_, mut findings) = agent_block(&CODEX_AGENT_DIALECT, keys, &document);
+    // The common layer already speaks for `model` and `tools`.
+    for field in fields_not_carried(&document, PORTABLE_AGENT_FIELDS)
+        .into_iter()
+        .filter(|field| {
+            !uze_core::capability::harness::PER_HARNESS_FIELDS.contains(&field.as_str())
+        })
+    {
+        findings.warnings.push(format!(
+            "`{field}` at the root is not carried to Codex, which refuses a role file with a \
+             key it does not know; write what Codex should get under `harness.codex`"
+        ));
+    }
+    findings
 }
 
 /// A TOML basic string. JSON's escaping is TOML's for every character but
@@ -566,6 +663,54 @@ fn toml_string(value: &str) -> String {
         .expect("strings are JSON serializable")
         .replace('\u{7f}', "\\u007F")
 }
+
+/// What codex was measured to do, each fact with the Lab check proving it.
+const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "project agents",
+        fact: "reads no `./.agents/agents`, and offers the roles a `-c agents={...}` layer declares beside the user's own",
+        measured_on: VERSION,
+        proven_by: "contract/context.py::_assert_project_agent",
+    },
+    HarnessFact {
+        subject: "project agents",
+        fact: "takes a launch's `-c` layer into a session served by an app-server daemon started without it",
+        measured_on: VERSION,
+        proven_by: "experiments/codex/project-agents.py::run",
+    },
+    HarnessFact {
+        subject: "agents",
+        fact: "runs a role file from `~/.codex/agents/` by its `name`, which carries the label",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_dispatch",
+    },
+    HarnessFact {
+        subject: "agents",
+        fact: "honours `model` in a role file and refuses one with a key it does not know",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_block_model",
+    },
+    HarnessFact {
+        subject: "skills",
+        fact: "hides a skill from the model with `agents/openai.yaml` `allow_implicit_invocation: false`",
+        measured_on: VERSION,
+        proven_by: "harnesses/codex/scenarios.py::phase_skill_invocation_policy",
+    },
+    HarnessFact {
+        subject: "placeholders",
+        fact: "expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_plugin_root",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "fires `SessionStart` once per new session, with its source",
+        measured_on: VERSION,
+        proven_by: "experiments/session_start_probe.py::run",
+    },
+];
+/// The version the facts above were measured on.
+const VERSION: &str = "0.158.0";
 
 #[cfg(test)]
 mod agent_toml_tests {

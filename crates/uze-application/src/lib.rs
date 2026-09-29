@@ -30,9 +30,12 @@ pub use uze_core::{
     },
     context::PlannedAction,
     conversation::Claim,
+    // Which manifest a package-level delivery handed the harness, as the
+    // install report names it.
+    exposure::PackageEnvelope,
     features::{ALL_FEATURES, Feature},
     hosts::HostEntry,
-    integration::{AttachmentState, PublicationStatus},
+    integration::{AttachmentState, HarnessDetection, PublicationStatus},
     landing::Forge,
     naming::{
         FixedResolution, NameCollisionAuthority, NameCollisionRequest, NameCollisionResolution,
@@ -48,7 +51,11 @@ pub use uze_core::{
         PreferenceAxis, PreferencePlan, Preferences, SandboxScope,
     },
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
-    provisioning::{ProcessOutput, ProcessResult, ProcessRunner, ProcessSpec, SystemProcessRunner},
+    // What one `setup` did to a harness, as `SetupResult` reports it.
+    provisioning::{
+        ProcessOutput, ProcessResult, ProcessRunner, ProcessSpec, ProvisionAction, ProvisionStatus,
+        ProvisioningResult, SystemProcessRunner,
+    },
     // What a blocked removal or update carries, so a surface can say which
     // receipt stood in the way.
     reconciliation::ReconciliationReport,

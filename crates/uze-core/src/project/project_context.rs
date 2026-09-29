@@ -21,10 +21,28 @@ pub struct ProjectContext {
     pub agents_directory: Option<PathBuf>,
 }
 
-/// The resource kinds `.agents/` carries. Named here rather than at each
-/// call site so a harness projecting the directory and a status view
-/// describing it can never drift apart on which subdirectories count.
-pub const AGENTS_DIRECTORY_RESOURCES: &[&str] = &["skills", "agents"];
+/// A resource kind `.agents/` carries. Named here rather than at each call
+/// site so a harness projecting the directory and a status view describing
+/// it can never drift apart on which subdirectories count. The kinds are
+/// answered apart because harnesses read them apart: one that reads
+/// `.agents/skills` may read no `.agents/agents`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum AgentsDirectoryResource {
+    Skills,
+    Agents,
+}
+
+impl AgentsDirectoryResource {
+    pub const ALL: [Self; 2] = [Self::Skills, Self::Agents];
+
+    /// The subdirectory of `.agents/` holding this kind.
+    pub fn directory_name(self) -> &'static str {
+        match self {
+            Self::Skills => "skills",
+            Self::Agents => "agents",
+        }
+    }
+}
 
 pub const AGENTS_MD_FILE_NAME: &str = "AGENTS.md";
 pub const AGENTS_DIRECTORY_NAME: &str = ".agents";
@@ -36,6 +54,14 @@ impl ProjectContext {
     /// context, and vice versa.
     pub fn has_any(&self) -> bool {
         self.agents_md.is_some() || self.agents_directory.is_some()
+    }
+
+    /// `.agents/<resource>/`, when the project carries that kind.
+    pub fn resource_directory(&self, resource: AgentsDirectoryResource) -> Option<PathBuf> {
+        self.agents_directory
+            .as_ref()
+            .map(|directory| directory.join(resource.directory_name()))
+            .filter(|path| path.is_dir())
     }
 }
 

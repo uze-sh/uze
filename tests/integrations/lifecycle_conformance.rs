@@ -76,9 +76,9 @@ fn assert_skill_lifecycle_and_drift_safety(integration: &dyn IntegrationPort, re
         "a freshly attached receipt must inspect as Matched"
     );
 
-    if !matches!(receipt.artifact, ManagedArtifact::SymlinkReference { .. }) {
+    if !matches!(receipt.artifact, ManagedArtifact::GeneratedTree { .. }) {
         panic!(
-            "{}: expected a SymlinkReference artifact for Skill delivery, got {:?}",
+            "{}: expected a materialized skill directory for Skill delivery, got {:?}",
             integration.id(),
             receipt.artifact
         );
@@ -99,17 +99,15 @@ fn assert_skill_lifecycle_and_drift_safety(integration: &dyn IntegrationPort, re
         .attach_receipt(resource)
         .unwrap()
         .expect("reattach must succeed after a clean detach");
-    let ManagedArtifact::SymlinkReference { path, .. } = &receipt.artifact else {
+    let ManagedArtifact::GeneratedTree { path, .. } = &receipt.artifact else {
         unreachable!("already matched this shape above");
     };
 
-    // 8a: Drift — repoint the managed symlink at something else entirely.
-    // Never observed as Matched; a detach attempt must be blocked (return
-    // Drifted, not Missing) and must leave the repointed artifact in place.
-    let elsewhere = path.parent().unwrap().join("conformance-drift-target");
-    fs::create_dir_all(&elsewhere).unwrap();
-    fs::remove_file(path).unwrap();
-    symlink(&elsewhere, path);
+    // 8a: Drift — edit the delivered SKILL.md by hand. Never observed as
+    // Matched; a detach attempt must be blocked (return Drifted, not
+    // Missing) and must leave the edited directory in place.
+    let skill = path.join("SKILL.md");
+    fs::write(&skill, "edited by hand").unwrap();
     assert_eq!(
         integration.inspect_receipt(&receipt).state,
         AttachmentState::Drifted
@@ -120,16 +118,16 @@ fn assert_skill_lifecycle_and_drift_safety(integration: &dyn IntegrationPort, re
         AttachmentState::Drifted,
         "a drifted artifact must never be silently destroyed by detach"
     );
-    assert!(
-        path.is_symlink(),
+    assert_eq!(
+        fs::read_to_string(&skill).unwrap(),
+        "edited by hand",
         "the drifted artifact must still exist, untouched, after a blocked detach"
     );
-    assert_eq!(fs::read_link(path).unwrap(), elsewhere);
 
-    // 8b: Conflict — replace the managed path with a foreign, non-symlink
-    // file. Same discipline: inspection must say Conflict, detach must
-    // refuse, and the foreign content must survive untouched.
-    fs::remove_file(path).unwrap();
+    // 8b: Conflict — replace the managed directory with a foreign file.
+    // Same discipline: inspection must say Conflict, detach must refuse,
+    // and the foreign content must survive untouched.
+    fs::remove_dir_all(path).unwrap();
     fs::write(path, "foreign content this suite must never delete").unwrap();
     assert_eq!(
         integration.inspect_receipt(&receipt).state,
@@ -144,10 +142,6 @@ fn assert_skill_lifecycle_and_drift_safety(integration: &dyn IntegrationPort, re
     );
 
     fs::remove_file(path).ok();
-}
-
-fn symlink(source: &Path, target: &Path) {
-    std::os::unix::fs::symlink(source, target).unwrap();
 }
 
 #[cfg(unix)]
@@ -166,70 +160,28 @@ fn every_harness_attaches_inspects_detaches_and_refuses_to_destroy_drift() {
     }
 }
 
-// ============================================================================
-// 9. Shared agent skill root convergence — SKILL.
-// ============================================================================
-//
-// Codex and OpenCode both discover Skills from the same physical
-// `~/.agents/skills` directory; Claude's is exclusive. This is the
-// statically-provable half of the convergence invariant: the two that
-// claim a shared root must actually report the identical path when
-// constructed against the identical `agents_home`, and Claude must report
-// none (Antigravity's root is exclusive too). The dynamic half — that
-// naming resolution actually avoids a duplicate physical entry when more
-// than one of them attaches the same skill — is a `UzeApplication`-level
-// concern (`resolve_exposure_name`, `pub(crate)`, unreachable from here)
-// already proven end-to-end by `tests/shared_agent_skill_root_naming.rs`;
-// this suite does not re-derive that heavier test, only its prerequisite.
+// Every loose-skill root has exactly one owner: two harnesses writing one
+// directory is how a skill got two encodings in one file and a removal had
+// to ask who else still held it.
 
 #[test]
-fn codex_opencode_agree_on_the_shared_skill_root() {
-    let root = temp("shared-root-agree");
+fn every_integration_owns_its_skill_root() {
+    let root = temp("skill-root-owners");
     let agents_home = root.join("agents-home");
     let uze_home = UzeHome::at(root.join("uze"));
-    let codex = CodexIntegration::new(agents_home.clone(), uze_home.clone());
-    let opencode = OpenCodeIntegration::new(
-        agents_home.clone(),
-        root.join("opencode-config.json"),
-        uze_home,
-    );
-    let codex_root = codex.shared_agent_skill_root();
-    let opencode_root = opencode.shared_agent_skill_root();
-    assert!(
-        codex_root.is_some() && opencode_root.is_some(),
-        "both must opt into shared-root awareness"
-    );
-    assert_eq!(
-        codex_root, opencode_root,
-        "Codex and OpenCode must agree on the physical shared skills directory"
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn claude_has_no_shared_skill_root_by_design() {
-    let root = temp("claude-exclusive-root");
-    let integration = ClaudeIntegration::new(root.join("claude"), UzeHome::at(root.join("uze")));
-    assert_eq!(
-        integration.shared_agent_skill_root(),
-        None,
-        "Claude's skills directory is exclusive, not shared with any peer — this must stay \
-         None, never forced into symmetry with Codex/OpenCode"
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn antigravity_has_no_shared_skill_root_by_design() {
-    let root = temp("antigravity-exclusive-root");
-    let integration =
-        AntigravityIntegration::new(root.join("agents-home"), UzeHome::at(root.join("uze")));
-    assert_eq!(
-        integration.shared_agent_skill_root(),
-        None,
-        "Antigravity's skills staging is exclusive, not shared with any peer — this must stay \
-         None, never forced into symmetry with Codex/OpenCode"
-    );
+    let roots = [
+        ClaudeIntegration::new(root.join("claude"), uze_home.clone()).skill_discovery_root(),
+        CodexIntegration::new(agents_home.clone(), uze_home.clone()).skill_discovery_root(),
+        OpenCodeIntegration::new(
+            agents_home.clone(),
+            root.join("opencode/opencode.json"),
+            uze_home.clone(),
+        )
+        .skill_discovery_root(),
+        AntigravityIntegration::new(agents_home, uze_home).skill_discovery_root(),
+    ];
+    let distinct: std::collections::BTreeSet<_> = roots.iter().flatten().collect();
+    assert_eq!(distinct.len(), roots.len(), "{roots:#?}");
     let _ = fs::remove_dir_all(root);
 }
 

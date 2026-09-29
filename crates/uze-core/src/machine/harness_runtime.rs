@@ -247,7 +247,7 @@ pub const PROJECTION_MARKER: &str = "project.json";
 /// the wrappers a bridge is made of — whose lifetime is the attachment's
 /// rather than any project's, and which the receipt ledger already answers
 /// for. Sweeping it here would delete a live delivery on the next `doctor`.
-const RUNTIME_TENANTS: &[&str] = &["projects", "attachments"];
+const RUNTIME_TENANTS: &[&str] = &["projects", "attachments", "packages"];
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ProjectionMarker {

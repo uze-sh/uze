@@ -16,6 +16,7 @@
 use std::{fs, path::Path};
 
 use crate::shared::plan::unsupported;
+use uze_core::capability::agent::AgentDocument;
 use uze_core::{
     Result, UzeError,
     capability::CapabilityKind,
@@ -25,14 +26,14 @@ use uze_core::{
     home::UzeHome,
     integration::{
         AttachmentInspection, AttachmentReceipt, AttachmentState, ContextDelivery,
-        HarnessDetection, IntegrationPort, ManagedArtifact, PublicationStatus, active_plugin_name,
-        default_exposure_name_candidates, qualified_exposure_name_candidates,
+        HarnessDetection, IntegrationPort, ManagedArtifact, PublicationStatus, UnreadableDelivery,
+        active_plugin_name, default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
     preference::{
         PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
     },
     provisioning::{ProcessRunner, ProcessSpec, ProvisioningResult},
-    router::HarnessCapabilities,
+    router::{CompatibilityRoute, HarnessCapabilities},
     state,
     store::StoredPackage,
 };
@@ -48,14 +49,21 @@ mod skills;
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::{HookEntry, HookTarget};
-use crate::shared::agent::{agent_name, markdown_agent_plan};
+use crate::shared::agent::{
+    MarkdownAgent, agent_file_plan, agent_label, delivered_agent, markdown_agent, projection_route,
+};
+use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
-use crate::shared::provision::{official_installer, provision_cli};
+use crate::shared::provision::{
+    OfficialRoute, native_installer_destination, official_installer, provision_cli,
+};
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
-use skills::materialize_shim;
+use uze_core::capability::harness::Findings;
+use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::project_context::AgentsDirectoryResource;
 /// Claude Code peer integration. Its transparent-attachment strategy is a
 /// UZE-managed "skills-dir plugin" reference at `<claude_home>/skills/<name>`
 /// (see ADR-006): Claude auto-loads any directory there containing
@@ -122,7 +130,11 @@ impl ClaudeIntegration {
     }
 
     fn provisioning_executable(&self) -> String {
-        real_executable("claude", &self.uze_home.shims_dir(), None)
+        real_executable(
+            "claude",
+            &self.uze_home.shims_dir(),
+            native_installer_destination("claude"),
+        )
     }
 }
 
@@ -255,16 +267,28 @@ impl IntegrationPort for ClaudeIntegration {
         true
     }
 
+    /// Claude Code reads neither `.agents/` kind; its launcher links both
+    /// into the `--add-dir` target (see `runtime::project_resource_projection`).
+    fn project_resource_route(&self, _resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        ProjectResourceRoute::RuntimeProjection
+    }
+
     fn provision(&self, runner: &dyn ProcessRunner) -> Result<ProvisioningResult> {
         let executable = self.provisioning_executable();
+        let route = OfficialRoute {
+            label: "Claude Code",
+            program: "claude",
+            install: official_installer("https://claude.ai/install.sh", "bash"),
+            update: ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
+            method: "official-native-installer",
+            manual_route: "https://code.claude.com/docs/en/installation",
+        };
         provision_cli(
             runner,
+            route,
             &executable,
-            "Claude Code",
+            &self.uze_home.shims_dir(),
             self.detect(),
-            official_installer("https://claude.ai/install.sh", "bash"),
-            ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
-            "official-native-installer",
             claude_version,
         )
     }
@@ -296,22 +320,39 @@ impl IntegrationPort for ClaudeIntegration {
         }
     }
 
-    /// Claude namespaces plugin skills/commands itself (`/flow:review` for a
-    /// plugin named `flow` — see `docs/capabilities/skill-invocation-policy.md`), so UZE
-    /// never materializes the namespace into the plugin: the plugin declares
-    /// the plain logical name and Claude owns the `plugin:` prefix. For the
-    /// capability-level fallback shim the physical directory name is the
-    /// stable namespaced label (ADR-026). MCP deliberately stays on the
-    /// shared default (fully qualified only) — its physical name never
-    /// reaches the terminal UX the same way, and mixing naming policies just
-    /// because both are `Resource`s would be exactly the "não misture Skill
-    /// e MCP" mistake the design explicitly rules out.
+    fn facts(&self) -> &'static [HarnessFact] {
+        FACTS
+    }
+
+    fn skill_discovery_root(&self) -> Option<std::path::PathBuf> {
+        Some(self.skills_dir.clone())
+    }
+
+    /// Claude namespaces plugin skills itself (`/flow:review` for a plugin
+    /// named `flow` — see `docs/capabilities/skill-invocation-policy.md`),
+    /// so UZE never materializes the namespace into the plugin: the plugin
+    /// declares the plain logical name and Claude owns the `plugin:` prefix.
+    /// For the capability-level fallback the physical name is the stable
+    /// namespaced label (ADR-026).
+    ///
+    /// An MCP server registered outside a plugin goes through `claude mcp
+    /// add`, which accepts only letters, digits, `-` and `_` ("Invalid name
+    /// std@cardinal-rtc" refused the whole install on 1.0.0-beta.3): the
+    /// plugin and server name first, then qualified by the marketplace for
+    /// the rare collision, every other character spelled as `-`.
     fn exposure_name_candidates(&self, resource: &Resource) -> Vec<String> {
-        if resource.capability.kind != CapabilityKind::AgentSkill {
+        if resource.capability.kind == CapabilityKind::Mcp {
+            return mcp_registry_names(&self.uze_home, resource);
+        }
+        if !resource.capability.kind.is_invoked_by_label() {
             return default_exposure_name_candidates(resource);
         }
         let active_name = active_plugin_name(&self.uze_home, resource);
         qualified_exposure_name_candidates(resource, &active_name)
+    }
+
+    fn package_receipt_serves(&self, receipt: &AttachmentReceipt) -> bool {
+        marketplace::receipt_serves::<ClaudeMarketplace>(&self.uze_home, receipt)
     }
 
     fn package_exposure_plan(
@@ -320,6 +361,76 @@ impl IntegrationPort for ClaudeIntegration {
         resources: &[&Resource],
     ) -> Option<PackageExposurePlan> {
         marketplace::package_plan::<ClaudeMarketplace>(package, resources)
+    }
+
+    /// Claude loads a plugin's agents but ignores four fields a user agent
+    /// honours (plugin components reference: "Ignored fields:
+    /// `permissionMode`, `hooks`, `mcpServers`, and `initialPrompt`"), so an
+    /// agent that declares one reaches it without that part.
+    fn check_capability(&self, resource: &Resource) -> Findings {
+        if resource.capability.kind != CapabilityKind::Agent {
+            return Findings::default();
+        }
+        let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
+            return Findings::default();
+        };
+        agent_block(&CLAUDE_AGENT_DIALECT, &self.harness_keys(), &document).1
+    }
+
+    fn packaged_shortfall(
+        &self,
+        _package: &StoredPackage,
+        resource: &Resource,
+    ) -> Option<(CompatibilityRoute, String)> {
+        if resource.capability.kind != CapabilityKind::Agent {
+            return None;
+        }
+        let document = AgentDocument::parse(&resource.capability.payload)?;
+        let ignored: Vec<&str> = ["permissionMode", "hooks", "mcpServers", "initialPrompt"]
+            .into_iter()
+            .filter(|field| document.frontmatter.contains_key(field))
+            .collect();
+        (!ignored.is_empty()).then(|| {
+            (
+                CompatibilityRoute::Degraded,
+                format!(
+                    "Claude Code ignores these fields on an agent a plugin delivers: {}.",
+                    ignored.join(", ")
+                ),
+            )
+        })
+    }
+
+    /// The plugin UZE handed Claude must still be there, in Claude's cache
+    /// as much as in UZE's marketplace; and a user agent is named by its
+    /// frontmatter `name`, which must be the label it is filed under.
+    fn unreadable(
+        &self,
+        package: &StoredPackage,
+        receipt: &AttachmentReceipt,
+        served: &[&Resource],
+    ) -> Vec<UnreadableDelivery> {
+        match &receipt.artifact {
+            ManagedArtifact::IntegrationOwned { kind, selector, .. } => plugin::plugin_unreadable(
+                &self.command_home,
+                &self.uze_home,
+                package,
+                kind,
+                selector,
+                served,
+            ),
+            ManagedArtifact::GeneratedFile { path, .. } => served
+                .iter()
+                .filter(|resource| resource.capability.kind == CapabilityKind::Agent)
+                .filter_map(|resource| {
+                    user_agent_unreadable(path).map(|reason| UnreadableDelivery {
+                        capability: resource.identity(),
+                        reason,
+                    })
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
     }
 
     fn attach_package(
@@ -351,34 +462,8 @@ impl IntegrationPort for ClaudeIntegration {
             return Ok(None);
         };
         let attached = match &artifact {
-            ManagedArtifact::SymlinkReference { path, target } => {
-                if resource.capability.kind == CapabilityKind::AgentSkill {
-                    let skill_source_dir = resource
-                        .capability
-                        .path
-                        .parent()
-                        .expect("SKILL.md has a parent");
-                    let entry_name = path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .expect("a managed Skill entry has a UTF-8 name");
-                    // The shim's own plugin directory gets the stable
-                    // namespaced label (`flow:review`), while the *manifest
-                    // plugin name* stays the namespace (`flow`): Claude then
-                    // exposes the skill as `/flow:review` (ADR-026) instead
-                    // of double namespacing it (`/flow:flow:review`).
-                    let namespace = active_plugin_name(&self.uze_home, resource);
-                    let policy = resource.skill_invocation();
-                    materialize_shim(
-                        target,
-                        skill_source_dir,
-                        entry_name,
-                        Some(&namespace),
-                        &policy,
-                    )?;
-                }
-                artifact.attach_standard()?;
-                true
+            ManagedArtifact::GeneratedTree { path, .. } => {
+                return self.attach_skill(resource, path).map(Some);
             }
             ManagedArtifact::VendorConfigEntry {
                 entry_name,
@@ -414,6 +499,10 @@ impl IntegrationPort for ClaudeIntegration {
                         wrapper,
                     },
                 )?;
+                true
+            }
+            ManagedArtifact::GeneratedFile { .. } => {
+                artifact.attach_standard()?;
                 true
             }
             _ => false,
@@ -518,17 +607,50 @@ impl IntegrationPort for ClaudeIntegration {
     }
 }
 
+/// A Claude user agent outside a plugin: named by its frontmatter `name`,
+/// which becomes the label, and keeping every authored field — Claude's
+/// format is the canonical one.
+const CLAUDE_USER_AGENT: MarkdownAgent = MarkdownAgent {
+    name_in_frontmatter: true,
+    set: &[],
+    keep: |_| true,
+    dialect: &CLAUDE_AGENT_DIALECT,
+};
+
+/// What Claude Code reads under `harness.claude-code` on an agent (subagents
+/// reference). Claude tolerates a field it does not know, so one outside
+/// this list is carried, unverified.
+pub(crate) const CLAUDE_AGENT_DIALECT: AgentDialect = AgentDialect {
+    known: &[
+        ("model", Shape::Text),
+        ("tools", Shape::TextOrList),
+        ("disallowedTools", Shape::TextOrList),
+        ("color", Shape::Text),
+        (
+            "permissionMode",
+            Shape::OneOf(&["default", "acceptEdits", "plan", "bypassPermissions"]),
+        ),
+    ],
+    carries_unknown: true,
+};
+
 impl ClaudeIntegration {
+    /// Only reached when the package is not delivered as a plugin: Claude
+    /// names a user agent after its frontmatter `name`, so the generated
+    /// definition is named with the label and keeps every other field,
+    /// Claude's own format being the canonical one.
     fn agent_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
-        let entry_name = resource
-            .resolved_exposure_name
-            .clone()
-            .unwrap_or_else(|| agent_name(resource));
-        markdown_agent_plan(
+        let label = agent_label(&self.uze_home, resource);
+        let content = markdown_agent(&label, resource, &CLAUDE_USER_AGENT, &self.harness_keys());
+        agent_file_plan(
             &self.agents_dir,
-            &entry_name,
-            resource,
-            "Claude Code natively discovers Markdown subagents from its user agents directory; UZE keeps a receipt-owned symlink to the canonical Store definition.",
+            &label,
+            "md",
+            content,
+            projection_route(
+                "Claude Code natively discovers Markdown subagents from its user agents directory; outside a plugin UZE writes the definition there under the agent's label, receipt-owned by its content.",
+                &[],
+            ),
         )
     }
 
@@ -537,8 +659,29 @@ impl ClaudeIntegration {
             &self.uze_home,
             resource,
             self.hooks_config_path(),
-            "Claude Code reads `hooks` from its user settings file; UZE merges one group entry per canonical hook (matcher and timeout preserved) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps the exact entry receipt-owned. The generated settings entry follows the plugin `hooks/hooks.json` group form.",
+            "Claude Code reads `hooks` from its user settings file; UZE merges one group entry per canonical hook (matcher and timeout preserved) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps the exact entry receipt-owned. The generated settings entry follows the plugin `hooks/hooks.json` group form; SessionStart is Claude's own event, matched on the session's source.",
         )
+    }
+}
+
+/// Why Claude Code would not show the agent at `path` under the label it
+/// is filed under.
+fn user_agent_unreadable(path: &Path) -> Option<String> {
+    let document = match delivered_agent(path) {
+        Ok(document) => document,
+        Err(reason) => return Some(reason),
+    };
+    let label = path.file_stem()?.to_str()?;
+    match document.name.as_deref() {
+        None => Some(format!(
+            "{} has no `name`, which is what Claude Code names a user agent by",
+            path.display()
+        )),
+        Some(name) if name != label => Some(format!(
+            "Claude Code names this agent `{name}` after its frontmatter, not `{label}`, the \
+             label it is delivered under"
+        )),
+        Some(_) => None,
     }
 }
 
@@ -574,6 +717,81 @@ impl PreferencePort for ClaudeIntegration {
         )
     }
 }
+
+/// The names Claude's MCP registry accepts for a server, most readable
+/// first: `<plugin>-<server>`, then `<plugin>-<marketplace>-<server>`.
+fn mcp_registry_names(uze_home: &UzeHome, resource: &Resource) -> Vec<String> {
+    let Some(server) = resource.logical_capability_name() else {
+        return Vec::new();
+    };
+    let plugin = active_plugin_name(uze_home, resource);
+    let marketplace = resource.package_id.marketplace();
+    [
+        format!("{plugin}-{server}"),
+        format!("{plugin}-{marketplace}-{server}"),
+    ]
+    .into_iter()
+    .map(|name| {
+        name.chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect()
+    })
+    .collect()
+}
+
+/// What claude was measured to do, each fact with the Lab check proving it.
+const FACTS: &[HarnessFact] = &[
+    HarnessFact {
+        subject: "project agents",
+        fact: "reads no `./.agents/agents`, and offers an agent linked into an `--add-dir` target's `.claude/agents`",
+        measured_on: VERSION,
+        proven_by: "contract/context.py::_assert_project_agent",
+    },
+    HarnessFact {
+        subject: "agents",
+        fact: "offers a plugin's agent as `<plugin>:<subdirectories>:<name>`",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_dispatch",
+    },
+    HarnessFact {
+        subject: "agents",
+        fact: "runs an agent on the model its `harness.claude-code` block names",
+        measured_on: VERSION,
+        proven_by: "contract/agent.py::_assert_block_model",
+    },
+    HarnessFact {
+        subject: "plugins",
+        fact: "reads a directory-marketplace plugin live from its source; its cache copy drops linked files",
+        measured_on: VERSION,
+        proven_by: "experiments/claude/parity.py::observed",
+    },
+    HarnessFact {
+        subject: "placeholders",
+        fact: "expands only `${CLAUDE_PLUGIN_ROOT}`, so UZE resolves `${PLUGIN_ROOT}` itself",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_plugin_root",
+    },
+    HarnessFact {
+        subject: "skills",
+        fact: "honours `disable-model-invocation` and `user-invocable`",
+        measured_on: VERSION,
+        proven_by: "contract/skill.py::_assert_invocation",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "fires `SessionStart` once per new session, with its source",
+        measured_on: VERSION,
+        proven_by: "experiments/session_start_probe.py::run",
+    },
+];
+/// The version the facts above were measured on.
+const VERSION: &str = "2.1.283";
 
 #[cfg(test)]
 mod lifecycle_tests {

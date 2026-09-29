@@ -19,7 +19,10 @@ use uze_core::{
     capability::CapabilityKind,
     capability::Resource,
     exposure::{ExposureMechanism, ExposurePlan},
-    integration::{AttachmentReceipt, ContextDelivery, HarnessDetection, ManagedArtifact},
+    integration::{
+        AttachmentReceipt, ContextDelivery, HarnessDetection, ManagedArtifact, ProjectResourceRoute,
+    },
+    project_context::AgentsDirectoryResource,
     router::{CompatibilityRoute, HarnessCapabilities},
 };
 
@@ -1049,9 +1052,13 @@ pub(crate) fn market_inspect_errors_on_an_unregistered_marketplace() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// A failed install is not an installed package: the only harness refused
+/// after one capability was already attached, and nothing of the attempt
+/// may remain — not the attachment, not its receipt, not the Store entry
+/// `status` and `doctor` would go on listing.
 #[cfg(unix)]
 #[test]
-pub(crate) fn add_failure_after_a_confirmed_attachment_leaves_reconcilable_ledger_evidence() {
+pub(crate) fn an_install_its_only_harness_refuses_leaves_nothing_behind() {
     let root = uze_testkit::temp::scratch("partial-add");
     let home = UzeHome::at(&root);
     let integration = PartialIntegration {
@@ -1059,24 +1066,316 @@ pub(crate) fn add_failure_after_a_confirmed_attachment_leaves_reconcilable_ledge
         attached: std::sync::atomic::AtomicBool::new(false),
     };
     let app = UzeApplication::new(home.clone(), vec![Box::new(integration)]);
+    let failure = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(multi_mcp_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .expect_err("the only harness refused");
+    let UzeError::DeliveryFailed(reason) = &failure else {
+        panic!("expected a failed delivery, got {failure:?}");
+    };
     assert!(
-        app.plugins()
-            .add(
-                uze_core::PackageSource::local(multi_mcp_fixture()),
-                &uze_core::trust::AlwaysTrust
-            )
-            .is_err()
+        reason.contains("partial") && reason.contains("simulated second attachment failure"),
+        "the harness and its error are named: {reason}"
+    );
+    assert!(reason.contains("Nothing was installed"), "{reason}");
+
+    assert!(app.store.package_ids().unwrap().is_empty());
+    assert!(app.plugins().list().unwrap().is_empty());
+    assert!(state::receipts(&home, None).unwrap().is_empty());
+    assert!(
+        root.join("first-managed-resource")
+            .symlink_metadata()
+            .is_err(),
+        "what the attempt attached was taken back off"
+    );
+    let doctor = app.health().report();
+    assert!(doctor.plugins.is_empty() && doctor.attachments.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// One harness takes the package and the other refuses: the package stays,
+/// the refusing harness is left with nothing half-attached, and every
+/// listing says which harness it did not reach and why.
+#[cfg(unix)]
+#[test]
+pub(crate) fn an_install_one_of_two_harnesses_refuses_is_recorded_as_partial() {
+    let root = uze_testkit::temp::scratch("partial-two-harnesses");
+    let home = UzeHome::at(root.join("home"));
+    let whole = root.join("whole");
+    fs::create_dir_all(&whole).unwrap();
+    let app = UzeApplication::new(
+        home.clone(),
+        vec![
+            Box::new(AllResourceSymlinkIntegration {
+                root: whole.clone(),
+            }),
+            Box::new(PartialIntegration {
+                root: root.clone(),
+                attached: std::sync::atomic::AtomicBool::new(false),
+            }),
+        ],
+    );
+    let report = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(multi_mcp_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .expect("one harness took it, so the package is installed");
+
+    let [delivered, failed] = report.deliveries.as_slice() else {
+        panic!("one entry per detected harness: {:?}", report.deliveries);
+    };
+    assert_eq!(delivered.integration, "all-resources");
+    let HarnessDeliveryOutcome::Delivered {
+        route: DeliveryRoute::CapabilityByCapability { .. },
+        attachments,
+        ..
+    } = &delivered.outcome
+    else {
+        panic!("delivered capability by capability: {delivered:?}");
+    };
+    assert_eq!(
+        attachments.len(),
+        2,
+        "every attachment is listed: {attachments:?}"
+    );
+    assert_eq!(failed.integration, "partial");
+    assert!(
+        failed
+            .error()
+            .is_some_and(|error| error.contains("simulated second attachment failure")),
+        "{failed:?}"
     );
     assert!(
-        app.store
-            .package_ids()
-            .unwrap()
+        root.join("first-managed-resource")
+            .symlink_metadata()
+            .is_err(),
+        "the refusing harness is not left half-attached"
+    );
+    let receipts = state::receipts(&home, None).unwrap();
+    assert!(
+        receipts
             .iter()
-            .any(|id| id.as_str() == "multi-mcp-plugin@local")
+            .all(|receipt| receipt.integration == "all-resources")
+            && receipts.len() == 2,
+        "{receipts:?}"
     );
-    let receipts = state::receipts(&home, Some("multi-mcp-plugin@local")).unwrap();
-    assert_eq!(receipts.len(), 1);
-    assert_eq!(app.health().report().attachments[0].state.matched, 1);
+
+    let listed = app.health().machine_status().unwrap().packages;
+    let [plugin] = listed.as_slice() else {
+        panic!("{listed:?}");
+    };
+    let [undelivered] = plugin.undelivered.as_slice() else {
+        panic!("the partial state is listed: {plugin:?}");
+    };
+    assert_eq!(undelivered.integration, "partial");
+    assert!(
+        undelivered
+            .error
+            .contains("simulated second attachment failure")
+    );
+    assert_eq!(app.health().report().plugins[0].undelivered.len(), 1);
+    assert_eq!(
+        app.plugins()
+            .inspect("multi-mcp-plugin")
+            .unwrap()
+            .plugin
+            .undelivered
+            .len(),
+        1
+    );
+
+    app.plugins().remove("multi-mcp-plugin").unwrap();
+    assert!(
+        state::undelivered(&home, "multi-mcp-plugin@local")
+            .unwrap()
+            .is_empty(),
+        "the record goes with the package"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// The Store hands an already-held package back for the same origin, so a
+/// reinstall that fails did not create it — and must never be what takes
+/// away a package the operator already had.
+#[test]
+pub(crate) fn a_failed_reinstall_keeps_the_package_that_was_there() {
+    let root = uze_testkit::temp::scratch("reinstall-refused");
+    let home = UzeHome::at(&root);
+    let refuse_next = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let app = UzeApplication::new(
+        home.clone(),
+        vec![Box::new(DeliveryRefusedOnce {
+            refuse_next: refuse_next.clone(),
+        })],
+    );
+    install_conformance_fixture(&app, "alpha");
+
+    refuse_next.store(true, Ordering::SeqCst);
+    let acquired =
+        uze_core::acquisition::acquire(&uze_core::PackageSource::local(fixture())).unwrap();
+    let failure = app
+        .plugins()
+        .install_materialized(
+            acquired,
+            "alpha",
+            None,
+            &uze_core::trust::AlwaysTrust,
+            &uze_core::naming::NoNameCollisionAuthority,
+        )
+        .expect_err("the only harness refused");
+    assert!(matches!(failure, UzeError::DeliveryFailed(_)), "{failure}");
+
+    let kept = app
+        .package_by_name("uze-agent-skill-conformance")
+        .expect("the package that was there is still there");
+    assert!(kept.manifest.is_file());
+    assert_eq!(
+        state::undelivered(&home, kept.id.as_str()).unwrap().len(),
+        1,
+        "and the refusal is recorded against it"
+    );
+
+    install_conformance_fixture(&app, "alpha");
+    assert!(
+        state::undelivered(&home, kept.id.as_str())
+            .unwrap()
+            .is_empty(),
+        "a later full delivery clears it"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A harness that takes part of a package as one generated envelope and
+/// the rest capability by capability.
+#[cfg(unix)]
+struct EnvelopingIntegration {
+    root: PathBuf,
+}
+
+#[cfg(unix)]
+impl IntegrationPort for EnvelopingIntegration {
+    fn id(&self) -> &'static str {
+        "enveloping"
+    }
+
+    fn capabilities(&self) -> HarnessCapabilities {
+        HarnessCapabilities::default()
+    }
+
+    fn detect(&self) -> HarnessDetection {
+        HarnessDetection {
+            present: true,
+            version: None,
+        }
+    }
+
+    fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+        ExposurePlan {
+            route: CompatibilityRoute::Adaptable,
+            mechanism: ExposureMechanism::Unsupported {
+                rationale: "test attachment is implemented directly".to_owned(),
+            },
+            evidence: "test".to_owned(),
+        }
+    }
+
+    fn package_exposure_plan(
+        &self,
+        package: &StoredPackage,
+        resources: &[&Resource],
+    ) -> Option<PackageExposurePlan> {
+        Some(PackageExposurePlan {
+            package_id: package.id.clone(),
+            route: CompatibilityRoute::Native,
+            envelope: uze_core::exposure::PackageEnvelope::Generated,
+            provided_resource_identities: resources
+                .iter()
+                .filter(|resource| resource.name() == "filesystem")
+                .map(|resource| resource.identity())
+                .collect(),
+            evidence: "a generated envelope".to_owned(),
+        })
+    }
+
+    fn attach_package(
+        &self,
+        package: &StoredPackage,
+        _plan: &PackageExposurePlan,
+    ) -> Result<Option<AttachmentReceipt>> {
+        let path = self.root.join("envelope");
+        std::os::unix::fs::symlink(&package.root, &path).unwrap();
+        Ok(Some(AttachmentReceipt {
+            package_id: package.id.as_str().to_owned(),
+            resource_identity: None,
+            integration: self.id().to_owned(),
+            artifact: ManagedArtifact::SymlinkReference {
+                path,
+                target: package.root.clone(),
+            },
+        }))
+    }
+
+    fn attach_receipt(&self, resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+        AllResourceSymlinkIntegration {
+            root: self.root.clone(),
+        }
+        .attach_receipt(resource)
+        .map(|receipt| {
+            receipt.map(|receipt| AttachmentReceipt {
+                integration: self.id().to_owned(),
+                ..receipt
+            })
+        })
+    }
+}
+
+/// The report used to keep one location per harness and drop every
+/// capability delivered beside a package — which is exactly how a
+/// duplicate delivery went unseen.
+#[cfg(unix)]
+#[test]
+pub(crate) fn the_install_report_names_the_envelope_and_every_attachment_beside_it() {
+    let root = uze_testkit::temp::scratch("report-every-attachment");
+    let attached = root.join("attached");
+    fs::create_dir_all(&attached).unwrap();
+    let app = UzeApplication::new(
+        UzeHome::at(root.join("home")),
+        vec![Box::new(EnvelopingIntegration {
+            root: attached.clone(),
+        })],
+    );
+    let report = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(multi_mcp_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let [delivery] = report.deliveries.as_slice() else {
+        panic!("{:?}", report.deliveries);
+    };
+    let HarnessDeliveryOutcome::Delivered {
+        route:
+            DeliveryRoute::Package {
+                envelope: uze_core::exposure::PackageEnvelope::Generated,
+                ..
+            },
+        attachments,
+        ..
+    } = &delivery.outcome
+    else {
+        panic!("a generated envelope: {delivery:?}");
+    };
+    assert_eq!(
+        attachments,
+        &vec![attached.join("envelope"), attached.join("github")],
+        "the envelope and the capability beside it"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1875,7 +2174,7 @@ fn runtime_shim_repairs_an_rc_file_when_the_shims_dir_is_already_shadowed() {
 
     let app = UzeApplication::new(home, Vec::new());
     let setup = app
-        .ensure_runtime_shim(&ShimConflictingIntegration {})
+        .ensure_runtime_shim(&ShimConflictingIntegration {}, None)
         .unwrap()
         .expect("runtime-enabled integration creates a shim");
     assert_eq!(setup.rc_file_updated, Some(rc_file.clone()));
@@ -2111,13 +2410,14 @@ fn shim_failure_is_reported_but_does_not_abort_setup() {
 }
 
 // `HarnessContextSupport::declared` is the Harnesses screen's whole answer
-// for the two portable resources, so it must be derivable from the
+// for the portable resources, so it must be derivable from the
 // integration's declarations alone — no project, no cwd — and must apply
 // the same mechanism precedence `AgentContextStatus` applies per project.
 
 struct DeclaringIntegration {
     context_delivery: ContextDelivery,
-    discovers_agents_directory: bool,
+    skills: ProjectResourceRoute,
+    agents: ProjectResourceRoute,
     projects_at_runtime: bool,
 }
 
@@ -2151,8 +2451,11 @@ impl IntegrationPort for DeclaringIntegration {
         self.context_delivery
     }
 
-    fn discovers_project_agents_directory(&self) -> bool {
-        self.discovers_agents_directory
+    fn project_resource_route(&self, resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        match resource {
+            AgentsDirectoryResource::Skills => self.skills,
+            AgentsDirectoryResource::Agents => self.agents,
+        }
     }
 
     fn runtime_projects_project_context(&self) -> bool {
@@ -2164,12 +2467,14 @@ impl IntegrationPort for DeclaringIntegration {
 fn a_harness_reading_the_project_itself_declares_native_context_support() {
     let integration = DeclaringIntegration {
         context_delivery: ContextDelivery::Native { files: &[] },
-        discovers_agents_directory: true,
+        skills: ProjectResourceRoute::Native,
+        agents: ProjectResourceRoute::Native,
         projects_at_runtime: false,
     };
     let support = HarnessContextSupport::declared(&integration, true);
     assert_eq!(support.instructions, ContextMechanism::Native);
-    assert_eq!(support.agents_directory, ContextMechanism::Native);
+    assert_eq!(support.project_skills, ContextMechanism::Native);
+    assert_eq!(support.project_agents, ContextMechanism::Native);
 }
 
 #[test]
@@ -2178,12 +2483,14 @@ fn a_runtime_projection_outranks_the_persistent_bridge() {
         context_delivery: ContextDelivery::Bridge {
             file_name: "BRIDGE.md",
         },
-        discovers_agents_directory: false,
+        skills: ProjectResourceRoute::RuntimeProjection,
+        agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
     };
     let support = HarnessContextSupport::declared(&integration, true);
     assert_eq!(support.instructions, ContextMechanism::RuntimeShim);
-    assert_eq!(support.agents_directory, ContextMechanism::RuntimeShim);
+    assert_eq!(support.project_skills, ContextMechanism::RuntimeShim);
+    assert_eq!(support.project_agents, ContextMechanism::RuntimeShim);
 }
 
 #[test]
@@ -2192,12 +2499,14 @@ fn a_shadowed_shim_is_reported_instead_of_the_projection_it_defeats() {
         context_delivery: ContextDelivery::Bridge {
             file_name: "BRIDGE.md",
         },
-        discovers_agents_directory: false,
+        skills: ProjectResourceRoute::RuntimeProjection,
+        agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
     };
     let support = HarnessContextSupport::declared(&integration, false);
     assert_eq!(support.instructions, ContextMechanism::ShimShadowed);
-    assert_eq!(support.agents_directory, ContextMechanism::ShimShadowed);
+    assert_eq!(support.project_skills, ContextMechanism::ShimShadowed);
+    assert_eq!(support.project_agents, ContextMechanism::ShimShadowed);
 }
 
 #[test]
@@ -2206,22 +2515,48 @@ fn a_bridge_without_a_runtime_projection_stays_a_bridge() {
         context_delivery: ContextDelivery::Bridge {
             file_name: "BRIDGE.md",
         },
-        discovers_agents_directory: false,
+        skills: ProjectResourceRoute::RuntimeProjection,
+        agents: ProjectResourceRoute::Unsupported,
         projects_at_runtime: false,
     };
     let support = HarnessContextSupport::declared(&integration, true);
     assert_eq!(support.instructions, ContextMechanism::Bridge);
-    assert_eq!(support.agents_directory, ContextMechanism::Unsupported);
+    assert_eq!(support.project_skills, ContextMechanism::Unsupported);
+    assert_eq!(support.project_agents, ContextMechanism::Unsupported);
 }
 
 #[test]
 fn a_harness_declaring_no_delivery_is_unsupported_regardless_of_the_shim() {
     let integration = DeclaringIntegration {
         context_delivery: ContextDelivery::None,
-        discovers_agents_directory: false,
+        skills: ProjectResourceRoute::RuntimeProjection,
+        agents: ProjectResourceRoute::Unsupported,
         projects_at_runtime: false,
     };
     let support = HarnessContextSupport::declared(&integration, true);
     assert_eq!(support.instructions, ContextMechanism::Unsupported);
-    assert_eq!(support.agents_directory, ContextMechanism::Unsupported);
+    assert_eq!(support.project_skills, ContextMechanism::Unsupported);
+    assert_eq!(support.project_agents, ContextMechanism::Unsupported);
+}
+
+#[test]
+fn each_kind_of_the_agents_directory_is_answered_apart() {
+    let integration = DeclaringIntegration {
+        context_delivery: ContextDelivery::Native { files: &[] },
+        skills: ProjectResourceRoute::Native,
+        agents: ProjectResourceRoute::RuntimeProjection,
+        projects_at_runtime: true,
+    };
+    let support = HarnessContextSupport::declared(&integration, true);
+    assert_eq!(support.project_skills, ContextMechanism::Native);
+    assert_eq!(support.project_agents, ContextMechanism::RuntimeShim);
+
+    let integration = DeclaringIntegration {
+        agents: ProjectResourceRoute::Unsupported,
+        projects_at_runtime: false,
+        ..integration
+    };
+    let support = HarnessContextSupport::declared(&integration, true);
+    assert_eq!(support.project_skills, ContextMechanism::Native);
+    assert_eq!(support.project_agents, ContextMechanism::Unsupported);
 }

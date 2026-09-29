@@ -111,7 +111,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     let archive = hook_resource(&stop_resources, "archive");
     let opencode_plan = opencode.exposure_plan(archive);
-    assert_eq!(opencode_plan.route, CompatibilityRoute::Degraded);
+    assert_eq!(opencode_plan.route, CompatibilityRoute::Unsupported);
     assert!(
         opencode_plan.evidence.contains("no `stop` semantic event"),
         "the opencode plan must state the exact semantic loss"
@@ -153,6 +153,70 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
         CompatibilityRoute::Native,
         "Antigravity documents native allow/ask/deny decisions"
     );
+}
+
+/// A session start is delivered where the harness fires one and reported
+/// Unsupported where it does not — per harness, beside the package's other
+/// groups, never as a reason to refuse the manifest (spec: "An event a
+/// harness lacks does not block the package").
+#[test]
+fn session_start_is_native_where_fired_and_unsupported_where_not() {
+    let (root, resources) = hook_package(
+        "compat-session",
+        &manifest_with(
+            r#""SessionStart":[{"id":"ensure-ui","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/ensure-ui"}]}],"PreToolUse":[{"id":"watch","matcher":"shell","hooks":[{"type":"command","command":"watch"}]}]"#,
+        ),
+    );
+    let started = hook_resource(&resources, "ensure-ui");
+    let watch = hook_resource(&resources, "watch");
+    let home = UzeHome::at(root.join("uze"));
+    let claude = ClaudeIntegration::new(root.join("claude"), home.clone());
+    let codex = CodexIntegration::new(root.join("agents"), home.clone());
+    let opencode = OpenCodeIntegration::new(
+        root.join("agents"),
+        root.join("config/opencode.json"),
+        home.clone(),
+    );
+    let antigravity = AntigravityIntegration::new(root.join("agents"), home);
+
+    for (harness, plan) in [
+        ("claude", claude.exposure_plan(started)),
+        ("codex", codex.exposure_plan(started)),
+    ] {
+        assert_eq!(plan.route, CompatibilityRoute::Native, "{harness}");
+        let uze_core::exposure::ExposureMechanism::Managed(ManagedArtifact::HookConfigEntry {
+            event,
+            expected,
+            ..
+        }) = &plan.mechanism
+        else {
+            panic!("{harness}: a session start is a managed config entry");
+        };
+        assert_eq!(*event, HookEvent::SessionStart);
+        let entry: serde_json::Value = serde_json::from_str(expected).unwrap();
+        assert_eq!(
+            entry["matcher"], "startup|resume|clear",
+            "{harness}: no matcher is every portable source, spelled out"
+        );
+    }
+
+    let plan = antigravity.exposure_plan(started);
+    assert_eq!(plan.route, CompatibilityRoute::Unsupported);
+    assert!(
+        plan.evidence.contains("no `session_start` semantic event"),
+        "the report says why: {}",
+        plan.evidence
+    );
+    assert_eq!(
+        antigravity.exposure_plan(watch).route,
+        CompatibilityRoute::Native,
+        "the package's other groups still reach Antigravity"
+    );
+    assert_eq!(
+        opencode.exposure_plan(started).route,
+        CompatibilityRoute::Unsupported
+    );
+    let _ = fs::remove_dir_all(root);
 }
 
 /// `transform` needs a channel for the handler to answer on, which the
@@ -1001,7 +1065,7 @@ fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_never_bridged() {
     let integration = opencode(&_root);
 
     let plan = integration.exposure_plan(stop);
-    assert_eq!(plan.route, CompatibilityRoute::Degraded);
+    assert_eq!(plan.route, CompatibilityRoute::Unsupported);
     assert!(matches!(
         plan.mechanism,
         uze_core::exposure::ExposureMechanism::Unsupported { .. }

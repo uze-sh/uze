@@ -39,10 +39,141 @@ use crate::{
 /// repository by. A lock records the identity — a path only this machine
 /// has is not something a project can be reproduced from — while the
 /// machine that has the clone keeps reading it locally.
+///
+/// `subpath` is where the catalogue sits inside that repository. It is
+/// beside the identity rather than in it: two marketplaces in one
+/// repository are one repository read at two directories.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MarketplaceRepository {
     pub fetch: String,
     pub identity: String,
+    pub subpath: MarketplaceSubpath,
+}
+
+/// The directory of a repository a marketplace's catalogue sits in: its
+/// root, or a relative path below it.
+///
+/// The one answer to "where is the catalogue, and where is a plugin": every
+/// reader, mirrored or linked, asks it rather than composing a path of its
+/// own, which is how a reader comes to read the root of a marketplace that
+/// is not there.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MarketplaceSubpath(Option<String>);
+
+impl MarketplaceSubpath {
+    /// The repository's root.
+    pub fn root() -> Self {
+        Self(None)
+    }
+
+    /// A typed or recorded subpath, normalized. Judged lexically, like a
+    /// plugin's `source`: a mirror has no directory to canonicalize
+    /// against, so a `..` or an absolute path is refused as written.
+    pub fn parse(subpath: &Path) -> Result<Self> {
+        let escapes = || UzeError::MarketplaceSubpathEscapes {
+            subpath: subpath.display().to_string(),
+        };
+        if subpath.is_absolute() {
+            return Err(escapes());
+        }
+        let mut parts = Vec::new();
+        for component in subpath.components() {
+            match component {
+                std::path::Component::Normal(part) => {
+                    parts.push(part.to_str().ok_or_else(escapes)?)
+                }
+                std::path::Component::CurDir => {}
+                _ => return Err(escapes()),
+            }
+        }
+        Ok(Self((!parts.is_empty()).then(|| parts.join("/"))))
+    }
+
+    /// [`Self::parse`] of an optional subpath, absent meaning the root.
+    pub fn of(subpath: Option<&Path>) -> Result<Self> {
+        subpath.map_or_else(|| Ok(Self::root()), Self::parse)
+    }
+
+    /// Where `directory` sits inside the checkout whose top level is
+    /// `toplevel`, refusing one outside it.
+    pub fn within_checkout(toplevel: &Path, directory: &Path) -> Result<Self> {
+        let toplevel = toplevel
+            .canonicalize()
+            .unwrap_or_else(|_| toplevel.to_path_buf());
+        let canonical = directory
+            .canonicalize()
+            .unwrap_or_else(|_| directory.to_path_buf());
+        let relative =
+            canonical
+                .strip_prefix(&toplevel)
+                .map_err(|_| UzeError::MarketplaceSubpathEscapes {
+                    subpath: directory.display().to_string(),
+                })?;
+        Self::parse(relative)
+    }
+
+    pub fn is_root(&self) -> bool {
+        self.0.is_none()
+    }
+
+    /// As a repository-relative path, `None` at the root — the spelling a
+    /// source and a lock entry carry.
+    pub fn as_path(&self) -> Option<PathBuf> {
+        self.0.as_ref().map(PathBuf::from)
+    }
+
+    /// The catalogue's path relative to the repository.
+    pub fn manifest_path(&self) -> String {
+        self.join(crate::workspace::MARKETPLACE_MANIFEST_NAME)
+    }
+
+    /// The repository-relative directory `plugin` occupies, `.` for the
+    /// whole repository. Containment is [`plugin_subdirectory`]'s: a plugin
+    /// is inside its marketplace, and so inside this directory.
+    pub fn plugin_path(&self, manifest: &MarketplaceManifest, plugin: &str) -> Result<String> {
+        let within = plugin_subdirectory(manifest, plugin)?;
+        Ok(if within == "." {
+            self.0.clone().unwrap_or_else(|| ".".to_owned())
+        } else {
+            self.join(&within)
+        })
+    }
+
+    /// The catalogue's directory inside `checkout`, a working tree of the
+    /// repository. Canonicalized and checked, because a working tree can
+    /// hold a symbolic link where the history holds a directory.
+    pub fn directory_in(&self, checkout: &Path) -> Result<PathBuf> {
+        let Some(subpath) = &self.0 else {
+            return Ok(checkout.to_path_buf());
+        };
+        let joined = checkout.join(subpath);
+        let canonical = joined
+            .canonicalize()
+            .map_err(|_| UzeError::MissingPath(joined.clone()))?;
+        let top = checkout.canonicalize().map_err(|source| UzeError::Read {
+            path: checkout.to_path_buf(),
+            source,
+        })?;
+        if !canonical.starts_with(&top) {
+            return Err(UzeError::MarketplaceSubpathEscapes {
+                subpath: subpath.clone(),
+            });
+        }
+        Ok(canonical)
+    }
+
+    fn join(&self, relative: &str) -> String {
+        match &self.0 {
+            Some(subpath) => format!("{subpath}/{relative}"),
+            None => relative.to_owned(),
+        }
+    }
+}
+
+impl std::fmt::Display for MarketplaceSubpath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0.as_deref().unwrap_or("."))
+    }
 }
 
 /// The repository behind a marketplace source, refusing anything that is
@@ -55,9 +186,12 @@ pub struct MarketplaceRepository {
 /// nowhere else.
 pub fn repository_of(source: &PackageSource) -> Result<MarketplaceRepository> {
     match source {
-        PackageSource::Git { url, .. } => Ok(MarketplaceRepository {
+        PackageSource::Git {
+            url, subdirectory, ..
+        } => Ok(MarketplaceRepository {
             fetch: url.clone(),
             identity: super::forge::canonical(url),
+            subpath: MarketplaceSubpath::of(subdirectory.as_deref())?,
         }),
         PackageSource::Local { path } => {
             let toplevel =
@@ -77,9 +211,11 @@ pub fn repository_of(source: &PackageSource) -> Result<MarketplaceRepository> {
                 || toplevel.clone(),
                 |origin| super::forge::canonical(&origin),
             );
+            let subpath = MarketplaceSubpath::within_checkout(Path::new(&toplevel), path)?;
             Ok(MarketplaceRepository {
                 fetch: toplevel,
                 identity,
+                subpath,
             })
         }
         PackageSource::Embedded { id } => Err(UzeError::AcquisitionFailed(format!(
@@ -325,6 +461,69 @@ mod subdirectory_tests {
             plugin_subdirectory(&manifest("/etc"), "flow"),
             Err(UzeError::UnsafePathReference { .. })
         ));
+    }
+
+    #[test]
+    fn a_subpath_resolves_the_catalogue_and_its_plugins_below_it() {
+        let subpath = MarketplaceSubpath::parse(Path::new("./aikit/")).unwrap();
+        assert_eq!(subpath.as_path(), Some(PathBuf::from("aikit")));
+        assert_eq!(subpath.manifest_path(), "aikit/marketplace.json");
+        assert_eq!(
+            subpath.plugin_path(&manifest("./flow"), "flow").unwrap(),
+            "aikit/flow"
+        );
+        assert_eq!(
+            subpath.plugin_path(&manifest("."), "flow").unwrap(),
+            "aikit"
+        );
+    }
+
+    #[test]
+    fn the_root_subpath_reads_exactly_what_a_root_marketplace_always_read() {
+        let root = MarketplaceSubpath::of(None).unwrap();
+        assert_eq!(MarketplaceSubpath::parse(Path::new(".")).unwrap(), root);
+        assert_eq!(root.as_path(), None);
+        assert_eq!(root.manifest_path(), "marketplace.json");
+        assert_eq!(
+            root.plugin_path(&manifest("./plugins/flow"), "flow")
+                .unwrap(),
+            "plugins/flow"
+        );
+        assert_eq!(root.plugin_path(&manifest("."), "flow").unwrap(), ".");
+    }
+
+    #[test]
+    fn a_subpath_leaving_the_repository_is_refused() {
+        for escaping in ["..", "../elsewhere", "aikit/../../elsewhere", "/etc"] {
+            assert!(
+                matches!(
+                    MarketplaceSubpath::parse(Path::new(escaping)),
+                    Err(UzeError::MarketplaceSubpathEscapes { .. })
+                ),
+                "{escaping}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_working_tree_directory_linked_outside_the_checkout_is_refused() {
+        let root = uze_testkit::temp::scratch("subpath-symlink");
+        let checkout = root.join("checkout");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(&checkout).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, checkout.join("aikit")).unwrap();
+
+        let refused = MarketplaceSubpath::parse(Path::new("aikit"))
+            .unwrap()
+            .directory_in(&checkout);
+
+        assert!(
+            matches!(refused, Err(UzeError::MarketplaceSubpathEscapes { .. })),
+            "{refused:?}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

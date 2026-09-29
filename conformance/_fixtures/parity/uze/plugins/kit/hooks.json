@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "parity-deny",
+        "matcher": "shell",
+        "effect": "deny",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/deny",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "id": "parity-post",
+        "matcher": "shell",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/mark-post",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "id": "parity-session",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/mark-session",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

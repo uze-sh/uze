@@ -47,26 +47,24 @@ scenes:
       - shell: "{uze} install -m flow@demo"
         say: install and deliver it
     then:
-      - link: "{home}/.agents/skills/flow:commit"
-        resolves_to: "/runtime/attachments/opencode/skills/flow/commit"
-        about: the shared skill root points into the artifact UZE generated
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
+        exists: true
+        about: OpenCode's skill root holds the directory UZE generated
 
   - scene: somebody repoints one of the artifacts at something else
     when:
       - shell: |
           set -e
-          mkdir -p {home}/somewhere-else
-          rm -rf "{home}/.agents/skills/flow:commit"
-          ln -s {home}/somewhere-else "{home}/.agents/skills/flow:commit"
-        say: repoint the managed symlink, the way a person or another tool would
+          echo "edited by hand" > "{home}/.config/opencode/skills/flow:commit/SKILL.md"
+        say: edit the managed skill, the way a person or another tool would
     then:
-      - link: "{home}/.agents/skills/flow:commit"
-        resolves_to: somewhere-else
-        about: the artifact now points where the tamperer put it
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
+        contains: edited by hand
+        about: the artifact now says what the editor wrote
       - capture:
           name: tampered
           tree:
-            - "{home}/.agents"
+            - "{home}/.config/opencode"
             - "{home}/.gemini"
             - "{home}/.claude"
         about: remember the world exactly as they left it
@@ -87,11 +85,11 @@ scenes:
           exit: 1
           stdout_contains: BlockedByDrift
         about: naming drift as the reason rather than failing vaguely
-      - link: "{home}/.agents/skills/flow:commit"
-        resolves_to: somewhere-else
-        about: the drifted artifact is exactly where the tamperer left it
+      - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
+        contains: edited by hand
+        about: the drifted artifact is exactly as the editor left it
       - tree:
-          - "{home}/.agents"
+          - "{home}/.config/opencode"
           - "{home}/.gemini"
           - "{home}/.claude"
         same_as: tampered

@@ -4,6 +4,13 @@ A complete MCP stdio server with no dependencies: newline-delimited
 JSON-RPC on stdin/stdout, one tool. Swap it for your real server — or
 delete the key in mcp.json and this file with it.
 
+mcp.json is the Agent Plugins 1.0 shape, which admits no comment key, so
+its documentation lives here: one server per key, keyed by the name a
+harness addresses it under; `"type": "stdio"` runs a local `command` with
+`args`, while `streamable-http` or `sse` reach a remote `url`. Name a file
+of this plugin as `${PLUGIN_ROOT}/...` in `args`, or a bundled executable
+as `./bin/...` in `command`; uze resolves both for every harness.
+
 stdout carries the protocol and nothing else; anything meant for a person
 goes to stderr, or the harness reads it as a broken message and drops the
 connection.

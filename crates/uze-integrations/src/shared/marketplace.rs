@@ -1,9 +1,11 @@
 //! The derived marketplaces Claude Code and Codex install native plugins
 //! from (ADR-013).
 //!
-//! Each harness gets two: `uze-local`, rooted at the Store itself, for the
-//! packages that ship the harness's own envelope, and `uze-store`, rooted
-//! under UZE's state, for the packages UZE synthesizes one for. Which
+//! Each harness gets two, both in the generated tier: `uze-local`, for the
+//! packages that ship the harness's own envelope, each mirrored there as
+//! real files, and `uze-store`, for the packages UZE synthesizes one for.
+//! Neither is rooted in the Store: a harness reads what UZE gave it, never
+//! the tier whose loss costs the packages. Which
 //! packages each catalogue lists, how a generated envelope is rebuilt and
 //! removed, what a receipt records and when publication is current are one
 //! lifecycle; a [`MarketplaceDialect`] supplies only what the vendor spells
@@ -19,7 +21,7 @@ use std::{
 use uze_core::{
     Result, UzeError,
     capability::{CapabilityKind, Resource},
-    exposure::PackageExposurePlan,
+    exposure::{PackageEnvelope, PackageExposurePlan},
     home::UzeHome,
     integration::{AttachmentInspection, AttachmentReceipt, ManagedArtifact, PublicationStatus},
     router::CompatibilityRoute,
@@ -47,6 +49,10 @@ pub(crate) trait MarketplaceDialect {
     const GENERATED_KIND: &'static str;
     const EXPLICIT_EVIDENCE: &'static str;
     const GENERATED_EVIDENCE: &'static str;
+    /// Whether the harness loads a plugin's `agents/` and names each one
+    /// under the plugin: a generated envelope then carries the package's
+    /// agents, and no agent is delivered beside it.
+    const ENVELOPE_CARRIES_AGENTS: bool;
 
     /// The whole catalogue document around its `plugins`.
     fn catalogue_document(
@@ -96,6 +102,9 @@ pub(crate) trait MarketplaceDialect {
         detail: &BTreeMap<String, serde_json::Value>,
     ) -> AttachmentInspection;
     fn remove_plugin(executable: &Path, home: &Path, selector: &str) -> Result<()>;
+    /// Unregisters a marketplace by name, which also uninstalls the plugins
+    /// installed from it.
+    fn remove_marketplace(executable: &Path, home: &Path, name: &str) -> Result<()>;
 }
 
 /// Which of the two marketplaces a package is delivered through.
@@ -135,10 +144,13 @@ pub(crate) fn has_envelope<D: MarketplaceDialect>(package: &StoredPackage) -> bo
 
 /// Whether UZE can safely synthesize an envelope: none of the package's
 /// own, and at least one structural surface to generate from — a
-/// conventional `skills/` directory or a root `mcp.json`.
+/// conventional `skills/` directory, a root `mcp.json`, or `agents/` for a
+/// harness whose plugins carry agents.
 pub(crate) fn generatable<D: MarketplaceDialect>(package: &StoredPackage) -> bool {
     !has_envelope::<D>(package)
-        && (package.root.join("skills").is_dir() || package.root.join("mcp.json").is_file())
+        && (package.root.join("skills").is_dir()
+            || package.root.join("mcp.json").is_file()
+            || (D::ENVELOPE_CARRIES_AGENTS && package.root.join("agents").is_dir()))
 }
 
 /// Root of every generated envelope, and the generated marketplace's own
@@ -154,13 +166,32 @@ pub(crate) fn generated_package_dir<D: MarketplaceDialect>(
     generated_root::<D>(uze_home).join(package_id)
 }
 
-/// The root a marketplace is registered at. The explicit one is the Store:
-/// Codex resolves a catalogue entry's `source.path` relative to it and
-/// rejects both absolute paths and relative paths escaping it (confirmed
-/// against Codex 0.148.0), so the catalogue sits beside the packages.
-fn marketplace_root<D: MarketplaceDialect>(uze_home: &UzeHome, origin: Origin) -> PathBuf {
+/// Root of the explicit marketplace and of the mirrors it lists. Codex
+/// resolves a catalogue entry's `source.path` relative to the marketplace
+/// root and rejects both absolute paths and relative paths escaping it
+/// (confirmed against Codex 0.148.0), so the mirrors sit beneath it.
+pub(crate) fn explicit_root<D: MarketplaceDialect>(uze_home: &UzeHome) -> PathBuf {
+    crate::shared::path::attachment_root(uze_home, D::VENDOR).join("explicit")
+}
+
+/// Where a package that ships its own envelope is mirrored for the harness.
+pub(crate) fn explicit_package_dir<D: MarketplaceDialect>(
+    uze_home: &UzeHome,
+    package: &StoredPackage,
+) -> PathBuf {
+    explicit_root::<D>(uze_home)
+        .join("plugins")
+        .join(package.id.marketplace())
+        .join(package.id.plugin_name())
+}
+
+/// The root a marketplace is registered at.
+pub(crate) fn marketplace_root<D: MarketplaceDialect>(
+    uze_home: &UzeHome,
+    origin: Origin,
+) -> PathBuf {
     match origin {
-        Origin::Explicit => uze_home.store_dir(),
+        Origin::Explicit => explicit_root::<D>(uze_home),
         Origin::Generated => generated_root::<D>(uze_home),
     }
 }
@@ -212,15 +243,17 @@ pub(crate) fn package_plan<D: MarketplaceDialect>(
     package: &StoredPackage,
     resources: &[&Resource],
 ) -> Option<PackageExposurePlan> {
-    let (provided, evidence) = if has_envelope::<D>(package) {
+    let (provided, evidence, envelope) = if has_envelope::<D>(package) {
         (
             D::explicit_coverage(package, resources),
             D::EXPLICIT_EVIDENCE,
+            PackageEnvelope::Own,
         )
     } else if generatable::<D>(package) {
         (
             generated_exact_coverage::<D>(package, resources),
             D::GENERATED_EVIDENCE,
+            PackageEnvelope::Generated,
         )
     } else {
         return None;
@@ -228,6 +261,7 @@ pub(crate) fn package_plan<D: MarketplaceDialect>(
     Some(PackageExposurePlan {
         package_id: package.id.clone(),
         route: CompatibilityRoute::Native,
+        envelope,
         provided_resource_identities: provided,
         evidence: evidence.to_owned(),
     })
@@ -236,8 +270,8 @@ pub(crate) fn package_plan<D: MarketplaceDialect>(
 /// The resources a generated envelope provides, computed against what it
 /// can preserve rather than by re-reading a manifest it wrote, so generation
 /// and coverage agree by construction: a Skill under `skills/` whose policy
-/// the envelope carries, and an MCP server named in the package's
-/// `mcp.json`.
+/// the envelope carries, an MCP server named in the package's `mcp.json`,
+/// and every agent when the harness's plugins carry agents.
 pub(crate) fn generated_exact_coverage<D: MarketplaceDialect>(
     package: &StoredPackage,
     resources: &[&Resource],
@@ -254,6 +288,7 @@ pub(crate) fn generated_exact_coverage<D: MarketplaceDialect>(
                 .resource_name
                 .as_ref()
                 .is_some_and(|name| declared_mcp.contains(name)),
+            CapabilityKind::Agent => D::ENVELOPE_CARRIES_AGENTS,
             _ => false,
         })
         .map(|resource| resource.identity())
@@ -312,8 +347,25 @@ pub(crate) fn materialize_generated_package<D: MarketplaceDialect>(
     package: &StoredPackage,
 ) -> Result<PathBuf> {
     let dir = generated_package_dir::<D>(uze_home, package.id.as_str());
-    crate::shared::skill::recreate_dir(&dir)?;
-    D::materialize_envelope(package, &dir)?;
+    uze_core::persistence::replace_dir(&dir, |staging| D::materialize_envelope(package, staging))?;
+    Ok(dir)
+}
+
+/// Mirrors a package's own envelope, and the whole package around it, into
+/// the explicit marketplace as real files, replaced whole: the author's
+/// plugin as they wrote it, read by the harness from the generated tier.
+pub(crate) fn materialize_explicit_package<D: MarketplaceDialect>(
+    uze_home: &UzeHome,
+    package: &StoredPackage,
+) -> Result<PathBuf> {
+    let dir = explicit_package_dir::<D>(uze_home, package);
+    let package_root = fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
+        path: package.root.clone(),
+        source,
+    })?;
+    uze_core::persistence::replace_dir(&dir, |staging| {
+        crate::shared::tree::mirror_tree(&package.root, staging, &package_root, &[])
+    })?;
     Ok(dir)
 }
 
@@ -353,11 +405,95 @@ pub(crate) fn republish<D: MarketplaceDialect>(
     uze_home: &UzeHome,
     packages: &[StoredPackage],
 ) -> Result<()> {
+    for package in members::<D>(packages, Origin::Explicit) {
+        materialize_explicit_package::<D>(uze_home, package)?;
+    }
     write_catalogue::<D>(uze_home, packages, Origin::Explicit)?;
+    // An earlier build wrote the explicit catalogue into the Store, the one
+    // tier that holds nothing but packages.
+    let stale = uze_home.store_dir().join(D::CATALOGUE_PATH);
+    if stale.is_file() {
+        fs::remove_file(&stale).map_err(|source| UzeError::Write {
+            path: stale.clone(),
+            source,
+        })?;
+    }
     for package in members::<D>(packages, Origin::Generated) {
         materialize_generated_package::<D>(uze_home, package)?;
     }
-    write_catalogue::<D>(uze_home, packages, Origin::Generated)
+    write_catalogue::<D>(uze_home, packages, Origin::Generated)?;
+    prune_unreferenced::<D>(uze_home, packages)
+}
+
+/// Removes every mirror and generated envelope that is neither in the
+/// installed package set nor named by a receipt: the generated tier is
+/// pruned by reference, never by age. One a receipt still names is left
+/// for its detach, which uninstalls the plugin before the directory goes,
+/// since Claude reads a directory marketplace live.
+fn prune_unreferenced<D: MarketplaceDialect>(
+    uze_home: &UzeHome,
+    packages: &[StoredPackage],
+) -> Result<()> {
+    let referenced: Vec<PathBuf> = uze_core::state::receipts(uze_home, None)?
+        .into_iter()
+        .filter_map(|receipt| match receipt.artifact {
+            ManagedArtifact::IntegrationOwned { detail, .. } => {
+                detail_path(&detail, "package_root")
+            }
+            _ => None,
+        })
+        .collect();
+    let keep = |dir: &Path| {
+        referenced
+            .iter()
+            .any(|root| root.starts_with(dir) || dir.starts_with(root))
+    };
+    let generated: BTreeSet<String> = members::<D>(packages, Origin::Generated)
+        .into_iter()
+        .map(|package| package.id.as_str().to_owned())
+        .collect();
+    for (name, dir) in child_dirs(&generated_root::<D>(uze_home)) {
+        if is_valid_qualified_id(&name) && !generated.contains(&name) && !keep(&dir) {
+            remove_tree(&dir)?;
+        }
+    }
+    let explicit: BTreeSet<PathBuf> = members::<D>(packages, Origin::Explicit)
+        .into_iter()
+        .map(|package| explicit_package_dir::<D>(uze_home, package))
+        .collect();
+    for (_, market) in child_dirs(&explicit_root::<D>(uze_home).join("plugins")) {
+        for (_, dir) in child_dirs(&market) {
+            if !explicit.contains(&dir) && !keep(&dir) {
+                remove_tree(&dir)?;
+            }
+        }
+        let _ = fs::remove_dir(&market);
+    }
+    Ok(())
+}
+
+/// The visible subdirectories of `dir`, by name; a staging sibling is
+/// hidden and belongs to a build in progress.
+fn child_dirs(dir: &Path) -> Vec<(String, PathBuf)> {
+    fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+                .filter_map(|entry| {
+                    let name = entry.file_name().into_string().ok()?;
+                    (!name.starts_with('.')).then(|| (name, entry.path()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn remove_tree(dir: &Path) -> Result<()> {
+    fs::remove_dir_all(dir).map_err(|source| UzeError::Write {
+        path: dir.to_path_buf(),
+        source,
+    })
 }
 
 fn write_catalogue<D: MarketplaceDialect>(
@@ -405,6 +541,7 @@ pub(crate) fn publication<D: MarketplaceDialect>(
     }
     if !generated_catalogue_matches::<D>(uze_home, packages)
         || !generated_packages_present::<D>(uze_home, packages)
+        || !explicit_packages_present::<D>(uze_home, packages)
     {
         return PublicationStatus::Unpublished(format!(
             "the generated {noun} does not match the installed package set; {rerun}"
@@ -442,6 +579,38 @@ fn generated_packages_present<D: MarketplaceDialect>(
         })
 }
 
+fn explicit_packages_present<D: MarketplaceDialect>(
+    uze_home: &UzeHome,
+    packages: &[StoredPackage],
+) -> bool {
+    members::<D>(packages, Origin::Explicit)
+        .into_iter()
+        .all(|package| {
+            explicit_package_dir::<D>(uze_home, package)
+                .join(D::ENVELOPE_DIR)
+                .join("plugin.json")
+                .is_file()
+        })
+}
+
+/// Whether a package receipt was made through the marketplace this build
+/// registers: one an earlier build made through a marketplace rooted
+/// elsewhere (the explicit one used to be the Store) is retired and the
+/// package installed again.
+pub(crate) fn receipt_serves<D: MarketplaceDialect>(
+    uze_home: &UzeHome,
+    receipt: &AttachmentReceipt,
+) -> bool {
+    let ManagedArtifact::IntegrationOwned { kind, detail, .. } = &receipt.artifact else {
+        return true;
+    };
+    let Some(origin) = receipt_origin::<D>(kind) else {
+        return true;
+    };
+    detail_path(detail, "marketplace_root")
+        .is_some_and(|root| root == marketplace_root::<D>(uze_home, origin))
+}
+
 /// Installs a package through its marketplace — registering the marketplace
 /// first when the harness does not know it — and returns the receipt.
 pub(crate) fn attach_package<D: MarketplaceDialect>(
@@ -452,7 +621,10 @@ pub(crate) fn attach_package<D: MarketplaceDialect>(
     package: &StoredPackage,
 ) -> Result<AttachmentReceipt> {
     let (origin, package_root) = if has_envelope::<D>(package) {
-        (Origin::Explicit, package.root.clone())
+        (
+            Origin::Explicit,
+            materialize_explicit_package::<D>(uze_home, package)?,
+        )
     } else {
         let envelope = materialize_generated_package::<D>(uze_home, package)?;
         (
@@ -476,7 +648,15 @@ pub(crate) fn attach_package<D: MarketplaceDialect>(
         (known.join().unwrap_or(false), installed)
     });
     if !known {
-        D::add_marketplace(executable, command_home, &root)?;
+        // A marketplace of this name registered from elsewhere (an earlier
+        // build rooted the explicit one in the Store) is re-pointed: one
+        // harness takes a second `add` as the new source, another refuses
+        // it until the old one is removed, which uninstalls its plugins;
+        // each package attached after this installs itself again.
+        D::add_marketplace(executable, command_home, &root).or_else(|_| {
+            D::remove_marketplace(executable, command_home, origin.marketplace_name())?;
+            D::add_marketplace(executable, command_home, &root)
+        })?;
     }
     if !installed {
         D::install_plugin(executable, command_home, &selector)?;
@@ -547,8 +727,17 @@ pub(crate) fn detach_package<D: MarketplaceDialect>(
     origin: Origin,
 ) -> Result<()> {
     D::remove_plugin(executable, command_home, selector)?;
-    if origin == Origin::Generated {
-        remove_generated_package::<D>(uze_home, &receipt.package_id)?;
+    match origin {
+        Origin::Generated => remove_generated_package::<D>(uze_home, &receipt.package_id)?,
+        Origin::Explicit => {
+            if let ManagedArtifact::IntegrationOwned { detail, .. } = &receipt.artifact
+                && let Some(mirror) = detail_path(detail, "package_root")
+                && mirror.starts_with(explicit_root::<D>(uze_home))
+                && mirror.is_dir()
+            {
+                remove_tree(&mirror)?;
+            }
+        }
     }
     Ok(())
 }

@@ -41,6 +41,36 @@ Current matrix, derived from the integration implementations themselves.
 | <a className="harness-table-cell" href="https://opencode.ai" target="_blank" rel="noreferrer noopener"><img src="/harnesses/opencode.svg" alt="" className="harness-table-icon" />OpenCode</a> | `@flow:commit` | `@flow:review` |
 | <a className="harness-table-cell" href="https://antigravity.google" target="_blank" rel="noreferrer noopener"><img src="/harnesses/antigravity.png" alt="" className="harness-table-icon" />Antigravity</a> | `/flow:commit` | `/flow:review` |
 
+### What each harness was measured to do
+
+Each fact is proved by a Conformance Lab check against the real harness; the check fails when a release changes it.
+
+| Harness | About | Fact | Measured on |
+| --- | --- | --- | --- |
+| Claude Code | project agents | reads no `./.agents/agents`, and offers an agent linked into an `--add-dir` target's `.claude/agents` | 2.1.283 |
+| Claude Code | agents | offers a plugin's agent as `<plugin>:<subdirectories>:<name>` | 2.1.283 |
+| Claude Code | agents | runs an agent on the model its `harness.claude-code` block names | 2.1.283 |
+| Claude Code | plugins | reads a directory-marketplace plugin live from its source; its cache copy drops linked files | 2.1.283 |
+| Claude Code | placeholders | expands only `${CLAUDE_PLUGIN_ROOT}`, so UZE resolves `${PLUGIN_ROOT}` itself | 2.1.283 |
+| Claude Code | skills | honours `disable-model-invocation` and `user-invocable` | 2.1.283 |
+| Claude Code | hooks | fires `SessionStart` once per new session, with its source | 2.1.283 |
+| Codex | project agents | reads no `./.agents/agents`, and offers the roles a `-c agents={...}` layer declares beside the user's own | 0.158.0 |
+| Codex | project agents | takes a launch's `-c` layer into a session served by an app-server daemon started without it | 0.158.0 |
+| Codex | agents | runs a role file from `~/.codex/agents/` by its `name`, which carries the label | 0.158.0 |
+| Codex | agents | honours `model` in a role file and refuses one with a key it does not know | 0.158.0 |
+| Codex | skills | hides a skill from the model with `agents/openai.yaml` `allow_implicit_invocation: false` | 0.158.0 |
+| Codex | placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 0.158.0 |
+| Codex | hooks | fires `SessionStart` once per new session, with its source | 0.158.0 |
+| OpenCode | project agents | reads no `./.agents/agents`, and its extra-configuration environment reaches only the shared service a launch starts, which serves it to every project | 2.0.18 |
+| OpenCode | agents | names an agent after its file and runs it on a `provider/model` its block names | 2.0.18 |
+| OpenCode | skills | lists a skill's supporting files only when its directory is not a link | 2.0.18 |
+| OpenCode | placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 2.0.18 |
+| OpenCode | hooks | runs a plugin's tool hooks but cannot block a tool from them | 2.0.18 |
+| Antigravity | agents | offers an agent from its global agents directory by its frontmatter `name` | 1.2.12 |
+| Antigravity | agents | drops an agent that carries `model`, whatever the value | 1.2.12 |
+| Antigravity | placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 1.2.12 |
+| Antigravity | hooks | reads hooks from its shared `hooks.json`, never from a plugin's | 1.2.12 |
+
 {/* uze-matrix:end */}
 
 ## Reading the columns
@@ -61,12 +91,16 @@ Current matrix, derived from the integration implementations themselves.
 
 Each name links to that harness's own site; what follows is how uze delivers to it.
 
-- **[Claude Code](https://code.claude.com)**: plugin delivery through a UZE-managed marketplace; a skills-directory
-  reference is the fallback. Project context arrives through the `CLAUDE.md` bridge
+Every harness offers a plugin's agents by the same name, `<plugin>:<name>` (a subdirectory
+under `agents/` joins it), and receives each agent as a file of its own, carrying only the
+fields that harness reads.
+
+- **[Claude Code](https://code.claude.com)**: plugin delivery through a UZE-managed marketplace; a skill directory
+  of its own in `~/.claude/skills` is the fallback. Project context arrives through the `CLAUDE.md` bridge
   (`@AGENTS.md`), the only bridge uze maintains. Hooks merge into its own user-scope hook
   configuration.
-- **[Codex](https://chatgpt.com/codex)**: the same marketplace model; its skills root (`~/.agents/skills`) is shared with
-  OpenCode, which uze accounts for when resolving names. User-only skills carry
+- **[Codex](https://chatgpt.com/codex)**: the same marketplace model; a skill the plugin does not cover goes to its
+  documented user root, `~/.agents/skills`. User-only skills carry
   `agents/openai.yaml` with implicit invocation disabled. Hooks merge into Codex's own
   `hooks.json` command form.
 - **[OpenCode](https://opencode.ai)**: consumes no external plugin envelope: skills and agents are delivered natively,
@@ -75,10 +109,12 @@ Each name links to that harness's own site; what follows is how uze delivers to 
   slash command. `slash: false` withholds one from the `/` catalog but a mention still expands
   it, which is why a `user: false` policy is reported adapted rather than native. Its binary is
   detected as `opencode`, with the legacy `opencode2` alias still resolved.
-- **[Antigravity](https://antigravity.google)**: the Google-family v0 harness: the canonical `plugin.json` *is* a
-  valid plugin manifest, so envelope-less packages install straight from the Store. Non-default
-  invocation policies are **adapted**: no explicit-only mechanism exists, so skills stay
-  model-discoverable and slash-invocable. It carries the widest hook effect set of the four.
+- **[Antigravity](https://antigravity.google)**: the Google-family v0 harness. uze installs a plugin it generates
+  from the package, with the plugin root resolved in every skill and the MCP servers translated;
+  agents go to its global agents directory under their plugin label, since a plugin's agents lose
+  it. Invocation policies are native: `disable-model-invocation` and `disable-slash-command` are
+  the harness's own controls. It carries the widest hook effect set of the four, and has no
+  session-start event.
 
 The runtime shim is in
 [The terminal session](/docs/advanced/terminal#resuming-after-a-reboot).

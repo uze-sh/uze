@@ -14,9 +14,9 @@
 //!
 //! Two properties fix that, and both are structural rather than
 //! conventional: the resolution starts from a directory the *caller* names
-//! (an agent pane's own cwd, not a session-wide root), and the two portable
-//! resources are answered independently, each naming the mechanism that
-//! delivers it.
+//! (an agent pane's own cwd, not a session-wide root), and each portable
+//! resource (`AGENTS.md`, `.agents/skills`, `.agents/agents`) is answered
+//! independently, naming the mechanism that delivers it.
 
 use std::path::{Path, PathBuf};
 
@@ -25,7 +25,8 @@ use uze_core::{
     Result, UzeError,
     harness_runtime::RuntimeContext,
     integration::{AttachmentState, ContextDelivery, IntegrationPort},
-    project_context, text_region,
+    project_context::{self, AgentsDirectoryResource},
+    text_region,
 };
 
 use super::{
@@ -84,8 +85,10 @@ pub struct AgentContextStatus {
     pub root: PathBuf,
     /// Delivery of the shared `AGENTS.md`.
     pub instructions: ResourceDelivery,
-    /// Delivery of the portable `.agents/` resource directory.
-    pub agents_directory: ResourceDelivery,
+    /// Delivery of the project's `.agents/skills`.
+    pub project_skills: ResourceDelivery,
+    /// Delivery of the project's `.agents/agents`.
+    pub project_agents: ResourceDelivery,
 }
 
 impl Workspace<'_> {
@@ -134,7 +137,20 @@ impl Workspace<'_> {
             present,
             root: context.root.clone(),
             instructions: instruction_delivery(integration, context, present, projection),
-            agents_directory: agents_directory_delivery(integration, context, present, projection),
+            project_skills: project_resource_delivery(
+                integration,
+                context,
+                AgentsDirectoryResource::Skills,
+                present,
+                projection,
+            ),
+            project_agents: project_resource_delivery(
+                integration,
+                context,
+                AgentsDirectoryResource::Agents,
+                present,
+                projection,
+            ),
         }
     }
 }
@@ -203,19 +219,20 @@ fn instruction_delivery(
     }
 }
 
-fn agents_directory_delivery(
+fn project_resource_delivery(
     integration: &dyn IntegrationPort,
     context: &project_context::ProjectContext,
+    resource: AgentsDirectoryResource,
     present: bool,
     projection: RuntimeProjection,
 ) -> ResourceDelivery {
-    if context.agents_directory.is_none() {
+    if context.resource_directory(resource).is_none() {
         return ResourceDelivery::AbsentFromProject;
     }
     if !present {
         return ResourceDelivery::Undelivered(UndeliveredReason::HarnessAbsent);
     }
-    match ContextMechanism::for_agents_directory(integration, projection) {
+    match ContextMechanism::for_project_resource(integration, resource, projection) {
         ContextMechanism::Native => ResourceDelivery::Native,
         ContextMechanism::RuntimeShim => ResourceDelivery::Projected,
         ContextMechanism::ShimShadowed => {

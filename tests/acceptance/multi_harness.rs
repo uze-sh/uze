@@ -52,21 +52,27 @@ fn one_plugin_reaches_every_harness_with_no_duplicate_delivery() {
     );
     assertions::assert_file(&claude_envelope, "claude generated envelope");
 
-    // Codex/OpenCode: one shared `.agents/skills` wrapper preserving the
-    // canonical body while publishing the stable qualified label.
-    let codex_entry = env
+    // OpenCode: a directory of its own preserving the canonical body while
+    // publishing the stable qualified label. Codex's plugin covers the
+    // skill, so nothing lands in Codex's loose root beside it.
+    let opencode_entry = env
         .home
-        .join(".agents/skills/uze-agent-skill-conformance:uze-e2e");
+        .join(".config/opencode/skills/uze-agent-skill-conformance:uze-e2e");
     assert!(
-        codex_entry.is_symlink(),
-        "codex/opencode shared skill entry must be a symlink"
+        opencode_entry.is_dir() && !opencode_entry.is_symlink(),
+        "OpenCode's skill entry must be a real directory"
     );
-    let shared_target = std::fs::read_link(&codex_entry).expect("read shared skill target");
     let wrapper =
-        std::fs::read_to_string(shared_target.join("SKILL.md")).expect("read shared skill wrapper");
+        std::fs::read_to_string(opencode_entry.join("SKILL.md")).expect("read OpenCode skill");
     assert!(
         wrapper.starts_with("---\nname: uze-agent-skill-conformance:uze-e2e\n"),
-        "the shared wrapper preserves the qualified skill label: {wrapper}"
+        "the delivered SKILL.md keeps the qualified skill label: {wrapper}"
+    );
+    assert!(
+        !env.home
+            .join(".agents/skills/uze-agent-skill-conformance:uze-e2e")
+            .exists(),
+        "a skill Codex's plugin covers is not also delivered loose"
     );
 
     let ledger = std::fs::read(env.uze_home.join("state/attachments.json")).unwrap();
@@ -139,30 +145,23 @@ fn invocation_policy_projects_per_harness_classification() {
         );
     }
 
-    // Physical projection: the default skill is exposed through the shared
-    // `.agents/skills` symlink (codex/opencode), the user-only skill is
-    // carried by its policy sidecar + slash surface, never a bare symlink
-    // that would make it model-visible.
-    let shared_root = env.home.join(".agents/skills");
-    assert!(
-        shared_root.join("policy-fixture:commit").is_symlink(),
-        "default skill must be projected for codex/opencode"
-    );
-    // The user-only skill goes through a policy wrapper: its shared-root
-    // entry is a symlink into UZE-owned attachments (never the Store
-    // bytes), and Codex's generated envelope carries its own
-    // `agents/openai.yaml` with implicit invocation disabled — the model
+    // Physical projection: OpenCode gets each skill as a directory of its
+    // own, the user-only one carrying OpenCode's own control, so the model
     // never sees it as auto-discoverable.
-    let review = shared_root.join("policy-fixture:review");
+    let opencode_root = env.home.join(".config/opencode/skills");
     assert!(
-        review.is_symlink(),
-        "user-only skill must be projected via its policy wrapper"
+        opencode_root.join("policy-fixture:commit").is_dir(),
+        "default skill must be projected for OpenCode"
     );
-    let review_target = std::fs::read_link(&review).expect("readlink");
+    let review = opencode_root.join("policy-fixture:review");
+    let review_skill = std::fs::read_to_string(review.join("SKILL.md"))
+        .expect("user-only skill must be projected with its own SKILL.md");
     assert!(
-        review_target.join("SKILL.md").is_file(),
-        "the wrapper must carry the skill bytes, got {review_target:?}"
+        review_skill.contains("opencode/autoinvoke: false"),
+        "OpenCode's copy carries its own model-invocation control: {review_skill}"
     );
+    // Codex's generated envelope carries its own `agents/openai.yaml` with
+    // implicit invocation disabled.
     let codex_policy = env.uze_home.join(
         "runtime/attachments/codex/generated/policy-fixture@test/skills/review/agents/openai.yaml",
     );
@@ -177,15 +176,12 @@ fn invocation_policy_projects_per_harness_classification() {
     );
 }
 
-/// A11 — shared-root superset: a model-only Skill on the Codex+OpenCode
-/// pair (Codex claims nothing in its envelope, OpenCode needs `slash:
-/// false` on the same entry) must install cleanly through the CLI, with the
-/// single shared entry carrying OpenCode's encoding — reusing the entry is
-/// only safe because the superset wrapper never silently drops a policy.
-/// Codex still reports its own user=false limitation honestly (Degraded);
-/// this is a physical representation fix, not a policy rewrite.
+/// A11 — a model-only Skill on Codex and OpenCode installs cleanly through
+/// the CLI, and OpenCode's own directory carries OpenCode's encoding of the
+/// policy (`slash: false`) and nothing of Codex's. Codex still reports its
+/// own user=false limitation honestly (Degraded).
 #[test]
-fn superset_shared_entry_keeps_both_integrations_preserved() {
+fn a_model_only_skill_reaches_opencode_in_its_own_encoding() {
     let env = TestEnvironment::isolated();
     install_fake_harnesses(&env);
     env.run_ok(uze_bin(), &["setup"]);
@@ -206,23 +202,24 @@ fn superset_shared_entry_keeps_both_integrations_preserved() {
         &install_args.iter().map(String::as_str).collect::<Vec<_>>(),
     );
 
-    let shared_entry = env.home.join(".agents/skills/conflict-fixture:audit");
+    let entry = env
+        .home
+        .join(".config/opencode/skills/conflict-fixture:audit");
     assert!(
-        shared_entry.is_symlink(),
-        "one shared physical entry for the model-only Skill"
+        entry.is_dir() && !entry.is_symlink(),
+        "OpenCode's own directory for the model-only Skill"
     );
-    let target = std::fs::read_link(&shared_entry).expect("readlink");
-    let wrapper = std::fs::read_to_string(target.join("SKILL.md")).unwrap();
+    let wrapper = std::fs::read_to_string(entry.join("SKILL.md")).unwrap();
     assert!(
         wrapper.contains("slash: false"),
-        "the shared entry carries OpenCode's user-invocation suppression: {wrapper}"
+        "the entry carries OpenCode's user-invocation suppression: {wrapper}"
     );
     assert!(
         !wrapper.contains("opencode/autoinvoke"),
         "model discovery stays enabled for a model-only Skill: {wrapper}"
     );
     assert!(
-        !target.join("agents/openai.yaml").exists(),
-        "no Codex policy sidecar for a model=true Skill"
+        !entry.join("agents/openai.yaml").exists(),
+        "OpenCode's directory carries no Codex policy sidecar"
     );
 }

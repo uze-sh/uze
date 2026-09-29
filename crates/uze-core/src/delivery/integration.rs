@@ -5,12 +5,12 @@ use std::{ffi::OsString, path::Path};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    capability::CapabilityKind,
     conversation::SessionId,
     error::Result,
     exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan},
     harness_runtime::{HarnessRuntimeContribution, RuntimeContext},
     home::UzeHome,
+    project_context::AgentsDirectoryResource,
     provisioning::ProvisionStatus,
     router::HarnessCapabilities,
     state,
@@ -59,6 +59,14 @@ pub enum AttachmentState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AttachmentInspection {
     pub state: AttachmentState,
+    pub reason: String,
+}
+
+/// One capability a harness would not load although UZE delivered it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnreadableDelivery {
+    /// The capability's resource identity.
+    pub capability: String,
     pub reason: String,
 }
 
@@ -308,16 +316,17 @@ pub trait IntegrationPort: Send + Sync {
         ContextDelivery::None
     }
 
-    /// Whether this harness's own binary natively discovers Agent Skills
-    /// from a project-local `.agents/skills/` directory, walking up from
-    /// cwd, entirely on its own — a vendor convention some harnesses
-    /// converged on independently, requiring no UZE involvement at all
-    /// (distinct from any UZE-managed global `~/.agents/skills` delivery,
-    /// which is a `CapabilityKind::AgentSkill` route, not this). Default
-    /// `false`: an integration overrides this only against its own vendor's
-    /// documented behavior.
-    fn discovers_project_agents_directory(&self) -> bool {
-        false
+    /// How one kind of a project's own `.agents/` reaches this harness:
+    /// read by its binary straight out of the project (a convention some
+    /// harnesses converged on, distinct from any UZE-managed global
+    /// `~/.agents/skills` delivery, which is a `CapabilityKind::AgentSkill`
+    /// route), handed to it by its runtime projection from outside the
+    /// repository, or not at all. UZE never writes into `.agents/`, so
+    /// there is no fourth answer. The kinds are asked apart because
+    /// harnesses read them apart. Default `Unsupported`: an integration
+    /// answers only from its own vendor's measured behavior.
+    fn project_resource_route(&self, _resource: AgentsDirectoryResource) -> ProjectResourceRoute {
+        ProjectResourceRoute::Unsupported
     }
 
     /// The prefix a human types to explicitly invoke an exposed capability
@@ -368,20 +377,11 @@ pub trait IntegrationPort: Send + Sync {
         default_exposure_name_candidates(resource)
     }
 
-    /// The physical directory this integration's harness reads Agent Skills
-    /// from, when — and only when — that directory is durably shared with
-    /// one or more *other* integrations rather than owned exclusively by
-    /// this one. OpenCode and Codex both discover Skills from
-    /// the same `~/.agents/skills` root, so naming resolution must treat a
-    /// name already claimed there by any one of them as claimed for all;
-    /// otherwise each independently-computed candidate list produces its
-    /// own physical entry in what is, on disk, a single shared folder —
-    /// visible to a harness (OpenCode's V2 slash commands) as duplicate
-    /// listings of the identical skill. `None` is the correct default for
-    /// every integration with an exclusive skills directory (Claude Code)
-    /// or no Skill delivery at all: it opts out of this cross-integration
-    /// awareness entirely, matching prior behavior.
-    fn shared_agent_skill_root(&self) -> Option<std::path::PathBuf> {
+    /// The directory this integration delivers loose Agent Skills into, one
+    /// owner per directory. Diagnosis sweeps it for references an earlier
+    /// build left pointing into `$UZE_HOME` at something gone; `None` for an
+    /// integration with no loose Skill route.
+    fn skill_discovery_root(&self) -> Option<std::path::PathBuf> {
         None
     }
 
@@ -394,6 +394,59 @@ pub trait IntegrationPort: Send + Sync {
         _resources: &[&crate::capability::Resource],
     ) -> Option<PackageExposurePlan> {
         None
+    }
+
+    /// Whether a package-level receipt still delivers what this build's plan
+    /// delivers. One from a route this build no longer takes (the Store tree
+    /// installed where a generated plugin is now installed) is replaced
+    /// rather than kept because it still inspects as matched.
+    fn package_receipt_serves(&self, _receipt: &AttachmentReceipt) -> bool {
+        true
+    }
+
+    /// How a resource a package plan provides reaches the harness, when that
+    /// is less than native: the harness loads it from the package, but not
+    /// all of what the author wrote (ADR-031: route evidence rather than
+    /// hidden loss). `None` when the package delivers it whole.
+    fn packaged_shortfall(
+        &self,
+        _package: &StoredPackage,
+        _resource: &crate::capability::Resource,
+    ) -> Option<(crate::router::CompatibilityRoute, String)> {
+        None
+    }
+
+    /// The name a session sees `resource` under when the harness loads it
+    /// from a package rather than from a delivery of its own. The neutral
+    /// answer is the plugin namespace every plugin mechanism modelled today
+    /// applies to what it invokes by label; anything else keeps its own
+    /// name. Presentation only: nothing is looked up or owned by it.
+    fn packaged_exposure_name(
+        &self,
+        package: &StoredPackage,
+        resource: &crate::capability::Resource,
+    ) -> Option<String> {
+        let logical = resource.logical_capability_name()?;
+        if resource.capability.kind.is_invoked_by_label() {
+            Some(format!("{}:{logical}", package.active_name))
+        } else {
+            Some(logical)
+        }
+    }
+
+    /// What the harness would not load of a delivery whose receipt still
+    /// inspects as matched: facts about the harness's own reading of the
+    /// artifact that only the owning integration knows (a plugin cache
+    /// left without the files, a definition whose fields the harness
+    /// refuses). `served` is every resource the receipt delivers. Empty by
+    /// default, and never a reason to detach anything: `doctor` reports it.
+    fn unreadable(
+        &self,
+        _package: &StoredPackage,
+        _receipt: &AttachmentReceipt,
+        _served: &[&crate::capability::Resource],
+    ) -> Vec<UnreadableDelivery> {
+        Vec::new()
     }
 
     /// Detects whether the harness binary is present and, if cheaply
@@ -512,6 +565,34 @@ pub trait IntegrationPort: Send + Sync {
         Ok(None)
     }
 
+    /// This harness's own layer of `plugin check`, above the rules every
+    /// harness shares: what it would refuse, drop or not recognise in
+    /// `resource` as authored, including its `harness.<id>` block. Offline
+    /// and read-only, answered from what the integration knows of the
+    /// harness's format, never from its binary; the same knowledge its
+    /// delivery applies, so the check says what the install would do.
+    fn check_capability(
+        &self,
+        _resource: &crate::capability::Resource,
+    ) -> crate::capability::harness::Findings {
+        crate::capability::harness::Findings::default()
+    }
+
+    /// What this harness was measured to do, fact by fact: the delivery
+    /// depends on each, and each names the Lab check that proves it, so a
+    /// harness release that breaks one fails a check rather than a user.
+    fn facts(&self) -> &'static [HarnessFact] {
+        &[]
+    }
+
+    /// The keys a `harness:` block names this integration by: its id and
+    /// every alias.
+    fn harness_keys(&self) -> Vec<&'static str> {
+        std::iter::once(self.id())
+            .chain(self.aliases().iter().copied())
+            .collect()
+    }
+
     /// Additional names `uze setup <harness>` accepts for this integration.
     /// Kept beside the integration so the Application never holds a manual
     /// catalogue of vendors.
@@ -585,13 +666,39 @@ pub trait IntegrationPort: Send + Sync {
     fn repair_missing_receipt(&self, receipt: &AttachmentReceipt) -> Result<bool> {
         match &receipt.artifact {
             ManagedArtifact::SymlinkReference { .. }
-            | ManagedArtifact::ManagedTextRegion { .. } => {
+            | ManagedArtifact::ManagedTextRegion { .. }
+            | ManagedArtifact::GeneratedFile { .. } => {
                 receipt.artifact.attach_standard()?;
                 Ok(true)
             }
             _ => Ok(false),
         }
     }
+}
+
+/// How one kind of a project's `.agents/` reaches a harness
+/// (`IntegrationPort::project_resource_route`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectResourceRoute {
+    /// The harness's binary reads it out of the project itself.
+    Native,
+    /// The harness's runtime projection hands it over at launch, from
+    /// outside the repository.
+    RuntimeProjection,
+    /// Neither; the integration's facts say why.
+    Unsupported,
+}
+
+/// One measured fact about a harness that a delivery depends on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HarnessFact {
+    /// What it is about: `agents`, `skills`, `placeholders`, `hooks`.
+    pub subject: &'static str,
+    pub fact: &'static str,
+    /// The harness version it was measured on.
+    pub measured_on: &'static str,
+    /// The Lab function that proves it, as `<path under conformance/>::<fn>`.
+    pub proven_by: &'static str,
 }
 
 /// The naming default every integration inherits unless it overrides
@@ -631,8 +738,8 @@ pub fn active_plugin_name(
     crate::store::UzeStore::new(home.clone()).active_name_for(&resource.package_id)
 }
 
-/// The single candidate for every UZE-projected Skill: its own stable
-/// namespaced invocation label (`flow:review`), never a bare alias and
+/// The single candidate for every UZE-projected Skill and Agent: its own
+/// stable namespaced label (`flow:review`), never a bare alias and
 /// never a collision-dependent qualification (ADR-026). One candidate by
 /// construction, so installation order and the presence of other plugins
 /// cannot change it. Other capabilities (MCP) deliberately stay on
@@ -644,7 +751,7 @@ pub fn qualified_exposure_name_candidates(
     resource: &crate::capability::Resource,
     active_plugin_name: &str,
 ) -> Vec<String> {
-    if resource.capability.kind != CapabilityKind::AgentSkill {
+    if !resource.capability.kind.is_invoked_by_label() {
         return Vec::new();
     }
     let Some(logical) = resource.logical_capability_name() else {

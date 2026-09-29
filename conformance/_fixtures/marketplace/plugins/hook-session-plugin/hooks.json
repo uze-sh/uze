@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "id": "session-opened",
+        "hooks": [{ "type": "command", "command": "${PLUGIN_ROOT}/scripts/opened", "timeout": 10 }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "id": "session-tool-seen",
+        "matcher": "shell",
+        "hooks": [{ "type": "command", "command": "${PLUGIN_ROOT}/scripts/opened", "timeout": 10 }]
+      }
+    ]
+  }
+}

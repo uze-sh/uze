@@ -64,8 +64,8 @@ fn antigravity_model_only_wrapper_hides_the_slash_command() {
         .attach_receipt(&r)
         .unwrap()
         .expect("model-only Skill attaches on Antigravity");
-    let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact else {
-        panic!("expected a managed symlink reference");
+    let ManagedArtifact::GeneratedTree { path: target, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     let wrapper = fs::read_to_string(target.join("SKILL.md")).unwrap();
     assert!(
@@ -86,8 +86,8 @@ fn antigravity_user_only_wrapper_carries_the_vendors_own_control() {
         .attach_receipt(&r)
         .unwrap()
         .expect("user-only Skill attaches on Antigravity");
-    let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact else {
-        panic!("expected a managed symlink reference");
+    let ManagedArtifact::GeneratedTree { path: target, .. } = &receipt.artifact else {
+        panic!("expected a materialized skill directory");
     };
     let wrapper = fs::read_to_string(target.join("SKILL.md")).unwrap();
     assert!(

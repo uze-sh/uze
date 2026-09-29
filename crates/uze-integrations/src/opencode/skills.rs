@@ -1,9 +1,9 @@
 //! OpenCode Agent Skill exposure — invocation-policy-aware delivery through
 //! OpenCode's native Skill mechanism.
 //!
-//! OpenCode discovers Skills natively at `~/.agents/skills` (the shared
-//! root it shares with Codex), and its SKILL.md frontmatter natively
-//! expresses both halves of the canonical invocation policy:
+//! OpenCode discovers Skills natively in its own `~/.config/opencode/skills`,
+//! and its SKILL.md frontmatter natively expresses both halves of the
+//! canonical invocation policy:
 //!
 //! - `metadata.opencode/autoinvoke: false` omits the skill from
 //!   model-facing discovery while it stays registered and explicitly
@@ -32,21 +32,19 @@
 //! — nothing measured it. It is now Adaptable, with the degradation
 //! stated, and the Lab holds it there.
 //!
-//! UZE materializes every Skill as one wrapper SKILL.md under `$UZE_HOME` —
-//! loading the canonical name/description/body, never rewriting the Store
-//! — and symlinks the shared root entry at it. OpenCode uses `name` as the
-//! visible label, so direct Store links would lose the stable qualified
-//! label whenever the canonical skill has a bare name. Because Codex reads the
-//! SAME physical entry from `~/.agents/skills`, the wrapper is the superset
-//! representation (`crate::shared::skill::write_superset_skill_wrapper`):
-//! OpenCode's own controls AND Codex's `agents/openai.yaml` policy sidecar
-//! for `model=false`, so the entry is correct whichever integration
-//! created it (ADR-030 §25).
+//! Each Skill is delivered as a directory of its own: a SKILL.md carrying
+//! the stable qualified label as its `name` (OpenCode shows `name`, so the
+//! canonical bytes alone would lose the label whenever the skill has a bare
+//! one) with these controls, and the canonical supporting files copied. A
+//! real directory, because OpenCode's walker does not descend a linked
+//! skill root: the body loads and the list of supporting files it shows the
+//! model comes out empty.
 
-use std::path::{Path, PathBuf};
+use crate::shared::package_root::resolve_bytes;
+use std::path::Path;
 
 use uze_core::{
-    Result, UzeError,
+    Result,
     capability::Resource,
     exposure::{ExposureMechanism, ExposurePlan, ManagedArtifact},
     home::UzeHome,
@@ -58,31 +56,14 @@ use uze_core::{
 use super::OpenCodeIntegration;
 use crate::shared::plan::unsupported;
 use crate::shared::skill::{
-    SharedRootReader, entry_name, generated_skill_dir, invalid_policy_plan, setup_pending_plan,
-    skill_label, verify_reused_wrapper, write_superset_skill_wrapper,
+    attach_skill_tree, entry_name, invalid_policy_plan, render_skill_wrapper, setup_pending_plan,
+    skill_label, skill_tree_plan, skill_wrapper_root,
 };
 
-/// Deterministically materializes (or refreshes) one Skill's
-/// wrapper directory — the shared-root superset representation
-/// (`crate::shared::skill::write_superset_skill_wrapper`): a real SKILL.md
-/// carrying the stable namespaced label as its `name`, the canonical
-/// description/body, and OpenCode's own invocation
-/// controls — plus Codex's `agents/openai.yaml` policy sidecar, because
-/// this directory lives in the shared `~/.agents/skills` root Codex reads
-/// too (`model=false` must stay hidden there; ADR-030 §25). Idempotent and
-/// rebuilt wholesale — the
-/// directory is entirely UZE-owned and non-authoritative (ADR-013 §5).
-pub(super) fn materialize_generated_skill(
-    uze_home: &UzeHome,
-    resource: &Resource,
-) -> Result<PathBuf> {
-    let policy = resource.skill_invocation();
-    if policy.is_invalid() {
-        return Err(UzeError::ExposureUnavailable(
-            "a Skill nobody may invoke is never projected".to_owned(),
-        ));
-    }
-    let dir = generated_skill_dir(uze_home, "opencode", resource);
+/// The SKILL.md UZE writes for one Skill: the stable namespaced label as
+/// its `name`, the canonical description and body, and OpenCode's own
+/// invocation controls for a non-default policy.
+pub(super) fn rendered_skill(uze_home: &UzeHome, resource: &Resource) -> String {
     let canonical_dir = resource
         .capability
         .path
@@ -95,47 +76,49 @@ pub(super) fn materialize_generated_skill(
             .unwrap_or("skill")
             .to_owned()
     });
-    write_superset_skill_wrapper(
-        &dir,
-        canonical_dir,
-        &resource.capability.payload,
+    let policy = resource.skill_invocation();
+    let mut markers = Vec::new();
+    if !policy.user {
+        markers.push("slash: false");
+    }
+    if !policy.model {
+        markers.extend(["metadata:", "  opencode/autoinvoke: false"]);
+    }
+    render_skill_wrapper(
         &label,
-        &policy,
-    )?;
-    Ok(dir)
+        &resolve_bytes(&resource.capability.payload, &resource.package_root),
+        &markers,
+        &["opencode"],
+    )
 }
 
 impl OpenCodeIntegration {
+    /// Removes the generated-tier directory an earlier build linked a Skill
+    /// entry to, once nothing links to it any more.
     pub(super) fn cleanup_unused_wrapper(&self, target: &Path) -> Result<()> {
         let managed_root = crate::shared::path::attachment_root(&self.uze_home, "opencode");
         crate::shared::path::cleanup_unused_wrapper(
             target,
             &managed_root,
             &self.skills_dir,
-            &managed_root.join("skills"),
+            &skill_wrapper_root(&self.uze_home, "opencode"),
             &|wrapper| wrapper.join("SKILL.md").is_file(),
         )
     }
 
-    /// Materializes this Skill's wrapper when this resource owns the shared
-    /// entry; when the shared-root resolution reused another integration's
-    /// artifact, verifies that the reused artifact still carries OpenCode's
-    /// own invocation encoding — otherwise the canonical policy would
-    /// silently degrade (ADR-030 §25).
-    pub(super) fn materialize_or_verify_skill(&self, resource: &Resource) -> Result<()> {
-        if resource.skill_invocation().is_invalid() {
-            return Ok(());
-        }
-        match &resource.resolved_artifact_target {
-            Some(wrapper) => verify_reused_wrapper(
-                resource,
-                wrapper,
-                &self.skills_dir,
-                SharedRootReader::OpenCode,
-                self.id(),
-            ),
-            None => materialize_generated_skill(&self.uze_home, resource).map(|_| ()),
-        }
+    pub(super) fn attach_skill(&self, resource: &Resource, path: &Path) -> Result<ManagedArtifact> {
+        // A canonical `agents/openai.yaml` is Codex's policy file and says
+        // nothing to OpenCode.
+        attach_skill_tree(
+            &self.uze_home,
+            path,
+            resource,
+            &[(
+                "SKILL.md",
+                rendered_skill(&self.uze_home, resource).into_bytes(),
+            )],
+            &["agents"],
+        )
     }
 
     pub(super) fn skill_plan(&self, resource: &Resource) -> ExposurePlan {
@@ -149,12 +132,8 @@ impl OpenCodeIntegration {
         if !state::is_installed(&self.uze_home, self.id()) {
             return setup_pending_plan("OpenCode");
         }
-        let source = resource
-            .resolved_artifact_target
-            .clone()
-            .unwrap_or_else(|| generated_skill_dir(&self.uze_home, "opencode", resource));
         let mut evidence = String::from(
-            "OpenCode natively discovers the UZE-managed symlink in ~/.agents/skills (the same shared root Codex uses). UZE generates a wrapper carrying the stable qualified label as its `name`, while preserving the canonical description and body without rewriting the Store.",
+            "OpenCode natively discovers Skills in its own ~/.config/opencode/skills. UZE delivers each as a directory there: a SKILL.md carrying the stable qualified label as its `name` with the canonical description and body, and the canonical supporting files copied, so OpenCode lists them. The canonical Store bytes are never rewritten.",
         );
         let mut route = CompatibilityRoute::Native;
         if !policy.is_default() {
@@ -167,17 +146,18 @@ impl OpenCodeIntegration {
             // the `/` catalog, and a mention (`@id`) still expands its body —
             // V2's picker offers every discovered Skill that way. Half the
             // policy is carried; half is not.
+            // The loss leads, so a report that shows one sentence shows it.
             route = CompatibilityRoute::Adaptable;
-            evidence.push_str(
-                " invoke.user=false degrades on OpenCode V2: `slash: false` withholds the Skill from the `/` catalog, but a mention (`@<label>`) still invokes it, so a user can reach it anyway — ADAPTED per ADR-030, reported rather than claimed.",
+            evidence.insert_str(
+                0,
+                "A user can still invoke it with a mention (`@<label>`). invoke.user=false degrades on OpenCode V2: `slash: false` withholds the Skill from the `/` catalog, but a mention still invokes it — ADAPTED per ADR-030, reported rather than claimed. ",
             );
         }
         ExposurePlan {
             route,
-            mechanism: ExposureMechanism::Managed(ManagedArtifact::SymlinkReference {
-                path: self.skills_dir.join(entry_name),
-                target: source,
-            }),
+            mechanism: ExposureMechanism::Managed(skill_tree_plan(
+                self.skills_dir.join(entry_name),
+            )),
             evidence,
         }
     }

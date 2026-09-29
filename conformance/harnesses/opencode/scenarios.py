@@ -53,7 +53,7 @@ const fs=require("fs");
 const p="/work/home/.config/opencode/opencode.json";
 let d={{}};
 try {{ d=JSON.parse(fs.readFileSync(p,"utf8")); }} catch (e) {{ d={{}}; }}
-d.providers={{"uze-conformance":{{"name":"UZE Conformance","env":["UZE_CONFORMANCE_KEY"],"package":"@opencode-ai/ai/providers/openai-compatible","settings":{{"baseURL":"http://{prov_ip}:9999/v1","apiKey":"{{env:UZE_CONFORMANCE_KEY}}"}},"models":{{"uze-model":{{"modelID":"uze-model","name":"UZE Conformance Model"}}}}}}}};
+d.providers={{"uze-conformance":{{"name":"UZE Conformance","env":["UZE_CONFORMANCE_KEY"],"package":"@opencode-ai/ai/providers/openai-compatible","settings":{{"baseURL":"http://{prov_ip}:9999/v1","apiKey":"{{env:UZE_CONFORMANCE_KEY}}"}},"models":{{"uze-model":{{"modelID":"uze-model","name":"UZE Conformance Model"}},"claude-haiku-4-5":{{"modelID":"claude-haiku-4-5","name":"Claude Haiku 4.5"}}}}}}}};
 d.model="uze-conformance/uze-model";
 d.agents={{"build":{{"model":"uze-conformance/uze-model"}}}};
 fs.writeFileSync(p, JSON.stringify(d,null,1));
@@ -62,9 +62,9 @@ fs.writeFileSync(p, JSON.stringify(d,null,1));
 """
 
 
-def opencode_container(cfg, prov_ip, final_cmd, plugins="flow mcp-plugin"):
+def opencode_container(cfg, prov_ip, final_cmd, plugins="flow mcp-plugin", tty=True):
     cmd = docker_base(
-        cfg, prov_ip, opencode_setup(cfg, prov_ip, final_cmd, plugins=plugins)
+        cfg, prov_ip, opencode_setup(cfg, prov_ip, final_cmd, plugins=plugins), tty=tty
     )
     return cmd
 
@@ -236,15 +236,14 @@ def phase_mcp_toolcall(cfg, prov_ip):
     the real MCP server and the proof value returns through the follow-up
     provider request, rendered as UZE_CONFORMANCE_PASS.
 
-    Channel reality (v0.0.0-beta-18387, observed on multiple runs): the
-    UZE-delivered server connects and the runtime enumerates its tool
-    (`mcp connected ... tools=1` in the harness server log; /mcps shows
-    `Connected ✓`) — but the model request carries only the agent's
-    built-in tools, and a scripted call to the delivered tool name is
-    answered `Unknown tool: uze-mcp-conformance-uze-conformance_uze_conformance`.
-    The MCP round-trip is therefore NOT observable on this channel; the
-    checks below assert the turn behavior and register the channel
-    limitation as evidence (never fabricated):
+    OpenCode 2.x offers an MCP server to the model through Code Mode, not
+    as a tool of its own: the request lists the server as a catalog
+    namespace in the instructions, and the model calls it with an
+    `execute` tool whose JavaScript invokes it (observed on 2.0.18). The
+    provider scripts exactly that call, so the proof that comes back is the
+    delivered server having run. The earlier reading of this channel — a
+    direct call answered `Unknown tool` — scripted a stale tool name, not a
+    limit of the harness.
     """
     common.start_provider(cfg, "toolcall")
     time.sleep(1)
@@ -527,3 +526,9 @@ def run(cfg, prov_ip):
         for kind in ("deny", "allow", "order"):
             with describe(kind):
                 phase_hooks(cfg, prov_ip, kind)
+    # Promoted from `experiments/opencode/skill_files`; imported here
+    # because the experiment imports this module for its container helper.
+    from experiments.opencode import skill_files
+
+    with describe("skill-files"):
+        skill_files.run(cfg, prov_ip)
