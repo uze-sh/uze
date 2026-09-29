@@ -110,17 +110,35 @@ def drive_onboarding(child):
     that cannot race; the model is — `model: loading` until the session the
     daemon serves exists, which is after the directory is trusted. Both are
     required, so the older order still settles the same way.
+
+    codex-cli 0.158 writes neither label: its header is the version, the
+    directory and the model, with no `loading` state, and the trust dialog
+    arrives in the same frame as the prompt, drawn over it where
+    `render_screen` does not recover it. Waiting for the labels therefore
+    spent every one of the 30 reads (~3 minutes per launch, measured
+    2026-09-28) and answered no dialog. So the dialog is also recognised in
+    the text a read returned, and the prompt is the signal again, but only
+    after the dialog was answered, or when it keeps arriving with no dialog
+    at all (a directory trusted already).
     """
     screen = make_screen(child)
     raw = ""
     shown = ""
+    answered = False
+    prompt_reads = 0
+    quiet_reads = 0
     for _ in range(30):
-        chunk, _plain = screen(1.5)
+        chunk, plain = screen(1.5)
         raw += chunk
         shown = common.render_screen(raw)
         squashed = shown.replace(" ", "")
-        if "Doyoutrust" in squashed or "Trustthisfolder?" in squashed:
+        flat = plain.replace(" ", "")
+        if any(
+            dialog in squashed or dialog in flat
+            for dialog in ("Doyoutrust", "Trustthisfolder?")
+        ):
             child.send("\r")
+            answered = True
             continue
         if (
             "directory:" in shown
@@ -128,6 +146,13 @@ def drive_onboarding(child):
             and "model:" in shown
             and "model:loading" not in squashed
         ):
+            break
+        prompt = "AskCodextodoanything" in flat
+        prompt_reads += prompt
+        quiet_reads = quiet_reads + 1 if not chunk else 0
+        if answered and (prompt or quiet_reads >= 2):
+            break
+        if not answered and prompt_reads >= 3:
             break
     return raw, shown
 
