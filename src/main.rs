@@ -3776,6 +3776,8 @@ struct ArtifactsCheckReport {
     /// How many draw with edges missing — counted apart because the board
     /// still looks finished, which is the failure nobody sees by looking.
     unrouted: usize,
+    /// How many have a box whose link opens nothing.
+    unlinked: usize,
     artifacts: Vec<CheckedArtifactReport>,
     /// Why there was nothing to check, where there was not.
     nothing: Option<String>,
@@ -3796,6 +3798,8 @@ struct CheckedArtifactReport {
     unrouted: usize,
     /// Why it is not drawn at all, quoted from the parser.
     reason: Option<String>,
+    /// Every box link that opens nothing, and why.
+    broken_links: Vec<String>,
 }
 
 impl ArtifactsCheckReport {
@@ -3804,9 +3808,13 @@ impl ArtifactsCheckReport {
         if let Some(unusable) = &self.unusable {
             return Some(unusable.clone());
         }
-        match self.undrawable + self.unrouted {
-            0 => None,
-            failed => Some(format!(
+        match (self.undrawable + self.unrouted, self.unlinked) {
+            (0, 0) => None,
+            (0, unlinked) => Some(format!(
+                "{unlinked} of {} artifacts link a box to nothing",
+                self.checked
+            )),
+            (failed, _) => Some(format!(
                 "{failed} of {} artifacts do not draw as written",
                 self.checked
             )),
@@ -3822,6 +3830,7 @@ impl From<&uze_extensions::architect::Checkup> for ArtifactsCheckReport {
             checked: 0,
             undrawable: 0,
             unrouted: 0,
+            unlinked: 0,
             artifacts: Vec::new(),
             nothing: None,
             unusable: None,
@@ -3852,6 +3861,10 @@ impl From<&uze_extensions::architect::Checkup> for ArtifactsCheckReport {
                     .iter()
                     .filter(|artifact| matches!(artifact.verdict, Verdict::Unrouted { .. }))
                     .count(),
+                unlinked: artifacts
+                    .iter()
+                    .filter(|artifact| !artifact.broken_links.is_empty())
+                    .count(),
                 artifacts: artifacts
                     .iter()
                     .map(|artifact| CheckedArtifactReport {
@@ -3871,6 +3884,7 @@ impl From<&uze_extensions::architect::Checkup> for ArtifactsCheckReport {
                             Verdict::Undrawable(reason) => Some(reason.clone()),
                             _ => None,
                         },
+                        broken_links: artifact.broken_links.clone(),
                     })
                     .collect(),
                 ..empty
@@ -3899,6 +3913,10 @@ fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
         .iter()
         .map(|artifact| {
             let (icon, note) = match artifact.verdict {
+                "drawn" if !artifact.broken_links.is_empty() => (
+                    progress::error_icon(),
+                    progress::error_text(artifact.broken_links.join("; ")),
+                ),
                 "drawn" => (progress::success_icon(), artifact.name.clone()),
                 "unrouted" => (
                     progress::warning_icon(),
@@ -3929,7 +3947,9 @@ fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
     if report.verdict().is_none() {
         out.push_str(&format!(
             "\n  {}\n",
-            progress::success_text("Every artifact draws, with every edge routed.")
+            progress::success_text(
+                "Every artifact draws, with every edge routed and every link leading to a file."
+            )
         ));
     }
     out

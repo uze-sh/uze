@@ -309,6 +309,11 @@ pub struct Checked {
     /// The area its first word puts it in.
     pub area: &'static str,
     pub verdict: Verdict,
+    /// Every box link that opens nothing: a path that leaves the project, or
+    /// that names no file in it (a module's directory, a file that moved).
+    /// The code surface opens a link as a file, so the box leads nowhere and
+    /// nobody learns of it until they follow it.
+    pub broken_links: Vec<String>,
 }
 
 /// What checking a project found: its artifacts, or why it has none to
@@ -347,13 +352,17 @@ pub fn check(host: &dyn Host, source: ArtifactSource) -> Checkup {
             text: reason,
             hint: "Fix `artifacts:` in agents.yaml and run this again.".to_owned(),
         },
-        ArtifactSource::Directory { path, declared, .. } => match catalog::read(host, &path) {
+        ArtifactSource::Directory {
+            path,
+            declared,
+            project,
+        } => match catalog::read(host, &path) {
             Ok(artifacts) => Checkup::Checked {
                 declared,
                 artifacts: Catalog::of(artifacts)
                     .artifacts()
                     .iter()
-                    .map(checked)
+                    .map(|artifact| checked(host, &project, artifact))
                     .collect(),
             },
             Err(reason) => {
@@ -364,12 +373,27 @@ pub fn check(host: &dyn Host, source: ArtifactSource) -> Checkup {
     }
 }
 
-fn checked(artifact: &Artifact) -> Checked {
+fn checked(host: &dyn Host, project: &Path, artifact: &Artifact) -> Checked {
+    let mut broken_links = Vec::new();
     let verdict = match mermaid::parse(artifact.diagram()) {
-        Ok(Diagram::Graph(graph)) => match Scene::of(graph).routes.unrouted {
-            0 => Verdict::Drawn,
-            edges => Verdict::Unrouted { edges },
-        },
+        Ok(Diagram::Graph(graph)) => {
+            broken_links = graph
+                .nodes
+                .iter()
+                .filter_map(|node| node.link.as_deref())
+                .filter_map(|link| match within_project(link) {
+                    None => Some(format!("`{link}` leaves the project")),
+                    Some(path) => host
+                        .read_file(&project.join(path))
+                        .is_err()
+                        .then(|| format!("`{link}` is not a file in the project")),
+                })
+                .collect();
+            match Scene::of(graph).routes.unrouted {
+                0 => Verdict::Drawn,
+                edges => Verdict::Unrouted { edges },
+            }
+        }
         Ok(Diagram::Sequence(_)) => Verdict::Drawn,
         Err(reason) => Verdict::Undrawable(reason),
     };
@@ -378,6 +402,7 @@ fn checked(artifact: &Artifact) -> Checked {
         name: artifact.name.clone(),
         area: artifact.kind.name(),
         verdict,
+        broken_links,
     }
 }
 
