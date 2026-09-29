@@ -1,8 +1,9 @@
 ## 0. Decisions
 
 - [ ] 0.1 The `harness:` block's name and shape, approved.
-- [ ] 0.2 Ownership of a UZE-written file inside a repository (committed or
-  ignored, and who removes it).
+- [x] 0.2 Ownership of files inside a repository. Decided 2026-09-28: UZE
+  writes nothing into `./.agents/`; the project authors it and UZE reads and
+  mounts it.
 
 ## 1. Dialect table
 
@@ -24,7 +25,10 @@
 - [ ] 3.1 Canonical package conformant with Agent Plugins 1.0, UZE-only
   surfaces under `extensions["sh.uze"]`.
 
-## 4. Project `.agents/`
+## 4. Project `.agents/`, read and mounted
 
-- [ ] 4.1 Deliver project-scoped plugins into `./.agents/` for the harnesses
-  that read it.
+- [ ] 4.1 Read the project's `./.agents/` and mount what a harness does not
+  read there natively into its runtime projection (outside the repository);
+  a harness that reads it natively is left alone.
+- [ ] 4.2 Lab: a project `.agents/skills` skill reaches every harness, with
+  nothing written into the checkout.

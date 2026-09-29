@@ -315,9 +315,9 @@ is reported, not engineered around.
 `.agents/` is where the harnesses actually converged, and it converged at
 **project** scope: `./.agents/skills` is read by Codex, OpenCode and
 Antigravity, and Antigravity also reads agents, MCP and hooks there.
-Delivering into it means UZE writing into the repository beside
-`AGENTS.md`, which is a product decision (committed or ignored, and who
-owns it), not a delivery detail. It is part 3, now `harness-dialect-table`.
+The project authors it, as it does `AGENTS.md`: UZE writes nothing there,
+and mounts what a harness does not read natively into that harness's
+runtime projection. That is part 3, now `harness-dialect-table`.
 
 #### Replace, never edit
 
@@ -357,9 +357,8 @@ too.
 - **Pruning** walks the generated tier and removes what no receipt and no
   catalogue references. The Store is only ever reported on: a marketplace
   commit that was force-pushed away cannot be acquired again.
-- **Project `.agents/`**: project-scoped plugins delivered into
-  `./.agents/` for the harnesses that read it, with the ownership rule for a
-  UZE-written file inside the repository decided first.
+- **Project `.agents/`**: read, never written; mounted into the runtime
+  projection of a harness that does not read it natively.
 - **The dialect table** turns the tables above into data: one entry per
   (harness, artifact kind, fact), version-stamped, each with the Lab check
   that proves it. A new harness is a new column filled by running the

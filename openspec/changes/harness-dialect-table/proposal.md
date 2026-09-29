@@ -28,18 +28,20 @@ harnesses drop or refuse.
   `skills/`, `mcp.json`), with UZE-only surfaces (agents, hooks, invocation
   policy) under `extensions["sh.uze"]`, and every vendor envelope rendered
   from it.
-- **Project `.agents/`**: project-scoped plugins delivered into `./.agents/`
-  for the harnesses that read it (skills on Codex, OpenCode and Antigravity;
-  agents, MCP and hooks on Antigravity), once the ownership of a UZE-written
-  file inside a repository is decided.
+- **Project `.agents/` is read, never written.** The project authors
+  `./.agents/`, as it does `AGENTS.md`; UZE writes nothing into the
+  repository. A harness that reads `./.agents/` natively (skills on Codex,
+  OpenCode and Antigravity; agents, MCP and hooks on Antigravity) needs
+  nothing. For one that does not (Claude Code reads `.claude/`), UZE mounts
+  the project's `.agents/` content into that harness's runtime projection,
+  outside the repository, the way it already projects `AGENTS.md`. The table
+  says which harness reads which kind there.
 
 ## Decisions this waits on
 
 - The `harness:` block's name and shape (validated with a second model on
   2026-09-28: a block keyed by harness id, opaque to the Core, rendered by the
   integration; root `model` reserved).
-- Whether files UZE writes into a repository are committed or ignored, and
-  who owns them.
 
 ## Capabilities
 

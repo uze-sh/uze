@@ -130,6 +130,5 @@
 
 - [x] 10.1 Moved to its own change, `harness-dialect-table`: the per-harness
   table, canonical `harness:` frontmatter, Agent Plugins 1.0 conformance and
-  project `.agents/` are one design that waits on product decisions (the
-  frontmatter shape, who owns a UZE-written file in a repository), not on
-  this change's materialization.
+  project `.agents/` (read and mounted, never written) are one design that
+  waits on the frontmatter decision, not on this change's materialization.

@@ -144,8 +144,8 @@ Materialization, second part:
   pruning of the generated tier; a hardlink materializer offered only as a
   measured optimization on top of a copy, never from the Store.
 - **Part 3 moved to `harness-dialect-table`**: the per-harness dialect
-  table, canonical `harness:` frontmatter and project `.agents/` wait on
-  product decisions this change does not need.
+  table, canonical `harness:` frontmatter and project `.agents/` (read and
+  mounted, never written) wait on a decision this change does not need.
 
 ## Capabilities
 
