@@ -23,7 +23,7 @@ world:
 scenes:
   - scene: an agent started in the project's space runs in the project directory
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: uze opens on the project
         expect: demo-app
         expect_timeout: 20

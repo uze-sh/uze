@@ -86,7 +86,7 @@ pub enum UzeError {
     AcquisitionFailed(String),
     /// The local terminal runtime failed. Its own right to a variant: a
     /// socket that cannot be reached has nothing to do with acquiring a
-    /// package, and borrowing that variant is how `uze terminal stop`
+    /// package, and borrowing that variant is how `uze workspace stop`
     /// reported a missing socket as `could not acquire package`.
     #[error("terminal runtime: {0}")]
     TerminalRuntime(String),

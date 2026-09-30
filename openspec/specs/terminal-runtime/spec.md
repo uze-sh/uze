@@ -399,14 +399,14 @@ alive.
 
 ### Requirement: Stopping the runtime stops what holds the workspace
 
-`uze terminal stop` SHALL end the server holding the workspace, whether or
+`uze workspace stop` SHALL end the server holding the workspace, whether or
 not that server answers at the endpoint this build computes. "Nothing
 answers here" SHALL NOT be reported as "nothing is running" while the
 workspace is claimed.
 
 #### Scenario: The server recorded itself and is on another endpoint
 
-- **WHEN** `uze terminal stop` runs while a server that recorded its own
+- **WHEN** `uze workspace stop` runs while a server that recorded its own
   id holds the workspace at an endpoint this build does not name
 - **THEN** that server SHALL be ended
 - **AND THEN** the workspace SHALL be free for the next server
@@ -416,13 +416,13 @@ workspace is claimed.
 - **WHEN** the workspace is claimed, nothing answers at this build's
   endpoint, and the claim records nobody — a server from a release older
   than the record itself
-- **THEN** `uze terminal stop` SHALL report that, naming the endpoint it
+- **THEN** `uze workspace stop` SHALL report that, naming the endpoint it
   looked at and how to find the process
 - **AND THEN** it SHALL NOT report success, and SHALL signal nothing
 
 #### Scenario: Nothing is running at all
 
-- **WHEN** `uze terminal stop` runs with no server holding the workspace
+- **WHEN** `uze workspace stop` runs with no server holding the workspace
   and no endpoint present
 - **THEN** it SHALL succeed, having nothing to do
 

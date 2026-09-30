@@ -1,0 +1,99 @@
+journey: the workspace opened on a project that already has plugins
+tags: [gate, tui, workspace]
+proves: web/content/docs/workspace/terminal.mdx
+about: |
+  The workspace builds on the package manager and never the reverse. Opened
+  on a project that already installed its plugins and chose a policy, it
+  brings its own section of AGENTS.md in step without a command, puts its
+  shims first on PATH in its own panes so a harness typed there goes
+  through them, and leaves the package manager's lock exactly as it was.
+
+world:
+  project: demo-app
+  manifest: |
+    worktrees:
+      completion: pr
+  files:
+    market/marketplace.json: |
+      {
+        "name": "demo",
+        "description": "A marketplace this journey stages.",
+        "plugins": [
+          { "name": "flow", "source": "./plugins/flow", "description": "Canonical skill plugin." }
+        ]
+      }
+    market/plugins/flow/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "flow",
+        "version": "1.0.0",
+        "description": "Canonical: one package, no vendor manifests."
+      }
+    market/plugins/flow/skills/commit/SKILL.md: |
+      ---
+      name: commit
+      description: Write a commit message from the staged diff.
+      ---
+
+      The body a harness would read.
+
+scenes:
+  - scene: the package manager set the project up, and wrote nothing of the workspace's
+    when:
+      - shell: "{uze} setup"
+        say: provision every registered harness
+        check: false
+      - shell: "{uze} market add {world}/market"
+        say: register the staged marketplace
+      - shell: "cd {project} && {uze} flow@demo && {uze} install && cp agents.lock {world}/lock.before"
+        say: add and install the plugin, and remember the lock's bytes
+    then:
+      - file: "{project}/AGENTS.md"
+        excludes: "project:worktree-policy"
+        about: install leaves the workspace's section to the workspace
+
+  - scene: and then the workspace opens and keeps its own section in step
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - wait: shell
+        until: grep -q project:worktree-policy {project}/AGENTS.md
+        timeout: 30
+        say: the workspace brings AGENTS.md in step when the space opens
+    then:
+      - file: "{project}/AGENTS.md"
+        contains: "An agent started any other way can ignore it"
+        about: the section opens by saying who it is for
+      - file: "{project}/AGENTS.md"
+        contains: "uze:begin project:plugin-authoring"
+        about: and the package manager's region is still there beside it
+
+  - scene: and then a harness typed into a pane goes through the shim
+    when:
+      - type: "command -v claude > {world}/which-claude"
+        say: ask the pane's shell which claude it would run
+        expect: which-claude
+      - wait: shell
+        until: test -s {world}/which-claude
+        timeout: 20
+        say: the answer lands on disk
+    then:
+      - file: "{world}/which-claude"
+        contains: "{uze_home}/shims"
+        about: the pane put the workspace's shims first on PATH
+      - file: "{shell_rc}"
+        exists: false
+        about: and no shell startup file was written for it
+
+  - scene: and then the package manager's lock is exactly as it was
+    when:
+      - wait: shell
+        until: cmp -s {project}/agents.lock {world}/lock.before
+        timeout: 5
+        say: compare the lock's bytes with the ones remembered
+    then:
+      - file: "{project}/agents.lock"
+        contains: "flow"
+        about: the workspace changed nothing the package manager owns

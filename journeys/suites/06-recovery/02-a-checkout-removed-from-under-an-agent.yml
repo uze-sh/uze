@@ -35,7 +35,7 @@ world:
 scenes:
   - scene: an agent with work committed in its own checkout
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         expect: demo-app
         expect_timeout: 20
         pause: 1.0

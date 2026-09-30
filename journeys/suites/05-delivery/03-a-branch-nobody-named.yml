@@ -27,7 +27,7 @@ world:
 scenes:
   - scene: an agent commits without ever naming its work
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: uze opens on the project
         expect: demo-app
         expect_timeout: 20

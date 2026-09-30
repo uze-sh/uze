@@ -6,16 +6,14 @@
 //! [`exposure`] plans the concrete artifacts; [`engine`] carries the plan
 //! out; [`state`] and [`persistence`] record what was written, as typed
 //! receipts; [`reconciliation`] compares that record against what is
-//! actually on disk, which is what makes removal safe. [`continuity`] is
-//! the one delivery that reaches a harness through its own launch rather
-//! than through an artifact: whether this agent resumes a conversation or
-//! starts one.
+//! actually on disk, which is what makes removal safe. [`session`] names a
+//! harness's conversation, which the contract speaks; carrying one across a
+//! launch is the workspace's, in `uze-workspace`.
 //!
 //! Vendor-neutral throughout — no module here names a harness. The concrete
 //! verticals live in `uze-integrations`, behind
 //! [`integration::IntegrationPort`].
 
-pub mod continuity;
 pub mod delivered_root;
 pub mod engine;
 pub mod exposure;
@@ -24,4 +22,5 @@ pub mod leftovers;
 pub mod persistence;
 pub mod reconciliation;
 pub mod router;
+pub mod session;
 pub mod state;

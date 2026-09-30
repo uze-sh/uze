@@ -22,9 +22,12 @@ video:
     - from: poster
       to: web/public/uze-install-poster.png
   cast: '{root}/uze-install.cast'
-  # The same grade as every other demo, so the docs read as one set.
-  cols: 152
-  rows: 36
+  # The other demos' proportions (152x36), smaller: the output of each
+  # command is what this one is for, and the docs scale a GIF to their
+  # column, so fewer cells is bigger type. 126x30 holds the ratio and still
+  # fits the workspace's sidebar beside the agent it opens.
+  cols: 126
+  rows: 30
   speed: 1.2
   # Above the longest pause: the renderer caps a still screen at its idle
   # limit (1.5s by default), which halved every look the beats ask for.

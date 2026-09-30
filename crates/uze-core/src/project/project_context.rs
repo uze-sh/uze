@@ -6,7 +6,14 @@
 //! independently at that root. Neither gates the other: a project with only
 //! `.agents/skills/` still has context to deliver.
 
-use std::path::{Path, PathBuf};
+use std::{
+    fs::{self, File, OpenOptions},
+    path::{Path, PathBuf},
+    thread,
+    time::{Duration, Instant},
+};
+
+use crate::{Result, UzeError, harness_runtime::project_id_for, home::UzeHome};
 
 /// The portable project-context resources, as they exist on disk right
 /// now. Purely observational: resolving never creates or moves anything.
@@ -87,9 +94,84 @@ pub fn resolve(cwd: &Path) -> ProjectContext {
     }
 }
 
+/// How long a writer waits for the other owner of `AGENTS.md` to finish.
+/// A rewrite of one Markdown file takes milliseconds; a holder past this is
+/// a stuck process, which is reported rather than waited on forever.
+const AGENTS_MD_WAIT: Duration = Duration::from_secs(10);
+const AGENTS_MD_RETRY: Duration = Duration::from_millis(10);
+
+/// Held while a project's `AGENTS.md` is rewritten. The file has two owners,
+/// the package manager (package and authoring regions, the bridges read from
+/// it) and the workspace (its policy region), and a rewrite is a whole-file
+/// read-modify-write: without this, two of them interleaving would each keep
+/// its own region and drop the other's until the next run.
+pub struct AgentsMdGuard {
+    _file: File,
+}
+
+impl AgentsMdGuard {
+    pub fn acquire(home: &UzeHome, project_root: &Path) -> Result<Self> {
+        let path = home.agents_md_lock_path(&project_id_for(project_root));
+        let parent = path.parent().expect("UZE state paths have a parent");
+        fs::create_dir_all(parent).map_err(|source| UzeError::Write {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|source| UzeError::Write {
+                path: path.clone(),
+                source,
+            })?;
+        let started = Instant::now();
+        while let Err(error) = crate::persistence::try_lock_exclusive(&file) {
+            if error.kind() != std::io::ErrorKind::WouldBlock {
+                return Err(UzeError::Write {
+                    path,
+                    source: error,
+                });
+            }
+            if started.elapsed() >= AGENTS_MD_WAIT {
+                return Err(UzeError::MutationInProgress { path, pid: None });
+            }
+            thread::sleep(AGENTS_MD_RETRY);
+        }
+        Ok(Self { _file: file })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two owners of one `AGENTS.md` never rewrite it at once: the second
+    /// waits for the first to let go.
+    #[test]
+    fn a_second_owner_waits_for_the_first() {
+        use std::sync::mpsc;
+
+        let home = UzeHome::at(uze_testkit::temp::scratch("agents-md-guard-home"));
+        let project = uze_testkit::temp::scratch("agents-md-guard-project");
+        let first = AgentsMdGuard::acquire(&home, &project).unwrap();
+
+        let (sender, receiver) = mpsc::channel();
+        let (home_for, project_for) = (home.clone(), project.clone());
+        let waiter = std::thread::spawn(move || {
+            let _second = AgentsMdGuard::acquire(&home_for, &project_for).unwrap();
+            sender.send(()).unwrap();
+        });
+        assert!(
+            receiver.recv_timeout(Duration::from_millis(200)).is_err(),
+            "the second owner took the file while the first held it"
+        );
+        drop(first);
+        receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the second owner takes it once the first lets go");
+        waiter.join().unwrap();
+    }
     use std::fs;
 
     #[test]

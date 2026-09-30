@@ -11,7 +11,7 @@ use crate::{PaneId, Session, SpaceId, TabId};
 /// [`crate::attach`] replaces a server of another build before connecting;
 /// this is what a client that connects without it — a `uze` nested in a
 /// pane, a test — still meets.
-pub const PROTOCOL_VERSION: u16 = 18;
+pub const PROTOCOL_VERSION: u16 = 19;
 
 /// The colours a client draws a pane's default and indexed cells in. Plain
 /// `(r, g, b)` triples: this runtime holds no opinion about appearance, it

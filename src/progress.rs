@@ -104,6 +104,24 @@ pub fn accent_heading(text: impl AsRef<str>) -> String {
     paint(text, accent_style().bold())
 }
 
+/// Which part of uze a root command belongs to, which the root help says
+/// with the command's hue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandGroup {
+    Packages,
+    Workspace,
+    Machine,
+}
+
+pub fn command_name(text: impl AsRef<str>, group: CommandGroup) -> String {
+    let token = match group {
+        CommandGroup::Packages => Token::CommandPackages,
+        CommandGroup::Workspace => Token::CommandWorkspace,
+        CommandGroup::Machine => Token::CommandMachine,
+    };
+    paint(text, styled(token).bold())
+}
+
 /// The same palette, handed to `clap`'s own Styles builder so a missing
 /// argument or an unrecognized subcommand renders in the same voice as
 /// every hand-written report in this module, instead of clap's defaults.

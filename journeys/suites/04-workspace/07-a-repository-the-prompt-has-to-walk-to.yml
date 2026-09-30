@@ -50,7 +50,7 @@ scenes:
 
   - scene: the path typed reaches it, and the space is created there
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         expect: demo-app
         expect_timeout: 20
         pause: 1.0

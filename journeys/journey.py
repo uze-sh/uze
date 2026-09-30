@@ -1977,7 +1977,7 @@ def stop_world_servers(world: World) -> None:
     # process that exits cleanly runs the handlers a signalled one never
     # does. SIGTERM below stays as the fallback for a server that will not.
     subprocess.run(
-        [str(binary_path()), "terminal", "stop"],
+        [str(binary_path()), "workspace", "stop"],
         cwd=world.project,
         env=world.shell_env(),
         capture_output=True,

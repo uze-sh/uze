@@ -3,8 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
-use uze_core::{UzeHome, conversation::Claim};
+use uze_core::UzeHome;
+
 use uze_testkit::git::Repository;
+use uze_workspace::conversation::Claim;
 
 use super::*;
 use crate::{DeliveryOutcome, PlacementKind, UzeApplication};

@@ -1,5 +1,5 @@
 ---
-title: Harness support
+title: Harnesses
 description: What each harness receives natively, capability by capability
 ---
 
@@ -85,7 +85,7 @@ Each fact is proved by a Conformance Lab check against the real harness; the che
 | **Agents** | Is a portable agent profile delivered to a native agent surface? |
 | **Hooks** | Does a portable hook reach the harness's own hook configuration? |
 | **Session** | Can uze put a relaunched agent back into the conversation it was in? |
-| **Shim** | Runtime context projection through the PATH shim, experimental everywhere. |
+| **Shim** | Project context carried into a launch by the workspace's shim, so inside the workspace only; experimental everywhere. |
 
 ## Notes per harness
 
@@ -109,12 +109,12 @@ fields that harness reads.
   slash command. `slash: false` withholds one from the `/` catalog but a mention still expands
   it, which is why a `user: false` policy is reported adapted rather than native. Its binary is
   detected as `opencode`, with the legacy `opencode2` alias still resolved.
-- **[Antigravity](https://antigravity.google)**: the Google-family v0 harness. uze installs a plugin it generates
+- **[Antigravity](https://antigravity.google)**: the Google-family v0 harness. It receives a plugin uze generates
   from the package, with the plugin root resolved in every skill and the MCP servers translated;
   agents go to its global agents directory under their plugin label, since a plugin's agents lose
   it. Invocation policies are native: `disable-model-invocation` and `disable-slash-command` are
   the harness's own controls. It carries the widest hook effect set of the four, and has no
   session-start event.
 
-The runtime shim is in
-[The terminal session](/docs/advanced/terminal#resuming-after-a-reboot).
+The shim, and what reaches an agent only inside the workspace, is in
+[Terminal](/docs/workspace/terminal#resuming-after-a-reboot).

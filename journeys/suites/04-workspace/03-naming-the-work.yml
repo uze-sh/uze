@@ -32,7 +32,7 @@ world:
 scenes:
   - scene: an agent starts on a branch UZE generated, because nothing knows yet what the work is
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: uze opens on the project
         expect: demo-app
         expect_timeout: 20

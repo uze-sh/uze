@@ -227,6 +227,16 @@ impl UzeHome {
         self.state_dir().join("mutation.lock")
     }
 
+    /// The guard both owners of a project's `AGENTS.md` take before they
+    /// rewrite it (see [`crate::project_context::AgentsMdGuard`]). A lock,
+    /// not a record, keyed on the project id so two projects never wait on
+    /// each other.
+    pub fn agents_md_lock_path(&self, project_id: &str) -> PathBuf {
+        self.state_dir()
+            .join("locks")
+            .join(format!("agents-md-{project_id}.lock"))
+    }
+
     /// What UZE remembers about its own binary between runs: when it last
     /// asked for the latest release, and what the operator was told.
     pub fn binary_path(&self) -> PathBuf {

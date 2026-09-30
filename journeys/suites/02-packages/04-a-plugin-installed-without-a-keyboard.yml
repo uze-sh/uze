@@ -55,7 +55,7 @@ scenes:
 
   - scene: the plugin is found by clicking the search field and typing
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: uze opens, on the workspace side
         expect: demo-app
         expect_timeout: 20

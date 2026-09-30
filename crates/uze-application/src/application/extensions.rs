@@ -3,7 +3,9 @@
 
 use std::collections::BTreeSet;
 
-use uze_core::{Result, extensions};
+use uze_core::Result;
+
+use uze_workspace::extensions;
 
 use super::services::Extensions;
 

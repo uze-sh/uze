@@ -13,7 +13,11 @@ from .scenarios import opencode_container
 
 class OpenCodeBindings(Bindings):
     harness = "opencode"
-    launch = "UZE_HOME=/usr/local/.uze PATH=/usr/local/.uze/shims:$PATH exec opencode --standalone"
+    #: Started as its own binary, the way a person who only uses the
+    #: package manager starts it: the plugins must reach it with no shim on
+    #: `PATH`. What only the workspace's launch carries is the continuity
+    #: contract's, which relaunches through the launcher on purpose.
+    launch = "UZE_HOME=/usr/local/.uze exec opencode --standalone"
     ready_markers = ("Ask anything",)
     #: One interrupt ends it — measured (`experiments/relaunch_probe`). A
     #: second would not be spare: the process is already gone by then, so

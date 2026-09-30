@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use uze_core::{
+use uze_workspace::{
     checkout::{self, AccountedCheckout, CheckoutId, Owner, Presence, Refusal},
     task::{self, AgentStore, WorkState},
     worktree::{self, WORKTREES_DIRECTORY},

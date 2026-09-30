@@ -10,7 +10,7 @@ description: Every command
 </Callout>
 
 ```bash
-uze                       # open the workspace
+uze                       # help
 uze --help                # help, on the root or any command
 uze --version
 ```
@@ -18,7 +18,9 @@ uze --version
 A command run inside a project acts on that project and on the machine. `-m`
 makes it act on the machine alone.
 
-## Plugins
+## Package manager
+
+### Plugins
 
 ```bash
 uze <plugin>@<market>         # add a plugin to this project
@@ -41,7 +43,7 @@ uze status -m                 # this machine: every installed plugin
 | `--replace` | `install` | Replace the other marketplace's plugin of the same name |
 | `--harness <agent>` | `inspect` | Only this agent: each capability's name, route, where it lands and what it loses |
 
-## Marketplaces
+### Marketplaces
 
 ```bash
 uze market add <source>            # owner/repo, host:owner/repo, a Git URL or ./a-directory
@@ -51,6 +53,13 @@ uze market remove <name>           # the marketplace and everything it delivered
 uze market link <name> <checkout>  # read it from a checkout you are developing
 uze market unlink <name>
 uze market host [alias] [url]      # the hosts owner/repo resolves against
+```
+
+## Workspace
+
+```bash
+uze workspace               # open the workspace
+uze workspace stop          # stop the workspace and every process in it
 ```
 
 ## Setup and health
@@ -67,17 +76,10 @@ uze upgrade                 # install the latest uze
 ## Configuration
 
 ```bash
-uze config theme list | set <id> | show [id]
-uze config icons [default | nerd | ascii]
-uze config notification [on | off | silent | test]
-uze config extension [<id> [on | off]]
-```
-
-## Workspace
-
-```bash
-uze terminal attach         # the same as `uze`
-uze terminal stop           # stop the workspace and every process in it
+uze config theme list | set <id> | show [id]   # the CLI and the workspace
+uze config icons [default | nerd | ascii]       # the CLI and the workspace
+uze config notification [on | off | silent | test]   # workspace only
+uze config extension [<id> [on | off]]               # workspace only
 ```
 
 ## Everywhere
@@ -85,4 +87,4 @@ uze terminal stop           # stop the workspace and every process in it
 `--verbose` prints what happened in detail. `--format json` gives
 machine-readable output on every command that reports something.
 
-The commands agents call are in [The agent CLI](/docs/advanced/agent-cli).
+The commands agents call are in [The agent CLI](/docs/reference/agent-cli).

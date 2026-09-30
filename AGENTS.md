@@ -5,8 +5,8 @@ OpenCode, Antigravity CLI) when working with code in this repository.
 
 ## What this is
 
-uze is a Rust CLI: a compatibility and distribution layer for agentic tooling
-across harnesses (Claude Code, Codex, OpenCode, Antigravity CLI). You install a
+uze is a Rust CLI: the package manager and workspace for coding agents
+(Claude Code, Codex, OpenCode, Antigravity CLI). You install a
 plugin once; uze stores its bytes centrally and delivers it through each
 harness's most native mechanism — a real plugin where one exists, native
 capabilities where it doesn't, a safe adapter only as a last resort. It also
@@ -66,7 +66,7 @@ crash-avoidance measure. If a session still dies mid-run, look for a kill
 by signal in `journalctl` (`user@1000.service: ... status=9/KILL` at the
 same second as `Session N logged out`) before assuming memory pressure.
 
-Run the CLI itself with `cargo run --bin uze -- <args>` or `./target/debug/uze <args>` after a build; `uze` with no args launches the terminal UI.
+Run the CLI itself with `cargo run --bin uze -- <args>` or `./target/debug/uze <args>` after a build; `uze workspace` launches the terminal UI; `uze` with no args prints help.
 
 ## Code style
 
@@ -192,24 +192,37 @@ need to).
 - `.` (binary crate `uze`) — CLI parsing (`src/main.rs`), the terminal UI
   (`src/ui.rs`, `src/ui/`), the runtime PATH shim (`src/shim.rs`), and
   `src/command_performance.rs`.
-- `crates/uze-core` — harness-agnostic domain, organized into five
-  concerns, each a module whose own doc says what belongs in it. Read the
-  concern before the module: `hook` is a *capability*, and that is a
-  different question from where its file sits.
+- `crates/uze-core` — the shared foundation and the package manager's
+  harness-agnostic domain, organized into five concerns, each a module
+  whose own doc says what belongs in it. Read the concern before the
+  module: `hook` is a *capability*, and that is a different question from
+  where its file sits.
   - `package/` — where a package's bytes come from and where they live:
     acquisition, trust, importers, bundle, naming, store.
   - `capability/` — what a plugin declares, portably: skill, hook.
   - `delivery/` — how a capability reaches a harness: integration,
     router, exposure, engine, state, persistence, reconciliation.
   - `project/` — what a project declares and what UZE writes into it:
-    project_lock, worktree policy, context, text_region, workspace roots.
+    manifest (the file, and the package manager's section), project_lock,
+    context, text_region, the `anchor` a project or marketplace roots at.
   - `machine/` — the local environment outside UZE's own state: home,
     detection cache, provisioning, subprocess, shell PATH, harness runtime.
 
   Public paths stay flat (`uze_core::store`, not `uze_core::package::store`)
   via re-exports at the crate root, which is also where a reader sees which
   concern each module belongs to. Depends on nothing harness-specific and
-  must stay that way (see Architecture below).
+  must stay that way (see Architecture below), and never on
+  `uze-workspace`: that is how the package manager works without the
+  workspace, and the compiler is what says so.
+- `crates/uze-workspace` — the workspace's domain: the agents UZE launches
+  (`task`), their checkouts (`checkout`, `worktree`), the conversation
+  each is in and carrying it across a launch (`conversation`,
+  `continuity`), how finished work lands (`landing`), what a project
+  declares about all of that (`declaration`, reading `agents.yaml`'s
+  `worktrees` and `artifacts` sections, which `uze-core` carries unread),
+  and the workspace client's own state (`client_layout`, `prompt_history`,
+  `notifications`, `extensions`). Built on `uze-core`; unrelated to
+  `uze-terminal`, which owns the panes and knows nothing of agents.
 - `crates/uze-application` — the product-facing facade
   (`UzeApplication`) that orchestrates Core + Integrations into
   install/remove/update/context lifecycle operations. `src/application.rs`
@@ -439,9 +452,11 @@ Dependency direction is one-way and enforced by tests, not just convention:
 CLI/TUI (src/)  ──uses──▶  uze-extensions   (presentation: an extension
       ↓                                      describes, src/ui renders)
 uze-application  (orchestration: add/install/remove/update/context)
-      ↓
-uze-core         (domain contracts: Package, Store, Engine, Router,
-      ↑           IntegrationPort, capability/exposure model)
+      ↓                 ↓
+      ↓          uze-workspace (the workspace's domain: tasks, checkouts,
+      ↓                 ↓       landing, conversations)
+uze-core         (shared foundation + the package manager: Package, Store,
+      ↑           Engine, Router, IntegrationPort, capability/exposure model)
 uze-integrations (Claude, Codex, Antigravity, OpenCode — implement IntegrationPort)
 
 uze-git          (transport, no domain — used by core and by extensions)
@@ -628,14 +643,20 @@ trait proven by conformance tests across all four harnesses, rather than
 split into per-capability traits (`PackageDelivery`, `SkillDelivery`, …) —
 that fragmentation has been considered and rejected absent a concrete
 implementation problem forcing it.
-<!-- uze:begin project:worktree-policy/8168c69dd0515645 -->
+<!-- uze:begin project:plugin-authoring/1c13c82595549e7f -->
+## Authoring plugins
+
+- Creating a plugin is agent work, driven with these deterministic verbs, none of which needs anything but `uze` on the machine: `uze agent market create <name> --at <dir> [--description <text>]` scaffolds a marketplace as a Git repository, registers and links it in one step (or skip to the next verb when a marketplace already exists — ask `uze market list` for the names); `uze agent plugin create <name> --market <market> [--hook] [--mcp] [--instructions]` scaffolds a plugin into it; `uze agent plugin check <path>` and `uze agent market check <path>` validate offline — run the check before any install, then `uze install -m <plugin>@<market>` and iterate on the files, which the linked marketplace already reads. The guided script for the whole loop is the `uze:author` skill.
+<!-- uze:end project:plugin-authoring/1c13c82595549e7f -->
+<!-- uze:begin project:worktree-policy/75f45f108a721a55 -->
 ## Concurrent work isolation
 
+This section is for an agent `uze workspace` launched. An agent started any other way can ignore it: nothing below applies to it, and the `uze agent work` commands it names refuse outside the workspace.
+
 - Name the work as your first action, before reading a file, planning or editing: `uze agent work name <type>/<subject>`. Types this project accepts: `feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert`. The subject is one or two words naming the intention, not a description of the task — `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The request you were given is where the intention comes from, so nothing you read later makes the name easier to choose. Work that reaches a commit still unnamed is named by UZE from that commit's subject, which is a worse name than the one you would have chosen. Either way your branch is renamed, so ask Git for its name rather than remembering it; in the operator's checkout only your label changes. Name it again with the same command whenever the work turns out to be something else — the last name given is the one that stands.
-- Creating a plugin is agent work, driven with these deterministic verbs: `uze agent market create <name> --at <dir> [--description <text>]` scaffolds a marketplace as a Git repository, registers and links it in one step (or skip to the next verb when a marketplace already exists — ask `uze market list` for the names); `uze agent plugin create <name> --market <market> [--hook] [--mcp] [--instructions]` scaffolds a plugin into it; `uze agent plugin check <path>` and `uze agent market check <path>` validate offline — run the check before any install, then `uze install -m <plugin>@<market>` and iterate on the files, which the linked marketplace already reads. The guided script for the whole loop is the `uze:author` skill.
 - An agent UZE isolated works in a checkout of its own under `.worktrees/<id>`, on branch `agent/<id>`. If your working directory is inside `.worktrees/`, you are already isolated; do not switch branches.
 - If your working directory is not inside `.worktrees/`, you are in the operator's own checkout, on the branch they are on: commit there, as you go, and never switch, reset, stash or clean it — the operator's uncommitted work is theirs. Nothing below about delivery applies to you; the branch already has the name it will keep.
 - Commit your work on your own branch, as you go. Never commit to, merge into, rebase, or reset the target branch: delivery is UZE's — UZE rebases your branch onto the target, runs the project's checks and publishes it, then asks you to open the request for it; commit on your branch and stop until it does.
 - If UZE tells you a rebase is paused in your checkout, resolve the conflicts preserving the intent of your change, run `git rebase --continue`, run the project's checks, and end your turn.
 - Before spawning parallel subagents that write files, give each its own checkout: `uze agent work split <topic>` prints the path of one cut from your current commit — hand that path to the subagent. When it is done, commit in both checkouts and run `uze agent work join <topic>` to bring its commits onto your branch; on a conflict, resolve it in the subagent's checkout, run `git rebase --continue` there, and join again. `uze agent work list` shows them. Never make a worktree with Git for this: UZE only knows the checkouts it made. An agent in the operator's checkout has no branch of its own to join into, and runs its subagents one after another instead.
-<!-- uze:end project:worktree-policy/8168c69dd0515645 -->
+<!-- uze:end project:worktree-policy/75f45f108a721a55 -->

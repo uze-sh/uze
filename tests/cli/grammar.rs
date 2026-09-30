@@ -257,26 +257,38 @@ fn builtin_name_followed_by_at_market_is_still_shorthand() {
     let _ = std::fs::remove_dir_all(home);
 }
 
-/// `uze --help` must name the Project/Machine split explicitly
-/// (`specs/cli-command-grammar/spec.md`'s "Top-level help names both
-/// scopes" requirement) and list the machine operations under the machine
-/// heading, with the shorthand shown in Usage.
+/// `uze --help` lists every command flat, grouped by the part of uze it
+/// belongs to, with no scope heading: a command reports its own scope
+/// (ADR-054), so a heading such as "Project:" would claim one it may not
+/// have. It ends by saying where the documentation is, for a person and
+/// for an agent.
 #[test]
-fn help_names_the_project_machine_split() {
-    let home = temporary_home("help-split");
+fn help_lists_commands_flat_and_ends_at_the_documentation() {
+    let home = temporary_home("help-flat");
     std::fs::create_dir_all(&home).unwrap();
     let output = uze(&home).args(["--help"]).output().unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Project:"), "missing Project heading");
-    assert!(stdout.contains("Machine:"), "missing Machine heading");
-    assert!(stdout.contains("<plugin>@<market>"), "missing Usage line");
-    for namespace in ["market", "plugin", "setup"] {
+    assert!(!stdout.contains("Project:"), "a scope heading is back");
+    assert!(!stdout.contains("Machine:"), "a scope heading is back");
+    assert!(
+        stdout.contains("plugin@market"),
+        "missing the install example"
+    );
+    for command in ["install", "market", "workspace", "setup"] {
         assert!(
-            stdout.contains(namespace),
-            "Machine heading must list `{namespace}`"
+            stdout
+                .lines()
+                .any(|line| line.trim_start().starts_with(command)),
+            "`{command}` is not listed"
         );
     }
+    let last = stdout.lines().rev().find(|line| !line.trim().is_empty());
+    assert!(
+        last.is_some_and(|line| line.contains("https://uze.sh/llms.txt")),
+        "the help does not end at the documentation for agents"
+    );
+    assert!(stdout.contains("https://uze.sh/docs"));
     let _ = std::fs::remove_dir_all(home);
 }
 
@@ -372,8 +384,11 @@ fn no_builtin_command_name_contains_at() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
         // Skip the lines that legitimately document/demonstrate the
-        // shorthand form itself (the Usage line and the Examples section).
-        if line.contains("<plugin>@<market>") || line.contains("flow@ai") {
+        // shorthand form itself (the install example and the Examples section).
+        if line.contains("<plugin>@<market>")
+            || line.contains("plugin@market")
+            || line.contains("flow@ai")
+        {
             continue;
         }
         assert!(

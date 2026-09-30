@@ -177,7 +177,7 @@ impl MarketplaceRequest {
         let subpath = &self.repository.subpath;
         let manifest_path = subpath
             .directory_in(checkout)?
-            .join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME);
+            .join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME);
         let manifest_bytes = std::fs::read(&manifest_path).map_err(|source| UzeError::Read {
             path: manifest_path.clone(),
             source,
@@ -376,7 +376,7 @@ impl Marketplace<'_> {
                 let path = typed
                     .canonicalize()
                     .map_err(|_| UzeError::MissingPath(typed.clone()))?;
-                let manifest_path = path.join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME);
+                let manifest_path = path.join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME);
                 if !manifest_path.is_file() {
                     return Err(UzeError::MissingManifest(manifest_path));
                 }

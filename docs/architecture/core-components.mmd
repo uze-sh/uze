@@ -4,11 +4,12 @@ title: Core components
 C4Component
   Container(app, "Application", "uze-application", "Orchestrates lifecycle operations")
   Container(integrations, "Integrations", "uze-integrations", "One vertical per harness")
+  Container(workspace, "Workspace domain", "uze-workspace", "Tasks, checkouts, landing, conversations; built on this crate, never reached from it", $link="crates/uze-workspace/src/lib.rs")
   Container_Boundary(core, "Core") {
     Component(package, "package", "Rust module", "Where a package's bytes come from and where they live", $link="crates/uze-core/src/package.rs")
     Component(capability, "capability", "Rust module", "What a plugin declares, portably: skill, agent, hook, and the per-harness harness block", $link="crates/uze-core/src/capability.rs")
     Component(delivery, "delivery", "Rust module", "How a capability reaches a harness: router, engine, receipts, directories replaced whole", $link="crates/uze-core/src/delivery.rs")
-    Component(project, "project", "Rust module", "What a project declares, what UZE writes into it, and which checkouts are its own", $link="crates/uze-core/src/project.rs")
+    Component(project, "project", "Rust module", "What a project declares and the package manager writes into it: the manifest, the lock, AGENTS.md's regions, the anchor", $link="crates/uze-core/src/project.rs")
     Component(machine, "machine", "Rust module", "The local environment outside UZE's own state, the process table included", $link="crates/uze-core/src/machine.rs")
   }
   ContainerDb(store, "Store", "store/", "Installed package bytes; no harness reads them")
@@ -18,6 +19,7 @@ C4Component
   Rel(app, package, "Installs through")
   Rel(app, delivery, "Plans and applies")
   Rel(app, project, "Reads the manifest")
+  Rel(workspace, project, "Reads its sections of the manifest")
   Rel(integrations, delivery, "Implements IntegrationPort")
   Rel(delivery, capability, "Routes")
   Rel(delivery, machine, "Runs on")

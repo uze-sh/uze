@@ -1,5 +1,5 @@
 ---
-title: Project context
+title: AGENTS.md
 description: One AGENTS.md that every agent reads
 ---
 
@@ -29,7 +29,7 @@ If one does not, `uze install` fixes it.
 
 ## What uze writes into it
 
-`AGENTS.md` is yours. uze only writes inside blocks it marks:
+`AGENTS.md` is yours. The only place uze writes is inside the blocks it marks:
 
 ```markdown
 <!-- uze:begin … -->
@@ -37,11 +37,24 @@ If one does not, `uze install` fixes it.
 <!-- uze:end … -->
 ```
 
-They hold what uze needs every agent to know, such as how this project isolates
-agents. Anything you write outside them is never touched, and a block you edit
-by hand is reported, not overwritten.
+They hold what uze needs every agent to know. `uze install` writes the ones
+from your plugins and one on authoring plugins, for any project with an
+`agents.yaml`. The workspace writes its own, on how it isolates the agents it
+launches, only while you use it and only once the project chooses a policy
+([Agents](/docs/workspace/agents)); `uze install` never touches that one.
+Anything you write outside the blocks is never touched, and a block you edit by
+hand is reported, not overwritten.
+
+## Project skills and agents
+
+Skills and agents the project keeps in `.agents/skills` and `.agents/agents`
+reach Codex, OpenCode and Antigravity natively, wherever you start them. Claude
+Code does not read `.agents/`, and Codex does not read project agents there, so
+for those two they arrive through the workspace's shim: inside
+`uze workspace` only. `uze status` and `uze inspect` say which. Plugins you
+install are not affected: they reach every agent everywhere.
 
 <Cards>
-  <Card title="uze Skills" href="/docs/plugins/skills" />
-  <Card title="Harness support" href="/docs/reference/harnesses" />
+  <Card title="Skills" href="/docs/reference/skills" />
+  <Card title="Harnesses" href="/docs/reference/harnesses" />
 </Cards>

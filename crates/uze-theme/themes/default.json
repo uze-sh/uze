@@ -39,6 +39,10 @@
     "state.diff-added": "@state.success/1a",
     "state.diff-removed": "@state.danger/1a",
 
+    "command.packages": "@accent",
+    "command.workspace": "#d6a07c",
+    "command.machine": "@text.secondary",
+
     "ansi.0": "@surface.background",
     "ansi.1": "#e0765f",
     "ansi.2": "#8fd19e",

@@ -5,12 +5,11 @@
     "installation",
     "quickstart",
     "[Changelog](/docs/changelog)",
-    "---[Map]Guides---",
-    "workspace",
+    "---[Boxes]Modules---",
     "plugins",
-    "configuration",
+    "workspace",
+    "---[Library]Learn more---",
     "concepts",
-    "advanced",
     "reference"
   ]
 }

@@ -1,0 +1,26 @@
+---
+title: Workspace components
+---
+C4Component
+  Container(app, "Application", "uze-application", "The workspace's services: tasks, checkouts, work, policy region")
+  Container(core, "Core", "uze-core", "The shared foundation and the package manager")
+  Container_Boundary(workspace, "Workspace domain · uze-workspace") {
+    Component(task, "task", "Rust module", "The agents UZE launched in a project, and their state", $link="crates/uze-workspace/src/task.rs")
+    Component(checkout, "checkout", "Rust module", "The slots an isolated agent works in, their pool and their records", $link="crates/uze-workspace/src/checkout.rs")
+    Component(worktree, "worktree", "Rust module", "The fixed layout, the declared policy and the text it projects", $link="crates/uze-workspace/src/worktree.rs")
+    Component(landing, "landing", "Rust module", "How finished work reaches the target: rebase, gate, completion", $link="crates/uze-workspace/src/landing.rs")
+    Component(conversation, "conversation", "Rust module", "The conversation each agent is in, remembered for it", $link="crates/uze-workspace/src/conversation.rs")
+    Component(continuity, "continuity", "Rust module", "What a launch carries over: resume or start", $link="crates/uze-workspace/src/continuity.rs")
+    Component(declaration, "declaration", "Rust module", "agents.yaml's worktrees and artifacts sections, read by their owner", $link="crates/uze-workspace/src/declaration.rs")
+  }
+  System_Ext(git, "Git", "The project's own history")
+  Rel(app, task, "Places and evaluates")
+  Rel(app, landing, "Delivers through")
+  Rel(task, checkout, "Holds")
+  Rel(checkout, worktree, "Lays out by")
+  Rel(declaration, worktree, "Parses")
+  Rel(continuity, conversation, "Reads and records")
+  Rel(declaration, core, "Reads its sections of the manifest")
+  Rel(continuity, core, "Asks the harness through IntegrationPort")
+  Rel(checkout, git, "Worktrees and branches", "uze-git")
+  Rel(landing, git, "Rebases and pushes", "uze-git")

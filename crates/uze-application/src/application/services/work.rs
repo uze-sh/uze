@@ -8,8 +8,10 @@
 
 use std::path::{Path, PathBuf};
 
-use uze_core::{
-    Result, UzeError, checkout,
+use uze_core::{Result, UzeError};
+
+use uze_workspace::{
+    checkout,
     checkout::{
         Presence,
         record::{self, CheckoutRecord, Recorded},

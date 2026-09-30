@@ -118,6 +118,12 @@ pub struct Pane {
     /// Best-known foreground process name (e.g. the shell, or whatever it
     /// last exec'd into) — same live-probe caveat as `cwd`.
     pub process: String,
+    /// Whether that process carries the stamp of a launcher that names it —
+    /// the program was started through one rather than by its own name.
+    /// The runtime does not know what the launcher is for; a client that
+    /// does can tell a program that bypassed it.
+    #[serde(default)]
+    pub through_launcher: bool,
 }
 
 /// What [`Session::open_space`] found or did — the caller only has a pane
@@ -344,6 +350,7 @@ impl Session {
                 columns,
                 rows,
                 process: "shell".to_owned(),
+                through_launcher: false,
             },
         }
     }
@@ -628,6 +635,19 @@ impl Session {
     /// reports whether anything actually changed — so the caller only
     /// broadcasts a `SessionUpdated` when the sidebar tree would show
     /// something new, not on every probe tick.
+    /// Records whether the pane's foreground process came through a
+    /// launcher, reporting whether that changed anything.
+    pub fn update_pane_launcher(&mut self, pane: PaneId, through_launcher: bool) -> bool {
+        let Some(tab) = self.tab_of_pane_mut(pane) else {
+            return false;
+        };
+        if tab.pane.through_launcher == through_launcher {
+            return false;
+        }
+        tab.pane.through_launcher = through_launcher;
+        true
+    }
+
     pub fn update_pane_status(&mut self, pane: PaneId, cwd: PathBuf, process: String) -> bool {
         let Some(tab) = self.tab_of_pane_mut(pane) else {
             return false;

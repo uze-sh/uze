@@ -3,9 +3,38 @@ title: Welcome
 description: What uze is, in one page
 ---
 
-**uze is one setup for every coding agent.** Run Claude Code, Codex, OpenCode
-and Antigravity side by side, each in a checkout of its own, and give all of
-them the same plugins and the same project instructions.
+**The package manager and workspace for coding agents.** Give Claude
+Code, Codex, OpenCode and Antigravity the same plugins and one `AGENTS.md`,
+each delivered natively. Then run several agents at once, each in a checkout
+of its own.
+
+Two tools, one binary. Each works without the other; use either, or both.
+
+## The package manager
+
+**It delivers your tooling.** Install a plugin once and every agent receives it
+through its own native mechanism. Write one `AGENTS.md` and every agent reads
+it. A project records its plugins in `agents.yaml`, so whoever clones it gets
+the same ones.
+
+It is a plain CLI (`uze install`, `uze market`, `uze status`). The agents it
+serves are the ones you already start the way you always have, in your own
+terminal, your editor or CI.
+[The package manager →](/docs/plugins)
+
+<Demo
+  src="/uze-packages.gif"
+  poster="/uze-packages-poster.png"
+  alt="Adding a marketplace, installing one plugin into a project, and inspecting how Claude Code, Codex, OpenCode and Antigravity each received it."
+/>
+
+## The workspace
+
+**It runs your agents.** `uze workspace` opens a terminal workspace
+where every agent gets a tab, a branch and, if you want, a checkout of its own.
+You see what each one changed, and bring the work home when it is ready.
+Closing it stops nothing.
+[The workspace →](/docs/workspace)
 
 <Demo
   src="/uze-demo.gif"
@@ -13,16 +42,13 @@ them the same plugins and the same project instructions.
   alt="The uze workspace: several agents at once, each on its own branch in its own checkout."
 />
 
-It does two things.
+## Together
 
-**It runs your agents.** `uze` opens a terminal workspace where every agent gets
-a tab, a branch and, if you want, a checkout of its own. You see what each one
-changed, and bring the work home when it is ready.
-[The workspace →](/docs/workspace)
-
-**It delivers your tooling.** Install a plugin once and every agent receives it
-through its own native mechanism. Write one `AGENTS.md` and every agent reads
-it. [Plugins →](/docs/plugins)
+Every agent the workspace starts already has the plugins and the instructions
+the package manager delivered, and the workspace's management screen
+(`Ctrl+O`) handles the same plugins and marketplaces with the mouse. Neither
+is required for the other: a project can use only the plugins, or only the
+workspace.
 
 <Callout type="info">
   uze is **beta**. Commands and file formats may still change before v1.

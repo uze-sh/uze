@@ -3771,6 +3771,8 @@ impl Attach<'_> {
             spawn_support_refresh(self.home, key, self.channels.support.sender.clone());
         }
         self.absorb_surface_answers();
+        self.absorb_policy_regions();
+        self.absorb_launchers();
         self.schedule_surface_reads();
         if self.model.expire_agent_activity(Instant::now()) {
             self.model.dirty = true;
@@ -4007,10 +4009,18 @@ impl Attach<'_> {
         // not when its pane next goes quiet or on the refresh clock: a
         // folded space's root or an agent nobody selected otherwise
         // showed its path for as long as `TASK_REFRESH` before its branch.
-        for cwd in self.model.unread_named_directories(&self.identities) {
+        let unread = self.model.unread_named_directories(&self.identities);
+        for cwd in &unread {
             self.model
-                .schedule_evaluation(self.home, cwd, &self.channels.tasks.sender);
+                .schedule_evaluation(self.home, cwd.clone(), &self.channels.tasks.sender);
         }
+        // A directory first seen is where a space opens: its project's
+        // `AGENTS.md` is brought in step before any agent there reads it.
+        spawn_policy_region_sync(
+            self.home,
+            unread,
+            self.channels.policy_regions.sender.clone(),
+        );
         if self
             .model
             .remembered
@@ -4034,13 +4044,22 @@ impl Attach<'_> {
             // or a pull made from a terminal leaves nothing behind for any
             // other trigger to notice, and a folded space's `↑1` stayed up
             // until one of its agents happened to go quiet.
-            let directories = selected_pane_cwd(&self.model)
+            let directories: Vec<PathBuf> = selected_pane_cwd(&self.model)
                 .into_iter()
-                .chain(self.model.space_directories(&self.identities));
-            for cwd in directories {
+                .chain(self.model.space_directories(&self.identities))
+                .collect();
+            for cwd in &directories {
                 self.model
-                    .schedule_evaluation(self.home, cwd, &self.channels.tasks.sender);
+                    .schedule_evaluation(self.home, cwd.clone(), &self.channels.tasks.sender);
             }
+            // The same clock keeps each project's `AGENTS.md` in step with
+            // an edit to its `agents.yaml`: a sync with nothing new writes
+            // nothing.
+            spawn_policy_region_sync(
+                self.home,
+                directories,
+                self.channels.policy_regions.sender.clone(),
+            );
             // On the same clock, and for every agent rather than the
             // selected one: this is also where a launch left pending by a
             // client that was not running is finally resolved, well before
@@ -4051,6 +4070,52 @@ impl Attach<'_> {
 
     /// What the Git badge, the release notes, the commit detail and the
     /// code and architect surfaces' reads answered.
+    /// What keeping `AGENTS.md` in step could not do: said once a session
+    /// per file, never repaired over the operator's edit.
+    /// The registry's launcher names, asked once and absorbed when they
+    /// arrive, so a bypass already on screen is noticed without waiting for
+    /// the next status tick.
+    fn absorb_launchers(&mut self) {
+        if !self.model.remembered.launchers_asked {
+            self.model.remembered.launchers_asked = true;
+            spawn_launcher_names(self.home, self.channels.launchers.sender.clone());
+        }
+        while let Ok(names) = self.channels.launchers.receiver.try_recv() {
+            self.model.remembered.launchers = Some(names);
+            self.model.note_launcher_bypass();
+        }
+    }
+
+    fn absorb_policy_regions(&mut self) {
+        while let Ok(resolution) = self.channels.policy_regions.receiver.try_recv() {
+            if !self
+                .model
+                .remembered
+                .policy_region_reported
+                .insert(resolution.file.clone())
+            {
+                continue;
+            }
+            let (kind, title) = if resolution.drifted {
+                (
+                    ToastKind::Warned,
+                    "AGENTS.md's workspace section was edited by hand",
+                )
+            } else {
+                (
+                    ToastKind::Failed,
+                    "AGENTS.md's workspace section could not be updated",
+                )
+            };
+            self.model.raise_toast(
+                kind,
+                title,
+                format!("{}: {}", resolution.file.display(), resolution.problem),
+                None,
+            );
+        }
+    }
+
     fn absorb_surface_answers(&mut self) {
         while let Ok(resolution) = self.channels.git.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_git_read(resolution);

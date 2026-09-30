@@ -10,19 +10,22 @@ of them and you maintain four copies, each drifting on its own.
 Run more than one at a time and they collide: two agents editing one checkout,
 with your own uncommitted work in the middle.
 
-uze starts from one idea: **agents come and go; your work stays.** Whatever you
+Everything here starts from one idea: **agents come and go; your work stays.** Whatever you
 use today will not be what you use in a year, so nothing you invest in should be
 tied to one of them.
 
 ## What follows from it
 
+The first two shape [the package manager](/docs/plugins), the third shapes
+[the workspace](/docs/workspace), and the last holds for both.
+
 **Standards, not another format.** A plugin is an Agent Plugin, a skill is an
-Agent Skill, instructions are `AGENTS.md`. uze adopts the open standards and
+Agent Skill, instructions are `AGENTS.md`. The open standards are adopted as they are, and uze
 invents only what none of them covers. [Standards →](/docs/concepts/standards)
 
 **Each agent's own way in.** A plugin reaches an agent through the most native
 mechanism that agent has. When one cannot carry something, uze says so instead
-of faking it. [How delivery works →](/docs/concepts/delivery)
+of faking it. [How delivery works →](/docs/plugins/delivery)
 
 **Git is the source of truth.** Where an agent's work stands is read from its
 branch, never from what the agent claims. An agent works in a checkout of its

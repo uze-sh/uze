@@ -29,7 +29,7 @@ scenes:
       - shell: "{uze} setup"
         say: the operator provisions their harnesses, which is what installs the launcher
         check: false
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
@@ -78,7 +78,7 @@ scenes:
         until: "! pgrep -f 'terminal [s]erve --root {project}' > /dev/null"
         timeout: 20
         say: nothing is holding the panes any more
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: open the workspace again, which starts a server and restores what it held
         expect: demo-app
         expect_timeout: 25

@@ -3,7 +3,7 @@ name = "uze"
 version.workspace = true
 edition = "2024"
 rust-version = "1.97"
-description = "Standards-first agent project composition"
+description = "The package manager and workspace for coding agents"
 license.workspace = true
 authors.workspace = true
 # UZE is not published to crates.io. Native Cargo field (independent of
@@ -16,6 +16,7 @@ publish = false
 members = [
   ".",
   "crates/uze-core",
+  "crates/uze-workspace",
   "crates/uze-integrations",
   "crates/uze-application",
   "crates/uze-extensions",
@@ -44,6 +45,7 @@ debug = 0
 
 [dependencies]
 uze-core = { path = "crates/uze-core" }
+uze-workspace = { path = "crates/uze-workspace" }
 uze-integrations = { path = "crates/uze-integrations" }
 uze-application = { path = "crates/uze-application" }
 uze-extensions = { path = "crates/uze-extensions" }

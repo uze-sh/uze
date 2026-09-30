@@ -357,9 +357,9 @@ fn sync_directory(_path: &Path) {}
 
 /// Process-wide mutation guard for one UZE home.
 ///
-/// The lock is an `flock` on a permanent file, exactly as
-/// [`crate::project::task::locked`] holds its own document: the file always
-/// exists and is never unlinked, and what is held is the kernel's advisory
+/// The lock is an `flock` on a permanent file, exactly as the workspace's
+/// task store (`uze_workspace::task::locked`) holds its own document: the
+/// file always exists and is never unlinked, and what is held is the kernel's advisory
 /// lock on this process's open descriptor. That is what makes it both
 /// atomic and self-releasing — `Drop` does not run on `^C`, on `SIGKILL` or
 /// on an abort, and nothing in UZE installs a signal handler to make it, but
@@ -449,7 +449,7 @@ fn try_lock_exclusive_briefly(file: &File) -> std::io::Result<()> {
 /// Takes an exclusive advisory lock on `file` without waiting: a held lock
 /// is `WouldBlock`, and the lock lasts as long as the file stays open.
 #[cfg(unix)]
-pub(crate) fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
+pub fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
     // SAFETY: `flock` is called on a file descriptor this process owns and
     // keeps open for as long as the lock is held.
@@ -465,7 +465,7 @@ pub(crate) fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
 /// processes with; a cross-process guarantee is a Unix property here,
 /// matching the runtime's supported platforms.
 #[cfg(not(unix))]
-pub(crate) fn try_lock_exclusive(_file: &File) -> std::io::Result<()> {
+pub fn try_lock_exclusive(_file: &File) -> std::io::Result<()> {
     Ok(())
 }
 

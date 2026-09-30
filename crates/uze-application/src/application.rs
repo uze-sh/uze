@@ -45,6 +45,7 @@ mod freshness;
 mod inspection_cache;
 mod lifecycle;
 mod maintenance;
+mod managed_region;
 mod marketplace;
 mod marketplace_catalogue;
 mod notifications;
@@ -73,7 +74,7 @@ pub use project_environment::{
     InstallReport, ProjectLockStatus, RemoveProjectPluginReport, UpdateOutcome, UpdateReport,
     UpdateScope,
 };
-pub use uze_core::workspace::WorkspaceKind;
+pub use uze_core::anchor::AnchorKind;
 
 pub struct UzeApplication {
     home: UzeHome,

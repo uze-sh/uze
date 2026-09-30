@@ -20,54 +20,50 @@ pub use application::services::{
 pub use uze_core::{
     Result,
     UzeError,
-    UzeHome,
-    // The authoring surface's check report: vocabulary a read model is
+    UzeHome, // The authoring surface's check report: vocabulary a read model is
+    anchor::anchor_root_or_self,
     // made of, so the CLI answers the same thing a `check` verb asks.
     authoring::{ScaffoldCapabilities, ValidationReport},
     capability::CapabilityKind,
-    client_layout::{
-        ClientLayout, FirstStepsLayout, ManagementLayout, SidebarLayout, WorkspaceLayout,
-    },
-    context::PlannedAction,
-    conversation::Claim,
-    // Which manifest a package-level delivery handed the harness, as the
+    context::PlannedAction, // Which manifest a package-level delivery handed the harness, as the
     // install report names it.
     exposure::PackageEnvelope,
     features::{ALL_FEATURES, Feature},
     hosts::HostEntry,
     integration::{AttachmentState, HarnessDetection, PublicationStatus},
-    landing::Forge,
     naming::{
         FixedResolution, NameCollisionAuthority, NameCollisionRequest, NameCollisionResolution,
         NoNameCollisionAuthority,
-    },
-    notifications::{Chime, WrittenChime},
-    // The one writer for anything UZE owns. The binary writes its own
+    }, // The one writer for anything UZE owns. The binary writes its own
     // update ledger, and doing that with a second atomic-rename of its own
     // is how two conventions for one thing start.
     persistence::write_atomic,
     preference::{
         Autonomy, AxisPlan, KeyPlan, ModelPreference, PlannedValue, PreferenceApplyOutcome,
         PreferenceAxis, PreferencePlan, Preferences, SandboxScope,
-    },
-    prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
-    // What one `setup` did to a harness, as `SetupResult` reports it.
+    }, // What one `setup` did to a harness, as `SetupResult` reports it.
     provisioning::{
         ProcessOutput, ProcessResult, ProcessRunner, ProcessSpec, ProvisionAction, ProvisionStatus,
         ProvisioningResult, SystemProcessRunner,
-    },
-    // What a blocked removal or update carries, so a surface can say which
+    }, // What a blocked removal or update carries, so a surface can say which
     // receipt stood in the way.
     reconciliation::ReconciliationReport,
     router::CompatibilityRoute,
     router::HarnessCapabilities,
-    store::{parse_plugin_marketplace_spec, typed_name},
-    // For a runner of the binary's own that sends a child's output
+    store::{parse_plugin_marketplace_spec, typed_name}, // For a runner of the binary's own that sends a child's output
     // somewhere `ProcessOutput` cannot name: its timeout must still reach
     // the whole tree the way every other child's does.
     subprocess::{wait_with_timeout, with_process_group},
     trust::{AlwaysTrust, NoTrustAuthority, TrustAuthority, TrustOutcome, TrustRequest},
-    workspace::workspace_root_or_self,
+};
+pub use uze_workspace::{
+    client_layout::{
+        ClientLayout, FirstStepsLayout, ManagementLayout, SidebarLayout, WorkspaceLayout,
+    },
+    conversation::Claim,
+    landing::Forge,
+    notifications::{Chime, WrittenChime},
+    prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
     worktree::{CompletionBehavior, isolated_checkout},
 };
 
@@ -109,5 +105,5 @@ pub fn is_isolated_checkout(cwd: &std::path::Path) -> bool {
 /// repository, rooted inside `.worktrees`. An agent's checkout belongs to
 /// the space its repository already has.
 pub fn space_root(cwd: &std::path::Path) -> std::path::PathBuf {
-    workspace_root_or_self(&slot_key(cwd))
+    anchor_root_or_self(&slot_key(cwd))
 }

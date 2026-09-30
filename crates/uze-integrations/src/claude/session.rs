@@ -19,7 +19,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use uze_core::{conversation::SessionId, integration::ObservationContext};
+use uze_core::{integration::ObservationContext, session::SessionId};
 
 const START_FLAG: &str = "--session-id";
 const RESUME_FLAG: &str = "--resume";

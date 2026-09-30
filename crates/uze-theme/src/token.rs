@@ -127,6 +127,19 @@ vocabulary! {
         /// The wash behind a removed line in a diff.
         StateDiffRemoved = "state.diff-removed",
 
+        // ── command groups ─────────────────────────────────────────────
+        // The root help lists commands flat, and each group is told apart
+        // by its hue as well as by the blank line above it. The package
+        // manager takes the theme's accent and the machine its secondary
+        // text, so both follow any theme; the workspace's warm hue is the
+        // one a theme names for itself.
+        /// Commands of the package manager: install, update, market, ….
+        CommandPackages = "command.packages",
+        /// The command that opens the workspace.
+        CommandWorkspace = "command.workspace",
+        /// Commands that look after the machine: setup, config, doctor, ….
+        CommandMachine = "command.machine",
+
         // ── the pane's own 16 ──────────────────────────────────────────
         // A program inside a terminal pane emits indexed colours, and until
         // now they resolved to whatever the *outer* terminal happened to use

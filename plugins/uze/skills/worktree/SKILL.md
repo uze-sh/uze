@@ -1,12 +1,19 @@
 ---
 name: worktree
-description: Works inside the isolated checkout UZE placed you in — knowing where you are, committing on your own branch, giving parallel subagents checkouts of their own, and handing your work to UZE's delivery instead of integrating it yourself. Use when coordinating more than one writing agent, when resuming work in an existing checkout, when UZE reports a paused rebase or failed checks on your branch, or when a conflict or an unknown checkout owner needs resolving.
+description: For an agent `uze workspace` launched, and no other. Works inside the checkout the workspace placed you in — knowing where you are, committing on your own branch, giving parallel subagents checkouts of their own, and handing your work to UZE's delivery instead of integrating it yourself. Use when coordinating more than one writing agent, when resuming work in an existing checkout, when UZE reports a paused rebase or failed checks on your branch, or when a conflict or an unknown checkout owner needs resolving.
 slash: true
 metadata:
   opencode/autoinvoke: "true"
 ---
 
 # UZE — working where UZE placed you
+
+**This applies only to an agent `uze workspace` launched.** An agent a
+person started by hand, in a terminal, an editor or CI, was placed by
+nobody: none of what follows applies to it, and the `uze agent work`
+commands it names refuse with "not an agent UZE launched". If you are not
+sure which you are, `uze agent work list` answers: it lists your subagents'
+checkouts, or refuses. On a refusal, stop reading here.
 
 You do not decide where to work: UZE places every agent it launches before
 you start. Either you were **isolated** — a checkout of your own under
@@ -18,8 +25,9 @@ are relaunched in the new checkout — with whatever their tree had
 uncommitted, if they said to carry it, and possibly with a conversation
 that starts over, because a harness that files a conversation under the
 directory it ran in cannot resume it elsewhere.
-Read the "Concurrent work isolation" section of `AGENTS.md` — it states
-the layout and what happens to finished work.
+When the project declares a policy, the "Concurrent work isolation"
+section of `AGENTS.md` states the layout and what happens to finished
+work; the workspace keeps it in step with `agents.yaml`.
 
 This skill is what no harness does for you: the part of that arrangement
 you have to carry yourself.
@@ -40,9 +48,10 @@ onto your own branch.
 If your working directory is not inside `.worktrees/`, you are in the
 operator's own checkout, on their branch. Commit there, as you go, and
 never switch, reset, stash, clean or move it: the operator's uncommitted
-work is theirs, and so is the branch's name. Nothing below about naming,
-delivery and rebases applies to you — there is nothing to deliver, because
-your commits already land where the operator is. Ask again after the
+work is theirs, and so is the branch's name. Nothing below about delivery
+and rebases applies to you — there is nothing to deliver, because your
+commits already land where the operator is. Naming still does: in the
+operator's checkout it changes only your label, never their branch. Ask again after the
 operator isolates you: the answer changes, and your own working directory
 is where it is written.
 

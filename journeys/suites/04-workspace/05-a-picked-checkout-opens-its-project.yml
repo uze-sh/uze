@@ -30,7 +30,7 @@ scenes:
           set -e
           git -C {project} worktree add -q -b agent/t0pick .worktrees/t0pick HEAD
         say: the project holds a checkout under its isolation directory
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         in: "{home}"
         say: uze opens in the home directory, not in the project
         # A pattern, like every `expect`: the `+` is escaped.

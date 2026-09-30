@@ -9,7 +9,8 @@
 use std::fs;
 
 use uze_application::UzeApplication;
-use uze_core::{UzeHome, manifest, trust::AlwaysTrust, worktree::CompletionBehavior};
+use uze_core::{UzeHome, manifest, trust::AlwaysTrust};
+use uze_workspace::worktree::CompletionBehavior;
 
 /// A real repository, because a manifest declaring links is validated
 /// against what the repository ignores — a bare directory would pass tests
@@ -71,8 +72,8 @@ fn install_sets_the_project_up_and_writes_no_lock_when_there_is_nothing_to_resol
         );
     }
     assert_eq!(
-        manifest::worktree_policy(&root).unwrap(),
-        uze_core::worktree::WorktreePolicy::default(),
+        uze_workspace::declaration::policy(&root).unwrap(),
+        uze_workspace::worktree::WorktreePolicy::default(),
         "showing the options must not declare any of them"
     );
     assert!(
@@ -124,7 +125,9 @@ fn declaring_the_policy_from_the_client_creates_the_manifest_and_states_it_first
             .unwrap()
     );
     assert_eq!(
-        manifest::worktree_policy(&root).unwrap().completion,
+        uze_workspace::declaration::policy(&root)
+            .unwrap()
+            .completion,
         CompletionBehavior::Pr
     );
     assert!(
@@ -161,12 +164,15 @@ fn the_policy_in_force_is_what_the_manifest_says_and_it_reaches_the_projection()
         "worktrees:\n  completion: pr\n",
     )
     .unwrap();
+    // The workspace keeps its section in an AGENTS.md the project has; it
+    // never creates one.
+    fs::write(root.join("AGENTS.md"), "# Project\n").unwrap();
 
-    application.context().reconcile(&root).unwrap();
+    application.workspace().sync_policy_region(&root).unwrap();
 
     let agents_md = fs::read_to_string(root.join("AGENTS.md")).unwrap();
     assert!(
-        agents_md.contains(uze_core::worktree::CompletionBehavior::Pr.instruction_clause()),
+        agents_md.contains(uze_workspace::worktree::CompletionBehavior::Pr.instruction_clause()),
         "the declared behavior must be the one an agent reads: {agents_md}"
     );
 }
@@ -181,11 +187,15 @@ fn a_typo_in_the_manifest_is_named_rather_than_ignored() {
     )
     .unwrap();
 
-    let error = application
-        .context()
-        .inspect(&root)
+    // The section is the workspace's, so the workspace names the typo; the
+    // package manager reads the file without failing over it.
+    let error = uze_workspace::declaration::declared(&root)
         .expect_err("a misspelled field must not be silently dropped");
     assert!(error.to_string().contains("completon"), "{error}");
+    application
+        .context()
+        .inspect(&root)
+        .expect("a workspace section never fails a package command");
 }
 
 /// The pin is the point: a lock that records where bytes came from but not
@@ -666,7 +676,7 @@ fn a_machine_update_of_a_linked_edit_reports_the_package_updated() {
     assert!(
         matches!(
             edited.outcomes.as_slice(),
-            [UpdateOutcome::FollowedLink { checkout, .. }]
+            [UpdateOutcome::FollowedLink { linked_source: checkout, .. }]
                 if checkout.canonicalize().ok() == market.canonicalize().ok()
         ),
         "the Store took the edit in from the working tree, and says so: {edited:?}"
@@ -718,7 +728,7 @@ fn linking_to_an_absent_checkout_clones_the_marketplace_there() {
         assert!(cloned, "{} had nothing to read", checkout.display());
         assert!(
             checkout
-                .join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME)
+                .join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME)
                 .is_file(),
             "the clone holds the marketplace"
         );

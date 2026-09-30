@@ -1,6 +1,8 @@
 //! Harness-agnostic UZE domain, persistence, planning, and integration
-//! contracts. Concrete vendor integrations and presentation layers depend on
-//! this crate; it never depends on them.
+//! contracts: the shared foundation, and the package manager built on it.
+//! Concrete vendor integrations, the workspace (`uze-workspace`) and
+//! presentation layers depend on this crate; it never depends on them, which
+//! is what keeps the package manager usable without the workspace.
 //!
 //! # How to read this crate
 //!
@@ -43,19 +45,6 @@ pub mod error;
 pub mod preference;
 pub mod profile_state;
 
-/// Per-workspace prompt log for agent tabs. Borderline: only the TUI reads
-/// it, which argued for evicting it — but it is UZE-owned state under
-/// `UzeHome`, like [`profile_state`], and the crate that would host it
-/// (`uze-terminal`) depends on nothing here today, which is a property
-/// worth more than this module's tidiness. Left at the root, named, rather
-/// than filed under a concern it does not belong to.
-pub mod prompt_history;
-
-/// What the TUI keeps of its own shape between runs. Here for the same
-/// reason [`prompt_history`] is: UZE-owned state under `UzeHome`, read by
-/// the one client that draws it.
-pub mod client_layout;
-
 /// The operator's `config.toml`. Knows files and sections, never what a
 /// setting means: each section is owned by the module named after it.
 /// Root-level for the same reason [`profile_state`] is: UZE-owned state
@@ -67,20 +56,13 @@ pub mod config;
 /// design system, which this crate does not name.
 pub mod appearance;
 
-/// `[notifications]`: whether the workspace rings when an agent finishes.
-pub mod notifications;
-
-/// `[extensions]`: which of the workspace's built-in extensions are
-/// switched off.
-pub mod extensions;
-
 // Flat public API. Each line also says which concern the module belongs to,
 // which is the second reason for keeping them: the crate root is where a
 // reader looks first.
 pub use capability::{hook, skill};
 pub use delivery::{
-    continuity, delivered_root, engine, exposure, integration, leftovers, persistence,
-    reconciliation, router, state,
+    delivered_root, engine, exposure, integration, leftovers, persistence, reconciliation, router,
+    session, state,
 };
 pub use machine::{
     detection_cache, features, harness_runtime, home, process_cwd, provisioning, shell_path,
@@ -88,8 +70,7 @@ pub use machine::{
 };
 pub use package::{acquisition, authoring, hosts, naming, store, trust};
 pub use project::{
-    checkout, context, conversation, landing, manifest, project_context, project_lock,
-    project_root, record, task, text_region, workspace, worktree,
+    anchor, context, manifest, project_context, project_lock, project_root, record, text_region,
 };
 /// How a record written by another build is read by this one. A leaf crate
 /// rather than a module here, because the terminal runtime holds the

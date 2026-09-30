@@ -11,13 +11,14 @@ use std::cell::OnceCell;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use uze_core::{
-    Result, UzeError, checkout, client_layout,
+use uze_core::{Result, UzeError, anchor, manifest};
+
+use uze_workspace::{
+    checkout, client_layout,
     conversation::{self, Claim},
     landing::{self, Delivered, DeliveryFailure, Forge, Readiness},
-    manifest, prompt_history,
+    prompt_history,
     task::{self, Agent, AgentId, AgentStore, Base, Isolation, WorkState},
-    workspace,
     worktree::{self, BranchVocabulary, CompletionBehavior, NameRefusal, WorktreePolicy},
 };
 
@@ -31,7 +32,7 @@ impl Workspace<'_> {
     /// here, rather than twice at two call sites.
     #[tracing::instrument(name = "workspace.root", skip_all, fields(cwd = %cwd.display()))]
     pub fn root(&self, cwd: &Path) -> PathBuf {
-        workspace::workspace_root_or_self(cwd)
+        anchor::anchor_root_or_self(cwd)
     }
 
     /// The harnesses this installation can recognize, as descriptors.
@@ -111,7 +112,7 @@ impl Workspace<'_> {
             .iter()
             .find(|candidate| candidate.id() == integration)
             .is_some_and(|integration| {
-                uze_core::continuity::refresh(&self.0.home, claim, integration.as_ref())
+                uze_workspace::continuity::refresh(&self.0.home, claim, integration.as_ref())
             })
     }
 
@@ -207,11 +208,23 @@ impl Workspace<'_> {
                 let view = context.as_ref().and_then(|(primary, policy)| {
                     self.placed_view(primary, agent.id.as_str(), policy)
                 });
+                // Before the agent starts, and only in the primary checkout:
+                // the agent reads the region the project declares now. A pane
+                // standing in a slot is not the primary, and a slot's file is
+                // its branch's.
+                let in_the_primary = context
+                    .as_ref()
+                    .is_some_and(|(primary, _)| canonical(primary) == root);
+                let warnings = if in_the_primary {
+                    self.policy_region_warnings(&root)
+                } else {
+                    Vec::new()
+                };
                 Ok(AgentPlacement {
                     project: root.clone(),
                     cwd: root,
                     placement: Placement::InPlace { id: agent.id },
-                    warnings: Vec::new(),
+                    warnings,
                     view,
                 })
             }
@@ -626,7 +639,7 @@ impl Workspace<'_> {
     /// participates, so the same repository resolves identically everywhere.
     /// A malformed manifest is an error rather than a silent default.
     pub(super) fn policy(&self, primary: &Path) -> Result<WorktreePolicy> {
-        manifest::worktree_policy(primary)
+        uze_workspace::declaration::policy(primary)
     }
 
     /// The row a placement answers with: the agent just recorded, read
@@ -796,7 +809,7 @@ impl Workspace<'_> {
             .repository(cwd)
             .map(|repository| repository.primary)
             .ok_or_else(|| UzeError::MissingPath(cwd.to_path_buf()))?;
-        manifest::set_completion(&primary, behavior)
+        uze_workspace::declaration::set_completion(&primary, behavior)
     }
 
     #[tracing::instrument(name = "workspace.delivery_policy", skip_all, fields(cwd = %cwd.display()))]

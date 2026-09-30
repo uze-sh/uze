@@ -11,6 +11,13 @@
 //! [`edit`], which patches the document in place so comments and
 //! formatting survive.
 //!
+//! One file, sections by owner. This module owns the file, its scaffold and
+//! the list of keys its root may hold, and reads the package manager's
+//! section (`marketplaces`). The workspace's sections ([`Section`]) are
+//! carried unread and parsed by the workspace, so a mistake in one is
+//! reported by the part of UZE that uses it and never stops a package
+//! command that does not.
+//!
 //! [`project_lock`]: crate::project_lock
 
 pub mod edit;
@@ -22,12 +29,9 @@ use std::{
 };
 
 use noyalib::{DuplicateKeyPolicy, ParserConfig, compat::serde_yaml, from_str_with_config};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::{
-    Result, UzeError,
-    worktree::{CompletionBehavior, WorktreePolicy},
-};
+use crate::{Result, UzeError};
 
 pub const MANIFEST_FILE_NAME: &str = "agents.yaml";
 
@@ -41,28 +45,71 @@ pub const BUILT_IN_MARKETPLACE: &str = "uze-official";
 /// The manifest as declared. Every field is optional: a project that
 /// declares only an isolation policy is as valid as one that declares only
 /// plugins.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktrees: Option<WorktreePolicy>,
+    worktrees: Option<serde_yaml::Value>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub marketplaces: BTreeMap<String, DeclaredMarketplace>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub artifacts: Option<DeclaredArtifacts>,
+    artifacts: Option<serde_yaml::Value>,
 }
 
-/// Where the project keeps what describes it — its architecture diagrams,
-/// today. A directory and nothing else: what each file in it *is* is read
-/// off the file, so there is no second place for that to go stale in.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct DeclaredArtifacts {
-    /// Relative to the project root, and inside it.
-    pub path: PathBuf,
+/// A root section of `agents.yaml` this module carries but does not read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Section {
+    /// How the workspace isolates agents and delivers their work.
+    Worktrees,
+    /// Where the project keeps its architecture artifacts.
+    Artifacts,
+}
+
+impl Section {
+    pub const ALL: [Section; 2] = [Section::Worktrees, Section::Artifacts];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Section::Worktrees => "worktrees",
+            Section::Artifacts => "artifacts",
+        }
+    }
 }
 
 impl ProjectManifest {
+    /// Whether the project wrote the section at all, a question that needs no
+    /// parsing and that a reader of only the package manager's section may
+    /// ask.
+    pub fn declares(&self, section: Section) -> bool {
+        self.raw(section).is_some()
+    }
+
+    /// The section as its owner's type, or `None` when it is not declared. A
+    /// section that does not fit the type is a malformed manifest, reported
+    /// with the section's key.
+    pub fn section<T: DeserializeOwned + 'static>(
+        &self,
+        section: Section,
+        path: &Path,
+    ) -> Result<Option<T>> {
+        let Some(value) = self.raw(section) else {
+            return Ok(None);
+        };
+        serde_yaml::from_value(value.clone())
+            .map(Some)
+            .map_err(|error| UzeError::MalformedManifest {
+                path: path.to_path_buf(),
+                reason: explain(&format!("{}: {error}", section.key())),
+            })
+    }
+
+    fn raw(&self, section: Section) -> Option<&serde_yaml::Value> {
+        match section {
+            Section::Worktrees => self.worktrees.as_ref(),
+            Section::Artifacts => self.artifacts.as_ref(),
+        }
+    }
+
     /// Every plugin the project declares, with the marketplace it comes
     /// from — the `plugin@marketplace` pair ADR-036 makes the identity,
     /// which this file spells structurally rather than by repeating the
@@ -126,61 +173,20 @@ pub fn load(root: &Path) -> Result<Option<ProjectManifest>> {
         path: path.clone(),
         reason: format!("{MANIFEST_FILE_NAME} is not valid UTF-8"),
     })?;
-    let manifest = parse(&text, &path)?;
-    if let Some(policy) = &manifest.worktrees {
-        reject_unignored_links(root, &path, policy)?;
-    }
-    Ok(Some(manifest))
+    parse(&text, &path).map(Some)
 }
 
-/// A linked file must be ignored by the repository: a tracked file linked
-/// into a checkout would land in the agent's commits as a symlink. Asked of
-/// Git only when a manifest declares links, so one that declares none costs
-/// no subprocess to read.
-fn reject_unignored_links(root: &Path, path: &Path, policy: &WorktreePolicy) -> Result<()> {
-    for link in &policy.link {
-        let spelled = link.to_string_lossy();
-        let answer =
-            uze_git::read(root, &["check-ignore", "--quiet", "--", &spelled]).map_err(|error| {
-                UzeError::MalformedManifest {
-                    path: path.to_path_buf(),
-                    reason: format!("`worktrees.link` names `{spelled}`, but {error}"),
-                }
-            })?;
-        match answer.code {
-            Some(0) => {}
-            Some(1) => {
-                return Err(UzeError::MalformedManifest {
-                    path: path.to_path_buf(),
-                    reason: format!(
-                        "`worktrees.link` names `{spelled}`, which the repository does not \
-                         ignore; a linked file must be ignored, or it would be committed as a \
-                         symlink from an agent's checkout"
-                    ),
-                });
-            }
-            _ => {
-                return Err(UzeError::MalformedManifest {
-                    path: path.to_path_buf(),
-                    reason: format!(
-                        "`worktrees.link` names `{spelled}`, but this directory is not a Git \
-                         repository that could ignore it"
-                    ),
-                });
-            }
-        }
+/// One of the sections this module carries unread, parsed as its owner's
+/// type; `None` when there is no manifest or it does not declare the
+/// section.
+pub fn load_section<T: DeserializeOwned + 'static>(
+    root: &Path,
+    section: Section,
+) -> Result<Option<T>> {
+    match load(root)? {
+        Some(manifest) => manifest.section(section, &manifest_path_for(root)),
+        None => Ok(None),
     }
-    Ok(())
-}
-
-/// The policy in force for a project: what the manifest declares, or the
-/// built-in default. No machine-scoped setting participates — an
-/// undeclared policy resolves the same way on every machine, so the text
-/// projected into `AGENTS.md` does not depend on who ran the command.
-pub fn worktree_policy(root: &Path) -> Result<WorktreePolicy> {
-    Ok(load(root)?
-        .and_then(|manifest| manifest.worktrees)
-        .unwrap_or_default())
 }
 
 /// The file UZE writes when it creates the manifest itself: every key the
@@ -188,19 +194,24 @@ pub fn worktree_policy(root: &Path) -> Result<WorktreePolicy> {
 /// it, so the vocabulary is discoverable by opening the file rather than by
 /// reading documentation.
 ///
-/// Only `completion` is live. Everything else is commented, because a value
-/// written here would be a decision UZE made on the project's behalf —
-/// uncommenting a line is what changes behavior, never the file appearing.
-const SCAFFOLD: &str = r"# This project's agent environment. UZE reads this file and writes
+/// Nothing is live. Every value is commented, because a value written here
+/// would be a decision UZE made on the project's behalf — uncommenting a line
+/// is what changes behavior, never the file appearing. The `worktrees:` key
+/// itself stays, empty: an empty key declares nothing, and it is where the
+/// workspace writes a choice, beside the comments that explain it.
+pub const SCAFFOLD: &str = r"# This project's agent environment. UZE reads this file and writes
 # agents.lock from it — edit this one; the lock regenerates.
 #
 # Every key UZE understands is below. A commented line carries the default
 # already in force: uncomment it to make the choice the project's own.
 
+# How the workspace (`uze workspace`) isolates the agents it launches and
+# what it does with their finished work. Nothing here is in force until you
+# choose it: a project that only uses plugins never needs this section.
 worktrees:
   # handoff | merge | pr — what UZE does with an agent's finished branch.
   # `handoff` leaves it for you to integrate.
-  completion: handoff
+  # completion: handoff
 
   # in-place | isolated — where an agent launched here starts. In place,
   # it shares the project's own checkout and is isolated when somebody
@@ -307,22 +318,18 @@ fn open_or_scaffold(root: &Path) -> Result<(edit::ManifestDocument, bool)> {
     Ok((document, true))
 }
 
-/// Declares the completion behavior, creating the manifest when the project
-/// has none. This is the other act that declares something — the client's
-/// own — so it creates the file for the same reason `install` does, and
-/// reports whether it had to, since a caller showing a person the
-/// consequence of their click needs to say "this creates a tracked file"
-/// before it happens rather than after.
-pub fn set_completion(root: &Path, behavior: CompletionBehavior) -> Result<bool> {
+/// Writes one scalar into one of the sections this module carries, creating
+/// the manifest when the project has none, and reports whether it had to. The
+/// owner of the section decides what the value means and re-reads it; this
+/// only patches the document in place, so the comments around it survive.
+pub fn set_scalar(root: &Path, section: Section, key: &str, value: &str) -> Result<bool> {
     let (mut document, created) = open_or_scaffold(root)?;
     document.upsert(
-        "worktrees",
-        "completion",
-        &serde_yaml::Value::String(behavior.abi_name().to_owned()),
+        section.key(),
+        key,
+        &serde_yaml::Value::String(value.to_owned()),
     )?;
     document.save()?;
-    // Re-read through the typed path, the same guard `declare_plugin` has:
-    // a write the schema would reject is a bug here, not on a later command.
     load(root)?;
     Ok(created)
 }
@@ -516,34 +523,12 @@ fn validate(manifest: &ProjectManifest, path: &Path) -> Result<()> {
             }
         }
     }
-    if let Some(policy) = &manifest.worktrees
-        && policy.slots == Some(0)
-    {
-        // Zero is honored, and honoring it refuses every checkout: the cap
-        // is compared with `>=`, so the first task fails with "cap
-        // reached" and nothing says the manifest is why.
-        return Err(malformed(
-            "`worktrees.slots` is 0, which would refuse every checkout there is; leave it \
-             undeclared for no cap at all, or give it at least 1"
-                .to_owned(),
-        ));
-    }
-    if let Some(policy) = &manifest.worktrees
-        && let Some((link, why)) = policy.misplaced_links().into_iter().next()
-    {
-        return Err(malformed(format!(
-            "`worktrees.link` names `{}`, which is {why}; a link is a relative path inside the \
-             repository",
-            link.display()
-        )));
-    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::worktree::{AgentPlacementDefault, CompletionBehavior};
 
     fn parsed(text: &str) -> Result<ProjectManifest> {
         parse(text, Path::new("/p/agents.yaml"))
@@ -552,16 +537,6 @@ mod tests {
     #[test]
     fn an_empty_manifest_declares_nothing() {
         assert_eq!(parsed("").unwrap(), ProjectManifest::default());
-    }
-
-    #[test]
-    fn a_policy_only_manifest_is_valid() {
-        let manifest = parsed("worktrees:\n  completion: pr\n").unwrap();
-        assert_eq!(
-            manifest.worktrees.unwrap().completion,
-            CompletionBehavior::Pr
-        );
-        assert!(manifest.marketplaces.is_empty());
     }
 
     #[test]
@@ -703,12 +678,6 @@ mod tests {
     }
 
     #[test]
-    fn a_misspelled_field_is_named_rather_than_ignored() {
-        let error = parsed("worktrees:\n  completon: pr\n").unwrap_err();
-        assert!(error.to_string().contains("completon"), "{error}");
-    }
-
-    #[test]
     fn a_schema_version_is_refused_and_says_why_there_is_none() {
         let error = parsed("version: 1\nworktrees:\n  completion: pr\n").unwrap_err();
         let message = error.to_string();
@@ -717,271 +686,6 @@ mod tests {
             !message.contains("plugin versions"),
             "the plugin answer must not be given to the schema question: {message}"
         );
-    }
-
-    #[test]
-    fn a_command_and_a_list_of_commands_are_both_accepted() {
-        let one = parsed("worktrees:\n  gate: cargo test\n").unwrap();
-        assert_eq!(one.worktrees.unwrap().gate, vec!["cargo test".to_owned()]);
-        let many = parsed("worktrees:\n  gate:\n    - cargo test\n    - cargo clippy\n").unwrap();
-        assert_eq!(many.worktrees.unwrap().gate.len(), 2);
-    }
-
-    #[test]
-    fn declaring_the_policy_creates_the_manifest_and_says_that_it_did() {
-        let root = uze_testkit::temp::scratch("manifest-set-completion");
-        assert!(
-            set_completion(&root, CompletionBehavior::Pr).unwrap(),
-            "the first call creates the file, and the caller is told so"
-        );
-        assert_eq!(
-            worktree_policy(&root).unwrap().completion,
-            CompletionBehavior::Pr
-        );
-
-        assert!(
-            !set_completion(&root, CompletionBehavior::Merge).unwrap(),
-            "the second call changes a file that already exists"
-        );
-        assert_eq!(
-            worktree_policy(&root).unwrap().completion,
-            CompletionBehavior::Merge
-        );
-    }
-
-    /// The scaffold's own commentary is what teaches the choices, so a
-    /// click that changes one must not take the explanation with it.
-    #[test]
-    fn declaring_the_policy_keeps_the_comment_that_explains_it() {
-        let root = uze_testkit::temp::scratch("manifest-set-completion-comments");
-        set_completion(&root, CompletionBehavior::Pr).unwrap();
-        let written = fs::read_to_string(manifest_path_for(&root)).unwrap();
-        assert!(written.contains("completion: pr"), "{written}");
-        assert!(written.contains("handoff | merge | pr"), "{written}");
-        assert!(written.contains("# slots: 3"), "{written}");
-    }
-
-    #[test]
-    fn declaring_the_policy_into_a_manifest_that_has_no_policy_block_adds_one() {
-        let root = uze_testkit::temp::scratch("manifest-set-completion-marketless");
-        let authored = "# ours\nmarketplaces:\n  ai:\n    path: ../ai\n    plugins: [flow]\n";
-        fs::write(manifest_path_for(&root), authored).unwrap();
-
-        assert!(
-            !set_completion(&root, CompletionBehavior::Merge).unwrap(),
-            "a manifest that exists is not created"
-        );
-        let manifest = load(&root).unwrap().unwrap();
-        assert_eq!(
-            manifest.worktrees.unwrap().completion,
-            CompletionBehavior::Merge
-        );
-        let written = fs::read_to_string(manifest_path_for(&root)).unwrap();
-        assert!(written.contains("# ours"), "{written}");
-        assert_eq!(manifest.marketplaces["ai"].plugins, vec!["flow".to_owned()]);
-    }
-
-    #[test]
-    fn a_cap_of_zero_is_refused_rather_than_honored() {
-        let error = parsed("worktrees:\n  slots: 0\n").unwrap_err();
-        let message = error.to_string();
-        assert!(message.contains("refuse every checkout"), "{message}");
-        assert!(parsed("worktrees:\n  slots: 1\n").is_ok());
-        assert!(parsed("worktrees:\n  completion: pr\n").is_ok());
-    }
-
-    #[test]
-    fn a_link_escaping_the_repository_is_rejected() {
-        let error = parsed("worktrees:\n  link: [../outside]\n").unwrap_err();
-        assert!(error.to_string().contains("worktrees.link"), "{error}");
-    }
-
-    #[test]
-    fn a_link_to_a_tracked_file_is_rejected_and_an_ignored_one_loads() {
-        let repository = uze_testkit::git::Repository::new("manifest-links");
-        repository.commit_file(".gitignore", ".env\n");
-        let root = repository.root();
-
-        fs::write(
-            root.join(MANIFEST_FILE_NAME),
-            "worktrees:\n  link: [.env]\n",
-        )
-        .unwrap();
-        let manifest = load(root).unwrap().unwrap();
-        assert_eq!(
-            manifest.worktrees.unwrap().link,
-            vec![PathBuf::from(".env")]
-        );
-
-        fs::write(
-            root.join(MANIFEST_FILE_NAME),
-            "worktrees:\n  link: [README.md]\n",
-        )
-        .unwrap();
-        let error = load(root).unwrap_err();
-        let UzeError::MalformedManifest { reason, .. } = error else {
-            panic!("a tracked link must be a malformed manifest");
-        };
-        assert!(
-            reason.contains("README.md") && reason.contains("ignore"),
-            "{reason}"
-        );
-    }
-
-    #[test]
-    fn an_unknown_key_inside_the_policy_block_is_refused_by_name() {
-        let error =
-            parsed("worktrees:\n  completion: merge\n  directory: ./.worktrees\n").unwrap_err();
-        assert!(error.to_string().contains("directory"), "{error}");
-    }
-
-    #[test]
-    fn the_policy_round_trips_with_every_field() {
-        let manifest = parsed(
-            "worktrees:\n  default: isolated\n  target: develop\n  completion: pr\n  \
-             link: [.env, .env.local]\n  setup: pnpm install\n  gate:\n    - cargo test\n    \
-             - cargo clippy\n  slots: 3\n",
-        )
-        .unwrap();
-        let policy = manifest.worktrees.unwrap();
-        assert_eq!(policy.default, AgentPlacementDefault::Isolated);
-        assert_eq!(policy.target.as_deref(), Some("develop"));
-        assert_eq!(policy.completion, CompletionBehavior::Pr);
-        assert_eq!(policy.link.len(), 2);
-        assert_eq!(policy.setup, vec!["pnpm install".to_owned()]);
-        assert_eq!(
-            policy.gate,
-            vec!["cargo test".to_owned(), "cargo clippy".to_owned()],
-            "a list is what makes a failure say which step failed"
-        );
-        assert_eq!(policy.slots, Some(3));
-    }
-
-    /// Where an agent starts is the project's answer, not a person's, and
-    /// an undeclared one is the answer UZE has always given: in the
-    /// project's own root, isolated when somebody asks. A value nobody
-    /// can read is refused by name with the rest of the policy rather
-    /// than quietly falling back to that default — a project that meant
-    /// `isolated` and typed it wrong would otherwise put every agent in
-    /// the operator's own tree.
-    #[test]
-    fn where_an_agent_starts_is_declared_defaulted_or_refused_by_name() {
-        assert_eq!(
-            parsed("worktrees:\n  completion: handoff\n")
-                .unwrap()
-                .worktrees
-                .unwrap()
-                .default,
-            AgentPlacementDefault::InPlace,
-            "undeclared is what was already in force"
-        );
-        assert_eq!(
-            parsed("worktrees:\n  default: in-place\n")
-                .unwrap()
-                .worktrees
-                .unwrap()
-                .default,
-            AgentPlacementDefault::InPlace
-        );
-
-        let reason = parsed("worktrees:\n  default: worktree\n")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            reason.contains("worktree"),
-            "names the value it read: {reason}"
-        );
-        assert!(
-            reason.contains("in-place") && reason.contains("isolated"),
-            "the refusal names both answers it would have taken: {reason}"
-        );
-    }
-
-    #[test]
-    fn ensure_exists_creates_a_commented_default_and_is_idempotent() {
-        let root = uze_testkit::temp::scratch("manifest-ensure");
-        assert!(ensure_exists(&root).unwrap(), "the first call creates it");
-        let first = fs::read_to_string(manifest_path_for(&root)).unwrap();
-        assert!(first.contains("completion: handoff"), "{first}");
-        assert!(
-            first.contains("handoff | merge | pr"),
-            "the choices must be discoverable by opening the file: {first}"
-        );
-        assert_eq!(
-            worktree_policy(&root).unwrap(),
-            WorktreePolicy::default(),
-            "everything but the live line is commented, so a created manifest declares exactly \
-             what was already in force"
-        );
-
-        assert!(
-            !ensure_exists(&root).unwrap(),
-            "the second call changes nothing"
-        );
-        assert_eq!(fs::read_to_string(manifest_path_for(&root)).unwrap(), first);
-    }
-
-    /// The scaffold is documentation that must not drift from the schema.
-    /// Each struct literal is exhaustive, so a field added to the manifest
-    /// has to be named here, and this then asks the created file to offer
-    /// it — a new knob nobody can discover fails the build.
-    #[test]
-    fn a_created_manifest_offers_every_field_the_schema_accepts() {
-        // The keys a shape declares, as serde spells them. Only column
-        // zero: an entry's *name* inside a mapping is the author's word,
-        // not a key the schema defines.
-        fn declared_keys(shape: &impl Serialize) -> Vec<String> {
-            serde_yaml::to_string(shape)
-                .unwrap()
-                .lines()
-                .filter(|line| !line.starts_with(char::is_whitespace))
-                .filter_map(|line| line.split_once(':').map(|(key, _)| key.to_owned()))
-                .collect()
-        }
-
-        let policy = WorktreePolicy {
-            default: Default::default(),
-            branch: crate::worktree::BranchVocabulary::Unset,
-            target: Some("main".to_owned()),
-            completion: CompletionBehavior::Handoff,
-            link: vec![PathBuf::from(".env")],
-            setup: vec!["pnpm install".to_owned()],
-            gate: vec!["pnpm test".to_owned()],
-            slots: Some(3),
-            spare: Some(2),
-            idle_days: Some(3),
-        };
-        let marketplace = DeclaredMarketplace {
-            git: Some("https://example.invalid/ai".to_owned()),
-            path: Some(PathBuf::from("../ai")),
-            r#ref: Some("main".to_owned()),
-            subdirectory: Some(PathBuf::from("plugins")),
-            plugins: vec!["flow".to_owned()],
-        };
-        let artifacts = DeclaredArtifacts {
-            path: PathBuf::from("docs/architecture"),
-        };
-        let manifest = ProjectManifest {
-            worktrees: Some(policy.clone()),
-            marketplaces: BTreeMap::from([("ai".to_owned(), marketplace.clone())]),
-            artifacts: Some(artifacts.clone()),
-        };
-
-        let keys = [
-            declared_keys(&manifest),
-            declared_keys(&policy),
-            declared_keys(&marketplace),
-            declared_keys(&artifacts),
-        ]
-        .concat();
-        assert!(keys.len() > 10, "the shapes emitted nothing to check");
-        for key in keys {
-            assert!(
-                SCAFFOLD.contains(&format!("{key}:")),
-                "the created manifest never mentions `{key}`, so nothing tells a reader it \
-                 exists:\n{SCAFFOLD}"
-            );
-        }
     }
 
     #[test]
@@ -1131,13 +835,59 @@ mod tests {
     }
 
     #[test]
-    fn an_undeclared_policy_is_the_built_in_default() {
-        let directory = std::env::temp_dir().join(format!("uze-manifest-{}", std::process::id()));
-        fs::create_dir_all(&directory).unwrap();
-        assert_eq!(
-            worktree_policy(&directory).unwrap(),
-            WorktreePolicy::default()
+    fn ensure_exists_creates_the_scaffold_once() {
+        let root = uze_testkit::temp::scratch("manifest-ensure");
+        assert!(ensure_exists(&root).unwrap(), "the first call creates it");
+        let first = fs::read_to_string(manifest_path_for(&root)).unwrap();
+        assert_eq!(first, SCAFFOLD);
+        assert!(
+            !ensure_exists(&root).unwrap(),
+            "the second call changes nothing"
         );
-        fs::remove_dir_all(&directory).ok();
+        assert_eq!(fs::read_to_string(manifest_path_for(&root)).unwrap(), first);
+    }
+
+    /// The scaffold is documentation that must not drift from the schema.
+    /// Each struct literal is exhaustive, so a field added to the package
+    /// manager's section has to be named here, and this then asks the
+    /// created file to offer it. The workspace asks the same of its own
+    /// sections.
+    #[test]
+    fn a_created_manifest_offers_every_key_this_module_reads() {
+        let marketplace = DeclaredMarketplace {
+            git: Some("https://example.invalid/ai".to_owned()),
+            path: Some(PathBuf::from("../ai")),
+            r#ref: Some("main".to_owned()),
+            subdirectory: Some(PathBuf::from("plugins")),
+            plugins: vec!["flow".to_owned()],
+        };
+        let keys: Vec<String> = serde_yaml::to_string(&marketplace)
+            .unwrap()
+            .lines()
+            .filter(|line| !line.starts_with(char::is_whitespace))
+            .filter_map(|line| line.split_once(':').map(|(key, _)| key.to_owned()))
+            .chain(["marketplaces".to_owned()])
+            .chain(Section::ALL.iter().map(|section| section.key().to_owned()))
+            .collect();
+        assert!(keys.len() > 5, "the shapes emitted nothing to check");
+        for key in keys {
+            assert!(
+                SCAFFOLD.contains(&format!("{key}:")),
+                "the created manifest never mentions `{key}`:\n{SCAFFOLD}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_section_this_module_does_not_read_is_carried_whatever_it_holds() {
+        let manifest = parsed("worktrees:\n  completon: pr\n  slots: 0\n").unwrap();
+        assert!(manifest.declares(Section::Worktrees));
+        assert!(!manifest.declares(Section::Artifacts));
+    }
+
+    #[test]
+    fn a_misspelled_root_key_is_still_refused() {
+        let error = parsed("worktree:\n  completion: pr\n").unwrap_err();
+        assert!(error.to_string().contains("worktree"), "{error}");
     }
 }

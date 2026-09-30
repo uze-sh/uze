@@ -88,7 +88,7 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
         ResourceDelivery::AbsentFromProject => (State::Neutral, "none in project"),
         ResourceDelivery::Undelivered(reason) => match reason {
             UndeliveredReason::HarnessAbsent => (State::Error, "harness not installed"),
-            UndeliveredReason::ShimShadowed => (State::Warning, "shim not on PATH"),
+            UndeliveredReason::ShimMissing => (State::Warning, "run uze setup"),
             UndeliveredReason::Bridge(_) => (State::Warning, "not loaded"),
             UndeliveredReason::Unsupported => (State::Error, "not supported"),
         },
@@ -456,12 +456,12 @@ mod tests {
         // "unavailable"/"not supported".
         let support = support(
             true,
-            ResourceDelivery::Undelivered(UndeliveredReason::ShimShadowed),
-            ResourceDelivery::Undelivered(UndeliveredReason::ShimShadowed),
+            ResourceDelivery::Undelivered(UndeliveredReason::ShimMissing),
+            ResourceDelivery::Undelivered(UndeliveredReason::ShimMissing),
         );
-        assert_eq!(support.instructions_label, "shim not on PATH");
+        assert_eq!(support.instructions_label, "run uze setup");
         assert!(matches!(support.instructions, State::Warning));
-        assert_eq!(support.project_skills_label, "shim not on PATH");
+        assert_eq!(support.project_skills_label, "run uze setup");
         assert!(matches!(support.project_skills, State::Warning));
     }
 

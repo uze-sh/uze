@@ -32,7 +32,7 @@ use uze_core::{
 use super::{
     ContextMechanism, RuntimeProjection, UzeApplication,
     context::{INSTRUCTION_BRIDGE_CONTENT, INSTRUCTION_BRIDGE_IDENTITY},
-    services::Workspace,
+    services::Context,
 };
 
 /// The mechanism actually carrying one portable resource into one harness.
@@ -62,10 +62,9 @@ pub enum ResourceDelivery {
 pub enum UndeliveredReason {
     /// The harness is not installed on this machine.
     HarnessAbsent,
-    /// A real harness binary resolves ahead of UZE's shim on this
-    /// process's `PATH`, so a launch from here bypasses the projection.
-    /// An environment fact, not a defect in the harness or the project.
-    ShimShadowed,
+    /// The workspace would carry it through a shim `uze setup` has not
+    /// created yet.
+    ShimMissing,
     /// The harness's persistent bridge file is not in a usable state.
     Bridge(AttachmentState),
     /// No delivery strategy exists for this harness and this resource.
@@ -91,7 +90,7 @@ pub struct AgentContextStatus {
     pub project_agents: ResourceDelivery,
 }
 
-impl Workspace<'_> {
+impl Context<'_> {
     /// Resolves how every registered harness receives `cwd`'s project
     /// context. `cwd` is a real working directory — an agent pane's own,
     /// typically — never a pre-resolved root: resolving it here is the
@@ -107,7 +106,7 @@ impl Workspace<'_> {
             .collect()
     }
 
-    /// The single-harness slice of [`Workspace::agent_context`] — what
+    /// The single-harness slice of [`Context::agent_context`] — what
     /// an agent pane running one known harness needs, without paying for
     /// the others.
     #[tracing::instrument(name = "workspace.agent_context_for", skip_all, fields(integration_id = %integration_id, cwd = %cwd.display()), err)]
@@ -198,7 +197,7 @@ fn instruction_delivery(
         (ContextMechanism::Native, _) => ResourceDelivery::Native,
         (ContextMechanism::RuntimeShim, _) => ResourceDelivery::Projected,
         (
-            ContextMechanism::Bridge | ContextMechanism::ShimShadowed,
+            ContextMechanism::Bridge | ContextMechanism::ShimMissing,
             ContextDelivery::Bridge { file_name },
         ) => {
             let state = text_region::inspect(
@@ -209,8 +208,8 @@ fn instruction_delivery(
             .state;
             if state == AttachmentState::Matched {
                 ResourceDelivery::Bridged
-            } else if mechanism == ContextMechanism::ShimShadowed {
-                ResourceDelivery::Undelivered(UndeliveredReason::ShimShadowed)
+            } else if mechanism == ContextMechanism::ShimMissing {
+                ResourceDelivery::Undelivered(UndeliveredReason::ShimMissing)
             } else {
                 ResourceDelivery::Undelivered(UndeliveredReason::Bridge(state))
             }
@@ -235,8 +234,8 @@ fn project_resource_delivery(
     match ContextMechanism::for_project_resource(integration, resource, projection) {
         ContextMechanism::Native => ResourceDelivery::Native,
         ContextMechanism::RuntimeShim => ResourceDelivery::Projected,
-        ContextMechanism::ShimShadowed => {
-            ResourceDelivery::Undelivered(UndeliveredReason::ShimShadowed)
+        ContextMechanism::ShimMissing => {
+            ResourceDelivery::Undelivered(UndeliveredReason::ShimMissing)
         }
         ContextMechanism::Bridge | ContextMechanism::Unsupported => {
             ResourceDelivery::Undelivered(UndeliveredReason::Unsupported)

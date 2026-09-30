@@ -1,0 +1,26 @@
+[package]
+name = "uze-workspace"
+version.workspace = true
+edition = "2024"
+rust-version = "1.97"
+description = "The workspace's domain: agents UZE launches, their checkouts, their conversations and how their work lands"
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+# The package manager and the shared foundation. This crate depends on it
+# and `uze-core` never depends on this one: the package manager works
+# without the workspace because the compiler says it cannot reach it.
+uze-core = { path = "../uze-core" }
+uze-git = { path = "../uze-git" }
+uze-document = { path = "../uze-document" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tracing = "0.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+uze-testkit = { path = "../uze-testkit" }

@@ -266,7 +266,7 @@ fn spawn_support_refresh(home: &UzeHome, key: SupportKey, sender: mpsc::Sender<S
         let support = answered_or(
             || {
                 super::tui_application(support_home).ok().and_then(|app| {
-                    let context = app.workspace().agent_context_for(&key.0, &key.1).ok()?;
+                    let context = app.context().agent_context_for(&key.0, &key.1).ok()?;
                     let health = app.health().harness(&key.0).ok()?;
                     let profiles = app.profiles().list().unwrap_or_default();
                     let active_profile = profiles.iter().find(|profile| profile.active);
@@ -315,6 +315,83 @@ fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAgent>) {
                 },
             );
         }
+    });
+}
+
+/// What keeping one project's `AGENTS.md` in step found that the operator
+/// should hear: a workspace section edited by hand, which is left as it is,
+/// or one that could not be written. Nothing is sent when it is in step.
+struct PolicyRegionResolution {
+    file: PathBuf,
+    problem: String,
+    drifted: bool,
+}
+
+/// Keeps the workspace's region of each directory's `AGENTS.md` in step
+/// with what its project declares, in the primary checkout only. Off the
+/// frame like every other repository touch: it reads `agents.yaml`, may ask
+/// Git about linked files, and may write the file. A sync with nothing new
+/// writes nothing, so asking on the refresh clock is how an edit to
+/// `agents.yaml` reaches the file without a command.
+fn spawn_policy_region_sync(
+    home: &UzeHome,
+    directories: Vec<PathBuf>,
+    sender: mpsc::Sender<PolicyRegionResolution>,
+) {
+    if directories.is_empty() {
+        return;
+    }
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::debug_span!("tui.policy_region_sync").entered();
+        let Ok(app) = tui_application(home) else {
+            return;
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for directory in directories {
+            let resolution = match app.workspace().sync_policy_region(&directory) {
+                Ok(Some(region)) if !seen.insert(region.file.clone()) => continue,
+                Ok(Some(region)) => match region.state {
+                    uze_application::AttachmentState::Drifted => PolicyRegionResolution {
+                        file: region.file,
+                        problem: region.reason,
+                        drifted: true,
+                    },
+                    uze_application::AttachmentState::Blocked => PolicyRegionResolution {
+                        file: region.file,
+                        problem: region.reason,
+                        drifted: false,
+                    },
+                    _ => continue,
+                },
+                Ok(None) => continue,
+                Err(error) => PolicyRegionResolution {
+                    file: directory,
+                    problem: error.to_string(),
+                    drifted: false,
+                },
+            };
+            let _ = sender.send(resolution);
+        }
+    });
+}
+
+/// Asks the registry, once, which names a harness launched through a shim
+/// runs under. Off the frame: composing the application reads the machine.
+fn spawn_launcher_names(home: &UzeHome, sender: mpsc::Sender<Vec<String>>) {
+    let home = home.clone();
+    thread::spawn(move || {
+        let names = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| app.workspace().launcher_names())
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(names);
     });
 }
 
@@ -2632,6 +2709,10 @@ struct Channels {
     spec_summaries: Answers<SpecSummaryResolution>,
     /// The code surface's map, measured once per checkout it is opened on.
     code_measures: Answers<MeasureResolution>,
+    /// Keeping each project's `AGENTS.md` workspace section in step.
+    policy_regions: Answers<PolicyRegionResolution>,
+    /// The names a harness launched through a shim runs under, asked once.
+    launchers: Answers<Vec<String>>,
 }
 
 /// The half of [`WorkspaceModel`] that outlives one attach. Everything
@@ -2759,6 +2840,17 @@ struct Remembered {
     /// slot, because two things finishing at once is the ordinary case and
     /// the notice's single slot loses one of them.
     toasts: VecDeque<RaisedToast>,
+    /// The `AGENTS.md` files already reported as holding a workspace section
+    /// edited by hand, so the report is made once a session rather than on
+    /// every refresh.
+    policy_region_reported: BTreeSet<PathBuf>,
+    /// The names a harness launched through the workspace's shim runs
+    /// under, once the registry has answered, and whether it was asked.
+    launchers: Option<Vec<String>>,
+    launchers_asked: bool,
+    /// Panes already told their harness bypassed the shim, so it is said
+    /// once rather than on every status tick.
+    bypass_reported: BTreeSet<uze_terminal::PaneId>,
     /// The checkout each open pane was first seen in — a pane's slot does
     /// not change when it `cd`s. A directory fact, and the only thing it
     /// answers is slot occupancy; which agent a pane is for is what the
@@ -3209,6 +3301,7 @@ impl WorkspaceModel {
             }
             ClientEvent::SessionUpdated { session } => {
                 self.session = Some(session);
+                self.note_launcher_bypass();
                 self.note_strip_selection(identities);
                 self.close_extension_left_behind();
                 self.prune_dragging_tab();
@@ -4082,6 +4175,42 @@ impl WorkspaceModel {
     fn note(&mut self, text: String) {
         self.remembered.notice = Some(Notice { text });
         self.dirty = true;
+    }
+
+    /// Says, once per pane, that a harness is running there without the
+    /// workspace's shim: something in the pane's shell put another copy
+    /// ahead of it on `PATH`, and what the shim carries (the conversation
+    /// resumed after a restart, the project's own skills and agents for a
+    /// harness that does not read them) is lost for it.
+    fn note_launcher_bypass(&mut self) {
+        let Some(launchers) = self.remembered.launchers.clone() else {
+            return;
+        };
+        let Some(session) = &self.session else {
+            return;
+        };
+        let bypassed: Vec<(uze_terminal::PaneId, String)> = session
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| &space.tabs)
+            .map(|tab| &tab.pane)
+            .filter(|pane| !pane.through_launcher && launchers.contains(&pane.process))
+            .map(|pane| (pane.id, pane.process.clone()))
+            .collect();
+        for (pane, harness) in bypassed {
+            if self.remembered.bypass_reported.insert(pane) {
+                self.raise_toast(
+                    ToastKind::Warned,
+                    format!("{harness} started without the workspace's launcher"),
+                    "something in this pane's shell put another copy first on PATH, so its \
+                     conversation will not resume after a restart and the project's own skills \
+                     may not reach it"
+                        .to_owned(),
+                    None,
+                );
+            }
+        }
     }
 
     /// Raises an outcome for the reader. It leaves on its own clock unless

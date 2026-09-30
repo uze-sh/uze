@@ -585,9 +585,9 @@ Each workspace keeps its own append-only file; one workspace can never evict
 another's entries, the file and its directory are `0600`/`0700`, and
 `prompt_history::clear` deletes a workspace's history outright.
 
-> `crates/uze-core/src/prompt_history.rs::tests::history_is_owner_only`
-> `crates/uze-core/src/prompt_history.rs::tests::each_workspace_keeps_its_own_history`
-> `crates/uze-core/src/prompt_history.rs::tests::clear_removes_only_the_named_workspace_and_tolerates_absence`
+> `crates/uze-workspace/src/prompt_history.rs::tests::history_is_owner_only`
+> `crates/uze-workspace/src/prompt_history.rs::tests::each_workspace_keeps_its_own_history`
+> `crates/uze-workspace/src/prompt_history.rs::tests::clear_removes_only_the_named_workspace_and_tolerates_absence`
 
 ---
 
@@ -696,8 +696,8 @@ and publication records and never the work.
 The judgement is only ever made under the mutation lock, because that is
 what separates "unreadable" from "read while somebody was publishing it".
 
-> `crates/uze-core/src/project/task.rs::tests::an_older_schema_is_named_by_its_version_rather_than_by_a_missing_field`
-> `crates/uze-core/src/project/task.rs::tests::a_document_this_build_cannot_read_is_set_aside_rather_than_refused`
+> `crates/uze-workspace/src/task.rs::tests::an_older_schema_is_named_by_its_version_rather_than_by_a_missing_field`
+> `crates/uze-workspace/src/task.rs::tests::a_document_this_build_cannot_read_is_set_aside_rather_than_refused`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_unreadable_document_never_stops_an_agent_being_created`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_document_that_cannot_be_read_is_recovered_from_and_said`
 
@@ -723,7 +723,7 @@ a delivery carries the reason in `DeliveryReport::warnings`, and a placement
 whose task could not be recorded gives the slot back and answers
 `Unisolated`.
 
-> `crates/uze-core/src/project/task.rs::tests::overlapping_mutations_do_not_erase_each_other`
+> `crates/uze-workspace/src/task.rs::tests::overlapping_mutations_do_not_erase_each_other`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_evaluation_that_overlaps_a_delivery_does_not_erase_it`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_delivery_that_could_not_be_recorded_says_so`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_placement_that_could_not_be_recorded_gives_the_slot_back`
@@ -1086,9 +1086,9 @@ A new agent takes a free slot before a directory is created: the tree is put
 at the base with none of the previous task's tracked or untracked files, and
 ignored artifacts survive. A slot holding work is never reused.
 
-> `crates/uze-core/src/project/checkout.rs::a_free_slot_is_reused_and_ignored_artifacts_survive`
-> `crates/uze-core/src/project/checkout.rs::a_previous_tasks_edits_never_reach_the_next`
-> `crates/uze-core/src/project/checkout.rs::a_new_directory_appears_only_when_none_is_free_and_the_cap_holds`
+> `crates/uze-workspace/src/checkout.rs::a_free_slot_is_reused_and_ignored_artifacts_survive`
+> `crates/uze-workspace/src/checkout.rs::a_previous_tasks_edits_never_reach_the_next`
+> `crates/uze-workspace/src/checkout.rs::a_new_directory_appears_only_when_none_is_free_and_the_cap_holds`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_delivered_tasks_slot_is_reused_by_the_next_agent`
 
 ### Work in the target is recognized by its patch, not by its commits
@@ -1101,8 +1101,8 @@ frees a slot, prunes a branch and keeps a delivered task delivered. Read by
 reachability alone, one squash merge parked a slot for the life of the
 repository and every new agent paid for a checkout of its own.
 
-> `crates/uze-core/src/project/checkout.rs::a_squash_merged_branch_frees_its_slot_and_is_pruned`
-> `crates/uze-core/src/project/checkout.rs::a_rebase_merged_branch_frees_its_slot`
+> `crates/uze-workspace/src/checkout.rs::a_squash_merged_branch_frees_its_slot_and_is_pruned`
+> `crates/uze-workspace/src/checkout.rs::a_rebase_merged_branch_frees_its_slot`
 
 ### An agent is placed on the target as the remote has it
 
@@ -1111,8 +1111,8 @@ branch is cut from it, and by nothing but a fast-forward: a target carrying
 commits the remote lacks is left where it stands and the placement reports
 how far behind the agent starts.
 
-> `crates/uze-core/src/project/landing.rs::the_local_target_is_fast_forwarded_onto_the_remotes`
-> `crates/uze-core/src/project/landing.rs::a_target_carrying_its_own_commits_is_left_alone_and_reported`
+> `crates/uze-workspace/src/landing.rs::the_local_target_is_fast_forwarded_onto_the_remotes`
+> `crates/uze-workspace/src/landing.rs::a_target_carrying_its_own_commits_is_left_alone_and_reported`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_new_agent_starts_from_the_target_as_the_remote_has_it`
 
 ### Publication is read from the remote, never from UZE's own records
@@ -1129,9 +1129,9 @@ as a non-fast-forward. The one network question — is a request open — is
 asked only where the completion publishes, only for a branch that is on the
 remote, at most once a minute, and never again once answered.
 
-> `crates/uze-core/src/project/landing.rs::a_branch_its_own_agent_pushed_is_published_and_in_sync`
-> `crates/uze-core/src/project/landing.rs::a_request_the_agent_opened_is_discovered_on_the_evaluation_pass`
-> `crates/uze-core/src/project/landing.rs::the_remote_is_asked_about_a_missing_request_at_most_once_a_minute`
+> `crates/uze-workspace/src/landing.rs::a_branch_its_own_agent_pushed_is_published_and_in_sync`
+> `crates/uze-workspace/src/landing.rs::a_request_the_agent_opened_is_discovered_on_the_evaluation_pass`
+> `crates/uze-workspace/src/landing.rs::the_remote_is_asked_about_a_missing_request_at_most_once_a_minute`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_agents_own_push_and_request_are_what_the_delivery_view_reports`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_merge_project_never_measures_its_work_against_the_remote`
 
@@ -1167,13 +1167,13 @@ This is what the 2026-09-26 incident broke: a subagent's checkout, seconds
 old and so clean and level with the target, was adopted, read as free,
 and reset under the subagent still writing in it.
 
-> `crates/uze-core/src/project/checkout.rs::a_checkout_added_by_hand_beside_the_slots_is_never_taken_as_one`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::an_earlier_builds_inference_is_not_inherited`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_launched_agents_slot_is_recorded_on_sight`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::the_record_outlives_lost_state`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::the_record_goes_with_the_worktree`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_copied_checkout_does_not_inherit_the_record`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_record_from_a_newer_build_is_neither_reused_removed_nor_written_over`
+> `crates/uze-workspace/src/checkout.rs::a_checkout_added_by_hand_beside_the_slots_is_never_taken_as_one`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::an_earlier_builds_inference_is_not_inherited`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_launched_agents_slot_is_recorded_on_sight`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::the_record_outlives_lost_state`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::the_record_goes_with_the_worktree`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_copied_checkout_does_not_inherit_the_record`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_record_from_a_newer_build_is_neither_reused_removed_nor_written_over`
 > `tests/acceptance/engine.rs::a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand`
 
 ### Every worktree is accounted for by owner, and a foreign one is only shown
@@ -1185,7 +1185,7 @@ operator's. Only the operator, from the checkouts view, adopts or removes a
 foreign one; removal inspects first, keeps the branch, and never takes the
 primary or a harness's checkout.
 
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::every_worktree_is_accounted_for_by_owner`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::every_worktree_is_accounted_for_by_owner`
 > `crates/uze-application/src/application/services/checkouts/tests.rs::every_checkout_is_listed_under_its_owner_with_its_facts`
 > `crates/uze-application/src/application/services/checkouts/tests.rs::removing_a_checkout_keeps_its_branch_and_never_takes_the_primary`
 > `crates/uze-application/src/application/services/checkouts/tests.rs::a_harness_checkout_is_left_to_its_harness`
@@ -1203,8 +1203,8 @@ in `/`, so the checkout it was first started from is not held for its life.
 
 > `crates/uze-core/src/machine/process_cwd.rs::a_process_working_in_a_directory_is_seen_there`
 > `crates/uze-core/src/machine/process_cwd.rs::an_unreadable_process_table_holds_everything`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_process_inside_a_free_looking_slot_keeps_it`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_process_table_nobody_could_read_holds_every_slot`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_process_inside_a_free_looking_slot_keeps_it`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_process_table_nobody_could_read_holds_every_slot`
 > `crates/uze-application/src/application/services/checkouts/tests.rs::a_checkout_somebody_is_working_in_is_not_removed`
 > `crates/uze-terminal/src/runtime.rs::the_server_works_in_no_checkout`
 
@@ -1217,10 +1217,10 @@ it, and each parked the slot for good. A lock that moves a plugin's pin is
 work, since moving pins is what `update` exists for. Rebasing, joining and
 delivering still require a tree with nothing uncommitted at all.
 
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_lock_that_only_gained_an_entry_leaves_the_slot_free`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_moved_pin_parks_the_slot`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_reprojected_region_leaves_the_slot_free`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_hand_edit_beside_a_region_parks_the_slot`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_lock_that_only_gained_an_entry_leaves_the_slot_free`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_moved_pin_parks_the_slot`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_reprojected_region_leaves_the_slot_free`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_hand_edit_beside_a_region_parks_the_slot`
 
 ### The pool keeps a few spare slots and no more
 
@@ -1231,10 +1231,10 @@ by default) is removed too. Decided from the slots as they stand, with no
 record of past use; branches are kept, and parked or occupied slots are
 never touched.
 
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::closing_agents_leaves_spares_for_the_next_ones`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::spares_beyond_the_declared_number_are_removed`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::an_idle_project_gives_its_disk_back`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::work_is_never_trimmed`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::closing_agents_leaves_spares_for_the_next_ones`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::spares_beyond_the_declared_number_are_removed`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::an_idle_project_gives_its_disk_back`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::work_is_never_trimmed`
 
 ### A subagent's checkout belongs to its agent
 
@@ -1254,8 +1254,8 @@ the checkout's record.
 > `crates/uze-application/src/application/services/work/tests.rs::a_conflicting_join_pauses_in_the_child_and_completes_once_resolved`
 > `crates/uze-application/src/application/services/work/tests.rs::a_child_lives_as_long_as_its_agent`
 > `crates/uze-application/src/application/services/work/tests.rs::an_agent_is_not_delivered_while_a_child_holds_unjoined_work`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_child_whose_agent_an_older_build_forgot_is_given_it_back`
-> `crates/uze-core/src/project/checkout/accounting_tests.rs::a_joined_childs_branch_is_pruned_against_its_agents_branch`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_child_whose_agent_an_older_build_forgot_is_given_it_back`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_joined_childs_branch_is_pruned_against_its_agents_branch`
 
 ### Nothing that can hold work is removed automatically
 
@@ -1270,11 +1270,11 @@ does not have — is answered "not integrated", never "nothing ahead". Read
 the other way, a declared target the repository lacks made every branch in
 it collectable.
 
-> `crates/uze-core/src/project/checkout.rs::a_checkout_holding_work_is_parked_with_every_file_preserved`
-> `crates/uze-core/src/project/checkout.rs::an_unintegrated_branch_outlives_its_directory`
-> `crates/uze-core/src/project/checkout.rs::a_parked_slot_is_never_removed_for_being_idle`
-> `crates/uze-core/src/project/checkout.rs::an_integrated_branch_is_pruned_and_an_unintegrated_one_is_not`
-> `crates/uze-core/src/project/checkout.rs::a_target_this_clone_does_not_have_collects_nothing_and_frees_no_slot`
+> `crates/uze-workspace/src/checkout.rs::a_checkout_holding_work_is_parked_with_every_file_preserved`
+> `crates/uze-workspace/src/checkout.rs::an_unintegrated_branch_outlives_its_directory`
+> `crates/uze-workspace/src/checkout.rs::a_parked_slot_is_never_removed_for_being_idle`
+> `crates/uze-workspace/src/checkout.rs::an_integrated_branch_is_pruned_and_an_unintegrated_one_is_not`
+> `crates/uze-workspace/src/checkout.rs::a_target_this_clone_does_not_have_collects_nothing_and_frees_no_slot`
 
 ### Reconciliation adopts before it prunes
 
@@ -1283,8 +1283,8 @@ legacy checkout keeps its branch name, since it may have been pushed. Git's
 worktree registry is pruned only after every directory has been looked at, so
 a stale entry can never be dropped before its work is.
 
-> `crates/uze-core/src/project/checkout.rs::prune_runs_after_adoption_and_an_orphaned_task_keeps_its_branch`
-> `crates/uze-core/src/project/checkout.rs::a_legacy_checkout_is_adopted_under_its_branch_name`
+> `crates/uze-workspace/src/checkout.rs::prune_runs_after_adoption_and_an_orphaned_task_keeps_its_branch`
+> `crates/uze-workspace/src/checkout.rs::a_legacy_checkout_is_adopted_under_its_branch_name`
 
 ### A slot is invisible to the primary's own commits
 
@@ -1293,7 +1293,7 @@ The isolation directory is excluded through the repository's own
 status stays what the operator left and `git add -A` there never stages a
 slot as an embedded repository.
 
-> `crates/uze-core/src/project/checkout.rs::the_isolation_directory_is_excluded_without_touching_the_primary_tree`
+> `crates/uze-workspace/src/checkout.rs::the_isolation_directory_is_excluded_without_touching_the_primary_tree`
 
 ### Task identity is immutable; the label is derived
 
@@ -1302,9 +1302,9 @@ new label changes none of them. State lives under UZE's own `state/`, outside
 every checkout, and is written atomically: a reader sees the previous
 document or the new one, never a torn one.
 
-> `crates/uze-core/src/project/task.rs::the_identifier_is_stable_while_the_label_changes`
-> `crates/uze-core/src/project/task.rs::state_survives_checkout_removal`
-> `crates/uze-core/src/project/task.rs::a_kill_mid_write_leaves_the_previous_or_the_new_document`
+> `crates/uze-workspace/src/task.rs::the_identifier_is_stable_while_the_label_changes`
+> `crates/uze-workspace/src/task.rs::state_survives_checkout_removal`
+> `crates/uze-workspace/src/task.rs::a_kill_mid_write_leaves_the_previous_or_the_new_document`
 
 ### Repository writes are serialized under one lock
 
@@ -1325,8 +1325,8 @@ tree. That is read from the checkout when the pane goes quiet or on demand,
 and never from anything the agent says; a paused rebase reads as exactly
 that.
 
-> `crates/uze-core/src/project/landing.rs::readiness_is_read_from_the_checkout`
-> `crates/uze-core/src/project/landing.rs::a_task_without_commits_is_not_delivered`
+> `crates/uze-workspace/src/landing.rs::readiness_is_read_from_the_checkout`
+> `crates/uze-workspace/src/landing.rs::a_task_without_commits_is_not_delivered`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::evaluation_reads_the_checkout_and_merge_delivers`
 
 ### The target is written only in deliver, and only by UZE
@@ -1343,14 +1343,14 @@ checked out: `git merge` advances `HEAD`, so the branch is asked for first
 and the ref moved directly when the operator is standing elsewhere, and the
 target's new tip is read back before the task is recorded `Integrated`.
 
-> `crates/uze-core/src/project/landing.rs::handoff_never_touches_the_target`
-> `crates/uze-core/src/project/landing.rs::merge_advances_the_target_linearly_after_the_gate`
-> `crates/uze-core/src/project/landing.rs::merge_moves_the_target_while_the_primary_stands_on_a_detached_head`
-> `crates/uze-core/src/project/landing.rs::merge_never_moves_the_branch_the_primary_happens_to_be_on`
-> `crates/uze-core/src/project/landing.rs::the_gate_runs_after_the_rebase_not_before`
-> `crates/uze-core/src/project/landing.rs::a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner`
-> `crates/uze-core/src/project/landing.rs::a_conflict_leaves_the_rebase_paused_and_the_target_untouched`
-> `crates/uze-core/src/project/landing.rs::pr_publishes_and_leaves_the_request_to_the_agent`
+> `crates/uze-workspace/src/landing.rs::handoff_never_touches_the_target`
+> `crates/uze-workspace/src/landing.rs::merge_advances_the_target_linearly_after_the_gate`
+> `crates/uze-workspace/src/landing.rs::merge_moves_the_target_while_the_primary_stands_on_a_detached_head`
+> `crates/uze-workspace/src/landing.rs::merge_never_moves_the_branch_the_primary_happens_to_be_on`
+> `crates/uze-workspace/src/landing.rs::the_gate_runs_after_the_rebase_not_before`
+> `crates/uze-workspace/src/landing.rs::a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner`
+> `crates/uze-workspace/src/landing.rs::a_conflict_leaves_the_rebase_paused_and_the_target_untouched`
+> `crates/uze-workspace/src/landing.rs::pr_publishes_and_leaves_the_request_to_the_agent`
 
 ### A delivery never collides with the operator's own edits
 
@@ -1358,7 +1358,7 @@ A fast-forward into the checked-out target updates the operator's working
 tree, so a task touching a file the operator has uncommitted changes to is
 refused before anything is written.
 
-> `crates/uze-core/src/project/landing.rs::overlap_with_the_operators_uncommitted_work_refuses_and_writes_nothing`
+> `crates/uze-workspace/src/landing.rs::overlap_with_the_operators_uncommitted_work_refuses_and_writes_nothing`
 
 ### Sibling tasks share work only through the target
 
@@ -1367,8 +1367,8 @@ first; a live, clean task follows a moved target on its own, and one mid-edit
 is never rebased under its agent. No task's branch ever carries another
 task's commits directly.
 
-> `crates/uze-core/src/project/landing.rs::the_second_task_sees_the_first`
-> `crates/uze-core/src/project/landing.rs::a_live_task_follows_the_target_when_clean_and_is_left_alone_when_dirty`
+> `crates/uze-workspace/src/landing.rs::the_second_task_sees_the_first`
+> `crates/uze-workspace/src/landing.rs::a_live_task_follows_the_target_when_clean_and_is_left_alone_when_dirty`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::evaluation_lets_a_clean_task_follow_the_target`
 
 ### A linked file is ignored by the repository
@@ -1378,9 +1378,9 @@ be ignored by it; a violation is a malformed lock at read time, not a
 surprise at launch. Linked or not, a failed `setup` warns and never blocks a
 launch.
 
-> `crates/uze-core/src/project/manifest.rs::a_link_escaping_the_repository_is_rejected`
-> `crates/uze-core/src/project/manifest.rs::a_link_to_a_tracked_file_is_rejected_and_an_ignored_one_loads`
-> `crates/uze-core/src/project/checkout.rs::a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent`
+> `crates/uze-workspace/src/declaration.rs::a_link_escaping_the_repository_is_rejected`
+> `crates/uze-workspace/src/declaration.rs::a_link_to_a_tracked_file_is_rejected_and_an_ignored_one_loads`
+> `crates/uze-workspace/src/checkout.rs::a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent`
 
 ### The projection never triggers a harness's own isolation
 
@@ -1391,7 +1391,7 @@ instruction, and would isolate a second time on top of the slot UZE already
 placed the agent in.
 
 > `tests/projection/worktree_policy.rs::the_projection_never_triggers_a_harnesss_own_isolation`
-> `crates/uze-core/src/project/worktree.rs::the_projected_text_never_asks_for_a_top_level_worktree`
+> `crates/uze-workspace/src/worktree.rs::the_projected_text_never_asks_for_a_top_level_worktree`
 
 ### A declaration stays editable
 
@@ -1424,7 +1424,7 @@ already named there. Both halves say the same thing: a declared policy can
 never become no policy in silence.
 
 > `crates/uze-core/src/project/project_lock.rs::a_key_this_uze_does_not_understand_is_refused`
-> `crates/uze-core/src/project/manifest.rs::an_unknown_key_inside_the_policy_block_is_refused_by_name`
+> `crates/uze-workspace/src/declaration.rs::an_unknown_key_inside_the_policy_block_is_refused_by_name`
 
 ---
 
@@ -1643,8 +1643,8 @@ outside every checkout. A slot reset keeps it, a slot recycled for the next
 task never inherits it, and a task given its checkout back finds what it
 left.
 
-> `crates/uze-core/src/project/conversation.rs::a_recycled_slots_new_task_finds_nothing_the_previous_one_left`
-> `crates/uze-core/src/project/conversation.rs::a_verified_claim_resolves_to_its_own_record_wherever_inside_its_directory`
+> `crates/uze-workspace/src/conversation.rs::a_recycled_slots_new_task_finds_nothing_the_previous_one_left`
+> `crates/uze-workspace/src/conversation.rs::a_verified_claim_resolves_to_its_own_record_wherever_inside_its_directory`
 
 ### An agent is what its launch carried, verified twice (`identify-agents-at-launch`)
 
@@ -1662,8 +1662,8 @@ runtime's launch vocabulary, and core never spells it.
 > `crates/uze-terminal/src/runtime.rs::a_launch_environment_survives_a_restart`
 > `crates/uze-terminal/src/runtime.rs::a_shell_respawn_carries_no_launch_environment`
 > `crates/uze-terminal/src/runtime.rs::a_pane_does_not_inherit_the_servers_agent_identity`
-> `crates/uze-core/src/project/conversation.rs::a_claim_no_record_backs_has_no_owner`
-> `crates/uze-core/src/delivery/continuity.rs::two_agents_in_one_directory_keep_their_own_conversations`
+> `crates/uze-workspace/src/conversation.rs::a_claim_no_record_backs_has_no_owner`
+> `crates/uze-workspace/src/continuity.rs::two_agents_in_one_directory_keep_their_own_conversations`
 > `tests/acceptance/session_continuity.rs::an_identity_claimed_from_the_wrong_directory_is_launched_untouched`
 > `tests/architecture/layering.rs::architecture_rules_hold` (the identity variable has one owner)
 
@@ -1687,7 +1687,7 @@ no client present. A first launch names or records the conversation; the
 next one continues it.
 
 > `tests/acceptance/session_continuity.rs::a_relaunched_agent_resumes_the_conversation_its_task_was_left_in`
-> `crates/uze-core/src/delivery/continuity.rs::a_second_launch_resumes_what_the_first_recorded`
+> `crates/uze-workspace/src/continuity.rs::a_second_launch_resumes_what_the_first_recorded`
 
 ### Continuity never rewrites an invocation and never blocks a launch
 
@@ -1700,8 +1700,8 @@ starts the agent anyway.
 
 > `tests/acceptance/session_continuity.rs::an_invocation_the_operator_composed_is_launched_exactly_as_typed`
 > `tests/acceptance/session_continuity.rs::a_launch_carrying_no_identity_is_launched_untouched_even_inside_a_slot`
-> `crates/uze-core/src/delivery/continuity.rs::a_conversation_the_harness_no_longer_holds_starts_a_new_one_and_says_so`
-> `crates/uze-core/src/delivery/continuity.rs::unreadable_state_still_launches_the_agent`
+> `crates/uze-workspace/src/continuity.rs::a_conversation_the_harness_no_longer_holds_starts_a_new_one_and_says_so`
+> `crates/uze-workspace/src/continuity.rs::unreadable_state_still_launches_the_agent`
 
 ### The record follows the agent, not the assignment
 
@@ -1709,8 +1709,8 @@ An identifier written once at launch goes stale the moment the person
 clears, forks or switches the conversation. What is recorded is the last one
 observed for the task, so what resumes is where the work was left.
 
-> `crates/uze-core/src/delivery/continuity.rs::a_conversation_the_agent_moved_to_replaces_the_one_it_started_in`
-> `crates/uze-core/src/project/conversation.rs::an_answer_to_a_replaced_launch_is_dropped`
+> `crates/uze-workspace/src/continuity.rs::a_conversation_the_agent_moved_to_replaces_the_one_it_started_in`
+> `crates/uze-workspace/src/conversation.rs::an_answer_to_a_replaced_launch_is_dropped`
 
 ### Continuity is declared per harness, and the matrix is derived from it
 
@@ -1801,7 +1801,7 @@ one, which is the truth about where they are. Only *delivering* is
 withheld from them: the branch is the operator's, UZE did not cut it, and
 rebasing and pushing it is theirs to ask for.
 
-> `crates/uze-core/src/project/task.rs::tests::the_shape_that_kept_the_state_inside_the_isolation_is_carried_across`
+> `crates/uze-workspace/src/task.rs::tests::the_shape_that_kept_the_state_inside_the_isolation_is_carried_across`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::an_agent_in_the_root_creates_no_checkout_and_no_branch_and_shares_the_tree`
 
 ### Preserved work answers for the machine, and resumes into its own project
@@ -1859,6 +1859,64 @@ through a projection it collects.
 > `crates/uze-core/src/machine/harness_runtime.rs::tests::the_sweep_keeps_the_tenants_and_nothing_else`
 > `tests/integrations/runtime_projection.rs::sweeping_a_dead_projection_never_touches_the_project_it_pointed_at`
 > `tests/packages/store.rs::uze_home_derives_every_owned_path_from_one_root`
+
+---
+
+## Module boundary (`separate-package-manager-and-workspace`)
+
+### The package manager never depends on the workspace
+
+The workspace's domain is `uze-workspace`, above `uze-core`; `uze-core`
+does not depend on it, so the compiler refuses a package-manager module
+that names a task, a checkout or a policy. In `uze-application`, which
+orchestrates both, the package manager's files and the shared ones are
+listed and held to the same rule by a test.
+
+> `tests/architecture/layering.rs::the_package_manager_never_names_the_workspace`
+
+### A workspace setting never fails a package command
+
+`agents.yaml`'s `worktrees` and `artifacts` sections are carried unread by
+the manifest and parsed by the workspace, which also owns the `worktrees.link`
+Git check. A section the workspace would reject still leaves `install` and
+`status` able to read the file.
+
+> `crates/uze-workspace/src/declaration.rs::tests::a_workspace_section_the_workspace_rejects_does_not_fail_the_manifest`
+> `tests/lifecycle/manifest_and_lock.rs::a_typo_in_the_manifest_is_named_rather_than_ignored`
+
+### A project declares a policy only by choosing one
+
+The `agents.yaml` UZE creates carries `worktrees:` empty over commented
+choices, so it declares nothing; choosing one writes it beneath that key.
+
+> `crates/uze-workspace/src/declaration.rs::tests::a_scaffolded_manifest_declares_no_policy`
+> `crates/uze-workspace/src/declaration.rs::tests::choosing_a_completion_writes_it_under_the_scaffolds_empty_key`
+
+### Each region of `AGENTS.md` has one owner
+
+The package manager writes its regions (plugin contributions, plugin
+authoring) and counts only those as drift; it never writes, removes or
+counts the workspace's region. The workspace keeps its own in step in the
+primary checkout only, never in a slot, and an isolate does not carry a
+region-only change. Both owners take one per-project guard on the file.
+
+> `tests/projection/worktree_policy.rs::package_reconciliation_neither_writes_nor_removes_the_workspace_region`
+> `tests/projection/worktree_policy.rs::a_stale_workspace_region_leaves_the_package_environment_clear`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_launch_in_the_primary_syncs_the_region_and_a_slot_is_never_written`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_leaves_the_synced_region_behind_and_carries_the_rest`
+> `crates/uze-core/src/project/project_context.rs::tests::a_second_owner_waits_for_the_first`
+
+### No shell file is edited, and the shim is the workspace's
+
+`uze setup` creates the shims and never writes a shell startup file; it takes
+back, byte-exactly, the block an earlier build wrote, until 1.0.0. The
+terminal server puts the shims first on every pane's `PATH`, and no command
+walks the operator's `PATH` to ask about a shim.
+
+> `crates/uze-application/src/application/tests.rs::runtime_shim_takes_back_the_block_an_earlier_build_wrote_and_writes_none`
+> `crates/uze-core/src/machine/shell_path.rs::tests::the_block_is_removed_and_every_other_byte_kept`
+> `crates/uze-core/src/machine/shell_path.rs::tests::the_block_is_taken_back_only_until_1_0_0`
+> `crates/uze-terminal/src/runtime.rs::tests::the_named_directory_leads_the_pane_path_once`
 
 ---
 
@@ -2204,8 +2262,8 @@ network. Converging a removal edits the lock and nothing on the machine:
 the Store keeps the package and every harness keeps reading it, because
 other projects share both and machine scope is `uze remove <plugin> -m`'s.
 
-> `tests/workspace/consumer.rs::drift::install_converges_the_lock_and_leaves_the_machine_alone`
-> `tests/workspace/consumer.rs::drift::a_policy_change_reads_as_a_stale_projection_until_install_clears_it`
+> `tests/project/consumer.rs::drift::install_converges_the_lock_and_leaves_the_machine_alone`
+> `tests/project/consumer.rs::drift::a_package_region_gone_from_agents_md_reads_as_stale_until_install_clears_it`
 
 
 ## Input (M6)

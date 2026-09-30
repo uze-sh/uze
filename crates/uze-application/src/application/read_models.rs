@@ -572,19 +572,13 @@ pub struct SetupResult {
 #[derive(Clone, Debug, Serialize)]
 pub struct RuntimeShimSetup {
     pub shim_path: PathBuf,
-    /// Set only when this call actually wrote a change into a detected
-    /// shell rc file (`shell_path::ensure_path_line`) — the file that was
-    /// touched. A marked, reversible block; see `shell_path` for the exact
-    /// shape and safety guarantees. Absent when the shim dir was already
-    /// on `PATH`, when the rc file already had the right line (idempotent
-    /// no-op), or when no rc file was touched at all.
-    pub rc_file_updated: Option<PathBuf>,
-    /// Set whenever the shim dir isn't yet on `PATH` for the *current*
-    /// shell session — a change to a shell rc file only takes effect in a
-    /// new shell, so this is always the instruction for finishing that
-    /// (open a new terminal / `source <rc>`), or the raw manual `export`
-    /// line when no supported shell rc file was detected at all.
-    pub path_hint: Option<String>,
+    /// The shell startup file an earlier build's `PATH` block was taken back
+    /// from, when there was one. UZE no longer edits shell files; the
+    /// workspace puts the shims on `PATH` in its own panes.
+    pub took_back_from: Option<PathBuf>,
+    /// A shell startup file whose UZE markers did not verify, left as it is,
+    /// and why.
+    pub left_alone: Option<(PathBuf, String)>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -655,9 +649,9 @@ pub struct HarnessHealth {
     /// existed. Compare against `PluginInspection::deliveries`, which is
     /// the same routing decision but for one specific installed resource.
     pub capabilities: HarnessCapabilities,
-    /// Whether invoking this harness's command name resolves to UZE's
-    /// runtime shim. A configured harness with a shadowed shim is not ready:
-    /// its runtime context projection would be bypassed.
+    /// Whether the shim the workspace launches this harness through exists.
+    /// Nothing here asks the operator's `PATH`: outside the workspace a
+    /// harness is its own binary, by design.
     pub runtime_shim_active: bool,
     /// How this harness can receive a project's portable context on this
     /// machine — declared by the integration, like `capabilities` above,
@@ -668,20 +662,21 @@ pub struct HarnessHealth {
 
 /// The mechanism through which one portable project resource (`AGENTS.md`,
 /// `.agents/`) reaches a harness on this machine. A property of the harness
-/// and of this environment's `PATH` — never of any project, which is why
-/// there is no "absent" variant: a machine-level row has nothing to be
-/// absent from.
+/// and of whether its shim exists — never of any project, which is why there
+/// is no "absent" variant: a machine-level row has nothing to be absent
+/// from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ContextMechanism {
     /// The harness's own binary reads it straight out of the project.
     Native,
-    /// UZE's runtime PATH shim projects it into every launch, without
-    /// writing anything into the project.
+    /// The workspace's shim projects it into every launch the workspace
+    /// makes, without writing anything into the project. A harness started
+    /// any other way does not receive it.
     RuntimeShim,
-    /// The shim would project it, but a real binary resolves ahead of the
-    /// shim on this process's `PATH`, so a launch from here bypasses it.
-    ShimShadowed,
+    /// The workspace would project it through a shim `uze setup` has not
+    /// created yet.
+    ShimMissing,
     /// A persistent bridge file in the project root, maintained by
     /// `uze agent context reconcile`, carries it.
     Bridge,
@@ -704,7 +699,8 @@ pub struct HarnessContextSupport {
 
 impl HarnessContextSupport {
     /// Derives the declaration from the integration's own answers plus the
-    /// one environment fact that can defeat them (`runtime_shim_active`).
+    /// one fact that can defeat them: whether its shim exists
+    /// (`runtime_shim_active`).
     pub fn declared(integration: &dyn IntegrationPort, runtime_shim_active: bool) -> Self {
         let projection = RuntimeProjection::of(integration, runtime_shim_active);
         Self {
@@ -730,11 +726,11 @@ pub(crate) enum RuntimeProjection {
     /// Nothing is projected: the harness has no runtime projection of
     /// project context, or it has nothing to project here.
     Inactive,
-    /// A launch goes through the shim, which projects the context.
+    /// A launch from the workspace goes through the shim, which projects
+    /// the context.
     Active,
-    /// The harness would be projected, but a real binary resolves ahead of
-    /// the shim on this process's `PATH`.
-    Shadowed,
+    /// The harness would be projected, but its shim does not exist.
+    Missing,
 }
 
 impl RuntimeProjection {
@@ -746,7 +742,7 @@ impl RuntimeProjection {
         } else if runtime_shim_active {
             Self::Active
         } else {
-            Self::Shadowed
+            Self::Missing
         }
     }
 }
@@ -762,7 +758,7 @@ impl ContextMechanism {
             (ContextDelivery::Native { .. }, _) => Self::Native,
             (ContextDelivery::None, _) => Self::Unsupported,
             (ContextDelivery::Bridge { .. }, RuntimeProjection::Active) => Self::RuntimeShim,
-            (ContextDelivery::Bridge { .. }, RuntimeProjection::Shadowed) => Self::ShimShadowed,
+            (ContextDelivery::Bridge { .. }, RuntimeProjection::Missing) => Self::ShimMissing,
             (ContextDelivery::Bridge { .. }, RuntimeProjection::Inactive) => Self::Bridge,
         }
     }
@@ -777,8 +773,8 @@ impl ContextMechanism {
             (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Active) => {
                 Self::RuntimeShim
             }
-            (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Shadowed) => {
-                Self::ShimShadowed
+            (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Missing) => {
+                Self::ShimMissing
             }
             (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Inactive)
             | (ProjectResourceRoute::Unsupported, _) => Self::Unsupported,
@@ -862,9 +858,6 @@ pub struct ProjectContextStatus {
     pub orphaned_regions: Vec<String>,
     pub malformed_regions: Vec<String>,
     pub harnesses: Vec<HarnessContextStatus>,
-    /// The project's worktree policy, when `agents.lock` declares one.
-    /// `None` means no policy is declared — not that isolation is forbidden.
-    pub worktrees: Option<WorktreePolicyStatus>,
     pub portability: Portability,
     /// Human-readable notices for a state worth surfacing but that is not
     /// itself a gap or an error — e.g. a harness carrying legitimate
@@ -873,35 +866,20 @@ pub struct ProjectContextStatus {
     pub warnings: Vec<String>,
 }
 
-/// The project's isolation declaration as it currently stands in the shared
-/// instruction file. There is no per-harness row: UZE performs the isolation
-/// itself, at launch, identically everywhere, so there is nothing left for a
-/// harness to preserve or lose.
+/// The planned change to one region UZE owns in `AGENTS.md`.
 #[derive(Clone, Debug, Serialize)]
-pub struct WorktreePolicyStatus {
-    /// Where isolated checkouts live for this project. Fixed layout,
-    /// resolved against the project root — reported, never configured.
-    pub directory: PathBuf,
-    pub completion: uze_core::worktree::CompletionBehavior,
-    pub state: AttachmentState,
-    pub reason: String,
-    /// Regions left by a previous declaration, still present in the file.
-    pub superseded_regions: Vec<String>,
-}
-
-/// The planned or performed change to the worktree policy's managed region.
-#[derive(Clone, Debug, Serialize)]
-pub struct WorktreeRegionPlan {
+pub struct ManagedRegionPlan {
     pub file: PathBuf,
     pub action: instruction_context::PlannedAction,
-    /// Regions a previous policy owned, which this pass would remove. A
-    /// policy edit reads as one region going stale and another appearing,
-    /// never as drift inside the region that already exists.
+    /// Versions of the region an earlier text left, which this pass would
+    /// remove. A change of text reads as one region going stale and another
+    /// appearing, never as drift inside the region that already exists.
     pub superseded: Vec<String>,
 }
 
+/// What converging one region UZE owns in `AGENTS.md` did.
 #[derive(Clone, Debug, Serialize)]
-pub struct WorktreeRegionStatus {
+pub struct ManagedRegionStatus {
     pub file: PathBuf,
     pub state: AttachmentState,
     pub reason: String,
@@ -922,9 +900,9 @@ pub struct BridgePlan {
 pub struct ContextPlan {
     pub agents_md: PathBuf,
     pub agents_md_plan: instruction_context::AgentsMdPlan,
-    /// Present whenever the shared file would gain, keep, lose, or is
-    /// blocked from changing the worktree policy region.
-    pub worktree_region: Option<WorktreeRegionPlan>,
+    /// The package manager's plugin-authoring region, present for a project
+    /// with an `agents.yaml`.
+    pub authoring_region: Option<ManagedRegionPlan>,
     pub bridges: Vec<BridgePlan>,
 }
 
@@ -932,7 +910,7 @@ impl ContextPlan {
     pub fn has_changes(&self) -> bool {
         self.agents_md_plan.has_changes()
             || self
-                .worktree_region
+                .authoring_region
                 .as_ref()
                 .is_some_and(|region| is_mutating(&region.action) || !region.superseded.is_empty())
             || self
@@ -963,7 +941,8 @@ pub struct InstructionsFile {
     pub path: PathBuf,
     pub exists: bool,
     /// How many managed regions UZE owns in it: each installed package's
-    /// contribution, plus the worktree policy when one is declared.
+    /// contribution, the authoring region, and the workspace's policy
+    /// region when the workspace keeps one there.
     pub managed_regions: usize,
 }
 
@@ -1018,7 +997,8 @@ pub struct EnvironmentDrift {
     pub surplus: Vec<String>,
     /// Recorded in the lock and absent from this machine's Store.
     pub missing: Vec<String>,
-    /// The projected instruction region is behind the declared policy.
+    /// A region the package manager owns in `AGENTS.md` is not what it
+    /// should say.
     pub stale_projection: bool,
     /// Marketplaces that resolve nowhere but the machine that declared
     /// them. Carried here so `uze status` and the overview say the same
@@ -1080,7 +1060,7 @@ pub struct ContextReconciliationReport {
     /// A package whose region this pass could not write, with the reason —
     /// distinct from a region that is merely absent.
     pub failed: Vec<(String, String)>,
-    pub worktree_region: Option<WorktreeRegionStatus>,
+    pub authoring_region: Option<ManagedRegionStatus>,
     pub bridges: Vec<BridgeStatus>,
 }
 

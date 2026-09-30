@@ -5,7 +5,6 @@ use std::{ffi::OsString, path::Path};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    conversation::SessionId,
     error::Result,
     exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan},
     harness_runtime::{HarnessRuntimeContribution, RuntimeContext},
@@ -13,6 +12,7 @@ use crate::{
     project_context::AgentsDirectoryResource,
     provisioning::ProvisionStatus,
     router::HarnessCapabilities,
+    session::SessionId,
     state,
     store::StoredPackage,
 };
@@ -177,14 +177,6 @@ pub trait IntegrationPort: Send + Sync {
 
     fn capabilities(&self) -> HarnessCapabilities;
 
-    /// Where, relative to any checkout of a project, this harness keeps
-    /// worktrees of its own isolation. A worktree found there is accounted
-    /// for as that harness's: shown, never driven, never removed. Defaults
-    /// to none.
-    fn own_worktree_dirs(&self) -> &'static [&'static str] {
-        &[]
-    }
-
     /// The hook semantics this harness can preserve (ADR-033): the semantic
     /// events, effects, matcher translation, input transformation,
     /// ordering, and handler types an integration can honestly deliver.
@@ -218,6 +210,22 @@ pub trait IntegrationPort: Send + Sync {
     /// contribution performs writes.
     fn runtime_contribution_would_activate(&self, ctx: &RuntimeContext) -> bool {
         !self.runtime_contribution(ctx).is_passthrough()
+    }
+
+    // ── The workspace's half ───────────────────────────────────────────
+    // Asked only by the workspace (`uze-workspace`): where a harness keeps
+    // worktrees of its own, and how a conversation is named, started,
+    // recognized and resumed across a launch. A vertical that only delivers
+    // plugins keeps the defaults, which say "not supported" and contribute
+    // nothing. One trait rather than two by decision (AGENTS.md); the
+    // grouping is what says which module asks.
+
+    /// Where, relative to any checkout of a project, this harness keeps
+    /// worktrees of its own isolation. A worktree found there is accounted
+    /// for as that harness's: shown, never driven, never removed. Defaults
+    /// to none.
+    fn own_worktree_dirs(&self) -> &'static [&'static str] {
+        &[]
     }
 
     /// How this harness lets an agent's conversation be picked up again.
@@ -264,6 +272,8 @@ pub trait IntegrationPort: Send + Sync {
     fn session_exists(&self, _session: &SessionId, _cwd: &Path) -> bool {
         true
     }
+
+    // ── Back to delivery ───────────────────────────────────────────────
 
     /// Whether this harness's [`Self::runtime_contribution`] is the
     /// mechanism carrying a project's portable context (`AGENTS.md`,

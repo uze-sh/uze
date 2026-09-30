@@ -1,5 +1,6 @@
-//! The PATH shim a harness is launched through when it opts into runtime
-//! integration.
+//! The shim a harness is launched through, by the workspace, when it opts
+//! into runtime integration. Created under `~/.uze/shims`; reached only from
+//! the workspace's panes, never from the operator's own shell.
 
 use super::*;
 
@@ -35,7 +36,7 @@ impl UzeApplication {
         // differently from `shim_name` is still found.
         let mut candidates = vec![shim_name];
         candidates.extend(integration.runtime_executable_aliases());
-        let resolved = uze_core::harness_runtime::resolve_real_executable(&candidates, &shims_dir)
+        uze_core::harness_runtime::resolve_real_executable(&candidates, &shims_dir)
             .or_else(|| installed_off_path.map(Path::to_path_buf))
             .ok_or_else(|| {
                 UzeError::ExposureUnavailable(format!(
@@ -56,56 +57,28 @@ impl UzeApplication {
         let shim_path = shims_dir.join(shim_name);
         refresh_shim_symlink(&uze_binary, &shim_path)?;
 
-        let shim_precedes_real_executable = std::env::var_os("PATH")
-            .map(|path| {
-                let entries: Vec<_> = std::env::split_paths(&path).collect();
-                let shim_position = entries.iter().position(|entry| entry == &shims_dir);
-                let executable_position = resolved
-                    .parent()
-                    .and_then(|parent| entries.iter().position(|entry| entry == parent));
-                matches!(
-                    (shim_position, executable_position),
-                    (Some(shim), Some(executable)) if shim < executable
-                )
-            })
-            .unwrap_or(false);
-
-        let mut rc_file_updated = None;
-        let mut path_hint = None;
-        let manual_export = format!("export PATH=\"{}:$PATH\"", shims_dir.display());
-        match std::env::var_os("HOME")
+        // The shim is the workspace's: its panes put the shims first on
+        // `PATH`, and nothing outside the workspace should reach them. A
+        // build before that wrote a block into the operator's shell startup
+        // file; the block is UZE's, so it is taken back, and nothing else
+        // in the file is touched.
+        let mut took_back_from = None;
+        let mut left_alone = None;
+        if let Some(target) = std::env::var_os("HOME")
             .map(PathBuf::from)
             .and_then(|home_dir| uze_core::shell_path::detect_shell_rc(&home_dir))
         {
-            Some(target) => match uze_core::shell_path::ensure_path_line(&target, &shims_dir) {
-                Ok(changed) => {
-                    if changed {
-                        rc_file_updated = Some(target.rc_file.clone());
-                    }
-                    if !shim_precedes_real_executable {
-                        path_hint = Some(format!(
-                            "open a new terminal, or run: source {}",
-                            target.rc_file.display()
-                        ));
-                    }
-                }
-                // The rc file has a marker in a shape this function doesn't
-                // recognize (edited by hand, presumably) — refuse to guess,
-                // fall back to the manual instruction when the current shell
-                // does not resolve the shim first.
-                Err(_) if !shim_precedes_real_executable => path_hint = Some(manual_export),
-                Err(_) => {}
-            },
-            // No detected shell (uncommon shell, `$SHELL`/`$HOME` unset) —
-            // nothing to edit, same manual fallback when needed.
-            None if !shim_precedes_real_executable => path_hint = Some(manual_export),
-            None => {}
+            match uze_core::shell_path::take_back_path_block(&target) {
+                Ok(true) => took_back_from = Some(target.rc_file),
+                Ok(false) => {}
+                Err(error) => left_alone = Some((target.rc_file, error.to_string())),
+            }
         }
 
         Ok(Some(RuntimeShimSetup {
             shim_path,
-            rc_file_updated,
-            path_hint,
+            took_back_from,
+            left_alone,
         }))
     }
 }

@@ -27,14 +27,22 @@ const config = {
   // A published URL is a promise to whoever linked it. `theming` became
   // `appearance` when appearance stopped being one choice — the palette and
   // the glyph set are chosen apart now, and only one of them is a theme.
-  // The docs were regrouped by what a reader is doing — installing, running
-  // agents, managing plugins, configuring, understanding, looking up — so every
-  // page that moved keeps its old address.
+  // The docs are split by product surface: the package manager, which works
+  // with or without the workspace, and the workspace itself. Every page that
+  // moved keeps its old address.
   async redirects() {
     const moved = {
-      '/docs/theming': '/docs/configuration/appearance',
-      '/docs/appearance': '/docs/configuration/appearance',
-      '/docs/keys': '/docs/configuration/keys',
+      '/docs/theming': '/docs/workspace/appearance',
+      '/docs/appearance': '/docs/workspace/appearance',
+      '/docs/keys': '/docs/workspace/keys',
+      '/docs/configuration/appearance': '/docs/workspace/appearance',
+      '/docs/configuration/keys': '/docs/workspace/keys',
+      '/docs/advanced/terminal': '/docs/workspace/terminal',
+      '/docs/advanced/themes': '/docs/workspace/themes',
+      '/docs/advanced/keyboard': '/docs/workspace/keyboard',
+      '/docs/advanced/agent-cli': '/docs/reference/agent-cli',
+      '/docs/concepts/delivery': '/docs/plugins/delivery',
+      '/docs/plugins/skills': '/docs/reference/skills',
       '/docs/getting-started': '/docs/installation',
       '/docs/uninstall': '/docs/installation#removing-uze',
       '/docs/creating-a-plugin': '/docs/plugins/creating',

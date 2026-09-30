@@ -6,21 +6,18 @@
 //! cover is the remainder that travels as text: the layout a subagent needs
 //! to reproduce, the sentence that stops an already-isolated agent from
 //! isolating again, and the completion rule.
+//!
+//! The region is the workspace's. The workspace keeps it in step in the
+//! primary checkout; the package manager never writes, removes or counts
+//! it, which the last section holds.
 
 use std::{fs, path::Path, path::PathBuf};
 
 use uze_application::UzeApplication;
-use uze_core::{
-    UzeHome,
-    integration::AttachmentState,
-    worktree::{self, CompletionBehavior},
-};
+use uze_core::{UzeHome, authoring::region as authoring_region, integration::AttachmentState};
 use uze_integrations::registry::IntegrationRegistry;
-use uze_testkit::temp::scratch;
-
-fn temp(label: &str) -> PathBuf {
-    scratch(label)
-}
+use uze_testkit::git::Repository;
+use uze_workspace::worktree::{self, CompletionBehavior};
 
 /// The real four integrations, against isolated roots.
 fn app(root: &Path) -> UzeApplication {
@@ -29,47 +26,52 @@ fn app(root: &Path) -> UzeApplication {
     UzeApplication::new(home, registry.into_parts().0)
 }
 
-fn project_with_policy(root: &Path, manifest: &str) -> PathBuf {
-    let project = root.join("project");
-    fs::create_dir_all(&project).unwrap();
+/// A repository whose primary checkout declares `manifest` and keeps the
+/// `AGENTS.md` a project with instructions has.
+fn project_with_policy(label: &str, manifest: &str) -> (Repository, PathBuf) {
+    let repository = Repository::new(label);
+    repository.commit_file("AGENTS.md", "# Project\n");
+    let project = repository.root().to_path_buf();
     fs::write(project.join("agents.yaml"), manifest).unwrap();
-    project
+    (repository, project)
 }
 
 /// The policy declared with every field left to its default — the shape
 /// that proves projection does not depend on any of them being set.
 const POLICY_MANIFEST: &str = "worktrees: {}\n";
 
+fn agents_md(project: &Path) -> String {
+    fs::read_to_string(project.join("AGENTS.md")).unwrap_or_default()
+}
+
 // --- projection into the shared baseline ----------------------------------
 
 #[test]
-fn reconcile_projects_the_declaration_into_the_shared_baseline() {
-    let root = temp("worktree-projection");
-    let application = app(&root);
-    let project = project_with_policy(&root, POLICY_MANIFEST);
+fn the_workspace_projects_the_declaration_into_the_shared_baseline() {
+    let (repository, project) = project_with_policy("worktree-projection", POLICY_MANIFEST);
+    let application = app(repository.root());
 
-    let report = application.context().reconcile(&project).unwrap();
-    let region = report
-        .worktree_region
-        .expect("a declared policy is reconciled");
+    let region = application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap()
+        .expect("a repository answers");
     assert_eq!(region.state, AttachmentState::Matched);
 
-    let agents_md = fs::read_to_string(project.join("AGENTS.md")).unwrap();
+    let written = agents_md(&project);
     assert!(
-        agents_md.contains(worktree::POLICY_REGION_PREFIX),
+        written.contains(worktree::POLICY_REGION_PREFIX),
         "the region is marker-owned, not free text"
     );
-    assert!(agents_md.contains(worktree::WORKTREES_DIRECTORY));
-    assert!(agents_md.contains(worktree::BRANCH_PREFIX));
+    assert!(written.contains(worktree::WORKTREES_DIRECTORY));
+    assert!(written.contains(worktree::BRANCH_PREFIX));
 
     // Idempotent: a second pass changes nothing and stays matched.
-    let before = agents_md.clone();
-    application.context().reconcile(&project).unwrap();
-    assert_eq!(
-        fs::read_to_string(project.join("AGENTS.md")).unwrap(),
-        before
-    );
-    fs::remove_dir_all(root).unwrap();
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
+    assert_eq!(agents_md(&project), written);
 }
 
 /// The projected text must never ask for a top-level worktree. A harness
@@ -78,62 +80,113 @@ fn reconcile_projects_the_declaration_into_the_shared_baseline() {
 /// agent in — the nesting this whole design avoids.
 #[test]
 fn the_projection_never_triggers_a_harnesss_own_isolation() {
-    let root = temp("worktree-no-double-isolation");
-    let application = app(&root);
-    let project = project_with_policy(&root, POLICY_MANIFEST);
-    application.context().reconcile(&project).unwrap();
+    let (repository, project) =
+        project_with_policy("worktree-no-double-isolation", POLICY_MANIFEST);
+    let application = app(repository.root());
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
 
-    let agents_md = fs::read_to_string(project.join("AGENTS.md"))
-        .unwrap()
-        .to_lowercase();
-    assert!(!agents_md.contains("before editing"), "{agents_md}");
-    assert!(!agents_md.contains("create or reuse"), "{agents_md}");
+    let written = agents_md(&project).to_lowercase();
+    assert!(!written.contains("before editing"), "{written}");
+    assert!(!written.contains("create or reuse"), "{written}");
     assert!(
-        agents_md.contains("already isolated"),
+        written.contains("already isolated"),
         "an agent UZE placed must be told it is already isolated"
     );
     assert!(
-        agents_md.contains("operator's own checkout"),
-        "an agent placed on the operator's branch must be told where it is: {agents_md}"
+        written.contains("operator's own checkout"),
+        "an agent placed on the operator's branch must be told where it is: {written}"
     );
-    fs::remove_dir_all(root).unwrap();
+}
+
+/// An agent a person started by hand reads the same file. The region says
+/// before anything else that it is not for that agent, so the first command
+/// it names is never one that refuses outside the workspace.
+#[test]
+fn an_agent_started_by_hand_is_told_first_that_the_region_is_not_for_it() {
+    let (repository, project) = project_with_policy(
+        "worktree-hand-started",
+        "worktrees:\n  branch: conventional\n",
+    );
+    let application = app(repository.root());
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
+
+    let written = agents_md(&project);
+    let statement = written
+        .find("An agent started any other way can ignore it")
+        .expect("the region says who it is for");
+    let first_command = written
+        .find("`uze agent work")
+        .expect("the naming clause is projected");
+    assert!(statement < first_command, "{written}");
+    assert!(
+        !written.contains("uze agent plugin create"),
+        "authoring is the package manager's, not this region's: {written}"
+    );
 }
 
 #[test]
 fn a_project_declaring_nothing_gets_no_region() {
-    let root = temp("worktree-absent");
-    let application = app(&root);
-    let project = project_with_policy(&root, "");
+    let (repository, project) = project_with_policy("worktree-absent", "");
+    let application = app(repository.root());
 
-    let report = application.context().reconcile(&project).unwrap();
-    assert!(report.worktree_region.is_none());
-    let status = application.context().inspect(&project).unwrap();
-    assert!(status.worktrees.is_none());
-
-    if let Ok(agents_md) = fs::read_to_string(project.join("AGENTS.md")) {
-        assert!(!agents_md.contains(worktree::POLICY_REGION_PREFIX));
-    }
-    fs::remove_dir_all(root).unwrap();
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
+    assert!(!agents_md(&project).contains(worktree::POLICY_REGION_PREFIX));
+    let view = application.workspace().policy_region(&project).unwrap();
+    assert!(view.completion.is_none());
+    assert!(view.in_step);
 }
 
 #[test]
 fn the_declared_completion_behavior_is_what_reaches_the_baseline() {
-    let root = temp("worktree-completion");
-    let application = app(&root);
-    let project = project_with_policy(&root, "worktrees:\n  completion: merge\n");
+    let (repository, project) =
+        project_with_policy("worktree-completion", "worktrees:\n  completion: merge\n");
+    let application = app(repository.root());
 
-    application.context().reconcile(&project).unwrap();
-    let agents_md = fs::read_to_string(project.join("AGENTS.md")).unwrap();
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
+    let written = agents_md(&project);
 
-    assert!(agents_md.contains(CompletionBehavior::Merge.instruction_clause()));
-    assert!(!agents_md.contains(CompletionBehavior::Handoff.instruction_clause()));
-
-    let status = application.context().inspect(&project).unwrap();
+    assert!(written.contains(CompletionBehavior::Merge.instruction_clause()));
+    assert!(!written.contains(CompletionBehavior::Handoff.instruction_clause()));
     assert_eq!(
-        status.worktrees.unwrap().completion,
-        CompletionBehavior::Merge
+        application
+            .workspace()
+            .policy_region(&project)
+            .unwrap()
+            .completion,
+        Some(CompletionBehavior::Merge)
     );
-    fs::remove_dir_all(root).unwrap();
+}
+
+/// A project with no `AGENTS.md` has given its agents no instructions yet.
+/// The workspace keeps its section of a file the project has and never
+/// creates one: a tracked file appearing in the operator's checkout because
+/// a screen opened is not the workspace's call.
+#[test]
+fn the_workspace_never_creates_the_file() {
+    let repository = Repository::new("worktree-no-agents-md");
+    let project = repository.root().to_path_buf();
+    fs::write(project.join("agents.yaml"), POLICY_MANIFEST).unwrap();
+    let application = app(repository.root());
+
+    let region = application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap()
+        .unwrap();
+    assert_eq!(region.state, AttachmentState::Missing);
+    assert!(!project.join("AGENTS.md").exists());
 }
 
 // --- ownership of the region ----------------------------------------------
@@ -142,70 +195,154 @@ fn the_declared_completion_behavior_is_what_reaches_the_baseline() {
 /// drift, and drift is refused rather than silently rewritten.
 #[test]
 fn an_edited_region_is_blocked_not_overwritten() {
-    let root = temp("worktree-drift");
-    let application = app(&root);
-    let project = project_with_policy(&root, POLICY_MANIFEST);
-    application.context().reconcile(&project).unwrap();
+    let (repository, project) = project_with_policy("worktree-drift", POLICY_MANIFEST);
+    let application = app(repository.root());
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
 
-    let agents_md = project.join("AGENTS.md");
-    let tampered = fs::read_to_string(&agents_md)
+    let file = project.join("AGENTS.md");
+    let tampered = agents_md(&project).replace(worktree::WORKTREES_DIRECTORY, "somewhere-else");
+    fs::write(&file, &tampered).unwrap();
+
+    let region = application
+        .workspace()
+        .sync_policy_region(&project)
         .unwrap()
-        .replace(worktree::WORKTREES_DIRECTORY, "somewhere-else");
-    fs::write(&agents_md, &tampered).unwrap();
-
-    let report = application.context().reconcile(&project).unwrap();
+        .unwrap();
+    assert_eq!(region.state, AttachmentState::Drifted);
     assert_eq!(
-        report.worktree_region.unwrap().state,
-        AttachmentState::Drifted
-    );
-    assert_eq!(
-        fs::read_to_string(&agents_md).unwrap(),
+        fs::read_to_string(&file).unwrap(),
         tampered,
         "drift is reported, never repaired"
     );
-    fs::remove_dir_all(root).unwrap();
+    assert!(
+        !application
+            .workspace()
+            .policy_region(&project)
+            .unwrap()
+            .in_step
+    );
 }
 
 /// A declaration must stay editable. Before the region identity carried the
-/// rendered content's digest, changing the lock produced a permanently
-/// drifted region that reconciliation refused to touch — projected once,
-/// never updatable.
+/// rendered content's digest, changing the declaration produced a
+/// permanently drifted region that reconciliation refused to touch —
+/// projected once, never updatable.
 #[test]
 fn editing_the_declaration_replaces_its_region_rather_than_drifting() {
-    let root = temp("worktree-edit");
-    let application = app(&root);
-    let project = project_with_policy(&root, POLICY_MANIFEST);
-    application.context().reconcile(&project).unwrap();
+    let (repository, project) = project_with_policy("worktree-edit", POLICY_MANIFEST);
+    let application = app(repository.root());
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
 
     fs::write(
         project.join("agents.yaml"),
         "worktrees:\n  completion: merge\n",
     )
     .unwrap();
+    assert!(
+        !application
+            .workspace()
+            .policy_region(&project)
+            .unwrap()
+            .in_step
+    );
 
-    let plan = application.context().plan(&project).unwrap();
-    let planned = plan.worktree_region.as_ref().unwrap();
-    assert_eq!(planned.superseded.len(), 1, "{planned:?}");
-    assert!(plan.has_changes(), "a declaration edit is a pending change");
-
-    let report = application.context().reconcile(&project).unwrap();
-    let region = report.worktree_region.unwrap();
+    let region = application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap()
+        .unwrap();
     assert_eq!(region.state, AttachmentState::Matched);
     assert_eq!(region.removed_superseded.len(), 1);
     assert!(region.blocked_superseded.is_empty());
 
-    let agents_md = fs::read_to_string(project.join("AGENTS.md")).unwrap();
-    assert!(agents_md.contains(CompletionBehavior::Merge.instruction_clause()));
+    let written = agents_md(&project);
+    assert!(written.contains(CompletionBehavior::Merge.instruction_clause()));
     assert!(
-        !agents_md.contains(CompletionBehavior::Handoff.instruction_clause()),
+        !written.contains(CompletionBehavior::Handoff.instruction_clause()),
         "the superseded statement must not survive beside the new one"
     );
     assert_eq!(
-        agents_md
-            .matches("uze:begin project:worktree-policy")
-            .count(),
+        written.matches("uze:begin project:worktree-policy").count(),
         1,
         "exactly one policy region at a time"
     );
-    fs::remove_dir_all(root).unwrap();
+}
+
+/// A policy taken back out of `agents.yaml` takes its region with it, the
+/// next time the workspace synchronizes.
+#[test]
+fn a_declaration_that_is_gone_takes_its_region_with_it() {
+    let (repository, project) = project_with_policy("worktree-withdrawn", POLICY_MANIFEST);
+    let application = app(repository.root());
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
+    fs::write(project.join("agents.yaml"), "").unwrap();
+
+    let region = application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap()
+        .unwrap();
+    assert_eq!(region.removed_superseded.len(), 1, "{region:?}");
+    assert!(!agents_md(&project).contains(worktree::POLICY_REGION_PREFIX));
+}
+
+// --- the package manager leaves it alone ----------------------------------
+
+#[test]
+fn package_reconciliation_neither_writes_nor_removes_the_workspace_region() {
+    let (repository, project) = project_with_policy("worktree-pm-leaves-it", POLICY_MANIFEST);
+    let application = app(repository.root());
+
+    application.context().reconcile(&project).unwrap();
+    let written = agents_md(&project);
+    assert!(
+        !written.contains(worktree::POLICY_REGION_PREFIX),
+        "the package manager does not write it: {written}"
+    );
+    assert!(
+        written.contains(authoring_region::REGION_PREFIX),
+        "it writes its own region for a project with an agents.yaml: {written}"
+    );
+
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
+    fs::write(project.join("agents.yaml"), "").unwrap();
+    application.context().reconcile(&project).unwrap();
+    assert!(
+        agents_md(&project).contains(worktree::POLICY_REGION_PREFIX),
+        "nor removes it, even when the policy is gone"
+    );
+}
+
+#[test]
+fn a_stale_workspace_region_leaves_the_package_environment_clear() {
+    let (repository, project) = project_with_policy("worktree-status-clear", POLICY_MANIFEST);
+    let application = app(repository.root());
+    application.context().reconcile(&project).unwrap();
+    application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap();
+    fs::write(
+        project.join("agents.yaml"),
+        "worktrees:\n  completion: merge\n",
+    )
+    .unwrap();
+
+    let plan = application.project().plan(&project).unwrap();
+    assert!(
+        plan.stale_projection.is_none(),
+        "the workspace's region is not the package manager's to count: {plan:?}"
+    );
 }

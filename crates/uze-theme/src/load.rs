@@ -725,6 +725,23 @@ fn missing_entries(
 mod tests {
     use super::*;
 
+    #[test]
+    fn command_groups_take_each_themes_own_accent_and_text() {
+        for name in builtin_names() {
+            let theme = builtin(name).expect("a built-in theme resolves");
+            assert_eq!(
+                theme.color(Token::CommandPackages),
+                theme.color(Token::Accent),
+                "{name}: the package manager's commands wear the theme's accent"
+            );
+            assert_eq!(
+                theme.color(Token::CommandMachine),
+                theme.color(Token::TextSecondary),
+                "{name}: the machine's commands wear the theme's secondary text"
+            );
+        }
+    }
+
     fn load(json: &str) -> Loaded {
         load_str("test", json).expect("theme resolves")
     }

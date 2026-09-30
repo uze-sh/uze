@@ -107,11 +107,10 @@ fn temporary_home(label: &str) -> PathBuf {
 }
 
 #[test]
-fn no_subcommand_stays_headless_when_stdout_is_not_a_terminal() {
-    // `UZE_PANE` is set for every process the terminal runtime spawns, and
-    // a bare `uze` seeing it opens a space in the running client instead of
-    // printing help. Inherited, this test failed for anyone running the
-    // suite from inside uze itself — which is how the project dogfoods.
+fn no_subcommand_prints_help_even_inside_a_workspace_pane() {
+    // Opening the workspace is `uze workspace`; a bare `uze` is help, and
+    // `UZE_PANE`, which every process the terminal runtime spawns inherits,
+    // no longer turns it into anything else.
     //
     // `HOME`/`UZE_HOME` are scoped for the same reason every other spawn in
     // this suite scopes them: a bare `uze` resolves `UzeHome::from_env()` and
@@ -121,13 +120,13 @@ fn no_subcommand_stays_headless_when_stdout_is_not_a_terminal() {
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .isolated_home(&home)
         .env("UZE_HOME", home.join(".uze"))
-        .env_remove("UZE_PANE")
+        .env("UZE_PANE", "1")
         .output()
         .unwrap();
     assert!(output.status.success());
     let text = String::from_utf8_lossy(&output.stdout);
-    assert!(text.contains("Manage one local agent plugin environment"));
-    assert!(text.contains("Usage:"));
+    assert!(text.contains("Usage"));
+    assert!(text.contains("workspace"));
     let _ = std::fs::remove_dir_all(&home);
 }
 

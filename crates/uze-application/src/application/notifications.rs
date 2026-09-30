@@ -1,7 +1,9 @@
 //! When this machine rings for a finished agent. Only the choice: ringing
 //! is the client's, which owns the terminal.
 
-use uze_core::{Result, notifications, notifications::Chime};
+use uze_core::Result;
+
+use uze_workspace::{notifications, notifications::Chime};
 
 use super::services::Notifications;
 

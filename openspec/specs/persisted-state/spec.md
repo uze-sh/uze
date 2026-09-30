@@ -247,7 +247,7 @@ running.
 
 - **WHEN** a live server that recorded itself holds a workspace at an
   endpoint named by rules this build no longer uses
-- **THEN** `uze terminal stop` SHALL end that server
+- **THEN** `uze workspace stop` SHALL end that server
 - **AND THEN** opening UZE SHALL replace it with one that answers where
   this build looks, restoring the spaces and panes it was serving
 - **AND THEN** neither SHALL require the operator to find a process or

@@ -24,7 +24,7 @@ world:
 scenes:
   - scene: the workspace opens on the project, with no agent placed
     when:
-      - open: "{uze}"
+      - open: ["{uze}", "workspace"]
         say: uze opens on the project
         expect: demo-app
         expect_timeout: 20

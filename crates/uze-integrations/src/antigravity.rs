@@ -300,23 +300,23 @@ impl IntegrationPort for AntigravityIntegration {
 
     fn resume_session_args(
         &self,
-        session: &uze_core::conversation::SessionId,
+        session: &uze_core::session::SessionId,
     ) -> Vec<std::ffi::OsString> {
         session::resume_args(session)
     }
 
-    fn session_recorded_for(&self, cwd: &Path) -> Option<uze_core::conversation::SessionId> {
+    fn session_recorded_for(&self, cwd: &Path) -> Option<uze_core::session::SessionId> {
         session::recorded_for(&self.cli_root, cwd)
     }
 
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,
-    ) -> Option<uze_core::conversation::SessionId> {
+    ) -> Option<uze_core::session::SessionId> {
         session::observe(&self.cli_root, ctx)
     }
 
-    fn session_exists(&self, session: &uze_core::conversation::SessionId, _cwd: &Path) -> bool {
+    fn session_exists(&self, session: &uze_core::session::SessionId, _cwd: &Path) -> bool {
         session::exists(&self.cli_root, session)
     }
 

@@ -139,3 +139,90 @@ impl Scenario {
         }
     }
 }
+
+/// The shell startup files a machine's own shell reads, across the shells
+/// UZE ever wrote into. Seeded by [`ShellFiles::seed`] so a test can tell
+/// whether anything changed them.
+pub const SHELL_STARTUP_FILES: [&str; 4] = [
+    ".bashrc",
+    ".bash_profile",
+    ".zshrc",
+    ".config/fish/config.fish",
+];
+
+/// A machine's shell startup files, seeded with text of the operator's own,
+/// so any edit made to one afterwards is detectable.
+pub struct ShellFiles {
+    seeded: Vec<(PathBuf, String)>,
+}
+
+impl ShellFiles {
+    pub fn seed(home: &Path) -> Self {
+        let seeded = SHELL_STARTUP_FILES
+            .iter()
+            .map(|relative| {
+                let path = home.join(relative);
+                let contents = format!("# the operator's own {relative}\nexport EDITOR=vi\n");
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).expect("scenario: shell dir must be creatable");
+                }
+                std::fs::write(&path, &contents).expect("scenario: shell file must be writable");
+                (path, contents)
+            })
+            .collect();
+        Self { seeded }
+    }
+
+    /// The seeded files whose bytes are no longer what was seeded.
+    pub fn changed(&self) -> Vec<PathBuf> {
+        self.seeded
+            .iter()
+            .filter(|(path, seeded)| std::fs::read_to_string(path).ok().as_deref() != Some(seeded))
+            .map(|(path, _)| path.clone())
+            .collect()
+    }
+}
+
+/// The world of a person who only uses the package manager: `env.project`
+/// is a Git repository with no `agents.yaml` yet, the shell is their own,
+/// and every harness is a stand-in they start by hand. Nothing here is
+/// launched by the workspace.
+pub struct PackageOnly {
+    pub shell: ShellFiles,
+    pub project: PathBuf,
+}
+
+impl PackageOnly {
+    pub fn prepare(env: &TestEnvironment) -> Self {
+        let shell = ShellFiles::seed(&env.home);
+        crate::git::isolated_git_in(&env.project, &["init", "-q", "-b", "main"]);
+        std::fs::write(env.project.join("README.md"), "# demo\n")
+            .expect("scenario: README must be writable");
+        crate::git::commit_everything_in(&env.project);
+        Self {
+            shell,
+            project: env.project.clone(),
+        }
+    }
+}
+
+/// The same project once somebody chose a workspace policy: `agents.yaml`
+/// declares `completion`, committed, so the workspace has a region to keep
+/// in step and the package manager has one it must leave alone.
+pub struct PackageAndWorkspace {
+    pub shell: ShellFiles,
+    pub project: PathBuf,
+}
+
+impl PackageAndWorkspace {
+    pub fn prepare(env: &TestEnvironment, completion: &str) -> Self {
+        let PackageOnly { shell, project } = PackageOnly::prepare(env);
+        std::fs::write(
+            project.join("agents.yaml"),
+            format!("worktrees:\n  completion: {completion}\n"),
+        )
+        .expect("scenario: agents.yaml must be writable");
+        crate::git::commit_everything_in(&project);
+        Self { shell, project }
+    }
+}
