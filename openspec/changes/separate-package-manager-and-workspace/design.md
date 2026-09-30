@@ -190,8 +190,16 @@ the `uze:author` skill. Rejected because `plugin-authoring` requires the
 verbs to be documented in `AGENTS.md`, and a skill is only offered, never
 guaranteed to be read.
 
-**D6. The shim belongs to the workspace.** `uze setup` still creates the
-shims under `~/.uze/shims` (generated tier) but never writes a shell file.
+**D6. The shim belongs to the workspace.** Setup still creates the
+shims under `~/.uze/shims` (generated tier), and is their one writer, but
+never writes a shell file. The workspace runs setup itself before it opens
+for every harness installed and not set up (a verified provisioning record
+and the shim in place), from the executable already on the machine and
+without the vendor's update route; it asks which to provision only when
+the machine has no harness. The predicate is readiness, not "UZE never ran
+here": the terminal runtime lays out `state/terminal` on its own, and the
+package manager prepares every detected harness on every command, so
+neither says a harness can be launched.
 The client composes every pane's `Launch` env with the shims directory
 prepended to `PATH`, which is what keeps a harness typed into a pane, or
 started by the agent itself, going through the shim; menu launches already

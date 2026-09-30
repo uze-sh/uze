@@ -14,13 +14,13 @@ use std::{
 };
 
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
-use uze_application::{Chime, HostEntry, PlannedAction, Result, UzeHome};
+use uze_application::{Chime, HostEntry, PlannedAction, Result, UzeHome, WorkspaceEntry};
 use uze_application::{
     UzeApplication,
     application::{
         AddPluginReport, ContextPlan, ContextReconciliationReport, DoctorReport,
         HarnessContextDelivery, HarnessHealth, MachineStatusReport, MarketplaceRemovalReport,
-        MarketplaceSummary, PluginInspection, Portability, ProjectContextStatus,
+        MarketplaceSummary, PluginInspection, Portability, ProjectContextStatus, ProvisionRoute,
         RemovePluginReport, RemoveProjectPluginReport, StatusReport,
     },
 };
@@ -1343,16 +1343,11 @@ fn run_upgrade(home: &UzeHome) -> Result<()> {
     Ok(())
 }
 
-/// A machine UZE has never run on has no harness set up, so nothing the
-/// workspace could launch an agent with: the first run asks which to set
-/// up before the first frame rather than leaving the operator to find out
-/// from a pane that never starts. Asked once — calling it off still opens
-/// the workspace, whose new-agent menu then leads to Integrations.
-///
-/// A setup that ran waits for `enter` before the workspace takes the
-/// screen: its report — a harness that failed, the line that reloads the
-/// shell's `PATH` — is only worth printing if it can be read.
-#[tracing::instrument(name = "tui.first_run_setup", skip_all)]
+/// The workspace launches agents through harnesses set up for it, so what
+/// this machine has is settled before the first frame
+/// ([`set_up_before_opening`]) rather than left to a pane that never
+/// starts.
+#[tracing::instrument(name = "tui.open_workspace", skip_all)]
 fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
     // Started inside one of the running client's own panes: a client
     // inside a client is never what that means. Open a space for this
@@ -1374,23 +1369,38 @@ fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
         // terminal-takeover path — running it here, synchronously, before
         // the alternate screen is even entered, left the terminal looking
         // frozen for however long harness detection took.
-        set_up_on_first_run(&home, verbose)?;
+        set_up_before_opening(&home, verbose)?;
     }
     uze::ui::run(home)
 }
 
-fn set_up_on_first_run(home: &UzeHome, verbose: bool) -> Result<()> {
+/// A harness installed on this machine and not set up for the workspace is
+/// set up from the executable already here, without asking: using it is
+/// why it was installed, and opening the workspace must not update it. Only
+/// a machine with no harness at all is asked which to provision, since the
+/// workspace would otherwise have nothing to launch an agent with.
+///
+/// The report waits for `enter` when it has something to be read — a
+/// harness that failed, a warning, or an answer the operator just gave —
+/// and otherwise gives the screen straight to the workspace.
+fn set_up_before_opening(home: &UzeHome, verbose: bool) -> Result<()> {
     let app = UzeApplication::from_env(home.clone())?;
-    if !app.health().first_run() {
-        return Ok(());
-    }
-    let Some(chosen) = choose_harnesses(&app) else {
-        return Ok(());
+    let (targets, route) = match app.workspace().entry() {
+        WorkspaceEntry::Ready => return Ok(()),
+        WorkspaceEntry::SetUp(installed) => (installed, ProvisionRoute::Existing),
+        WorkspaceEntry::Choose => match choose_harnesses(&app) {
+            Some(chosen) => (chosen, ProvisionRoute::Official),
+            None => return Ok(()),
+        },
     };
-    if let Err(error) = run_setup(&app, home, &chosen, verbose) {
+    let asked = route == ProvisionRoute::Official;
+    let ending = run_setup(&app, home, &targets, route, verbose);
+    if let Err(error) = &ending {
         eprintln!("uze: {error}");
     }
-    let _ = prompt::ask("Press enter to open uze");
+    if asked || !matches!(ending, Ok(SetupEnding::Clean)) {
+        let _ = prompt::ask("Press enter to open uze");
+    }
     Ok(())
 }
 
@@ -1401,7 +1411,7 @@ fn run_setup_command(
     verbose: bool,
 ) -> Result<()> {
     match arguments {
-        [] => run_setup(app, home, arguments, verbose),
+        [] => run_setup(app, home, arguments, ProvisionRoute::Official, verbose).map(drop),
         [command] if command == "list" => {
             print!("{}", render_harness_list(&app.health().harnesses()));
             Ok(())
@@ -1422,7 +1432,7 @@ fn run_setup_command(
                 "use `uze setup list`, `uze setup inspect <harness>`, or `uze setup <harness>...`",
             )
         }
-        harnesses => run_setup(app, home, harnesses, verbose),
+        harnesses => run_setup(app, home, harnesses, ProvisionRoute::Official, verbose).map(drop),
     }
 }
 
@@ -2091,23 +2101,32 @@ fn harness_hint(harness: &HarnessHealth) -> String {
 /// installer's output is buffered to `$UZE_HOME/state/logs/setup-<harness>.log`
 /// instead of interleaving on the terminal, so the terminal shows only
 /// ordered step headers and the per-harness final status.
+/// How a setup that did not fail ended: with nothing to say beyond its
+/// report, or with warnings a person should read before the screen moves on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SetupEnding {
+    Clean,
+    WithWarnings,
+}
+
 fn run_setup(
     app: &UzeApplication,
     home: &UzeHome,
     harnesses: &[String],
+    route: ProvisionRoute,
     verbose: bool,
-) -> Result<()> {
+) -> Result<SetupEnding> {
     let targets: Vec<String> = if harnesses.is_empty() {
         match choose_harnesses(app) {
             Some(chosen) => chosen,
-            None => return Ok(()),
+            None => return Ok(SetupEnding::Clean),
         }
     } else {
         harnesses.to_vec()
     };
     if targets.is_empty() {
         println!("No harnesses registered");
-        return Ok(());
+        return Ok(SetupEnding::Clean);
     }
     let total = targets.len();
     let is_tty = std::io::stderr().is_terminal();
@@ -2156,7 +2175,7 @@ fn run_setup(
         );
         let runner = CapturingRunner::new(log_path.clone(), verbose);
         let per_app = UzeApplication::from_env_with_runner(home.clone(), Box::new(runner))?;
-        let results = match per_app.setup(Some(id)) {
+        let results = match per_app.setup_through(Some(id), route) {
             Ok(r) => r,
             Err(e) => {
                 if let Some(pb) = &spinner {
@@ -2366,7 +2385,11 @@ fn run_setup(
     } else {
         println!("\nSetup completed — all {} harness(es) ready.", total);
     }
-    Ok(())
+    Ok(if had_warning {
+        SetupEnding::WithWarnings
+    } else {
+        SetupEnding::Clean
+    })
 }
 
 fn chrono_stamp() -> String {

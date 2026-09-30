@@ -9,7 +9,7 @@ pub use application::services::{
     CheckoutRefusal, CheckoutView, CheckoutsView, CleanUp, DeliveryOutcome, DeliveryPolicyView,
     DeliveryReport, Evaluation, JoinedWork, KeptCheckout, NamedTask, Placement, PlacementKind,
     PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, RemovedCheckout, SplitWork,
-    SubagentCheckout, UpstreamSync, WorkStateView, project_artifacts,
+    SubagentCheckout, UpstreamSync, WorkStateView, WorkspaceEntry, project_artifacts,
 };
 
 /// Types the read models above are made of. Presentation consumes these

@@ -42,6 +42,12 @@ struct Engine {
 
 impl Engine {
     fn start(lock: &str) -> Self {
+        Self::start_with(lock, |_| {})
+    }
+
+    /// `start`, with `before_serve` run against the world before the
+    /// server is: what the server does as it starts is part of the subject.
+    fn start_with(lock: &str, before_serve: impl FnOnce(&TestEnvironment)) -> Self {
         let env = TestEnvironment::isolated();
         // The application runs in this process and spawns Git and the forge
         // CLI, so this process must see the isolated HOME, UZE_HOME and the
@@ -69,12 +75,16 @@ impl Engine {
         let scripts = env.root().join("agent-scripts");
         fs::create_dir_all(&scripts).unwrap();
         FakeHarness::scripted_agent(&env.fake_bin, "agent");
+        before_serve(&env);
 
         let server = env
             .command(uze_bin())
             .args(["terminal", "serve", "--root"])
             .arg(&project)
             .env("AGENT_SCRIPTS", &scripts)
+            // A pane with no command runs this: a shell nothing on the
+            // machine configured, so what it finds on `PATH` is the server's.
+            .env("SHELL", "/bin/sh")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -938,4 +948,84 @@ fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
         session.workspace.selected_space, first_space,
         "a space opened from a pane does not steal this client's focus"
     );
+}
+
+/// A harness a person types into a workspace pane, or a program running
+/// there starts, goes through the launcher its setup placed, like one
+/// started from the menu: the server puts the shims first on every pane's
+/// `PATH`, and nothing in the pane's shell is told.
+#[test]
+fn a_harness_typed_into_a_pane_goes_through_its_launcher() {
+    let launched = std::cell::OnceCell::new();
+    let mut engine = Engine::start_with("  completion: merge\n", |env| {
+        let marker = env.root().join("claude.env");
+        let claude = env.fake_bin.join("claude");
+        fs::write(
+            &claude,
+            format!(
+                "#!/bin/sh\n\
+                 case \"$1\" in --version) echo '9.9.9 (Claude Code)'; exit 0;; update|plugin) exit 0;; esac\n\
+                 {{ echo \"PID=$$\"; env; }} > '{marker}.part' && mv '{marker}.part' '{marker}'\n\
+                 exec sleep 60\n",
+                marker = marker.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
+        env.run_ok(uze_bin(), &["setup", "claude-code"]);
+        launched.set(marker).unwrap();
+    });
+    let marker = launched.into_inner().unwrap();
+    assert!(
+        UzeHome::at(&engine.env.uze_home)
+            .shims_dir()
+            .join("claude")
+            .exists(),
+        "setup placed the harness's launcher"
+    );
+
+    let project = engine.project().to_path_buf();
+    send_request(
+        &mut engine.stream,
+        &ClientRequest::CreateTab {
+            label: "shell".into(),
+            agent: None,
+            columns: 80,
+            rows: 24,
+            cwd: Some(project.clone()),
+            command: None,
+            env: Vec::new(),
+        },
+    )
+    .unwrap();
+    engine.wait_for_tab_in(&project);
+    let pane = engine.pane_in(&project);
+    engine.tell(pane, "claude");
+    wait_until("the typed harness started", || marker.exists());
+
+    let seen = fs::read_to_string(&marker).unwrap();
+    let pid = seen
+        .lines()
+        .find_map(|line| line.strip_prefix("PID="))
+        .unwrap();
+    assert!(
+        seen.lines().any(|line| line == "UZE_SHIM_NAME=claude"),
+        "the real binary was reached through its launcher: {seen}"
+    );
+    assert!(
+        seen.lines()
+            .any(|line| line == format!("UZE_SHIM_PID={pid}")),
+        "and the stamp names the harness's own process: {seen}"
+    );
+    engine.wait_for_session_where("the pane runs claude through its launcher", |session| {
+        session
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| &space.tabs)
+            .any(|tab| {
+                tab.pane.id == pane && tab.pane.process == "claude" && tab.pane.through_launcher
+            })
+    });
 }

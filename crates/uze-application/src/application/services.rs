@@ -155,11 +155,28 @@ pub struct AgentIdentity {
     /// able to continue, when that is the case. `None` is the ordinary
     /// answer; a value is meant to be said once, on the tab.
     pub continuity_gap: Option<String>,
-    /// Whether this harness has been set up on this machine. Every
-    /// identity still recognizes a running agent; only a configured one is
-    /// offered to launch, because a harness nobody set up may not even be
-    /// on `PATH`, and its pane would never start.
+    /// Whether this harness is set up for the workspace: its executable
+    /// verified and its launcher in place. Every identity still recognizes
+    /// a running agent; only a set-up one is offered to launch, because an
+    /// agent started without its launcher neither resumes its conversation
+    /// nor receives what the launcher carries.
     pub configured: bool,
+}
+
+/// What the workspace needs before it opens, decided from the harnesses
+/// this machine has rather than from whether UZE ever ran on it: a machine
+/// is only ever in one of these, and each asks for something different.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WorkspaceEntry {
+    /// Every harness on this machine is set up for the workspace.
+    Ready,
+    /// These harnesses are installed and not set up: they are set up from
+    /// what is already here, without asking, because using them is why
+    /// they were installed.
+    SetUp(Vec<String>),
+    /// No harness is installed: the operator is asked which to provision,
+    /// since the workspace has nothing to launch an agent with.
+    Choose,
 }
 
 /// The workspace service's own file — named for what it holds rather

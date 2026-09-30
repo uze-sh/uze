@@ -903,7 +903,7 @@ pub(crate) fn a_harness_that_fails_to_prepare_does_not_stop_the_others() {
         ],
     );
 
-    let results = app.provision_and_prepare(None);
+    let results = app.provision_and_prepare_through(None, ProvisionRoute::Official);
 
     assert_eq!(results.len(), 2, "{results:?}");
     let refused = &results[0];
@@ -1884,7 +1884,7 @@ fn provision_and_prepare_writes_through_the_cache_on_success() {
     let fake = FakeIntegration::new("fake-d", true, calls.clone());
     let app = UzeApplication::new(UzeHome::at(&root), vec![Box::new(fake)]);
 
-    let results = app.provision_and_prepare(None);
+    let results = app.provision_and_prepare_through(None, ProvisionRoute::Official);
     assert!(results[0].configured);
     let calls_after_provision = calls.load(Ordering::SeqCst);
     assert!(calls_after_provision >= 1);

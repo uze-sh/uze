@@ -14,6 +14,7 @@ use uze_core::{
     provisioning::{ProcessResult, ProcessSpec},
 };
 
+use super::services::WorkspaceEntry;
 use super::tests::fixture;
 use super::*;
 
@@ -79,6 +80,7 @@ impl ProcessRunner for FakeRunner {
 struct RoutedHarness {
     id: &'static str,
     home: UzeHome,
+    launched_through_a_shim: bool,
     skills_dir: PathBuf,
     machine: Machine,
     provisioned: Arc<AtomicUsize>,
@@ -90,6 +92,7 @@ impl RoutedHarness {
         Self {
             id,
             home: home.clone(),
+            launched_through_a_shim: false,
             skills_dir: root.join(id).join("skills"),
             machine: machine.clone(),
             provisioned: Arc::new(AtomicUsize::new(0)),
@@ -108,7 +111,7 @@ impl IntegrationPort for RoutedHarness {
     }
 
     fn supports_runtime_integration(&self) -> bool {
-        false
+        self.launched_through_a_shim
     }
 
     fn detect(&self) -> HarnessDetection {
@@ -222,9 +225,24 @@ struct World {
 
 impl World {
     fn new(label: &str, machine: Machine, failing: Option<&'static str>) -> Self {
+        Self::built(label, machine, failing, false)
+    }
+
+    /// A world whose harness the workspace launches through its shim.
+    fn launched_through_a_shim(label: &str, machine: Machine) -> Self {
+        Self::built(label, machine, None, true)
+    }
+
+    fn built(
+        label: &str,
+        machine: Machine,
+        failing: Option<&'static str>,
+        launched_through_a_shim: bool,
+    ) -> Self {
         let root = uze_testkit::temp::scratch(label);
         let home = UzeHome::at(root.join("uze"));
-        let harness = RoutedHarness::new("routed", &home, &root.join("home"), &machine);
+        let mut harness = RoutedHarness::new("routed", &home, &root.join("home"), &machine);
+        harness.launched_through_a_shim = launched_through_a_shim;
         let provisioned = harness.provisioned.clone();
         let prepared = harness.prepared.clone();
         let app = UzeApplication::new_with_runner(
@@ -496,4 +514,102 @@ fn add_never_provisions_even_when_every_harness_is_absent() {
     );
     assert!(state::provisioning(&home, "routed-a").unwrap().is_none());
     let _ = fs::remove_dir_all(root);
+}
+
+/// The environment a shim is placed in: the harness's executable on `PATH`
+/// for the shim to resolve, and a shell with no startup file UZE knows, so
+/// setup has none of the operator's to take a block back from.
+fn with_the_executable_on_path(world: &World) -> uze_testkit::env::ProcessEnvGuard<'static> {
+    let bin = world.root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let executable = bin.join("routed");
+    fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let mut environment = uze_testkit::env::scope();
+    environment
+        .set("PATH", &bin)
+        .set("SHELL", "uze-test-no-recognized-shell");
+    environment
+}
+
+#[test]
+fn a_machine_with_no_harness_is_asked_which_to_provision() {
+    let world = World::launched_through_a_shim("entry-no-harness", Machine::default());
+
+    assert_eq!(world.app.workspace().entry(), WorkspaceEntry::Choose);
+}
+
+/// What every command prepares on its way through makes a harness able to
+/// receive plugins, not one the workspace can launch — and what the
+/// terminal runtime lays out under `state/` is not a machine meeting UZE
+/// before: the two things that read as "set up" on a clean install.
+#[test]
+fn an_installed_harness_nobody_set_up_is_set_up_before_the_workspace_opens() {
+    let world = World::launched_through_a_shim(
+        "entry-installed-not-set-up",
+        Machine::with_harness_installed(),
+    );
+    fs::create_dir_all(world.home.state_dir().join("terminal")).unwrap();
+
+    assert_eq!(
+        world.app.workspace().entry(),
+        WorkspaceEntry::SetUp(vec!["routed".to_owned()])
+    );
+    assert!(
+        !world.app.workspace().agent_identities()[0].configured,
+        "not offered to launch before it is set up"
+    );
+}
+
+#[test]
+fn the_workspace_sets_up_what_is_installed_without_updating_it() {
+    let world =
+        World::launched_through_a_shim("entry-set-up-existing", Machine::with_harness_installed());
+    let _environment = with_the_executable_on_path(&world);
+
+    let mut results = world
+        .app
+        .setup_through(Some("routed"), ProvisionRoute::Existing)
+        .unwrap();
+    let result = results.remove(0);
+
+    assert!(result.configured, "{result:?}");
+    assert!(result.shim_error.is_none(), "{result:?}");
+    assert!(
+        world.machine.commands().is_empty(),
+        "no vendor route was taken: {:?}",
+        world.machine.commands()
+    );
+    assert_eq!(world.provisioned.load(Ordering::SeqCst), 0);
+    assert_eq!(result.provisioning.action, ProvisionAction::None);
+    assert!(world.home.shims_dir().join("routed").is_symlink());
+    assert_eq!(world.app.workspace().entry(), WorkspaceEntry::Ready);
+    assert!(world.app.workspace().agent_identities()[0].configured);
+    assert_eq!(world.app.workspace().launcher_names(), ["routed"]);
+}
+
+#[test]
+fn a_launcher_gone_since_setup_is_set_up_again() {
+    let world =
+        World::launched_through_a_shim("entry-launcher-gone", Machine::with_harness_installed());
+    let _environment = with_the_executable_on_path(&world);
+    world
+        .app
+        .setup_through(Some("routed"), ProvisionRoute::Existing)
+        .unwrap();
+
+    fs::remove_file(world.home.shims_dir().join("routed")).unwrap();
+
+    assert_eq!(
+        world.app.workspace().entry(),
+        WorkspaceEntry::SetUp(vec!["routed".to_owned()])
+    );
+    assert!(
+        world.app.workspace().launcher_names().is_empty(),
+        "a harness with no launcher cannot have bypassed one"
+    );
 }
