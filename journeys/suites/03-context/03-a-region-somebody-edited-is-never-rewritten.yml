@@ -70,7 +70,7 @@ scenes:
         about: the plugin's own words are on the page
       - cmd:
           run: "{uze} agent context inspect | grep house-rules@demo"
-          stdout_contains: "Matched"
+          stdout_contains: "matched"
         about: |
           and UZE reads the region as its own — which is what makes the
           next scene a change rather than a coincidence
@@ -113,7 +113,7 @@ scenes:
     then:
       - cmd:
           run: "{uze} agent context inspect | grep house-rules@demo"
-          stdout_contains: "Drifted"
+          stdout_contains: "drifted"
         about: |
           UZE names the region as drifted, so a person who wants the
           plugin's version back knows there is something to decide

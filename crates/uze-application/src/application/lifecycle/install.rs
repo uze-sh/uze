@@ -165,7 +165,7 @@ impl Plugins<'_> {
         if !targets.is_empty() {
             let names: Vec<&str> = targets
                 .iter()
-                .map(|(integration, _)| integration.id())
+                .map(|(integration, _)| integration.display_name())
                 .collect();
             tracing::info!(
                 target: uze_core::acquisition::git::STEP,

@@ -75,9 +75,11 @@ fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion(
         .args(["doctor"])
         .output()
         .expect("uze doctor must run");
+    // Fake harnesses leave doctor something to find, and a finding fails
+    // the command; what matters here is that it ran and whom it asked.
     assert!(
-        output.status.success(),
-        "doctor failed: {}",
+        output.status.code().is_some_and(|code| code <= 1),
+        "doctor did not run: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);

@@ -118,7 +118,7 @@ accepts, which is why the table sums to more than the number of crates.
 | Licence | Crates |
 | --- | --- |
 | Apache License 2.0 (`Apache-2.0`) | 193 |
-| MIT License (`MIT`) | 66 |
+| MIT License (`MIT`) | 65 |
 | Unicode License v3 (`Unicode-3.0`) | 1 |
 | zlib License (`Zlib`) | 1 |
 
@@ -161,7 +161,6 @@ accepts, which is why the table sums to more than the number of crates.
 | `clap_derive` | 4.6.7 | MIT OR Apache-2.0 |
 | `clap_lex` | 1.1.0 | MIT OR Apache-2.0 |
 | `colorchoice` | 1.0.5 | MIT OR Apache-2.0 |
-| `comfy-table` | 8.0.0 | MIT |
 | `compact_str` | 0.9.1 | MIT |
 | `concurrent-queue` | 2.5.0 | Apache-2.0 OR MIT |
 | `console` | 0.16.4 | MIT |

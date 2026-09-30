@@ -162,7 +162,7 @@ fn a_scaffolded_plugin_is_installable_before_any_second_commit() {
         String::from_utf8_lossy(&check.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&check.stdout).contains("this is a valid Agent Plugins 1.0 plugin"),
+        String::from_utf8_lossy(&check.stdout).contains("valid Agent Plugins 1.0"),
         "the scaffold is valid under the standard too: {}",
         String::from_utf8_lossy(&check.stdout)
     );

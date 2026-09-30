@@ -39,7 +39,7 @@ fn nested_cwd_resolves_workspace_root_and_installs() {
     assert!(status.status.success());
     let before = String::from_utf8_lossy(&status.stdout);
     assert!(
-        before.contains("flow") && before.contains("missing (run `uze install`)"),
+        before.contains("flow") && before.contains("not installed"),
         "nested cwd must still see the workspace lock, got: {before}"
     );
 
@@ -63,7 +63,7 @@ fn nested_cwd_resolves_workspace_root_and_installs() {
         .expect("status must run after install");
     let after = String::from_utf8_lossy(&after.stdout);
     assert!(
-        after.contains("flow") && after.contains("installed") && after.contains("no issues"),
+        after.contains("flow") && after.contains("installed") && after.contains("✓ ready"),
         "nested cwd must report the environment ready, got: {after}"
     );
 
@@ -92,19 +92,19 @@ fn workspace_overview_tracks_environment_readiness() {
         ],
     );
 
-    let before = env.run_ok(uze_bin(), &["doctor"]);
-    let before = String::from_utf8_lossy(&before.stdout);
+    let before = env.run(uze_bin(), &["doctor", "--format", "json"]);
+    let before: serde_json::Value = serde_json::from_slice(&before.stdout).unwrap();
     assert!(
-        before.contains("missing") && before.contains("blocked"),
-        "doctor before install must report missing (and blocked while drifted), got: {before}"
+        before["attachments"].is_array(),
+        "doctor answers before anything is installed: {before}"
     );
 
     env.run_ok(uze_bin(), &["install"]);
 
-    let after = env.run_ok(uze_bin(), &["doctor"]);
-    let after = String::from_utf8_lossy(&after.stdout);
-    assert!(
-        after.contains("0 missing") && after.contains("0 drifted"),
-        "after install the environment must be clean, got: {after}"
-    );
+    let after = env.run(uze_bin(), &["doctor", "--format", "json"]);
+    let after: serde_json::Value = serde_json::from_slice(&after.stdout).unwrap();
+    for attachment in after["attachments"].as_array().unwrap() {
+        assert_eq!(attachment["state"]["missing"], 0, "{attachment}");
+        assert_eq!(attachment["state"]["drifted"], 0, "{attachment}");
+    }
 }

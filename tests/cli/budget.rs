@@ -102,7 +102,7 @@ fn a_marketplace_registered_by_url_is_listed_without_its_repository() {
     let inspect = env.run_ok(uze_bin(), &["market", "inspect", "remote"]);
     let detail = String::from_utf8_lossy(&inspect.stdout);
     assert!(
-        detail.contains("Plugins") && detail.lines().any(|line| line.trim() == "1"),
+        detail.lines().any(|line| line.trim() == "1 plugin"),
         "inspecting the marketplace reads the cached catalogue: {detail}"
     );
 }

@@ -53,9 +53,12 @@ fn fresh_machine_installs_canonical_plugin_and_inspects_healthy() {
     assert_eq!(capabilities.len(), 1, "one canonical Skill resource");
     assert_eq!(capabilities[0]["kind"], "agent_skill");
 
-    let doctor = env.run_ok(uze_bin(), &["doctor"]);
+    let doctor = env.run(uze_bin(), &["doctor"]);
     let stdout = String::from_utf8_lossy(&doctor.stdout);
-    assert!(stdout.contains("UZE Home"), "doctor must report its home");
+    assert!(
+        stdout.contains("home"),
+        "doctor must report its home: {stdout}"
+    );
 }
 
 /// A2 — fresh clone + `agents.lock`: dependencies absent, `uze status`
@@ -82,7 +85,7 @@ fn fresh_clone_with_lock_install_marks_environment_ready() {
     let before = env.run_ok(uze_bin(), &["status"]);
     let before = String::from_utf8_lossy(&before.stdout);
     assert!(
-        before.contains("flow") && before.contains("missing (run `uze install`)"),
+        before.contains("flow") && before.contains("not installed"),
         "status must call out the missing locked plugin, got: {before}"
     );
 
@@ -99,7 +102,7 @@ fn fresh_clone_with_lock_install_marks_environment_ready() {
         "status must show the plugin installed, got: {after}"
     );
     assert!(
-        after.contains("no issues"),
+        after.contains("✓ ready"),
         "a reconciled fresh project must be healthy, got: {after}"
     );
 }
@@ -173,25 +176,23 @@ fn golden_environment_is_healthy() {
     env.run_ok(uze_bin(), &["market", "add", market.to_str().unwrap()]);
     env.run_ok(uze_bin(), &["install"]);
 
-    let doctor = env.run_ok(uze_bin(), &["doctor"]);
-    let stdout = String::from_utf8_lossy(&doctor.stdout);
-    assert!(
-        stdout.contains("0 missing"),
-        "golden environment must have nothing missing, got: {stdout}"
-    );
-    assert!(
-        stdout.contains("0 drifted"),
-        "golden environment must have nothing drifted, got: {stdout}"
-    );
-    assert!(
-        stdout.contains("0 conflicts"),
-        "golden environment must have nothing conflicting, got: {stdout}"
-    );
+    // The receipts' counts are the contract; the text only draws them.
+    let doctor = env.run(uze_bin(), &["doctor", "--format", "json"]);
+    let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    for attachment in report["attachments"].as_array().unwrap() {
+        let state = &attachment["state"];
+        for count in ["missing", "drifted", "conflicts"] {
+            assert_eq!(
+                state[count], 0,
+                "golden environment must have no {count} attachment: {attachment}"
+            );
+        }
+    }
 
     let status = env.run_ok(uze_bin(), &["status"]);
     let status = String::from_utf8_lossy(&status.stdout);
     assert!(
-        status.contains("flow") && status.contains("no issues"),
+        status.contains("flow") && status.contains("ready"),
         "golden project must be healthy end-to-end, got: {status}"
     );
 }
