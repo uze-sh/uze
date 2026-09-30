@@ -22,7 +22,7 @@ use uze_workspace::{
     worktree::{self, BranchVocabulary, CompletionBehavior, NameRefusal, WorktreePolicy},
 };
 
-use super::{AgentIdentity, Workspace};
+use super::{AgentIdentity, Workspace, WorkspaceEntry};
 
 impl Workspace<'_> {
     /// The workspace root a directory belongs to, or the directory itself.
@@ -54,11 +54,52 @@ impl Workspace<'_> {
                     display_name: integration.display_name(),
                     launch,
                     continuity_gap,
-                    configured: integration.status(&self.0.home)
-                        != uze_core::integration::IntegrationStatus::NotConfigured,
+                    configured: self.is_set_up(integration.as_ref()),
                 }
             })
             .collect()
+    }
+
+    /// What the workspace needs before it opens. Asks each harness whether
+    /// it is on this machine, which the detection cache answers without a
+    /// probe after the first time.
+    #[tracing::instrument(name = "workspace.entry", skip_all)]
+    pub fn entry(&self) -> WorkspaceEntry {
+        let installed: Vec<&dyn uze_core::integration::IntegrationPort> = self
+            .0
+            .integrations
+            .iter()
+            .map(|integration| integration.as_ref())
+            .filter(|integration| self.0.detect_cached(*integration).present)
+            .collect();
+        if installed.is_empty() {
+            return WorkspaceEntry::Choose;
+        }
+        let to_set_up: Vec<String> = installed
+            .into_iter()
+            .filter(|integration| !self.is_set_up(*integration))
+            .map(|integration| integration.id().to_owned())
+            .collect();
+        if to_set_up.is_empty() {
+            WorkspaceEntry::Ready
+        } else {
+            WorkspaceEntry::SetUp(to_set_up)
+        }
+    }
+
+    /// Set up for the workspace: a setup verified the executable, and the
+    /// launcher it placed is still there. Read from the record and the
+    /// shims directory, never from the detection cache — what the package
+    /// manager prepared on its way through a command is a harness that can
+    /// receive plugins, not one the workspace can launch.
+    fn is_set_up(&self, integration: &dyn uze_core::integration::IntegrationPort) -> bool {
+        uze_core::state::provisioning(&self.0.home, integration.id())
+            .ok()
+            .flatten()
+            .is_some_and(|provisioning| {
+                provisioning.status == uze_core::provisioning::ProvisionStatus::Verified
+            })
+            && self.0.runtime_shim_is_active(integration)
     }
 
     /// What to launch an agent of `integration` by, and what that costs.
@@ -66,11 +107,12 @@ impl Workspace<'_> {
     /// UZE's own launcher is what decides, per launch, whether an agent
     /// resumes its task's conversation or starts one, so naming it here by
     /// path is what makes continuity independent of the operator's `PATH`.
-    /// It is never created on their behalf: the launcher's presence is the
-    /// operator's own opt-in, and resurrecting one they removed would
-    /// override a decision they made. Without it the harness still starts —
-    /// on its plain name, with no conversation carried over, and the reason
-    /// said rather than silently missing.
+    /// Setup places it, and the workspace runs setup before it opens for
+    /// every harness installed and not set up ([`Self::entry`]), so this
+    /// is found missing only for a harness whose setup could not place it.
+    /// Without it the harness still starts — on its plain name, with no
+    /// conversation carried over, and the reason said rather than silently
+    /// missing.
     fn launcher(
         &self,
         integration: &dyn uze_core::integration::IntegrationPort,

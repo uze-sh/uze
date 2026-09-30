@@ -5476,15 +5476,7 @@ mod workspace_tests {
             .into_iter()
             .next()
             .expect("a harness is registered");
-        uze_core::state::record(
-            &home,
-            only.integration,
-            uze_core::state::IntegrationRecord {
-                version: None,
-                strategy: "test".to_owned(),
-            },
-        )
-        .unwrap();
+        set_up_harness(&home, &only);
         let mut driven =
             driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
         driven.frame();
@@ -8189,16 +8181,29 @@ mod workspace_tests {
     /// that launches one sets them up first.
     fn set_up_every_harness(home: &UzeHome) {
         for identity in super::super::agent_identities(home) {
-            uze_core::state::record(
-                home,
-                identity.integration,
-                uze_core::state::IntegrationRecord {
-                    version: None,
-                    strategy: "test".to_owned(),
-                },
-            )
-            .unwrap();
+            set_up_harness(home, &identity);
         }
+    }
+
+    /// What setup leaves behind for the workspace to read a harness as set
+    /// up: a verified provisioning record and the launcher in the shims
+    /// directory.
+    pub(super) fn set_up_harness(home: &UzeHome, identity: &AgentIdentity) {
+        uze_core::state::record_provisioning(
+            home,
+            identity.integration,
+            &uze_core::provisioning::ProvisioningResult::verified(
+                uze_core::provisioning::ProvisionAction::None,
+                "test",
+                uze_core::integration::HarnessDetection {
+                    present: true,
+                    version: None,
+                },
+            ),
+        )
+        .unwrap();
+        std::fs::create_dir_all(home.shims_dir()).unwrap();
+        std::fs::write(home.shims_dir().join(identity.binary), "").unwrap();
     }
 
     pub(super) fn driven(model: WorkspaceModel, home: &UzeHome) -> Driven<'_> {

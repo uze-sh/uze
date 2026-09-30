@@ -1,0 +1,60 @@
+journey: the first run sets up the harnesses it finds before the workspace opens
+tags: [gate, tui, first-run]
+proves: web/content/docs/installation.mdx
+about: |
+  Somebody who installs uze on a machine that already has coding agents, and
+  runs the workspace straight away without ever hearing of `uze setup`, gets
+  a workspace whose agents start through their launchers — not a question
+  about what they already installed, and not a new-agent menu offering
+  harnesses nothing set up.
+
+  The claim is read off the machine: every harness found is recorded as set
+  up from the executable already there, with no install or update run, each
+  has a shim resolving to uze, and an agent launched from the workspace is a
+  real process.
+
+world:
+  project: demo-app
+  first_run: true
+
+scenes:
+  - scene: the harnesses on the machine are set up without a question
+    when:
+      - open: ["{uze}", "workspace"]
+        say: run uze on a machine that has agents and where nothing was set up
+        expect: demo-app
+        expect_timeout: 90
+        pause: 1.0
+    then:
+      - json: "{uze_home}/state/provisioning.json"
+        at: harnesses.*.status
+        count: 4
+        equals: VERIFIED
+        about: every harness found is recorded as verified
+      - json: "{uze_home}/state/provisioning.json"
+        at: harnesses.*.action
+        count: 4
+        equals: NONE
+        about: from the executable already there, with no install or update run
+      - link: "{uze_home}/shims/*"
+        resolves_to: uze
+        about: and each has its launcher in UZE's own shims
+      - process: { matching: bash, cwd: "{project}", alive: true }
+        about: the workspace opened on the project, with its shell running
+
+  - scene: an agent picked in that workspace starts
+    when:
+      - click: "✦ new"
+        say: open the new-agent picker from the space's row
+        in: sidebar
+        expect: new agent
+      - click: " new agent "
+        say: pick the first harness it offers
+        row_offset: 1
+        offset: 3
+        expect: agent 1
+        expect_timeout: 90
+        pause: 1.5
+    then:
+      - process: { matching: claude, alive: true }
+        about: the harness the operator picked is a running process, not a pane stuck starting

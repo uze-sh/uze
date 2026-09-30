@@ -3,6 +3,20 @@
 
 use super::*;
 
+/// How [`UzeApplication::setup_through`] reaches a harness's executable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProvisionRoute {
+    /// The vendor's official route, which installs what is missing and
+    /// updates what is not: `uze setup`, and the workspace's first-run
+    /// chooser on a machine with no harness.
+    Official,
+    /// The executable already on this machine, verified by the version it
+    /// answers and never updated: what the workspace does for a harness it
+    /// finds installed but not set up, since opening it must not change
+    /// anybody's tools behind their back.
+    Existing,
+}
+
 impl UzeApplication {
     /// Ensures every plugin `bootstrap::DEFAULT_PLUGIN_IDS` names is present
     /// in the Store. Each default plugin's *first install* goes through the
@@ -143,6 +157,19 @@ impl UzeApplication {
     /// `Vec<SetupResult>` with one entry per harness, and `doctor` shows the
     /// same facts via reconciliation.
     pub fn setup(&self, requested: Option<&str>) -> Result<Vec<SetupResult>> {
+        self.setup_through(requested, ProvisionRoute::Official)
+    }
+
+    /// [`setup`](Self::setup), reaching each harness's executable by
+    /// `route`. Everything past provisioning — the record, the prepared
+    /// harness, its plugins and its shim — is the same whichever route
+    /// verified the executable, which is what makes a harness the
+    /// workspace set up indistinguishable from one `uze setup` did.
+    pub fn setup_through(
+        &self,
+        requested: Option<&str>,
+        route: ProvisionRoute,
+    ) -> Result<Vec<SetupResult>> {
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.home)?;
         // Seed the default marketplace plugins before any provisioning, so a
         // fresh `UZE_HOME` gets the Skill without a manual `uze add` and so
@@ -151,7 +178,7 @@ impl UzeApplication {
         let wanted = requested
             .map(|name| self.resolve_integration_id(name))
             .transpose()?;
-        let mut results = self.provision_and_prepare(wanted);
+        let mut results = self.provision_and_prepare_through(wanted, route);
         // `setup` is the documented way to repair a derived view that
         // failed to publish, so it always rebuilds them.
         let _ = self.republish_all();
@@ -187,28 +214,53 @@ impl UzeApplication {
     /// One entry per harness whatever happens to it: a harness that fails
     /// to provision or to be prepared is reported as failed, never as the
     /// end of everybody else's setup.
-    pub(crate) fn provision_and_prepare(&self, requested: Option<&str>) -> Vec<SetupResult> {
+    pub(crate) fn provision_and_prepare_through(
+        &self,
+        requested: Option<&str>,
+        route: ProvisionRoute,
+    ) -> Vec<SetupResult> {
         self.integrations
             .iter()
             .filter(|integration| requested.is_none_or(|id| integration.id() == id))
-            .map(|integration| self.provision_and_prepare_one(integration.as_ref()))
+            .map(|integration| self.provision_and_prepare_one(integration.as_ref(), route))
             .collect()
     }
 
-    fn provision_and_prepare_one(&self, integration: &dyn IntegrationPort) -> SetupResult {
+    fn provision_and_prepare_one(
+        &self,
+        integration: &dyn IntegrationPort,
+        route: ProvisionRoute,
+    ) -> SetupResult {
         let provisioning = {
-            let _span =
-                tracing::info_span!("integration.provision", integration = integration.id())
-                    .entered();
-            integration
-                .provision(self.runner.as_ref())
-                .unwrap_or_else(|error| {
-                    ProvisioningResult::failed(
-                        ProvisionAction::None,
-                        "provision",
-                        error.to_string(),
-                    )
-                })
+            let _span = tracing::info_span!(
+                "integration.provision",
+                integration = integration.id(),
+                ?route
+            )
+            .entered();
+            match route {
+                ProvisionRoute::Official => integration
+                    .provision(self.runner.as_ref())
+                    .unwrap_or_else(|error| {
+                        ProvisioningResult::failed(
+                            ProvisionAction::None,
+                            "provision",
+                            error.to_string(),
+                        )
+                    }),
+                ProvisionRoute::Existing => {
+                    let detection = self.detect_cached(integration);
+                    if detection.present {
+                        ProvisioningResult::verified(
+                            ProvisionAction::None,
+                            "existing-executable",
+                            detection,
+                        )
+                    } else {
+                        ProvisioningResult::blocked("not installed on this machine")
+                    }
+                }
+            }
         };
         let prepared = state::record_provisioning(&self.home, integration.id(), &provisioning)
             .and_then(|()| {

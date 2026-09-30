@@ -62,6 +62,7 @@ mod theme;
 pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason};
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;
+pub use setup::ProvisionRoute;
 pub use theme::{GlyphSetSummary, ThemeSummary};
 
 pub use maintenance::{MaintenanceOutcome, MaintenanceReport};

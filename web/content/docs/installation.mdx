@@ -48,8 +48,11 @@ uze setup
 ```
 
 It finds the coding agents on your machine and offers to install the missing
-ones through each vendor's official installer. Pick the ones you use. Opening
-the workspace for the first time asks the same question.
+ones through each vendor's official installer. Pick the ones you use.
+
+You can also skip this step. When the workspace opens, it sets up every agent
+already on your machine that is not set up yet, without asking and without
+updating it. It asks which to install only when your machine has none.
 
 Some installers put the agent in a directory your current shell does not
 search yet. `uze setup` still verifies it there, tells you where it is, and

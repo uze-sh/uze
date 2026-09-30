@@ -98,3 +98,13 @@ way it is lived and not only module by module.
 - [x] 9.9 Rename `tests/workspace/` (agents.lock consumer, marketplace, root resolution: the package manager's anchor, not the workspace) to `tests/project/`, and add the two usage profiles to `tests/README.md` as a row of its coverage map
 - [x] 9.10 Update, not delete, the existing tests that assumed a live scaffold policy, the policy region in package reconciliation, or an rc edit: each keeps its claim under the profile it belongs to
 
+## 10. The workspace sets up what the machine has
+
+- [x] 10.1 Replace `Health::first_run` (a `state/` check the terminal runtime satisfies on its own) with `Workspace::entry`: `Choose` when no harness is installed, `SetUp` for installed harnesses without a verified provisioning record or a shim, `Ready` otherwise
+- [x] 10.2 `ProvisionRoute::{Official, Existing}` on `setup_through`: `Existing` verifies the executable already present and takes no vendor route; everything after provisioning is the path `uze setup` takes, so setup stays the one shim writer
+- [x] 10.3 `uze workspace` sets up `SetUp` harnesses through `Existing` without asking, asks only on `Choose`, and pauses on its report only after an answer, a failure or a warning
+- [x] 10.4 `AgentIdentity.configured` and `launcher_names` read the same readiness: a harness is offered to launch, and a bypass is only reported, when its shim exists
+- [x] 10.5 Unit tests in `setup_tests.rs` for each entry, the `Existing` route taking no vendor command, `state/terminal` not reading as set up, and a removed shim set up again; the typed-into-a-pane acceptance test places its shim through `uze setup`
+- [x] 10.6 Rewrite journey `01-first-run/04` as `04-the-first-run-sets-up-the-harnesses-it-finds`: stand-ins present, no chooser, every harness `VERIFIED` with action `NONE`, shims resolve to `uze`, an agent from the menu starts
+- [ ] 10.7 Journeys: an empty machine meets the chooser, and a variant where `uze workspace stop` ran before the first open
+
