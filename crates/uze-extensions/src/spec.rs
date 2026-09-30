@@ -905,6 +905,7 @@ fn content(state: &SpecView, space: Size) -> Content {
             .collect(),
         total: state.lines.len(),
         caret: None,
+        selection: None,
     }
 }
 

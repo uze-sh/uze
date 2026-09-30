@@ -70,6 +70,27 @@ fn split_lines(text: &str) -> (Vec<String>, LineEndings) {
     )
 }
 
+/// The character `cell` display cells into `text`, clamped to its end —
+/// see [`OpenFile::column_at_cell`].
+pub(super) fn column_at_cell(text: &str, cell: usize) -> usize {
+    let mut cells = 0usize;
+    for (column, character) in text.chars().enumerate() {
+        let width = match character {
+            '\t' => TAB_WIDTH,
+            _ => unicode_width::UnicodeWidthChar::width(character)
+                .unwrap_or(1)
+                .max(1),
+        };
+        // Landing anywhere inside a wide glyph means that glyph, not
+        // the one after it.
+        if cell < cells + width {
+            return column;
+        }
+        cells += width;
+    }
+    text.chars().count()
+}
+
 /// The file being shown, and the state of editing it.
 pub(super) struct OpenFile {
     pub(super) path: PathBuf,
@@ -145,25 +166,9 @@ impl OpenFile {
     /// because that is what the text is made of. A double-width glyph is
     /// two cells and one character, and only this side can tell.
     pub(super) fn column_at_cell(&self, line: usize, cell: usize) -> usize {
-        let Some(text) = self.lines.get(line) else {
-            return 0;
-        };
-        let mut cells = 0usize;
-        for (column, character) in text.chars().enumerate() {
-            let width = match character {
-                '\t' => TAB_WIDTH,
-                _ => unicode_width::UnicodeWidthChar::width(character)
-                    .unwrap_or(1)
-                    .max(1),
-            };
-            // Landing anywhere inside a wide glyph means that glyph, not
-            // the one after it.
-            if cell < cells + width {
-                return column;
-            }
-            cells += width;
-        }
-        text.chars().count()
+        self.lines
+            .get(line)
+            .map_or(0, |text| column_at_cell(text, cell))
     }
 
     /// Installs a file the host read, keeping a line to put the caret on

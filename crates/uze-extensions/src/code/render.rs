@@ -131,6 +131,7 @@ fn map_content(code: &CodeView, space: Size) -> Content {
         total: lines.len(),
         lines,
         caret: None,
+        selection: None,
     }
 }
 
@@ -456,6 +457,7 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
     let diff = &code.changes.diff;
     Content::Lines {
         caret: None,
+        selection: code.text_selection(),
         total: diff.len(),
         heading: format!(
             "DIFF · {}",
@@ -490,7 +492,7 @@ fn preview_content(code: &CodeView, space: Size) -> Content {
         "Pick a file on the left. This shows it rendered; Source shows what is in it.",
     ) {
         Ok(open) => open,
-        Err(message) => return message,
+        Err(message) => return *message,
     };
     let (total, lines) = open.preview(
         code.scroll as usize,
@@ -498,6 +500,7 @@ fn preview_content(code: &CodeView, space: Size) -> Content {
     );
     Content::Lines {
         caret: None,
+        selection: code.text_selection(),
         total,
         heading: format!(
             "{} · preview",
@@ -519,36 +522,36 @@ fn readable_open_file<'a>(
     code: &'a CodeView,
     empty: &str,
     hint: &str,
-) -> Result<&'a OpenFile, Content> {
+) -> Result<&'a OpenFile, Box<Content>> {
     let Some(open) = code.open.as_ref() else {
-        return Err(Content::Message {
+        return Err(Box::new(Content::Message {
             text: empty.to_owned(),
             hint: Some(hint.to_owned()),
             role: Role::Muted,
-        });
+        }));
     };
     match &open.error {
         Some(Unreadable::NotText) => {
-            return Err(not_text(
+            return Err(Box::new(not_text(
                 &open.path,
                 "There is no text in it to show here. Open it with an app that reads its format.",
-            ));
+            )));
         }
         Some(Unreadable::Failed(message)) => {
-            return Err(Content::Message {
+            return Err(Box::new(Content::Message {
                 text: message.clone(),
                 hint: None,
                 role: Role::Danger,
-            });
+            }));
         }
         None => {}
     }
     if open.loading {
-        return Err(Content::Message {
+        return Err(Box::new(Content::Message {
             text: "reading…".to_owned(),
             hint: None,
             role: Role::Muted,
-        });
+        }));
     }
     Ok(open)
 }
@@ -575,7 +578,7 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
         "Pick one on the left to read it, or press e to edit it in place.",
     ) {
         Ok(open) => open,
-        Err(message) => return message,
+        Err(message) => return *message,
     };
     Content::Lines {
         total: open.lines.len(),
@@ -631,5 +634,6 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
             })
             .collect(),
         caret: (open.editing && code.content == ContentMode::Contents).then_some(open.caret),
+        selection: code.text_selection(),
     }
 }

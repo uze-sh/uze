@@ -21,7 +21,7 @@ use ratatui::{
 use uze_extensions::view::{
     Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
     Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section,
-    Size, Span, TAB_WIDTH, TrailStep, View, ViewHit,
+    Size, Span, TAB_WIDTH, TextSelection, TrailStep, View, ViewHit,
 };
 
 use crate::ui::theme::{self, Symbol, Token};
@@ -695,6 +695,7 @@ pub(crate) fn render(
             lines,
             total,
             caret,
+            selection,
         } => {
             rendered.content_gutter = gutter_width(lines);
             (rendered.content_bar, rendered.content_at_end) = render_lines(
@@ -707,6 +708,7 @@ pub(crate) fn render(
                     lines,
                     total: *total,
                     caret: *caret,
+                    selection: *selection,
                     modes: column_modes,
                 },
                 hits,
@@ -1617,6 +1619,7 @@ struct Lines<'a> {
     lines: &'a [ContentLine],
     total: usize,
     caret: Option<Caret>,
+    selection: Option<TextSelection>,
     modes: &'a [Mode],
 }
 
@@ -1633,6 +1636,7 @@ fn render_lines(
         lines,
         total,
         caret,
+        selection,
         modes,
     } = content_lines;
     frame.render_widget(
@@ -1693,6 +1697,9 @@ fn render_lines(
         }
         let row = Rect::new(content.x, y, content.width, height);
         render_line(frame, row, line, gutter, true);
+        if let Some(marked) = selection.and_then(|selection| selection.on_line(offset)) {
+            render_marked(frame, row, line, marked, gutter);
+        }
         // One hit per *visual* row, not per line: a wrapped line covers
         // several, and which one the pointer is on is half of where in
         // the text it landed. The cell offset here is the row's own
@@ -2051,6 +2058,38 @@ fn render_caret(
     let cell = &mut frame.buffer_mut()[(x, y)];
     cell.set_bg(theme::color(Token::Accent));
     cell.set_fg(theme::color(Token::SurfaceBackground));
+}
+
+/// The characters of `line` a selection covers, inverted where they were
+/// drawn — found by the same walk that drew them, so a wrapped line is
+/// marked on the rows its characters actually landed on.
+///
+/// Inverted rather than tinted, as a pane's selection is: a diff's rows
+/// already carry a wash of their own, and inversion is the one mark that
+/// reads over every one of them.
+fn render_marked(
+    frame: &mut ratatui::Frame<'_>,
+    row: Rect,
+    line: &ContentLine,
+    marked: std::ops::Range<usize>,
+    gutter: u16,
+) {
+    let width = text_width(row.width, gutter);
+    let area = frame.area();
+    let buffer = frame.buffer_mut();
+    let mut index = 0usize;
+    fold(line, width, |down, across, _, character| {
+        if marked.contains(&index) {
+            for offset in 0..cell_width(character) {
+                let x = row.x + gutter + (across + offset) as u16;
+                let y = row.y + down as u16;
+                if x < row.right() && y < row.bottom() && area.contains((x, y).into()) {
+                    buffer[(x, y)].set_style(Style::default().add_modifier(Modifier::REVERSED));
+                }
+            }
+        }
+        index += 1;
+    });
 }
 
 /// Draws the groove for a surface, and makes the whole of it the drag
@@ -2687,6 +2726,7 @@ mod tests {
             content: Content::Lines {
                 first: 0,
                 caret: None,
+                selection: None,
                 total: 1,
                 heading: "DIFF · src/ui.rs".to_owned(),
                 scroll: 0,
@@ -3044,6 +3084,7 @@ mod tests {
                     spans: vec![Span::new("fn main() {}", Role::Default)],
                 }],
                 caret: None,
+                selection: None,
             },
             footer: Vec::new(),
             notice: None,
@@ -3312,6 +3353,7 @@ mod tests {
             content: Content::Lines {
                 first: 0,
                 caret: None,
+                selection: None,
                 total: 1,
                 heading: "3 boxes · 2 edges · containers.mmd".to_owned(),
                 scroll: 0,
@@ -3427,6 +3469,7 @@ mod tests {
                     total: lines.len(),
                     lines,
                     caret: None,
+                    selection: None,
                 },
                 footer: vec![Command::Close],
                 notice: None,
@@ -3541,6 +3584,7 @@ mod tests {
                 lines: Vec::new(),
                 total: 0,
                 caret: None,
+                selection: None,
             },
             footer: vec![Command::Close],
             notice: None,
@@ -3697,6 +3741,7 @@ mod tests {
                 lines: Vec::new(),
                 total: 0,
                 caret: None,
+                selection: None,
             },
             footer: vec![Command::Close],
             notice: None,
@@ -4110,6 +4155,54 @@ mod tests {
     /// Drawing a mark into the cell is the obvious implementation and the
     /// wrong one: the letter being edited becomes the one letter the
     /// person cannot see. This is the test that says so.
+    /// Marked text is inverted where each of its characters was drawn,
+    /// and nothing either side of it is.
+    #[test]
+    fn marked_text_is_inverted_where_it_was_drawn() {
+        let mut view = sample();
+        let Content::Lines { selection, .. } = &mut view.content else {
+            unreachable!("the sample shows lines");
+        };
+        *selection = Some(TextSelection {
+            from: Caret { line: 0, column: 3 },
+            to: Caret { line: 0, column: 7 },
+        });
+
+        let mut terminal = Terminal::new(TestBackend::new(90, 14)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
+                    uze_keys::Scope::Code,
+                    &mut hits,
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row = hits
+            .iter()
+            .find(|(_, hit)| matches!(hit, ViewHit::PlaceCaret { line: 0, .. }))
+            .expect("the first line is drawn")
+            .0;
+
+        let inverted: Vec<u16> = (0..12)
+            .filter(|cell| {
+                buffer[(row.x + GUTTER_WIDTH + cell, row.y)]
+                    .modifier
+                    .contains(Modifier::REVERSED)
+            })
+            .collect();
+        assert_eq!(inverted, [3, 4, 5, 6]);
+    }
+
     #[test]
     fn the_caret_marks_the_character_it_sits_on_without_hiding_it() {
         let mut view = sample();
