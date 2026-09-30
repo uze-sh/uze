@@ -1,16 +1,16 @@
 ## 1. Extract `uze-workspace`, no behavior change
 
-- [ ] 1.1 Parse `agents.yaml`'s `worktrees` section outside `ProjectManifest` so `uze-core`'s manifest no longer names `WorktreePolicy` (the parsing half of 2.1); `load` keeps its `check-ignore` until 2.2, and `set_completion` keeps re-validating through it
-- [ ] 1.2 Keep `SessionId` in `uze-core` as a shared type outside `conversation`, and point `IntegrationPort` at it
-- [ ] 1.3 Move the task and `AgentPlacement` variants out of `uze-core`'s error enum into an error owned by the workspace domain, with error text and exit codes byte-identical
-- [ ] 1.4 Create `crates/uze-workspace` (workspace member, inherited version, no external dependency beyond what the moved code already uses) and move `worktree`, `checkout`, `task`, `landing`, `conversation` (with `Claim`), `delivery/continuity`, `prompt_history`, `client_layout`, `notifications` and `extensions` into it; make public the `uze-core` helpers they call
-- [ ] 1.4a Extend the layering rule that gives the agent identity variable one owner (`tests/architecture/layering.rs`) to `crates/uze-workspace`, and repoint intra-doc links that named moved items (`persistence.rs`'s link to `task::locked`)
-- [ ] 1.5 Rename `project/workspace.rs` (the `agents.yaml`/`marketplace.json` anchor) to `anchor` and update every caller
-- [ ] 1.6 Update `uze-application`, `src/`, `uze-testkit` and `tests/` imports; `uze-core` keeps no re-export of what moved
-- [ ] 1.7 Rename the linked-marketplace "checkout" in `project_environment.rs` to `linked_source`, and move `agent_context` and the package half of `overview::summary` off the `Workspace` facade onto `Context` and `Project`, leaving prompt history on `Workspace`
-- [ ] 1.8 Group `IntegrationPort`'s workspace-only methods under one documented section, no signature change
-- [ ] 1.9 Repoint every box link and every test reference in `docs/architecture/` (`checkout-ownership.mmd`, `agent-lifecycle.mmd`, `subagent-checkouts.mmd`, `invariants.md`) at the files' new paths in `crates/uze-workspace`, so `make artifacts` stays green after the move (the content changes are group 8)
-- [ ] 1.10 Update AGENTS.md (Workspace layout, Architecture diagram and rules) for `uze-workspace` and its direction
+- [x] 1.1 Parse `agents.yaml`'s `worktrees` section outside `ProjectManifest` so `uze-core`'s manifest no longer names `WorktreePolicy` (the parsing half of 2.1); `load` keeps its `check-ignore` until 2.2, and `set_completion` keeps re-validating through it
+- [x] 1.2 Keep `SessionId` in `uze-core` as a shared type outside `conversation`, and point `IntegrationPort` at it
+- [x] 1.3 Keep the task and `AgentPlacement` variants in `uze-core`'s shared error: they carry only text, so they create no dependency on the workspace, and a separate error type would re-type every `Result` in `uze-workspace` and `uze-application` for no boundary gained (design D1)
+- [x] 1.4 Create `crates/uze-workspace` (workspace member, inherited version, no external dependency beyond what the moved code already uses) and move `worktree`, `checkout`, `task`, `landing`, `conversation` (with `Claim`), `delivery/continuity`, `prompt_history`, `client_layout`, `notifications` and `extensions` into it; make public the `uze-core` helpers they call
+- [x] 1.4a Extend the layering rule that gives the agent identity variable one owner (`tests/architecture/layering.rs`) to `crates/uze-workspace`, and repoint intra-doc links that named moved items (`persistence.rs`'s link to `task::locked`)
+- [x] 1.5 Rename `project/workspace.rs` (the `agents.yaml`/`marketplace.json` anchor) to `anchor` and update every caller
+- [x] 1.6 Update `uze-application`, `src/`, `uze-testkit` and `tests/` imports; `uze-core` keeps no re-export of what moved
+- [x] 1.7 Rename the linked-marketplace "checkout" in `project_environment.rs` to `linked_source`, and move `agent_context` and the package half of `overview::summary` off the `Workspace` facade onto `Context` and `Project`, leaving prompt history on `Workspace`
+- [x] 1.8 Group `IntegrationPort`'s workspace-only methods under one documented section, no signature change
+- [x] 1.9 Repoint every box link and every test reference in `docs/architecture/` (`checkout-ownership.mmd`, `agent-lifecycle.mmd`, `subagent-checkouts.mmd`, `invariants.md`) at the files' new paths in `crates/uze-workspace`, so `make artifacts` stays green after the move (the content changes are group 8)
+- [x] 1.10 Update AGENTS.md (Workspace layout, Architecture diagram and rules) for `uze-workspace` and its direction
 - [ ] 1.11 Check that `cargo tree -p uze-core` does not list `uze-workspace`; run `cargo test --workspace --no-fail-fast` and `cargo clippy --all-targets -- -D warnings`; nothing behaves differently
 
 ## 2. agents.yaml sections by owner

@@ -3199,6 +3199,7 @@ dependencies = [
  "uze-terminal",
  "uze-testkit",
  "uze-theme",
+ "uze-workspace",
 ]
 
 [[package]]
@@ -3213,6 +3214,7 @@ dependencies = [
  "uze-integrations",
  "uze-keys",
  "uze-testkit",
+ "uze-workspace",
 ]
 
 [[package]]
@@ -3316,6 +3318,20 @@ dependencies = [
  "syntect",
  "thiserror 2.0.20",
  "unicode-width",
+]
+
+[[package]]
+name = "uze-workspace"
+version = "1.0.0-beta.4"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uze-core",
+ "uze-document",
+ "uze-git",
+ "uze-testkit",
 ]
 
 [[package]]

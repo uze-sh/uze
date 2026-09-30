@@ -882,7 +882,7 @@ pub struct WorktreePolicyStatus {
     /// Where isolated checkouts live for this project. Fixed layout,
     /// resolved against the project root — reported, never configured.
     pub directory: PathBuf,
-    pub completion: uze_core::worktree::CompletionBehavior,
+    pub completion: uze_workspace::worktree::CompletionBehavior,
     pub state: AttachmentState,
     pub reason: String,
     /// Regions left by a previous declaration, still present in the file.

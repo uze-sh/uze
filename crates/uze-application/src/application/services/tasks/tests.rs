@@ -478,7 +478,7 @@ mod placement_tests {
             .unwrap();
         let primary = root.canonicalize().unwrap();
         let mut store = task::load(&app.home, &primary).unwrap();
-        store.get_mut(slot(&first)).unwrap().state = uze_core::task::WorkState::Integrated;
+        store.get_mut(slot(&first)).unwrap().state = uze_workspace::task::WorkState::Integrated;
         task::save(&app.home, &primary, &store).unwrap();
 
         let second = app
@@ -509,7 +509,7 @@ mod placement_tests {
         let before = slot(&first).clone();
         let primary = root.canonicalize().unwrap();
         let mut store = task::load(&app.home, &primary).unwrap();
-        store.get_mut(&before).unwrap().state = uze_core::task::WorkState::Closed;
+        store.get_mut(&before).unwrap().state = uze_workspace::task::WorkState::Closed;
         task::save(&app.home, &primary, &store).unwrap();
         let second = app
             .workspace()
@@ -517,7 +517,7 @@ mod placement_tests {
             .unwrap();
         assert_eq!(second.cwd, first.cwd, "the freed slot is reused");
         let mut store = task::load(&app.home, &primary).unwrap();
-        store.get_mut(&before).unwrap().state = uze_core::task::WorkState::Running;
+        store.get_mut(&before).unwrap().state = uze_workspace::task::WorkState::Running;
         task::save(&app.home, &primary, &store).unwrap();
 
         let evaluation = app
@@ -785,7 +785,7 @@ mod placement_tests {
             .unwrap();
         let primary = root.canonicalize().unwrap();
         let mut store = task::load(&app.home, &primary).unwrap();
-        store.get_mut(slot(&first)).unwrap().state = uze_core::task::WorkState::Integrated;
+        store.get_mut(slot(&first)).unwrap().state = uze_workspace::task::WorkState::Integrated;
         task::save(&app.home, &primary, &store).unwrap();
 
         let still_inside = vec![first.cwd.clone()];

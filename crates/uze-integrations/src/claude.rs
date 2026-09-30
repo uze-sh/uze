@@ -232,14 +232,14 @@ impl IntegrationPort for ClaudeIntegration {
 
     fn start_session_args(
         &self,
-        session: &uze_core::conversation::SessionId,
+        session: &uze_core::session::SessionId,
     ) -> Vec<std::ffi::OsString> {
         session::start_args(session)
     }
 
     fn resume_session_args(
         &self,
-        session: &uze_core::conversation::SessionId,
+        session: &uze_core::session::SessionId,
     ) -> Vec<std::ffi::OsString> {
         session::resume_args(session)
     }
@@ -247,11 +247,11 @@ impl IntegrationPort for ClaudeIntegration {
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,
-    ) -> Option<uze_core::conversation::SessionId> {
+    ) -> Option<uze_core::session::SessionId> {
         session::observe(&self.transcripts_root, ctx)
     }
 
-    fn session_exists(&self, session: &uze_core::conversation::SessionId, cwd: &Path) -> bool {
+    fn session_exists(&self, session: &uze_core::session::SessionId, cwd: &Path) -> bool {
         session::exists(&self.transcripts_root, cwd, session)
     }
 

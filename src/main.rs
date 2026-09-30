@@ -3059,7 +3059,7 @@ fn render_update_summary(report: &uze_application::application::UpdateReport) ->
             }
             UpdateOutcome::FollowedLink {
                 plugin,
-                checkout,
+                linked_source: checkout,
                 deliveries,
             } => {
                 moved += 1;
@@ -3142,7 +3142,9 @@ fn render_update_report(report: &uze_application::application::UpdateReport) -> 
                 progress::label(format!("moved to {}", &revision[..revision.len().min(12)])),
             ],
             UpdateOutcome::FollowedLink {
-                plugin, checkout, ..
+                plugin,
+                linked_source: checkout,
+                ..
             } => vec![
                 progress::title(plugin),
                 progress::label(match report.scope {

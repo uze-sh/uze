@@ -12,8 +12,9 @@ use uze_core::{
     integration::{AttachmentState, ContextDelivery},
     project_context::AGENTS_MD_FILE_NAME,
     text_region,
-    worktree::{self, WorktreePolicy},
 };
+
+use uze_workspace::worktree::{self, WorktreePolicy};
 
 use super::services::Context;
 use super::*;
@@ -358,7 +359,7 @@ impl Context<'_> {
     /// saying so is exactly the failure that left `worktrees_dir`
     /// unprojected for so long.
     fn worktree_policy(&self, canonical: &std::path::Path) -> Result<Option<WorktreePolicy>> {
-        Ok(uze_core::manifest::load(canonical)?.and_then(|manifest| manifest.worktrees))
+        uze_workspace::declaration::declared(canonical)
     }
 
     /// Composes the policy's current standing: its managed region in the

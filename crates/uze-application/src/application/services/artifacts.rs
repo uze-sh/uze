@@ -8,7 +8,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use uze_core::{manifest, project_root};
+use uze_core::project_root;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProjectArtifacts {
@@ -34,9 +34,8 @@ pub fn project_artifacts(cwd: &Path) -> ProjectArtifacts {
     let Ok(Some(root)) = project_root::resolve_project_root(cwd) else {
         return ProjectArtifacts::Undeclared;
     };
-    let declared = match manifest::load(&root) {
-        Ok(Some(manifest)) => manifest.artifacts,
-        Ok(None) => None,
+    let declared = match uze_workspace::declaration::artifacts(&root) {
+        Ok(declared) => declared,
         Err(error) => return ProjectArtifacts::Refused(error.to_string()),
     };
     match declared {

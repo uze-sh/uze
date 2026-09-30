@@ -16,6 +16,7 @@ publish = false
 members = [
   ".",
   "crates/uze-core",
+  "crates/uze-workspace",
   "crates/uze-integrations",
   "crates/uze-application",
   "crates/uze-extensions",
@@ -44,6 +45,7 @@ debug = 0
 
 [dependencies]
 uze-core = { path = "crates/uze-core" }
+uze-workspace = { path = "crates/uze-workspace" }
 uze-integrations = { path = "crates/uze-integrations" }
 uze-application = { path = "crates/uze-application" }
 uze-extensions = { path = "crates/uze-extensions" }

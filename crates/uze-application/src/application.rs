@@ -73,7 +73,7 @@ pub use project_environment::{
     InstallReport, ProjectLockStatus, RemoveProjectPluginReport, UpdateOutcome, UpdateReport,
     UpdateScope,
 };
-pub use uze_core::workspace::WorkspaceKind;
+pub use uze_core::anchor::AnchorKind;
 
 pub struct UzeApplication {
     home: UzeHome,

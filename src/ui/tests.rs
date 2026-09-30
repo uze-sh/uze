@@ -2854,8 +2854,8 @@ fn clip_line_truncates_long_status_with_ellipsis() {
 // --- Overview workspace awareness ---------------------------------------
 
 use uze_application::application::{
-    MarketplaceState, MemoryState, OverviewMarketplace, OverviewWorkspaceSummary,
-    ProjectEnvironmentState, ProjectOverview, WorkspaceKind,
+    AnchorKind, MarketplaceState, MemoryState, OverviewMarketplace, OverviewWorkspaceSummary,
+    ProjectEnvironmentState, ProjectOverview,
 };
 fn consumer_workspace(
     state: ProjectEnvironmentState,
@@ -2867,7 +2867,7 @@ fn consumer_workspace(
     OverviewWorkspaceSummary {
         cwd: root.to_path_buf(),
         root: root.to_path_buf(),
-        kind: WorkspaceKind::Consumer,
+        kind: AnchorKind::Consumer,
         agents_directory_present: true,
         project: ProjectOverview {
             drift: Default::default(),
@@ -2885,7 +2885,7 @@ fn marketplace_workspace(root: &std::path::Path) -> OverviewWorkspaceSummary {
     OverviewWorkspaceSummary {
         cwd: root.to_path_buf(),
         root: root.to_path_buf(),
-        kind: WorkspaceKind::Marketplace,
+        kind: AnchorKind::Marketplace,
         agents_directory_present: false,
         project: ProjectOverview {
             drift: Default::default(),
@@ -3372,7 +3372,7 @@ fn no_workspace_render_creates_nothing() {
             workspace: Some(OverviewWorkspaceSummary {
                 cwd: root.clone(),
                 root: root.clone(),
-                kind: WorkspaceKind::NoWorkspace,
+                kind: AnchorKind::NoWorkspace,
                 agents_directory_present: false,
                 project: ProjectOverview {
                     drift: Default::default(),
@@ -3596,8 +3596,8 @@ fn the_seeded_history_reads_what_the_workspace_client_recorded() {
     std::fs::remove_dir_all(&base).ok();
 }
 
-fn prompt(tab_id: u64, preview: &str) -> uze_core::prompt_history::PromptEntry {
-    uze_core::prompt_history::PromptEntry {
+fn prompt(tab_id: u64, preview: &str) -> uze_workspace::prompt_history::PromptEntry {
+    uze_workspace::prompt_history::PromptEntry {
         space_label: "space 1".to_owned(),
         tab_id,
         tab_label: format!("tab {tab_id}"),
@@ -3787,11 +3787,12 @@ fn the_prompt_table_groups_rows_by_age_and_marks_the_selection() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let recent = |tab_id: u64, agent: &str, preview: &str| uze_core::prompt_history::PromptEntry {
-        agent_binary: agent.to_owned(),
-        timestamp_secs: now - 8 * 60,
-        ..prompt(tab_id, preview)
-    };
+    let recent =
+        |tab_id: u64, agent: &str, preview: &str| uze_workspace::prompt_history::PromptEntry {
+            agent_binary: agent.to_owned(),
+            timestamp_secs: now - 8 * 60,
+            ..prompt(tab_id, preview)
+        };
     let model = TuiModel {
         route: Route::Overview,
         focus: Focus::Content,

@@ -18,7 +18,7 @@ flowchart TD
   free --> spare{Among the spare slots,<br/>and used within the idle age?}
   spare -->|yes| kept[Kept warm for the next agent]
   spare -->|no| removed[Directory removed, branch kept]
-  click recorded href "crates/uze-core/src/project/checkout/record.rs"
+  click recorded href "crates/uze-workspace/src/checkout/record.rs"
   click inuse href "crates/uze-core/src/machine/process_cwd.rs"
-  click spare href "crates/uze-core/src/project/checkout.rs"
-  click child href "crates/uze-core/src/project/checkout/subagent.rs"
+  click spare href "crates/uze-workspace/src/checkout.rs"
+  click child href "crates/uze-workspace/src/checkout/subagent.rs"

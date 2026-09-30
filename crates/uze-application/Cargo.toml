@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 uze-core = { path = "../uze-core" }
+uze-workspace = { path = "../uze-workspace" }
 uze-keys = { path = "../uze-keys" }
 uze-integrations = { path = "../uze-integrations" }
 serde = { version = "1", features = ["derive"] }

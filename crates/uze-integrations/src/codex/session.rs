@@ -18,7 +18,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use uze_core::{conversation::SessionId, integration::ObservationContext};
+use uze_core::{integration::ObservationContext, session::SessionId};
 
 const RESUME_SUBCOMMAND: &str = "resume";
 const ROLLOUT_EXTENSION: &str = "jsonl";

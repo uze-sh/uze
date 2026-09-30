@@ -9,7 +9,8 @@
 use std::fs;
 
 use uze_application::UzeApplication;
-use uze_core::{UzeHome, manifest, trust::AlwaysTrust, worktree::CompletionBehavior};
+use uze_core::{UzeHome, manifest, trust::AlwaysTrust};
+use uze_workspace::worktree::CompletionBehavior;
 
 /// A real repository, because a manifest declaring links is validated
 /// against what the repository ignores — a bare directory would pass tests
@@ -71,8 +72,8 @@ fn install_sets_the_project_up_and_writes_no_lock_when_there_is_nothing_to_resol
         );
     }
     assert_eq!(
-        manifest::worktree_policy(&root).unwrap(),
-        uze_core::worktree::WorktreePolicy::default(),
+        uze_workspace::declaration::policy(&root).unwrap(),
+        uze_workspace::worktree::WorktreePolicy::default(),
         "showing the options must not declare any of them"
     );
     assert!(
@@ -124,7 +125,9 @@ fn declaring_the_policy_from_the_client_creates_the_manifest_and_states_it_first
             .unwrap()
     );
     assert_eq!(
-        manifest::worktree_policy(&root).unwrap().completion,
+        uze_workspace::declaration::policy(&root)
+            .unwrap()
+            .completion,
         CompletionBehavior::Pr
     );
     assert!(
@@ -166,7 +169,7 @@ fn the_policy_in_force_is_what_the_manifest_says_and_it_reaches_the_projection()
 
     let agents_md = fs::read_to_string(root.join("AGENTS.md")).unwrap();
     assert!(
-        agents_md.contains(uze_core::worktree::CompletionBehavior::Pr.instruction_clause()),
+        agents_md.contains(uze_workspace::worktree::CompletionBehavior::Pr.instruction_clause()),
         "the declared behavior must be the one an agent reads: {agents_md}"
     );
 }
@@ -666,7 +669,7 @@ fn a_machine_update_of_a_linked_edit_reports_the_package_updated() {
     assert!(
         matches!(
             edited.outcomes.as_slice(),
-            [UpdateOutcome::FollowedLink { checkout, .. }]
+            [UpdateOutcome::FollowedLink { linked_source: checkout, .. }]
                 if checkout.canonicalize().ok() == market.canonicalize().ok()
         ),
         "the Store took the edit in from the working tree, and says so: {edited:?}"
@@ -718,7 +721,7 @@ fn linking_to_an_absent_checkout_clones_the_marketplace_there() {
         assert!(cloned, "{} had nothing to read", checkout.display());
         assert!(
             checkout
-                .join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME)
+                .join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME)
                 .is_file(),
             "the clone holds the marketplace"
         );

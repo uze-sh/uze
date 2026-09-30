@@ -1,11 +1,17 @@
-//! Deterministic workspace detection for `agents.yaml` / `marketplace.json`.
+//! Where a project or a marketplace is anchored: deterministic detection of
+//! `agents.yaml` / `marketplace.json`.
 //!
-//! One predictable rule, no harness assumption: a directory is a workspace
+//! Named `anchor`, not `workspace`, because the workspace is a module of
+//! uze (`uze-workspace`) and this is not it: the variants keep their
+//! historical spelling (`NoWorkspace`, …) only because they are serialized
+//! into `--format json` output.
+//!
+//! One predictable rule, no harness assumption: a directory is anchored
 //! when it contains `agents.yaml` (consumer), or `marketplace.json`
 //! (marketplace), or both (hybrid). The nearest such directory wins over any
 //! ancestor. A Git repository is not an anchor; it only answers which root a
 //! runtime identity keys on when nothing is anchored
-//! ([`workspace_root_or_self`]).
+//! ([`anchor_root_or_self`]).
 //!
 //! The consumer anchor is the *manifest*, not the lock: a project that has
 //! declared an environment but never resolved one has no lock yet and is
@@ -34,7 +40,7 @@ pub const MARKETPLACE_MANIFEST_NAME: &str = "marketplace.json";
 
 /// The two UZE workspace anchors, seen from a plain directory.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub enum WorkspaceKind {
+pub enum AnchorKind {
     /// Neither `agents.yaml` nor `marketplace.json` on the resolved path.
     NoWorkspace,
     /// `agents.yaml` present.
@@ -47,11 +53,11 @@ pub enum WorkspaceKind {
 
 /// What directory detection found, and why.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ResolvedWorkspace {
+pub struct ResolvedAnchor {
     /// The workspace root: the nearest ancestor (or the cwd itself) that
     /// carries an anchor. For `NoWorkspace`, the canonicalized cwd.
     pub root: PathBuf,
-    pub kind: WorkspaceKind,
+    pub kind: AnchorKind,
 }
 
 /// The root runtime identities are keyed on for `cwd`: its workspace when
@@ -64,11 +70,11 @@ pub struct ResolvedWorkspace {
 /// this answer: resolving it differently in two places means launching UZE
 /// from a repository and from a subdirectory of it produces two independent
 /// servers over one repository, each believing it is alone.
-pub fn workspace_root_or_self(cwd: &Path) -> PathBuf {
-    let Ok(workspace) = resolve_workspace(cwd) else {
+pub fn anchor_root_or_self(cwd: &Path) -> PathBuf {
+    let Ok(workspace) = resolve_anchor(cwd) else {
         return cwd.to_path_buf();
     };
-    if workspace.kind != WorkspaceKind::NoWorkspace {
+    if workspace.kind != AnchorKind::NoWorkspace {
         return workspace.root;
     }
     find_upward(&workspace.root, |dir| {
@@ -82,27 +88,27 @@ pub fn workspace_root_or_self(cwd: &Path) -> PathBuf {
 /// The nearest directory, from `cwd` upward, anchoring a workspace — an
 /// `agents.yaml`, a `marketplace.json`, or both — and which kind it is. A
 /// nested workspace is detected as its own, never as the outer one. With no
-/// anchor anywhere, the canonical `cwd` with [`WorkspaceKind::NoWorkspace`].
-pub fn resolve_workspace(cwd: &Path) -> Result<ResolvedWorkspace> {
+/// anchor anywhere, the canonical `cwd` with [`AnchorKind::NoWorkspace`].
+pub fn resolve_anchor(cwd: &Path) -> Result<ResolvedAnchor> {
     let (start, anchored) = find_upward(cwd, |dir| {
-        anchor_kind(dir).map(|kind| ResolvedWorkspace {
+        anchor_kind(dir).map(|kind| ResolvedAnchor {
             root: dir.to_path_buf(),
             kind,
         })
     })?;
-    Ok(anchored.unwrap_or(ResolvedWorkspace {
+    Ok(anchored.unwrap_or(ResolvedAnchor {
         root: start,
-        kind: WorkspaceKind::NoWorkspace,
+        kind: AnchorKind::NoWorkspace,
     }))
 }
 
-fn anchor_kind(dir: &Path) -> Option<WorkspaceKind> {
+fn anchor_kind(dir: &Path) -> Option<AnchorKind> {
     let consumer = dir.join(MANIFEST_FILE_NAME).is_file();
     let marketplace = dir.join(MARKETPLACE_MANIFEST_NAME).is_file();
     match (consumer, marketplace) {
-        (true, true) => Some(WorkspaceKind::Hybrid),
-        (true, false) => Some(WorkspaceKind::Consumer),
-        (false, true) => Some(WorkspaceKind::Marketplace),
+        (true, true) => Some(AnchorKind::Hybrid),
+        (true, false) => Some(AnchorKind::Consumer),
+        (false, true) => Some(AnchorKind::Marketplace),
         (false, false) => None,
     }
 }
@@ -124,10 +130,7 @@ mod workspace_root_tests {
 
         // The property the terminal server is keyed on: launching from the
         // root and from a subdirectory must not produce two identities.
-        assert_eq!(
-            workspace_root_or_self(&nested),
-            workspace_root_or_self(&root)
-        );
+        assert_eq!(anchor_root_or_self(&nested), anchor_root_or_self(&root));
     }
 
     #[test]
@@ -138,12 +141,12 @@ mod workspace_root_tests {
         std::fs::create_dir_all(repository.join(".git")).unwrap();
 
         assert_eq!(
-            workspace_root_or_self(&nested),
+            anchor_root_or_self(&nested),
             repository.canonicalize().unwrap()
         );
         assert_eq!(
-            workspace_root_or_self(&nested),
-            workspace_root_or_self(&repository)
+            anchor_root_or_self(&nested),
+            anchor_root_or_self(&repository)
         );
     }
 
@@ -151,7 +154,7 @@ mod workspace_root_tests {
     fn a_directory_marking_no_workspace_answers_itself() {
         let root = uze_testkit::temp::scratch("workspace-none");
         assert_eq!(
-            workspace_root_or_self(&root),
+            anchor_root_or_self(&root),
             root.canonicalize().unwrap_or(root)
         );
     }
@@ -170,8 +173,8 @@ mod tests {
     fn no_workspace_when_no_anchors() {
         let root = uze_testkit::temp::scratch("none");
         mkdir(&root);
-        let resolved = resolve_workspace(&root).unwrap();
-        assert_eq!(resolved.kind, WorkspaceKind::NoWorkspace);
+        let resolved = resolve_anchor(&root).unwrap();
+        assert_eq!(resolved.kind, AnchorKind::NoWorkspace);
         assert_eq!(resolved.root, root.canonicalize().unwrap());
         fs::remove_dir_all(&root).unwrap();
     }
@@ -181,8 +184,8 @@ mod tests {
         let root = uze_testkit::temp::scratch("consumer-root");
         mkdir(&root);
         fs::write(root.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
-        let resolved = resolve_workspace(&root).unwrap();
-        assert_eq!(resolved.kind, WorkspaceKind::Consumer);
+        let resolved = resolve_anchor(&root).unwrap();
+        assert_eq!(resolved.kind, AnchorKind::Consumer);
         assert_eq!(resolved.root, root.canonicalize().unwrap());
         fs::remove_dir_all(&root).unwrap();
     }
@@ -194,8 +197,8 @@ mod tests {
         fs::write(root.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
         let sub = root.join("src/foo");
         mkdir(&sub);
-        let resolved = resolve_workspace(&sub).unwrap();
-        assert_eq!(resolved.kind, WorkspaceKind::Consumer);
+        let resolved = resolve_anchor(&sub).unwrap();
+        assert_eq!(resolved.kind, AnchorKind::Consumer);
         assert_eq!(resolved.root, root.canonicalize().unwrap());
         fs::remove_dir_all(&root).unwrap();
     }
@@ -209,8 +212,8 @@ mod tests {
             r#"{"name":"m","plugins":[]}"#,
         )
         .unwrap();
-        let resolved = resolve_workspace(&root).unwrap();
-        assert_eq!(resolved.kind, WorkspaceKind::Marketplace);
+        let resolved = resolve_anchor(&root).unwrap();
+        assert_eq!(resolved.kind, AnchorKind::Marketplace);
         assert_eq!(resolved.root, root.canonicalize().unwrap());
         fs::remove_dir_all(&root).unwrap();
     }
@@ -220,8 +223,8 @@ mod tests {
         let root = uze_testkit::temp::scratch("agents-json-only");
         mkdir(&root);
         fs::write(root.join("agents.json"), r#"{"name":"m","plugins":[]}"#).unwrap();
-        let resolved = resolve_workspace(&root).unwrap();
-        assert_eq!(resolved.kind, WorkspaceKind::NoWorkspace);
+        let resolved = resolve_anchor(&root).unwrap();
+        assert_eq!(resolved.kind, AnchorKind::NoWorkspace);
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -235,8 +238,8 @@ mod tests {
             r#"{"name":"m","plugins":[]}"#,
         )
         .unwrap();
-        let resolved = resolve_workspace(&root).unwrap();
-        assert_eq!(resolved.kind, WorkspaceKind::Hybrid);
+        let resolved = resolve_anchor(&root).unwrap();
+        assert_eq!(resolved.kind, AnchorKind::Hybrid);
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -249,8 +252,8 @@ mod tests {
         fs::write(inner.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
         let deep = inner.join("src");
         mkdir(&deep);
-        let resolved = resolve_workspace(&deep).unwrap();
-        assert_eq!(resolved.kind, WorkspaceKind::Consumer);
+        let resolved = resolve_anchor(&deep).unwrap();
+        assert_eq!(resolved.kind, AnchorKind::Consumer);
         assert_eq!(resolved.root, inner.canonicalize().unwrap());
         fs::remove_dir_all(&outer).unwrap();
     }
@@ -268,10 +271,10 @@ mod tests {
         )
         .unwrap();
         fs::write(inner.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
-        let resolved = resolve_workspace(&inner).unwrap();
+        let resolved = resolve_anchor(&inner).unwrap();
         assert_eq!(
             resolved.kind,
-            WorkspaceKind::Consumer,
+            AnchorKind::Consumer,
             "the nearest anchor (the nested agents.yaml) must win"
         );
         assert_eq!(resolved.root, inner.canonicalize().unwrap());
@@ -283,10 +286,10 @@ mod tests {
         let root = uze_testkit::temp::scratch("agents-md-only");
         mkdir(&root);
         fs::write(root.join("AGENTS.md"), "# hi\n").unwrap();
-        let resolved = resolve_workspace(&root).unwrap();
+        let resolved = resolve_anchor(&root).unwrap();
         assert_eq!(
             resolved.kind,
-            WorkspaceKind::NoWorkspace,
+            AnchorKind::NoWorkspace,
             "AGENTS.md is a resource, not an anchor"
         );
         fs::remove_dir_all(&root).unwrap();
@@ -298,8 +301,8 @@ mod tests {
         mkdir(&root);
         fs::write(root.join("CLAUDE.md"), "# vendor\n").unwrap();
         fs::create_dir_all(root.join(".claude")).unwrap();
-        let resolved = resolve_workspace(&root).unwrap();
-        assert_eq!(resolved.kind, WorkspaceKind::NoWorkspace);
+        let resolved = resolve_anchor(&root).unwrap();
+        assert_eq!(resolved.kind, AnchorKind::NoWorkspace);
         fs::remove_dir_all(&root).unwrap();
     }
 }

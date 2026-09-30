@@ -124,7 +124,7 @@ impl MarketplaceSubpath {
 
     /// The catalogue's path relative to the repository.
     pub fn manifest_path(&self) -> String {
-        self.join(crate::workspace::MARKETPLACE_MANIFEST_NAME)
+        self.join(crate::anchor::MARKETPLACE_MANIFEST_NAME)
     }
 
     /// The repository-relative directory `plugin` occupies, `.` for the

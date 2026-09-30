@@ -188,15 +188,14 @@ mod tests {
     use super::*;
     use crate::{
         checkout::CheckoutId,
-        exposure::ExposurePlan,
         integration::HarnessDetection,
-        router::HarnessCapabilities,
         task::{self, Agent, AgentStore, Base},
     };
     use std::{
         path::PathBuf,
         sync::atomic::{AtomicUsize, Ordering},
     };
+    use uze_core::{Resource, exposure::ExposurePlan, router::HarnessCapabilities};
 
     /// A harness whose every continuity answer the test decides.
     struct Harness {
@@ -224,7 +223,7 @@ mod tests {
         fn capabilities(&self) -> HarnessCapabilities {
             HarnessCapabilities::default()
         }
-        fn exposure_plan(&self, _resource: &crate::Resource) -> ExposurePlan {
+        fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
             panic!("not used")
         }
         fn detect(&self) -> HarnessDetection {

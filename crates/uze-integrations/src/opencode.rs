@@ -209,7 +209,7 @@ impl IntegrationPort for OpenCodeIntegration {
 
     fn resume_session_args(
         &self,
-        session: &uze_core::conversation::SessionId,
+        session: &uze_core::session::SessionId,
     ) -> Vec<std::ffi::OsString> {
         session::resume_args(session)
     }
@@ -217,12 +217,12 @@ impl IntegrationPort for OpenCodeIntegration {
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,
-    ) -> Option<uze_core::conversation::SessionId> {
+    ) -> Option<uze_core::session::SessionId> {
         let (executable, home) = self.session_query()?;
         session::observe(&executable, &home, ctx)
     }
 
-    fn session_exists(&self, session: &uze_core::conversation::SessionId, _cwd: &Path) -> bool {
+    fn session_exists(&self, session: &uze_core::session::SessionId, _cwd: &Path) -> bool {
         match self.session_query() {
             Some((executable, home)) => session::exists(&executable, &home, session),
             // Nothing to ask: an uninstalled harness is not evidence that a

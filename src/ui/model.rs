@@ -2112,7 +2112,7 @@ impl TuiModel {
             .workspace
             .as_ref()
             .map(|workspace| workspace.root.clone())
-            .unwrap_or_else(|| uze_application::workspace_root_or_self(&self.context_root))
+            .unwrap_or_else(|| uze_application::anchor_root_or_self(&self.context_root))
     }
 
     /// `Some(root)` exactly when the Application reports the project

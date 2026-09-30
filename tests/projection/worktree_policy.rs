@@ -10,13 +10,10 @@
 use std::{fs, path::Path, path::PathBuf};
 
 use uze_application::UzeApplication;
-use uze_core::{
-    UzeHome,
-    integration::AttachmentState,
-    worktree::{self, CompletionBehavior},
-};
+use uze_core::{UzeHome, integration::AttachmentState};
 use uze_integrations::registry::IntegrationRegistry;
 use uze_testkit::temp::scratch;
+use uze_workspace::worktree::{self, CompletionBehavior};
 
 fn temp(label: &str) -> PathBuf {
     scratch(label)

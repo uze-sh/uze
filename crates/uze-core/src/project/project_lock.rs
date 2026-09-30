@@ -269,7 +269,7 @@ pub fn load_lock(root: &Path) -> Result<Option<ProjectLock>> {
     parse_lock_str(&text, &path).map(Some)
 }
 
-pub(crate) fn parse_lock_str(text: &str, path: &Path) -> Result<ProjectLock> {
+pub fn parse_lock_str(text: &str, path: &Path) -> Result<ProjectLock> {
     // A key written twice is a mistake, not a precedence question — the
     // same rule the manifest holds. YAML's default is to keep the last,
     // which would let a second `integrity:` quietly replace the pin.

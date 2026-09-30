@@ -17,13 +17,14 @@
 use std::path::{Path, PathBuf};
 use uze_testkit::process::IsolatedHome;
 
-use uze_core::{
-    UzeHome,
+use uze_core::UzeHome;
+
+use uze_testkit::fake_harness::{Action, FakeHarness};
+use uze_testkit::temp::TestEnvironment;
+use uze_workspace::{
     checkout::CheckoutId,
     task::{self, Agent, AgentStore, Base},
 };
-use uze_testkit::fake_harness::{Action, FakeHarness};
-use uze_testkit::temp::TestEnvironment;
 
 use crate::util::uze_bin;
 
@@ -268,8 +269,11 @@ fn a_launch_nested_inside_an_agents_launch_is_ordinary() {
         "the nested launch is ordinary"
     );
     let store = task::load(&UzeHome::at(&env.uze_home), &primary).unwrap();
-    let record =
-        uze_core::conversation::load(&UzeHome::at(&env.uze_home), &primary, &store.agents[0].id);
+    let record = uze_workspace::conversation::load(
+        &UzeHome::at(&env.uze_home),
+        &primary,
+        &store.agents[0].id,
+    );
     assert_eq!(
         record
             .get(INTEGRATION)

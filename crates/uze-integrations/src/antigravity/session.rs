@@ -21,7 +21,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use uze_core::{conversation::SessionId, integration::ObservationContext};
+use uze_core::{integration::ObservationContext, session::SessionId};
 
 const RESUME_FLAG: &str = "--conversation";
 

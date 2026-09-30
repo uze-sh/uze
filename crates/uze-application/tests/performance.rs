@@ -168,7 +168,7 @@ impl World {
         let plugin_dir = market.join("plugins").join(PLUGIN);
         uze_testkit::fixtures::copy_tree(&uze_testkit::fixtures::canonical(PLUGIN), &plugin_dir);
         fs::write(
-            market.join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME),
+            market.join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME),
             serde_json::json!({
                 "name": MARKETPLACE,
                 "plugins": [{ "name": PLUGIN, "source": format!("./plugins/{PLUGIN}") }],
@@ -357,7 +357,7 @@ fn the_agent_surface_meets_the_budget() {
         // path a successful naming takes before its one ref rename.
         app.workspace()
             .name_task(
-                uze_core::conversation::Claim {
+                uze_workspace::conversation::Claim {
                     id: "budget",
                     cwd: &world.project,
                 },
@@ -367,7 +367,7 @@ fn the_agent_surface_meets_the_budget() {
     });
     world.within_budget("agent work list", |app| {
         app.workspace()
-            .list_work(uze_core::conversation::Claim {
+            .list_work(uze_workspace::conversation::Claim {
                 id: "budget",
                 cwd: &world.project,
             })
@@ -467,7 +467,7 @@ fn market_link_and_unlink_meet_the_budget() {
     let plugin_dir = market.join("plugins").join(PLUGIN);
     uze_testkit::fixtures::copy_tree(&uze_testkit::fixtures::canonical(PLUGIN), &plugin_dir);
     fs::write(
-        market.join(uze_core::workspace::MARKETPLACE_MANIFEST_NAME),
+        market.join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME),
         serde_json::json!({
             "name": MARKETPLACE,
             "plugins": [{ "name": PLUGIN, "source": format!("./plugins/{PLUGIN}") }],

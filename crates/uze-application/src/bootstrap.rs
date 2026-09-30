@@ -126,13 +126,11 @@ fn embedded_manifest() -> Result<marketplace::MarketplaceManifest> {
     let bytes = EMBEDDED_MARKETPLACE_FILES
         .iter()
         .find(|(relative, _)| {
-            Path::new(relative) == Path::new(uze_core::workspace::MARKETPLACE_MANIFEST_NAME)
+            Path::new(relative) == Path::new(uze_core::anchor::MARKETPLACE_MANIFEST_NAME)
         })
         .map(|(_, bytes)| *bytes)
         .ok_or_else(|| {
-            UzeError::MissingManifest(PathBuf::from(
-                uze_core::workspace::MARKETPLACE_MANIFEST_NAME,
-            ))
+            UzeError::MissingManifest(PathBuf::from(uze_core::anchor::MARKETPLACE_MANIFEST_NAME))
         })?;
     marketplace::parse_manifest(bytes)
 }

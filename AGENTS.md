@@ -192,24 +192,37 @@ need to).
 - `.` (binary crate `uze`) — CLI parsing (`src/main.rs`), the terminal UI
   (`src/ui.rs`, `src/ui/`), the runtime PATH shim (`src/shim.rs`), and
   `src/command_performance.rs`.
-- `crates/uze-core` — harness-agnostic domain, organized into five
-  concerns, each a module whose own doc says what belongs in it. Read the
-  concern before the module: `hook` is a *capability*, and that is a
-  different question from where its file sits.
+- `crates/uze-core` — the shared foundation and the package manager's
+  harness-agnostic domain, organized into five concerns, each a module
+  whose own doc says what belongs in it. Read the concern before the
+  module: `hook` is a *capability*, and that is a different question from
+  where its file sits.
   - `package/` — where a package's bytes come from and where they live:
     acquisition, trust, importers, bundle, naming, store.
   - `capability/` — what a plugin declares, portably: skill, hook.
   - `delivery/` — how a capability reaches a harness: integration,
     router, exposure, engine, state, persistence, reconciliation.
   - `project/` — what a project declares and what UZE writes into it:
-    project_lock, worktree policy, context, text_region, workspace roots.
+    manifest (the file, and the package manager's section), project_lock,
+    context, text_region, the `anchor` a project or marketplace roots at.
   - `machine/` — the local environment outside UZE's own state: home,
     detection cache, provisioning, subprocess, shell PATH, harness runtime.
 
   Public paths stay flat (`uze_core::store`, not `uze_core::package::store`)
   via re-exports at the crate root, which is also where a reader sees which
   concern each module belongs to. Depends on nothing harness-specific and
-  must stay that way (see Architecture below).
+  must stay that way (see Architecture below), and never on
+  `uze-workspace`: that is how the package manager works without the
+  workspace, and the compiler is what says so.
+- `crates/uze-workspace` — the workspace's domain: the agents UZE launches
+  (`task`), their checkouts (`checkout`, `worktree`), the conversation
+  each is in and carrying it across a launch (`conversation`,
+  `continuity`), how finished work lands (`landing`), what a project
+  declares about all of that (`declaration`, reading `agents.yaml`'s
+  `worktrees` and `artifacts` sections, which `uze-core` carries unread),
+  and the workspace client's own state (`client_layout`, `prompt_history`,
+  `notifications`, `extensions`). Built on `uze-core`; unrelated to
+  `uze-terminal`, which owns the panes and knows nothing of agents.
 - `crates/uze-application` — the product-facing facade
   (`UzeApplication`) that orchestrates Core + Integrations into
   install/remove/update/context lifecycle operations. `src/application.rs`
@@ -439,9 +452,11 @@ Dependency direction is one-way and enforced by tests, not just convention:
 CLI/TUI (src/)  ──uses──▶  uze-extensions   (presentation: an extension
       ↓                                      describes, src/ui renders)
 uze-application  (orchestration: add/install/remove/update/context)
-      ↓
-uze-core         (domain contracts: Package, Store, Engine, Router,
-      ↑           IntegrationPort, capability/exposure model)
+      ↓                 ↓
+      ↓          uze-workspace (the workspace's domain: tasks, checkouts,
+      ↓                 ↓       landing, conversations)
+uze-core         (shared foundation + the package manager: Package, Store,
+      ↑           Engine, Router, IntegrationPort, capability/exposure model)
 uze-integrations (Claude, Codex, Antigravity, OpenCode — implement IntegrationPort)
 
 uze-git          (transport, no domain — used by core and by extensions)

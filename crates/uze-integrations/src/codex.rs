@@ -230,7 +230,7 @@ impl IntegrationPort for CodexIntegration {
 
     fn resume_session_args(
         &self,
-        session: &uze_core::conversation::SessionId,
+        session: &uze_core::session::SessionId,
     ) -> Vec<std::ffi::OsString> {
         session::resume_args(session)
     }
@@ -238,11 +238,11 @@ impl IntegrationPort for CodexIntegration {
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,
-    ) -> Option<uze_core::conversation::SessionId> {
+    ) -> Option<uze_core::session::SessionId> {
         session::observe(&self.sessions_dir(), ctx)
     }
 
-    fn session_exists(&self, session: &uze_core::conversation::SessionId, _cwd: &Path) -> bool {
+    fn session_exists(&self, session: &uze_core::session::SessionId, _cwd: &Path) -> bool {
         session::exists(&self.sessions_dir(), session)
     }
 

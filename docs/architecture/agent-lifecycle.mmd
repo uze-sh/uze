@@ -2,7 +2,7 @@
 title: Agent lifecycle
 ---
 flowchart TD
-  click pool href "crates/uze-core/src/project/checkout.rs"
+  click pool href "crates/uze-workspace/src/checkout.rs"
   place([An agent is placed]) --> pool{A free recorded slot?}
   pool -->|yes| reuse[Reset it to the base<br/>on branch agent/id]
   pool -->|no| cut[git worktree add .worktrees/id<br/>and record that UZE made it]

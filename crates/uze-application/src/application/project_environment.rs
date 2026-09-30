@@ -25,10 +25,10 @@ use super::*;
 /// it, left empty because `declare_plugin` pushes into whatever is already
 /// declared rather than replacing it.
 ///
-/// A marketplace linked to a checkout this machine develops pins nothing
+/// A marketplace linked to a working copy this machine develops pins nothing
 /// (`record_in_lock` leaves it out by design), so the lock has no entry to
 /// carry — the declared source is then what the machine registry knows: the
-/// checkout, as a local path. A checkout that is the project or sits inside
+/// working copy, as a local path. One that is the project or sits inside
 /// it is spelled relative to the project root, which is what a `path:` is
 /// read against, so every clone of the project resolves it; any other does
 /// not reproduce on another machine, and `plan` says so. What it must never
@@ -36,7 +36,7 @@ use super::*;
 fn declared_marketplace_for(
     lock: &ProjectLock,
     marketplace: &str,
-    checkout: Option<std::path::PathBuf>,
+    linked_source: Option<std::path::PathBuf>,
     project_root: &Path,
 ) -> DeclaredMarketplace {
     match lock.marketplaces.get(marketplace) {
@@ -49,7 +49,7 @@ fn declared_marketplace_for(
         },
         None => DeclaredMarketplace {
             git: None,
-            path: checkout.map(|checkout| declared_path(checkout, project_root)),
+            path: linked_source.map(|source| declared_path(source, project_root)),
             r#ref: None,
             subdirectory: None,
             plugins: Vec::new(),
@@ -57,12 +57,12 @@ fn declared_marketplace_for(
     }
 }
 
-fn declared_path(checkout: std::path::PathBuf, project_root: &Path) -> std::path::PathBuf {
-    let checkout = checkout.canonicalize().unwrap_or(checkout);
-    match checkout.strip_prefix(project_root) {
+fn declared_path(linked_source: std::path::PathBuf, project_root: &Path) -> std::path::PathBuf {
+    let linked_source = linked_source.canonicalize().unwrap_or(linked_source);
+    match linked_source.strip_prefix(project_root) {
         Ok(inside) if inside.as_os_str().is_empty() => std::path::PathBuf::from("."),
         Ok(inside) => inside.to_path_buf(),
-        Err(_) => checkout,
+        Err(_) => linked_source,
     }
 }
 
@@ -145,12 +145,12 @@ impl Project<'_> {
         // Only a *declared* policy is owed a projection: an undeclared one
         // projects nothing, so it can never be behind. Same gate the
         // context service uses to decide whether the region exists at all.
-        let policy = manifest::load(canonical).ok()??.worktrees?;
+        let policy = uze_workspace::declaration::declared(canonical).ok()??;
         let wanted = policy.region_identity();
         let agents_md = canonical.join(uze_core::project_context::AGENTS_MD_FILE_NAME);
         let found = uze_core::text_region::region_identities_present(&agents_md)
             .into_iter()
-            .find(|identity| uze_core::worktree::WorktreePolicy::owns_region(identity));
+            .find(|identity| uze_workspace::worktree::WorktreePolicy::owns_region(identity));
         // A missing region is as behind as a stale one: the policy is
         // declared and the agents are reading nothing at all.
         (found.as_deref() != Some(wanted.as_str())).then(|| StaleProjection {
@@ -163,7 +163,7 @@ impl Project<'_> {
     /// declared `ref:` — a lock that re-resolved `main` would install
     /// whatever was pushed since, which is what it exists to prevent.
     ///
-    /// The commit is fetched from the local checkout when this machine has
+    /// The commit is fetched from the local working copy when this machine has
     /// one registered for the same repository, and from the recorded URL
     /// otherwise. Same bytes either way — a commit is a commit — but a
     /// person who set up a local marketplace should not need the network
@@ -294,8 +294,8 @@ impl Project<'_> {
         // person reads and edits — silently out of date.
         tracing::info!(target: uze_core::acquisition::git::STEP, step = "lock");
         // A linked marketplace pins nothing, so the lock has no entry —
-        // the declaration names the checkout the registry link carries.
-        let checkout = uze_core::state::marketplace_get(&self.0.home, marketplace)?.and_then(
+        // the declaration names the working copy the registry link carries.
+        let linked_source = uze_core::state::marketplace_get(&self.0.home, marketplace)?.and_then(
             |record| match (record.link, &record.source) {
                 (Some(link), source) => Some(
                     uze_core::acquisition::marketplace::repository_of(source)
@@ -310,7 +310,7 @@ impl Project<'_> {
             &canonical,
             plugin,
             marketplace,
-            &declared_marketplace_for(&lock, marketplace, checkout, &canonical),
+            &declared_marketplace_for(&lock, marketplace, linked_source, &canonical),
         )?;
         project_lock::save_lock(&canonical, &lock)?;
 
@@ -539,12 +539,12 @@ impl Project<'_> {
                 self.record_in_lock(&mut lock, &name, &marketplace, &request, &installed_id)?;
             if !pinned {
                 let followed = self
-                    .linked_checkout(&marketplace)
+                    .linked_source(&marketplace)
                     .filter(|_| self.installed_revision(&installed_id).content != content_before);
                 outcomes.push(match followed {
-                    Some(checkout) => UpdateOutcome::FollowedLink {
+                    Some(linked_source) => UpdateOutcome::FollowedLink {
                         plugin: name,
-                        checkout,
+                        linked_source,
                         deliveries,
                     },
                     None => UpdateOutcome::Held {
@@ -635,15 +635,15 @@ impl Project<'_> {
                         .0
                         .package_by_name(&id)
                         .ok()
-                        .and_then(|package| self.linked_checkout(package.id.marketplace()));
+                        .and_then(|package| self.linked_source(package.id.marketplace()));
                     outcomes.push(match linked {
                         _ if after.content == before.content => UpdateOutcome::AlreadyCurrent {
                             plugin: id,
                             deliveries,
                         },
-                        Some(checkout) => UpdateOutcome::FollowedLink {
+                        Some(linked_source) => UpdateOutcome::FollowedLink {
                             plugin: id,
-                            checkout,
+                            linked_source,
                             deliveries,
                         },
                         None => UpdateOutcome::Moved {
@@ -678,8 +678,8 @@ impl Project<'_> {
         })
     }
 
-    /// The checkout `marketplace` is linked to on this machine, if any.
-    fn linked_checkout(&self, marketplace: &str) -> Option<std::path::PathBuf> {
+    /// The working copy `marketplace` is linked to on this machine, if any.
+    fn linked_source(&self, marketplace: &str) -> Option<std::path::PathBuf> {
         uze_core::state::marketplace_get(&self.0.home, marketplace)
             .ok()
             .flatten()
@@ -687,7 +687,7 @@ impl Project<'_> {
     }
 
     /// What decides whether an update changed a package is its content: a
-    /// linked marketplace resolves to the same checkout path however much
+    /// linked marketplace resolves to the same working-copy path however much
     /// its files change, and a new commit can carry the same bytes.
     fn installed_revision(&self, id: &str) -> InstalledRevision {
         let package = self.0.package_by_name(id).ok();
@@ -1039,7 +1039,7 @@ impl Project<'_> {
     /// Deliberately writes nothing to the lock. `add`, `install` and
     /// `update` must not differ in *how* they resolve — that is what this
     /// being one function buys — and they legitimately differ in what they
-    /// record: a marketplace linked to a checkout on this machine is
+    /// record: a marketplace linked to a working copy on this machine is
     /// resolved exactly like any other and pins nothing, which a branch
     /// inside a shared function would be the wrong way to say.
     fn resolve_and_install(
@@ -1084,7 +1084,7 @@ impl Project<'_> {
     ) -> Result<bool> {
         let stored = self.0.package_by_name(installed_id)?;
         let reproducible = stored.provenance.resolved.lock_revision().is_some();
-        // A marketplace read from a checkout this machine develops resolves
+        // A marketplace read from a working copy this machine develops resolves
         // to a path, not a commit, and pins nothing. Writing one would put
         // a revision taken from unpublished work into a file a
         // collaborator pulls — the mistake `pnpm link` also refuses. The
@@ -1278,17 +1278,20 @@ pub enum UpdateOutcome {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         deliveries: Vec<HarnessDeliveryReport>,
     },
-    /// The package's marketplace is linked to a checkout on this machine,
+    /// The package's marketplace is linked to a working copy on this machine,
     /// and the Store took in what its working tree holds now. Nothing was
     /// pinned: a working tree is not a revision a lock can name.
     FollowedLink {
         plugin: String,
-        checkout: std::path::PathBuf,
+        /// The working tree the marketplace is linked to. Serialized under its
+        /// earlier name, which `--format json` readers already know.
+        #[serde(rename = "checkout")]
+        linked_source: std::path::PathBuf,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         deliveries: Vec<HarnessDeliveryReport>,
     },
     /// Considered and deliberately not moved, with the reason — a
-    /// marketplace linked to a checkout on this machine pins nothing, and a
+    /// marketplace linked to a working copy on this machine pins nothing, and a
     /// revision introducing execution waits for an explicit decision.
     Held { plugin: String, reason: String },
     /// The safety check refused to detach what is installed, so it was left

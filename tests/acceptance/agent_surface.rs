@@ -3,12 +3,13 @@
 
 use std::path::Path;
 
-use uze_core::{
-    UzeHome,
+use uze_core::UzeHome;
+
+use uze_testkit::temp::TestEnvironment;
+use uze_workspace::{
     checkout::CheckoutId,
     task::{self, Agent, AgentStore, Base},
 };
-use uze_testkit::temp::TestEnvironment;
 
 use crate::util::uze_bin;
 

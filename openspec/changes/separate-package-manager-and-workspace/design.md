@@ -75,8 +75,9 @@ reverse coupling today is three points, each resolved before the move:
 `ProjectManifest` holding `WorktreePolicy` (D3), `IntegrationPort` naming
 `conversation::SessionId` (the identifier stays in `uze-core` as a shared
 type, so `uze-integrations` does not depend on the new crate), and the task
-variants of `uze-core`'s error enum (they move to the new crate's own
-error). Alternative considered: a `workspace` concern inside `uze-core`
+variants of `uze-core`'s error enum, which on inspection carry only text
+and so create no dependency: they stay in the shared error, which the
+workspace's `Result` keeps using. Alternative considered: a `workspace` concern inside `uze-core`
 held by a name-matching test. Rejected: a test that looks for names needs a
 `sanctioned` list and misses a type re-exported under another name, and the
 reason the presentation seam is a test (the binary crate shared with
@@ -92,8 +93,8 @@ knows nothing of terminals.
 
 **D2. What moves, and what is renamed.** `worktree`, `checkout`, `task`,
 `landing`, `conversation` (except `SessionId`, including `Claim`, which the
-shim uses) and `delivery/continuity` move into `uze-workspace`, and the
-task and `AgentPlacement` variants of `uze-core`'s error move with them, with the helpers they call from `uze-core`
+shim uses) and `delivery/continuity` move into `uze-workspace`, while the
+task and `AgentPlacement` variants of `uze-core`'s error stay (text only), with the helpers they call from `uze-core`
 (`persistence`, `digest`, `subprocess`, `record`, `text_region`,
 `project_lock`, `project_context`, `process_cwd`) made public where they are
 not. The TUI-state modules at `uze-core`'s root (`prompt_history`,

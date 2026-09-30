@@ -43,7 +43,7 @@ use uze_core::{
         self,
         marketplace::{MarketplaceManifest, MarketplaceSubpath},
     },
-    workspace::MARKETPLACE_MANIFEST_NAME,
+    anchor::MARKETPLACE_MANIFEST_NAME,
 };
 
 /// How long a catalogue stands for before a read clones the remote again.

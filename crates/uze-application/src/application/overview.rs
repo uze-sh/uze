@@ -2,7 +2,7 @@
 //! answers "what kind of UZE workspace am I in, and is it ready to work",
 //! composed entirely from existing core/application primitives:
 //!
-//! - workspace detection (`uze_core::workspace`) for root + kind
+//! - workspace detection (`uze_core::anchor`) for root + kind
 //! - `agents.lock` parsing (`uze_core::project_lock`) for the consumer side
 //! - `marketplace.json` parsing (`acquisition::marketplace`) for the marketplace side
 //! - Store package ids (`installed_packages`) for installed vs required
@@ -25,11 +25,11 @@ use serde::Serialize;
 use uze_core::{
     Result,
     acquisition::marketplace,
+    anchor::{self, AnchorKind},
     project_lock,
-    workspace::{self, WorkspaceKind},
 };
 
-use super::{services::Workspace, *};
+use super::{services::Project, *};
 
 /// Everything the management screens show, read in one pass: the machine
 /// (plugins, health, marketplaces, profiles) and the project the session
@@ -49,7 +49,7 @@ pub struct MachineSnapshot {
     pub root: PathBuf,
     pub workspace: Option<OverviewWorkspaceSummary>,
     pub context_status: Option<ProjectContextStatus>,
-    pub prompt_history: Vec<uze_core::prompt_history::PromptEntry>,
+    pub prompt_history: Vec<uze_workspace::prompt_history::PromptEntry>,
 }
 
 impl UzeApplication {
@@ -74,14 +74,14 @@ impl UzeApplication {
         let marketplaces = self.marketplace().list()?;
         let marketplace_plugins = self.marketplace().plugins()?;
         let profiles = self.profiles().list()?;
-        let resolved = workspace::resolve_workspace(context_root).ok();
+        let resolved = anchor::resolve_anchor(context_root).ok();
         let root = resolved
             .as_ref()
             .map(|resolved| resolved.root.clone())
             .unwrap_or_else(|| context_root.to_path_buf());
         let context_status = self.context().inspect(&root).ok();
         let workspace = resolved.map(|resolved| {
-            self.workspace().summary_of(
+            self.project().summary_of(
                 context_root,
                 resolved,
                 context_status.as_ref().map(|status| &status.portability),
@@ -102,7 +102,7 @@ impl UzeApplication {
     }
 }
 
-impl Workspace<'_> {
+impl Project<'_> {
     /// What kind of UZE workspace `cwd` is inside, and the semantic state
     /// of its project/marketplace halves. Total for workspace-shaped
     /// inputs: a malformed `agents.lock` or `marketplace.json` is reported as a
@@ -111,7 +111,7 @@ impl Workspace<'_> {
     /// The only `Err` is an unresolvable cwd.
     #[tracing::instrument(name = "workspace.summary", skip_all, fields(cwd = %cwd.display()), err)]
     pub fn summary(&self, cwd: &Path) -> Result<OverviewWorkspaceSummary> {
-        let resolved = workspace::resolve_workspace(cwd)?;
+        let resolved = anchor::resolve_anchor(cwd)?;
         let context = self.0.context().inspect(&resolved.root).ok();
         Ok(self.summary_of(
             cwd,
@@ -125,18 +125,12 @@ impl Workspace<'_> {
     fn summary_of(
         &self,
         cwd: &Path,
-        resolved: workspace::ResolvedWorkspace,
+        resolved: anchor::ResolvedAnchor,
         portability: Option<&Portability>,
     ) -> OverviewWorkspaceSummary {
         let root = resolved.root;
-        let declares_project = matches!(
-            resolved.kind,
-            WorkspaceKind::Consumer | WorkspaceKind::Hybrid
-        );
-        let is_marketplace = matches!(
-            resolved.kind,
-            WorkspaceKind::Marketplace | WorkspaceKind::Hybrid
-        );
+        let declares_project = matches!(resolved.kind, AnchorKind::Consumer | AnchorKind::Hybrid);
+        let is_marketplace = matches!(resolved.kind, AnchorKind::Marketplace | AnchorKind::Hybrid);
         OverviewWorkspaceSummary {
             cwd: cwd.to_path_buf(),
             kind: resolved.kind,
@@ -246,7 +240,7 @@ pub struct OverviewWorkspaceSummary {
     /// Nearest ancestor (or cwd) carrying an anchor; equals `cwd` when no
     /// anchor exists anywhere on the path.
     pub root: PathBuf,
-    pub kind: WorkspaceKind,
+    pub kind: AnchorKind,
     /// Whether the project carries a `.agents/` directory. This is an
     /// observation for contextual clients; the Application owns the file
     /// inspection so presentation never probes project files directly.
@@ -371,7 +365,7 @@ mod tests {
             .map(|name| format!(r#"{{"name": "{name}", "source": "{name}"}}"#))
             .collect();
         fs::write(
-            root.join(workspace::MARKETPLACE_MANIFEST_NAME),
+            root.join(anchor::MARKETPLACE_MANIFEST_NAME),
             format!(
                 r#"{{"name": "{marketplace_name}", "plugins": [{}]}}"#,
                 entries.join(",")
@@ -472,7 +466,7 @@ mod tests {
         }
 
         fn project(&self, cwd: &Path) -> ProjectOverview {
-            self.app.workspace().summary(cwd).unwrap().project
+            self.app.project().summary(cwd).unwrap().project
         }
     }
 
@@ -694,8 +688,8 @@ mod tests {
         write_plugin(&root, "flow");
         write_plugin(&root, "std");
 
-        let summary = fx.app.workspace().summary(&root).unwrap();
-        assert_eq!(summary.kind, WorkspaceKind::Marketplace);
+        let summary = fx.app.project().summary(&root).unwrap();
+        assert_eq!(summary.kind, AnchorKind::Marketplace);
         let market = summary.marketplace.as_ref().unwrap();
         assert_eq!(market.state, MarketplaceState::Valid);
         assert_eq!(market.name.as_deref(), Some("acme"));
@@ -708,10 +702,10 @@ mod tests {
         let fx = Fixture::new("market-invalid");
         let root = fx._drop_root.join("market");
         fs::create_dir_all(&root).unwrap();
-        fs::write(root.join(workspace::MARKETPLACE_MANIFEST_NAME), "not json").unwrap();
+        fs::write(root.join(anchor::MARKETPLACE_MANIFEST_NAME), "not json").unwrap();
 
-        let summary = fx.app.workspace().summary(&root).unwrap();
-        assert_eq!(summary.kind, WorkspaceKind::Marketplace);
+        let summary = fx.app.project().summary(&root).unwrap();
+        assert_eq!(summary.kind, AnchorKind::Marketplace);
         let market = summary.marketplace.as_ref().unwrap();
         assert_eq!(market.state, MarketplaceState::InvalidManifest);
         assert_eq!(market.name, None);
@@ -728,7 +722,7 @@ mod tests {
 
         let market = fx
             .app
-            .workspace()
+            .project()
             .summary(&root)
             .unwrap()
             .marketplace
@@ -750,8 +744,8 @@ mod tests {
         write_plugin(&root, "flow");
         write_plugin(&root, "std");
 
-        let summary = fx.app.workspace().summary(&root).unwrap();
-        assert_eq!(summary.kind, WorkspaceKind::Hybrid);
+        let summary = fx.app.project().summary(&root).unwrap();
+        assert_eq!(summary.kind, AnchorKind::Hybrid);
         assert!(summary.project.environment != ProjectEnvironmentState::Ready);
         assert_eq!(
             summary.project.environment,
@@ -769,8 +763,8 @@ mod tests {
         write_manifest(&outer, "acme", &[]);
         write_lock(&inner, &["flow"], "test");
 
-        let summary = fx.app.workspace().summary(&inner.join("src")).unwrap();
-        assert_eq!(summary.kind, WorkspaceKind::Consumer);
+        let summary = fx.app.project().summary(&inner.join("src")).unwrap();
+        assert_eq!(summary.kind, AnchorKind::Consumer);
         assert_eq!(summary.root, inner.canonicalize().unwrap());
         assert_eq!(
             summary.project.environment,

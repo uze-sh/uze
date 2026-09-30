@@ -92,6 +92,17 @@ const RULES: &[Rule] = &[
                  the name from there. Core receives a verified claim and never learns \
                  how it travelled; a second spelling here is a second owner, and two \
                  owners of one name drift apart.",
+        remedy: "take a `uze_workspace::conversation::Claim`. The reader that has the \
+                 environment builds it from `uze_terminal::launch::AGENT_IDENTITY_VARIABLE`.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the workspace's domain never spells the agent identity variable either",
+        scope: "crates/uze-workspace/src",
+        forbidden: "UZE_AGENT",
+        reason: "the claim moved here with the rest of the workspace's domain, and the \
+                 rule moved with it: the terminal runtime owns the variable's name.",
         remedy: "take a `conversation::Claim`. The reader that has the environment \
                  builds it from `uze_terminal::launch::AGENT_IDENTITY_VARIABLE`.",
         sanctioned: &[],

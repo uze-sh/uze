@@ -1194,11 +1194,7 @@ mod tests {
         let home = home("tasks-kill");
         let root = uze_testkit::temp::scratch("tasks-kill-project");
         let mut writer = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "project::task::tests::save_until_killed",
-                "--ignored",
-            ])
+            .args(["--exact", "task::tests::save_until_killed", "--ignored"])
             .env("UZE_TASK_STORE_HOME", home.root())
             .env("UZE_TASK_STORE_ROOT", &root)
             .stdout(Stdio::null())

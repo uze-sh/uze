@@ -27,12 +27,13 @@ use std::{
 };
 
 use uze_core::{
-    UzeHome, continuity,
-    conversation::Claim,
+    UzeHome,
     harness_runtime::{self, HarnessRuntimeContribution, RuntimeContext},
 };
+
 use uze_integrations::registry::IntegrationRegistry;
 use uze_terminal::launch;
+use uze_workspace::{continuity, conversation::Claim};
 
 /// `None` when this process was not invoked through one of the registry's
 /// shim names — the ordinary `uze <subcommand>` path in `main()` continues
