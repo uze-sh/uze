@@ -10,12 +10,6 @@
 //! filesystem-safe id identifies a project across repeat runs. Which
 //! project a directory belongs to, and what portable context it carries, is
 //! `crate::project_context`'s single answer — not this module's.
-//!
-//! This is `RUNTIME INFRASTRUCTURE`, not `CONTEXT DELIVERY POLICY`: building
-//! this does not by itself decide that runtime projection replaces the
-//! existing project-root `CLAUDE.md` bridge
-//! (`uze agent context reconcile`'s persistent instruction bridge) — that remains
-//! a separate, later decision pending empirical comparison.
 
 use std::{
     ffi::OsString,

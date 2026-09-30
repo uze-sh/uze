@@ -176,11 +176,14 @@ impl IntegrationPort for ClaudeIntegration {
         Some("https://code.claude.com")
     }
 
-    /// Reads project context only through the `@AGENTS.md` bridge region in
-    /// `CLAUDE.md` — the vendor's own documented interop path.
+    /// Reads the shared `AGENTS.md` natively (measured against 2.1.283's
+    /// built-in `agents-md` reader, on by default), but only where the
+    /// project has no `CLAUDE.md` of its own: its default
+    /// `instructionFiles` mode loads one or the other, never both.
     fn context_delivery(&self) -> ContextDelivery {
-        ContextDelivery::Bridge {
-            file_name: "CLAUDE.md",
+        ContextDelivery::Native {
+            files: &[],
+            shadowed_by: &["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"],
         }
     }
 
@@ -214,11 +217,8 @@ impl IntegrationPort for ClaudeIntegration {
         vec!["claude"]
     }
 
-    /// `CONTEXT DELIVERY POLICY`: this is the `EXPERIMENTAL RUNTIME
-    /// DELIVERY STRATEGY` — see `runtime::claude_runtime_projection`'s doc
-    /// comment. Building this shim path does not by itself replace the
-    /// existing project-root `CLAUDE.md` bridge; that decision waits on an
-    /// empirical interactive comparison.
+    /// Carries `.agents/` into a launch, which Claude Code has no reader
+    /// for — see `runtime::claude_runtime_projection`.
     fn runtime_contribution(
         &self,
         ctx: &RuntimeContext,

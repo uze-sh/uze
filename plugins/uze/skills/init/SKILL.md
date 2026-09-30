@@ -20,7 +20,7 @@ You (this Skill)              UZE Context Manager (the `uze` CLI)
 
 **The boundary is absolute.** You reason, propose, and converse. `uze` — the
 CLI, never you directly — is the only thing that creates, updates, or
-removes any UZE-managed region or harness bridge. You are never the one
+removes any UZE-managed region. You are never the one
 deciding *how* a managed artifact gets written; you decide *what content* a
 human approves, and `uze` writes it in the one way it already knows how to
 write it safely.
@@ -37,10 +37,10 @@ You MAY:
 
 You MUST NOT:
 - Write, edit, or delete anything between `<!-- uze:begin ... -->` / `<!-- uze:end ... -->` markers, ever, under any circumstance. Those are UZE-owned. If you need one to exist, match, or go away, that is what `uze agent context reconcile` is for — call it, don't hand-edit around it.
-- Invent your own markers, receipts, or bridge mechanics.
+- Invent your own markers or receipts.
 - Run shell one-liners, `sed`, or scripts that touch `AGENTS.md`/`CLAUDE.md`/`GEMINI.md` as a substitute for `uze agent context reconcile`.
 - Implement your own version of inspect/plan/reconcile logic (e.g. hand-computing what's drifted). Always ask the CLI; never infer state from a stale memory of a previous call.
-- Apply any AGENTS.md/bridge change without an explicit human confirmation first.
+- Apply any AGENTS.md/CLAUDE.md change without an explicit human confirmation first.
 - Silently overwrite or "fix" a `DRIFTED` state you see reported. Report it and ask.
 - Read the repository indiscriminately. Analysis is bounded (see below).
 
@@ -62,8 +62,8 @@ source of truth.
 ### `PORTABLE`
 
 Nothing to propose. Tell the user their context is already portable and
-summarize `harnesses` briefly (who's native, who's bridged, who's not
-detected on this machine). Stop here unless they ask for something
+summarize `harnesses` briefly (who's native, who's not detected on this
+machine). Stop here unless they ask for something
 specific.
 
 ### `NO_CONTEXT` (no AGENTS.md, no CLAUDE.md, no GEMINI.md)
@@ -74,14 +74,15 @@ This is the "portable init" flow — see **Flow A** below.
 
 This is the "extract the portable core" flow — see **Flow B** below.
 
-### `PARTIALLY_PORTABLE` (AGENTS.md exists, at least one bridge gap)
+### `PARTIALLY_PORTABLE` (AGENTS.md exists, a harness reads its own file instead)
 
-Run `uze agent context plan --format json`. The gaps are almost always a bridge
-that's `Missing` (a harness just needs `uze agent context reconcile`, no semantic
-work needed) or `Blocked` (drifted/malformed — report it, ask the human how
-they want to resolve it; do not guess). If every gap is a plain `Missing`
-bridge, you can usually skip straight to Step 4 (confirm) — there is no
-content proposal to make, only a reconcile to run.
+Each gap names a harness and the file it reads in place of `AGENTS.md`
+(`SHADOWED_BY` in `harnesses`). Today that is Claude Code with a `CLAUDE.md`,
+`.claude/CLAUDE.md` or `CLAUDE.local.md` carrying content and no
+`@AGENTS.md` import: Claude Code loads one or the other, never both. No
+reconcile closes this — it is **Flow B** with `AGENTS.md` already present:
+classify the vendor file, propose moving its portable part into `AGENTS.md`,
+and propose the import line that lets the harness read both.
 
 ## Flow A — no context exists yet ("portable init")
 
@@ -113,7 +114,7 @@ the output is portable `AGENTS.md` content, never a vendor-proprietary file.
 
 Then go to Step 3 (present the dry-run) — never write anything yet.
 
-## Flow B — a vendor file exists, no AGENTS.md ("extract the portable core")
+## Flow B — a vendor file holds the context ("extract the portable core")
 
 Read the existing vendor file(s) (`CLAUDE.md` and/or `GEMINI.md`). For each
 instruction in them, classify it:
@@ -123,16 +124,22 @@ instruction in them, classify it:
   on this repo. This is what you propose moving into `AGENTS.md`.
 - **Vendor-specific** — instructions that only make sense for that one
   harness (e.g. "use Claude subagents for code review," a
-  vendor-specific workflow). This stays in the vendor file, unchanged,
-  below the bridge.
+  vendor-specific workflow). This stays in the vendor file, unchanged.
 - **Ambiguous** — you are not confident which bucket it belongs in. Ask
   the user (Step 3 groups these into one question, doesn't ask one at a
   time).
 
 **Never do `cp CLAUDE.md AGENTS.md`.** Never move vendor-specific content.
-Never delete anything from the vendor file — content that stays
-vendor-specific stays exactly where it is; only the portable subset gets
-proposed as new `AGENTS.md` content.
+Never delete anything from the vendor file unless the user asks to —
+content that stays vendor-specific stays exactly where it is; only the
+portable subset gets proposed as new `AGENTS.md` content.
+
+A `CLAUDE.md` that keeps content of its own must also import the baseline,
+or Claude Code reads it *instead of* `AGENTS.md`. Propose adding one line,
+`@AGENTS.md`, at its top: that line is user-owned content you write with
+your normal file tools after approval, exactly as a human would. If the
+user would rather empty the file entirely, an empty (or deleted)
+`CLAUDE.md` lets Claude Code read `AGENTS.md` on its own.
 
 If both `CLAUDE.md` and `GEMINI.md` exist with different content and no
 `AGENTS.md`: read both, propose one merged portable core, and be explicit
@@ -148,9 +155,9 @@ apart at a glance:
 substantive summary. This is your reasoning, not yet applied.
 
 **2. Deterministic UZE plan** — the output of `uze agent context plan`, verbatim
-or lightly formatted: which `AGENTS.md` regions would be `ATTACH`ed, which
-bridges would be `ATTACH`ed, and anything `BLOCKED` (drift/malformed — flag
-prominently, this needs the user's decision, not yours).
+or lightly formatted: which `AGENTS.md` regions would be `ATTACH`ed, and
+anything `BLOCKED` (drift/malformed — flag prominently, this needs the
+user's decision, not yours).
 
 Example shape:
 
@@ -168,7 +175,7 @@ Proposed AGENTS.md content
 
 UZE plan (uze agent context plan)
   AGENTS.md   pkg  ATTACH
-  CLAUDE.md   claude-code  ATTACH  (bridge: @AGENTS.md)
+  Claude Code native, no artifact (reads AGENTS.md; no CLAUDE.md of its own)
   Codex       native, no artifact
   OpenCode    native, no artifact
   Antigravity native, no artifact (reads AGENTS.md and GEMINI.md directly)
@@ -182,12 +189,13 @@ same turn — do not turn this into a multi-round wizard.
 ## Step 4 — apply only after explicit confirmation
 
 1. If the user approved new/changed **user-owned** content (new `AGENTS.md`
-   prose that doesn't exist as a package contribution, or moving
-   vendor-specific fragments within a vendor file), write that first, with
+   prose that doesn't exist as a package contribution, the `@AGENTS.md`
+   import in a vendor file, or moving vendor-specific fragments within a
+   vendor file), write that first, with
    your normal file tools — this is content you and the user own, not a
    managed region.
 2. Then run `uze agent context reconcile --format json`. This is what actually
-   creates/updates any UZE-owned region and any bridge. Never substitute a
+   creates/updates any UZE-owned region. Never substitute a
    hand-written region for this step, even if you believe you know the
    exact bytes it would produce.
 3. If reconcile reports anything `Blocked` (a drift it found that wasn't
@@ -204,7 +212,7 @@ just did:
 Portable context created.
 
 AGENTS.md   healthy
-Claude      bridged
+Claude      native
 Codex       native
 OpenCode    native
 Antigravity native
@@ -218,7 +226,7 @@ Portability: PORTABLE
   manufacture work. "Project context is healthy and portable. No changes
   required."
 - **Managed region `DRIFTED`**: `uze agent context inspect` will show this per
-  contribution or bridge. Report exactly what's drifted and where, and ask
+  contribution. Report exactly what's drifted and where, and ask
   the user how they want to resolve it (e.g. "accept the current file
   content and I'll treat it as the new baseline" is a human decision about
   *content*, which then still only gets written via a package

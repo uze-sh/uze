@@ -158,7 +158,10 @@ impl IntegrationPort for OpenCodeIntegration {
     /// Reads the shared `AGENTS.md` natively (preferred over `CLAUDE.md`
     /// per its own docs); UZE maintains no artifact for it.
     fn context_delivery(&self) -> ContextDelivery {
-        ContextDelivery::Native { files: &[] }
+        ContextDelivery::Native {
+            files: &[],
+            shadowed_by: &[],
+        }
     }
 
     /// OpenCode's own Skills docs (opencode.ai/docs/skills, 2026) document

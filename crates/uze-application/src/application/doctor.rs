@@ -340,11 +340,8 @@ impl Health<'_> {
                     .harnesses
                     .iter()
                     .filter_map(|harness| match &harness.delivery {
-                        HarnessContextDelivery::Bridge {
-                            needed: true,
-                            state,
-                        } if *state != AttachmentState::Matched => {
-                            Some(format!("{}: bridge {:?}", harness.display_name, state))
+                        HarnessContextDelivery::ShadowedBy { file } => {
+                            Some(super::context::shadowed_gap(&harness.display_name, file))
                         }
                         _ => None,
                     }),

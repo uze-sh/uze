@@ -384,7 +384,7 @@ enum ContextAction {
     /// Apply the project context plan.
     ///
     /// Writes: composes every installed package's contribution into this
-    /// project's AGENTS.md, and reconciles the harness bridges it implies.
+    /// project's AGENTS.md.
     Reconcile {
         path: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
@@ -1400,13 +1400,11 @@ fn run_context(app: &UzeApplication, action: ContextAction) -> Result<()> {
         }
         ContextAction::Plan { path, format } => {
             let plan = app.context().plan(&context_path(path))?;
-            emit(format, &plan, |plan| render_context_plan(plan, app));
+            emit(format, &plan, render_context_plan);
         }
         ContextAction::Reconcile { path, format } => {
             let report = app.context().reconcile(&context_path(path))?;
-            emit(format, &report, |report| {
-                render_context_reconciliation(report, app)
-            });
+            emit(format, &report, render_context_reconciliation);
         }
     }
     Ok(())
@@ -4631,6 +4629,12 @@ fn render_status(report: &StatusReport) -> String {
 }
 
 fn status_headline(report: &StatusReport) -> (String, &'static str) {
+    if matches!(report.portability, Portability::PartiallyPortable { .. }) {
+        return (
+            progress::warning_heading("Needs attention"),
+            "A harness reads its own file in place of AGENTS.md.",
+        );
+    }
     if !report.issues.is_empty() {
         return (
             progress::warning_heading("Needs attention"),
@@ -4768,14 +4772,11 @@ fn render_portability_gaps(portability: &Portability) -> String {
 fn render_status_harness(harness: &uze_application::application::HarnessContextStatus) -> String {
     let state = match &harness.delivery {
         HarnessContextDelivery::Native => progress::success_text("Native"),
-        HarnessContextDelivery::Projected => progress::success_text("Runtime shim"),
         HarnessContextDelivery::NotDetected => progress::label("Not installed"),
-        HarnessContextDelivery::Bridge {
-            state: uze_application::AttachmentState::Matched,
-            ..
-        } => progress::success_text("Bridged"),
-        HarnessContextDelivery::Bridge { needed: false, .. } => progress::label("Not needed"),
-        HarnessContextDelivery::Bridge { .. } => progress::warning_text("Needs reconciliation"),
+        HarnessContextDelivery::ShadowedBy { file } => progress::warning_text(format!(
+            "Reads {} instead",
+            file.file_name().unwrap_or_default().to_string_lossy()
+        )),
     };
     format!("  {:<16} {state}\n", harness.display_name)
 }
@@ -4803,8 +4804,12 @@ fn status_next_step(report: &StatusReport) -> Option<&'static str> {
         Portability::NoContext | Portability::VendorLocked { .. } => {
             Some("Write an AGENTS.md — the `uze:init` Skill drafts one with you.")
         }
+        Portability::PartiallyPortable { .. } => Some(
+            "A harness reads its own file instead of AGENTS.md — the `uze:init` Skill folds \
+             it in with you.",
+        ),
         Portability::Portable if report.issues.is_empty() => None,
-        _ => Some("Run `uze install` to repair project context."),
+        Portability::Portable => Some("Run `uze install` to repair project context."),
     }
 }
 
@@ -4897,18 +4902,9 @@ fn render_context_status(status: &ProjectContextStatus) -> String {
     for harness in &status.harnesses {
         let delivery = match &harness.delivery {
             HarnessContextDelivery::Native => "native".to_owned(),
-            HarnessContextDelivery::Projected => "runtime shim".to_owned(),
             HarnessContextDelivery::NotDetected => "not detected".to_owned(),
-            HarnessContextDelivery::Bridge { needed, state } => {
-                format!(
-                    "bridge {:?}{}",
-                    state,
-                    if *needed {
-                        ""
-                    } else {
-                        " (not currently needed)"
-                    }
-                )
+            HarnessContextDelivery::ShadowedBy { file } => {
+                format!("shadowed by {}", file.display())
             }
         };
         text.push_str(&format!("  {}  {delivery}\n", harness.display_name));
@@ -4969,9 +4965,7 @@ fn render_action(action: &PlannedAction) -> String {
     }
 }
 
-/// Bridge rows show the human label (`app.integration_label`); the plan's
-/// own keys stay the stable ids — which is what `--format json` emits.
-fn render_context_plan(plan: &ContextPlan, app: &UzeApplication) -> String {
+fn render_context_plan(plan: &ContextPlan) -> String {
     let mut text =
         progress::report_title("Context plan", Some(&plan.agents_md.display().to_string()));
     text.push('\n');
@@ -4989,17 +4983,6 @@ fn render_context_plan(plan: &ContextPlan, app: &UzeApplication) -> String {
             orphan.region_identity,
             render_action(&orphan.action)
         ));
-    }
-    if !plan.bridges.is_empty() {
-        text.push_str("\nBridges\n");
-        for bridge in &plan.bridges {
-            text.push_str(&format!(
-                "  {}  {}  {}\n",
-                app.health().integration_label(&bridge.integration),
-                bridge.file.display(),
-                render_action(&bridge.action)
-            ));
-        }
     }
     if let Some(region) = &plan.worktree_region {
         text.push_str("\nWorktree policy\n");
@@ -5020,10 +5003,7 @@ fn render_context_plan(plan: &ContextPlan, app: &UzeApplication) -> String {
     text
 }
 
-fn render_context_reconciliation(
-    report: &ContextReconciliationReport,
-    app: &UzeApplication,
-) -> String {
+fn render_context_reconciliation(report: &ContextReconciliationReport) -> String {
     let mut text = progress::report_title(
         "Context reconciled",
         Some(&report.agents_md.display().to_string()),
@@ -5054,17 +5034,6 @@ fn render_context_reconciliation(
         }
         for (identity, reason) in &region.blocked_superseded {
             text.push_str(&format!("  {identity}  BLOCKED: {reason}\n"));
-        }
-    }
-    if !report.bridges.is_empty() {
-        text.push_str("\nBridges\n");
-        for bridge in &report.bridges {
-            text.push_str(&format!(
-                "  {}  {}  {:?}\n",
-                app.health().integration_label(&bridge.integration),
-                bridge.file.display(),
-                bridge.state
-            ));
         }
     }
     text
@@ -5263,14 +5232,17 @@ mod status_output_tests {
     /// which is now the agent's command; a person reading "needs
     /// attention" has to be told what about.
     #[test]
-    fn a_bridge_gap_is_named_where_a_person_reads_it() {
+    fn a_shadowed_baseline_is_named_where_a_person_reads_it() {
         let text = render_status(&report(
             present(),
             Portability::PartiallyPortable {
-                gaps: vec!["claude-code: bridge Missing".to_owned()],
+                gaps: vec!["claude-code: reads CLAUDE.md instead of AGENTS.md".to_owned()],
             },
         ));
-        assert!(text.contains("claude-code: bridge Missing"), "{text}");
+        assert!(
+            text.contains("claude-code: reads CLAUDE.md instead of AGENTS.md"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -5287,15 +5259,15 @@ mod status_output_tests {
     }
 
     #[test]
-    fn a_reconcilable_gap_is_owed_the_command_that_closes_it() {
+    fn a_shadowed_baseline_is_owed_a_decision_never_a_command() {
         let step = status_next_step(&report(
             present(),
             Portability::PartiallyPortable {
-                gaps: vec!["claude-code: bridge Missing".to_owned()],
+                gaps: vec!["claude-code: reads CLAUDE.md instead of AGENTS.md".to_owned()],
             },
         ))
-        .expect("a bridge gap is owed a command");
-        assert_eq!(step, "Run `uze install` to repair project context.");
+        .expect("a shadowed baseline is owed a next step");
+        assert!(step.contains("uze:init"), "{step}");
     }
 
     #[test]

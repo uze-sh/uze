@@ -952,7 +952,7 @@ impl Project<'_> {
         // Declaring an environment and projecting it are one command, so a
         // projection that failed fails the command. Swallowed, it reported
         // `NoChanges` — "everything already agrees" — over a read-only
-        // `AGENTS.md` or a bridge that could not be written, and the half of
+        // `AGENTS.md` that could not be written, and the half of
         // the environment the agents actually read never moved. Re-running
         // `install` converges the rest again and retries this.
         let reconciled = match attempted {

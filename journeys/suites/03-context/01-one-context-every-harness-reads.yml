@@ -4,17 +4,12 @@ proves: web/content/docs/plugins/context.mdx
 about: |
   A project states its conventions once, in AGENTS.md. An installed plugin
   contributes to it in a region UZE owns and can take back; everything else
-  on the page belongs to the team and is never UZE's to touch. Harnesses that
-  read AGENTS.md natively get it for free, and the one that does not gets a
-  bridge — generated, marked, and removable.
+  on the page belongs to the team and is never UZE's to touch. Every harness
+  reads AGENTS.md natively, so nothing else is written for any of them.
 
   The read-only commands are held to it: `inspect` and `plan` say what would
   change and write nothing at all, which is the only reason a person can
   trust running them on a repository they care about.
-
-  The last scene characterizes what the round trip does *not* undo, on
-  purpose: a journey that quietly narrowed its scope until everything passed
-  would be worth less than no journey.
 
 world:
   project: demo-app
@@ -64,9 +59,6 @@ scenes:
       - file: "{project}/AGENTS.md"
         contains: Conventional Commits for commit subjects.
         about: the team's own page is on disk, untouched
-      - file: "{project}/CLAUDE.md"
-        exists: false
-        about: no bridge exists until something asks for one
       - capture:
           name: project
           tree: "{project}"
@@ -101,18 +93,12 @@ scenes:
       - file: "{project}/AGENTS.md"
         contains: Conventional Commits for commit subjects.
         about: and the team's own words are still there
-
-  - scene: the one harness that cannot read AGENTS.md gets a bridge, not a copy
-    then:
       - file: "{project}/CLAUDE.md"
-        contains: "@AGENTS.md"
-        about: the bridge points at the baseline instead of duplicating it
-      - file: "{project}/CLAUDE.md"
-        contains: "<!-- uze:begin instruction-bridge -->"
-        about: and is marked as UZE's to take back
+        exists: false
+        about: every harness reads AGENTS.md itself, so no vendor file is written
       - file: "{project}/GEMINI.md"
         exists: false
-        about: harnesses that read AGENTS.md natively get no second file
+        about: not for any harness
 
   - scene: reconciling again changes nothing
     then:
@@ -154,19 +140,6 @@ scenes:
         at: receipts.*.package_id
         exists: true
         about: and the machine still knows what it has
-
-  - scene: what the round trip does leave behind, stated rather than glossed over
-    then:
       - file: "{project}/CLAUDE.md"
-        exists: true
-        about: |
-          the bridge file survives, empty — a characterization, not a claim
-          that it is right. `text_region::detach` will not delete a file it
-          cannot prove UZE created (its own test pins that: a user's
-          pre-existing empty file must survive attach/detach), so the region
-          goes and the file stays. `uze agent context inspect` then reports the
-          bridge as `Missing` while an empty file sits in the repository
-          disagreeing with it. Making the file's existence a tracked
-          artifact — a receipt, the way every other managed artifact is —
-          is what would let this flip to `exists: false`, and that is a
-          design decision rather than a patch.
+        exists: false
+        about: nothing was left behind for any harness

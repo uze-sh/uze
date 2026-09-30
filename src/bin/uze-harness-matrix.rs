@@ -336,21 +336,19 @@ fn matrix_block() -> String {
     }
     out.push('\n');
     out.push_str("🟢 native · 🟡 adapted · 🟠 degraded · ⚪ roadmap · 🧪 experimental · — n/a\n\n");
-    let bridge_harnesses: Vec<&str> = harnesses()
-        .iter()
-        .filter_map(|harness| {
-            matches!(
-                harness.integration.context_delivery(),
-                ContextDelivery::Bridge { .. }
-            )
-            .then_some(harness.integration.display_name())
-        })
-        .collect();
-    out.push_str("**Project context:** All harnesses read `AGENTS.md` natively via uze;\n");
-    out.push_str(&format!(
-        "`@AGENTS.md` bridge for {}, native file for others.\n",
-        bridge_harnesses.join(", ")
-    ));
+    out.push_str("**Project context:** every harness reads `AGENTS.md` natively.");
+    for harness in harnesses() {
+        if let ContextDelivery::Native { shadowed_by, .. } = harness.integration.context_delivery()
+            && let Some(own_file) = shadowed_by.first()
+        {
+            out.push_str(&format!(
+                " {} reads its own `{own_file}` instead when that file has content and \
+                 does not import `@AGENTS.md`.",
+                harness.integration.display_name()
+            ));
+        }
+    }
+    out.push('\n');
     out.push('\n');
 
     out.push_str("### Planned harnesses\n\n");
@@ -450,8 +448,8 @@ fn matrix_json() -> String {
     for harness in harnesses() {
         let integration = harness.integration.as_ref();
         let context = match integration.context_delivery() {
-            ContextDelivery::Bridge { .. } => "bridge",
-            _ => "native",
+            ContextDelivery::Native { .. } => "native",
+            ContextDelivery::None => "none",
         };
         let package = package_route(integration).map(route_name).unwrap_or("none");
         rows.push(format!(

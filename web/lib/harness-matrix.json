@@ -5,7 +5,7 @@
       "name": "Claude Code",
       "icon": "/harnesses/claude-code.svg",
       "url": "https://code.claude.com",
-      "context": "bridge",
+      "context": "native",
       "skills": "native",
       "mcp": "native",
       "agents": "native",

@@ -4,8 +4,9 @@ description: One AGENTS.md that every agent reads
 ---
 
 Write your project's instructions once, in `AGENTS.md` at the project root.
-Every agent reads it: Codex, OpenCode and Antigravity natively, and Claude Code
-through a one-line `CLAUDE.md` that uze keeps in place.
+Every agent reads it natively: Claude Code, Codex, OpenCode and Antigravity.
+Claude Code reads a `CLAUDE.md` of your own instead, when you have one with
+content that does not import `@AGENTS.md`; `uze status` says when that happens.
 
 ## Set it up
 
@@ -25,7 +26,8 @@ uze status
 ```
 
 Says which file your instructions come from and whether every agent reads it.
-If one does not, `uze install` fixes it.
+If one does not, it says why: usually a `CLAUDE.md` of your own, which `/uze:init`
+can fold into `AGENTS.md` with you.
 
 ## What uze writes into it
 

@@ -170,7 +170,10 @@ impl IntegrationPort for CodexIntegration {
     /// Reads the shared `AGENTS.md` natively (it is the origin harness for
     /// the convention); UZE maintains no artifact for it.
     fn context_delivery(&self) -> ContextDelivery {
-        ContextDelivery::Native { files: &[] }
+        ContextDelivery::Native {
+            files: &[],
+            shadowed_by: &[],
+        }
     }
 
     /// Codex's own Skills docs (developers.openai.com/codex/skills, 2026)

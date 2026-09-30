@@ -107,15 +107,15 @@ CLI/TUI.
 
 ### Project-context delivery is declared per integration
 
-Which harness reads the shared `AGENTS.md` natively, which needs an
-`@AGENTS.md` bridge region, and which additional native files are
-observed for portability reporting is each integration's
-`context_delivery()` declaration — never an Application-owned vendor
-list. The bridge protocol itself (region identity, import line) is the
-Application's, shared by every bridge-needing harness.
+Which harness reads the shared `AGENTS.md` natively, which of its own
+files it reads *in place of* `AGENTS.md` when they carry content
+(`shadowed_by`), and which additional native files are observed for
+portability reporting is each integration's `context_delivery()`
+declaration — never an Application-owned vendor list. A shadowed baseline
+is reported as a gap and never closed by writing into the vendor file.
 
-> `tests/memory/inspection.rs` scenarios A–F (stub harness declares its
-> bridge exactly like a real integration)
+> `tests/memory/inspection.rs` scenarios A–F (stub harness declares what
+> shadows it exactly like a real integration)
 
 ### Native means preserved semantics, not identical primitives (ADR-030)
 

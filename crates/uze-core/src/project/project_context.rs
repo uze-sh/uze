@@ -65,6 +65,28 @@ impl ProjectContext {
     }
 }
 
+/// The first of `names` under `root` that a harness reads in place of
+/// `AGENTS.md`: one with content that does not import it. An empty file is
+/// no instructions at all, and one that imports `AGENTS.md` delivers it —
+/// neither takes its place.
+pub fn shadowing_file(root: &Path, names: &[&str]) -> Option<PathBuf> {
+    names
+        .iter()
+        .map(|name| root.join(name))
+        .find(|path| std::fs::read_to_string(path).is_ok_and(|text| shadows_agents_md(&text)))
+}
+
+/// The import spellings that carry the root's `AGENTS.md` into a sibling
+/// instructions file — the vendor-documented interop line.
+const AGENTS_MD_IMPORTS: &[&str] = &["@AGENTS.md", "@./AGENTS.md"];
+
+fn shadows_agents_md(text: &str) -> bool {
+    !text.trim().is_empty()
+        && !text
+            .lines()
+            .any(|line| AGENTS_MD_IMPORTS.contains(&line.trim()))
+}
+
 /// Resolves the project context containing `cwd`. Infallible by design:
 /// an unresolvable or nonexistent `cwd` yields a context rooted at `cwd`
 /// with no resources, never an error — every caller (a status popup, a

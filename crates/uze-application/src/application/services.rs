@@ -96,8 +96,8 @@ impl UzeApplication {
     }
 }
 
-/// A project's portable instruction context — `AGENTS.md` and the bridges
-/// projected from it.
+/// A project's portable instruction context — `AGENTS.md`, and whether each
+/// harness reads it.
 ///
 /// Separate from [`Project`] because the CLI grammar already draws that
 /// line (ADR-019): `uze agent context …` is its own command group, scoped to a

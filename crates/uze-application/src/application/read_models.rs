@@ -548,10 +548,7 @@ pub struct SetupResult {
     /// `Some` when this integration opted into `EXPERIMENTAL RUNTIME
     /// DELIVERY STRATEGY` (`IntegrationPort::supports_runtime_integration`)
     /// and `ensure_runtime_shim` created/refreshed its PATH shim as an
-    /// ordinary part of this `setup` call — see
-    /// `context::INSTRUCTION_BRIDGE_IDENTITY` for how this relates to the
-    /// existing, still-default,
-    /// persistent `CLAUDE.md` bridge. `None` for every
+    /// ordinary part of this `setup` call. `None` for every
     /// integration with no runtime-integration story (not an error).
     pub runtime_shim: Option<RuntimeShimSetup>,
     /// `Some` when attachment of at least one stored package failed for this
@@ -682,17 +679,14 @@ pub enum ContextMechanism {
     /// The shim would project it, but a real binary resolves ahead of the
     /// shim on this process's `PATH`, so a launch from here bypasses it.
     ShimShadowed,
-    /// A persistent bridge file in the project root, maintained by
-    /// `uze agent context reconcile`, carries it.
-    Bridge,
     /// No delivery strategy exists for this harness and this resource.
     Unsupported,
 }
 
 /// One harness's declared context support, one mechanism per portable
 /// resource — answered independently because a harness may read
-/// `.agents/skills` natively while needing help with `AGENTS.md`, or with
-/// `.agents/agents`, or getting none for it at all.
+/// `AGENTS.md` natively while needing help with `.agents/skills` or
+/// `.agents/agents`, or getting none for them at all.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct HarnessContextSupport {
     pub instructions: ContextMechanism,
@@ -708,7 +702,7 @@ impl HarnessContextSupport {
     pub fn declared(integration: &dyn IntegrationPort, runtime_shim_active: bool) -> Self {
         let projection = RuntimeProjection::of(integration, runtime_shim_active);
         Self {
-            instructions: ContextMechanism::for_instructions(integration, projection),
+            instructions: ContextMechanism::for_instructions(integration),
             project_skills: ContextMechanism::for_project_resource(
                 integration,
                 AgentsDirectoryResource::Skills,
@@ -752,18 +746,12 @@ impl RuntimeProjection {
 }
 
 /// The one precedence every context read model applies: what the harness
-/// reads itself, then a runtime projection, then a persistent bridge.
+/// reads itself, then a runtime projection.
 impl ContextMechanism {
-    pub(crate) fn for_instructions(
-        integration: &dyn IntegrationPort,
-        projection: RuntimeProjection,
-    ) -> Self {
-        match (integration.context_delivery(), projection) {
-            (ContextDelivery::Native { .. }, _) => Self::Native,
-            (ContextDelivery::None, _) => Self::Unsupported,
-            (ContextDelivery::Bridge { .. }, RuntimeProjection::Active) => Self::RuntimeShim,
-            (ContextDelivery::Bridge { .. }, RuntimeProjection::Shadowed) => Self::ShimShadowed,
-            (ContextDelivery::Bridge { .. }, RuntimeProjection::Inactive) => Self::Bridge,
+    pub(crate) fn for_instructions(integration: &dyn IntegrationPort) -> Self {
+        match integration.context_delivery() {
+            ContextDelivery::Native { .. } => Self::Native,
+            ContextDelivery::None => Self::Unsupported,
         }
     }
 
@@ -804,19 +792,10 @@ pub struct InstructionSourceObservation {
 pub enum HarnessContextDelivery {
     /// Reads the shared `AGENTS.md` directly; nothing else is needed.
     Native,
-    /// Needs a bridge region in its own file. `needed` is whether
-    /// `AGENTS.md` currently carries at least one matched contribution
-    /// worth bridging to; `state` is the bridge region's own observed
-    /// state, checked regardless of whether it is currently needed (an
-    /// unneeded-but-present bridge is real, reportable state, not silently
-    /// folded into "needed").
-    Bridge {
-        needed: bool,
-        state: AttachmentState,
-    },
-    /// UZE's runtime shim projects `AGENTS.md` into every launch from here,
-    /// so a missing bridge is not a gap.
-    Projected,
+    /// Would read `AGENTS.md` natively, but reads `file` — its own
+    /// instructions file, carrying content and no import of `AGENTS.md` —
+    /// in its place. A gap UZE reports and never writes its way out of.
+    ShadowedBy { file: PathBuf },
     /// This harness was not found on the machine at all; nothing here is
     /// evaluated as a gap.
     NotDetected,
@@ -840,12 +819,10 @@ pub struct HarnessContextStatus {
 pub enum Portability {
     /// No recognized instructions file exists at all.
     NoContext,
-    /// A shared `AGENTS.md` exists and every detected harness that needs
-    /// something from it currently has it (natively, through the runtime
-    /// shim, or via a matched bridge).
+    /// A shared `AGENTS.md` exists and every detected harness reads it.
     Portable,
-    /// A shared `AGENTS.md` exists, but at least one detected harness that
-    /// needs a bridge does not currently have a working one.
+    /// A shared `AGENTS.md` exists, but at least one detected harness reads
+    /// a vendor file of its own in its place.
     PartiallyPortable { gaps: Vec<String> },
     /// No shared `AGENTS.md` exists, but one or more vendor-specific files
     /// hold their own content — the original problem this capability set
@@ -867,8 +844,8 @@ pub struct ProjectContextStatus {
     pub worktrees: Option<WorktreePolicyStatus>,
     pub portability: Portability,
     /// Human-readable notices for a state worth surfacing but that is not
-    /// itself a gap or an error — e.g. a harness carrying legitimate
-    /// vendor-specific content alongside its bridge. Never a suggestion to
+    /// itself a gap or an error — e.g. a vendor file carrying legitimate
+    /// vendor-specific content beside `AGENTS.md`. Never a suggestion to
     /// consolidate or an automatic action.
     pub warnings: Vec<String>,
 }
@@ -912,20 +889,12 @@ pub struct WorktreeRegionStatus {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct BridgePlan {
-    pub integration: String,
-    pub file: PathBuf,
-    pub action: instruction_context::PlannedAction,
-}
-
-#[derive(Clone, Debug, Serialize)]
 pub struct ContextPlan {
     pub agents_md: PathBuf,
     pub agents_md_plan: instruction_context::AgentsMdPlan,
     /// Present whenever the shared file would gain, keep, lose, or is
     /// blocked from changing the worktree policy region.
     pub worktree_region: Option<WorktreeRegionPlan>,
-    pub bridges: Vec<BridgePlan>,
 }
 
 impl ContextPlan {
@@ -935,10 +904,6 @@ impl ContextPlan {
                 .worktree_region
                 .as_ref()
                 .is_some_and(|region| is_mutating(&region.action) || !region.superseded.is_empty())
-            || self
-                .bridges
-                .iter()
-                .any(|bridge| is_mutating(&bridge.action))
     }
 }
 
@@ -988,7 +953,7 @@ pub struct StatusReport {
     /// the projection all agree.
     pub drift: EnvironmentDrift,
     /// Human-readable, one-line-each context problems: a non-matched
-    /// contribution, a bridge gap, a malformed or blocked orphan region.
+    /// contribution, a shadowed `AGENTS.md`, a malformed or blocked orphan region.
     /// Empty means healthy. Never a substitute for the full detail of
     /// `agent context inspect` — this is the "does anything need my
     /// attention" view.
@@ -1058,14 +1023,6 @@ pub struct PackageInstructionStatus {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct BridgeStatus {
-    pub integration: String,
-    pub file: PathBuf,
-    pub state: AttachmentState,
-    pub reason: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
 pub struct ContextReconciliationReport {
     pub agents_md: PathBuf,
     pub packages: Vec<PackageInstructionStatus>,
@@ -1081,7 +1038,6 @@ pub struct ContextReconciliationReport {
     /// distinct from a region that is merely absent.
     pub failed: Vec<(String, String)>,
     pub worktree_region: Option<WorktreeRegionStatus>,
-    pub bridges: Vec<BridgeStatus>,
 }
 
 #[derive(Clone, Debug, Serialize)]

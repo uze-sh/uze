@@ -7,8 +7,8 @@ covering the package's conventional `skills/`/`mcp.json` surface (Generated
 Native Package, ADR-013) — or, when neither surface is safely
 representable, decomposed into a managed Skill directory plus a registered
 MCP server. The only integration in this crate with a runtime-projection
-mechanism (`--add-dir` delivery of `AGENTS.md`, independent of package
-delivery).
+mechanism (`--add-dir` delivery of a project's `.agents/`, independent of
+package delivery). `AGENTS.md` itself is read natively.
 
 ## Support
 
@@ -18,8 +18,8 @@ delivery).
 | Plugin (native, generated) | SUPPORTED | Second, UZE-owned `uze-store` catalogue → `claude plugin install` (ADR-013) | TESTED (`claude::generate::generated_native_tests`) + CODE_FACT |
 | Skills | SUPPORTED | Native envelope (VIA_PACKAGE) or a managed directory in `<claude_home>/skills/<label>` (NATIVE_CAPABILITY) | EMPIRICAL — real `claude -p` run returned the exact proof token end-to-end (ADR-006) |
 | MCP | SUPPORTED (config), PARTIAL (behavioral) | Native envelope (VIA_PACKAGE) or `claude mcp add --scope user --transport stdio` (SAFE_ADAPTATION) | EMPIRICAL for config/discovery (`claude mcp get`/`list` confirmed `✔ Connected` live, ADR-007); a real tool call needed a non-default `--allowedTools=mcp__...` flag and a secondary headless-discovery quirk was never fully closed |
+| Context (`AGENTS.md`) | SUPPORTED | Native — Claude Code's built-in `agents-md` reader, on by default. Its default `instructionFiles` mode (`claude-md-or-agents-md`) loads `AGENTS.md` only where no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` is found; a project that has one with content and no `@AGENTS.md` import is reported `ShadowedBy`, never written into | CODE_FACT — read off the 2.1.283 binary's embedded plugin (`isOnByDefault = true`, same in 2.1.281/2.1.282); an interactive session is the check still owed |
 | Project `.agents/` (runtime) | SUPPORTED | Claude Code 2.1.283 reads neither `./.agents/skills` nor `./.agents/agents` (its roots are `.claude/skills` and `.claude/agents`). The launcher links `<runtime dir>/.claude/skills` and `.claude/agents` to the project's own `.agents/skills` and `.agents/agents`, which Claude discovers inside the `--add-dir` target and follows as linked roots. Nothing is written into the repository (RUNTIME_PROJECTION) | EMPIRICAL (Lab contract `context-project-skill-reaches-model`, `context-project-agent-reaches-model`, `context-project-skill-checkout-untouched`; both absent with the launcher left out) + TESTED (`claude::runtime::runtime_projection_tests`) |
-| Context (runtime) | EXPERIMENTAL | `--add-dir` + `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` (RUNTIME_PROJECTION) | EMPIRICAL — extensive real-CLI evidence (ADR-014); `/compact` retention across a session is the one open gap |
 | Agents | Supported | Inside the package plugin (Claude names them `<plugin>:<subdirs>:<name>`); outside one, a generated `~/.claude/agents/<label>.md` with `name: <label>`. Plugin agents lose `permissionMode`, `hooks`, `mcpServers`, `initialPrompt`, reported as Degraded | EMPIRICAL (`conformance/experiments/claude/parity.py`, Claude Code 2.1.283) |
 | Hooks | SUPPORTED | Native — one merged entry per canonical group in `~/.claude/settings.json`, whose `command`+`args` start the generated `hooks/exec` wrapper (ADR-033, ADR-040). Handlers read `HOOK_*` and answer with an exit code; ordering, first-deny-wins and fail-closed live in the wrapper because Claude runs a group's hooks in parallel and treats a non-blocking exit as "run the tool". No `uze` on the execution path. | EMPIRICAL — the conformance vertical's `hooks` suite (deny relayed and blocking, the portable alias reaching the handler, first-deny-wins, allow executing the tool) |
 | Skill invocation policy | SUPPORTED | Canonical `invoke: {model,user}` is translated into Claude's own SKILL.md frontmatter: `disable-model-invocation: true` (model=false) and `user-invocable: false` (user=false). Generated envelopes materialize those markers; an explicit envelope is only claimed as covered when the author's own bytes already carry them (never rewritten) — ADR-030 | EMPIRICAL — real `claude -p` run, `UZE_BYPASS=1` against the actual `materialize_generated_package` output, proved both explicit `/name` invocation and model-auto-invocation-blocked (marker technique carried over from ADR-030) |
@@ -163,10 +163,11 @@ canonical skill directory still referenced. The invalid policy
 ## Runtime
 
 `claude/runtime.rs` is Claude's unique mechanism: `claude_runtime_projection`
-builds `$UZE_HOME/runtime/projects/<id>/claude-code/CLAUDE.md` (a single
-`@<AGENTS.md path>` import line, content-compared before writing —
-idempotent), and `runtime_contribution` turns that into `--add-dir <dir>` +
-`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`. Reached through
+builds `$UZE_HOME/runtime/projects/<id>/claude-code/` with the project's
+`.agents/skills` and `.agents/agents` linked in as `.claude/skills` and
+`.claude/agents` (atomic, idempotent), and `runtime_contribution` turns that
+into `--add-dir <dir>`. A project with no `.agents/` is passthrough: its
+`AGENTS.md` needs nothing from UZE. Reached through
 `src/shim.rs`'s `argv[0]` dispatch, entirely outside this crate.
 Fail-open by construction (`HarnessRuntimeContribution` has no `Err` variant
 — a blocked runtime dir degrades to passthrough with a stderr note, verified
@@ -175,12 +176,11 @@ integration in this crate overrides `runtime_contribution` or
 `supports_runtime_integration` (both default to passthrough/`false`).
 
 This is independent of Native Projection (ADR-013): it delivers
-project-context, not package/capability content, and there is no higher-tier
-option to fall back from for an externally-scoped `AGENTS.md` — see ADR-014's
-"Relationship to Native Plugin Projection". A separate, older mechanism (the
-persistent `CLAUDE.md` bridge via `text_region`) also exists, owned by
-`crates/uze-application`, not this crate — which of the two is authoritative
-long-term is explicitly undecided (ADR-014 Consequences).
+project-context, not package/capability content. Earlier builds also
+projected `AGENTS.md` here (an `@` import plus
+`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`) and kept an `@AGENTS.md`
+bridge region in the project's `CLAUDE.md`; both went once Claude Code read
+`AGENTS.md` natively.
 
 ## Lifecycle
 
@@ -208,9 +208,12 @@ reasoning holds, not confirmed by a dedicated test.
   no unit test coverage — only reachable via a real `claude` binary.
 - MCP behavioral verification (an actual tool call) is not closed; a headless
   discovery quirk was characterized, not fixed (ADR-007).
-- `/compact` retention of runtime-projected context is unverified (ADR-014).
-- The persistent-bridge-vs-runtime-projection question for context delivery
-  is explicitly undecided.
+- The native `AGENTS.md` reader can be switched off per user
+  (`instructionFiles: "claude-md"` or `"managed-only"` in Claude Code's
+  settings, or its server-side flag); UZE does not read those settings, so
+  `Native` is what the project allows, not a claim about every account.
+- A `CLAUDE.md` in a directory *above* the project root also makes Claude
+  Code skip `AGENTS.md`; UZE observes only the project root.
 
 ## Evidence
 
@@ -229,4 +232,4 @@ reasoning holds, not confirmed by a dedicated test.
 1. Add unit coverage for the native-plugin CLI functions (`inspect_claude_plugin`, `attach_package`) via a fake/injectable process boundary, matching how `provision_cli` already uses `ProcessRunner`. (An `executable_override` escape hatch was added and then removed this milestone for the generated-native pass — it ended up with zero call sites once PATH-based test isolation solved the actual failing tests more directly; worth reconsidering if this item is picked up for real.)
 2. Close the MCP headless-discovery/behavioral gap from ADR-007's last entry.
 3. Verify or refute the `package_root`-not-compared observation above with a dedicated drift test.
-4. Resolve persistent-bridge vs. runtime-projection precedence for Claude context delivery (ADR-014 Future Work).
+4. Prove native `AGENTS.md` delivery in the conformance Lab (the synthetic world has no server flag, so it exercises the built-in default).

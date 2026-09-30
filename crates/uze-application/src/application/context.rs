@@ -1,5 +1,5 @@
 //! A project's portable instruction context: the shared `AGENTS.md`, the
-//! regions UZE manages in it, and the bridges projected from it.
+//! regions UZE manages in it, and whether each harness reads it.
 
 use std::{
     collections::BTreeSet,
@@ -10,32 +10,13 @@ use uze_core::{
     Result, UzeError,
     context::{self as instruction_context, InstructionContribution},
     integration::{AttachmentState, ContextDelivery},
-    project_context::AGENTS_MD_FILE_NAME,
+    project_context::{self, AGENTS_MD_FILE_NAME},
     text_region,
     worktree::{self, WorktreePolicy},
 };
 
 use super::services::Context;
 use super::*;
-
-/// `PERSISTENT CONTEXT DELIVERY STRATEGY`: the region a harness that reads
-/// `AGENTS.md` only through a bridge gets in its own native file inside the
-/// project (see `docs/capabilities/context-manager.md`). Which harness needs
-/// one is each integration's own `context_delivery()` declaration; this is
-/// only the bridge protocol they share.
-///
-/// Kept alongside the `EXPERIMENTAL RUNTIME DELIVERY STRATEGY` (the PATH
-/// shim): whether runtime projection ever replaces this bridge waits on an
-/// empirical interactive comparison, and neither is folded into the other
-/// before it.
-///
-/// Package-independent: the bridge serves however many packages contribute
-/// to `AGENTS.md` and is owned by none of them.
-pub(super) const INSTRUCTION_BRIDGE_IDENTITY: &str = "instruction-bridge";
-
-/// The import syntax a bridge-needing harness uses to pull another Markdown
-/// file into its own native instructions file.
-pub(super) const INSTRUCTION_BRIDGE_CONTENT: &str = "@AGENTS.md";
 
 impl Context<'_> {
     #[tracing::instrument(name = "context.inspect", skip_all, fields(project_root = %project_root.display()), err)]
@@ -50,14 +31,14 @@ impl Context<'_> {
 
         // The observed project files are the shared canonical `AGENTS.md`
         // plus whatever each registered integration declares through
-        // `context_delivery` (its bridge file or additional native files) —
-        // never an Application-owned list of filenames.
+        // `context_delivery` (additional native files, and the files that
+        // would be read in place of `AGENTS.md`) — never an
+        // Application-owned list of filenames.
         let mut source_names = vec![AGENTS_MD_FILE_NAME];
         for integration in &self.0.integrations {
-            match integration.context_delivery() {
-                ContextDelivery::Bridge { file_name } => source_names.push(file_name),
-                ContextDelivery::Native { files } => source_names.extend(files),
-                ContextDelivery::None => {}
+            if let ContextDelivery::Native { files, shadowed_by } = integration.context_delivery() {
+                source_names.extend(files);
+                source_names.extend(shadowed_by);
             }
         }
         source_names.dedup();
@@ -92,9 +73,8 @@ impl Context<'_> {
             .filter_map(|integration| {
                 let delivery = self.harness_context_delivery(
                     integration.as_ref(),
-                    project_root,
                     &canonical,
-                    observation.has_any_matched_contribution(),
+                    agents_md_exists,
                 )?;
                 Some(HarnessContextStatus {
                     integration: integration.id().to_owned(),
@@ -109,7 +89,7 @@ impl Context<'_> {
             .map(|policy| self.worktree_policy_status(&canonical, &agents_md_path, &policy));
 
         let portability = derive_portability(agents_md_exists, &sources, &harnesses);
-        let warnings = derive_warnings(agents_md_exists, &sources);
+        let warnings = derive_warnings(agents_md_exists, &sources, &harnesses);
 
         Ok(ProjectContextStatus {
             root: project_root.to_path_buf(),
@@ -142,33 +122,6 @@ impl Context<'_> {
         } = self.scope(project_root)?;
         let agents_md_plan = instruction_context::plan_agents_md(&agents_md, &contributions);
 
-        // Bridge planning asks the question `reconcile` asks — would
-        // AGENTS.md end up with a matched contribution — read from the plan.
-        let would_have_contribution = agents_md_plan.contributions.iter().any(|plan| {
-            matches!(
-                plan.action,
-                instruction_context::PlannedAction::Attach
-                    | instruction_context::PlannedAction::NoChange
-            )
-        });
-
-        let bridges = self
-            .detected_bridges(&canonical)
-            .map(|(integration, bridge_file)| {
-                let state = text_region::inspect(
-                    &bridge_file,
-                    INSTRUCTION_BRIDGE_IDENTITY,
-                    INSTRUCTION_BRIDGE_CONTENT,
-                )
-                .state;
-                BridgePlan {
-                    integration: integration.id().to_owned(),
-                    file: bridge_file,
-                    action: plan_action_for_region(would_have_contribution, state, "bridge"),
-                }
-            })
-            .collect();
-
         let worktree_region = self.worktree_policy(&canonical)?.map(|policy| {
             let state = text_region::inspect(
                 &agents_md,
@@ -187,7 +140,6 @@ impl Context<'_> {
             agents_md,
             agents_md_plan,
             worktree_region,
-            bridges,
         })
     }
 
@@ -200,10 +152,6 @@ impl Context<'_> {
         } = self.scope(project_root)?;
         let agents_md_report = instruction_context::reconcile_agents_md(&agents_md, &contributions);
 
-        // The policy region is reconciled against the shared file before the
-        // bridges are, for the same reason package contributions are: a
-        // bridge's own desired-state question is answered by what `AGENTS.md`
-        // ends up carrying, not by what it carried on entry.
         let declared_policy = self.worktree_policy(&canonical)?;
         let worktree_region = declared_policy.as_ref().map(|policy| {
             let mut convergence = text_region::converge(
@@ -235,24 +183,6 @@ impl Context<'_> {
             }
         });
 
-        let bridges = self
-            .detected_bridges(&canonical)
-            .map(|(integration, bridge_file)| {
-                let inspection = text_region::reconcile(
-                    &bridge_file,
-                    INSTRUCTION_BRIDGE_IDENTITY,
-                    INSTRUCTION_BRIDGE_CONTENT,
-                    agents_md_report.has_any_matched_contribution(),
-                );
-                BridgeStatus {
-                    integration: integration.id().to_owned(),
-                    file: bridge_file,
-                    state: inspection.state,
-                    reason: inspection.reason,
-                }
-            })
-            .collect();
-
         Ok(ContextReconciliationReport {
             agents_md,
             packages: agents_md_report
@@ -272,7 +202,6 @@ impl Context<'_> {
                 .map(|(package_id, reason)| (package_id.as_str().to_owned(), reason))
                 .collect(),
             worktree_region,
-            bridges,
         })
     }
 
@@ -299,56 +228,27 @@ impl Context<'_> {
         })
     }
 
-    /// Every detected harness that reads a bridge, with the bridge file it
-    /// reads in this project.
-    fn detected_bridges<'s>(
-        &'s self,
-        canonical: &'s Path,
-    ) -> impl Iterator<Item = (&'s dyn IntegrationPort, PathBuf)> + 's {
-        self.0.integrations.iter().filter_map(move |integration| {
-            let ContextDelivery::Bridge { file_name } = integration.context_delivery() else {
-                return None;
-            };
-            self.0
-                .detect_cached(integration.as_ref())
-                .present
-                .then(|| (integration.as_ref(), canonical.join(file_name)))
-        })
-    }
-
     /// How one harness receives this project's `AGENTS.md`, or `None` for a
     /// harness that declares no instructions delivery at all — excluded
     /// rather than reported as a gap it was never claimed to close.
     fn harness_context_delivery(
         &self,
         integration: &dyn IntegrationPort,
-        project_root: &Path,
         canonical: &Path,
-        bridge_needed: bool,
+        agents_md_exists: bool,
     ) -> Option<HarnessContextDelivery> {
-        let file_name = match integration.context_delivery() {
-            ContextDelivery::None => return None,
-            _ if !self.0.detect_cached(integration).present => {
-                return Some(HarnessContextDelivery::NotDetected);
-            }
-            ContextDelivery::Native { .. } => return Some(HarnessContextDelivery::Native),
-            ContextDelivery::Bridge { file_name } => file_name,
+        let ContextDelivery::Native { shadowed_by, .. } = integration.context_delivery() else {
+            return None;
         };
-        let projection = self.0.runtime_projection_at(integration, project_root);
-        if ContextMechanism::for_instructions(integration, projection)
-            == ContextMechanism::RuntimeShim
-        {
-            return Some(HarnessContextDelivery::Projected);
+        if !self.0.detect_cached(integration).present {
+            return Some(HarnessContextDelivery::NotDetected);
         }
-        let state = text_region::inspect(
-            &canonical.join(file_name),
-            INSTRUCTION_BRIDGE_IDENTITY,
-            INSTRUCTION_BRIDGE_CONTENT,
-        )
-        .state;
-        Some(HarnessContextDelivery::Bridge {
-            needed: bridge_needed,
-            state,
+        let shadowing = agents_md_exists
+            .then(|| project_context::shadowing_file(canonical, shadowed_by))
+            .flatten();
+        Some(match shadowing {
+            Some(file) => HarnessContextDelivery::ShadowedBy { file },
+            None => HarnessContextDelivery::Native,
         })
     }
 
@@ -435,11 +335,8 @@ fn derive_portability(
     let gaps: Vec<String> = harnesses
         .iter()
         .filter_map(|harness| match &harness.delivery {
-            HarnessContextDelivery::Bridge {
-                needed: true,
-                state,
-            } if *state != AttachmentState::Matched => {
-                Some(format!("{}: bridge {:?}", harness.integration, state))
+            HarnessContextDelivery::ShadowedBy { file } => {
+                Some(shadowed_gap(&harness.integration, file))
             }
             _ => None,
         })
@@ -451,11 +348,28 @@ fn derive_portability(
     }
 }
 
+/// One harness reading its own file instead of `AGENTS.md`, worded the one
+/// way every surface repeats it.
+pub(super) fn shadowed_gap(integration: &str, file: &Path) -> String {
+    format!(
+        "{integration}: reads {} instead of AGENTS.md",
+        file.file_name().unwrap_or_default().to_string_lossy()
+    )
+}
+
 fn derive_warnings(
     agents_md_exists: bool,
     sources: &[InstructionSourceObservation],
+    harnesses: &[HarnessContextStatus],
 ) -> Vec<String> {
     let mut warnings = Vec::new();
+    let shadowing: Vec<&Path> = harnesses
+        .iter()
+        .filter_map(|harness| match &harness.delivery {
+            HarnessContextDelivery::ShadowedBy { file } => Some(file.as_path()),
+            _ => None,
+        })
+        .collect();
     let vendor_specific_with_content: Vec<&InstructionSourceObservation> = sources
         .iter()
         .filter(|source| carries_vendor_content(source))
@@ -473,9 +387,12 @@ fn derive_warnings(
         ));
     }
     if agents_md_exists {
-        for source in &vendor_specific_with_content {
+        for source in vendor_specific_with_content
+            .iter()
+            .filter(|source| !shadowing.contains(&source.path.as_path()))
+        {
             warnings.push(format!(
-                "{} carries content beyond the shared bridge — this is expected and supported \
+                "{} carries content beside AGENTS.md — this is expected and supported \
                  (vendor-specific instructions alongside portable ones), not a gap.",
                 source.file_name
             ));
@@ -497,9 +414,9 @@ fn superseded_policy_regions(agents_md: &std::path::Path, policy: &WorktreePolic
 }
 
 /// The action a managed region needs to reach its desired presence. Shared
-/// by every region this module owns — a bridge's import line and the
-/// worktree policy alike — because the safety rules are `text_region`'s, not
-/// each caller's; `subject` only names the region in a blocked explanation.
+/// by every region this module owns, because the safety rules are
+/// `text_region`'s, not each caller's; `subject` only names the region in a
+/// blocked explanation.
 fn plan_action_for_region(
     needed: bool,
     state: AttachmentState,

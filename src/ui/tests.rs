@@ -71,7 +71,7 @@ fn model_with_data() -> TuiModel {
         HarnessHealth, ManagedStateSummary, PackageManagedState, Portability, ProjectContextStatus,
         StoreHealth,
     };
-    use uze_core::integration::{AttachmentState, HarnessDetection, PublicationStatus};
+    use uze_core::integration::{HarnessDetection, PublicationStatus};
     use uze_core::router::HarnessCapabilities;
 
     let mut model = model_with_plugins(&["one", "two"]);
@@ -171,18 +171,11 @@ fn model_with_data() -> TuiModel {
         malformed_regions: Vec::new(),
         worktrees: None,
         harnesses: vec![
-            // Claude Code only ever reads context through a `CLAUDE.md`
-            // bridge (never natively) — `needed: false` here means
-            // AGENTS.md currently has no matched package contribution
-            // to bridge, not that the bridge itself is unhealthy. The
-            // regression this guards: a `Matched` bridge must still
-            // read "Bridged", never collapse to "Not needed".
             HarnessContextStatus {
                 integration: "claude-code".to_owned(),
                 display_name: "Claude Code".to_owned(),
-                delivery: HarnessContextDelivery::Bridge {
-                    needed: false,
-                    state: AttachmentState::Matched,
+                delivery: HarnessContextDelivery::ShadowedBy {
+                    file: PathBuf::from("/home/project/CLAUDE.md"),
                 },
             },
             HarnessContextStatus {

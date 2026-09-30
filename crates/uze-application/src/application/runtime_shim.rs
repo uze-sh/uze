@@ -14,9 +14,7 @@ impl UzeApplication {
     /// no separate flag. `installed_off_path` is where provisioning just
     /// verified the binary when this process's `PATH` does not reach it.
     ///
-    /// `EXPERIMENTAL RUNTIME DELIVERY STRATEGY` (`RUNTIME INFRASTRUCTURE`,
-    /// not a `CONTEXT DELIVERY POLICY` decision; see
-    /// `context::INSTRUCTION_BRIDGE_IDENTITY` for how the two relate).
+    /// `EXPERIMENTAL RUNTIME DELIVERY STRATEGY`.
     pub(crate) fn ensure_runtime_shim(
         &self,
         integration: &dyn IntegrationPort,

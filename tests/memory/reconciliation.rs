@@ -1,9 +1,8 @@
 //! L1 contract: `UzeApplication::context_reconcile` composes what globally
 //! installed packages contribute into one project's shared `AGENTS.md`, and
-//! separately reconciles the small set of harnesses that need a bridge into
-//! it rather than reading it natively.
+//! writes nothing else: every harness reads that file itself.
 //!
-//! Deterministic by construction: bridge-capable integrations here are test
+//! Deterministic by construction: integrations here are test
 //! doubles with a controllable `detect()`, not the real CLIs, so this suite
 //! passes identically whether or not those binaries are installed on the
 //! machine running it. Real-CLI evidence is separate L2a research, not this
@@ -19,7 +18,6 @@ use std::{
 };
 
 use uze_application::UzeApplication;
-use uze_application::application::{BridgeStatus, ContextReconciliationReport};
 use uze_core::PackageSource;
 use uze_core::{
     Result, UzeError, UzeHome,
@@ -39,8 +37,7 @@ fn fixture_b() -> PathBuf {
     uze_testkit::fixtures::canonical("instructions-b")
 }
 
-/// A deterministic stand-in for the one bridge-capable harness (Claude
-/// Code): `context_reconcile` itself never calls
+/// A deterministic stand-in for Claude Code: `context_reconcile` itself never calls
 /// `exposure_plan`/`attach_receipt` on it — it only reads `id()`/`detect()`
 /// directly. `add_plugin`'s pre-existing, unmodified per-resource loop does
 /// still call `exposure_plan` for every registered integration on every
@@ -50,22 +47,22 @@ fn fixture_b() -> PathBuf {
 /// integration's fallthrough arm does today. Present/absent is controlled
 /// explicitly rather than depending on what happens to be installed on the
 /// machine running the test.
-struct StubBridgeHarness {
+struct StubShadowableHarness {
     stub_id: &'static str,
     present: bool,
 }
 
-impl IntegrationPort for StubBridgeHarness {
+impl IntegrationPort for StubShadowableHarness {
     fn id(&self) -> &'static str {
         self.stub_id
     }
 
-    /// The one bridged harness in v0 declares its bridge like any real
-    /// integration would — the Application reads `context_delivery`, never
-    /// a vendor name.
+    /// Declared like any real integration would — the Application reads
+    /// `context_delivery`, never a vendor name.
     fn context_delivery(&self) -> uze_core::integration::ContextDelivery {
-        uze_core::integration::ContextDelivery::Bridge {
-            file_name: "CLAUDE.md",
+        uze_core::integration::ContextDelivery::Native {
+            files: &[],
+            shadowed_by: &["CLAUDE.md"],
         }
     }
 
@@ -95,7 +92,7 @@ impl IntegrationPort for StubBridgeHarness {
 fn app(root: &Path, claude_present: bool) -> UzeApplication {
     UzeApplication::new(
         UzeHome::at(root.join("uze-home")),
-        vec![Box::new(StubBridgeHarness {
+        vec![Box::new(StubShadowableHarness {
             stub_id: "claude-code",
             present: claude_present,
         })],
@@ -112,18 +109,10 @@ fn agents_md_content(project: &Path) -> String {
     fs::read_to_string(project.join("AGENTS.md")).unwrap_or_default()
 }
 
-fn bridge<'a>(report: &'a ContextReconciliationReport, integration: &str) -> &'a BridgeStatus {
-    report
-        .bridges
-        .iter()
-        .find(|bridge| bridge.integration == integration)
-        .unwrap_or_else(|| panic!("no bridge status reported for {integration}"))
-}
-
 // --- A: baseline without UZE / B: decomposition / C: attach / D: discovery-shape ---
 
 #[test]
-fn a_single_package_composes_agents_md_and_bridges_only_present_harnesses() {
+fn a_single_package_composes_agents_md_and_writes_nothing_else() {
     let root = temp("single-package");
     let application = app(&root, true);
     install(&application, fixture_a());
@@ -143,37 +132,11 @@ fn a_single_package_composes_agents_md_and_bridges_only_present_harnesses() {
     let content = agents_md_content(&project);
     assert!(content.contains("uze-instructions-fixture-a"));
 
-    // D: Codex/OpenCode/Antigravity receive nothing extra — no artifact
-    // beyond the shared AGENTS.md file itself is ever created for them.
+    // D: no harness receives anything beyond the shared AGENTS.md — a
+    // present Claude Code included, which reads it natively.
     assert!(!project.join(".codex").exists());
     assert!(!project.join(".opencode").exists());
-
-    // The bridge-capable harness was "present", so it gets a real bridge,
-    // matched.
-    assert_eq!(
-        bridge(&report, "claude-code").state,
-        AttachmentState::Matched
-    );
-    let claude_md = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
-    assert!(claude_md.contains("@AGENTS.md"));
-    assert!(claude_md.contains("uze:begin instruction-bridge"));
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn an_absent_bridge_harness_receives_no_bridge_file_at_all() {
-    let root = temp("absent-harness");
-    // Claude Code absent from this machine.
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-
-    let _report = application.context().reconcile(&project).unwrap();
-    assert!(
-        !project.join("CLAUDE.md").exists(),
-        "an absent harness must never receive a bridge file"
-    );
+    assert!(!project.join("CLAUDE.md").exists());
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -318,43 +281,10 @@ fn an_orphaned_regions_cleanup_is_structural_not_content_verified_but_still_refu
     fs::remove_dir_all(root).unwrap();
 }
 
-/// The bridge's own drift protection is unaffected by orphan cleanup's
-/// weaker rule: `reconcile`'s "remove" path always goes through `detach`,
-/// which is content-verified, because the bridge's expected content
-/// (`@AGENTS.md`) is a fixed constant this module always knows, never
-/// something that becomes unrecoverable when a package is removed.
-#[test]
-fn a_drifted_bridge_line_blocks_its_own_removal_even_after_the_last_package_is_gone() {
-    let root = temp("bridge-drift-blocks");
-    let application = app(&root, true);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    application.context().reconcile(&project).unwrap();
-
-    let claude_md = project.join("CLAUDE.md");
-    let tampered_bridge = fs::read_to_string(&claude_md)
-        .unwrap()
-        .replace("@AGENTS.md", "@SOMETHING-ELSE.md");
-    fs::write(&claude_md, &tampered_bridge).unwrap();
-
-    application
-        .plugins()
-        .remove("uze-instructions-fixture-a")
-        .unwrap();
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(
-        bridge(&report, "claude-code").state,
-        AttachmentState::Drifted
-    );
-    assert_eq!(fs::read_to_string(&claude_md).unwrap(), tampered_bridge);
-    fs::remove_dir_all(root).unwrap();
-}
-
-// --- Fase C.6: two packages coexist, independent removal, single shared bridge ---
+// --- Fase C.6: two packages coexist, independent removal ---
 
 #[test]
-fn two_packages_share_one_agents_md_and_exactly_one_bridge_per_harness() {
+fn two_packages_share_one_agents_md() {
     let root = temp("two-packages");
     let application = app(&root, true);
     install(&application, fixture_a());
@@ -374,12 +304,7 @@ fn two_packages_share_one_agents_md_and_exactly_one_bridge_per_harness() {
     assert!(content.contains("uze-instructions-fixture-a"));
     assert!(content.contains("uze-instructions-fixture-b"));
 
-    // Exactly one bridge file per harness regardless of package count.
-    assert_eq!(report.bridges.len(), 1);
-    let claude_md = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
-    assert_eq!(claude_md.matches("@AGENTS.md").count(), 1);
-
-    // Removing package A leaves B's region and the bridge intact.
+    // Removing package A leaves B's region intact.
     application
         .plugins()
         .remove("uze-instructions-fixture-a")
@@ -394,23 +319,8 @@ fn two_packages_share_one_agents_md_and_exactly_one_bridge_per_harness() {
     let content = agents_md_content(&project);
     assert!(!content.contains("uze-instructions-fixture-a"));
     assert!(content.contains("uze-instructions-fixture-b"));
-    assert_eq!(
-        bridge(&report, "claude-code").state,
-        AttachmentState::Matched
-    );
-    assert!(
-        project.join("CLAUDE.md").exists(),
-        "bridge must survive while B is still installed"
-    );
 
-    // Removing package B leaves AGENTS.md empty of managed content and
-    // removes the now-unneeded bridge region — Fase C.5's core claim. The
-    // bridge *file* itself is left behind, empty: `text_region::detach`
-    // deliberately never deletes a file it did not independently prove it
-    // is safe to delete (see `text_region.rs`'s
-    // `detach_leaves_an_empty_file_rather_than_deleting_a_preexisting_file`)
-    // — it cannot tell "UZE created this file from nothing" apart from "the
-    // user's own file happened to end up empty," so it treats both alike.
+    // Removing package B leaves AGENTS.md empty of managed content.
     application
         .plugins()
         .remove("uze-instructions-fixture-b")
@@ -418,22 +328,14 @@ fn two_packages_share_one_agents_md_and_exactly_one_bridge_per_harness() {
     let report = application.context().reconcile(&project).unwrap();
     assert!(report.packages.is_empty());
     assert_eq!(report.removed_orphans.len(), 1);
-    assert_eq!(
-        bridge(&report, "claude-code").state,
-        AttachmentState::Missing
-    );
-    assert_eq!(
-        fs::read_to_string(project.join("CLAUDE.md")).unwrap(),
-        "",
-        "the bridge region is gone; the file it leaves behind is empty, not deleted"
-    );
+    assert!(!agents_md_content(&project).contains("uze:begin"));
     fs::remove_dir_all(root).unwrap();
 }
 
 // --- reinstall/update must not duplicate regions ---
 
 #[test]
-fn reconciling_repeatedly_never_duplicates_regions_or_bridges() {
+fn reconciling_repeatedly_never_duplicates_regions() {
     let root = temp("no-duplication");
     let application = app(&root, true);
     install(&application, fixture_a());
@@ -442,18 +344,15 @@ fn reconciling_repeatedly_never_duplicates_regions_or_bridges() {
 
     application.context().reconcile(&project).unwrap();
     let after_first = fs::read_to_string(project.join("AGENTS.md")).unwrap();
-    let bridge_after_first = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
 
     application.context().reconcile(&project).unwrap();
     application.context().reconcile(&project).unwrap();
     let after_repeat = fs::read_to_string(project.join("AGENTS.md")).unwrap();
-    let bridge_after_repeat = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
 
     assert_eq!(
         after_first, after_repeat,
         "repeated reconcile must be byte-idempotent"
     );
-    assert_eq!(bridge_after_first, bridge_after_repeat);
     assert_eq!(after_repeat.matches("uze:begin").count(), 1);
     fs::remove_dir_all(root).unwrap();
 }

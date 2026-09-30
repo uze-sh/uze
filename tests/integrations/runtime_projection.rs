@@ -19,8 +19,8 @@ use uze_integrations::claude::ClaudeIntegration;
 use uze_integrations::registry::IntegrationRegistry;
 use uze_testkit::temp::TestEnvironment;
 
-/// A project carrying portable context, which is the only condition that
-/// makes an integration project at all.
+/// A project carrying an `.agents/` directory, which is the only condition
+/// that makes Claude Code's integration project at all.
 fn project_at(root: &Path) -> PathBuf {
     fs::create_dir_all(root.join(".git")).unwrap();
     fs::create_dir_all(root.join(".agents/skills/demo")).unwrap();
@@ -55,10 +55,9 @@ fn a_destroyed_checkout_loses_its_projection_and_its_repository_keeps_one() {
     assert_ne!(
         primary_projection, checkout_projection,
         "a checkout is a project root of its own — sharing would hand one \
-         branch's instructions to another"
+         branch's skills to another"
     );
     for projection in [&primary_projection, &checkout_projection] {
-        assert!(projection.join("CLAUDE.md").is_file());
         assert!(projection.join(".claude/skills").is_symlink());
     }
 
@@ -73,7 +72,7 @@ fn a_destroyed_checkout_loses_its_projection_and_its_repository_keeps_one() {
     );
     assert!(!checkout_projection.exists());
     assert!(
-        primary_projection.join("CLAUDE.md").is_file(),
+        primary_projection.join(".claude/skills").is_symlink(),
         "the repository the checkout was cut from is untouched"
     );
 
@@ -96,10 +95,6 @@ fn a_swept_projection_is_rebuilt_by_the_next_launch() {
     // Nothing was lost that mattered: a projection is derived, so the
     // sweep can afford to be wrong about one.
     assert_eq!(project_into(&home, &claude_home, &project), projection);
-    assert_eq!(
-        fs::read_to_string(projection.join("CLAUDE.md")).unwrap(),
-        format!("@{}\n", project.join("AGENTS.md").display())
-    );
     assert!(projection.join(".claude/skills").is_symlink());
 }
 

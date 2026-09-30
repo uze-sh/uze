@@ -299,7 +299,8 @@ pub enum MemoryState {
     None,
     /// `AGENTS.md` present and the context is portable across harnesses.
     Ready,
-    /// Context exists but is not portable everywhere — a bridge gap, or
+    /// Context exists but is not portable everywhere — a harness reading a
+    /// vendor file in place of `AGENTS.md`, or
     /// vendor-specific files carrying content with no shared `AGENTS.md`.
     Issue,
 }
@@ -329,7 +330,7 @@ pub enum MarketplaceState {
 /// The `MemoryState` truth table, pure and testable: `AGENTS.md` presence
 /// plus the portability verdict `Context::inspect` produced (or `None` when
 /// inspection was unavailable). `Issue` means "context exists but is not
-/// portable everywhere" — a bridge gap behind a present `AGENTS.md`, or
+/// portable everywhere" — a shadowed `AGENTS.md`, or
 /// vendor-specific files carrying content with no shared `AGENTS.md`.
 fn derive_memory(agents_md: bool, portability: Option<&Portability>) -> MemoryState {
     match (agents_md, portability) {

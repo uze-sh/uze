@@ -23,15 +23,19 @@ of this boundary later:
 - **No LLM.** No function in `text_region.rs`, `context.rs`, or
   `UzeApplication::context_*` calls a model, and none ever will as part of this
   boundary. Determinism and LLM-independence are the same property stated twice.
-- **`AGENTS.md` is the baseline.** The one file every recognized delivery path
-  either reads natively or bridges into. It is an existing external convention,
-  preserved as plain content, not a uze format.
+- **`AGENTS.md` is the baseline.** The one file every supported harness reads
+  natively. It is an existing external convention, preserved as plain content,
+  not a uze format. uze writes nothing else into a project for a harness to
+  reach it.
 - **Vendor files stay valid.** `CLAUDE.md`/`GEMINI.md` are never treated as
   deficient. A harness's own file legitimately holding harness-specific
-  instructions, alongside or instead of a bridge, is expected and supported.
-- **The bridge is a mechanism, not content.** The `@AGENTS.md` region exists only
-  so one harness reaches the same canonical content the others read directly. It
-  carries nothing of its own and is never the source of truth.
+  instructions beside `AGENTS.md` is expected and supported.
+- **A shadowed baseline is reported, never repaired.** Claude Code reads
+  `AGENTS.md` only where the project has no `CLAUDE.md`, `.claude/CLAUDE.md` or
+  `CLAUDE.local.md` with content of its own (its default `instructionFiles`
+  mode). A file that imports `@AGENTS.md` delivers it; one that does not takes
+  its place, and uze reports that gap instead of writing into the file, because
+  moving vendor content into the baseline is a judgement (`uze:init`'s).
 
 ## Why a separate boundary
 
@@ -91,10 +95,11 @@ regions, per-harness delivery, a portability verdict, and warnings.
 and **managed** (the region identities present). That is the smallest split that
 answers "whose content is this?" without inventing a larger taxonomy.
 
-`HarnessContextDelivery` is three cases, not five: `Native` (reads `AGENTS.md`
-directly), `Bridge { needed, state }` — `state` is checked even when `needed` is
-false, so a stale-but-present bridge is visible rather than folded into "not
-needed" — and `NotDetected`, which is never counted as a gap.
+`HarnessContextDelivery` is three cases: `Native` (reads `AGENTS.md`
+directly), `ShadowedBy { file }` (would read it, but reads its own `file` in its
+place) and `NotDetected`, which is never counted as a gap. Which files can
+shadow the baseline is each integration's declaration
+(`ContextDelivery::Native { shadowed_by }`), never a list the Application keeps.
 
 **Proven zero-write** by filesystem-snapshot equality across every state a
 project can be in — absent, matched, drifted, orphaned, malformed
@@ -114,10 +119,10 @@ pub enum Portability {
 
 A pure function of `sources` + `harnesses`. `VendorLocked` fires when
 `AGENTS.md` is absent but another recognized file has its own content;
-`PartiallyPortable` when `AGENTS.md` exists but a *detected* bridge-needing
-harness's bridge isn't `Matched`. Two cases get a warning instead of a verdict:
-two divergent vendor files with no `AGENTS.md`, and a bridge file legitimately
-carrying vendor-specific content alongside its bridge region.
+`PartiallyPortable` when `AGENTS.md` exists but a *detected* harness reads a
+vendor file in its place. Two cases get a warning instead of a verdict: two
+divergent vendor files with no `AGENTS.md`, and a vendor file legitimately
+carrying vendor-specific content beside an `AGENTS.md` it still lets through.
 
 ## Plan
 
@@ -139,21 +144,23 @@ decision. Also proven zero-write.
 | User-owned content never overwritten | `tests/context_inspection.rs` scenarios A–F |
 | `DRIFTED` never silently corrected | `a_still_installed_packages_drifted_region_is_reported_and_never_rewritten` |
 | Other owners' regions stay intact | `multiple_regions_from_different_identities_coexist_and_detach_independently` |
-| Reconciling twice is idempotent | `reconciling_repeatedly_never_duplicates_regions_or_bridges` |
-| The bridge is derived state | the bridge loop recomputes `needed` every call, never reads a stored receipt |
-| No bridge without a matched contribution | same |
-| Native harnesses receive no extra artifact | `NATIVE_INSTRUCTION_INTEGRATIONS` never appears in `BRIDGE_INTEGRATIONS` |
-| Claude receives only the minimal bridge | `INSTRUCTION_BRIDGE_CONTENT = "@AGENTS.md"`, one line |
+| Reconciling twice is idempotent | `reconciling_repeatedly_never_duplicates_regions` |
+| No harness receives an extra artifact | `a_single_package_composes_agents_md_and_writes_nothing_else` |
+| A shadowing `CLAUDE.md` is reported and never written | `scenario_f_a_claude_md_with_content_shadows_agents_md_and_stays_untouched` |
 | The Store stays machine-scoped | `context_operations_never_alter_the_installed_package_set` |
 | No integration gains project lifecycle semantics | `IntegrationPort` is unmodified |
 
 ## What it does to a project that already had files
 
-Six scenarios pass end to end (`tests/context_inspection.rs::scenario_[a-f]_*`):
+Six scenarios pass end to end (`tests/memory/inspection.rs::scenario_[a-f]_*`):
 only a hand-written `CLAUDE.md`; only `GEMINI.md`; both, divergent; a
 hand-written `AGENTS.md` with nothing installed; a hand-written `AGENTS.md`
-beside a uze region; a hand-written `CLAUDE.md` beside a uze bridge. In every
+beside a uze region; a hand-written `CLAUDE.md` beside `AGENTS.md`. In every
 case manual content survives byte-for-byte and no migration occurs.
+
+A `CLAUDE.md` still holding the `instruction-bridge` region an earlier build
+wrote is an `@AGENTS.md` import like any other: it keeps delivering, and uze
+neither maintains nor removes it.
 
 **`CLAUDE.md → AGENTS.md` is explicitly not attempted.** Deciding that two
 hand-written files mean the same thing is a semantic judgment, which belongs to
@@ -174,11 +181,12 @@ these three functions.
 Each of these was decided against a concrete alternative, and each is still in
 force:
 
-- **A region, never a file of uze's own.** A managed symlink
-  (`CLAUDE.md -> AGENTS.md`) only works where `CLAUDE.md` is absent or holds
-  nothing else, and the design cannot assume either. A one-line `@AGENTS.md`
-  import works in both cases, and is the interop path Claude's own
-  documentation prescribes.
+- **Nothing written for Claude Code.** Earlier builds kept an `@AGENTS.md`
+  region in the project's `CLAUDE.md`, then a runtime `--add-dir` import.
+  Claude Code now reads `AGENTS.md` itself (measured against 2.1.283's built-in
+  `agents-md` reader, on by default since at least 2.1.281), so both were
+  dropped; what remains of its runtime shim carries only `.agents/`, which it
+  still has no reader for.
 - **No harness's config array is edited.** OpenCode's `instructions` field and
   the Gemini-family `context.fileName` are real second mechanisms, and both
   were rejected: each needs a `ManagedArtifact` variant for a JSON-array edit
@@ -205,6 +213,6 @@ force:
 ## Vendor-neutrality
 
 `text_region.rs` and `context.rs` contain zero occurrences of any harness name,
-in code, doc comments and tests alike. In `uze-application`, three lines name
-one: `BRIDGE_INTEGRATIONS`, `NATIVE_INSTRUCTION_INTEGRATIONS`, and the list of
-recognized filenames `context_inspect` observes. One file, one layer.
+in code, doc comments and tests alike. The filenames `context_inspect` observes
+come from each integration's `context_delivery()`; the Application keeps no
+list of its own.
