@@ -112,7 +112,10 @@ or by an edit to `agents.yaml`), and before an agent starts in the primary
 checkout. The system SHALL NOT write the region into an isolated checkout:
 there the file is part of the agent's branch, and what the agent reads is
 the region its branch was cut with, which the operator brings forward by
-committing the primary checkout's file like the declaration itself. When an
+committing the primary checkout's file like the declaration itself. The
+system SHALL keep the region only in an `AGENTS.md` the project has, and
+SHALL NOT create the file: a project without one has given its agents no
+instructions yet, and `uze install` is what creates it. When an
 agent is isolated with a copy of the primary checkout's changes, a change to
 `AGENTS.md` that lies only inside UZE's managed regions SHALL NOT be copied.
 A region edited by hand SHALL be reported once per client session and
@@ -140,6 +143,10 @@ hold up what the workspace client draws.
 - **WHEN** an agent in the primary checkout is isolated with a copy of its changes while `AGENTS.md` differs from the last commit only inside UZE's managed regions
 - **THEN** the isolated checkout's `AGENTS.md` is the committed one
 - **AND** every other change, `agents.yaml` included, is carried as before
+
+#### Scenario: A project with no AGENTS.md
+- **WHEN** the workspace synchronizes a project that declares a policy and has no `AGENTS.md`
+- **THEN** no `AGENTS.md` is created, and the operator's checkout is left as it was
 
 #### Scenario: A hand-edited region
 - **WHEN** the region has been changed by hand and the workspace synchronizes

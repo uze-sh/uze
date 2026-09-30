@@ -26,9 +26,11 @@ fn app(root: &Path) -> UzeApplication {
     UzeApplication::new(home, registry.into_parts().0)
 }
 
-/// A repository whose primary checkout declares `manifest`.
+/// A repository whose primary checkout declares `manifest` and keeps the
+/// `AGENTS.md` a project with instructions has.
 fn project_with_policy(label: &str, manifest: &str) -> (Repository, PathBuf) {
     let repository = Repository::new(label);
+    repository.commit_file("AGENTS.md", "# Project\n");
     let project = repository.root().to_path_buf();
     fs::write(project.join("agents.yaml"), manifest).unwrap();
     (repository, project)
@@ -165,6 +167,26 @@ fn the_declared_completion_behavior_is_what_reaches_the_baseline() {
             .completion,
         Some(CompletionBehavior::Merge)
     );
+}
+
+/// A project with no `AGENTS.md` has given its agents no instructions yet.
+/// The workspace keeps its section of a file the project has and never
+/// creates one: a tracked file appearing in the operator's checkout because
+/// a screen opened is not the workspace's call.
+#[test]
+fn the_workspace_never_creates_the_file() {
+    let repository = Repository::new("worktree-no-agents-md");
+    let project = repository.root().to_path_buf();
+    fs::write(project.join("agents.yaml"), POLICY_MANIFEST).unwrap();
+    let application = app(repository.root());
+
+    let region = application
+        .workspace()
+        .sync_policy_region(&project)
+        .unwrap()
+        .unwrap();
+    assert_eq!(region.state, AttachmentState::Missing);
+    assert!(!project.join("AGENTS.md").exists());
 }
 
 // --- ownership of the region ----------------------------------------------

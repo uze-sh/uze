@@ -55,6 +55,20 @@ impl Workspace<'_> {
         };
         let desired = desired_region(&primary)?;
         let agents_md = primary.join(AGENTS_MD_FILE_NAME);
+        // The workspace keeps its section of a file the project has; it
+        // never creates one. A project without `AGENTS.md` has given its
+        // agents no instructions yet, and a tracked file appearing in the
+        // operator's checkout because a screen opened is not the workspace's
+        // call. `uze install` creates it, as it always has.
+        if !agents_md.is_file() {
+            return Ok(Some(ManagedRegionStatus {
+                file: agents_md,
+                state: AttachmentState::Missing,
+                reason: "the project has no AGENTS.md; `uze install` creates it".to_owned(),
+                removed_superseded: Vec::new(),
+                blocked_superseded: Vec::new(),
+            }));
+        }
         if managed_region::in_step(&agents_md, WorktreePolicy::owns_region, &desired) {
             let (state, reason) = match &desired {
                 Some((identity, content)) => {

@@ -1,11 +1,13 @@
-journey: changing the worktree policy changes what agents read, in the same command
-tags: [gate, cli, context]
-proves: web/content/docs/reference/project-files.mdx
+journey: changing the worktree policy changes what agents read, while the workspace runs
+tags: [gate, tui, context]
+proves: web/content/docs/workspace/agents.mdx
 about: |
   UZE reads `worktrees:` live wherever it acts on the policy itself. The
-  agents that must honour it read something else: the region UZE projects
-  into `AGENTS.md`. So a policy could be in force for UZE and not for them
-  — for as long as nobody happened to run a second command.
+  agents that must honour it read something else: the section the workspace
+  keeps in `AGENTS.md`. So a policy could be in force for UZE and not for
+  them, for as long as nobody ran a command. The workspace closes that gap
+  itself while it runs, and the package manager, which a person using only
+  plugins runs, never writes or counts that section.
 
   A separate file from the plugin journey next door: a different claim,
   and a run stops at the first failure, so claims that share a file share a
@@ -19,43 +21,51 @@ world:
       completion: handoff
 
 scenes:
-  - scene: the declared policy is what the file says
+  - scene: install gives the project its AGENTS.md and leaves the policy to the workspace
     when:
       - shell: "{uze} install"
         say: set the project up
     then:
       - file: "{project}/AGENTS.md"
-        contains: "left for a person to integrate"
-        about: the projected region carries the words of the policy in force
+        contains: "uze:begin project:plugin-authoring"
+        about: the package manager writes its own section
+      - file: "{project}/AGENTS.md"
+        excludes: "left for a person to integrate"
+        about: and not the workspace's
 
-  - scene: a changed policy is owed to the file, and status says so
+  - scene: and then the workspace opens and projects the policy in force
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - wait: shell
+        until: grep -q "left for a person to integrate" {project}/AGENTS.md
+        timeout: 30
+        say: the workspace brings AGENTS.md in step when the space opens
+    then:
+      - file: "{project}/AGENTS.md"
+        contains: "left for a person to integrate"
+        about: the section carries the words of the policy in force
+
+  - scene: and then a changed policy reaches the file with no command run
     when:
       - shell: |
           set -e
           printf 'worktrees:\n  target: main\n  completion: merge\n' > {project}/agents.yaml
         say: the person changes the completion behaviour
-    then:
-      - cmd:
-          run: "{uze} status"
-          stdout_contains: "AGENTS.md is behind"
-        about: |
-          the policy is in force for UZE and not yet for the agents reading
-          the file, and that gap is reported rather than left to be noticed
-      - file: "{project}/AGENTS.md"
-        contains: "left for a person to integrate"
-        about: the file on disk still carries the previous instruction
-
-  - scene: one command, one intention
-    when:
-      - shell: "{uze} install"
-        say: apply what the manifest now declares
+      - wait: shell
+        until: grep -q "fast-forwards the target" {project}/AGENTS.md
+        timeout: 60
+        say: the workspace notices the edit on its refresh clock
     then:
       - file: "{project}/AGENTS.md"
         contains: "fast-forwards the target"
-        about: |
-          the projected region carries the new policy's own words —
-          declaring an environment and projecting it are one act
+        about: the section carries the new policy's own words
+      - file: "{project}/AGENTS.md"
+        excludes: "left for a person to integrate"
+        about: and the superseded words are gone, not left beside them
       - cmd:
           run: "{uze} status"
           stdout_excludes: "AGENTS.md is behind"
-        about: and nothing is owed any more
+        about: and the package manager has nothing to say about the workspace's section
