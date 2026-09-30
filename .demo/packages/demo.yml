@@ -1,0 +1,179 @@
+# The package manager, as a spec: add a marketplace, install one plugin
+# into a project, and ask how each agent received it. Shown at the top of
+# the Package manager overview.
+#
+#   tui-record seed   .demo/packages
+#   tui-record run    .demo/packages
+#
+# A shell, like the install demo, and no workspace: the video is of uze used
+# as a package manager alone. No `uze setup` either — the four agents are
+# found on PATH, and delivery never runs them, so no account is involved.
+#
+# `inspect` prints where each agent's copy lives, so the sandbox home is on
+# screen: it lives under /tmp, where a path carries no username.
+
+video:
+  title: uze — package manager
+  out: .demo/packages/uze-packages.gif
+  poster: .demo/packages/uze-packages-poster.png
+  publish:
+    - from: out
+      to: web/public/uze-packages.gif
+    - from: poster
+      to: web/public/uze-packages-poster.png
+  cast: '{root}/uze-packages.cast'
+  # The other demos' proportions (152x36), smaller: this one is text to be
+  # read, and the docs scale a GIF to their column, so fewer cells is bigger
+  # type. 30 rows is the least that keeps all four agents of `inspect` on
+  # its last screen; 126 columns holds the ratio.
+  cols: 126
+  rows: 30
+  speed: 1.2
+  # Above the longest pause: the renderer caps a still screen at its idle
+  # limit (1.5s by default), which would halve the look at `inspect`.
+  idle_limit: 4.0
+  background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
+  font_size: 20
+  font_family: FiraCode Nerd Font Mono,DejaVu Sans Mono
+  font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
+  # The first `market add` mirrors the repository; that wait is squeezed.
+  wait_collapse: 0.8
+  poster_when: 'Managed state'
+sandbox:
+  root: /tmp/uzepkg
+  fixtures: /tmp/uzepkg/work
+  cwd: '{fixtures}/my-app'
+  command:
+    - '{home}/demoshell'
+  shell: '{home}/demoshell'
+  path:
+    - '{home}/bin'
+    - /usr/local/bin
+    - /usr/bin
+    - /bin
+  env:
+    TZ: UTC
+    PS1: '\[\e[38;5;114m\]my-app\[\e[0m\] $ '
+  author: Ada Lovelace
+  author_email: ada@demo.dev
+  # The agents are the host's own binaries, linked by path rather than by
+  # name: the host PATH may put uze's shims first, and a shim linked under
+  # the agent's name is uze, not the agent.
+  link:
+    - from: '{project}/target/release/uze'
+      to: '{home}/bin/uze'
+    - from: ~/.local/bin/claude
+      to: '{home}/bin/claude'
+    - from: ~/.local/bin/codex
+      to: '{home}/bin/codex'
+    - from: ~/.local/bin/agy
+      to: '{home}/bin/agy'
+    - from: ~/.opencode/bin/opencode
+      to: '{home}/bin/opencode'
+  # The marketplace names a public home, so `market add` reports it by that
+  # rather than by a path on this machine. Nothing is fetched from it.
+  reset:
+    - git -C {fixtures}/acme-tools remote get-url origin >/dev/null 2>&1 || git -C {fixtures}/acme-tools remote add origin https://github.com/acme/agent-tools.git
+  # Every take is a machine that has never seen this marketplace, and a
+  # project that never declared it: what the agents hold is what the video
+  # writes.
+  clear:
+    - '{home}/.uze'
+    - '{home}/.claude'
+    - '{home}/.claude.json'
+    - '{home}/.codex'
+    - '{home}/.config/opencode'
+    - '{home}/.gemini'
+    - '{fixtures}/my-app/agents.yaml'
+    - '{fixtures}/my-app/agents.lock'
+  write:
+    - path: '{home}/demoshell'
+      executable: true
+      text: |
+        #!/bin/sh
+        exec /bin/bash --norc --noprofile
+    - path: '{home}/.gitconfig'
+      text: "[user]\n\tname = Ada Lovelace\n\temail = ada@demo.dev\n[init]\n\tdefaultBranch = main\n"
+fixtures:
+  - name: my-app
+    commits:
+      - message: 'chore: initial commit'
+        days_ago: 6
+        files:
+          README.md: '# my-app'
+      - message: 'feat: add the entry point'
+        days_ago: 3
+        files:
+          src/main.rs: |-
+            fn main() {
+                println!("hello from my-app");
+            }
+  - name: acme-tools
+    commits:
+      - message: 'chore: start the team marketplace'
+        days_ago: 9
+        files:
+          README.md: '# acme agent tools'
+          marketplace.json: |
+            {
+              "name": "acme",
+              "description": "The tools our team's agents share.",
+              "plugins": [
+                { "name": "review", "source": "./plugins/review", "description": "Review a change the way this team does." }
+              ]
+            }
+      - message: 'feat: review plugin'
+        days_ago: 4
+        files:
+          plugins/review/plugin.json: |
+            {
+              "name": "review",
+              "description": "Review a change the way this team does."
+            }
+          plugins/review/skills/review/SKILL.md: |
+            ---
+            name: review
+            description: Review the current change against the team's checklist.
+            ---
+
+            Read the diff, then check it against the list below. Report each
+            finding with the file and line it is about.
+          plugins/review/skills/changelog/SKILL.md: |
+            ---
+            name: changelog
+            description: Draft the changelog entry for the current change.
+            ---
+
+            Summarise what changed for a reader of the release notes.
+beats:
+  # Long enough to outlast the recorder's own start: its marks count from
+  # launching tmux, the cast from when asciinema came up — up to ~3s later on
+  # this machine — and the startup cut, measured by the marks, otherwise
+  # swallows the first command being typed.
+  - say: a project, and a shell with four agents on it
+    pause: 3.0
+  - say: add the team's marketplace
+    type: uze market add ../acme-tools
+    pause: 0.3
+  - wait: screen
+    until: Marketplace added
+    timeout: 60
+    pause: 1.6
+  - say: install one plugin into the project
+    type: uze install review@acme
+    pause: 0.3
+  - wait: screen
+    until: Added to this project
+    timeout: 60
+    pause: 2.0
+  - say: and ask how each agent received it
+    type: uze inspect review
+    expect: Managed state
+    expect_timeout: 20
+    pause: 3.8
+  # Not C-d: bash answers it with `exit`, and that write lands inside the
+  # recorder's trailing margin, so the loop's last frame would be the shell
+  # leaving. C-g is readline's abort — a bell, nothing drawn — and the
+  # recorder closes the take itself.
+  - say: and out
+    end: C-g
