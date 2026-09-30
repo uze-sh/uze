@@ -9,12 +9,9 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-A22136?style=flat-square&labelColor=1e1f20)](LICENSE)
 [![Status](https://img.shields.io/badge/status-beta-e0b567?style=flat-square&labelColor=1e1f20)](https://uze.sh/docs/roadmap)
 
-Install a plugin once, write one `AGENTS.md`, and every agent you run gets
-both through its own most native surface: Claude Code, Codex, OpenCode and
-Antigravity today, and whatever you switch to next. Then run several at
-once, each in a checkout of its own or beside you in yours, and close the
-terminal without losing any of
-it. Agents come and go; your work stays.
+Install plugins once for Claude Code, Codex, OpenCode and Antigravity, with
+one `AGENTS.md` every one of them reads. Run them side by side, each in a
+checkout of its own.
 
 <p align="center">
   <img src="web/public/uze-demo.gif" alt="The uze terminal: two agents at once, each on its own branch in its own checkout, with the checkout's diff, its map and the project's own architecture diagrams a keystroke away" width="860" />
