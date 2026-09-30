@@ -3889,10 +3889,11 @@ mod tests {
     }
 
     /// The shim before its `exec`: `uze` run through a symlink named after
-    /// the harness, so the kernel already calls it `claude`, and no stamp,
-    /// because the stamp is only in the environment it hands on. That is
-    /// the launcher at work, and must never read as a harness that went
-    /// around it.
+    /// the harness, and no stamp, because the stamp is only in the
+    /// environment it hands on. That is the launcher at work, and must
+    /// never read as a harness that went around it. Linux already calls it
+    /// `claude` (the link's name); macOS calls it `uze` (the file the link
+    /// resolves to), so either name is the shim in the foreground.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
@@ -3923,7 +3924,7 @@ mod tests {
         for _ in 0..500 {
             let reading = pane.foreground_status();
             if let Some((_, process)) = &reading
-                && process == "claude"
+                && (process == "claude" || process == "uze")
             {
                 through = pane.foreground_through_launcher();
                 break;
