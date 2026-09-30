@@ -53,7 +53,9 @@ pub(super) fn observe(cli_root: &Path, ctx: &ObservationContext) -> Option<Sessi
     if ctx.preceded_by == Some(&current) {
         return None;
     }
-    Some(current)
+    // One entry per directory: another agent's conversation here is the
+    // only answer this harness has, and it is not this agent's.
+    ctx.is_unclaimed(&current).then_some(current)
 }
 
 /// Whether a conversation's own store is still there. The store is named by
@@ -108,6 +110,7 @@ mod tests {
                     cwd: Path::new("/work/slot"),
                     since_unix: 0,
                     preceded_by: Some(&SessionId::new("c-previous")),
+                    claimed_elsewhere: &[],
                 },
             ),
             Some(SessionId::new("c-new"))
@@ -129,6 +132,7 @@ mod tests {
                     cwd: Path::new("/work/slot"),
                     since_unix: 0,
                     preceded_by: Some(&SessionId::new("c-previous")),
+                    claimed_elsewhere: &[],
                 },
             ),
             None

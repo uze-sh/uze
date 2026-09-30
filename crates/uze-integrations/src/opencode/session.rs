@@ -57,8 +57,10 @@ pub(super) fn observe(
         .filter(|listed| {
             Path::new(&listed.directory) == ctx.cwd && listed.created_unix >= ctx.since_unix
         })
-        .max_by_key(|listed| listed.created_unix)
-        .map(|listed| SessionId::new(listed.id))
+        .map(|listed| (listed.created_unix, SessionId::new(listed.id)))
+        .filter(|(_, session)| ctx.is_unclaimed(session))
+        .max_by_key(|(created_unix, _)| *created_unix)
+        .map(|(_, session)| session)
 }
 
 /// Whether the harness still lists `session`.

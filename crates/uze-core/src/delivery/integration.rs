@@ -152,6 +152,18 @@ pub struct ObservationContext<'a> {
     /// rather than timestamping conversations: reading that same value back
     /// means nothing new was started.
     pub preceded_by: Option<&'a SessionId>,
+    /// Conversations other agents already hold. A directory is shared by
+    /// every agent standing in it, so "the newest conversation here" is
+    /// only this agent's once the others' are set aside — without this,
+    /// every agent in one directory adopts whichever of them spoke last.
+    pub claimed_elsewhere: &'a [SessionId],
+}
+
+impl ObservationContext<'_> {
+    /// Whether `session` may be answered for this agent.
+    pub fn is_unclaimed(&self, session: &SessionId) -> bool {
+        !self.claimed_elsewhere.contains(session)
+    }
 }
 
 pub trait IntegrationPort: Send + Sync {
@@ -952,6 +964,7 @@ mod tests {
                 cwd,
                 since_unix: 0,
                 preceded_by: None,
+                claimed_elsewhere: &[],
             }),
             None
         );

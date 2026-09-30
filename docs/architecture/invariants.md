@@ -1665,6 +1665,14 @@ runtime's launch vocabulary, and core never spells it.
 > `crates/uze-workspace/src/conversation.rs::a_claim_no_record_backs_has_no_owner`
 > `crates/uze-workspace/src/continuity.rs::two_agents_in_one_directory_keep_their_own_conversations`
 > `tests/acceptance/session_continuity.rs::an_identity_claimed_from_the_wrong_directory_is_launched_untouched`
+
+Reading back which conversation an agent moved to is held to the same
+rule. Agents sharing a directory each see the others' conversations as the
+newest one there, so a read-back never adopts a conversation another agent
+of the project already holds.
+
+> `crates/uze-workspace/src/continuity.rs::a_conversation_another_agent_holds_is_never_taken_over`
+> `crates/uze-integrations/src/claude/session.rs::a_conversation_another_agent_holds_is_never_adopted`
 > `tests/architecture/layering.rs::architecture_rules_hold` (the identity variable has one owner)
 
 ### An identity has an owner, and a launch inside a launch is ordinary

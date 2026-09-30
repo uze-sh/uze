@@ -201,6 +201,34 @@ pub fn save(home: &UzeHome, project_root: &Path, record: &ConversationRecord) ->
     write_atomic(&path, &payload)
 }
 
+/// The conversations every other agent of `project_root` holds in
+/// `integration`. Each is one small read of a directory kept to the
+/// project's own agents, and an unreadable record holds nothing: at worst
+/// an agent may still adopt that conversation, which is today's behaviour
+/// rather than a new failure.
+pub fn claimed_by_others(
+    home: &UzeHome,
+    project_root: &Path,
+    agent: &AgentId,
+    integration: &str,
+) -> Vec<SessionId> {
+    let own = store_path(home, project_root, agent);
+    let Some(Ok(entries)) = own.parent().map(fs::read_dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| *path != own)
+        .filter_map(|path| {
+            uze_document::read::<ConversationRecord>(&path)
+                .ok()
+                .and_then(uze_document::Carried::record)
+        })
+        .filter_map(|record| record.harnesses.get(integration)?.conversation.clone())
+        .collect()
+}
+
 /// Forgets an agent's conversations. Best-effort by construction: a record
 /// that is already gone is the outcome asked for.
 pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {

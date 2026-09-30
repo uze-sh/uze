@@ -87,11 +87,12 @@ pub(super) fn observe(projects_root: &Path, ctx: &ObservationContext) -> Option<
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|elapsed| elapsed.as_secs())
             .unwrap_or_default();
-        if modified < ctx.since_unix {
+        let session = SessionId::new(name);
+        if modified < ctx.since_unix || !ctx.is_unclaimed(&session) {
             continue;
         }
         if newest.as_ref().is_none_or(|(latest, _)| modified > *latest) {
-            newest = Some((modified, SessionId::new(name)));
+            newest = Some((modified, session));
         }
     }
     newest.map(|(_, session)| session)
@@ -180,6 +181,7 @@ mod tests {
                 cwd,
                 since_unix: 50,
                 preceded_by: None,
+                claimed_elsewhere: &[],
             },
         );
         assert_eq!(observed, Some(SessionId::new("moved-to")));
@@ -200,9 +202,32 @@ mod tests {
                     cwd,
                     since_unix: 500,
                     preceded_by: None,
+                    claimed_elsewhere: &[],
                 },
             ),
             None
         );
+    }
+
+    /// Seven agents in one project root, as a space without isolation
+    /// has them: the newest transcript there is whoever spoke last, and
+    /// adopting it gave every agent the same conversation on restart.
+    #[test]
+    fn a_conversation_another_agent_holds_is_never_adopted() {
+        let root = scratch("claude-session-claimed");
+        let cwd = Path::new("/work/shared");
+        transcript(&root, cwd, "cleared-to", 200);
+        transcript(&root, cwd, "neighbour", 300);
+
+        let observed = observe(
+            &root,
+            &ObservationContext {
+                cwd,
+                since_unix: 50,
+                preceded_by: None,
+                claimed_elsewhere: &[SessionId::new("neighbour")],
+            },
+        );
+        assert_eq!(observed, Some(SessionId::new("cleared-to")));
     }
 }
