@@ -9,9 +9,9 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-A22136?style=flat-square&labelColor=1e1f20)](LICENSE)
 [![Status](https://img.shields.io/badge/status-beta-e0b567?style=flat-square&labelColor=1e1f20)](https://uze.sh/docs/roadmap)
 
-Install plugins once for Claude Code, Codex, OpenCode and Antigravity, with
-one `AGENTS.md` every one of them reads. Run them side by side, each in a
-checkout of its own.
+uze gives every coding agent you use the same plugins and the same project
+instructions, and lets you run several of them at once without one stepping
+on another.
 
 <p align="center">
   <img src="web/public/uze-demo.gif" alt="The uze terminal: two agents at once, each on its own branch in its own checkout, with the checkout's diff, its map and the project's own architecture diagrams a keystroke away" width="860" />
@@ -24,6 +24,20 @@ curl -fsSL https://uze.sh/i | sh
 **[Full documentation →](https://uze.sh/docs)**
 
 </div>
+
+## Two tools, one binary
+
+Each works without the other: use the package manager with agents you start
+yourself, the workspace to run them, or both.
+
+- **Package manager.** Install a plugin once and Claude Code, Codex, OpenCode
+  and Antigravity each receive it through their own native mechanism. One
+  `AGENTS.md` holds the project's instructions for all of them, and
+  `agents.yaml` records the project's plugins, so a teammate gets the same
+  setup with `uze install`.
+- **Workspace.** Run agents side by side in one terminal, each on its own
+  branch in a checkout of its own. See what each one changed, bring the work
+  home when it is ready, and close the terminal without losing any of it.
 
 ## Roadmap
 

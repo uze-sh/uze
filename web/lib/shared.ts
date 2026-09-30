@@ -4,7 +4,7 @@ export const appName = 'uze';
 // just "uze" says nothing to someone with twenty tabs open.
 export const appTagline = 'the package manager and workspace for coding agents';
 export const appDescription =
-  'Install plugins once for Claude Code, Codex, OpenCode and Antigravity, and run them side by side, each in a checkout of its own.';
+  'Give Claude Code, Codex, OpenCode and Antigravity the same plugins and one AGENTS.md, each delivered natively. Then run several agents at once, each in a checkout of its own.';
 // Why uze exists, said after what it is: a principle, not a definition.
 export const appMotto = 'Agents come and go. Your work stays.';
 // The production deployment sets NEXT_PUBLIC_SITE_URL; the fallback is the

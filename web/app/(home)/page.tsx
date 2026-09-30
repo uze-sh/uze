@@ -136,9 +136,10 @@ export default function HomePage() {
           <span className="text-accent">for coding agents.</span>
         </h1>
         <p className="mx-auto mt-6 max-w-[56ch] text-lg leading-relaxed text-muted">
-          Install plugins once for Claude Code, Codex, OpenCode and Antigravity, with one{' '}
-          <code className="font-mono text-ink">AGENTS.md</code> every one of them reads. Run them
-          side by side, each in a checkout of its own. Agents come and go; your work stays.
+          Give Claude Code, Codex, OpenCode and Antigravity the same plugins and one{' '}
+          <code className="font-mono text-ink">AGENTS.md</code>, each delivered natively. Then
+          run several agents at once, each in a checkout of its own. Agents come and go; your
+          work stays.
         </p>
 
         <div className="mx-auto mt-9 flex max-w-xl flex-col items-stretch gap-3 sm:flex-row">
