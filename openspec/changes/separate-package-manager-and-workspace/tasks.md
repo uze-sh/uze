@@ -65,21 +65,21 @@
 
 ## 7. Hold the boundary
 
-- [ ] 7.1 Add the architecture rule for `uze-application`: its package-manager files (`lifecycle/`, `project_environment`, `context`, `marketplace*`, `authoring`, `freshness`, the package read models) never name `uze_workspace`, with any exception listed with its reason
-- [ ] 7.2 Add the invariants to `docs/architecture/invariants.md`: `uze-core` does not depend on `uze-workspace` (the manifest), and the `uze-application` rule (the test)
+- [x] 7.1 Add the architecture rule for `uze-application`: its package-manager files (`lifecycle/`, `project_environment`, `context`, `marketplace*`, `authoring`, `freshness`, the package read models) never name `uze_workspace`, with any exception listed with its reason
+- [x] 7.2 Add the invariants to `docs/architecture/invariants.md`: `uze-core` does not depend on `uze-workspace` (the manifest), and the `uze-application` rule (the test)
 - [ ] 7.3 Run the full gate: `cargo test --workspace --no-fail-fast`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo deny check`, `make artifacts`, `openspec validate --all --strict`
 
 ## 8. Architecture artifacts
 
-- [ ] 8.1 `crate-layering.mmd`: add `uze-workspace` between `uze-application` and `uze-core`, with the edges it has (`uze-core`, `uze-git`) and none from `uze-core` to it; keep `uze-terminal` apart
-- [ ] 8.2 `containers.mmd`: add the workspace domain container; narrow `Core` to the shared foundation and the package manager; redraw the shim as the workspace's (launched by the TUI and the terminal server through the pane's `PATH`, no longer "Runs, from PATH" from the developer's shell)
-- [ ] 8.3 `core-components.mmd`: narrow `project` to what the package manager declares and writes; move `delivery`'s continuity out; add the `anchor` rename
-- [ ] 8.4 New `workspace-components.mmd` for `uze-workspace` (worktree, checkout, task, landing, conversation, continuity, the TUI state modules), each box linked to its file
-- [ ] 8.5 `system-context.mmd`: show the two modules' relations apart (the developer installs plugins through the package manager and runs agents through the workspace; the agent's `uze agent work` relation belongs to the workspace)
-- [ ] 8.6 `agent-lifecycle.mmd` and `subagent-checkouts.mmd`: a launch goes through the shim by absolute path from the workspace; the workspace region is reconciled at launch
-- [ ] 8.7 `install-pipeline.mmd`, `install-sequence.mmd` and `attachment-lifecycle.mmd`: confirm they carry no workspace step (policy region, `worktrees.link` check) after groups 2 and 3, and remove any
-- [ ] 8.8 `invariants.md`: add the module-boundary invariants (tasks 7.2), update the shim invariants for its workspace scope and "no shell file is edited", and update every test path that moved
-- [ ] 8.9 Run `cargo test -p uze-extensions` and `make artifacts`; every diagram draws and every box link opens a file
+- [x] 8.1 `crate-layering.mmd`: add `uze-workspace` between `uze-application` and `uze-core`, with the edges it has (`uze-core`, `uze-git`) and none from `uze-core` to it; keep `uze-terminal` apart
+- [x] 8.2 `containers.mmd`: add the workspace domain container; narrow `Core` to the shared foundation and the package manager; redraw the shim as the workspace's (launched by the TUI and the terminal server through the pane's `PATH`, no longer "Runs, from PATH" from the developer's shell)
+- [x] 8.3 `core-components.mmd`: narrow `project` to what the package manager declares and writes; move `delivery`'s continuity out; add the `anchor` rename
+- [x] 8.4 New `workspace-components.mmd` for `uze-workspace` (worktree, checkout, task, landing, conversation, continuity, the TUI state modules), each box linked to its file
+- [x] 8.5 `system-context.mmd`: show the two modules' relations apart (the developer installs plugins through the package manager and runs agents through the workspace; the agent's `uze agent work` relation belongs to the workspace)
+- [x] 8.6 `agent-lifecycle.mmd` and `subagent-checkouts.mmd`: a launch goes through the shim by absolute path from the workspace; the workspace region is reconciled at launch
+- [x] 8.7 `install-pipeline.mmd`, `install-sequence.mmd` and `attachment-lifecycle.mmd`: confirm they carry no workspace step (policy region, `worktrees.link` check) after groups 2 and 3, and remove any
+- [x] 8.8 `invariants.md`: add the module-boundary invariants (tasks 7.2), update the shim invariants for its workspace scope and "no shell file is edited", and update every test path that moved
+- [x] 8.9 Run `cargo test -p uze-extensions` and `make artifacts`; every diagram draws and every box link opens a file
 
 ## 9. Tests by usage profile
 

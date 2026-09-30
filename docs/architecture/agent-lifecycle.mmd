@@ -3,12 +3,16 @@ title: Agent lifecycle
 ---
 flowchart TD
   click pool href "crates/uze-workspace/src/checkout.rs"
-  place([An agent is placed]) --> pool{A free recorded slot?}
+  place([An agent is placed]) --> where{In place or isolated?}
+  where -->|isolated| pool{A free recorded slot?}
+  where -->|in the primary checkout| sync[AGENTS.md's workspace section<br/>brought in step first]
+  sync --> launch
   pool -->|yes| reuse[Reset it to the base<br/>on branch agent/id]
   pool -->|no| cut[git worktree add .worktrees/id<br/>and record that UZE made it]
   reuse --> setup[The project's setup command runs]
   cut --> setup
-  setup --> name[uze agent work name type/subject<br/>or, still unnamed at the first commit,<br/>named from that commit's subject]
+  setup --> launch[Started through its shim, by path<br/>every pane puts the shims first on PATH]
+  launch --> name[uze agent work name type/subject<br/>or, still unnamed at the first commit,<br/>named from that commit's subject]
   name --> running[Running]
   running --> evaluate{What Git says, each pass}
   evaluate -->|a dirty tree| uncommitted[Uncommitted]

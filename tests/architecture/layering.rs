@@ -735,6 +735,66 @@ fn every_source_file_a_crate_carries_is_one_it_compiles() {
     );
 }
 
+/// The package manager's half of `uze-application`, and the parts both
+/// halves share. `uze-core` cannot name `uze-workspace` because its
+/// manifest does not depend on it; `uze-application` depends on both, so
+/// the same rule is held here, by file. `services/` and the workspace's own
+/// read models (`overview.rs`'s machine snapshot, which carries the
+/// workspace's prompt history) are the other half and are not listed.
+const PACKAGE_MANAGER_APPLICATION: &[&str] = &[
+    "crates/uze-application/src/application/lifecycle",
+    "crates/uze-application/src/application/lifecycle.rs",
+    "crates/uze-application/src/application/project_environment.rs",
+    "crates/uze-application/src/application/context.rs",
+    "crates/uze-application/src/application/managed_region.rs",
+    "crates/uze-application/src/application/marketplace.rs",
+    "crates/uze-application/src/application/marketplace_catalogue.rs",
+    "crates/uze-application/src/application/authoring.rs",
+    "crates/uze-application/src/application/freshness.rs",
+    "crates/uze-application/src/application/offers.rs",
+    "crates/uze-application/src/application/agent_context.rs",
+    "crates/uze-application/src/application/doctor.rs",
+    "crates/uze-application/src/application/read_models.rs",
+];
+
+/// The package manager never depends on the workspace. In `uze-core` the
+/// crate graph says so; in `uze-application`, which orchestrates both, this
+/// does: a package-manager or shared file that names the workspace crate
+/// is a package command that could fail, change or wait over the
+/// workspace, which is what a person who only installs plugins must never
+/// meet.
+#[test]
+fn the_package_manager_never_names_the_workspace() {
+    let root = repository_root();
+    let mut failures = Vec::new();
+    for listed in PACKAGE_MANAGER_APPLICATION {
+        let path = root.join(listed);
+        assert!(path.exists(), "{listed} is listed but does not exist");
+        let sources = if path.is_dir() {
+            production_sources(&path)
+        } else {
+            let contents = fs::read_to_string(&path).unwrap_or_default();
+            vec![(path.clone(), strip_test_modules(&contents))]
+        };
+        for (file, contents) in sources {
+            let found = occurrences(&contents, "uze_workspace");
+            if found > 0 {
+                failures.push(format!(
+                    "  {} names `uze_workspace` {found} time(s)",
+                    file.strip_prefix(&root).unwrap_or(&file).display()
+                ));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "the package manager's half of uze-application reaches into the workspace. Move \
+         the workspace's part into `services/` and have the workspace call the package \
+         manager, never the reverse:\n{}",
+        failures.join("\n")
+    );
+}
+
 #[test]
 fn architecture_rules_hold() {
     let root = repository_root();

@@ -5,18 +5,24 @@ flowchart TD
   subgraph presentation [Presentation · src/]
     cli[CLI<br/>main.rs · clap]
     tui[Workspace TUI<br/>src/ui · ratatui]
-    shim[Runtime PATH shim<br/>src/shim.rs]
+    shim[Runtime shim<br/>src/shim.rs · the workspace's]
   end
   ext[uze-extensions<br/>describes, never draws]
   keys[uze-keys<br/>actions · scopes]
   theme[uze-theme<br/>tokens · symbols]
   terminal[uze-terminal<br/>PTY server + protocol]
   app[uze-application<br/>UzeApplication facade]
-  subgraph core [uze-core · domain]
+  subgraph ws [uze-workspace · the workspace's domain]
+    tasks[task · checkout · worktree<br/>where an agent works]
+    landing[landing<br/>how its work reaches the target]
+    conversation[conversation · continuity<br/>what a launch carries over]
+    declaration[declaration<br/>agents.yaml's worktrees · artifacts]
+  end
+  subgraph core [uze-core · shared foundation + package manager]
     package[package<br/>acquisition · trust · store]
     capability[capability<br/>skill · agent · hook · harness block]
     delivery[delivery<br/>router · engine · receipts · replace_dir]
-    project[project<br/>lock · context · worktrees]
+    project[project<br/>manifest · lock · context · anchor]
     machine[machine<br/>home · subprocess · PATH]
   end
   subgraph integrations [uze-integrations]
@@ -41,6 +47,13 @@ flowchart TD
   app --> delivery
   app --> project
   app --> registry
+  app --> tasks
+  tasks --> project
+  tasks --> git
+  landing --> git
+  declaration --> project
+  conversation --> delivery
+  shim -.->|sanctioned| conversation
   registry --> verticals
   verticals --> shared
   verticals -.->|IntegrationPort| delivery

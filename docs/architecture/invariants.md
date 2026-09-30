@@ -1862,6 +1862,64 @@ through a projection it collects.
 
 ---
 
+## Module boundary (`separate-package-manager-and-workspace`)
+
+### The package manager never depends on the workspace
+
+The workspace's domain is `uze-workspace`, above `uze-core`; `uze-core`
+does not depend on it, so the compiler refuses a package-manager module
+that names a task, a checkout or a policy. In `uze-application`, which
+orchestrates both, the package manager's files and the shared ones are
+listed and held to the same rule by a test.
+
+> `tests/architecture/layering.rs::the_package_manager_never_names_the_workspace`
+
+### A workspace setting never fails a package command
+
+`agents.yaml`'s `worktrees` and `artifacts` sections are carried unread by
+the manifest and parsed by the workspace, which also owns the `worktrees.link`
+Git check. A section the workspace would reject still leaves `install` and
+`status` able to read the file.
+
+> `crates/uze-workspace/src/declaration.rs::tests::a_workspace_section_the_workspace_rejects_does_not_fail_the_manifest`
+> `tests/lifecycle/manifest_and_lock.rs::a_typo_in_the_manifest_is_named_rather_than_ignored`
+
+### A project declares a policy only by choosing one
+
+The `agents.yaml` UZE creates carries `worktrees:` empty over commented
+choices, so it declares nothing; choosing one writes it beneath that key.
+
+> `crates/uze-workspace/src/declaration.rs::tests::a_scaffolded_manifest_declares_no_policy`
+> `crates/uze-workspace/src/declaration.rs::tests::choosing_a_completion_writes_it_under_the_scaffolds_empty_key`
+
+### Each region of `AGENTS.md` has one owner
+
+The package manager writes its regions (plugin contributions, plugin
+authoring) and counts only those as drift; it never writes, removes or
+counts the workspace's region. The workspace keeps its own in step in the
+primary checkout only, never in a slot, and an isolate does not carry a
+region-only change. Both owners take one per-project guard on the file.
+
+> `tests/projection/worktree_policy.rs::package_reconciliation_neither_writes_nor_removes_the_workspace_region`
+> `tests/projection/worktree_policy.rs::a_stale_workspace_region_leaves_the_package_environment_clear`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_launch_in_the_primary_syncs_the_region_and_a_slot_is_never_written`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_leaves_the_synced_region_behind_and_carries_the_rest`
+> `crates/uze-core/src/project/project_context.rs::tests::a_second_owner_waits_for_the_first`
+
+### No shell file is edited, and the shim is the workspace's
+
+`uze setup` creates the shims and never writes a shell startup file; it takes
+back, byte-exactly, the block an earlier build wrote, until 1.0.0. The
+terminal server puts the shims first on every pane's `PATH`, and no command
+walks the operator's `PATH` to ask about a shim.
+
+> `crates/uze-application/src/application/tests.rs::runtime_shim_takes_back_the_block_an_earlier_build_wrote_and_writes_none`
+> `crates/uze-core/src/machine/shell_path.rs::tests::the_block_is_removed_and_every_other_byte_kept`
+> `crates/uze-core/src/machine/shell_path.rs::tests::the_block_is_taken_back_only_until_1_0_0`
+> `crates/uze-terminal/src/runtime.rs::tests::the_named_directory_leads_the_pane_path_once`
+
+---
+
 ## Architecture seams (`enforce-architecture-seams`)
 
 ### The layer direction is a fact, not a convention
