@@ -2667,3 +2667,52 @@ fn the_map_takes_the_frame_and_says_which_level_it_is_on() {
         "and only then out of it"
     );
 }
+
+/// The changes list opened on a file that is not among them — one the
+/// tree was on, or one the last commit took off the list — lands on the
+/// first change rather than beside an empty diff with nothing highlighted.
+#[test]
+fn the_changes_open_on_the_first_change_when_nothing_of_theirs_is_selected() {
+    let mut open = fixture();
+    open.selected = Some(PathBuf::from("/repo/README.md"));
+    let files = open.changes.files.clone();
+    open.absorb_changes(RefreshedChanges {
+        placement: open.placement(),
+        branch: "main".to_owned(),
+        changes: Changes {
+            files,
+            ..Changes::default()
+        },
+    });
+
+    assert_eq!(
+        open.selected(),
+        Some(Path::new("/repo/src/ui/git_diff.rs")),
+        "the first row of the list is the selection"
+    );
+    assert!(open.diff_request().is_some(), "and its diff is asked for");
+}
+
+/// The same arriving from the tree: the file it was on has no diff, so
+/// the list it switches to is read from its top.
+#[test]
+fn switching_to_the_changes_from_an_unchanged_file_selects_the_first_change() {
+    let mut view = fixture();
+    view.content = ContentMode::Contents;
+    view.selected = Some(PathBuf::from("/repo/README.md"));
+
+    view.show(ContentMode::Diff);
+
+    assert_eq!(view.selected(), Some(Path::new("/repo/src/ui/git_diff.rs")));
+}
+
+/// A changed file already selected is left where it is.
+#[test]
+fn switching_to_the_changes_keeps_a_changed_file_selected() {
+    let mut view = fixture();
+    view.content = ContentMode::Contents;
+
+    view.show(ContentMode::Diff);
+
+    assert_eq!(view.selected(), Some(Path::new("/repo/src/ui.rs")));
+}

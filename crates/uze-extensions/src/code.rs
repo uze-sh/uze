@@ -589,6 +589,23 @@ impl CodeView {
             self.changes.diff_pending = self.selected.is_some();
             self.read_selection_as_what_it_is();
         }
+        self.land_on_a_change();
+    }
+
+    /// Selects the first changed file when the changes list is on show and
+    /// none of its rows is the selection — arriving from the tree on a file
+    /// nobody touched, or on one the last commit took off the list.
+    ///
+    /// A list with nothing highlighted beside an empty diff reads as a
+    /// surface that has nothing to say, when what it has is a list of
+    /// things to read and no opinion about which comes first.
+    fn land_on_a_change(&mut self) {
+        if self.navigator() != NavigatorMode::Changes || self.selected_change().is_some() {
+            return;
+        }
+        if let Some(first) = self.changes.files.first().map(|file| file.path.clone()) {
+            self.select(first);
+        }
     }
 
     /// The next thing the host should do for the files half, or `None`.
@@ -855,6 +872,7 @@ impl CodeView {
                 self.scroll = line
                     .and_then(|line| self.diff_row_of(line))
                     .unwrap_or(self.scroll);
+                self.land_on_a_change();
             }
             // Nothing to fetch: the map is already measured, and what it
             // shows is the checkout rather than the selection.
