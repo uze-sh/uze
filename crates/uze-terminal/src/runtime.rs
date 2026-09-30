@@ -2693,13 +2693,20 @@ impl PaneRuntime {
     /// that started it, read from its own environment (`/proc` on Linux,
     /// `KERN_PROCARGS2` on macOS). `None` when there is no foreground
     /// process to ask.
+    ///
+    /// The shim itself, caught before its `exec`, is the launcher at work:
+    /// it already answers to the harness's name (`comm` is the symlink it
+    /// was run through) but carries no stamp yet, because the stamp is only
+    /// in the environment it hands the harness. The probe made right after
+    /// a spawn lands in exactly that window, so reading it as a bypass
+    /// warned about every agent the workspace launched.
     fn foreground_through_launcher(&self) -> Option<bool> {
         let pgid = self
             .master
             .lock()
             .expect("master poisoned")
             .process_group_leader()?;
-        Some(shim_launched_name(pgid).is_some())
+        Some(shim_launched_name(pgid).is_some() || runs_uze(pgid))
     }
 
     fn snapshot(&self) -> PaneSnapshot {
@@ -3879,6 +3886,59 @@ mod tests {
             panic!("the shim identity must reach the foreground; last saw {last_seen:?}")
         });
         assert_eq!(process, "claude");
+    }
+
+    /// The shim before its `exec`: `uze` run through a symlink named after
+    /// the harness, so the kernel already calls it `claude`, and no stamp,
+    /// because the stamp is only in the environment it hands on. That is
+    /// the launcher at work, and must never read as a harness that went
+    /// around it.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
+        let bin_dir = uze_testkit::temp::scratch("shim-in-flight-test");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let uze = bin_dir.join("uze");
+        uze_testkit::process::install_executable(&uze, &std::fs::read("/bin/sleep").unwrap());
+        let shim = bin_dir.join("claude");
+        std::os::unix::fs::symlink(&uze, &shim).unwrap();
+
+        let (damage, _damage_events) = std::sync::mpsc::channel();
+        let pane = PaneRuntime::spawn(
+            PaneId(31),
+            PathBuf::from("/tmp"),
+            80,
+            24,
+            damage,
+            Launch::Program {
+                argv: vec![shim.display().to_string(), "5".to_owned()],
+                env: Vec::new(),
+            },
+            Arc::new(Mutex::new(Palette::default())),
+        )
+        .unwrap();
+
+        let mut through = None;
+        let mut last_seen = None;
+        for _ in 0..500 {
+            let reading = pane.foreground_status();
+            if let Some((_, process)) = &reading
+                && process == "claude"
+            {
+                through = pane.foreground_through_launcher();
+                break;
+            }
+            last_seen = reading.or(last_seen);
+            thread::sleep(Duration::from_millis(10));
+        }
+        pane.stop();
+        let _ = std::fs::remove_dir_all(&bin_dir);
+
+        assert_eq!(
+            through,
+            Some(true),
+            "the shim in flight is the launcher; last saw {last_seen:?}"
+        );
     }
 
     /// What a client says about where it is deciding *where it lands*, and
