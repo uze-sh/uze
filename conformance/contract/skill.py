@@ -92,6 +92,15 @@ def _assert_catalog(cfg, prov_ip, bindings):
     are the same session, and splitting them would let a harness pass one
     while failing the other with nobody noticing.
     """
+    # Every assertion below is about a harness started as its own binary,
+    # the way a person who only uses the package manager starts it: plugins
+    # are delivered natively and must not need the workspace's shim. The
+    # shim's own deliveries are the context and continuity contracts'.
+    check(
+        "skill-harness-started-without-the-shim",
+        "shims" not in bindings.launch,
+        f"{bindings.harness} is launched as `{bindings.launch}`",
+    )
     with bindings.session(cfg, prov_ip) as tui:
         plain, matched = bindings.prepare(tui)
         check(

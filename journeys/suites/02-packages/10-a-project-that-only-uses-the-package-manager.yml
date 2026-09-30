@@ -1,0 +1,74 @@
+journey: a project that only uses the package manager never meets the workspace
+tags: [gate, cli, packages]
+proves: web/content/docs/plugins/index.mdx
+about: |
+  A person who installs plugins and starts their agents by hand gets the
+  plugins, one AGENTS.md, and nothing of the workspace: no isolation policy
+  declared for them, no workspace section in AGENTS.md, no checkout, and no
+  edit to their shell. A harness they type in a plain shell is the harness's
+  own binary.
+
+world:
+  project: demo-app
+  files:
+    market/marketplace.json: |
+      {
+        "name": "demo",
+        "description": "A marketplace this journey stages.",
+        "plugins": [
+          { "name": "flow", "source": "./plugins/flow", "description": "Canonical skill plugin." }
+        ]
+      }
+    market/plugins/flow/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "flow",
+        "version": "1.0.0",
+        "description": "Canonical: one package, no vendor manifests."
+      }
+    market/plugins/flow/skills/commit/SKILL.md: |
+      ---
+      name: commit
+      description: Write a commit message from the staged diff.
+      ---
+
+      The body a harness would read.
+
+scenes:
+  - scene: setting up, adding a plugin and installing it touch no shell
+    when:
+      - shell: "{uze} setup"
+        say: provision every registered harness
+        check: false
+      - shell: "{uze} market add {world}/market"
+        say: register the staged marketplace
+      - shell: "cd {project} && {uze} flow@demo && {uze} install"
+        say: add the plugin to the project, then converge it
+    then:
+      - file: "{shell_rc}"
+        exists: false
+        about: no shell startup file is written, by setup or by anything after it
+      - file: "{project}/agents.yaml"
+        contains: "flow"
+        about: the project declares the plugin
+      - file: "{project}/agents.yaml"
+        excludes: "\n  completion: "
+        about: and declares no workspace policy on the person's behalf
+      - file: "{project}/AGENTS.md"
+        contains: "uze:begin project:plugin-authoring"
+        about: AGENTS.md carries the package manager's own region
+      - file: "{project}/AGENTS.md"
+        excludes: "project:worktree-policy"
+        about: and nothing of the workspace's
+      - dir: "{project}/.worktrees"
+        exists: false
+        about: no checkout was made
+
+  - scene: a harness typed in a plain shell is the harness's own binary
+    when:
+      - shell: "command -v claude > {world}/which-claude"
+        say: ask the plain shell which claude it would run
+    then:
+      - file: "{world}/which-claude"
+        excludes: "{uze_home}/shims"
+        about: nothing put uze's shims ahead of the harness outside the workspace

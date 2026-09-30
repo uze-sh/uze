@@ -48,7 +48,7 @@ tests/
 ├── cli/             CLI layer: grammar (ADR-019), machine-scoped commands, budget (what a warm command leaves behind)
 ├── memory/          what UZE sees: context inspection, reconciliation, projections
 ├── packages/        acquisition, containment, Store/Engine, canonical model
-├── workspace/       agents.lock consumer, marketplace (incl. malformed), root resolution
+├── project/         agents.lock consumer, marketplace (incl. malformed), root resolution
 ├── lifecycle/       install (application layer), future: update/remove/receipts/drift
 ├── projection/      exposure naming, invocation labels/policy, shared skill roots
 ├── integrations/    contract, capability+lifecycle conformance, runtime-shim boundary,
@@ -196,6 +196,22 @@ the real binaries) — the honest place for vendor-semantics verdicts.
 | A10 | workspace overview readiness | `workspace_health::workspace_overview_tracks_environment_readiness` |
 | A11 | projection conflict honest failure | `multi_harness::projection_conflict_is_reported_honestly` |
 | A12 | golden environment health (release signal) | `fresh_project::golden_environment_is_healthy` |
+| A13 | only the package manager: no policy, no workspace region, no checkout, no shell edit | `package_only::the_package_manager_alone_never_meets_the_workspace` |
+| A14 | a workspace setting fails no package command | `package_only::a_workspace_section_the_workspace_rejects_fails_no_package_command` |
+| A15 | the package manager and the workspace: each owns its own region | `package_and_workspace::install_leaves_the_workspace_section_to_the_workspace` |
+| A16 | moving between the two profiles | `package_and_workspace::moving_from_the_package_manager_to_the_workspace_and_back` |
+
+### Usage profiles
+
+A person uses the package manager alone, or with the workspace, and each
+profile has a world of its own (`uze_testkit::scenario::PackageOnly`,
+`PackageAndWorkspace`, both seeding the shell's startup files so any edit is
+caught):
+
+| Profile | L3 | Journey | Lab |
+|---|---|---|---|
+| package manager only | `package_only` | `02-packages/10-a-project-that-only-uses-the-package-manager` | the skill contract, every harness started as its own binary |
+| package manager + workspace | `package_and_workspace` | `04-workspace/10-the-workspace-on-a-project-with-plugins` | the context and continuity contracts, launched through the shim |
 
 A12 update-lifecycle is *not* an acceptance scenario yet: update semantics
 are L1 (`tests/packages/acquisition.rs` re-resolution tests) and the CLI
