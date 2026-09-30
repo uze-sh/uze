@@ -34,3 +34,4 @@ marketplaces:
     git: https://github.com/hiukky/ai
     plugins:
       - git
+      - tui
