@@ -862,9 +862,6 @@ pub struct ProjectContextStatus {
     pub orphaned_regions: Vec<String>,
     pub malformed_regions: Vec<String>,
     pub harnesses: Vec<HarnessContextStatus>,
-    /// The project's worktree policy, when `agents.lock` declares one.
-    /// `None` means no policy is declared — not that isolation is forbidden.
-    pub worktrees: Option<WorktreePolicyStatus>,
     pub portability: Portability,
     /// Human-readable notices for a state worth surfacing but that is not
     /// itself a gap or an error — e.g. a harness carrying legitimate
@@ -873,35 +870,20 @@ pub struct ProjectContextStatus {
     pub warnings: Vec<String>,
 }
 
-/// The project's isolation declaration as it currently stands in the shared
-/// instruction file. There is no per-harness row: UZE performs the isolation
-/// itself, at launch, identically everywhere, so there is nothing left for a
-/// harness to preserve or lose.
+/// The planned change to one region UZE owns in `AGENTS.md`.
 #[derive(Clone, Debug, Serialize)]
-pub struct WorktreePolicyStatus {
-    /// Where isolated checkouts live for this project. Fixed layout,
-    /// resolved against the project root — reported, never configured.
-    pub directory: PathBuf,
-    pub completion: uze_workspace::worktree::CompletionBehavior,
-    pub state: AttachmentState,
-    pub reason: String,
-    /// Regions left by a previous declaration, still present in the file.
-    pub superseded_regions: Vec<String>,
-}
-
-/// The planned or performed change to the worktree policy's managed region.
-#[derive(Clone, Debug, Serialize)]
-pub struct WorktreeRegionPlan {
+pub struct ManagedRegionPlan {
     pub file: PathBuf,
     pub action: instruction_context::PlannedAction,
-    /// Regions a previous policy owned, which this pass would remove. A
-    /// policy edit reads as one region going stale and another appearing,
-    /// never as drift inside the region that already exists.
+    /// Versions of the region an earlier text left, which this pass would
+    /// remove. A change of text reads as one region going stale and another
+    /// appearing, never as drift inside the region that already exists.
     pub superseded: Vec<String>,
 }
 
+/// What converging one region UZE owns in `AGENTS.md` did.
 #[derive(Clone, Debug, Serialize)]
-pub struct WorktreeRegionStatus {
+pub struct ManagedRegionStatus {
     pub file: PathBuf,
     pub state: AttachmentState,
     pub reason: String,
@@ -922,9 +904,9 @@ pub struct BridgePlan {
 pub struct ContextPlan {
     pub agents_md: PathBuf,
     pub agents_md_plan: instruction_context::AgentsMdPlan,
-    /// Present whenever the shared file would gain, keep, lose, or is
-    /// blocked from changing the worktree policy region.
-    pub worktree_region: Option<WorktreeRegionPlan>,
+    /// The package manager's plugin-authoring region, present for a project
+    /// with an `agents.yaml`.
+    pub authoring_region: Option<ManagedRegionPlan>,
     pub bridges: Vec<BridgePlan>,
 }
 
@@ -932,7 +914,7 @@ impl ContextPlan {
     pub fn has_changes(&self) -> bool {
         self.agents_md_plan.has_changes()
             || self
-                .worktree_region
+                .authoring_region
                 .as_ref()
                 .is_some_and(|region| is_mutating(&region.action) || !region.superseded.is_empty())
             || self
@@ -963,7 +945,8 @@ pub struct InstructionsFile {
     pub path: PathBuf,
     pub exists: bool,
     /// How many managed regions UZE owns in it: each installed package's
-    /// contribution, plus the worktree policy when one is declared.
+    /// contribution, the authoring region, and the workspace's policy
+    /// region when the workspace keeps one there.
     pub managed_regions: usize,
 }
 
@@ -1018,7 +1001,8 @@ pub struct EnvironmentDrift {
     pub surplus: Vec<String>,
     /// Recorded in the lock and absent from this machine's Store.
     pub missing: Vec<String>,
-    /// The projected instruction region is behind the declared policy.
+    /// A region the package manager owns in `AGENTS.md` is not what it
+    /// should say.
     pub stale_projection: bool,
     /// Marketplaces that resolve nowhere but the machine that declared
     /// them. Carried here so `uze status` and the overview say the same
@@ -1080,7 +1064,7 @@ pub struct ContextReconciliationReport {
     /// A package whose region this pass could not write, with the reason —
     /// distinct from a region that is merely absent.
     pub failed: Vec<(String, String)>,
-    pub worktree_region: Option<WorktreeRegionStatus>,
+    pub authoring_region: Option<ManagedRegionStatus>,
     pub bridges: Vec<BridgeStatus>,
 }
 

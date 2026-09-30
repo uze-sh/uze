@@ -134,28 +134,30 @@ impl Project<'_> {
         })
     }
 
-    /// Whether the projected worktree-policy region has fallen behind the
-    /// policy the manifest declares, and what the two say.
+    /// Whether a region the package manager owns in `AGENTS.md` is not what
+    /// it should say. The workspace's region is the workspace's to report:
+    /// a package command never counts it, so a project that stopped using
+    /// the workspace is never told to run anything over it.
     ///
-    /// One string comparison, and no harness is asked anything: the region
-    /// carries `WorktreePolicy::region_identity()`, a digest of the exact
-    /// bytes it should hold, so "has the projection caught up" is answered
-    /// by the identity already written into `AGENTS.md`.
+    /// One string comparison per region, and no harness is asked anything:
+    /// a region's identity is a digest of the bytes it should hold.
     fn stale_projection(&self, canonical: &Path) -> Option<StaleProjection> {
-        // Only a *declared* policy is owed a projection: an undeclared one
-        // projects nothing, so it can never be behind. Same gate the
-        // context service uses to decide whether the region exists at all.
-        let policy = uze_workspace::declaration::declared(canonical).ok()??;
-        let wanted = policy.region_identity();
+        let desired = super::context::authoring_desired(canonical);
         let agents_md = canonical.join(uze_core::project_context::AGENTS_MD_FILE_NAME);
-        let found = uze_core::text_region::region_identities_present(&agents_md)
+        if super::managed_region::in_step(
+            &agents_md,
+            uze_core::authoring::region::owns_region,
+            &desired,
+        ) {
+            return None;
+        }
+        let projected_identity = uze_core::text_region::region_identities_present(&agents_md)
             .into_iter()
-            .find(|identity| uze_workspace::worktree::WorktreePolicy::owns_region(identity));
-        // A missing region is as behind as a stale one: the policy is
-        // declared and the agents are reading nothing at all.
-        (found.as_deref() != Some(wanted.as_str())).then(|| StaleProjection {
-            declared: policy.completion.abi_name().to_owned(),
-            projected_identity: found.unwrap_or_else(|| "none".to_owned()),
+            .find(|identity| uze_core::authoring::region::owns_region(identity))
+            .unwrap_or_else(|| "none".to_owned());
+        Some(StaleProjection {
+            region: uze_core::authoring::region::REGION_PREFIX.to_owned(),
+            projected_identity,
         })
     }
 
@@ -943,9 +945,9 @@ impl Project<'_> {
         }
 
         // Installing changes what this project's packages contribute to
-        // `AGENTS.md`, and a policy edit changes what the projected region
-        // should say. Leaving either to a second command is how a policy
-        // stayed in force for UZE and not for the agents reading the file.
+        // `AGENTS.md`, and a region the package manager owns there can fall
+        // behind on its own. Leaving either to a second command is how the
+        // agents came to read something the project no longer says.
         let nothing_moved = installed_plugins.is_empty() && removed_plugins.is_empty();
         let attempted = (!nothing_moved || self.stale_projection(&canonical).is_some())
             .then(|| self.0.context().reconcile(&canonical));
@@ -1209,7 +1211,7 @@ pub struct ProjectEnvironmentPlan {
     pub unresolved: Vec<String>,
     /// In the lock, and the manifest no longer declares it.
     pub surplus: Vec<String>,
-    /// The projected instruction region has fallen behind the policy.
+    /// A region the package manager owns in `AGENTS.md` is behind.
     pub stale_projection: Option<StaleProjection>,
     /// Marketplaces this project declares that resolve nowhere but the
     /// machine that declared them. Not a fault here — they work where they
@@ -1220,14 +1222,13 @@ pub struct ProjectEnvironmentPlan {
     pub has_changes: bool,
 }
 
-/// The projected policy region is behind what the manifest declares:
-/// UZE itself acts on the live policy, but the agents that must honor it
-/// read the projected text, so this is a policy only half in force.
+/// A region the package manager owns in `AGENTS.md` is not what it should
+/// say, so the agents reading the file are reading something else.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct StaleProjection {
-    /// The completion behavior `agents.yaml` declares today.
-    pub declared: String,
-    /// The identity the region in `AGENTS.md` still carries.
+    /// Which region: its identity's prefix.
+    pub region: String,
+    /// The identity the region in `AGENTS.md` still carries, or `none`.
     pub projected_identity: String,
 }
 

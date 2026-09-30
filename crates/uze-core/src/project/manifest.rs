@@ -194,19 +194,24 @@ pub fn load_section<T: DeserializeOwned + 'static>(
 /// it, so the vocabulary is discoverable by opening the file rather than by
 /// reading documentation.
 ///
-/// Only `completion` is live. Everything else is commented, because a value
-/// written here would be a decision UZE made on the project's behalf —
-/// uncommenting a line is what changes behavior, never the file appearing.
+/// Nothing is live. Every value is commented, because a value written here
+/// would be a decision UZE made on the project's behalf — uncommenting a line
+/// is what changes behavior, never the file appearing. The `worktrees:` key
+/// itself stays, empty: an empty key declares nothing, and it is where the
+/// workspace writes a choice, beside the comments that explain it.
 pub const SCAFFOLD: &str = r"# This project's agent environment. UZE reads this file and writes
 # agents.lock from it — edit this one; the lock regenerates.
 #
 # Every key UZE understands is below. A commented line carries the default
 # already in force: uncomment it to make the choice the project's own.
 
+# How the workspace (`uze workspace`) isolates the agents it launches and
+# what it does with their finished work. Nothing here is in force until you
+# choose it: a project that only uses plugins never needs this section.
 worktrees:
   # handoff | merge | pr — what UZE does with an agent's finished branch.
   # `handoff` leaves it for you to integrate.
-  completion: handoff
+  # completion: handoff
 
   # in-place | isolated — where an agent launched here starts. In place,
   # it shares the project's own checkout and is isolated when somebody

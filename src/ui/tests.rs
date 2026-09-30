@@ -169,7 +169,6 @@ fn model_with_data() -> TuiModel {
         contributions: Vec::new(),
         orphaned_regions: Vec::new(),
         malformed_regions: Vec::new(),
-        worktrees: None,
         harnesses: vec![
             // Claude Code only ever reads context through a `CLAUDE.md`
             // bridge (never natively) — `needed: false` here means

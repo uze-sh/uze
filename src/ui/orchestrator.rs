@@ -318,6 +318,66 @@ fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAgent>) {
     });
 }
 
+/// What keeping one project's `AGENTS.md` in step found that the operator
+/// should hear: a workspace section edited by hand, which is left as it is,
+/// or one that could not be written. Nothing is sent when it is in step.
+struct PolicyRegionResolution {
+    file: PathBuf,
+    problem: String,
+    drifted: bool,
+}
+
+/// Keeps the workspace's region of each directory's `AGENTS.md` in step
+/// with what its project declares, in the primary checkout only. Off the
+/// frame like every other repository touch: it reads `agents.yaml`, may ask
+/// Git about linked files, and may write the file. A sync with nothing new
+/// writes nothing, so asking on the refresh clock is how an edit to
+/// `agents.yaml` reaches the file without a command.
+fn spawn_policy_region_sync(
+    home: &UzeHome,
+    directories: Vec<PathBuf>,
+    sender: mpsc::Sender<PolicyRegionResolution>,
+) {
+    if directories.is_empty() {
+        return;
+    }
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::debug_span!("tui.policy_region_sync").entered();
+        let Ok(app) = tui_application(home) else {
+            return;
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for directory in directories {
+            let resolution = match app.workspace().sync_policy_region(&directory) {
+                Ok(Some(region)) if !seen.insert(region.file.clone()) => continue,
+                Ok(Some(region)) => match region.state {
+                    uze_application::AttachmentState::Drifted => PolicyRegionResolution {
+                        file: region.file,
+                        problem: region.reason,
+                        drifted: true,
+                    },
+                    uze_application::AttachmentState::Blocked => PolicyRegionResolution {
+                        file: region.file,
+                        problem: region.reason,
+                        drifted: false,
+                    },
+                    _ => continue,
+                },
+                Ok(None) => continue,
+                Err(error) => PolicyRegionResolution {
+                    file: directory,
+                    problem: error.to_string(),
+                    drifted: false,
+                },
+            };
+            let _ = sender.send(resolution);
+        }
+    });
+}
+
 /// An agent UZE launched, as the session reports it: the harness running
 /// it, the identity its launch carried, and the directory it stands in.
 struct LaunchedAgent {
@@ -2632,6 +2692,8 @@ struct Channels {
     spec_summaries: Answers<SpecSummaryResolution>,
     /// The code surface's map, measured once per checkout it is opened on.
     code_measures: Answers<MeasureResolution>,
+    /// Keeping each project's `AGENTS.md` workspace section in step.
+    policy_regions: Answers<PolicyRegionResolution>,
 }
 
 /// The half of [`WorkspaceModel`] that outlives one attach. Everything
@@ -2759,6 +2821,10 @@ struct Remembered {
     /// slot, because two things finishing at once is the ordinary case and
     /// the notice's single slot loses one of them.
     toasts: VecDeque<RaisedToast>,
+    /// The `AGENTS.md` files already reported as holding a workspace section
+    /// edited by hand, so the report is made once a session rather than on
+    /// every refresh.
+    policy_region_reported: BTreeSet<PathBuf>,
     /// The checkout each open pane was first seen in — a pane's slot does
     /// not change when it `cd`s. A directory fact, and the only thing it
     /// answers is slot occupancy; which agent a pane is for is what the

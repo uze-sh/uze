@@ -4783,7 +4783,7 @@ fn render_drift(drift: &uze_application::application::EnvironmentDrift) -> Strin
     }
     if drift.stale_projection {
         text.push_str(&format!(
-            "  {} AGENTS.md is behind the declared worktree policy\n",
+            "  {} AGENTS.md is behind what uze keeps there; `uze install` brings it back\n",
             progress::warning_icon()
         ));
     }
@@ -5001,22 +5001,6 @@ fn render_context_status(status: &ProjectContextStatus) -> String {
         };
         text.push_str(&format!("  {}  {delivery}\n", harness.display_name));
     }
-    if let Some(worktrees) = &status.worktrees {
-        text.push('\n');
-        text.push_str(&progress::report_section("Worktree policy"));
-        text.push_str(&format!(
-            "  {}  region {:?}\n",
-            worktrees.directory.display(),
-            worktrees.state
-        ));
-        text.push_str(&format!(
-            "  completion: {}\n",
-            worktrees.completion.abi_name()
-        ));
-        for identity in &worktrees.superseded_regions {
-            text.push_str(&format!("  {identity}  SUPERSEDED (a previous policy)\n"));
-        }
-    }
     text.push_str(&format!(
         "\nPortability: {}\n",
         render_portability(&status.portability)
@@ -5089,8 +5073,8 @@ fn render_context_plan(plan: &ContextPlan, app: &UzeApplication) -> String {
             ));
         }
     }
-    if let Some(region) = &plan.worktree_region {
-        text.push_str("\nWorktree policy\n");
+    if let Some(region) = &plan.authoring_region {
+        text.push_str("\nPlugin authoring\n");
         text.push_str(&format!(
             "  {}  {}\n",
             region.file.display(),
@@ -5130,8 +5114,8 @@ fn render_context_reconciliation(
     for (package, reason) in &report.failed {
         text.push_str(&format!("  {package}  FAILED: {reason}\n"));
     }
-    if let Some(region) = &report.worktree_region {
-        text.push_str("\nWorktree policy\n");
+    if let Some(region) = &report.authoring_region {
+        text.push_str("\nPlugin authoring\n");
         text.push_str(&format!(
             "  {}  {:?}\n",
             region.file.display(),

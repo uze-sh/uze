@@ -208,11 +208,23 @@ impl Workspace<'_> {
                 let view = context.as_ref().and_then(|(primary, policy)| {
                     self.placed_view(primary, agent.id.as_str(), policy)
                 });
+                // Before the agent starts, and only in the primary checkout:
+                // the agent reads the region the project declares now. A pane
+                // standing in a slot is not the primary, and a slot's file is
+                // its branch's.
+                let in_the_primary = context
+                    .as_ref()
+                    .is_some_and(|(primary, _)| canonical(primary) == root);
+                let warnings = if in_the_primary {
+                    self.policy_region_warnings(&root)
+                } else {
+                    Vec::new()
+                };
                 Ok(AgentPlacement {
                     project: root.clone(),
                     cwd: root,
                     placement: Placement::InPlace { id: agent.id },
-                    warnings: Vec::new(),
+                    warnings,
                     view,
                 })
             }

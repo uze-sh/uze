@@ -2205,7 +2205,7 @@ the Store keeps the package and every harness keeps reading it, because
 other projects share both and machine scope is `uze remove <plugin> -m`'s.
 
 > `tests/workspace/consumer.rs::drift::install_converges_the_lock_and_leaves_the_machine_alone`
-> `tests/workspace/consumer.rs::drift::a_policy_change_reads_as_a_stale_projection_until_install_clears_it`
+> `tests/workspace/consumer.rs::drift::a_package_region_gone_from_agents_md_reads_as_stale_until_install_clears_it`
 
 
 ## Input (M6)

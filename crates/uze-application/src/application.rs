@@ -45,6 +45,7 @@ mod freshness;
 mod inspection_cache;
 mod lifecycle;
 mod maintenance;
+mod managed_region;
 mod marketplace;
 mod marketplace_catalogue;
 mod notifications;

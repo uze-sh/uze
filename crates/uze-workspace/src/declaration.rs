@@ -437,6 +437,42 @@ mod tests {
     }
 
     #[test]
+    fn a_scaffolded_manifest_declares_no_policy() {
+        let root = uze_testkit::temp::scratch("declaration-scaffold-declares-nothing");
+        assert!(ensure_exists(&root).unwrap());
+        assert_eq!(declared(&root).unwrap(), None);
+        let written = fs::read_to_string(manifest_path_for(&root)).unwrap();
+        assert!(
+            written.contains("# completion: handoff"),
+            "the choice is offered, commented: {written}"
+        );
+    }
+
+    #[test]
+    fn choosing_a_completion_writes_it_under_the_scaffolds_empty_key() {
+        let root = uze_testkit::temp::scratch("declaration-scaffold-then-choose");
+        ensure_exists(&root).unwrap();
+        assert!(!set_completion(&root, CompletionBehavior::Pr).unwrap());
+        let written = fs::read_to_string(manifest_path_for(&root)).unwrap();
+        assert!(
+            written.contains("worktrees:\n  completion: pr\n"),
+            "{written}"
+        );
+        assert_eq!(
+            written
+                .lines()
+                .filter(|line| line.starts_with("worktrees:"))
+                .count(),
+            1,
+            "one section, not a second block at the end: {written}"
+        );
+        assert_eq!(
+            declared(&root).unwrap().map(|policy| policy.completion),
+            Some(CompletionBehavior::Pr)
+        );
+    }
+
+    #[test]
     fn a_workspace_section_the_workspace_rejects_does_not_fail_the_manifest() {
         let repository = uze_testkit::git::Repository::new("declaration-unignored-link");
         repository.commit_file("README.md", "tracked\n");

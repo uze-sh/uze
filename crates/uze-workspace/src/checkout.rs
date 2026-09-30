@@ -695,7 +695,34 @@ pub fn carry_changes(primary: &Path, slot: &Path) -> Result<(), String> {
         std::fs::copy(&from, &to)
             .map_err(|error| format!("`{relative}` could not be copied: {error}"))?;
     }
-    Ok(())
+    keep_derived_instructions_behind(primary, slot)
+}
+
+/// Undoes, in a slot just given the primary's changes, a change to
+/// `AGENTS.md` that lies only inside UZE's managed regions. The workspace
+/// keeps its region in step in the primary checkout, where it is the
+/// operator's to commit; carried into a slot it would be a change the agent
+/// could commit and deliver, colliding with the same change still
+/// uncommitted in the primary. A change of the operator's own beside the
+/// regions is theirs, and is carried like any other.
+fn keep_derived_instructions_behind(primary: &Path, slot: &Path) -> Result<(), String> {
+    use crate::project_context::AGENTS_MD_FILE_NAME;
+
+    if !instructions_changed_only_in_regions(primary) {
+        return Ok(());
+    }
+    let in_slot = slot.join(AGENTS_MD_FILE_NAME);
+    match committed_text(slot, AGENTS_MD_FILE_NAME) {
+        Committed::Text(text) => std::fs::write(&in_slot, text)
+            .map_err(|error| format!("`{AGENTS_MD_FILE_NAME}` could not be restored: {error}")),
+        Committed::Absent => match std::fs::remove_file(&in_slot) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(format!(
+                "`{AGENTS_MD_FILE_NAME}` could not be left out: {error}"
+            )),
+            _ => Ok(()),
+        },
+        Committed::Unknown => Ok(()),
+    }
 }
 
 /// What a collection removed, so a caller can say so.

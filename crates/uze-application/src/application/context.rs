@@ -8,13 +8,15 @@ use std::{
 
 use uze_core::{
     Result, UzeError,
+    authoring::region as authoring_region,
     context::{self as instruction_context, InstructionContribution},
     integration::{AttachmentState, ContextDelivery},
-    project_context::AGENTS_MD_FILE_NAME,
+    manifest,
+    project_context::{AGENTS_MD_FILE_NAME, AgentsMdGuard},
     text_region,
 };
 
-use uze_workspace::worktree::{self, WorktreePolicy};
+use super::managed_region::{self, Desired, plan_action_for_region};
 
 use super::services::Context;
 use super::*;
@@ -105,10 +107,6 @@ impl Context<'_> {
             })
             .collect::<Vec<_>>();
 
-        let worktrees = self
-            .worktree_policy(&canonical)?
-            .map(|policy| self.worktree_policy_status(&canonical, &agents_md_path, &policy));
-
         let portability = derive_portability(agents_md_exists, &sources, &harnesses);
         let warnings = derive_warnings(agents_md_exists, &sources);
 
@@ -128,7 +126,6 @@ impl Context<'_> {
             orphaned_regions: observation.orphaned_regions,
             malformed_regions: observation.malformed_regions,
             harnesses,
-            worktrees,
             portability,
             warnings,
         })
@@ -170,24 +167,20 @@ impl Context<'_> {
             })
             .collect();
 
-        let worktree_region = self.worktree_policy(&canonical)?.map(|policy| {
-            let state = text_region::inspect(
+        let authoring = authoring_desired(&canonical);
+        let authoring_region = authoring.is_some().then(|| {
+            managed_region::plan(
                 &agents_md,
-                &policy.region_identity(),
-                &policy.instructions(),
+                authoring_region::owns_region,
+                &authoring,
+                "plugin authoring",
             )
-            .state;
-            WorktreeRegionPlan {
-                file: agents_md.clone(),
-                action: plan_action_for_region(true, state, "worktree policy"),
-                superseded: superseded_policy_regions(&agents_md, &policy),
-            }
         });
 
         Ok(ContextPlan {
             agents_md,
             agents_md_plan,
-            worktree_region,
+            authoring_region,
             bridges,
         })
     }
@@ -199,42 +192,18 @@ impl Context<'_> {
             agents_md,
             contributions,
         } = self.scope(project_root)?;
+        // Two owners rewrite this file (the package manager here, the
+        // workspace its policy region), each as a whole-file read-modify-write.
+        let _guard = AgentsMdGuard::acquire(&self.0.home, &canonical)?;
         let agents_md_report = instruction_context::reconcile_agents_md(&agents_md, &contributions);
 
-        // The policy region is reconciled against the shared file before the
-        // bridges are, for the same reason package contributions are: a
-        // bridge's own desired-state question is answered by what `AGENTS.md`
-        // ends up carrying, not by what it carried on entry.
-        let declared_policy = self.worktree_policy(&canonical)?;
-        let worktree_region = declared_policy.as_ref().map(|policy| {
-            let mut convergence = text_region::converge(
-                &agents_md,
-                WorktreePolicy::owns_region,
-                &[(policy.region_identity(), policy.instructions())],
-            );
-            let region = convergence
-                .desired
-                .pop()
-                .expect("one desired region yields one outcome");
-            let (state, reason) = match region.write_failure {
-                Some(failure)
-                    if !matches!(
-                        region.inspection.state,
-                        AttachmentState::Blocked | AttachmentState::Drifted
-                    ) =>
-                {
-                    (AttachmentState::Blocked, failure)
-                }
-                _ => (region.inspection.state, region.inspection.reason),
-            };
-            WorktreeRegionStatus {
-                file: agents_md.clone(),
-                state,
-                reason,
-                removed_superseded: convergence.removed,
-                blocked_superseded: convergence.blocked,
-            }
-        });
+        // Reconciled before the bridges, for the same reason package
+        // contributions are: a bridge's own desired-state question is
+        // answered by what `AGENTS.md` ends up carrying.
+        let authoring = authoring_desired(&canonical);
+        let authoring_region = (authoring.is_some()
+            || !managed_region::in_step(&agents_md, authoring_region::owns_region, &None))
+        .then(|| managed_region::converge(&agents_md, authoring_region::owns_region, authoring));
 
         let bridges = self
             .detected_bridges(&canonical)
@@ -272,7 +241,7 @@ impl Context<'_> {
                 .into_iter()
                 .map(|(package_id, reason)| (package_id.as_str().to_owned(), reason))
                 .collect(),
-            worktree_region,
+            authoring_region,
             bridges,
         })
     }
@@ -351,35 +320,6 @@ impl Context<'_> {
             needed: bridge_needed,
             state,
         })
-    }
-
-    /// This project's declared isolation policy, or `None` when
-    /// `agents.yaml` declares none. A malformed manifest is an error here
-    /// rather than a silent "no policy": dropping a declared policy without
-    /// saying so is exactly the failure that left `worktrees_dir`
-    /// unprojected for so long.
-    fn worktree_policy(&self, canonical: &std::path::Path) -> Result<Option<WorktreePolicy>> {
-        uze_workspace::declaration::declared(canonical)
-    }
-
-    /// Composes the policy's current standing: its managed region in the
-    /// shared file, each harness's honest route, and the checkouts on disk
-    /// the policy does not account for.
-    fn worktree_policy_status(
-        &self,
-        canonical: &std::path::Path,
-        agents_md: &std::path::Path,
-        policy: &WorktreePolicy,
-    ) -> WorktreePolicyStatus {
-        let inspection =
-            text_region::inspect(agents_md, &policy.region_identity(), &policy.instructions());
-        WorktreePolicyStatus {
-            directory: canonical.join(worktree::WORKTREES_DIRECTORY),
-            completion: policy.completion,
-            state: inspection.state,
-            reason: inspection.reason,
-            superseded_regions: superseded_policy_regions(agents_md, policy),
-        }
     }
 
     fn instruction_contributions(&self) -> Result<Vec<InstructionContribution>> {
@@ -485,42 +425,13 @@ fn derive_warnings(
     warnings
 }
 
-/// Regions in `agents_md` that this module's own naming shape claims but
-/// that the current policy does not — what a previous policy left behind.
-/// Structural, exactly like `uze_core::context`'s orphan detection: an
-/// identity is claimed by shape, never by comparing rendered content.
-fn superseded_policy_regions(agents_md: &std::path::Path, policy: &WorktreePolicy) -> Vec<String> {
-    text_region::stale_regions(
-        agents_md,
-        WorktreePolicy::owns_region,
-        [policy.region_identity().as_str()],
-    )
-}
-
-/// The action a managed region needs to reach its desired presence. Shared
-/// by every region this module owns — a bridge's import line and the
-/// worktree policy alike — because the safety rules are `text_region`'s, not
-/// each caller's; `subject` only names the region in a blocked explanation.
-fn plan_action_for_region(
-    needed: bool,
-    state: AttachmentState,
-    subject: &str,
-) -> instruction_context::PlannedAction {
-    use instruction_context::PlannedAction;
-    match (needed, state) {
-        (true, AttachmentState::Matched) | (false, AttachmentState::Missing) => {
-            PlannedAction::NoChange
-        }
-        (true, AttachmentState::Missing) => PlannedAction::Attach,
-        (false, AttachmentState::Matched) => PlannedAction::Remove,
-        (_, AttachmentState::Drifted) => PlannedAction::Blocked(format!(
-            "{subject} content differs from what UZE would write"
-        )),
-        (_, AttachmentState::Blocked) => {
-            PlannedAction::Blocked(format!("{subject} region markers are malformed"))
-        }
-        (_, AttachmentState::Conflict) => {
-            PlannedAction::Blocked(format!("{subject} region ownership is ambiguous"))
-        }
-    }
+/// The authoring region a project is owed: one for every project with an
+/// `agents.yaml`, whether or not the workspace is ever used there.
+pub(super) fn authoring_desired(canonical: &Path) -> Desired {
+    manifest::manifest_path_for(canonical).is_file().then(|| {
+        (
+            authoring_region::identity(),
+            authoring_region::instructions(),
+        )
+    })
 }

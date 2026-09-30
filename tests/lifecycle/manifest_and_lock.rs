@@ -165,7 +165,7 @@ fn the_policy_in_force_is_what_the_manifest_says_and_it_reaches_the_projection()
     )
     .unwrap();
 
-    application.context().reconcile(&root).unwrap();
+    application.workspace().sync_policy_region(&root).unwrap();
 
     let agents_md = fs::read_to_string(root.join("AGENTS.md")).unwrap();
     assert!(
@@ -184,11 +184,15 @@ fn a_typo_in_the_manifest_is_named_rather_than_ignored() {
     )
     .unwrap();
 
-    let error = application
-        .context()
-        .inspect(&root)
+    // The section is the workspace's, so the workspace names the typo; the
+    // package manager reads the file without failing over it.
+    let error = uze_workspace::declaration::declared(&root)
         .expect_err("a misspelled field must not be silently dropped");
     assert!(error.to_string().contains("completon"), "{error}");
+    application
+        .context()
+        .inspect(&root)
+        .expect("a workspace section never fails a package command");
 }
 
 /// The pin is the point: a lock that records where bytes came from but not

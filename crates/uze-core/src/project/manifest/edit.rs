@@ -80,6 +80,9 @@ impl ManifestDocument {
         value: &serde_yaml::Value,
     ) -> Result<()> {
         if self.document.get(mapping_path).is_none() {
+            if self.holds_empty_root_key(mapping_path) {
+                return self.fill_empty_root_key(mapping_path, key, value);
+            }
             return self.append_mapping(mapping_path, key, value);
         }
         let full = format!("{mapping_path}.{key}");
@@ -178,6 +181,57 @@ impl ManifestDocument {
     /// no mapping to insert into and nothing above to preserve. Emitting
     /// the whole `key: value` block at once keeps the emitter's hands on
     /// the quoting here too.
+    /// Whether `key` is written at the root with no value, as the scaffold
+    /// writes `worktrees:`: a heading over commented choices, which declares
+    /// nothing and which the library therefore does not report as present.
+    fn holds_empty_root_key(&self, key: &str) -> bool {
+        self.document
+            .source()
+            .lines()
+            .any(|line| is_empty_root_key(line, key))
+    }
+
+    /// Writes the first entry under an empty root key, directly beneath it,
+    /// so the choice lands among the comments that explain it rather than in
+    /// a second block of the same name at the end of the file.
+    fn fill_empty_root_key(
+        &mut self,
+        mapping_path: &str,
+        key: &str,
+        value: &serde_yaml::Value,
+    ) -> Result<()> {
+        let mut entry = serde_yaml::Mapping::new();
+        entry.insert(key, value.clone());
+        let emitted = serde_yaml::to_string(&serde_yaml::Value::Mapping(entry))
+            .map_err(|error| self.refusal(mapping_path, error.to_string()))?;
+        let indented: String = emitted.lines().map(|line| format!("  {line}\n")).collect();
+        let mut text = String::new();
+        let mut filled = false;
+        for line in self.document.source().split_inclusive('\n') {
+            text.push_str(line);
+            if !filled && is_empty_root_key(line.trim_end_matches('\n'), mapping_path) {
+                if !line.ends_with('\n') {
+                    text.push('\n');
+                }
+                text.push_str(&indented);
+                filled = true;
+            }
+        }
+        let reopened = Self::from_source(&self.path, &text)?;
+        if reopened
+            .document
+            .get(&format!("{mapping_path}.{key}"))
+            .is_none()
+        {
+            return Err(self.refusal(
+                mapping_path,
+                "the entry written under the empty key did not read back".to_owned(),
+            ));
+        }
+        *self = reopened;
+        Ok(())
+    }
+
     fn append_mapping(
         &mut self,
         mapping_path: &str,
@@ -307,6 +361,16 @@ fn reject_shapes_we_will_not_edit(path: &Path, text: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `line` is `key:` at column zero with nothing after it but a comment.
+fn is_empty_root_key(line: &str, key: &str) -> bool {
+    line.strip_prefix(key)
+        .and_then(|rest| rest.strip_prefix(':'))
+        .is_some_and(|rest| {
+            let rest = rest.trim();
+            rest.is_empty() || rest.starts_with('#')
+        })
 }
 
 #[cfg(test)]

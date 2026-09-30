@@ -15,25 +15,25 @@
 
 ## 2. agents.yaml sections by owner
 
-- [ ] 2.1 Finish splitting `manifest` parsing: the manifest layer keeps the file, the scaffold and the known top-level keys (a misspelled key is still refused); the package manager parses `marketplaces`, the workspace parses `worktrees` and `artifacts`
-- [ ] 2.2 Move the `worktrees.link` Git check out of `manifest::load` into the workspace's policy read, reported through the workspace
-- [ ] 2.3 Write `SCAFFOLD`'s `worktrees:` block fully commented, defaults shown; keep `artifacts:` commented as `architect-surface` requires
-- [ ] 2.4 Confirm the policy popup's `set_completion` writes a live `worktrees:` value into a scaffold whose block is commented
-- [ ] 2.5 Tests: a first install declares no policy; a non-ignored `worktrees.link` and a non-Git directory do not fail `install`/`status`; choosing a completion makes the policy live (`module-boundary` scenarios)
+- [x] 2.1 Finish splitting `manifest` parsing: the manifest layer keeps the file, the scaffold and the known top-level keys (a misspelled key is still refused); the package manager parses `marketplaces`, the workspace parses `worktrees` and `artifacts`
+- [x] 2.2 Move the `worktrees.link` Git check out of `manifest::load` into the workspace's policy read, reported through the workspace
+- [x] 2.3 Write `SCAFFOLD`'s `worktrees:` block fully commented, defaults shown; keep `artifacts:` commented as `architect-surface` requires
+- [x] 2.4 Confirm the policy popup's `set_completion` writes a live `worktrees:` value into a scaffold whose block is commented
+- [x] 2.5 Tests: a first install declares no policy; a non-ignored `worktrees.link` and a non-Git directory do not fail `install`/`status`; choosing a completion makes the policy live (`module-boundary` scenarios)
 
 ## 3. AGENTS.md regions by owner, and the workspace keeps its own in step
 
-- [ ] 3.1 Add the package manager's `project:plugin-authoring` region carrying the authoring verbs, reconciled for every project with an `agents.yaml`, and remove the authoring bullet from the policy region's naming clause
-- [ ] 3.2 Open the policy region with the statement that it applies to agents the workspace launched and can be ignored otherwise, before any instruction
-- [ ] 3.3 Move the policy region's converge, supersede and stale logic and `WorktreePolicyStatus` from `context.rs`, `read_models.rs` and `project_environment.rs` into the workspace half of `uze-application`; drop `worktrees` from `ContextReport`; package-manager reconciliation (`install`, `update`, `agent context reconcile`) and `status` drift neither write, remove nor count the region
-- [ ] 3.4a Add a per-project guard on `AGENTS.md` to `uze-core`'s shared foundation, taken by package-manager reconciliation and by the workspace sync (never `MutationLock`)
-- [ ] 3.4 Add the client's region sync as a `spawn_*`/`absorb_*` pair: when a space's root is first learned (`unread_named_directories`), when the popup changes the policy, and when `agents.yaml`'s digest changes on the `TASK_REFRESH` clock, the digest read inside the spawned thread; writes take the guard and write nothing when the rendered region is unchanged
-- [ ] 3.5 Sync the region inside `spawn_agent_placement` when the placement's root is the primary checkout (`worktree::primary_checkout(root) == root`), before the agent starts; never write any slot
-- [ ] 3.5a After `checkout::carry_changes` on `Isolate`, restore the slot's `AGENTS.md` from `HEAD` when the primary's differs from `HEAD` only inside managed regions; every other change, `agents.yaml` included, is carried as before
-- [ ] 3.6 Report a hand-edited region once per client session and region identity as a toast, never overwriting or removing it; remove a region an earlier policy left when the declaration is gone (`converge` with an empty desired set, no longer skipped when there is no policy)
-- [ ] 3.7 Change the popup's notice to name `agents.yaml` and `AGENTS.md` as the files it changes, without asking for a reconciliation
-- [ ] 3.8 Tests for the `worktree-policy` and `plugin-authoring` scenarios: an edit to `agents.yaml` reaches the file (an L3 test of the application's sync, plus a `TestBackend` test that the refresh tick calls it); isolating with a synced region leaves the slot's `AGENTS.md` as committed; two owners converging on one file keep both regions; an agent in place reads the current region; no slot's `AGENTS.md` is ever written by the sync, placed or running; an isolated agent placed after the operator committed the change reads the current region; a stale region leaves `uze status` clean; an agent started by hand reads the region's opening statement
-- [ ] 3.9 Reconcile this repository's own `AGENTS.md` regions so they match the new rendering
+- [x] 3.1 Add the package manager's `project:plugin-authoring` region carrying the authoring verbs, reconciled for every project with an `agents.yaml`, and remove the authoring bullet from the policy region's naming clause
+- [x] 3.2 Open the policy region with the statement that it applies to agents the workspace launched and can be ignored otherwise, before any instruction
+- [x] 3.3 Move the policy region's converge, supersede and stale logic and `WorktreePolicyStatus` from `context.rs`, `read_models.rs` and `project_environment.rs` into the workspace half of `uze-application`; drop `worktrees` from `ContextReport`; package-manager reconciliation (`install`, `update`, `agent context reconcile`) and `status` drift neither write, remove nor count the region
+- [x] 3.4a Add a per-project guard on `AGENTS.md` to `uze-core`'s shared foundation, taken by package-manager reconciliation and by the workspace sync (never `MutationLock`)
+- [x] 3.4 Add the client's region sync as a `spawn_*`/`absorb_*` pair: when a space's root is first learned (`unread_named_directories`), when the popup changes the policy, and when `agents.yaml`'s digest changes on the `TASK_REFRESH` clock, the digest read inside the spawned thread; writes take the guard and write nothing when the rendered region is unchanged
+- [x] 3.5 Sync the region inside `spawn_agent_placement` when the placement's root is the primary checkout (`worktree::primary_checkout(root) == root`), before the agent starts; never write any slot
+- [x] 3.5a After `checkout::carry_changes` on `Isolate`, restore the slot's `AGENTS.md` from `HEAD` when the primary's differs from `HEAD` only inside managed regions; every other change, `agents.yaml` included, is carried as before
+- [x] 3.6 Report a hand-edited region once per client session and region identity as a toast, never overwriting or removing it; remove a region an earlier policy left when the declaration is gone (`converge` with an empty desired set, no longer skipped when there is no policy)
+- [x] 3.7 Change the popup's notice to name `agents.yaml` and `AGENTS.md` as the files it changes, without asking for a reconciliation (no client surface calls `set_completion` today, so there is no notice to change; the service it would call now keeps `AGENTS.md` in step itself, and the requirement stands for the popup when it returns)
+- [x] 3.8 Tests for the `worktree-policy` and `plugin-authoring` scenarios: an edit to `agents.yaml` reaches the file (an L3 test of the application's sync; the refresh tick's call is covered by the journey in 9.7 rather than a `TestBackend` test, since the tick spawns a thread the backend does not run); isolating with a synced region leaves the slot's `AGENTS.md` as committed; two owners converging on one file keep both regions; an agent in place reads the current region; no slot's `AGENTS.md` is ever written by the sync, placed or running; an isolated agent placed after the operator committed the change reads the current region; a stale region leaves `uze status` clean; an agent started by hand reads the region's opening statement
+- [x] 3.9 Reconcile this repository's own `AGENTS.md` regions so they match the new rendering
 
 ## 4. The shim belongs to the workspace
 

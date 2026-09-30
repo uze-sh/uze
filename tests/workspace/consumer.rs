@@ -300,8 +300,8 @@ fn install_reports_a_projection_it_could_not_write_instead_of_no_changes() {
         .install(&fx.project_root, &AlwaysTrust)
         .unwrap();
 
-    // A projection that is behind — the declared policy's region is gone
-    // from the shared file — and an installed package whose bytes the
+    // A projection that is behind — the package manager's own region is
+    // gone from the shared file — and an installed package whose bytes the
     // projection is composed from cannot be read.
     fs::write(fx.project_root.join("AGENTS.md"), "").unwrap();
     let unreadable = fx
@@ -1096,10 +1096,13 @@ mod drift {
         );
     }
 
-    /// The policy hole: `worktrees:` is read live wherever UZE acts on it,
-    /// but the agents that must honour it read the projected text.
+    /// A region the package manager keeps in `AGENTS.md` can fall behind on
+    /// its own (edited away, the file replaced), and the agents reading the
+    /// file then read something the project no longer says. That is package
+    /// drift, and `install` clears it. The workspace's region is not: a
+    /// policy change is the workspace's to bring in step.
     #[test]
-    fn a_policy_change_reads_as_a_stale_projection_until_install_clears_it() {
+    fn a_package_region_gone_from_agents_md_reads_as_stale_until_install_clears_it() {
         let fx = Fixture::new("drift-projection");
         let manifest = fx.project_root.join("agents.yaml");
         fs::write(&manifest, "worktrees:\n  completion: handoff\n").unwrap();
@@ -1115,20 +1118,24 @@ mod drift {
         );
 
         fs::write(&manifest, "worktrees:\n  completion: merge\n").unwrap();
+        assert!(
+            app.project()
+                .plan(&fx.project_root)
+                .unwrap()
+                .stale_projection
+                .is_none(),
+            "a policy change is not the package manager's to count"
+        );
 
+        fs::write(fx.project_root.join("AGENTS.md"), "# Mine\n").unwrap();
         let stale = app
             .project()
             .plan(&fx.project_root)
             .unwrap()
             .stale_projection;
         assert!(
-            stale.is_some_and(|stale| stale.declared == "merge"),
-            "agents are still reading the previous instruction"
-        );
-        let projected = fs::read_to_string(fx.project_root.join("AGENTS.md")).unwrap();
-        assert!(
-            !projected.contains("fast-forwards the target"),
-            "the file on disk still carries the old clause"
+            stale.is_some_and(|stale| stale.region == uze_core::authoring::region::REGION_PREFIX),
+            "the authoring region is gone from the file"
         );
 
         app.project()
@@ -1145,8 +1152,8 @@ mod drift {
         );
         let projected = fs::read_to_string(fx.project_root.join("AGENTS.md")).unwrap();
         assert!(
-            projected.contains("fast-forwards the target"),
-            "and the file carries the new policy's own words: {projected}"
+            projected.contains("# Mine") && projected.contains("uze agent plugin create"),
+            "the operator's text stays and the region is back: {projected}"
         );
     }
 }

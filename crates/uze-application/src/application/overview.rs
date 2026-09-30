@@ -514,6 +514,9 @@ mod tests {
         write_lock(&root, &["flow", "std"], "test");
         fx.install_from(&market.join("flow"), "test");
         fx.install_from(&market.join("std"), "test");
+        // What `install` leaves behind: the package manager's own region in
+        // `AGENTS.md`, which a project with an `agents.yaml` is owed.
+        fx.app.context().reconcile(&root).unwrap();
 
         let project = fx.project(&root);
         assert_eq!(project.environment, ProjectEnvironmentState::Ready);
@@ -607,6 +610,7 @@ mod tests {
         let root = fx._drop_root.join("project");
         fs::create_dir_all(&root).unwrap();
         write_lock(&root, &[], "test");
+        fx.app.context().reconcile(&root).unwrap();
 
         let project = fx.project(&root);
         assert_eq!(project.environment, ProjectEnvironmentState::Ready);
