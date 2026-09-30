@@ -51,10 +51,12 @@ what a receipt says it owns. See [How delivery works](/docs/plugins/delivery#not
 **Drift.** An owned artifact that no longer matches its receipt. uze reports it
 and stops, instead of overwriting.
 
-**Shim.** A link in `~/.uze/shims` that starts the real harness binary. It
-brings an agent back to its conversation after a reboot, and can project
-`AGENTS.md` without writing into the project. Experimental. See
-[The terminal session](/docs/workspace/terminal#resuming-after-a-reboot).
+**Shim.** A link in `~/.uze/shims` that starts the real harness binary, used
+only by the workspace: its panes put the shims first on `PATH`, and no shell
+of yours is edited. It brings an agent back to its conversation after a
+reboot, and carries a project's `.agents/` into a harness that does not read
+it. Experimental. See
+[Terminal](/docs/workspace/terminal#resuming-after-a-reboot).
 
 ## Projects
 

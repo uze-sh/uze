@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Writing and changing the Mermaid diagrams a project keeps under `artifacts:` — choosing which diagram and which level a change belongs in, naming it so the architect surface lists it where a reader expects, and proving it still draws. Use when adding or editing a `.mmd`/`.mermaid` file, when asked to diagram or document an architecture, when a diagram does not appear or does not draw in the workspace's architect surface, or when setting up where a project keeps its architecture.
+description: Writing and changing the Mermaid diagrams a project keeps under `artifacts:` — choosing which diagram and which level a change belongs in, naming it so it reads where a reader expects, and proving it still draws with `uze agent artifacts check`, which needs no workspace. Use when adding or editing a `.mmd`/`.mermaid` file, when asked to diagram or document an architecture, when a diagram does not draw, or when setting up where a project keeps its architecture.
 slash: true
 metadata:
   opencode/autoinvoke: "true"
@@ -16,8 +16,11 @@ artifacts:
   path: docs/architecture
 ```
 
-Every `.mmd` or `.mermaid` file under that directory is one **artifact**,
-and the workspace's architect surface draws it in terminal cells. Nothing
+Every `.mmd` or `.mermaid` file under that directory is one **artifact**.
+`uze agent artifacts check` draws each one the way the workspace would and
+fails on one that does not draw, with or without the workspace running;
+the workspace's architect surface, when it is used, draws them in terminal
+cells to read and walk. Nothing
 lists the files and nothing registers them: adding a file is the whole act
 of adding a diagram, and an index beside them would be the one document
 that is wrong the moment somebody adds the next one.

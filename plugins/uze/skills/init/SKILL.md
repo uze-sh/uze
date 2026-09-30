@@ -99,7 +99,8 @@ enough evidence — do not read the whole source tree:
    conventions worth preserving.
 5. Top-level directory structure (listing, not content) — monorepo vs.
    single package, workspace layout.
-6. Already-installed UZE packages (`uze list` if available) that might
+6. Already-installed UZE packages (`uze status`, or `uze status -m` for the
+   machine) that might
    already contribute an Instructions region once reconciled.
 
 Do not open individual source files looking for conventions unless a signal

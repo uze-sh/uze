@@ -49,19 +49,19 @@
 
 ## 5. Surfaces that name the wrong module
 
-- [ ] 5.1 Open `uze:worktree`'s SKILL.md with its condition (an agent the workspace launched) and reconcile its naming guidance with the policy region's text
-- [ ] 5.2 Reframe `uze:architect` around the diagram files and `uze agent artifacts check`, with the workspace's surface as optional
-- [ ] 5.3 Fix `init` SKILL.md's reference to the nonexistent `uze list`
-- [ ] 5.4 Reword the hidden `uze agent` help: only `work` needs an agent the workspace launched
-- [ ] 5.5 Label `uze config notification` and `uze config extension` as workspace settings in the CLI help and `reference/cli.mdx`
+- [x] 5.1 Open `uze:worktree`'s SKILL.md with its condition (an agent the workspace launched) and reconcile its naming guidance with the policy region's text
+- [x] 5.2 Reframe `uze:architect` around the diagram files and `uze agent artifacts check`, with the workspace's surface as optional
+- [x] 5.3 Fix `init` SKILL.md's reference to the nonexistent `uze list`
+- [x] 5.4 Reword the hidden `uze agent` help: only `work` needs an agent the workspace launched
+- [x] 5.5 Label `uze config notification` and `uze config extension` as workspace settings in the CLI help and `reference/cli.mdx`
 
 ## 6. Documentation
 
-- [ ] 6.1 Rewrite `workspace/terminal.mdx`'s shim section for the workspace-scoped shim and the bypass notice; fix `reference/glossary.mdx` and `reference/harnesses.mdx`
-- [ ] 6.2 Drop the rc-block step from `installation.mdx`'s removal steps and explain that `uze setup` takes an earlier block back
-- [ ] 6.3 Say in the package manager's docs which project resources reach Claude Code and Codex only inside the workspace
-- [ ] 6.4 Move the Skills page to Reference, and have each module page name its own skill (AGENTS.md → `uze:init`, Authoring → `uze:author`, Agents → `uze:worktree`, Extensions → `uze:architect`), with a redirect from `/docs/plugins/skills`
-- [ ] 6.5 Say in `workspace/agents.mdx` and `reference/project-files.mdx` that a project has no isolation policy until one is chosen, and how to opt out by commenting the key
+- [x] 6.1 Rewrite `workspace/terminal.mdx`'s shim section for the workspace-scoped shim and the bypass notice; fix `reference/glossary.mdx` and `reference/harnesses.mdx`
+- [x] 6.2 Drop the rc-block step from `installation.mdx`'s removal steps and explain that `uze setup` takes an earlier block back
+- [x] 6.3 Say in the package manager's docs which project resources reach Claude Code and Codex only inside the workspace
+- [x] 6.4 Move the Skills page to Reference, and have each module page name its own skill (AGENTS.md → `uze:init`, Authoring → `uze:author`, Agents → `uze:worktree`, Extensions → `uze:architect`), with a redirect from `/docs/plugins/skills`
+- [x] 6.5 Say in `workspace/agents.mdx` and `reference/project-files.mdx` that a project has no isolation policy until one is chosen, and how to opt out by commenting the key
 
 ## 7. Hold the boundary
 

@@ -49,6 +49,12 @@ checkout; see [Agents](/docs/workspace/agents). The layout of those
 checkouts (`.worktrees/<id>`, branch `agent/<id>`) is fixed infrastructure and
 is deliberately *not* declared here.
 
+The section is the workspace's. The package manager carries it without reading
+it, so a mistake in it never fails `uze install` or `uze status`; the workspace
+reports it. The `agents.yaml` uze creates declares none of it: the key is empty
+and every value is commented, and a value is in force only once you uncomment
+it or choose it in the workspace.
+
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `default` | `in-place` | Where an agent launched here starts: `in-place` in the space's own root, or `isolated` in a checkout of its own |

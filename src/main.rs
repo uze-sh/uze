@@ -194,10 +194,12 @@ enum Command {
         #[command(subcommand)]
         action: TerminalAction,
     },
-    /// The agent's own surface: what an agent UZE launched calls to take
-    /// part in the workflow it is inside. Hidden from this help on
-    /// purpose — its audience reads the instruction text UZE projects into
-    /// the project, not `uze --help`.
+    /// The agent's own surface: what an agent calls to take part in the
+    /// project it works in. Only `work` needs an agent `uze workspace`
+    /// launched; `context`, `market`, `plugin` and `artifacts` answer any
+    /// agent, however it was started. Hidden from this help on purpose — its
+    /// audience reads the instruction text UZE projects into the project,
+    /// not `uze --help`.
     #[command(hide = true)]
     Agent {
         #[command(subcommand)]
@@ -219,7 +221,8 @@ enum Command {
 #[derive(Debug, Subcommand)]
 enum AgentAction {
     /// The work this agent is doing — the checkout under .worktrees/, the
-    /// branch a reviewer sees, the label an operator reads
+    /// branch a reviewer sees, the label an operator reads. Only for an
+    /// agent `uze workspace` launched
     Work {
         #[command(subcommand)]
         action: AgentWorkAction,
@@ -485,7 +488,7 @@ enum ConfigAction {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
-    /// The workspace's built-in extensions and whether each is offered, or
+    /// Workspace: its built-in extensions and whether each is offered, or
     /// `<id> on|off` to switch one
     Extension {
         /// `code`, `architect` or `spec`; omitted, every extension
@@ -495,7 +498,7 @@ enum ConfigAction {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
-    /// Which finished agent turns ring, or `test` to hear one now
+    /// Workspace: which finished agent turns ring, or `test` to hear one now
     Notification {
         /// `on`, `off` or `silent`; omitted, the choice in force
         state: Option<String>,

@@ -21,12 +21,22 @@ The server does not survive a reboot, but your work does. The next
 `uze workspace` brings back the spaces, tabs and agents, each relaunched in its
 checkout and resuming the conversation it was in.
 
-That resume is done by the **shim** `uze setup` installs for each agent in
-`~/.uze/shims/`, which your shell's `PATH` reaches first. It records which
-conversation belongs to which task, and nothing else; an agent you start by hand
-outside uze runs exactly as it would without it. Removing a shim turns the
-resume off for that agent. Whether each agent supports it is the **Session**
-column in [Harness support](/docs/reference/harnesses).
+That resume is done by the **shim** `uze setup` creates for each agent in
+`~/.uze/shims/`. The workspace launches agents through it, and puts
+`~/.uze/shims` first on `PATH` in every pane, so an agent you type into a pane
+goes through it too. Your own shell is never edited: an agent you start in any
+other terminal is the agent's own binary, exactly as it would be without uze.
+
+Besides the resume, the shim carries what some agents do not read on their own:
+the project's `.agents/skills` and `.agents/agents` for Claude Code, and the
+project's agents for Codex. Those reach them inside the workspace only; the
+plugins you install reach every agent everywhere. Whether each agent supports
+the resume is the **Session** column in [Harnesses](/docs/reference/harnesses).
+
+If a pane's shell puts another copy of an agent ahead of the shims (a version
+manager such as `mise`, `asdf` or `nvm` can), the workspace says so the first
+time that agent runs there: its conversation will not resume after a restart,
+and the project's own skills may not reach it.
 
 ## Prompt history
 

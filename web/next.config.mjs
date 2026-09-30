@@ -42,6 +42,7 @@ const config = {
       '/docs/advanced/keyboard': '/docs/workspace/keyboard',
       '/docs/advanced/agent-cli': '/docs/reference/agent-cli',
       '/docs/concepts/delivery': '/docs/plugins/delivery',
+      '/docs/plugins/skills': '/docs/reference/skills',
       '/docs/getting-started': '/docs/installation',
       '/docs/uninstall': '/docs/installation#removing-uze',
       '/docs/creating-a-plugin': '/docs/plugins/creating',

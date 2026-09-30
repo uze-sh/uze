@@ -56,6 +56,11 @@ search yet. `uze setup` still verifies it there, tells you where it is, and
 reminds you to open a new shell before running it by name. An agent already
 installed is updated through its own update command instead.
 
+`uze setup` never edits your shell's startup file. The shims it creates are for
+the workspace, which puts them first on `PATH` in its own panes. If an earlier
+uze added a `# >>> uze shims path >>>` block to your `.bashrc`, `.zshrc` or
+`config.fish`, `uze setup` takes it back and leaves every other line as it was.
+
 ```bash
 uze setup list    # what is installed and ready
 ```
@@ -78,8 +83,7 @@ every hour after, and tells you when one is installed; restart to use it.
 2. Stop the workspace in each project where you opened it: `uze workspace stop`.
 3. In each project, delete `agents.yaml`, `agents.lock` and `.worktrees/` if you
    no longer want them, and the `uze:begin … uze:end` blocks in `AGENTS.md`.
-4. Delete the `# >>> uze shims path >>>` block from your shell's rc file.
-5. Delete the binary and uze's home:
+4. Delete the binary and uze's home:
 
    ```bash
    rm ~/.local/bin/uze
