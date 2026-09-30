@@ -1,40 +1,44 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useRef } from 'react';
 import { UzeMark } from '@/components/uze-mark';
+import {
+  AMB,
+  CARD,
+  CARD_ON,
+  DIM,
+  FAINT,
+  G,
+  HOT,
+  INK,
+  LINE,
+  MAX_WIDE_SCALE,
+  MUTED,
+  PANEL,
+  PAPER,
+  RouteDots,
+  SHEET,
+  STACKED_STAGE,
+  STACK_BELOW,
+  WIDE_STAGE,
+  clamp,
+  ease,
+  mix,
+  nowrap,
+  panel,
+  pointAlong,
+  roundedPath,
+  useClock,
+  useColumnWidth,
+  type Point,
+} from '@/components/illustration-stage';
 import matrix from '@/lib/harness-matrix.json';
 
 // The landing page's package illustration: one plugin from a marketplace,
 // resolved into the Store, delivered to four harnesses, and then shown at
-// work in them: a skill invoked, its MCP server connected, its hook run. It is drawn on a fixed stage and scaled to the
-// column: 1200×500 left to right where there is room, and the same three
-// panels stacked top to bottom on a phone, where the wide stage would scale
-// its text below reading size. The palette is the site's own theme tokens,
-// so it follows the page into light or dark.
-
-// Every colour is one of the site's theme tokens, or a mix of them, so the
-// illustration reads as part of the page in either theme rather than as a
-// dark screenshot pasted onto a light one.
-const mix = (color: string, percent: number, base = 'transparent') =>
-  `color-mix(in srgb, ${color} ${percent}%, ${base})`;
-const INK = 'var(--color-ink)';
-const PAPER = 'var(--color-paper)';
-const MUTED = 'var(--color-muted)';
-const G = 'var(--color-accent)';
-const AMB = '#d4a72c';
-const DIM = 'var(--color-line)';
-const LINE = 'var(--color-line)';
-const HOT = mix(G, 70);
-const SOFT = mix(G, 40, DIM);
-const FAINT = mix(MUTED, 55);
-// Flat, not outlined: depth is opaque fills stepping from the page toward
-// the ink, neutral in both themes — the surface token is tinted green in the
-// dark one, and a whole panel of it reads as a cast. Green is kept for the
-// marks: tags, checks, routes and the lit tab.
-const PANEL = mix(INK, 4, PAPER);
-const CARD = mix(INK, 7, PAPER);
-const CARD_ON = mix(INK, 12, PAPER);
-const SHEET = mix(INK, 9, PAPER);
+// work in them: a skill invoked, its MCP server connected, its hook run.
+// Drawn the way a terminal would draw it: rows of text on rules rather than
+// cards, a prompt, and a fill only on the row that is active.
 
 const ROWS: [string, string][] = [
   ['AGENTS.md', 'md'],
@@ -62,14 +66,14 @@ const colorOf = (route: string) => (route === 'native' ? G : AMB);
 // What a delivered plugin looks like at work, one capability per tab. The
 // hook tab answers the adapted hook route above in words.
 const TABS = ['skills', 'mcp', 'hooks'];
-const TAB_TITLE = ['skill · /git:commit', 'mcp · status', 'hook · pre-commit'];
-const TAB_META = ['Claude Code', '4 connected', '4 ran'];
+const TAB_TITLE = ['skill · /git:commit', 'mcp · git', 'hook · PreToolUse'];
+const TAB_META = ['Claude Code · 1 of 4', '4 connected', '4 ran'];
 
 const TRANSCRIPT: [string, string][] = [
   ['> /git:commit', 'prompt'],
   ['● reading the staged diff', 'step'],
   ['● a Conventional Commit, from the diff', 'step'],
-  ['feat(web): add the package illustration', 'result'],
+  ['fix(api): return 404 for unknown routes', 'result'],
   ['✓ committed 3f2a91c', 'done'],
 ];
 
@@ -87,61 +91,13 @@ const T_DLV_END = 4.9;
 const T_RUN = 5.3;
 const T_EXT = 6.4;
 const EXT_GAP = 2.8;
-const T_DONE = 15.0;
-const LOOP = 18.4;
-// What a reader who asked for no motion sees: delivered everywhere, the
-// skill tab open.
-const STILL_AT = 7.2;
-
-type Point = [number, number];
-
-const clamp = (x: number) => Math.max(0, Math.min(1, x));
-const ease = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
-
-function roundedPath(points: Point[], radius = 14) {
-  let d = `M${points[0][0]} ${points[0][1]}`;
-  for (let i = 1; i < points.length - 1; i++) {
-    const [px, py] = points[i - 1];
-    const [cx, cy] = points[i];
-    const [nx, ny] = points[i + 1];
-    const before = Math.hypot(cx - px, cy - py);
-    const after = Math.hypot(nx - cx, ny - cy);
-    if (!before || !after) {
-      d += ` L${cx} ${cy}`;
-      continue;
-    }
-    const r = Math.min(radius, before / 2, after / 2);
-    const ax = cx - ((cx - px) / before) * r;
-    const ay = cy - ((cy - py) / before) * r;
-    const bx = cx + ((nx - cx) / after) * r;
-    const by = cy + ((ny - cy) / after) * r;
-    d += ` L${ax} ${ay} Q${cx} ${cy} ${bx} ${by}`;
-  }
-  const [lx, ly] = points[points.length - 1];
-  return `${d} L${lx} ${ly}`;
-}
-
-function pointAlong(points: Point[], progress: number): Point {
-  const lengths: number[] = [];
-  let total = 0;
-  for (let i = 1; i < points.length; i++) {
-    const length = Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
-    lengths.push(length);
-    total += length;
-  }
-  let remaining = progress * total;
-  for (let i = 1; i < points.length; i++) {
-    if (remaining <= lengths[i - 1]) {
-      const f = remaining / lengths[i - 1];
-      return [
-        points[i - 1][0] + (points[i][0] - points[i - 1][0]) * f,
-        points[i - 1][1] + (points[i][1] - points[i - 1][1]) * f,
-      ];
-    }
-    remaining -= lengths[i - 1];
-  }
-  return points[points.length - 1];
-}
+const LOOP = 15.4;
+// What a reader who asked for no motion sees: delivered everywhere, every
+// route coloured, nothing over it.
+const STILL_AT = 5.9;
+// A route at rest: visible on either ground, so the flow reads before
+// anything moves along it.
+const REST = mix(MUTED, 45);
 
 type Layout = {
   width: number;
@@ -155,8 +111,7 @@ type Layout = {
 };
 
 const WIDE: Layout = {
-  width: 1200,
-  height: 500,
+  ...WIDE_STAGE,
   store: [60, 50],
   hub: [536, 184],
   status: [480, 330],
@@ -178,8 +133,7 @@ const WIDE: Layout = {
 // The routes to the harnesses leave the hub by its side and run down the
 // left gutter, so they never cross the status line under it.
 const STACKED: Layout = {
-  width: 380,
-  height: 1110,
+  ...STACKED_STAGE,
   store: [40, 20],
   hub: [126, 480],
   status: [70, 624],
@@ -199,12 +153,6 @@ const STACKED: Layout = {
   ],
 };
 
-// Below this width the wide stage's 15px text would draw at under 9px.
-const STACK_BELOW = 700;
-// On a wide screen it may draw larger than the design: it is the one picture
-// on the page, and at its own size it sat small in a 1440px window.
-const MAX_WIDE_SCALE = 1.08;
-
 function frame(seconds: number, plugin: string, source: string, { rowRoute, harnessRoute }: Layout) {
   const tt = seconds % LOOP;
   const reset = tt > LOOP - 0.3;
@@ -214,7 +162,7 @@ function frame(seconds: number, plugin: string, source: string, { rowRoute, harn
     const since = tt - (T_ROW + r * ROW_GAP);
     const active = !reset && since > 0 && since < 0.7;
     if (active) dots.push(pointAlong(rowRoute(r), ease(clamp(since / 0.7))));
-    return { d: roundedPath(rowRoute(r)), stroke: active ? HOT : LINE };
+    return { d: roundedPath(rowRoute(r)), stroke: active ? HOT : REST };
   });
   const rows = ROWS.map(([name, tag], r) => {
     const at = T_ROW + r * ROW_GAP;
@@ -231,22 +179,27 @@ function frame(seconds: number, plugin: string, source: string, { rowRoute, harn
   const delivering = !reset && sinceDelivery > 0 && sinceDelivery < deliveryLength;
   const harnessPaths = HARNESSES.map((_, j) => {
     if (delivering) dots.push(pointAlong(harnessRoute(j), ease(clamp(sinceDelivery / deliveryLength))));
-    return { d: roundedPath(harnessRoute(j)), stroke: delivering ? HOT : LINE };
+    return { d: roundedPath(harnessRoute(j)), stroke: delivering ? HOT : REST };
   });
   const delivered = !reset && tt >= T_DLV_END;
   const harnesses = HARNESSES.map((name, j) => ({
     name,
-    running: !reset && tt >= T_RUN + j * 0.18,
-    slots: SLOTS.map(([letter, capability]) => ({ letter, color: colorOf(routeOf(name, capability)) })),
+    ready: !reset && tt >= T_RUN + j * 0.18,
+    slots: SLOTS.map(([letter, capability]) => ({
+      letter,
+      color: colorOf(routeOf(name, capability)),
+    })),
   }));
-  const anyRunning = !reset && tt >= T_RUN;
 
   const tabs = TABS.map((name, k) => {
     const at = T_EXT + k * EXT_GAP;
-    return { name, on: !reset && tt >= at && tt < at + EXT_GAP, seen: !reset && tt >= at };
+    return {
+      name,
+      on: !reset && tt >= at && tt < at + EXT_GAP,
+      seen: !reset && tt >= at,
+    };
   });
-  const extIndex =
-    !reset && tt >= T_EXT && tt < T_EXT + 3 * EXT_GAP ? Math.floor((tt - T_EXT) / EXT_GAP) : -1;
+  const extIndex = !reset && tt >= T_EXT && tt < T_EXT + 3 * EXT_GAP ? Math.floor((tt - T_EXT) / EXT_GAP) : -1;
   const sinceExt = extIndex >= 0 ? (tt - T_EXT) % EXT_GAP : 0;
   const extIn = extIndex >= 0 ? ease(clamp(sinceExt / 0.25)) : 0;
   const extOut = extIndex === 2 ? 1 - ease(clamp((sinceExt - (EXT_GAP - 0.25)) / 0.25)) : 1;
@@ -256,9 +209,9 @@ function frame(seconds: number, plugin: string, source: string, { rowRoute, harn
   const addMarket = `uze market add ${source}`;
   let command: string;
   let okOpacity: number;
-  if (!reset && tt >= T_DONE) {
-    command = `uze inspect ${plugin.split('@')[0]}`;
-    okOpacity = clamp((tt - T_DONE) / 0.3);
+  if (reset) {
+    command = '';
+    okOpacity = 0;
   } else if (tt < T_PLUGIN) {
     command = typing(addMarket, 0, T_MARKET_TYPED);
     okOpacity = clamp((tt - T_MARKET_TYPED - 0.1) / 0.2);
@@ -267,7 +220,7 @@ function frame(seconds: number, plugin: string, source: string, { rowRoute, harn
     okOpacity = delivered ? 1 : 0;
   }
 
-  let status = 'one plugin, every agent';
+  let status = '~/.uze/store';
   let statusColor = MUTED;
   if (!reset && tt >= T_MARKET_TYPED && tt < T_PLUGIN) {
     status = `${source} added`;
@@ -276,7 +229,7 @@ function frame(seconds: number, plugin: string, source: string, { rowRoute, harn
     status = 'resolving';
     statusColor = MUTED;
   } else if (!reset && tt >= T_HEX && tt < T_DLV_END) {
-    status = 'delivering natively';
+    status = 'delivering';
     statusColor = G;
   } else if (delivered) {
     status = 'delivered · 4 harnesses';
@@ -290,11 +243,10 @@ function frame(seconds: number, plugin: string, source: string, { rowRoute, harn
     harnesses,
     delivering,
     delivered,
-    anyRunning,
     tabs,
     extIndex,
     extOpacity: extIn * extOut,
-    extOffset: (1 - extIn) * 8,
+    extOffset: 0,
     command,
     okOpacity,
     cursorOn: Math.floor(seconds * 2.5) % 2 === 0,
@@ -305,87 +257,13 @@ function frame(seconds: number, plugin: string, source: string, { rowRoute, harn
   };
 }
 
-function useClock(stageRef: React.RefObject<HTMLDivElement | null>) {
-  const [seconds, setSeconds] = useState(STILL_AT);
-  useEffect(() => {
-    const element = stageRef.current;
-    if (!element) return;
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)');
-    let raf = 0;
-    let visible = false;
-    let origin = 0;
-    let elapsed = 0;
-    const tick = (now: number) => {
-      setSeconds(elapsed + (now - origin) / 1000);
-      raf = requestAnimationFrame(tick);
-    };
-    const start = () => {
-      if (raf || still.matches || !visible) return;
-      origin = performance.now();
-      raf = requestAnimationFrame(tick);
-    };
-    const stop = () => {
-      if (!raf) return;
-      cancelAnimationFrame(raf);
-      raf = 0;
-      elapsed += (performance.now() - origin) / 1000;
-    };
-    const onMotionChange = () => {
-      if (still.matches) {
-        stop();
-        setSeconds(STILL_AT);
-      } else start();
-    };
-    // Off screen, it stops: a landing page scrolled past has no reason to
-    // repaint at sixty frames a second.
-    const observer = new IntersectionObserver(([entry]) => {
-      visible = entry.isIntersecting;
-      if (visible) start();
-      else stop();
-    });
-    observer.observe(element);
-    still.addEventListener('change', onMotionChange);
-    return () => {
-      stop();
-      observer.disconnect();
-      still.removeEventListener('change', onMotionChange);
-    };
-  }, [stageRef]);
-  return seconds;
-}
-
-function useColumnWidth(wrapRef: React.RefObject<HTMLDivElement | null>) {
-  const [width, setWidth] = useState(WIDE.width);
-  useEffect(() => {
-    const element = wrapRef.current;
-    if (!element) return;
-    const fit = () => setWidth(element.offsetWidth);
-    const observer = new ResizeObserver(fit);
-    observer.observe(element);
-    fit();
-    return () => observer.disconnect();
-  }, [wrapRef]);
-  return width;
-}
-
-const panel: CSSProperties = {
-  position: 'absolute',
-  boxSizing: 'border-box',
-  background: PANEL,
-  borderRadius: 12,
-  overflow: 'hidden',
-  display: 'flex',
-  flexDirection: 'column',
-};
-const nowrap: CSSProperties = { whiteSpace: 'nowrap' };
-
 export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { plugin?: string; source?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const columnWidth = useColumnWidth(wrapRef);
+  const columnWidth = useColumnWidth(wrapRef, WIDE.width);
   const layout = columnWidth < STACK_BELOW ? STACKED : WIDE;
   const maxScale = layout === WIDE ? MAX_WIDE_SCALE : 1;
   const scale = Math.min(maxScale, columnWidth / layout.width);
-  const seconds = useClock(wrapRef);
+  const seconds = useClock(wrapRef, STILL_AT);
   const f = frame(seconds, plugin, source, layout);
 
   return (
@@ -409,7 +287,6 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
           color: INK,
         }}
       >
-
         <svg
           width={layout.width}
           height={layout.height}
@@ -424,7 +301,15 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
         </svg>
 
         {/* The plugin, as the Store holds it. */}
-        <div style={{ ...panel, left: layout.store[0], top: layout.store[1], width: 300, height: 400 }}>
+        <div
+          style={{
+            ...panel,
+            left: layout.store[0],
+            top: layout.store[1],
+            width: 300,
+            height: 400,
+          }}
+        >
           <div
             style={{
               ...nowrap,
@@ -442,18 +327,36 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
               <span>{f.command}</span>
               <span style={{ color: G, opacity: f.cursorOn ? 1 : 0 }}>▍</span>
             </span>
-            <span style={{ marginLeft: 'auto', color: G, fontSize: 13, opacity: f.okOpacity }}>✓</span>
+            <span
+              style={{
+                marginLeft: 'auto',
+                color: G,
+                fontSize: 13,
+                opacity: f.okOpacity,
+              }}
+            >
+              ✓
+            </span>
           </div>
-          <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div
+            style={{
+              flex: 1,
+              padding: '11px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0,
+            }}
+          >
             {f.rows.map((row) => (
               <div
                 key={row.name}
                 style={{
                   ...nowrap,
-                  height: 44,
+                  height: 54,
                   boxSizing: 'border-box',
-                  background: row.active ? CARD_ON : CARD,
-                  borderRadius: 8,
+                  background: row.active ? CARD_ON : 'transparent',
+                  borderBottom: `1px solid ${mix(INK, 10)}`,
+                  borderRadius: 0,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
@@ -466,7 +369,7 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
                   style={{
                     width: 28,
                     height: 22,
-                    borderRadius: 5,
+                    borderRadius: 0,
                     background: row.sent ? G : DIM,
                     color: row.sent ? PAPER : MUTED,
                     fontSize: 11,
@@ -496,8 +399,8 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
               color: MUTED,
             }}
           >
-            <span>agents.yaml</span>
-            <span>agents.lock</span>
+            <span>agents.yaml{f.delivered ? <span style={{ color: G }}> ✓</span> : null}</span>
+            <span>agents.lock{f.delivered ? <span style={{ color: G }}> ✓</span> : null}</span>
           </div>
         </div>
 
@@ -510,17 +413,14 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
             width: 128,
             height: 128,
             boxSizing: 'border-box',
-            borderRadius: 28,
-            background: CARD,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transform: `scale(${1 + 0.06 * f.pulse})`,
-            boxShadow: `0 0 ${44 * f.pulse}px ${mix(G, 35)}`,
+            transform: `scale(${1 + 0.08 * f.pulse})`,
             color: G,
           }}
         >
-          <UzeMark width={79} height={79} />
+          <UzeMark width={64} height={64} />
         </div>
         <div
           style={{
@@ -552,16 +452,31 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
         >
           {[
             [G, 'native'],
-            [AMB, 'bridge · adapted'],
+            [AMB, 'adapted'],
           ].map(([color, label]) => (
-            <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, color: MUTED }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+            <span
+              key={label}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                color: MUTED,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 0,
+                  background: color,
+                }}
+              />
               {label}
             </span>
           ))}
         </div>
 
-        {/* The workspace the harnesses run in. */}
+        {/* The harnesses on this machine, and what each one received. */}
         <div
           style={{
             ...panel,
@@ -585,18 +500,18 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
               color: MUTED,
             }}
           >
-            <span>workspace</span>
-            <span style={{ marginLeft: 'auto', color: f.anyRunning ? G : MUTED }}>
-              {f.anyRunning ? '4 running' : 'idle'}
+            <span>harnesses</span>
+            <span style={{ marginLeft: 'auto', color: f.delivered ? G : MUTED }}>
+              delivered {f.delivered ? '4/4' : '0/4'}
             </span>
           </div>
           <div
             style={{
               flex: 1,
-              padding: '12px 16px',
+              padding: '6px 16px',
               display: 'flex',
               flexDirection: 'column',
-              gap: 12,
+              gap: 0,
               position: 'relative',
             }}
           >
@@ -606,10 +521,11 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
                 key={harness.name}
                 style={{
                   ...nowrap,
-                  height: 56,
+                  height: 68,
                   boxSizing: 'border-box',
-                  background: f.delivering ? CARD_ON : CARD,
-                  borderRadius: 8,
+                  background: f.delivering ? CARD_ON : 'transparent',
+                  borderBottom: `1px solid ${mix(INK, 10)}`,
+                  borderRadius: 0,
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'center',
@@ -633,7 +549,7 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
                         width: 7,
                         height: 7,
                         borderRadius: '50%',
-                        background: harness.running ? G : DIM,
+                        background: harness.ready ? G : DIM,
                       }}
                     />
                     {harness.name}
@@ -646,9 +562,10 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
                           width: 22,
                           height: 22,
                           boxSizing: 'border-box',
-                          borderRadius: 5,
-                          background: f.delivered ? slot.color : PANEL,
-                          color: f.delivered ? PAPER : FAINT,
+                          borderRadius: 0,
+                          background: f.delivered ? slot.color : 'transparent',
+                          border: f.delivered ? 'none' : `1px solid ${mix(INK, 16)}`,
+                          color: f.delivered ? PAPER : 'transparent',
                           fontSize: 10,
                           fontWeight: 700,
                           display: 'flex',
@@ -682,7 +599,7 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
                   flex: 1,
                   height: 26,
                   boxSizing: 'border-box',
-                  borderRadius: 6,
+                  borderRadius: 0,
                   background: extension.on ? G : extension.seen ? CARD_ON : CARD,
                   color: extension.on ? PAPER : extension.seen ? INK : MUTED,
                   fontSize: 12,
@@ -698,22 +615,7 @@ export function HeroIllustration({ plugin = 'git@ai', source = 'hiukky/ai' }: { 
           </div>
         </div>
 
-        {f.dots.map(([x, y], i) => (
-          <div
-            key={i}
-            style={{
-              position: 'absolute',
-              left: x,
-              top: y,
-              width: 10,
-              height: 10,
-              margin: '-5px 0 0 -5px',
-              borderRadius: '50%',
-              background: G,
-              boxShadow: `0 0 14px ${G}`,
-            }}
-          />
-        ))}
+        <RouteDots dots={f.dots} />
       </div>
     </div>
   );
@@ -730,7 +632,7 @@ function CapabilitySheet({ index, opacity, offset }: { index: number; opacity: n
         bottom: 12,
         boxSizing: 'border-box',
         background: SHEET,
-        borderRadius: 8,
+        borderRadius: 0,
         opacity,
         transform: `translateY(${offset}px)`,
         pointerEvents: 'none',
@@ -766,7 +668,15 @@ function CapabilitySheet({ index, opacity, offset }: { index: number; opacity: n
 function SkillSheet() {
   const colorOf = { prompt: INK, step: MUTED, result: G, done: G };
   return (
-    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
+    <div
+      style={{
+        padding: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        fontSize: 12,
+      }}
+    >
       {TRANSCRIPT.map(([line, kind]) => (
         <div
           key={line}
@@ -786,7 +696,15 @@ function SkillSheet() {
 // One row per harness, the same four the cards under this sheet name.
 function HarnessRows({ status }: { status: (j: number) => [string, string] }) {
   return (
-    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+    <div
+      style={{
+        padding: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        fontSize: 12,
+      }}
+    >
       {HARNESSES.map((name, j) => {
         const [label, color] = status(j);
         return (
@@ -796,7 +714,7 @@ function HarnessRows({ status }: { status: (j: number) => [string, string] }) {
               ...nowrap,
               height: 30,
               boxSizing: 'border-box',
-              borderRadius: 6,
+              borderRadius: 0,
               background: PANEL,
               display: 'flex',
               alignItems: 'center',
@@ -804,8 +722,22 @@ function HarnessRows({ status }: { status: (j: number) => [string, string] }) {
               padding: '0 10px',
             }}
           >
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: INK }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                color: INK,
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: color,
+                }}
+              />
               {name}
             </span>
             <span style={{ color }}>{label}</span>

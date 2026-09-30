@@ -24,6 +24,11 @@
   --color-line: #ddd8cd;
   --color-surface: #eae7de;
   --color-accent: #3d7a52;
+  /* The two states the illustrations mark beside the accent: something
+     adapted or waiting, and something removed. Darker on paper, where the
+     terminal's own amber and red would sit at 2:1. */
+  --color-warn: #8a6100;
+  --color-danger: #b3402f;
 
   --color-fd-background: var(--color-paper);
   --color-fd-foreground: var(--color-ink);
@@ -51,6 +56,8 @@
   --color-line: #1e1f20;
   --color-surface: #161e1a;
   --color-accent: #8fd19e;
+  --color-warn: #d4a72c;
+  --color-danger: #d9776b;
 }
 
 /*
@@ -83,38 +90,6 @@ html {
 html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
-}
-
-/*
-  The recording is the page's one loud element, so it gets the page's one
-  piece of depth: a soft accent bloom behind the frame, strong enough to lift
-  a dark still off a light ground and invisible once the ground is dark too.
-*/
-.uze-demo-frame {
-  position: relative;
-  border-radius: 10px;
-  /* The recording is a raster inside the frame, so the corners only round
-     if the frame clips them. */
-  overflow: hidden;
-  box-shadow:
-    0 1px 2px rgba(10, 12, 13, 0.06),
-    0 24px 60px -30px rgba(10, 12, 13, 0.45);
-}
-.uze-demo-frame::before {
-  content: '';
-  position: absolute;
-  inset: -6% -3% 8%;
-  z-index: -1;
-  background: radial-gradient(60% 60% at 50% 40%, var(--color-accent), transparent 70%);
-  opacity: 0.14;
-  filter: blur(48px);
-  pointer-events: none;
-}
-.dark .uze-demo-frame {
-  box-shadow: none;
-}
-.dark .uze-demo-frame::before {
-  opacity: 0.1;
 }
 
 /* harness logos inlined by uze-harness-matrix in content/docs/reference/harnesses.mdx */

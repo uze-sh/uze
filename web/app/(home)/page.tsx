@@ -5,6 +5,7 @@ import { TrademarkNotice } from '@/components/trademark-notice';
 import matrix from '@/lib/harness-matrix.json';
 import { UzeMark } from '@/components/uze-mark';
 import { HeroIllustration } from '@/components/hero-illustration';
+import { WorkspaceIllustration } from '@/components/workspace-illustration';
 
 type Capability = 'context' | 'skills' | 'mcp' | 'agents' | 'hooks' | 'session' | 'package';
 
@@ -109,9 +110,8 @@ const pillars = [
   },
 ];
 
-// What the section below it pictures, said before it is shown: the
-// illustration is the package manager and the recording is the workspace,
-// and neither reads as that on its own.
+// What the section below it pictures, said before it is shown: each
+// illustration is one module, and neither reads as that on its own.
 function SectionHeading({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) {
   return (
     <header className="text-center">
@@ -126,7 +126,7 @@ export default function HomePage() {
   return (
     <main className="flex flex-col items-center flex-1 px-6 font-sans">
       {/* Hero. Holds the first screen on its own — the banner and the h-14
-          header are the only chrome above it — so the recording below is
+          header are the only chrome above it — so the illustrations below are
           something you arrive at by scrolling, not something competing with
           the headline for the same view. */}
       <section className="flex w-full max-w-5xl flex-col justify-center min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] py-14 text-center">
@@ -147,7 +147,7 @@ export default function HomePage() {
             <InstallCommand command="curl -fsSL https://uze.sh/i | sh" />
           </div>
           <Link
-            href="/docs/quickstart"
+            href="/docs"
             className="inline-flex shrink-0 items-center justify-center border border-ink bg-ink px-5 py-2.5 font-mono text-[13px] text-paper transition-opacity hover:opacity-85"
           >
             Get started
@@ -155,7 +155,7 @@ export default function HomePage() {
         </div>
         <p className="mt-3 text-xs text-muted">
           Linux and macOS, x86_64 or aarch64, checksum verified.{' '}
-          <Link href="/docs/quickstart" className="text-ink underline underline-offset-4 hover:text-accent transition-colors">
+          <Link href="/docs/installation" className="text-ink underline underline-offset-4 hover:text-accent transition-colors">
             Build from source
           </Link>{' '}
           on anything else.
@@ -164,7 +164,7 @@ export default function HomePage() {
 
       {/* What uze does, drawn: a screen of its own, the same height as the
           hero, so the illustration is never read against the headline or
-          the recording. It carries no ground of its own and follows the
+          the next one. It carries no ground of its own and follows the
           theme. */}
       <section className="flex w-full max-w-[1296px] min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-12">
         <SectionHeading
@@ -180,32 +180,17 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* The recording. `prefers-reduced-motion` gets a still frame instead,
-          and <source media> means only the matched file is ever fetched. */}
-      <section className="flex w-full max-w-6xl min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-8">
+      {/* The workspace, drawn on the package illustration's stage so the two
+          modules read as one set; the recording lives in its docs. */}
+      <section className="flex w-full max-w-[1296px] min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-12">
         <SectionHeading
           eyebrow="Workspace"
           title="Several agents, one terminal."
           body="Each agent works in a checkout of its own. Read what it plans, how the project is shaped and what it changed, then bring the work home."
         />
-        {/* The same fit as the illustration, at the recording's own ratio. */}
-        <figure
-          className="mx-auto mt-8 mb-0 w-full"
-          style={{ maxWidth: 'calc((100dvh - var(--uze-banner-height) - 3.5rem - 14rem) * 1.79)' }}
-        >
-          <div className="uze-demo-frame border border-line" style={{ background: '#0a0c0d' }}>
-            <picture>
-              <source srcSet="/uze-demo-poster.png" media="(prefers-reduced-motion: reduce)" />
-              <img
-                src="/uze-demo.gif"
-                width={1298}
-                height={725}
-                alt="The uze terminal: one project running a Claude Code agent and an OpenCode agent at once, each on its own branch in its own checkout, with the commit timeline of one beside them."
-                className="block h-auto w-full"
-              />
-            </picture>
-          </div>
-        </figure>
+        <div className="mx-auto mt-4 w-full" style={{ maxWidth: 'calc((100dvh - var(--uze-banner-height) - 3.5rem - 16rem) * 2.4)' }}>
+          <WorkspaceIllustration />
+        </div>
       </section>
 
       {/* Who it delivers to. */}
@@ -329,7 +314,7 @@ export default function HomePage() {
         </p>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4 font-mono text-xs">
           <Link
-            href="/docs/quickstart"
+            href="/docs"
             className="border border-ink bg-ink px-5 py-2.5 text-paper transition-opacity hover:opacity-85"
           >
             Get started
