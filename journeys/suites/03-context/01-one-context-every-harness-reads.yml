@@ -84,7 +84,7 @@ scenes:
         about: the project is byte-identical after inspect and plan
       - cmd:
           run: "{uze} agent context plan"
-          stdout_contains: ATTACH
+          stdout_contains: write
         about: and the plan says the contribution is not attached yet
 
   - scene: reconciling composes the contribution into a region UZE owns
@@ -136,7 +136,7 @@ scenes:
         about: a machine-scoped command never edits a project's page
       - cmd:
           run: "{uze} agent context plan"
-          stdout_contains: REMOVE
+          stdout_contains: remove
         about: the project's own command is what reports the region as orphaned
 
   - scene: and reconciling takes the region back, leaving the team's page as it was

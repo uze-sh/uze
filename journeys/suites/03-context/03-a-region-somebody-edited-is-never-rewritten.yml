@@ -119,7 +119,7 @@ scenes:
           plugin's version back knows there is something to decide
       - cmd:
           run: "{uze} agent context inspect | grep house-rules@demo"
-          stdout_excludes: "Matched"
+          stdout_excludes: "matched"
         about: |
           and stops calling it matched — "we left it alone" and "it is
           what we wrote" are different facts, and reading as matched is
