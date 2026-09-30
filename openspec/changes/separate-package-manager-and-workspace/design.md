@@ -146,7 +146,12 @@ file's digest on the existing 20-second `TASK_REFRESH` clock, inside the
 spawned thread (no file-watching dependency); and before an agent starts
 in the primary checkout, inside the existing `spawn_agent_placement`
 thread, only when the placement's root is the primary checkout (an agent
-"in place" in a pane standing in a slot is not). It writes only the
+"in place" in a pane standing in a slot is not). It keeps the region only
+in an `AGENTS.md` the project has and never creates the file: a tracked
+file appearing in the operator's checkout because a screen opened is not
+the workspace's call, and the journeys that hold the operator's checkout
+untouched caught exactly that; `uze install` creates it, as it always has.
+It writes only the
 primary checkout: in a slot, `AGENTS.md` is part of the agent's branch, and
 a region written there becomes a change the agent can commit and deliver,
 colliding with the same change still uncommitted in the primary checkout.
