@@ -9,9 +9,9 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-A22136?style=flat-square&labelColor=1e1f20)](LICENSE)
 [![Status](https://img.shields.io/badge/status-beta-e0b567?style=flat-square&labelColor=1e1f20)](https://uze.sh/docs/roadmap)
 
-uze gives every coding agent you use the same plugins and the same project
-instructions, and lets you run several of them at once without one stepping
-on another.
+Give every coding agent you use the same plugins and the same project
+instructions, and run several of them at once without one stepping on
+another.
 
 <p align="center">
   <img src="web/public/uze-demo.gif" alt="The uze terminal: two agents at once, each on its own branch in its own checkout, with the checkout's diff, its map and the project's own architecture diagrams a keystroke away" width="860" />
@@ -56,8 +56,8 @@ Contributions are welcome under the rules in [CONTRIBUTING.md](CONTRIBUTING.md).
 Security reports go through [SECURITY.md](SECURITY.md), never a public issue.
 
 **Trademarks.** All product names, logos and brands are the property of their
-respective owners. uze names the coding agents it interoperates with for
-identification only. It is an independent project and is not affiliated with,
+respective owners. The coding agents uze interoperates with are named for
+identification only. This is an independent project and is not affiliated with,
 endorsed by, or sponsored by any of them. The marks it ships as artwork, and
 the terms each comes under, are credited in [CREDITS.md](CREDITS.md).
 

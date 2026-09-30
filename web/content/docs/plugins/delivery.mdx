@@ -5,8 +5,8 @@ description: How one plugin reaches four agents, and what keeps that safe
 
 ## One copy, many deliveries
 
-An installed plugin's files live in one place, the **store** in `~/.uze`. uze
-never lets an agent write into it. Everything an agent reads is *delivered* from
+An installed plugin's files live in one place, the **store** in `~/.uze`. No
+agent ever writes into it. Everything an agent reads is *delivered* from
 there: a link, a generated folder, an entry in the agent's config. A delivery can
 always be deleted and rebuilt from the store.
 

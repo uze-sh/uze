@@ -23,7 +23,7 @@ other's files, or yours.
   ```
 
 Checkouts are reused, so a second agent does not pay for a fresh
-`node_modules/` or a cold build. uze keeps two free checkouts warm for the
+`node_modules/` or a cold build. Two free checkouts stay warm for the
 next agents and gives the disk of any other one back, and a free checkout
 unused for three days goes too. Both numbers are yours to change:
 
@@ -33,8 +33,8 @@ worktrees:
   idle_days: 3   # after this long unused, even a spare goes
 ```
 
-uze only ever reuses or removes a checkout it made itself, and never one
-something is still working in. A worktree you or a tool added by hand is
+A checkout is only ever reused or removed when uze made it, and never while
+something is still working in it. A worktree you or a tool added by hand is
 shown, never touched.
 
 A project has no `worktrees:` policy until somebody chooses one: the
@@ -65,9 +65,9 @@ says:
 
 ## Bringing the work home
 
-When an isolated agent is **Ready**, press `Alt+I` to deliver it. uze rebases the
-branch onto your target branch, runs your checks, and then does what the project
-chose:
+When an isolated agent is **Ready**, press `Alt+I` to deliver it. The branch is
+rebased onto your target branch, your checks run, and then comes what the
+project chose:
 
 ```yaml
 worktrees:
@@ -93,9 +93,9 @@ uze agent work join parser    # the subagent's commits land on the agent's branc
 ```
 
 The subagent's checkout comes from the same pool, so it starts warm. Joining
-replays its commits onto the agent's branch with no merge commit. uze keeps
-the checkout until it is joined or the agent ends, and does not deliver the
-agent while a subagent still holds work.
+replays its commits onto the agent's branch with no merge commit. The checkout
+stays until it is joined or the agent ends, and an agent is not delivered while
+a subagent still holds work.
 
 ## Work nobody finished
 

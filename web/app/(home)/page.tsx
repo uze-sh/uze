@@ -91,7 +91,7 @@ const pillars = [
   },
   {
     title: 'Semantics survive the trip',
-    body: 'A skill’s invocation policy, a hook’s effect, an agent’s frontmatter: each is translated into the vendor’s own encoding, or reported as adapted. uze never claims a route is native without a passing real-harness scenario.',
+    body: 'A skill’s invocation policy, a hook’s effect, an agent’s frontmatter: each is translated into the vendor’s own encoding, or reported as adapted. No route is claimed native without a passing real-harness scenario.',
     href: '/docs/reference/plugin-format',
     link: 'What travels, and how',
   },
@@ -170,7 +170,7 @@ export default function HomePage() {
         <SectionHeading
           eyebrow="Package manager"
           title="One plugin, every agent."
-          body="Install it once. uze keeps the bytes in its Store and delivers each capability through the most native route each harness has."
+          body="Install it once. Its bytes stay in one Store, and each capability is delivered through the most native route each harness has."
         />
         {/* As wide as the column, and no wider than the height left under
             the heading allows at the stage's 12:5, so the heading and the

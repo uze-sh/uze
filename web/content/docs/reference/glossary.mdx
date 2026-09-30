@@ -27,29 +27,29 @@ agent or a hook. See [Plugin format](/docs/reference/plugin-format).
 `invoke: {model, user}` block in `SKILL.md`.
 
 **Trust.** Your approval for anything a plugin can execute: MCP commands and
-hook handlers. uze asks before installing them.
+hook handlers. You are asked before they are installed.
 
 ## Delivery
 
 **Integration.** The part of uze that knows one harness. Everything
 vendor-specific lives there.
 
-**Delivery route.** How a capability reaches a harness. uze takes the first that
-works, in this order: native, generated native, safe adaptation, unsupported.
+**Delivery route.** How a capability reaches a harness. The first that works
+wins, in this order: native, generated native, safe adaptation, unsupported.
 See [How delivery works](/docs/plugins/delivery#the-most-native-route-wins).
 
-**Envelope.** A harness's own plugin format. uze uses the one a plugin ships, or
-generates one when it is missing.
+**Envelope.** A harness's own plugin format. The one a plugin ships is used, or
+one is generated when it is missing.
 
 **Projection.** Writing a harness's own view of something uze owns: a plugin
 directory, a config entry, a bridge. A projection can always be deleted and
 rebuilt.
 
-**Receipt.** uze's record of an artifact it placed. uze only changes or removes
-what a receipt says it owns. See [How delivery works](/docs/plugins/delivery#nothing-is-touched-blindly).
+**Receipt.** The record of an artifact uze placed. Only what a receipt says it
+owns is ever changed or removed. See [How delivery works](/docs/plugins/delivery#nothing-is-touched-blindly).
 
-**Drift.** An owned artifact that no longer matches its receipt. uze reports it
-and stops, instead of overwriting.
+**Drift.** An owned artifact that no longer matches its receipt. It is reported,
+and nothing overwrites it.
 
 **Shim.** A link in `~/.uze/shims` that starts the real harness binary, used
 only by the workspace: its panes put the shims first on `PATH`, and no shell
@@ -70,13 +70,13 @@ marketplaces and configuration. `-m` makes a command act on it alone.
 worktree policy. You write it. See [Project files](/docs/reference/project-files).
 
 **`agents.lock`.** What resolving `agents.yaml` produced: a commit per
-marketplace and a digest per plugin. uze writes it. Deleting it loses nothing.
+marketplace and a digest per plugin. Written by uze; deleting it loses nothing.
 
 **Bridge.** The line a harness reads to find `AGENTS.md`, when it does not read
 that file natively. See [Project context](/docs/plugins/context).
 
 **Managed region.** A block inside a file you own, between
-`<!-- uze:begin … -->` and `<!-- uze:end … -->` markers. uze writes only there.
+`<!-- uze:begin … -->` and `<!-- uze:end … -->` markers. The only place uze writes.
 
 ## Workspace
 
@@ -90,8 +90,8 @@ running after you close the UI.
 `.worktrees/<id>` on branch `agent/<id>`.
 
 **Slot.** An isolated checkout uze made and reuses for the next agent instead of
-creating a new one. uze records that it made it, and only ever reuses or
-removes a checkout it made. See [Running agents](/docs/workspace/agents#where-an-agent-works).
+creating a new one. Its making is recorded, and only a checkout uze made is
+ever reused or removed. See [Running agents](/docs/workspace/agents#where-an-agent-works).
 
 **Subagent checkout.** A slot an agent asked for with `uze agent work split`
 for one of its subagents. Its work comes back to the agent with

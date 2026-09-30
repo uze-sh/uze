@@ -19,8 +19,8 @@ description: Every file a plugin can ship, and how each one reaches each agent
   </Folder>
 </Files>
 
-Only `plugin.json` is required. uze stores every file byte for byte and never
-rewrites it into a format of its own.
+Only `plugin.json` is required. Every file is stored byte for byte, never
+rewritten into a format of uze's own.
 
 ## `plugin.json`
 
@@ -34,7 +34,7 @@ The [Agent Plugins](https://agent-plugins.org) 1.0 manifest:
 }
 ```
 
-uze reads `name`. The standard also allows `version`, `description`,
+Only `name` is read. The standard also allows `version`, `description`,
 `author` (`name`, `email`, `url`), `homepage`, `repository`, `license`,
 `keywords` and `extensions`, and nothing else at the top level. Settings for
 one tool go under `extensions`, keyed by that tool's namespace; uze's is
@@ -177,8 +177,7 @@ what every harness shares.
 
 `command` is one executable: a name found on `PATH`, or a `./` path to one
 the plugin ships. A server without `type` or `$schema` still installs.
-uze does not provide `${PLUGIN_DATA}` yet, and says so when it checks a
-plugin that uses it.
+`${PLUGIN_DATA}` is not provided yet; checking a plugin that uses it says so.
 
 Each agent receives it through its own mechanism (`claude mcp add`,
 `codex mcp add`, OpenCode's config, …).
@@ -248,8 +247,8 @@ every variable included, is in
 
 ## Commands a plugin runs
 
-MCP servers and hooks run commands on the user's machine. uze lists every one
-before installing and asks, and asks again when an update adds a new one. Where
+MCP servers and hooks run commands on the user's machine. Every one is listed
+before installing, with a question, and asks again when an update adds a new one. Where
 it cannot ask, in CI, it refuses unless `--trust` is passed.
 
 ## `marketplace.json`
