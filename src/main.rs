@@ -954,7 +954,7 @@ const ROOT_COMMANDS: &[(progress::CommandGroup, &[RootCommand])] = &[
 
 /// What the root help shows a newcomer typing, whole and copyable.
 const ROOT_EXAMPLES: &[&str] = &[
-    "uze install lint@acme",
+    "uze lint@acme",
     "uze market add owner/repo",
     "uze config theme set dracula",
 ];

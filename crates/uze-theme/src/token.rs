@@ -129,10 +129,10 @@ vocabulary! {
 
         // ── command groups ─────────────────────────────────────────────
         // The root help lists commands flat, and each group is told apart
-        // by its hue as well as by the blank line above it. The package
-        // manager takes the theme's accent and the machine its secondary
-        // text, so both follow any theme; the workspace's warm hue is the
-        // one a theme names for itself.
+        // by its hue as well as by the blank line above it. Each borrows a
+        // hue the theme already has, so no theme adds a colour for them: the
+        // package manager the accent, the workspace the hue the TUI gives
+        // the agent receiving keystrokes, the machine its secondary text.
         /// Commands of the package manager: install, update, market, ….
         CommandPackages = "command.packages",
         /// The command that opens the workspace.
