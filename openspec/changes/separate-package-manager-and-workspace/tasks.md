@@ -11,7 +11,7 @@
 - [x] 1.8 Group `IntegrationPort`'s workspace-only methods under one documented section, no signature change
 - [x] 1.9 Repoint every box link and every test reference in `docs/architecture/` (`checkout-ownership.mmd`, `agent-lifecycle.mmd`, `subagent-checkouts.mmd`, `invariants.md`) at the files' new paths in `crates/uze-workspace`, so `make artifacts` stays green after the move (the content changes are group 8)
 - [x] 1.10 Update AGENTS.md (Workspace layout, Architecture diagram and rules) for `uze-workspace` and its direction
-- [ ] 1.11 Check that `cargo tree -p uze-core` does not list `uze-workspace`; run `cargo test --workspace --no-fail-fast` and `cargo clippy --all-targets -- -D warnings`; nothing behaves differently
+- [x] 1.11 Check that `cargo tree -p uze-core` does not list `uze-workspace`; run `cargo test --workspace --no-fail-fast` and `cargo clippy --all-targets -- -D warnings`; nothing behaves differently
 
 ## 2. agents.yaml sections by owner
 
@@ -67,7 +67,7 @@
 
 - [x] 7.1 Add the architecture rule for `uze-application`: its package-manager files (`lifecycle/`, `project_environment`, `context`, `marketplace*`, `authoring`, `freshness`, the package read models) never name `uze_workspace`, with any exception listed with its reason
 - [x] 7.2 Add the invariants to `docs/architecture/invariants.md`: `uze-core` does not depend on `uze-workspace` (the manifest), and the `uze-application` rule (the test)
-- [ ] 7.3 Run the full gate: `cargo test --workspace --no-fail-fast`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo deny check`, `make artifacts`, `openspec validate --all --strict`
+- [x] 7.3 Run the full gate: `cargo test --workspace --no-fail-fast`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo deny check`, `make artifacts`, `openspec validate --all --strict`
 
 ## 8. Architecture artifacts
 
@@ -94,7 +94,7 @@ way it is lived and not only module by module.
 - [x] 9.5 A guard over the whole package-only lifecycle that no path outside `$UZE_HOME` and the project changes (shell files, harness configs beyond receipts), so a future shell edit fails a test by name
 - [x] 9.6 Journey `02-packages/…-a-project-that-only-uses-the-package-manager.yml` (tag `gate`): real CLI, a harness started from a plain shell; checks read the shell files, `AGENTS.md`, the project tree and `command -v` of the harness, never UZE's report
 - [x] 9.7 Journey `04-workspace/…-the-workspace-on-a-project-with-plugins.yml` (tag `gate`): open the workspace on a project that already has plugins, launch an agent from the menu, type the harness in a pane; checks: the pane's harness resolves to the shim, the workspace region is in `AGENTS.md`, `agents.lock` unchanged
-- [ ] 9.8 Lab: a contract check that a plugin reaches the model with the harness started with no UZE shim on `PATH` (the Lab prepends the shims today, so this check runs without the prepend), for every harness; the project `.agents/` resource checks run through the workspace's launch path, and a harness that cannot deliver one declares it through `bindings.unsupported`
+- [x] 9.8 Lab: a contract check that a plugin reaches the model with the harness started with no UZE shim on `PATH` (the Lab prepends the shims today, so this check runs without the prepend), for every harness; the project `.agents/` resource checks run through the workspace's launch path, and a harness that cannot deliver one declares it through `bindings.unsupported`
 - [x] 9.9 Rename `tests/workspace/` (agents.lock consumer, marketplace, root resolution: the package manager's anchor, not the workspace) to `tests/project/`, and add the two usage profiles to `tests/README.md` as a row of its coverage map
 - [x] 9.10 Update, not delete, the existing tests that assumed a live scaffold policy, the policy region in package reconciliation, or an rc edit: each keeps its claim under the profile it belongs to
 
