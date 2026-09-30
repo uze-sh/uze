@@ -49,10 +49,43 @@ fn danger() -> Style {
     styled(Token::StateDanger)
 }
 
+/// `--color`: `auto` asks the terminal, the other two answer for it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum ColorChoice {
+    #[default]
+    Auto,
+    Always,
+    Never,
+}
+
+static COLOR: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static QUIET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Settles, once per process, what `--color` and `--quiet` asked for.
+pub fn configure(color: ColorChoice, quiet: bool) {
+    COLOR.store(color as u8, std::sync::atomic::Ordering::Relaxed);
+    QUIET.store(quiet, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn quiet() -> bool {
+    QUIET.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+// `--color` wins, then `NO_COLOR` and `CLICOLOR_FORCE` — the same order cargo
+// and gh read them in — and only then the terminal itself.
 fn color_enabled() -> bool {
-    std::io::stdout().is_terminal()
-        && std::env::var_os("NO_COLOR").is_none()
-        && std::env::var("TERM").is_ok_and(|term| term != "dumb")
+    match COLOR.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+    if std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty()) {
+        return false;
+    }
+    if std::env::var_os("CLICOLOR_FORCE").is_some_and(|value| !value.is_empty() && value != "0") {
+        return true;
+    }
+    std::io::stdout().is_terminal() && std::env::var("TERM").is_ok_and(|term| term != "dumb")
 }
 
 fn paint(text: impl AsRef<str>, style: Style) -> String {
@@ -64,11 +97,40 @@ fn paint(text: impl AsRef<str>, style: Style) -> String {
     }
 }
 
+/// `text` with the styling this module paints stripped, for a caller that
+/// measures or compares what a person sees.
+pub fn unpainted(text: &str) -> String {
+    let mut plain = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(char) = chars.next() {
+        if char == '\u{1b}' {
+            for next in chars.by_ref() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            plain.push(char);
+        }
+    }
+    plain
+}
+
+/// The columns `text` occupies once drawn.
+pub fn width(text: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(unpainted(text).as_str())
+}
+
+/// A block of `rgb` itself, for a report whose subject is a colour.
+pub fn swatch(rgb: uze_theme::Rgb) -> String {
+    paint(
+        "██",
+        Style::new().fg_color(Some(Color::Rgb(RgbColor(rgb.0, rgb.1, rgb.2)))),
+    )
+}
+
 pub fn title(text: impl AsRef<str>) -> String {
     paint(text, bright())
-}
-pub fn section(text: impl AsRef<str>) -> String {
-    paint(text, heading())
 }
 pub fn label(text: impl AsRef<str>) -> String {
     paint(text, muted())
@@ -85,25 +147,6 @@ pub fn warning_text(text: impl AsRef<str>) -> String {
 pub fn error_text(text: impl AsRef<str>) -> String {
     paint(text, danger())
 }
-/// The single most important line in a report (a status headline, a final
-/// pass/fail) — bold, matching the TUI's status line (`ui.rs`'s
-/// `Status::Success`/`Status::Error`, which are always bold), so the verdict
-/// outweighs the incidental success/warning text sprinkled through the body.
-pub fn success_heading(text: impl AsRef<str>) -> String {
-    paint(text, styled(Token::StateSuccess).bold())
-}
-pub fn warning_heading(text: impl AsRef<str>) -> String {
-    paint(text, warning().bold())
-}
-pub fn error_heading(text: impl AsRef<str>) -> String {
-    paint(text, danger().bold())
-}
-/// A name the reader acts on — a harness id, a command to run — in the
-/// accent, with the weight of a heading.
-pub fn accent_heading(text: impl AsRef<str>) -> String {
-    paint(text, accent_style().bold())
-}
-
 /// Which part of uze a root command belongs to, which the root help says
 /// with the command's hue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,38 +179,95 @@ pub fn clap_styles() -> clap::builder::Styles {
         .invalid(danger())
 }
 
-/// A borderless, ANSI-aware table: aligned columns without the box-drawing
-/// clutter, for the many places a command lists rows of related data
-/// (`status -m`, `market list`, help's command table, …). One
-/// construction path means every list in the CLI lines up the same way,
-/// instead of each call site hand-computing its own column widths.
-fn table() -> comfy_table::Table {
-    let mut table = comfy_table::Table::new();
-    table
-        .load_style(comfy_table::presets::NOTHING)
-        .set_content_arrangement(comfy_table::ContentArrangement::Disabled);
-    table
+/// Renders `rows` as left-aligned, two-space-indented columns, gapped by
+/// three spaces, the last column left free. Widths are measured on what a
+/// person sees — the text without this module's colour — so a painted cell
+/// and a plain one line up. One construction path means every list in the
+/// CLI lines up the same way.
+pub fn aligned_rows(rows: Vec<Vec<String>>) -> String {
+    let columns = rows.iter().map(Vec::len).max().unwrap_or_default();
+    let widths: Vec<usize> = (0..columns)
+        .map(|column| {
+            rows.iter()
+                .filter_map(|row| row.get(column))
+                .map(|cell| width(cell))
+                .max()
+                .unwrap_or_default()
+        })
+        .collect();
+    rows.iter()
+        .map(|row| {
+            let last = row.iter().rposition(|cell| !cell.is_empty()).unwrap_or(0);
+            let mut line = String::from("  ");
+            for (column, cell) in row.iter().enumerate().take(last + 1) {
+                line.push_str(cell);
+                if column < last {
+                    line.push_str(&" ".repeat(widths[column] - width(cell) + 3));
+                }
+            }
+            line
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-/// Renders `rows` as left-aligned, two-space-indented columns, gapped by
-/// two spaces. `String` cells may carry this module's ANSI styling —
-/// `comfy-table` measures visual width, not byte length, so colored and
-/// plain columns still line up.
-pub fn aligned_rows(rows: Vec<Vec<String>>) -> String {
-    let mut table = table();
-    let columns = rows.first().map_or(0, Vec::len);
-    for row in rows {
-        table.add_row(row);
+/// The columns there are to draw in: the terminal's, or 80 off one.
+pub fn terminal_width() -> usize {
+    crossterm::terminal::size()
+        .ok()
+        .filter(|_| std::io::stdout().is_terminal())
+        .map_or(80, |(columns, _)| usize::from(columns))
+}
+
+/// [`aligned_rows`], with the last column wrapped to `width` and each
+/// continuation hung under where that column starts.
+pub fn aligned_rows_wrapped(rows: Vec<Vec<String>>, width: usize) -> String {
+    let columns = rows.iter().map(Vec::len).max().unwrap_or_default();
+    if columns == 0 {
+        return String::new();
     }
-    for index in 0..columns.saturating_sub(1) {
-        if let Some(column) = table.column_mut(index) {
-            column.set_padding((0, 2));
-        }
-    }
-    table
-        .to_string()
+    let lead: usize = 2
+        + (0..columns - 1)
+            .map(|column| {
+                rows.iter()
+                    .filter_map(|row| row.get(column))
+                    .map(|cell| self::width(cell))
+                    .max()
+                    .unwrap_or_default()
+                    + 3
+            })
+            .sum::<usize>();
+    let room = width.saturating_sub(lead).max(24);
+    aligned_rows(rows)
         .lines()
-        .map(|line| format!("  {}", line.trim_end()))
+        .map(|line| {
+            let plain = unpainted(line);
+            if self::width(&plain) <= width || self::width(&plain) <= lead {
+                return line.to_owned();
+            }
+            // Only plain text is wrapped: a description carries no colour.
+            let tail = &plain[plain
+                .char_indices()
+                .nth(lead)
+                .map_or(plain.len(), |(index, _)| index)..];
+            let head = &line[..line.len() - tail.len()];
+            let mut wrapped = head.to_owned();
+            let mut current = 0;
+            for word in tail.split(' ') {
+                let size = self::width(word);
+                if current > 0 && current + 1 + size > room {
+                    wrapped.push('\n');
+                    wrapped.push_str(&" ".repeat(lead));
+                    current = 0;
+                } else if current > 0 {
+                    wrapped.push(' ');
+                    current += 1;
+                }
+                wrapped.push_str(word);
+                current += size;
+            }
+            wrapped
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -190,25 +290,44 @@ pub fn aligned_groups(groups: Vec<Vec<Vec<String>>>) -> Vec<String> {
         .collect()
 }
 
-// Fixed so every section rule in a report is the same length. Sizing the
-// rule to its own heading's width (the previous behavior) produced a
-// different, arbitrary-looking underline per section instead of a
-// consistent divider — comfortably longer than any current heading
-// ("Project environment", 20 chars).
-const RULE_WIDTH: usize = 24;
-
-/// A report section heading. The heading text stays unchanged outside a TTY,
-/// preserving a stable text mode for scripts and saved logs.
+/// A block's heading: its name in bold and nothing under it. The blank
+/// line before the next block is what separates them, the way cargo and
+/// uv lay a report out.
 pub fn report_section(name: &str) -> String {
-    format!("{}\n{}\n", section(name), label("─".repeat(RULE_WIDTH)))
+    format!("{}\n", title(name))
 }
 
+/// What a read-only report is about, on one line: the subject, and beside
+/// it, muted, where it is.
 pub fn report_title(name: &str, detail: Option<&str>) -> String {
-    let mut output = format!("{}\n", title(name));
-    if let Some(detail) = detail {
-        output.push_str(&format!("{}\n", label(detail)));
+    match detail {
+        Some(detail) => format!("{}  {}\n", title(name), label(detail)),
+        None => format!("{}\n", title(name)),
     }
-    output
+}
+
+/// `path` as a person reads it: under `$HOME` it starts with `~`.
+pub fn path(path: &std::path::Path) -> String {
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from)
+        && !home.as_os_str().is_empty()
+        && let Ok(rest) = path.strip_prefix(&home)
+    {
+        return if rest.as_os_str().is_empty() {
+            "~".to_owned()
+        } else {
+            format!("~/{}", rest.display())
+        };
+    }
+    path.display().to_string()
+}
+
+/// `1 plugin`, `3 plugins`.
+pub fn count(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
 }
 
 /// When the command began, for the time its closing line reports.
@@ -238,7 +357,7 @@ pub fn change(kind: Change, subject: &str, detail: Option<&str>) -> String {
         Change::Failed => error_icon(),
     };
     match detail {
-        Some(detail) => format!("{mark} {subject}  {}\n", label(detail)),
+        Some(detail) => format!("{mark} {subject}   {}\n", label(detail)),
         None => format!("{mark} {subject}\n"),
     }
 }
@@ -248,16 +367,17 @@ pub fn change_detail(kind: Change, subject: &str, detail: Option<&str>) -> Strin
     format!("  {}", change(kind, subject, detail))
 }
 
-/// A whole change report: which UZE is speaking, a line per thing changed,
-/// and one closing line with the outcome and how long it took.
-pub fn change_report(lines: &str, outcome: &str) -> String {
+/// A whole change report: which command is speaking, a line per thing
+/// changed, and one closing line with the outcome and how long it took —
+/// `uze install v1.0.0` over `1 plugin installed [652ms]`, as bun does.
+pub fn change_report(verb: &str, lines: &str, outcome: &str) -> String {
     let took = STARTED
         .get()
         .map(|began| format!(" {}", label(format!("[{}]", took_to_say(began.elapsed())))))
         .unwrap_or_default();
     let header = format!(
         "{} {}\n",
-        title("uze"),
+        title(format!("uze {verb}")),
         label(format!("v{}", env!("CARGO_PKG_VERSION")))
     );
     if lines.is_empty() {
@@ -267,8 +387,11 @@ pub fn change_report(lines: &str, outcome: &str) -> String {
     }
 }
 
+/// One `key   value` line, the key padded by what it shows rather than by
+/// the bytes its colour adds.
 pub fn key_value(key: &str, value: impl AsRef<str>) -> String {
-    format!("  {:<16} {}", label(key), value.as_ref())
+    let pad = 14usize.saturating_sub(width(key)).max(1);
+    format!("  {}{}{}", label(key), " ".repeat(pad + 2), value.as_ref())
 }
 
 /// The spinner currently drawing, if one is. A question asked while a
@@ -277,8 +400,13 @@ static DRAWING: Mutex<Option<ProgressBar>> = Mutex::new(None);
 
 /// Creates a spinner for long-running operations.
 pub fn spinner(message: &str) -> ProgressBar {
-    let pb = ProgressBar::new_spinner();
-    pb.set_message(message.to_string());
+    let pb = if quiet() {
+        ProgressBar::hidden()
+    } else {
+        ProgressBar::new_spinner()
+    };
+    let message = message.trim_end_matches("...").trim_end_matches('…');
+    pb.set_message(format!("{message}{}", glyph(Symbol::Ellipsis)));
     pb.enable_steady_tick(Duration::from_millis(120));
     pb.set_style(
         ProgressStyle::default_spinner()
@@ -377,6 +505,9 @@ fn settle(bar: &ProgressBar, succeeded: bool) {
 /// A line above the spinner, or on stderr when there is no terminal to
 /// draw one on — a CI log still gets the account.
 fn say(bar: &ProgressBar, line: &str) {
+    if quiet() {
+        return;
+    }
     if bar.is_hidden() {
         eprintln!("{line}");
     } else {
@@ -486,11 +617,22 @@ fn describe(step: &uze::steps::Step) -> Option<Described> {
             ago(field("age_secs").parse().unwrap_or_default())
         )),
         "download" => Described::Now(format!("Downloading {} files", field("files"))),
-        "deliver" => Described::Now(format!("Delivering to {}", field("harness"))),
-        "detach" => Described::Now(format!("Removing from {}", field("harness"))),
+        "deliver" => Described::Now(format!("Delivering to {}", agents(&field("harness")))),
+        "detach" => Described::Now(format!("Removing from {}", agents(&field("harness")))),
         "lock" => Described::Now("Recording it in agents.yaml and agents.lock".to_owned()),
         _ => return None,
     })
+}
+
+/// The agents a step names: by name while two fit on the line, and counted
+/// past that, when their order would only be noise.
+fn agents(names: &str) -> String {
+    let count = names.split(", ").filter(|name| !name.is_empty()).count();
+    if count > 2 {
+        format!("{count} agents")
+    } else {
+        names.to_owned()
+    }
 }
 
 /// Runs `question` with the terminal to itself.
@@ -516,23 +658,27 @@ pub fn uninterrupted<T>(question: impl FnOnce() -> T) -> T {
     }
 }
 
+/// A one-line outcome: `✓ theme dracula`.
 pub fn success(msg: &str) {
-    println!("{} {}", success_icon(), msg);
+    if !quiet() {
+        println!("{} {}", success_icon(), msg);
+    }
 }
 pub fn warn(msg: &str) {
     eprintln!("{} {}", warning_icon(), msg);
 }
-pub fn error(msg: &str) {
-    eprintln!("{} {}", error_icon(), msg);
+/// The one way a failure is said: `error: …` on stderr, and under it, when
+/// there is one, the command that answers it.
+pub fn error(msg: &str, hint: Option<&str>) {
+    eprintln!("{} {msg}", paint("error:", danger().bold()));
+    if let Some(hint) = hint {
+        eprintln!("{}", next_step(hint));
+    }
 }
 
-pub fn step_header(step: usize, total: usize, harness: &str) -> String {
-    format!(
-        "{} {} {}",
-        label(format!("[{step}/{total}]")),
-        title(harness),
-        label("— provisioning…")
-    )
+/// The last line of a report that leaves something to do: `→ uze install`.
+pub fn next_step(command: &str) -> String {
+    format!("{} {command}", accent(glyph(Symbol::ArrowTo)))
 }
 
 pub fn success_icon() -> String {

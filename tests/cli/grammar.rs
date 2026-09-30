@@ -163,7 +163,7 @@ fn doctor_is_the_builtin() {
     let output = uze(&home).args(["doctor"]).output().unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("UZE Home"));
+    assert!(stdout.contains("home"), "{stdout}");
     let _ = std::fs::remove_dir_all(home);
 }
 
@@ -177,7 +177,7 @@ fn status_is_the_builtin() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     // A temp home is no project, so `status` answers the machine read
     // model — the absence of a project is an answer, not a fault.
-    assert!(stdout.contains("Machine status"), "{stdout}");
+    assert!(stdout.contains("no project here"), "{stdout}");
     let _ = std::fs::remove_dir_all(home);
 }
 
@@ -192,13 +192,27 @@ fn bare_unknown_name_is_an_unrecognized_command_with_a_hint() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("unrecognized subcommand 'unknown'"),
+        stderr.contains("unknown command `unknown`"),
         "got: {stderr}"
     );
     assert!(
         stderr.contains("unknown@<market>"),
         "expected a hint toward the shorthand form, got: {stderr}"
     );
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// A near miss of a command is a typo, and is answered with the command
+/// rather than with a plugin nobody meant.
+#[test]
+fn a_typo_of_a_command_is_answered_with_the_command() {
+    let home = temporary_home("unknown-typo");
+    std::fs::create_dir_all(&home).unwrap();
+    let output = uze(&home).args(["instal"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("uze install"), "got: {stderr}");
+    assert!(!stderr.contains("@<market>"), "got: {stderr}");
     let _ = std::fs::remove_dir_all(home);
 }
 
@@ -240,10 +254,10 @@ fn builtin_name_followed_by_at_market_is_still_shorthand() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     // Proof it did NOT run diagnostics: `doctor`'s own success output
-    // ("UZE Home") never appears, and the failure is a marketplace lookup,
+    // (its "store" row) never appears, and the failure is a marketplace lookup,
     // not a coincidentally-similar diagnostics report.
     assert!(
-        !stdout.contains("UZE Home"),
+        !stdout.contains("store"),
         "doctor@foo must not run the doctor command, got stdout: {stdout}"
     );
     assert!(
@@ -300,11 +314,7 @@ fn setup_consolidates_harness_operations_without_a_harness_namespace() {
     let help = uze(&home).args(["setup", "help"]).output().unwrap();
     assert!(help.status.success());
     let help = String::from_utf8_lossy(&help.stdout);
-    for usage in [
-        "uze setup <harness>...",
-        "uze setup list",
-        "uze setup inspect <harness>",
-    ] {
+    for usage in ["<agent>...", "setup list", "setup inspect"] {
         assert!(help.contains(usage), "setup help missing `{usage}`: {help}");
     }
 
@@ -348,12 +358,12 @@ fn every_public_help_route_uses_the_uze_renderer_and_dash_help_is_rejected() {
     for argument in ["help", "--help", "-h"] {
         let output = uze(&home).args([argument]).output().unwrap();
         assert!(output.status.success(), "root `{argument}` must succeed");
-        assert!(String::from_utf8_lossy(&output.stdout).contains("UZE"));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("uze"));
     }
     for (command, title) in [
-        ("market", "UZE market"),
-        ("config", "UZE config"),
-        ("setup", "UZE setup"),
+        ("market", "uze market"),
+        ("config", "uze config"),
+        ("setup", "uze setup"),
     ] {
         let output = uze(&home).args([command, "--help"]).output().unwrap();
         assert!(output.status.success(), "{command} help must succeed");
@@ -388,6 +398,7 @@ fn no_builtin_command_name_contains_at() {
         if line.contains("<plugin>@<market>")
             || line.contains("plugin@market")
             || line.contains("flow@ai")
+            || line.trim_start().starts_with("uze ")
         {
             continue;
         }
@@ -474,7 +485,7 @@ fn a_trailing_help_positional_is_a_value_not_a_help_request() {
             "`uze {rendered}` did nothing and reported success"
         );
         assert!(
-            !String::from_utf8_lossy(&output.stdout).contains("UZE market"),
+            !String::from_utf8_lossy(&output.stdout).contains("uze market <command>"),
             "`uze {rendered}` printed a help page instead of acting"
         );
     }
@@ -487,7 +498,7 @@ fn a_trailing_help_positional_is_a_value_not_a_help_request() {
             "`uze {}` must still print help",
             arguments.join(" ")
         );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("UZE"));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("uze"));
     }
     let _ = std::fs::remove_dir_all(home);
 }
@@ -529,7 +540,7 @@ fn a_package_install_outside_a_project_reports_the_machine_scope() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(
-            stdout.contains("Installed on this machine only"),
+            stdout.contains("on this machine only"),
             "`uze {rendered}` must end with the scope it touched: {stdout}"
         );
         assert!(
@@ -623,7 +634,7 @@ fn status_m_inside_a_project_does_not_claim_there_is_none() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
-        stdout.contains("Machine status") && !stdout.contains("No project here"),
+        stdout.contains("uze@uze-official") && !stdout.contains("no project here"),
         "got: {stdout}"
     );
 
@@ -653,7 +664,7 @@ fn a_marketplace_removed_whole_says_its_registry_entry_went() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(stdout.contains(" removed · "), "got: {stdout}");
+    assert!(stdout.contains("1 marketplace removed"), "got: {stdout}");
     let _ = std::fs::remove_dir_all(home);
 }
 

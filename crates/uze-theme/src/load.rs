@@ -735,6 +735,11 @@ mod tests {
                 "{name}: the package manager's commands wear the theme's accent"
             );
             assert_eq!(
+                theme.color(Token::CommandWorkspace),
+                theme.color(Token::StateWarning),
+                "{name}: the workspace's command wears the hue of the agent in focus"
+            );
+            assert_eq!(
                 theme.color(Token::CommandMachine),
                 theme.color(Token::TextSecondary),
                 "{name}: the machine's commands wear the theme's secondary text"

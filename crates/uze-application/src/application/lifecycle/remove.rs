@@ -190,7 +190,7 @@ impl UzeApplication {
         if !by_harness.is_empty() {
             let names: Vec<&str> = by_harness
                 .iter()
-                .map(|(integration, _)| integration.id())
+                .map(|(integration, _)| integration.display_name())
                 .collect();
             tracing::info!(
                 target: uze_core::acquisition::git::STEP,

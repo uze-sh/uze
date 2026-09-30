@@ -105,6 +105,7 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     // theme is resolved that is not the one being asked about.
     // `notification` and `extension` are each one `config.toml` section
     // read or one key written.
+    ("config theme", PerformanceClass::Budgeted),
     ("config theme list", PerformanceClass::Budgeted),
     ("config theme set", PerformanceClass::Budgeted),
     ("config theme show", PerformanceClass::Budgeted),
@@ -232,6 +233,10 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     (
         "agent context reconcile",
         "crates/uze-application/tests/performance.rs::context_reads_and_reconcile_meet_the_budget",
+    ),
+    (
+        "config theme",
+        "uze_application::application::theme::tests::theme_selection_meets_the_performance_budget",
     ),
     (
         "config theme list",

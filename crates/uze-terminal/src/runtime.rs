@@ -363,7 +363,7 @@ pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
     Ok(label)
 }
 
-/// Stops the user's server, and says so when there was nothing to stop.
+/// Stops the user's server, answering whether there was one to stop.
 ///
 /// "Nothing is running" is the ordinary state of this command, not a
 /// failure: after a reboot, after the server exited, and — on WSL — after
@@ -371,7 +371,7 @@ pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
 /// running. A missing socket and a socket nobody is listening on are both
 /// that state, and reporting them as errors made every teardown script and
 /// journey run end on a failure it was right to ignore.
-pub fn stop() -> Result<(), RuntimeError> {
+pub fn stop() -> Result<bool, RuntimeError> {
     let _span = tracing::info_span!("terminal.stop").entered();
     let socket = socket_path()?;
     let mut stream = match UnixStream::connect(&socket) {
@@ -392,17 +392,17 @@ pub fn stop() -> Result<(), RuntimeError> {
             return match claim_holder() {
                 Some(pid) => {
                     retire(pid, &socket);
-                    Ok(())
+                    Ok(true)
                 }
                 None if workspace_is_claimed() => Err(unreachable(&socket, None)),
-                None => Ok(()),
+                None => Ok(false),
             };
         }
         Err(error) => return Err(error.into()),
     };
     write_message(&mut stream, &ClientRequest::Stop)?;
     match read_message::<_, ClientEvent>(&mut BufReader::new(stream))? {
-        Some(ClientEvent::Stopped) => Ok(()),
+        Some(ClientEvent::Stopped) => Ok(true),
         Some(ClientEvent::Error { message }) => Err(RuntimeError::Protocol(message)),
         _ => Err(RuntimeError::Protocol(
             "server did not acknowledge stop".into(),

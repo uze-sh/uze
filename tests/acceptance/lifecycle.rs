@@ -119,10 +119,12 @@ fn drift_blocks_destructive_remove_and_preserves_the_artifact() {
     let skill = managed.join("SKILL.md");
     std::fs::write(&skill, "edited by hand\n").unwrap();
 
-    let doctor = env.run_ok(uze_bin(), &["doctor"]);
+    // Drift is a problem, so doctor fails the command as well as saying so.
+    let doctor = env.run(uze_bin(), &["doctor"]);
     let stdout = String::from_utf8_lossy(&doctor.stdout);
+    assert!(!doctor.status.success(), "{stdout}");
     assert!(
-        stdout.contains("1 drifted"),
+        stdout.contains("1 file drifted"),
         "doctor must report the drifted attachment, got: {stdout}"
     );
 

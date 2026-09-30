@@ -139,7 +139,7 @@ Prefer, in this order, and stop at the first tier that can do the job:
    `unicode-width` (unicode-rs), `alacritty_terminal` (alacritty),
    `portable-pty` (wezterm), `rmcp` (the official MCP Rust SDK).
 4. **A single maintainer, but mature and widely adopted** — `syntect`,
-   `comfy-table`, `schemars`. Acceptable, with the trade-off stated in the
+   `schemars`. Acceptable, with the trade-off stated in the
    PR.
 
 Refuse, unless there is no alternative and the reason is written down:

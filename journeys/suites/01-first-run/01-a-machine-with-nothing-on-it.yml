@@ -133,5 +133,5 @@ scenes:
         about: asking a project about itself writes nothing into it
       - cmd:
           run: "{uze} doctor"
-          stdout_contains: UZE Home
+          stdout_contains: store
         about: and doctor answers for the machine, which is where the state actually is
