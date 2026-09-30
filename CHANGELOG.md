@@ -4,6 +4,16 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.5](https://github.com/uze-sh/uze/compare/v1.0.0-beta.4...v1.0.0-beta.5) - 2026-09-30
+
+### Features
+
+- Separate the package manager and the workspace ([#157](https://github.com/uze-sh/uze/pull/157)) ([ae58e9f](https://github.com/uze-sh/uze/commit/ae58e9fc638747a7d3b2460ee5307f663e0751d5))
+
+### Fixes
+
+- **workspace:** Set up the harnesses the machine has before it opens ([#158](https://github.com/uze-sh/uze/pull/158)) ([3d384a1](https://github.com/uze-sh/uze/commit/3d384a1d098c91db49cd19df13837e33113b9fc9))
+
 ## [1.0.0-beta.4](https://github.com/uze-sh/uze/compare/v1.0.0-beta.3...v1.0.0-beta.4) - 2026-09-29
 
 ### Features

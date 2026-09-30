@@ -3163,7 +3163,7 @@ dependencies = [
 
 [[package]]
 name = "uze"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "anstyle",
  "bincode",
@@ -3204,7 +3204,7 @@ dependencies = [
 
 [[package]]
 name = "uze-application"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -3219,7 +3219,7 @@ dependencies = [
 
 [[package]]
 name = "uze-core"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "libc",
  "noyalib",
@@ -3236,7 +3236,7 @@ dependencies = [
 
 [[package]]
 name = "uze-document"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -3246,7 +3246,7 @@ dependencies = [
 
 [[package]]
 name = "uze-extensions"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "pulldown-cmark",
  "syntect",
@@ -3258,7 +3258,7 @@ dependencies = [
 
 [[package]]
 name = "uze-git"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "libc",
  "tracing",
@@ -3268,7 +3268,7 @@ dependencies = [
 
 [[package]]
 name = "uze-integrations"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "serde_json",
  "toml_edit",
@@ -3279,7 +3279,7 @@ dependencies = [
 
 [[package]]
 name = "uze-keys"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -3287,7 +3287,7 @@ dependencies = [
 
 [[package]]
 name = "uze-terminal"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "alacritty_terminal",
  "bincode",
@@ -3303,7 +3303,7 @@ dependencies = [
 
 [[package]]
 name = "uze-testkit"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "serde_json",
  "uze-git",
@@ -3311,7 +3311,7 @@ dependencies = [
 
 [[package]]
 name = "uze-theme"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -3322,7 +3322,7 @@ dependencies = [
 
 [[package]]
 name = "uze-workspace"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 dependencies = [
  "libc",
  "serde",
