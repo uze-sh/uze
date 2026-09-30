@@ -78,6 +78,7 @@ mod editor;
 mod files;
 mod history;
 mod map;
+mod marking;
 mod render;
 mod request;
 mod treemap;
@@ -125,6 +126,9 @@ pub enum CodeOutcome {
     /// Put this text on the clipboard. The host's, because the clipboard
     /// is the terminal's and reaching it is a sequence written to it.
     Copy(String),
+    /// The same, for text marked with the pointer — told apart because
+    /// what is said about it is how much was taken, not the text itself.
+    CopySelection(String),
 }
 
 /// Which list the navigator is showing — always the one the content mode
@@ -258,6 +262,8 @@ pub struct CodeView {
     menu: Option<change_menu::ChangeMenu>,
     /// A discard asked for and not yet answered.
     discarding: Option<change_menu::Discarding>,
+    /// Text marked with the pointer in the content on show.
+    marking: Option<marking::Marking>,
 }
 
 /// Where a viewer was on a checkout's code surface, so that opening it
@@ -362,6 +368,7 @@ impl CodeView {
             confirming_discard: false,
             menu: None,
             discarding: None,
+            marking: None,
         };
         if view.navigator() == NavigatorMode::Files {
             view.expand(view.root.clone());
@@ -582,12 +589,32 @@ impl CodeView {
             // where it stays — the cells were never sent back.
             changes.diff = std::mem::take(&mut self.changes.diff);
             changes.diff_binary = self.changes.diff_binary;
+        } else if self.content == ContentMode::Diff {
+            // What was marked named lines of a diff that is not this one.
+            self.marking = None;
         }
         self.changes = changes;
         if self.selected.is_none() {
             self.selected = self.changes.files.first().map(|file| file.path.clone());
             self.changes.diff_pending = self.selected.is_some();
             self.read_selection_as_what_it_is();
+        }
+        self.land_on_a_change();
+    }
+
+    /// Selects the first changed file when the changes list is on show and
+    /// none of its rows is the selection — arriving from the tree on a file
+    /// nobody touched, or on one the last commit took off the list.
+    ///
+    /// A list with nothing highlighted beside an empty diff reads as a
+    /// surface that has nothing to say, when what it has is a list of
+    /// things to read and no opinion about which comes first.
+    fn land_on_a_change(&mut self) {
+        if self.navigator() != NavigatorMode::Changes || self.selected_change().is_some() {
+            return;
+        }
+        if let Some(first) = self.changes.files.first().map(|file| file.path.clone()) {
+            self.select(first);
         }
     }
 
@@ -801,6 +828,7 @@ impl CodeView {
         if self.open.as_ref().is_some_and(|open| open.path != path) {
             self.open = None;
         }
+        self.marking = None;
         self.selected = Some(path);
         self.scroll = 0;
         self.changes.diff = Vec::new();
@@ -841,8 +869,10 @@ impl CodeView {
         if self.content == mode {
             return;
         }
-        // The menu was opened on the list this leaves.
+        // The menu was opened on the list this leaves, and what was marked
+        // on the lines it shows.
         self.menu = None;
+        self.marking = None;
         let line = self.line_in_view();
         self.content = mode;
         match mode {
@@ -855,6 +885,7 @@ impl CodeView {
                 self.scroll = line
                     .and_then(|line| self.diff_row_of(line))
                     .unwrap_or(self.scroll);
+                self.land_on_a_change();
             }
             // Nothing to fetch: the map is already measured, and what it
             // shows is the checkout rather than the selection.
@@ -1208,6 +1239,7 @@ impl CodeView {
     /// caret as one edit. Anything else open ignores a paste: there is
     /// nothing in a read-only surface for it to land in.
     pub fn paste(&mut self, text: &str, space: Size) {
+        self.marking = None;
         if let Some(open) = self
             .open
             .as_mut()
@@ -1374,6 +1406,9 @@ fn map_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcom
 /// nothing but keeping the caret and the page keys inside the file.
 pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcome {
     view.notice = None;
+    // What was marked stays drawn until something else is done, the way a
+    // pane's selection does.
+    view.marking = None;
     // Typing is modal, and the host says so by asking in the editing
     // scope. What is left here is the same command set the reading modes
     // answer, plus the two that leave typing.
@@ -1689,6 +1724,13 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
                     line,
                     column: open.column_at_cell(line, cell),
                 };
+            }
+            view.mark_from(line, cell);
+        }
+        Some(ViewHit::SelectTo { line, cell }) => view.mark_to(line, cell),
+        Some(ViewHit::LetGo) => {
+            if let Some(text) = view.let_go() {
+                return CodeOutcome::CopySelection(text);
             }
         }
         // The order is `render::modes`' own, and it is the only side

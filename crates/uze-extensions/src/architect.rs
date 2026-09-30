@@ -1219,6 +1219,7 @@ fn content(state: &ArchitectView, space: Size) -> Content {
                 total: lines.len(),
                 lines,
                 caret: None,
+                selection: None,
             }
         }
         // A board hands over its screen and nothing else: there is no
@@ -1233,6 +1234,7 @@ fn content(state: &ArchitectView, space: Size) -> Content {
                 total: lines.len(),
                 lines,
                 caret: None,
+                selection: None,
             }
         }
     }

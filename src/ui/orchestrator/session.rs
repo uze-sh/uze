@@ -1561,6 +1561,71 @@ impl Attach<'_> {
         }
     }
 
+    /// The pointer carried, button held, over the code surface's text.
+    ///
+    /// Resolved against the rows the last frame drew, clamped to them: a
+    /// drag beside the text means the nearest character of its row, and
+    /// one past the top or the bottom scrolls that way and names the line
+    /// beyond the edge — which is how a selection reaches text that was
+    /// not on screen when it began.
+    fn mark_code_text(&mut self, column: u16, row: u16) {
+        let rows: Vec<(Rect, usize, usize)> = self
+            .model
+            .hits
+            .iter()
+            .filter_map(|(rect, hit)| match hit {
+                WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { line, cell })) => {
+                    Some((*rect, *line, *cell))
+                }
+                _ => None,
+            })
+            .collect();
+        let (Some(top), Some(bottom)) = (
+            rows.iter().min_by_key(|(rect, ..)| rect.y),
+            rows.iter().max_by_key(|(rect, ..)| rect.y),
+        ) else {
+            return;
+        };
+        let (line, cell, scroll) = if row < top.0.y {
+            (top.1.saturating_sub(1), 0, Some(ScrollDirection::Up))
+        } else if row >= bottom.0.bottom() {
+            (bottom.1 + 1, usize::MAX, Some(ScrollDirection::Down))
+        } else {
+            let Some((rect, line, cell)) = rows.iter().find(|(rect, ..)| rect.y == row) else {
+                return;
+            };
+            let column = column.clamp(rect.x, rect.right().saturating_sub(1));
+            let cell = crate::ui::extension_view::caret_cell_at(
+                *rect,
+                *cell,
+                column,
+                self.model.code_scrollbars.content_gutter,
+            );
+            (*line, cell, None)
+        };
+        if let Some(direction) = scroll {
+            let at_end = self.model.code_scrollbars.content_at_end;
+            if let Some(view) = self.model.code.as_mut() {
+                code::handle_scroll(view, direction, at_end);
+            }
+        }
+        self.code_mouse(ViewHit::SelectTo { line, cell });
+    }
+
+    /// Hands the code surface a pointer gesture the host finished itself.
+    fn code_mouse(&mut self, hit: ViewHit) {
+        let space = self.code_space();
+        if let Some(outcome) = self
+            .model
+            .code
+            .as_mut()
+            .map(|view| code::handle_mouse(view, Some(hit), space))
+        {
+            self.follow_code(outcome);
+        }
+        self.model.dirty = true;
+    }
+
     /// Whether a point is on the groove an open surface drew for its
     /// content.
     fn on_content_scrollbar(&self, column: u16, row: u16) -> bool {
@@ -1729,6 +1794,7 @@ impl Attach<'_> {
                     .raise_toast(ToastKind::Done, "copied", text.clone(), None);
                 self.model.clipboard = Some(text);
             }
+            code::CodeOutcome::CopySelection(text) => self.model.copy_selected(text),
         }
     }
 
@@ -2147,6 +2213,15 @@ impl Attach<'_> {
                     self.model.dragging_code_content = true;
                     self.scroll_code_content_to(mouse.row);
                 } else {
+                    // The map is drawn from the same hits and is clicked,
+                    // never marked.
+                    self.model.marking_code_text =
+                        matches!(view_hit, Some(ViewHit::PlaceCaret { .. }))
+                            && self
+                                .model
+                                .code
+                                .as_ref()
+                                .is_some_and(|view| view.showing() != code::ContentMode::Map);
                     let space = self.code_space();
                     if let Some(outcome) = self
                         .model
@@ -2222,6 +2297,9 @@ impl Attach<'_> {
             }
             _ if self.model.dragging_code_content => {
                 self.scroll_code_content_to(mouse.row);
+            }
+            _ if self.model.marking_code_text => {
+                self.mark_code_text(mouse.column, mouse.row);
             }
             _ if self.model.code_edge_drag.is_some() => {
                 self.drag_code_edge(mouse.column, mouse.row, layout.pane);
@@ -2318,6 +2396,10 @@ impl Attach<'_> {
         let Viewport { ref layout, .. } = *viewport;
         if self.model.selection.is_some() {
             self.release_selection(mouse, layout.pane);
+            return Flow::Continue;
+        }
+        if std::mem::take(&mut self.model.marking_code_text) {
+            self.code_mouse(ViewHit::LetGo);
             return Flow::Continue;
         }
         // A drag this client never owned (no flag was set, no
@@ -3207,6 +3289,8 @@ impl Attach<'_> {
                 | ViewHit::ChooseItem
                 | ViewHit::SelectTrail(_)
                 | ViewHit::PlaceCaret { .. }
+                | ViewHit::SelectTo { .. }
+                | ViewHit::LetGo
                 | ViewHit::SelectMode(_)
                 | ViewHit::SelectSubject(_)
                 | ViewHit::DragContentScrollbar

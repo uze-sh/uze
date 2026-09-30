@@ -3040,6 +3040,9 @@ struct WorkspaceModel {
     /// Whether the content's own scrollbar is being held. Unambiguous, so
     /// it needs nothing but a flag.
     dragging_code_content: bool,
+    /// Whether the pointer is held since a press on the code surface's
+    /// text, so a movement marks what it passes over.
+    marking_code_text: bool,
     /// Text being selected in a pane with the pointer, and — once released
     /// — the selection still drawn until the next press or key.
     selection: Option<selection::PaneSelection>,
@@ -3365,6 +3368,12 @@ impl WorkspaceModel {
             self.selection = None;
             return;
         }
+        self.copy_selected(text);
+    }
+
+    /// Puts text a person marked on the clipboard, saying how much went —
+    /// the text itself is what they just looked at.
+    fn copy_selected(&mut self, text: String) {
         let characters = text.chars().count();
         self.raise_toast(
             ToastKind::Done,

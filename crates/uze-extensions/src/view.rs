@@ -461,7 +461,44 @@ pub enum Content {
         /// than reading. `None` for content nobody is typing into, which
         /// is every view that only shows.
         caret: Option<Caret>,
+        /// The text marked with the pointer, which the host draws
+        /// inverted. `None` when nothing is.
+        selection: Option<TextSelection>,
     },
+}
+
+/// A run of text marked in [`Content::Lines`], in the same terms as a
+/// [`Caret`] and for the same reason: the host knows where a glyph was
+/// drawn, and only the extension knows which character it is.
+///
+/// Ordered, and half-open: `from` is the first character marked and `to`
+/// the position just past the last, so an empty selection is never one.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TextSelection {
+    pub from: Caret,
+    pub to: Caret,
+}
+
+impl TextSelection {
+    /// Which characters of `line` are marked, as a range of character
+    /// indices; the end is `usize::MAX` where the selection carries on
+    /// past the line. `None` for a line it does not reach.
+    pub fn on_line(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        if line < self.from.line || line > self.to.line {
+            return None;
+        }
+        let start = if line == self.from.line {
+            self.from.column
+        } else {
+            0
+        };
+        let end = if line == self.to.line {
+            self.to.column
+        } else {
+            usize::MAX
+        };
+        Some(start..end)
+    }
 }
 
 /// The caret in editable [`Content::Lines`].
@@ -599,6 +636,17 @@ pub enum ViewHit {
         /// Display cells from the start of that line's text.
         cell: usize,
     },
+    /// The pointer, held down since a [`ViewHit::PlaceCaret`], has been
+    /// carried here: everything between the two is being marked. Resolved
+    /// the way that one is, and clamped to the text drawn — a drag past
+    /// the last line names the line after it, which is how a selection
+    /// reaches what the host scrolled into view to follow it.
+    SelectTo {
+        line: usize,
+        cell: usize,
+    },
+    /// The pointer held since a [`ViewHit::PlaceCaret`] came up.
+    LetGo,
     /// One of the [`View::modes`] offered, chosen — by its index into
     /// that list, which is the extension's own order.
     SelectMode(usize),

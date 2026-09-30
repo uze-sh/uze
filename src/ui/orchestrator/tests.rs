@@ -8305,6 +8305,94 @@ mod workspace_tests {
         driven.pump();
     }
 
+    /// The code surface answers the same gesture a pane does: press on a
+    /// file's text, drag, let go, and what was passed over is on the
+    /// clipboard.
+    #[test]
+    fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
+        use uze_extensions::{DirEntry, ExtensionHit, Unreadable, code};
+
+        /// One file in one directory, answered from memory: what is under
+        /// test is where the pointer lands, not a read.
+        struct OneFile;
+        impl uze_extensions::Host for OneFile {
+            fn git(&self, _: &Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+                Err("no git here".to_owned())
+            }
+            fn repository_root(&self, _: &Path) -> Result<PathBuf, String> {
+                Err("no git here".to_owned())
+            }
+            fn read_file(&self, _: &Path) -> Result<String, Unreadable> {
+                Ok("hello world\nsecond\n".to_owned())
+            }
+            fn list_dir(&self, _: &Path) -> Result<Vec<DirEntry>, String> {
+                Ok(vec![DirEntry {
+                    directory: false,
+                    name: "notes.txt".to_owned(),
+                }])
+            }
+            fn write_file(&self, _: &Path, _: &str) -> Result<(), String> {
+                Err("read only".to_owned())
+            }
+            fn delete_file(&self, _: &Path) -> Result<(), String> {
+                Err("read only".to_owned())
+            }
+            fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
+                Err("read only".to_owned())
+            }
+            fn syntax_theme(&self) -> String {
+                String::new()
+            }
+        }
+
+        let home = UzeHome::at(uze_testkit::temp::scratch(
+            "orchestrator-code-copy-on-select",
+        ));
+        let mut model = model_of(session("/tmp"));
+        let mut view = code::CodeView::opening(
+            PathBuf::from("/w"),
+            "/w".to_owned(),
+            code::ContentMode::Contents,
+        );
+        let settle = |view: &mut code::CodeView| {
+            while let Some(request) = view.take_request() {
+                view.absorb(code::fulfill(&OneFile, request));
+            }
+        };
+        settle(&mut view);
+        let space = uze_extensions::view::Size {
+            width: 60,
+            height: 20,
+        };
+        code::handle_command(&mut view, uze_extensions::view::Command::Activate, space);
+        settle(&mut view);
+        model.code = Some(view);
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let first_line = driven.hit(|hit| {
+            matches!(
+                hit,
+                WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { line: 0, .. }))
+            )
+        });
+        let text = first_line.x + driven.attach.model.code_scrollbars.content_gutter;
+
+        driven.press(text, first_line.y);
+        driven.mouse(
+            text + 5,
+            first_line.y,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+        driven.mouse(
+            text + 5,
+            first_line.y,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+
+        assert_eq!(driven.attach.model.clipboard.as_deref(), Some("hello"));
+        assert!(!driven.attach.model.marking_code_text, "the drag is over");
+    }
+
     #[test]
     fn releasing_a_drag_over_a_pane_copies_what_it_covered() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-copy-on-select"));
