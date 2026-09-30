@@ -45,7 +45,7 @@ scenes:
         check: false
       - shell: "{uze} market add {world}/market"
         say: register the staged marketplace
-      - shell: "cd {project} && {uze} flow@demo && {uze} install && sha256sum agents.lock > {world}/lock.sha"
+      - shell: "cd {project} && {uze} flow@demo && {uze} install && cp agents.lock {world}/lock.before"
         say: add and install the plugin, and remember the lock's bytes
     then:
       - file: "{project}/AGENTS.md"
@@ -90,7 +90,7 @@ scenes:
   - scene: and then the package manager's lock is exactly as it was
     when:
       - wait: shell
-        until: cd {project} && sha256sum -c {world}/lock.sha
+        until: cmp -s {project}/agents.lock {world}/lock.before
         timeout: 5
         say: compare the lock's bytes with the ones remembered
     then:

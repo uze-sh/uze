@@ -164,6 +164,9 @@ fn the_policy_in_force_is_what_the_manifest_says_and_it_reaches_the_projection()
         "worktrees:\n  completion: pr\n",
     )
     .unwrap();
+    // The workspace keeps its section in an AGENTS.md the project has; it
+    // never creates one.
+    fs::write(root.join("AGENTS.md"), "# Project\n").unwrap();
 
     application.workspace().sync_policy_region(&root).unwrap();
 
