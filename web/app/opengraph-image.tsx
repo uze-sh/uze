@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { appName, appTagline } from '@/lib/shared';
+import { appMotto, appName, appTagline } from '@/lib/shared';
 
 // The card a link to any page without one of its own unfurls into: the docs
 // pages draw their own, so this is the landing page's, and every chat or
@@ -64,10 +64,10 @@ export default function Image() {
           <div style={{ fontSize: 112, fontWeight: 700, color: paper, letterSpacing: -4 }}>{appName}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div style={{ fontSize: 60, color: paper, letterSpacing: -1.5, lineHeight: 1.1 }}>{appTagline}</div>
-          <div style={{ fontSize: 30, color: muted }}>
-            One setup for Claude Code, Codex, OpenCode and Antigravity
+          <div style={{ fontSize: 56, color: paper, letterSpacing: -1.5, lineHeight: 1.1 }}>
+            The package manager and workspace for coding agents
           </div>
+          <div style={{ fontSize: 30, color: muted }}>{appMotto}</div>
         </div>
         <div
           style={{

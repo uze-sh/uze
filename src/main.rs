@@ -30,7 +30,7 @@ use uze_application::{
 #[command(
     name = "uze",
     version,
-    about = "One setup for every coding agent: plugins delivered to each, and a workspace to run them in",
+    about = "The package manager and workspace for coding agents",
     after_help = "Scope: a project is the nearest agents.yaml, repository root or AGENTS.md. \
                   Project verbs maintain this project's agents.yaml when one is here, and \
                   act on this machine only when there is none — they always say which they \
@@ -870,7 +870,7 @@ const DOCUMENTATION_FOR_AGENTS_URL: &str = "https://uze.sh/llms.txt";
 
 fn print_root_help() {
     let version = env!("CARGO_PKG_VERSION");
-    let desc = "Plugins for every agent, and a workspace to run them";
+    let desc = "The package manager and workspace for coding agents";
     // Center within the commands block width (indent 2 + cmd 12 + gap 2 + longest desc ~44 = 60)
     const CW: usize = 60;
     let center = |s: &str| {

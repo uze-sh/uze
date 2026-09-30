@@ -5,8 +5,8 @@ OpenCode, Antigravity CLI) when working with code in this repository.
 
 ## What this is
 
-uze is a Rust CLI: a compatibility and distribution layer for agentic tooling
-across harnesses (Claude Code, Codex, OpenCode, Antigravity CLI). You install a
+uze is a Rust CLI: the package manager and workspace for coding agents
+(Claude Code, Codex, OpenCode, Antigravity CLI). You install a
 plugin once; uze stores its bytes centrally and delivers it through each
 harness's most native mechanism — a real plugin where one exists, native
 capabilities where it doesn't, a safe adapter only as a last resort. It also

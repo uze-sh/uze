@@ -131,14 +131,14 @@ export default function HomePage() {
           the headline for the same view. */}
       <section className="flex w-full max-w-5xl flex-col justify-center min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] py-14 text-center">
         <h1 className="mx-auto max-w-[21ch] font-mono font-bold tracking-tight text-ink text-[2.25rem] leading-[1.04] sm:text-6xl lg:text-[4rem]">
-          Agents come and go.
+          The package manager and workspace
           <br />
-          <span className="text-accent">Your work stays.</span>
+          <span className="text-accent">for coding agents.</span>
         </h1>
         <p className="mx-auto mt-6 max-w-[56ch] text-lg leading-relaxed text-muted">
-          One plugin and one <code className="font-mono text-ink">AGENTS.md</code>, native in
-          every agent you run, today&apos;s and the ones after them. Run several at once; closing
-          the terminal mid-run costs you nothing.
+          Install plugins once for Claude Code, Codex, OpenCode and Antigravity, with one{' '}
+          <code className="font-mono text-ink">AGENTS.md</code> every one of them reads. Run them
+          side by side, each in a checkout of its own. Agents come and go; your work stays.
         </p>
 
         <div className="mx-auto mt-9 flex max-w-xl flex-col items-stretch gap-3 sm:flex-row">

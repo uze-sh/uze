@@ -237,7 +237,7 @@ fi
 # what "latest" currently means.
 printf '%s%s%s\n' "$BRIGHT" "$(centred UZE)" "$RESET"
 printf '%s%s%s\n' "$MUTED" "$(centred "$platform")" "$RESET"
-printf '%s%s%s\n' "$MUTED" "$(centred 'Plugins for every agent, and a workspace to run them')" "$RESET"
+printf '%s%s%s\n' "$MUTED" "$(centred 'The package manager and workspace for coding agents')" "$RESET"
 say ""
 note "${base_url}/${path}/${archive}"
 
