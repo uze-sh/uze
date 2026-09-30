@@ -37,15 +37,15 @@
 
 ## 4. The shim belongs to the workspace
 
-- [ ] 4.1 Stop `uze setup` from writing the shell rc: remove the `ensure_path_line` path from `runtime_shim.rs` and its report lines, keep creating the shims
-- [ ] 4.2 Make `uze setup` remove a verified `# >>> uze shims path >>>` block and report it, leaving a file whose markers do not verify untouched and reported; add the test that fails once the workspace version reaches 1.0.0, when the removal and the test are deleted
-- [ ] 4.3 Compose every pane's `Launch` env with the shims directory prepended to `PATH` in the client; confirm menu launches keep using the shim's absolute path (`services/tasks.rs`)
-- [ ] 4.4 Add to the pane status in the versioned client protocol whether the foreground name came from the shim's stamp, decided by the server from the environment it already reads (Linux and macOS); bump the protocol and keep an older client's decoding rule
-- [ ] 4.5 In the client, show one toast per pane when a harness the registry knows is in the foreground without the stamp, saying that session resume and project resources are lost for it
-- [ ] 4.6 Remove the `PATH` walk (`runtime_shim_is_active` in `doctor.rs`) and the `ShimShadowed` state (`read_models.rs` `RuntimeProjection`), and update `agent_context.rs` and `src/ui/agent_support.rs`; `uze doctor` stops reporting a shadowed shim
-- [ ] 4.7 Report project resources that reach a harness only through `runtime_contribution` as adapted, "inside the workspace", in `uze inspect`, `uze status`, `uze doctor` and the client's agent support
-- [ ] 4.8 Tests: `uze setup` leaves shell files unchanged and removes an earlier block byte-exactly; a typed harness in a pane reaches the shim regardless of the outer `PATH`; continuity still holds with an untouched operator `PATH`; the pane status carries the stamp flag; `cli-performance`'s scenario that no command walks `PATH` for the shim
-- [ ] 4.9 Journeys: invert `01-first-run/01`'s check that the shell rc contains the shims into "the shell rc is unchanged", and add a pane-level check that a typed harness resolves to the shim; the Lab already prepends the shims itself and needs no change here
+- [x] 4.1 Stop `uze setup` from writing the shell rc: remove the `ensure_path_line` path from `runtime_shim.rs` and its report lines, keep creating the shims
+- [x] 4.2 Make `uze setup` remove a verified `# >>> uze shims path >>>` block and report it, leaving a file whose markers do not verify untouched and reported; add the test that fails once the workspace version reaches 1.0.0, when the removal and the test are deleted
+- [x] 4.3 Compose every pane's `Launch` env with the shims directory prepended to `PATH` in the client; confirm menu launches keep using the shim's absolute path (`services/tasks.rs`)
+- [x] 4.4 Add to the pane status in the versioned client protocol whether the foreground name came from the shim's stamp, decided by the server from the environment it already reads (Linux and macOS); bump the protocol and keep an older client's decoding rule
+- [x] 4.5 In the client, show one toast per pane when a harness the registry knows is in the foreground without the stamp, saying that session resume and project resources are lost for it
+- [x] 4.6 Remove the `PATH` walk (`runtime_shim_is_active` in `doctor.rs`) and the `ShimShadowed` state (`read_models.rs` `RuntimeProjection`), and update `agent_context.rs` and `src/ui/agent_support.rs`; `uze doctor` stops reporting a shadowed shim
+- [x] 4.7 Report project resources that reach a harness only through `runtime_contribution` as adapted, "inside the workspace", in `uze inspect`, `uze status`, `uze doctor` and the client's agent support
+- [x] 4.8 Tests: `uze setup` leaves shell files unchanged and removes an earlier block byte-exactly; a typed harness in a pane reaches the shim regardless of the outer `PATH`; continuity still holds with an untouched operator `PATH`; the pane status carries the stamp flag; `cli-performance`'s scenario that no command walks `PATH` for the shim
+- [x] 4.9 Journeys: invert `01-first-run/01`'s check that the shell rc contains the shims into "the shell rc is unchanged", and add a pane-level check that a typed harness resolves to the shim (the pane-level check lands with the journey in 9.7); the Lab already prepends the shims itself and needs no change here
 
 ## 5. Surfaces that name the wrong module
 

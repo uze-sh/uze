@@ -410,6 +410,31 @@ pub fn stop() -> Result<(), RuntimeError> {
     }
 }
 
+/// A directory every pane's `PATH` starts with, named once by the binary
+/// that serves. The runtime does not know what is in it; the binary puts the
+/// workspace's own launchers there, so a program typed into a pane, or
+/// started by one, finds them first without the operator's shell being told
+/// anything.
+static PANE_PATH_FIRST: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Names the directory every pane's `PATH` starts with. Set before
+/// [`serve`]; a second call is ignored, since panes already spawned were
+/// given the first.
+pub fn put_first_on_pane_path(directory: PathBuf) {
+    let _ = PANE_PATH_FIRST.set(directory);
+}
+
+/// `inherited`, with `first` moved to its front.
+fn path_with_first(inherited: Option<std::ffi::OsString>, first: &Path) -> std::ffi::OsString {
+    let rest = inherited
+        .map(|path| env::split_paths(&path).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|entry| entry != first);
+    env::join_paths(std::iter::once(first.to_path_buf()).chain(rest))
+        .unwrap_or_else(|_| first.as_os_str().to_owned())
+}
+
 /// Serves the user's one workspace. `seat` is the first space when nothing
 /// is persisted yet, and is otherwise ignored.
 pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
@@ -1884,6 +1909,9 @@ impl Server {
             if let Some((cwd, process)) = runtime.foreground_status() {
                 session.update_pane_status(pane_id, cwd, process);
             }
+            if let Some(through) = runtime.foreground_through_launcher() {
+                session.update_pane_launcher(pane_id, through);
+            }
         }
         let runtime = Arc::new(runtime);
         let replaced = {
@@ -1932,12 +1960,13 @@ impl Server {
             .iter()
             .map(|(&id, runtime)| (id, Arc::clone(runtime)))
             .collect();
-        let probes: Vec<(PaneId, PathBuf, String)> = runtimes
+        let probes: Vec<(PaneId, PathBuf, String, bool)> = runtimes
             .iter()
             .filter_map(|(id, runtime)| {
+                let through = runtime.foreground_through_launcher().unwrap_or(false);
                 runtime
                     .foreground_status()
-                    .map(|(cwd, process)| (*id, cwd, process))
+                    .map(|(cwd, process)| (*id, cwd, process, through))
             })
             .collect();
         if probes.is_empty() {
@@ -1945,8 +1974,9 @@ impl Server {
         }
         let mut changed = false;
         let mut session = self.session.lock().expect("session poisoned");
-        for (pane, cwd, process) in probes {
+        for (pane, cwd, process, through) in probes {
             changed |= session.update_pane_status(pane, cwd, process);
+            changed |= session.update_pane_launcher(pane, through);
         }
         drop(session);
         if changed {
@@ -2462,6 +2492,9 @@ impl PaneRuntime {
         for inherited in crate::launch::STAMPED_VARIABLES {
             command.env_remove(inherited);
         }
+        if let Some(first) = PANE_PATH_FIRST.get() {
+            command.env("PATH", path_with_first(env::var_os("PATH"), first));
+        }
         for (name, value) in launch.env() {
             command.env(name, value);
         }
@@ -2654,6 +2687,19 @@ impl PaneRuntime {
         let cwd = process_probe::current_directory_of(pgid)?;
         let process = shim_launched_name(pgid).or_else(|| process_probe::command_name_of(pgid))?;
         Some((cwd, process))
+    }
+
+    /// Whether the foreground process carries the stamp of the launcher
+    /// that started it, read from its own environment (`/proc` on Linux,
+    /// `KERN_PROCARGS2` on macOS). `None` when there is no foreground
+    /// process to ask.
+    fn foreground_through_launcher(&self) -> Option<bool> {
+        let pgid = self
+            .master
+            .lock()
+            .expect("master poisoned")
+            .process_group_leader()?;
+        Some(shim_launched_name(pgid).is_some())
     }
 
     fn snapshot(&self) -> PaneSnapshot {
@@ -3068,6 +3114,21 @@ fn identity_of(root: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_named_directory_leads_the_pane_path_once() {
+        let first = Path::new("/home/x/.uze/shims");
+        let joined =
+            crate::runtime::path_with_first(Some("/usr/bin:/home/x/.uze/shims:/bin".into()), first);
+        assert_eq!(
+            joined,
+            std::ffi::OsString::from("/home/x/.uze/shims:/usr/bin:/bin")
+        );
+        assert_eq!(
+            crate::runtime::path_with_first(None, first),
+            std::ffi::OsString::from("/home/x/.uze/shims")
+        );
+    }
+
     use super::{
         ANSWERS_WITHIN, Arrival, Launch, Listener, MAX_FRAME, MAX_PANE_DIMENSION, MAX_SOCKET_PATH,
         Outbox, PaneRuntime, PersistedWorkspace, ReplySink, RuntimeError, Selection, Server,
@@ -5124,12 +5185,18 @@ mod tests {
             .lock()
             .expect("master poisoned")
             .process_group_leader();
+        let through_launcher = pane.foreground_through_launcher();
         pane.stop();
 
         assert!(
             reported.is_some(),
             "the pane must report the shell it actually spawned, not the identity of the \
              session that happened to start the server"
+        );
+        assert_eq!(
+            through_launcher,
+            Some(false),
+            "a shell nobody launched through a shim is reported as not coming through one"
         );
         let leader = leader.expect("the spawned shell owns the PTY foreground group");
         assert_eq!(

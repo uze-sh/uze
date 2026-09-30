@@ -4373,6 +4373,7 @@ mod workspace_tests {
             columns: 80,
             rows: 24,
             process: "agent".to_owned(),
+            through_launcher: true,
         };
         space.tabs.push(tab);
         model
@@ -7650,6 +7651,7 @@ mod workspace_tests {
             columns: 80,
             rows: 24,
             process: process.to_owned(),
+            through_launcher: true,
         };
         Tab {
             id: TabId(1),
@@ -7685,6 +7687,34 @@ mod workspace_tests {
         );
         let model = model_of(session);
         assert_eq!(next_agent_label(&model), "agent 2");
+    }
+
+    /// A harness in a pane that did not come through the workspace's shim
+    /// is said once for that pane, and one that did is never said at all.
+    #[test]
+    fn a_harness_that_bypassed_the_launcher_is_said_once_per_pane() {
+        let mut session = session("/tmp");
+        session.workspace.spaces[0].tabs[0].pane.process = "claude".into();
+        session.workspace.spaces[0].tabs[0].pane.through_launcher = false;
+        let mut model = model_of(session.clone());
+        model.remembered.launchers = Some(vec!["claude".to_owned()]);
+
+        model.note_launcher_bypass();
+        model.note_launcher_bypass();
+        assert_eq!(model.toast_stack().len(), 1, "said once");
+        assert!(
+            model.remembered.toasts[0].text.contains("claude"),
+            "the notice names the harness"
+        );
+
+        let mut through = model_of({
+            let mut session = session;
+            session.workspace.spaces[0].tabs[0].pane.through_launcher = true;
+            session
+        });
+        through.remembered.launchers = Some(vec!["claude".to_owned()]);
+        through.note_launcher_bypass();
+        assert!(through.toast_stack().is_empty(), "nothing to say");
     }
 
     #[test]

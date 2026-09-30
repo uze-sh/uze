@@ -1,21 +1,19 @@
-//! Explicit, reversible shell `PATH` integration for `UzeHome::shims_dir()`.
+//! Taking back the `PATH` block earlier builds wrote into a shell's startup
+//! file.
 //!
-//! Never invoked implicitly — only from `uze setup <harness>`, an action
-//! the operator already explicitly ran, and only once that call actually
-//! created a shim needing `PATH`. The edit lives inside a whole-line marked
-//! block, structurally in the same spirit as `text_region`'s ownership
-//! guarantee (exactly one begin marker, exactly one end marker, content
-//! between verified before any rewrite) but not built on `text_region`
-//! itself: shell scripts have no block-comment syntax, so `text_region`'s
-//! `<!-- uze:begin ... -->` HTML-comment markers would corrupt a real
-//! `.bashrc`/`.zshrc` if written verbatim. This module uses `#`-prefixed
-//! whole-line markers instead — a shell comment in every shell this
-//! targets.
+//! UZE no longer edits shell startup files: the runtime shim belongs to the
+//! workspace, which puts the shims first on `PATH` in the panes it starts.
+//! A build before that wrote a whole-line marked block into the operator's
+//! `.bashrc`/`.zshrc`/`config.fish`; the block is UZE's, so `uze setup`
+//! removes it, and nothing else. Only a block whose two markers verify is
+//! removed, every byte outside it kept; a file with one marker, or with
+//! them out of order, is left alone and reported.
+//!
+//! This exists only to take back what UZE wrote. It is deleted, with its
+//! caller and the test that holds the date, once no supported release is a
+//! build that wrote the block (`the_block_is_taken_back_only_until_1_0_0`).
 
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-};
+use std::{env, fs, path::Path, path::PathBuf};
 
 use crate::{
     error::{Result, UzeError},
@@ -78,54 +76,8 @@ pub fn detect_shell_rc(home_dir: &Path) -> Option<ShellRcTarget> {
 const BEGIN: &str = "# >>> uze shims path >>>";
 const END: &str = "# <<< uze shims path <<<";
 
-fn desired_line(kind: ShellKind, shims_dir: &Path) -> String {
-    let shims_dir = shims_dir.display().to_string();
-    match kind {
-        ShellKind::Bash | ShellKind::Zsh => {
-            format!("export PATH=\"{}:$PATH\"", escape_double_quoted(&shims_dir))
-        }
-        // fish has no `export`; `fish_add_path` is its idiomatic,
-        // duplicate-safe equivalent.
-        ShellKind::Fish => format!("fish_add_path {}", fish_word(&shims_dir)),
-    }
-}
-
-/// Inside POSIX double quotes only these four stay special, and a path
-/// without any of them is written exactly as earlier builds wrote it.
-fn escape_double_quoted(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len());
-    for character in text.chars() {
-        if matches!(character, '\\' | '"' | '$' | '`') {
-            escaped.push('\\');
-        }
-        escaped.push(character);
-    }
-    escaped
-}
-
-/// A path of plain characters stays bare, as earlier builds wrote it; any
-/// other is single-quoted, where fish treats only `\\` and `'` specially.
-fn fish_word(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || "/._-+,:@%=".contains(character));
-    if plain {
-        return text.to_owned();
-    }
-    let mut quoted = String::from("'");
-    for character in text.chars() {
-        if matches!(character, '\\' | '\'') {
-            quoted.push('\\');
-        }
-        quoted.push(character);
-    }
-    quoted.push('\'');
-    quoted
-}
-
-/// The line ending the file already uses, so rewriting UZE's block does not
-/// convert someone's CRLF file.
+/// The line ending the file already uses, so rewriting it does not convert
+/// someone's CRLF file.
 fn line_ending(content: &str) -> &'static str {
     if content.contains("\r\n") {
         "\r\n"
@@ -134,20 +86,15 @@ fn line_ending(content: &str) -> &'static str {
     }
 }
 
-/// Idempotently ensures a marked block containing exactly the right line
-/// is the final PATH-affecting content in `target.rc_file`. Keeping UZE's
-/// owned block last means a later vendor installer cannot shadow its shims
-/// by prepending its own bin directory after this block. Returns `Ok(true)`
-/// if it wrote a change, `Ok(false)` if the file already had exactly this
-/// content in the required position. Refuses to touch the file (returns
-/// `Err`) if it finds only one of the two markers — that shape means
-/// something other than this function edited it last, and guessing at a fix
-/// would risk corrupting content that isn't ours.
-pub fn ensure_path_line(target: &ShellRcTarget, shims_dir: &Path) -> Result<bool> {
-    let wanted = desired_line(target.kind, shims_dir);
+/// Removes the marked block an earlier build wrote into `target.rc_file`,
+/// keeping every other byte. `Ok(true)` when it removed one, `Ok(false)`
+/// when the file holds none (or does not exist). Refuses (`Err`) a file
+/// whose markers do not verify — one of them, or both out of order —
+/// because something other than UZE edited it last.
+pub fn take_back_path_block(target: &ShellRcTarget) -> Result<bool> {
     let existing = match fs::read_to_string(&target.rc_file) {
         Ok(content) => content,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => {
             return Err(UzeError::Read {
                 path: target.rc_file.clone(),
@@ -157,35 +104,19 @@ pub fn ensure_path_line(target: &ShellRcTarget, shims_dir: &Path) -> Result<bool
     };
     let newline = line_ending(&existing);
     let lines: Vec<&str> = existing.lines().collect();
+    let begins = lines.iter().filter(|line| **line == BEGIN).count();
+    let ends = lines.iter().filter(|line| **line == END).count();
     let begin = lines.iter().position(|line| *line == BEGIN);
     let end = lines.iter().position(|line| *line == END);
-
     match (begin, end) {
-        (Some(b), Some(e)) if e > b => {
-            if e == b + 2 && lines[b + 1] == wanted && e + 1 == lines.len() {
-                return Ok(false);
+        (None, None) => Ok(false),
+        (Some(b), Some(e)) if e > b && begins == 1 && ends == 1 => {
+            let kept: Vec<&str> = lines[..b].iter().chain(&lines[e + 1..]).copied().collect();
+            let mut rebuilt = kept.join(newline);
+            if !kept.is_empty() && existing.ends_with('\n') {
+                rebuilt.push_str(newline);
             }
-            let mut rebuilt: Vec<&str> = lines[..b].to_vec();
-            rebuilt.extend(&lines[e + 1..]);
-            rebuilt.push(BEGIN);
-            rebuilt.push(&wanted);
-            rebuilt.push(END);
-            write_atomic_preserving(
-                &target.rc_file,
-                format!("{}{newline}", rebuilt.join(newline)).as_bytes(),
-            )?;
-            Ok(true)
-        }
-        (None, None) => {
-            let mut content = existing;
-            if !content.is_empty() && !content.ends_with('\n') {
-                content.push_str(newline);
-            }
-            for line in [BEGIN, &wanted, END] {
-                content.push_str(line);
-                content.push_str(newline);
-            }
-            write_atomic_preserving(&target.rc_file, content.as_bytes())?;
+            write_atomic_preserving(&target.rc_file, rebuilt.as_bytes())?;
             Ok(true)
         }
         _ => Err(UzeError::ManagedRegionDrift(target.rc_file.clone())),
@@ -196,169 +127,84 @@ pub fn ensure_path_line(target: &ShellRcTarget, shims_dir: &Path) -> Result<bool
 mod tests {
     use super::*;
 
-    #[test]
-    fn writes_a_fresh_marked_block_into_an_empty_or_missing_rc_file() {
-        let root = uze_testkit::temp::scratch("fresh");
-        let target = ShellRcTarget {
-            kind: ShellKind::Zsh,
-            rc_file: root.join(".zshrc"),
-        };
-        let changed = ensure_path_line(&target, Path::new("/home/x/.uze/shims")).unwrap();
-        assert!(changed);
-        let content = fs::read_to_string(&target.rc_file).unwrap();
-        assert!(content.contains(BEGIN));
-        assert!(content.contains(END));
-        assert!(content.contains("export PATH=\"/home/x/.uze/shims:$PATH\""));
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn preserves_existing_content_around_the_block() {
-        let root = uze_testkit::temp::scratch("preserve");
-        let rc_file = root.join(".bashrc");
-        fs::write(&rc_file, "alias ll='ls -la'\n").unwrap();
-        let target = ShellRcTarget {
-            kind: ShellKind::Bash,
-            rc_file: rc_file.clone(),
-        };
-        ensure_path_line(&target, Path::new("/home/x/.uze/shims")).unwrap();
-        let content = fs::read_to_string(&rc_file).unwrap();
-        assert!(content.starts_with("alias ll='ls -la'\n"));
-        assert!(content.contains(BEGIN));
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn a_shims_dir_with_shell_metacharacters_is_quoted_for_each_shell() {
-        let shims = Path::new("/home/a b/$x/`c`/\"q\"/it's");
-        assert_eq!(
-            desired_line(ShellKind::Bash, shims),
-            "export PATH=\"/home/a b/\\$x/\\`c\\`/\\\"q\\\"/it's:$PATH\""
-        );
-        assert_eq!(
-            desired_line(ShellKind::Fish, shims),
-            "fish_add_path '/home/a b/$x/`c`/\"q\"/it\\'s'"
-        );
-        assert_eq!(
-            desired_line(ShellKind::Fish, Path::new("/home/x/.uze/shims")),
-            "fish_add_path /home/x/.uze/shims"
-        );
-    }
-
-    #[test]
-    fn a_crlf_rc_file_keeps_its_line_endings_when_the_block_moves() {
-        let root = uze_testkit::temp::scratch("crlf");
-        let rc_file = root.join(".bashrc");
-        let shims = Path::new("/home/x/.uze/shims");
-        let target = ShellRcTarget {
-            kind: ShellKind::Bash,
-            rc_file: rc_file.clone(),
-        };
-        fs::create_dir_all(&root).unwrap();
-        fs::write(&rc_file, "alias ll='ls -la'\r\n").unwrap();
-        ensure_path_line(&target, shims).unwrap();
-        let mut content = fs::read_to_string(&rc_file).unwrap();
-        content.push_str("export PATH=\"/opt/bin:$PATH\"\r\n");
-        fs::write(&rc_file, &content).unwrap();
-
-        assert!(ensure_path_line(&target, shims).unwrap());
-
-        let content = fs::read_to_string(&rc_file).unwrap();
-        assert_eq!(
-            content.matches('\n').count(),
-            content.matches("\r\n").count()
-        );
-        assert!(content.ends_with(&format!("{END}\r\n")));
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn a_second_call_with_the_same_shims_dir_is_a_no_op() {
-        let root = uze_testkit::temp::scratch("idempotent");
-        let target = ShellRcTarget {
-            kind: ShellKind::Bash,
-            rc_file: root.join(".bashrc"),
-        };
-        assert!(ensure_path_line(&target, Path::new("/home/x/.uze/shims")).unwrap());
-        assert!(!ensure_path_line(&target, Path::new("/home/x/.uze/shims")).unwrap());
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn moves_the_owned_block_after_later_path_exports() {
-        let root = uze_testkit::temp::scratch("moves-to-end");
+    fn target_with(label: &str, content: &str) -> ShellRcTarget {
+        let root = uze_testkit::temp::scratch(label);
         let rc_file = root.join(".zshrc");
-        let target = ShellRcTarget {
+        fs::write(&rc_file, content).unwrap();
+        ShellRcTarget {
             kind: ShellKind::Zsh,
-            rc_file: rc_file.clone(),
-        };
-        let shims = Path::new("/home/x/.uze/shims");
-        ensure_path_line(&target, shims).unwrap();
-        fs::write(
-            &rc_file,
-            format!(
-                "{}export PATH=\"/home/x/.local/bin:$PATH\"\n",
-                fs::read_to_string(&rc_file).unwrap()
-            ),
-        )
-        .unwrap();
+            rc_file,
+        }
+    }
 
-        assert!(ensure_path_line(&target, shims).unwrap());
-        let content = fs::read_to_string(&rc_file).unwrap();
-        assert!(content.starts_with("export PATH=\"/home/x/.local/bin:$PATH\"\n"));
-        assert!(content.ends_with(&format!(
-            "{BEGIN}\nexport PATH=\"/home/x/.uze/shims:$PATH\"\n{END}\n"
-        )));
-        assert!(!ensure_path_line(&target, shims).unwrap());
-        let _ = fs::remove_dir_all(&root);
+    const BLOCK: &str = "# >>> uze shims path >>>\nexport PATH=\"/home/x/.uze/shims:$PATH\"\n# <<< uze shims path <<<\n";
+
+    #[test]
+    fn the_block_is_removed_and_every_other_byte_kept() {
+        let before = "export EDITOR=vim\n";
+        let after = "alias ll='ls -l'\n";
+        let target = target_with("shell-take-back", &format!("{before}{BLOCK}{after}"));
+        assert!(take_back_path_block(&target).unwrap());
+        assert_eq!(
+            fs::read_to_string(&target.rc_file).unwrap(),
+            format!("{before}{after}")
+        );
+        assert!(
+            !take_back_path_block(&target).unwrap(),
+            "a second pass has nothing to take back"
+        );
     }
 
     #[test]
-    fn a_changed_shims_dir_rewrites_only_the_marked_line() {
-        let root = uze_testkit::temp::scratch("rewrite");
-        let target = ShellRcTarget {
-            kind: ShellKind::Bash,
-            rc_file: root.join(".bashrc"),
-        };
-        ensure_path_line(&target, Path::new("/old/shims")).unwrap();
-        let changed = ensure_path_line(&target, Path::new("/new/shims")).unwrap();
-        assert!(changed);
-        let content = fs::read_to_string(&target.rc_file).unwrap();
-        assert!(content.contains("/new/shims"));
-        assert!(!content.contains("/old/shims"));
-        assert_eq!(content.matches(BEGIN).count(), 1);
-        assert_eq!(content.matches(END).count(), 1);
-        let _ = fs::remove_dir_all(&root);
+    fn a_file_holding_only_the_block_is_left_empty() {
+        let target = target_with("shell-take-back-only", BLOCK);
+        assert!(take_back_path_block(&target).unwrap());
+        assert_eq!(fs::read_to_string(&target.rc_file).unwrap(), "");
     }
 
     #[test]
-    fn a_malformed_single_marker_is_left_untouched() {
-        let root = uze_testkit::temp::scratch("malformed");
-        let rc_file = root.join(".bashrc");
-        fs::write(&rc_file, format!("{BEGIN}\nsomething odd\n")).unwrap();
-        let target = ShellRcTarget {
-            kind: ShellKind::Bash,
-            rc_file: rc_file.clone(),
-        };
-        let result = ensure_path_line(&target, Path::new("/home/x/.uze/shims"));
-        assert!(result.is_err());
-        let content = fs::read_to_string(&rc_file).unwrap();
-        assert_eq!(content, format!("{BEGIN}\nsomething odd\n"));
-        let _ = fs::remove_dir_all(&root);
+    fn a_crlf_file_keeps_its_line_endings() {
+        let content = format!(
+            "export A=1\r\n{}export B=2\r\n",
+            BLOCK.replace('\n', "\r\n")
+        );
+        let target = target_with("shell-take-back-crlf", &content);
+        assert!(take_back_path_block(&target).unwrap());
+        assert_eq!(
+            fs::read_to_string(&target.rc_file).unwrap(),
+            "export A=1\r\nexport B=2\r\n"
+        );
     }
 
     #[test]
-    fn fish_gets_fish_add_path_not_export() {
-        let root = uze_testkit::temp::scratch("fish");
-        let target = ShellRcTarget {
-            kind: ShellKind::Fish,
-            rc_file: root.join("config.fish"),
-        };
-        ensure_path_line(&target, Path::new("/home/x/.uze/shims")).unwrap();
-        let content = fs::read_to_string(&target.rc_file).unwrap();
-        assert!(content.contains("fish_add_path /home/x/.uze/shims"));
-        assert!(!content.contains("export"));
-        let _ = fs::remove_dir_all(&root);
+    fn a_file_without_the_block_is_never_written() {
+        let target = target_with("shell-take-back-none", "export A=1");
+        assert!(!take_back_path_block(&target).unwrap());
+        assert_eq!(fs::read_to_string(&target.rc_file).unwrap(), "export A=1");
+    }
+
+    #[test]
+    fn markers_that_do_not_verify_are_left_untouched() {
+        let content = format!("{BEGIN}\nsomething odd\n");
+        let target = target_with("shell-take-back-malformed", &content);
+        assert!(take_back_path_block(&target).is_err());
+        assert_eq!(fs::read_to_string(&target.rc_file).unwrap(), content);
+    }
+
+    /// The removal is the one place UZE still edits a shell startup file,
+    /// and only to take back its own block. Every build before the one that
+    /// stopped writing it is a beta; once 1.0.0 is released nobody can
+    /// upgrade to a supported release straight from one of them without
+    /// having run `uze setup` since, so the removal, its caller in `setup`,
+    /// and this test go.
+    #[test]
+    fn the_block_is_taken_back_only_until_1_0_0() {
+        let version = env!("CARGO_PKG_VERSION");
+        assert!(
+            version.starts_with("0.") || version.starts_with("1.0.0-"),
+            "uze {version} is past 1.0.0: delete `take_back_path_block`, its call in \
+             `ensure_runtime_shim`, and this test"
+        );
     }
 
     /// `$SHELL` is process-global and `detect_shell_rc` reads it, so the

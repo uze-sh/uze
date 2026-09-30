@@ -2128,7 +2128,7 @@ impl IntegrationPort for ShimConflictingIntegration {
 }
 
 #[test]
-fn runtime_shim_repairs_an_rc_file_when_the_shims_dir_is_already_shadowed() {
+fn runtime_shim_takes_back_the_block_an_earlier_build_wrote_and_writes_none() {
     let root = uze_testkit::temp::scratch("runtime-shim-shadowed");
     let home = UzeHome::at(root.join("uze-home"));
     let shims_dir = home.shims_dir();
@@ -2177,20 +2177,22 @@ fn runtime_shim_repairs_an_rc_file_when_the_shims_dir_is_already_shadowed() {
         .ensure_runtime_shim(&ShimConflictingIntegration {}, None)
         .unwrap()
         .expect("runtime-enabled integration creates a shim");
-    assert_eq!(setup.rc_file_updated, Some(rc_file.clone()));
-    assert!(setup.path_hint.is_some(), "current shell remains shadowed");
-    let rc = fs::read_to_string(&rc_file).unwrap();
-    assert!(rc.starts_with(&format!(
-        "export PATH=\"{}:$PATH\"\n",
-        real_bin_dir.display()
-    )));
-    assert!(rc.ends_with(&format!(
-        "# >>> uze shims path >>>\nexport PATH=\"{}:$PATH\"\n# <<< uze shims path <<<\n",
-        shims_dir.display()
-    )));
+    assert!(
+        setup.shim_path.exists(),
+        "the shim is created for the workspace"
+    );
+    assert_eq!(setup.took_back_from, Some(rc_file.clone()));
+    assert_eq!(
+        fs::read_to_string(&rc_file).unwrap(),
+        format!("export PATH=\"{}:$PATH\"\n", real_bin_dir.display()),
+        "the block is gone and the operator's own line is exactly as it was"
+    );
 
-    drop(environment);
-    fs::remove_dir_all(root).unwrap();
+    let again = app
+        .ensure_runtime_shim(&ShimConflictingIntegration {}, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.took_back_from, None, "nothing left to take back");
 }
 
 #[test]
@@ -2504,9 +2506,9 @@ fn a_shadowed_shim_is_reported_instead_of_the_projection_it_defeats() {
         projects_at_runtime: true,
     };
     let support = HarnessContextSupport::declared(&integration, false);
-    assert_eq!(support.instructions, ContextMechanism::ShimShadowed);
-    assert_eq!(support.project_skills, ContextMechanism::ShimShadowed);
-    assert_eq!(support.project_agents, ContextMechanism::ShimShadowed);
+    assert_eq!(support.instructions, ContextMechanism::ShimMissing);
+    assert_eq!(support.project_skills, ContextMechanism::ShimMissing);
+    assert_eq!(support.project_agents, ContextMechanism::ShimMissing);
 }
 
 #[test]

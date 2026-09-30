@@ -391,15 +391,15 @@ fn context_row(mechanism: ContextMechanism) -> (String, Style) {
             theme::fg(Token::Accent),
         ),
         ContextMechanism::RuntimeShim => (
-            format!("{} Runtime shim", theme::glyph(Symbol::MarkNative)),
+            format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::Accent),
         ),
         ContextMechanism::Bridge => (
             format!("{} Bridged", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::Accent),
         ),
-        ContextMechanism::ShimShadowed => (
-            format!("{} PATH shadowed", theme::glyph(Symbol::MarkAttention)),
+        ContextMechanism::ShimMissing => (
+            format!("{} Run uze setup", theme::glyph(Symbol::MarkAttention)),
             theme::fg(Token::StateWarning),
         ),
         ContextMechanism::Unsupported => (
@@ -531,13 +531,13 @@ mod tests {
         assert_eq!(rows[0].0, "AGENTS.md");
         assert_eq!(
             rows[0].1,
-            format!("{} Runtime shim", theme::glyph(Symbol::MarkNative))
+            format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative))
         );
         assert_eq!(rows[0].2.fg, Some(theme::color(Token::Accent)));
         assert_eq!(rows[1].0, ".agents/skills");
         assert_eq!(
             rows[1].1,
-            format!("{} Runtime shim", theme::glyph(Symbol::MarkNative))
+            format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative))
         );
     }
 
@@ -578,12 +578,12 @@ mod tests {
     #[test]
     fn a_shadowed_shim_reads_as_an_environment_warning() {
         let rows = context_rows(&support(
-            ContextMechanism::ShimShadowed,
-            ContextMechanism::ShimShadowed,
+            ContextMechanism::ShimMissing,
+            ContextMechanism::ShimMissing,
         ));
         assert_eq!(
             rows[0].1,
-            format!("{} PATH shadowed", theme::glyph(Symbol::MarkAttention))
+            format!("{} Run uze setup", theme::glyph(Symbol::MarkAttention))
         );
         assert_eq!(rows[0].2.fg, Some(theme::color(Token::StateWarning)));
     }

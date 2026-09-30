@@ -378,6 +378,23 @@ fn spawn_policy_region_sync(
     });
 }
 
+/// Asks the registry, once, which names a harness launched through a shim
+/// runs under. Off the frame: composing the application reads the machine.
+fn spawn_launcher_names(home: &UzeHome, sender: mpsc::Sender<Vec<String>>) {
+    let home = home.clone();
+    thread::spawn(move || {
+        let names = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| app.workspace().launcher_names())
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(names);
+    });
+}
+
 /// An agent UZE launched, as the session reports it: the harness running
 /// it, the identity its launch carried, and the directory it stands in.
 struct LaunchedAgent {
@@ -2694,6 +2711,8 @@ struct Channels {
     code_measures: Answers<MeasureResolution>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
     policy_regions: Answers<PolicyRegionResolution>,
+    /// The names a harness launched through a shim runs under, asked once.
+    launchers: Answers<Vec<String>>,
 }
 
 /// The half of [`WorkspaceModel`] that outlives one attach. Everything
@@ -2825,6 +2844,13 @@ struct Remembered {
     /// edited by hand, so the report is made once a session rather than on
     /// every refresh.
     policy_region_reported: BTreeSet<PathBuf>,
+    /// The names a harness launched through the workspace's shim runs
+    /// under, once the registry has answered, and whether it was asked.
+    launchers: Option<Vec<String>>,
+    launchers_asked: bool,
+    /// Panes already told their harness bypassed the shim, so it is said
+    /// once rather than on every status tick.
+    bypass_reported: BTreeSet<uze_terminal::PaneId>,
     /// The checkout each open pane was first seen in — a pane's slot does
     /// not change when it `cd`s. A directory fact, and the only thing it
     /// answers is slot occupancy; which agent a pane is for is what the
@@ -3275,6 +3301,7 @@ impl WorkspaceModel {
             }
             ClientEvent::SessionUpdated { session } => {
                 self.session = Some(session);
+                self.note_launcher_bypass();
                 self.note_strip_selection(identities);
                 self.close_extension_left_behind();
                 self.prune_dragging_tab();
@@ -4148,6 +4175,42 @@ impl WorkspaceModel {
     fn note(&mut self, text: String) {
         self.remembered.notice = Some(Notice { text });
         self.dirty = true;
+    }
+
+    /// Says, once per pane, that a harness is running there without the
+    /// workspace's shim: something in the pane's shell put another copy
+    /// ahead of it on `PATH`, and what the shim carries (the conversation
+    /// resumed after a restart, the project's own skills and agents for a
+    /// harness that does not read them) is lost for it.
+    fn note_launcher_bypass(&mut self) {
+        let Some(launchers) = self.remembered.launchers.clone() else {
+            return;
+        };
+        let Some(session) = &self.session else {
+            return;
+        };
+        let bypassed: Vec<(uze_terminal::PaneId, String)> = session
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| &space.tabs)
+            .map(|tab| &tab.pane)
+            .filter(|pane| !pane.through_launcher && launchers.contains(&pane.process))
+            .map(|pane| (pane.id, pane.process.clone()))
+            .collect();
+        for (pane, harness) in bypassed {
+            if self.remembered.bypass_reported.insert(pane) {
+                self.raise_toast(
+                    ToastKind::Warned,
+                    format!("{harness} started without the workspace's launcher"),
+                    "something in this pane's shell put another copy first on PATH, so its \
+                     conversation will not resume after a restart and the project's own skills \
+                     may not reach it"
+                        .to_owned(),
+                    None,
+                );
+            }
+        }
     }
 
     /// Raises an outcome for the reader. It leaves on its own clock unless

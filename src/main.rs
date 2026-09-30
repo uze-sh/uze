@@ -1060,6 +1060,12 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         action: TerminalAction::Serve { root },
     } = command
     {
+        // Every pane starts with the workspace's shims first on `PATH`: an
+        // agent launched from the menu is started through its shim by path,
+        // and this is what keeps one typed into a pane, or started by
+        // another program there, going through it too. Nothing outside the
+        // workspace is told.
+        uze_terminal::put_first_on_pane_path(home.shims_dir());
         return uze_terminal::serve(uze_terminal::SpaceSeat { root }).map_err(terminal_error);
     }
     // Ahead of the application: a check running detached from the command
@@ -2126,8 +2132,6 @@ fn run_setup(
     let _ = std::fs::create_dir_all(&logs_dir);
     let mut had_warning = false;
     let mut failed_harnesses: Vec<String> = Vec::new();
-    let mut shell_path_hints = Vec::new();
-    let mut shell_path_shim_names = Vec::new();
 
     for (idx, id) in targets.iter().enumerate() {
         let step = idx + 1;
@@ -2203,20 +2207,18 @@ fn run_setup(
                         "  ↳ shim: {}",
                         progress::label(shim.shim_path.display().to_string())
                     );
-                    if let Some(rc) = &shim.rc_file_updated {
+                    if let Some(rc) = &shim.took_back_from {
                         println!(
-                            "    added to PATH in {}",
+                            "    took back the PATH block an earlier uze wrote in {}; the \
+                             workspace puts the shims on PATH in its own panes",
                             progress::accent(rc.display().to_string())
                         );
                     }
-                    if let Some(hint) = &shim.path_hint {
-                        shell_path_hints.push(hint.clone());
-                        if let Some(name) = shim.shim_path.file_name().and_then(|n| n.to_str()) {
-                            let name = name.to_owned();
-                            if !shell_path_shim_names.contains(&name) {
-                                shell_path_shim_names.push(name);
-                            }
-                        }
+                    if let Some((rc, why)) = &shim.left_alone {
+                        println!(
+                            "    left {} as it is: {why}",
+                            progress::accent(rc.display().to_string())
+                        );
                     }
                 }
                 if let Some(err) = &result.attach_error {
@@ -2329,14 +2331,6 @@ fn run_setup(
             }
         }
     }
-    if let Some(command) = shell_path_reload_command(&shell_path_hints) {
-        println!("\nShell PATH was updated. Run this in the current terminal:");
-        println!("  {}", progress::accent_heading(command));
-        println!("Then verify:");
-        for name in &shell_path_shim_names {
-            println!("  {}", progress::accent_heading(format!("which {}", name)));
-        }
-    }
     // A harness that was not provisioned is a failed setup, not a warning:
     // a caller that scripts `uze setup` (an image build, a bootstrap) must
     // never read "all ready" over a missing binary.
@@ -2370,29 +2364,6 @@ fn run_setup(
         println!("\nSetup completed — all {} harness(es) ready.", total);
     }
     Ok(())
-}
-
-fn shell_path_reload_command(hints: &[String]) -> Option<&str> {
-    let hint = hints.first()?;
-    Some(
-        hint.strip_prefix("open a new terminal, or run: ")
-            .unwrap_or(hint),
-    )
-}
-
-#[cfg(test)]
-mod setup_output_tests {
-    use super::shell_path_reload_command;
-
-    #[test]
-    fn shell_reload_command_is_deduplicated_for_many_harnesses() {
-        let hints = vec![
-            "open a new terminal, or run: source ~/.zshrc".to_owned(),
-            "open a new terminal, or run: source ~/.zshrc".to_owned(),
-            "open a new terminal, or run: source ~/.zshrc".to_owned(),
-        ];
-        assert_eq!(shell_path_reload_command(&hints), Some("source ~/.zshrc"));
-    }
 }
 
 fn chrono_stamp() -> String {
@@ -4856,7 +4827,7 @@ fn render_portability_gaps(portability: &Portability) -> String {
 fn render_status_harness(harness: &uze_application::application::HarnessContextStatus) -> String {
     let state = match &harness.delivery {
         HarnessContextDelivery::Native => progress::success_text("Native"),
-        HarnessContextDelivery::Projected => progress::success_text("Runtime shim"),
+        HarnessContextDelivery::Projected => progress::success_text("Inside the workspace"),
         HarnessContextDelivery::NotDetected => progress::label("Not installed"),
         HarnessContextDelivery::Bridge {
             state: uze_application::AttachmentState::Matched,
@@ -4985,7 +4956,7 @@ fn render_context_status(status: &ProjectContextStatus) -> String {
     for harness in &status.harnesses {
         let delivery = match &harness.delivery {
             HarnessContextDelivery::Native => "native".to_owned(),
-            HarnessContextDelivery::Projected => "runtime shim".to_owned(),
+            HarnessContextDelivery::Projected => "inside the workspace".to_owned(),
             HarnessContextDelivery::NotDetected => "not detected".to_owned(),
             HarnessContextDelivery::Bridge { needed, state } => {
                 format!(

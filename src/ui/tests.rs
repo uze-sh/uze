@@ -311,7 +311,7 @@ fn the_harness_legend_names_the_words_a_card_carries() {
         legend.contains("Not configured"),
         "and the word the rest carry: {legend}"
     );
-    for gone in ["Not installed", "PATH shadowed"] {
+    for gone in ["Not installed", "Run uze setup"] {
         assert!(
             !legend.contains(gone),
             "{gone:?} is not a state a card has: {legend}"
@@ -3927,7 +3927,7 @@ fn eliding_reserves_the_active_themes_own_marker_width() {
 #[test]
 fn small_caps_preserves_a_labels_length_and_its_cells() {
     use ratatui::text::Span;
-    for label in ["Beta", "claude", "codex", "antigravity", "PATH shadowed"] {
+    for label in ["Beta", "claude", "codex", "antigravity", "Run uze setup"] {
         let drawn = crate::ui::widget::text::small_caps(label);
         assert_eq!(
             drawn.chars().count(),

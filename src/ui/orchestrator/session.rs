@@ -3772,6 +3772,7 @@ impl Attach<'_> {
         }
         self.absorb_surface_answers();
         self.absorb_policy_regions();
+        self.absorb_launchers();
         self.schedule_surface_reads();
         if self.model.expire_agent_activity(Instant::now()) {
             self.model.dirty = true;
@@ -4071,6 +4072,20 @@ impl Attach<'_> {
     /// code and architect surfaces' reads answered.
     /// What keeping `AGENTS.md` in step could not do: said once a session
     /// per file, never repaired over the operator's edit.
+    /// The registry's launcher names, asked once and absorbed when they
+    /// arrive, so a bypass already on screen is noticed without waiting for
+    /// the next status tick.
+    fn absorb_launchers(&mut self) {
+        if !self.model.remembered.launchers_asked {
+            self.model.remembered.launchers_asked = true;
+            spawn_launcher_names(self.home, self.channels.launchers.sender.clone());
+        }
+        while let Ok(names) = self.channels.launchers.receiver.try_recv() {
+            self.model.remembered.launchers = Some(names);
+            self.model.note_launcher_bypass();
+        }
+    }
+
     fn absorb_policy_regions(&mut self) {
         while let Ok(resolution) = self.channels.policy_regions.receiver.try_recv() {
             if !self
