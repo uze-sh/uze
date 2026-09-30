@@ -38,7 +38,7 @@ video:
   font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
   # The first `market add` mirrors the repository; that wait is squeezed.
   wait_collapse: 0.8
-  poster_when: 'Managed state'
+  poster_when: 'files in place'
 sandbox:
   root: /tmp/uzepkg
   fixtures: /tmp/uzepkg/work
@@ -156,19 +156,19 @@ beats:
     type: uze market add ../acme-tools
     pause: 0.3
   - wait: screen
-    until: Marketplace added
+    until: 1 marketplace added
     timeout: 60
     pause: 1.6
   - say: install one plugin into the project
     type: uze install review@acme
     pause: 0.3
   - wait: screen
-    until: Added to this project
+    until: added to this project
     timeout: 60
     pause: 2.0
   - say: and ask how each agent received it
     type: uze inspect review
-    expect: Managed state
+    expect: files in place
     expect_timeout: 20
     pause: 3.8
   # Not C-d: bash answers it with `exit`, and that write lands inside the
