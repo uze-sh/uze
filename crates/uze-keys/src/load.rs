@@ -261,7 +261,6 @@ fn default_bindings() -> Vec<Binding> {
         // that could not be pressed by mistake twice.
         bind(Scope::Management, "q", Action::Dismiss),
         // --- Management, per screen -------------------------------------
-        bind(Scope::Overview, "x", Action::ClearPromptHistory),
         bind(Scope::Plugins, "i", Action::InstallPlugin),
         bind(Scope::Plugins, "u", Action::UpdatePlugin),
         bind(Scope::Plugins, "r", Action::RemovePlugin),
@@ -459,6 +458,17 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
         bind(Scope::AgentPicker, "esc", Action::Dismiss),
+        bind(Scope::AgentDrawer, "down", Action::SelectNext),
+        bind(Scope::AgentDrawer, "up", Action::SelectPrevious),
+        bind(Scope::AgentDrawer, "enter", Action::Activate),
+        bind(Scope::AgentDrawer, "esc", Action::Dismiss),
+        // Whose prompts: this agent's or the whole space's. Two choices
+        // side by side, walked the way the root picker's chips are.
+        bind(Scope::AgentDrawer, "tab", Action::FocusNext),
+        bind(Scope::AgentDrawer, "right", Action::FocusNext),
+        bind(Scope::AgentDrawer, "shift+tab", Action::FocusPrevious),
+        bind(Scope::AgentDrawer, "left", Action::FocusPrevious),
+        bind(Scope::AgentDrawer, "x", Action::ClearPromptHistory),
         bind(Scope::ContextMenu, "down", Action::SelectNext),
         bind(Scope::ContextMenu, "up", Action::SelectPrevious),
         bind(Scope::ContextMenu, "enter", Action::Activate),
@@ -594,6 +604,9 @@ mod tests {
         // and `y` is the answer to a question the footer is asking at that
         // moment. Neither is live outside that surface — the scope is
         // sealed while it is open — and neither can reach a directory.
+        //
+        // The agent drawer's `x` asks first too, and the second `x` is the
+        // answer: its footer says so while the question stands.
         let bare: Vec<String> = default_keymap()
             .bindings()
             .iter()
@@ -612,7 +625,6 @@ mod tests {
         assert_eq!(
             bare,
             vec![
-                "overview.clear-prompt-history=x",
                 "plugins.remove-plugin=r",
                 "profiles.delete-profile=d",
                 "code.delete-file=d",
@@ -620,6 +632,7 @@ mod tests {
                 "preserved-work.discard-task=d",
                 "preserved-work.clean-up-checkouts=c",
                 "preserved-work.confirm-discard=y",
+                "agent-drawer.clear-prompt-history=x",
             ]
         );
     }

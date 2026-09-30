@@ -970,6 +970,7 @@ mod task_service_tests {
                         tab_id: 1,
                         tab_label: "claude".to_owned(),
                         agent_binary: "claude-code".to_owned(),
+                        agent: None,
                     },
                     secret,
                 )

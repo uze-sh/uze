@@ -589,6 +589,15 @@ another's entries, the file and its directory are `0600`/`0700`, and
 > `crates/uze-workspace/src/prompt_history.rs::tests::each_workspace_keeps_its_own_history`
 > `crates/uze-workspace/src/prompt_history.rs::tests::clear_removes_only_the_named_workspace_and_tolerates_absence`
 
+### An agent's prompts are matched on the agent, never on its tab
+
+The terminal runtime mints tab ids again when it restores a workspace, so a
+tab id names different agents on either side of a restart. Each entry
+records the agent UZE launched in the tab, and the drawer's "this agent"
+listing matches on that alone.
+
+> `src/ui/orchestrator/tests.rs::drawer_tests::an_agents_prompts_are_its_own_whatever_tab_ids_were_reused`
+
 ---
 
 ## The workspace client (ADR-038 companion)

@@ -54,9 +54,6 @@ pub(crate) enum Hit {
     ResizeSidebar,
     /// A route-local divider between two content panels.
     ResizePanel(ResizablePanel),
-    /// A row of the Overview's prompt history, by index into
-    /// `TuiModel::prompt_history`.
-    PromptHistory(usize),
     /// One row of the open index of everything, by position in it.
     ActionIndexEntry(usize),
     /// An overlay's own area — the release notes, a dialog: a click on it
@@ -303,11 +300,6 @@ impl TuiModel {
                 self.filtering = true;
                 self.focus = Focus::Content;
                 Intent::None
-            }
-            Hit::PromptHistory(index) => {
-                self.focus = Focus::Content;
-                self.remembered.overview_prompt_selected = index;
-                self.activate_selected_prompt()
             }
         }
     }

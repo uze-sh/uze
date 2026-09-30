@@ -64,7 +64,7 @@ fn a_service_call_is_one_span_tree() {
     let ((), recorded) = recorded(|| {
         let action = tracing::info_span!("action");
         let _entered = action.enter();
-        let _ = app.machine_snapshot(&root, 5);
+        let _ = app.machine_snapshot(&root);
     });
     let spans = recorded.spans.lock().unwrap().clone();
     let named = |name: &str| spans.iter().find(|(span, _)| span == name).cloned();

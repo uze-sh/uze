@@ -205,12 +205,48 @@ pub(super) fn render(
     if let Some(picker) = &model.agent_picker {
         render_agent_picker(frame, frame.area(), picker.anchor, picker, hits);
     }
-    if let Some(dropdown) = &model.support_dropdown
+    if let Some(drawer) = &model.support_dropdown
         && let Some(resolution) = &model.remembered.agent_support
-        && resolution.key == dropdown.key
+        && resolution.key == drawer.key
         && let Some(support) = &resolution.support
     {
-        crate::ui::agent_support::render(frame, frame.area(), dropdown.anchor, support);
+        let history = model
+            .remembered
+            .drawer_prompts
+            .as_ref()
+            .filter(|history| history.root == drawer.space_root);
+        let prompts = crate::ui::agent_support::DrawerPrompts {
+            entries: history.map(|history| drawer.prompts(&history.entries)),
+            scope: drawer.scope,
+            agent_known: drawer.agent.is_some(),
+            selected: drawer.selected,
+            hovered: match model.hovered {
+                Some(WorkspaceHit::DrawerPrompt(index)) => Some(index),
+                _ => None,
+            },
+            hovered_scope: match model.hovered {
+                Some(WorkspaceHit::DrawerScope(scope)) => Some(scope),
+                _ => None,
+            },
+            clearing: drawer.clearing,
+        };
+        let targets =
+            crate::ui::agent_support::render(frame, frame.area(), drawer.anchor, support, &prompts);
+        // Innermost first, so a row wins over the drawer's own body.
+        hits.splice(
+            0..0,
+            targets
+                .prompts
+                .into_iter()
+                .map(|(rect, index)| (rect, WorkspaceHit::DrawerPrompt(index)))
+                .chain(
+                    targets
+                        .scopes
+                        .into_iter()
+                        .map(|(rect, scope)| (rect, WorkspaceHit::DrawerScope(scope))),
+                )
+                .chain(std::iter::once((targets.body, WorkspaceHit::DrawerBody))),
+        );
     }
     if let Some(anchor) = model.status_catalog {
         render_status_catalog(frame, frame.area(), anchor, model.tick);

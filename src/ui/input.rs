@@ -180,9 +180,6 @@ impl TuiModel {
                     self.focus = Focus::Content;
                     return Intent::None;
                 }
-                if self.route == Route::Overview && !self.remembered.prompt_history.is_empty() {
-                    return self.activate_selected_prompt();
-                }
                 if self.route == Route::Keys {
                     // The one screen where Enter asks for a key rather
                     // than opening something.
@@ -304,15 +301,6 @@ impl TuiModel {
                     .map(Intent::InstallProjectEnvironment)
                     .unwrap_or(Intent::None)
             }
-            Action::ClearPromptHistory => {
-                if !self.remembered.prompt_history.is_empty() {
-                    self.overlay = Overlay::Confirm {
-                        kind: Confirmation::ClearPromptHistory,
-                        focus: None,
-                    };
-                }
-                Intent::None
-            }
             Action::SetupHarness => self.selected_harness().map_or(Intent::None, |harness| {
                 Intent::Setup(harness.integration.clone())
             }),
@@ -406,11 +394,6 @@ impl TuiModel {
             }
             Route::Settings => {
                 self.move_settings_selection(delta);
-                Intent::None
-            }
-            // The Overview's only navigable list is its prompt history.
-            Route::Overview if !self.remembered.prompt_history.is_empty() => {
-                self.move_prompt_selection(delta);
                 Intent::None
             }
             Route::Plugins if self.plugin_pane == PluginPane::Markets => {
@@ -715,10 +698,6 @@ impl TuiModel {
                 // honest if it lights up for the same rect the click
                 // resolves against.
                 let hovered = self.hit_at(event.column, event.row).cloned();
-                self.overview_prompt_hovered = match hovered {
-                    Some(Hit::PromptHistory(index)) if self.route == Route::Overview => Some(index),
-                    _ => None,
-                };
                 self.source_link_hovered = matches!(hovered, Some(Hit::OpenLink(_)));
                 self.version_hovered = matches!(hovered, Some(Hit::RunningReleaseNotes));
                 self.release_notes_close_hovered = false;
@@ -786,7 +765,7 @@ mod tests {
         let mut model = TuiModel {
             route: Route::Plugins,
             overlay: Overlay::Confirm {
-                kind: Confirmation::ClearPromptHistory,
+                kind: Confirmation::ApplyContext,
                 focus: None,
             },
             ..TuiModel::default()
@@ -796,7 +775,7 @@ mod tests {
         assert!(matches!(
             model.overlay,
             Overlay::Confirm {
-                kind: Confirmation::ClearPromptHistory,
+                kind: Confirmation::ApplyContext,
                 ..
             }
         ));

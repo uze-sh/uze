@@ -23,8 +23,7 @@ use super::hit::Hit;
 use super::keys::KeyboardSupport;
 use super::model::{self, Overlay, Remembered, Route, Status, TuiModel};
 use super::worker::{
-    Intent, WorkerResult, dispatch, drain_worker_results, recent_prompts, spawn_refresh,
-    spawn_startup,
+    Intent, WorkerResult, dispatch, drain_worker_results, spawn_refresh, spawn_startup,
 };
 use super::{overlay, view};
 use crate::ui::theme::{self, Token};
@@ -165,12 +164,6 @@ impl ManagementMemory {
         // this on the first tick.
         if model.remembered.resolved_at.is_none() || elsewhere {
             model.status = Status::Working("Refreshing environment…".to_owned());
-            // Read here rather than waited on from the worker, which
-            // reaches it only after seeding plugins, auto-updating and
-            // detecting harnesses (see `worker::recent_prompts`): one
-            // small file, and the Overview otherwise says "no history
-            // yet" — the same words it uses when there genuinely is none.
-            model.remembered.prompt_history = recent_prompts(home.clone(), &model.context_root);
         }
         model
     }

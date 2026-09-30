@@ -11146,3 +11146,72 @@ fn a_rename_edits_at_the_caret() {
     buffer.erase_forward();
     assert_eq!(buffer.text(), "Agent 1é", "edges are where the caret stops");
 }
+
+mod drawer_tests {
+    use super::*;
+
+    fn entry(tab_id: u64, agent: Option<&str>, preview: &str) -> uze_application::PromptEntry {
+        let origin = uze_application::PromptOrigin {
+            space_label: "uze".to_owned(),
+            tab_id,
+            tab_label: "agent".to_owned(),
+            agent_binary: "claude".to_owned(),
+            agent: agent.map(str::to_owned),
+        };
+        uze_application::PromptEntry::new(&origin, preview).unwrap()
+    }
+
+    fn drawer(agent: Option<&str>, scope: PromptScope) -> AgentSupportDropdown {
+        AgentSupportDropdown {
+            key: ("claude-code".to_owned(), PathBuf::from("/repo")),
+            anchor: Rect::default(),
+            agent: agent.map(str::to_owned),
+            space_root: PathBuf::from("/repo"),
+            scope,
+            selected: 0,
+            clearing: false,
+        }
+    }
+
+    /// Tab ids are minted again when the runtime restores a workspace, so
+    /// after a restart another agent's tab can carry the id this one had.
+    /// "This agent's prompts" is therefore matched on the agent, never on
+    /// the tab.
+    #[test]
+    fn an_agents_prompts_are_its_own_whatever_tab_ids_were_reused() {
+        let history = vec![
+            entry(1, Some("mevx3y"), "mine, after the restart"),
+            entry(
+                1,
+                Some("xum3gz"),
+                "another agent's, in a tab with my old id",
+            ),
+            entry(2, Some("mevx3y"), "mine, before the restart"),
+            entry(1, None, "a harness started by hand"),
+        ];
+        let listed: Vec<&str> = drawer(Some("mevx3y"), PromptScope::Agent)
+            .prompts(&history)
+            .iter()
+            .map(|entry| entry.preview.as_str())
+            .collect();
+        assert_eq!(
+            listed,
+            vec!["mine, after the restart", "mine, before the restart"]
+        );
+
+        let space = drawer(Some("mevx3y"), PromptScope::Space).prompts(&history);
+        assert_eq!(space.len(), history.len(), "the space lists every one");
+    }
+
+    /// An agent UZE did not launch has nothing to match its own prompts
+    /// on, so its own listing holds none rather than everyone's.
+    #[test]
+    fn an_agent_nothing_identifies_has_no_listing_of_its_own() {
+        let history = vec![entry(1, None, "a harness started by hand")];
+        assert!(
+            drawer(None, PromptScope::Agent)
+                .prompts(&history)
+                .is_empty()
+        );
+    }
+}

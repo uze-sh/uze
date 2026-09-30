@@ -4,12 +4,17 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Padding, Paragraph},
+    widgets::{Clear, Paragraph},
 };
 use uze_application::{CapabilityKind, HarnessCapabilities};
 
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{POPUP_H_PAD, POPUP_V_PAD, Surface, row, text};
+use crate::ui::widget::{
+    Chip, ChipState, Edge, Rule, hint,
+    row::{self, RowState},
+    text,
+};
+use uze_application::{PromptClock, PromptEntry};
 
 use uze_application::application::{
     AgentContextStatus, HarnessHealth, ProfileSummary, ResourceDelivery, UndeliveredReason,
@@ -95,19 +100,86 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     }
 }
 
+/// Whose prompts the drawer lists.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PromptScope {
+    Agent,
+    Space,
+}
+
+/// What the drawer lists under the agent's facts.
+pub(super) struct DrawerPrompts<'a> {
+    /// `None` while the history is still being read.
+    pub(super) entries: Option<Vec<&'a PromptEntry>>,
+    pub(super) scope: PromptScope,
+    /// Whether UZE knows which agent this is, so its own prompts can be
+    /// told from the space's.
+    pub(super) agent_known: bool,
+    pub(super) selected: usize,
+    pub(super) hovered: Option<usize>,
+    /// The scope chip under the pointer, which lightens like every other
+    /// control the pointer is over.
+    pub(super) hovered_scope: Option<PromptScope>,
+    pub(super) clearing: bool,
+}
+
+/// Where the drawer put what can be clicked.
+pub(super) struct DrawerTargets {
+    pub(super) body: Rect,
+    pub(super) prompts: Vec<(Rect, usize)>,
+    pub(super) scopes: Vec<(Rect, PromptScope)>,
+}
+
+/// The scopes the drawer's own keys are read from.
+const DRAWER_SCOPES: [uze_keys::Scope; 3] = [
+    uze_keys::Scope::Global,
+    uze_keys::Scope::Workspace,
+    uze_keys::Scope::AgentDrawer,
+];
+
+/// Columns an age takes (`55m`, `now`), and the air after it.
+const AGE_WIDTH: usize = 4;
+/// A tab label longer than this is clipped so the prompt keeps its share.
+const MAX_TAB_WIDTH: usize = 14;
+
+/// Draws the agent drawer: the agent's facts, then its prompts, down the
+/// right-hand side from the control that opened it to the bottom of the
+/// frame.
+///
+/// A drawer rather than a dropdown because the prompts are a list that
+/// grows, and a popup measured from its lines had no room to give one.
+/// It hangs over the pane without resizing it: a pane that changes size
+/// makes the program in it redraw everything, once to open and once to
+/// close.
 pub(super) fn render(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     anchor: Rect,
     support: &AgentSupport,
-) {
-    // Interior padding beyond the border itself — this used to sit flush
-    // against the frame, which read as cramped once the horizontal rules
-    // below were removed and had nothing to separate the sections but
-    // whitespace.
-
-    let width = 40.min(area.width).max(1);
-    let inner_width = width.saturating_sub(2 + 2 * POPUP_H_PAD) as usize;
+    prompts: &DrawerPrompts<'_>,
+) -> DrawerTargets {
+    let width = (area.width * 2 / 5).clamp(44, 72).min(area.width).max(1);
+    let top = (anchor.y + anchor.height).min(area.bottom());
+    let drawer = Rect::new(
+        area.right().saturating_sub(width),
+        top,
+        width,
+        area.bottom().saturating_sub(top),
+    );
+    frame.render_widget(Clear, drawer);
+    // The management screens' drawers' own ground and edge, and their
+    // inset, so a drawer reads as one kind of thing on either surface.
+    let edged = Rule::new(Edge::Left)
+        .tone(Token::SurfaceRecessed)
+        .ground(Token::SurfaceRecessed)
+        .render(frame, drawer);
+    let inner = Rect::new(
+        edged.x + 1,
+        drawer.y + 1,
+        drawer.width.saturating_sub(3),
+        drawer.height.saturating_sub(2),
+    );
+    let inner_width = inner.width as usize;
 
     // "agent", not "support": what this panel answers is what the agent
     // in front of the operator is running on and what reaches it here —
@@ -115,8 +187,95 @@ pub(super) fn render(
     // "Support" named the read model behind it (`AgentSupport`), which is
     // this codebase's word, not the operator's question.
     let mut lines = vec![row::title_row("agent", "esc", inner_width), Line::default()];
+    lines.extend(fact_lines(support, inner_width));
+    lines.push(Line::default());
 
-    lines.push(section_header("RUNTIME"));
+    let mut targets = DrawerTargets {
+        body: drawer,
+        prompts: Vec::new(),
+        scopes: Vec::new(),
+    };
+    let heading_y = inner.y + lines.len() as u16;
+    frame.render_widget(Paragraph::new(lines), inner);
+    if heading_y >= inner.bottom() {
+        return targets;
+    }
+
+    frame.render_widget(
+        Paragraph::new(section_header("PROMPTS")),
+        Rect::new(inner.x, heading_y, inner.width, 1),
+    );
+    let mut right = inner.right();
+    for (scope, label) in [(PromptScope::Space, "space"), (PromptScope::Agent, "agent")] {
+        if scope == PromptScope::Agent && !prompts.agent_known {
+            continue;
+        }
+        let state = if prompts.scope == scope {
+            ChipState::Pressed
+        } else if prompts.hovered_scope == Some(scope) {
+            ChipState::Hovered
+        } else {
+            ChipState::Resting
+        };
+        let chip = Chip::new(label, theme::color(Token::TextSecondary), state);
+        let rect = chip.rect_ending_at(right, heading_y);
+        chip.render(frame, rect);
+        targets.scopes.push((rect, scope));
+        right = rect.x.saturating_sub(1);
+    }
+
+    // Two rows at the bottom: air, and the keys that act here.
+    let list_top = heading_y + 2;
+    let footer_y = inner.bottom().saturating_sub(1);
+    let room = footer_y.saturating_sub(list_top + 1) as usize;
+    if footer_y > heading_y {
+        frame.render_widget(
+            Paragraph::new(footer(prompts, inner.width)),
+            Rect::new(inner.x, footer_y, inner.width, 1),
+        );
+    }
+    let Some(entries) = &prompts.entries else {
+        render_note(frame, inner, list_top, room, "reading…");
+        return targets;
+    };
+    if entries.is_empty() {
+        let note = match prompts.scope {
+            PromptScope::Agent => "nothing asked of this agent yet",
+            PromptScope::Space => "nothing asked in this space yet",
+        };
+        render_note(frame, inner, list_top, room, note);
+        return targets;
+    }
+
+    let clock = PromptClock::now();
+    let first = prompts.selected.saturating_sub(room.saturating_sub(1));
+    for (offset, (index, entry)) in entries
+        .iter()
+        .enumerate()
+        .skip(first)
+        .take(room)
+        .enumerate()
+    {
+        let rect = Rect::new(inner.x, list_top + offset as u16, inner.width, 1);
+        let state = RowState::of(index == prompts.selected, prompts.hovered == Some(index));
+        frame.render_widget(
+            Paragraph::new(prompt_line(
+                entry,
+                &clock,
+                prompts.scope,
+                inner.width,
+                state,
+            )),
+            rect,
+        );
+        targets.prompts.push((rect, index));
+    }
+    targets
+}
+
+/// The agent's facts: what it runs on, and what reaches it here.
+fn fact_lines(support: &AgentSupport, inner_width: usize) -> Vec<Line<'static>> {
+    let mut lines = vec![section_header("RUNTIME")];
     lines.push(fact_line(
         harness_state(support),
         "Harness",
@@ -150,7 +309,6 @@ pub(super) fn render(
 
     lines.push(Line::default());
     lines.push(section_header("CAPABILITIES"));
-
     for capability in [
         CapabilityKind::AgentSkill,
         CapabilityKind::Mcp,
@@ -168,32 +326,67 @@ pub(super) fn render(
             lines.push(reason_line(support, capability, inner_width));
         }
     }
+    lines
+}
 
-    let height = (lines.len() as u16 + 2 + 2 * POPUP_V_PAD)
-        .min(area.height)
-        .max(1);
-    let popup = Rect::new(
-        anchor
-            .x
-            .saturating_sub(width.saturating_sub(anchor.width))
-            .min(area.right().saturating_sub(width)),
-        (anchor.y + anchor.height).min(area.bottom().saturating_sub(height)),
-        width,
-        height,
+/// One prompt: how long ago, which tab when the whole space is listed,
+/// and the prompt itself.
+fn prompt_line(
+    entry: &PromptEntry,
+    clock: &PromptClock,
+    scope: PromptScope,
+    width: u16,
+    state: RowState,
+) -> Line<'static> {
+    let mut spans = vec![Span::styled(
+        format!("{:>3} ", entry.compact_age(clock)),
+        theme::fg(Token::TextMuted),
+    )];
+    let mut used = AGE_WIDTH;
+    if scope == PromptScope::Space {
+        let tab = text::elide(&entry.tab_label, MAX_TAB_WIDTH);
+        used += tab.chars().count() + 2;
+        spans.push(Span::styled(tab, theme::fg(Token::Accent)));
+        spans.push(Span::raw("  "));
+    }
+    let prompt = text::elide(&entry.preview, (width as usize).saturating_sub(used));
+    spans.push(Span::styled(prompt, theme::fg(Token::TextPrimary)));
+    row::fill(&mut spans, width, state);
+    Line::from(spans)
+}
+
+/// The keys that act here, or — while it stands — the question a first
+/// `x` asked.
+fn footer(prompts: &DrawerPrompts<'_>, width: u16) -> Line<'static> {
+    use uze_keys::Action;
+    if prompts.clearing {
+        let mut line = hint::named_within(
+            width,
+            &DRAWER_SCOPES,
+            &[(
+                Action::ClearPromptHistory,
+                "again to forget every prompt in this space".to_owned(),
+            )],
+        );
+        line.style = theme::fg(Token::StateWarning);
+        return line;
+    }
+    let mut actions = vec![(Action::Activate, "go to tab".to_owned())];
+    if prompts.agent_known {
+        actions.push((Action::FocusNext, "agent/space".to_owned()));
+    }
+    actions.push((Action::ClearPromptHistory, "clear".to_owned()));
+    hint::named_within(width, &DRAWER_SCOPES, &actions)
+}
+
+fn render_note(frame: &mut ratatui::Frame<'_>, inner: Rect, y: u16, room: usize, note: &str) {
+    if room == 0 {
+        return;
+    }
+    frame.render_widget(
+        Paragraph::new(Span::styled(note.to_owned(), theme::fg(Token::TextMuted))),
+        Rect::new(inner.x, y, inner.width, 1),
     );
-    frame.render_widget(Clear, popup);
-    // A row of air below as well as above: this popup's height is measured
-    // from its lines, so the bottom inset is content rather than slack.
-    let inner = Surface::floating()
-        .padding(Padding::new(
-            POPUP_H_PAD,
-            POPUP_H_PAD,
-            POPUP_V_PAD,
-            POPUP_V_PAD,
-        ))
-        .render(frame, popup);
-
-    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn harness_state(support: &AgentSupport) -> State {
@@ -519,5 +712,203 @@ mod tests {
         );
         assert_eq!(support.instructions_label, "not loaded");
         assert!(matches!(support.instructions, State::Warning));
+    }
+
+    fn entry(tab_label: &str, agent: Option<&str>, preview: &str) -> PromptEntry {
+        let origin = uze_application::PromptOrigin {
+            space_label: "uze".to_owned(),
+            tab_id: 1,
+            tab_label: tab_label.to_owned(),
+            agent_binary: "claude".to_owned(),
+            agent: agent.map(str::to_owned),
+        };
+        PromptEntry::new(&origin, preview).unwrap()
+    }
+
+    fn drawn(prompts: &DrawerPrompts<'_>) -> (Vec<String>, DrawerTargets) {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
+        let support = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
+        let mut targets = None;
+        terminal
+            .draw(|frame| {
+                targets = Some(render(
+                    frame,
+                    frame.area(),
+                    Rect::new(90, 0, 3, 1),
+                    &support,
+                    prompts,
+                ));
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let rows = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        (rows, targets.unwrap())
+    }
+
+    /// The drawer keeps the agent's facts and lists its prompts under
+    /// them, each one a row a click lands on.
+    #[test]
+    fn the_drawer_lists_the_prompts_under_the_agents_facts() {
+        let first = entry("cli logs", Some("a"), "the newest prompt");
+        let second = entry("cli logs", Some("a"), "an older prompt");
+        let prompts = DrawerPrompts {
+            entries: Some(vec![&first, &second]),
+            scope: PromptScope::Agent,
+            agent_known: true,
+            selected: 0,
+            hovered: None,
+            hovered_scope: None,
+            clearing: false,
+        };
+        let (rows, targets) = drawn(&prompts);
+        let text = rows.join("\n");
+        let row_of = |needle: &str| rows.iter().position(|row| row.contains(needle));
+        assert!(row_of("RUNTIME").is_some(), "{text}");
+        assert!(
+            row_of("CAPABILITIES").unwrap() < row_of("PROMPTS").unwrap(),
+            "{text}"
+        );
+        assert!(
+            row_of("PROMPTS").unwrap() < row_of("the newest prompt").unwrap(),
+            "{text}"
+        );
+        assert!(row_of("the newest prompt").unwrap() < row_of("an older prompt").unwrap());
+        assert_eq!(
+            targets
+                .prompts
+                .iter()
+                .map(|(_, index)| *index)
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        assert_eq!(
+            targets.prompts[0].0.y as usize,
+            row_of("the newest prompt").unwrap()
+        );
+        assert!(
+            !rows[row_of("the newest prompt").unwrap()].contains("cli logs"),
+            "one agent's prompts need no tab beside them: {text}"
+        );
+    }
+
+    /// Listing the whole space names the tab each prompt went to, since
+    /// they are no longer all the same agent's.
+    #[test]
+    fn the_space_listing_names_each_prompts_tab() {
+        let prompt = entry("harness detection", None, "submit PR");
+        let prompts = DrawerPrompts {
+            entries: Some(vec![&prompt]),
+            scope: PromptScope::Space,
+            agent_known: false,
+            selected: 0,
+            hovered: None,
+            hovered_scope: None,
+            clearing: false,
+        };
+        let (rows, targets) = drawn(&prompts);
+        let row = rows.iter().find(|row| row.contains("submit PR")).unwrap();
+        assert!(row.contains("harness detec"), "{row}");
+        assert_eq!(
+            targets
+                .scopes
+                .iter()
+                .map(|(_, scope)| *scope)
+                .collect::<Vec<_>>(),
+            vec![PromptScope::Space],
+            "an agent nothing identifies offers no listing of its own"
+        );
+    }
+
+    /// An empty list says whose prompts it would have held, rather than
+    /// leaving a blank that reads as a failed read.
+    #[test]
+    fn an_empty_listing_says_whose_it_is() {
+        let prompts = DrawerPrompts {
+            entries: Some(Vec::new()),
+            scope: PromptScope::Agent,
+            agent_known: true,
+            selected: 0,
+            hovered: None,
+            hovered_scope: None,
+            clearing: false,
+        };
+        let (rows, targets) = drawn(&prompts);
+        assert!(rows.join("\n").contains("nothing asked of this agent yet"));
+        assert!(targets.prompts.is_empty());
+    }
+
+    /// A list longer than the drawer keeps the selected row on screen.
+    #[test]
+    fn a_selection_below_the_fold_scrolls_the_listing() {
+        let many: Vec<PromptEntry> = (0..60)
+            .map(|index| entry("t", Some("a"), &format!("prompt number {index}")))
+            .collect();
+        let prompts = DrawerPrompts {
+            entries: Some(many.iter().collect()),
+            scope: PromptScope::Agent,
+            agent_known: true,
+            selected: 45,
+            hovered: None,
+            hovered_scope: None,
+            clearing: false,
+        };
+        let (rows, targets) = drawn(&prompts);
+        assert!(
+            rows.iter().any(|row| row.contains("prompt number 45 ")),
+            "{rows:?}"
+        );
+        assert!(targets.prompts.iter().any(|(_, index)| *index == 45));
+        assert!(!targets.prompts.iter().any(|(_, index)| *index == 0));
+    }
+
+    /// The chip that is not in force lightens under the pointer, as every
+    /// control does; the one in force keeps its filled skin.
+    #[test]
+    fn a_scope_chip_lightens_under_the_pointer() {
+        let ground_of = |hovered_scope| {
+            let prompts = DrawerPrompts {
+                entries: Some(Vec::new()),
+                scope: PromptScope::Agent,
+                agent_known: true,
+                selected: 0,
+                hovered: None,
+                hovered_scope,
+                clearing: false,
+            };
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
+            let support = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
+            let mut chip = None;
+            terminal
+                .draw(|frame| {
+                    let targets = render(
+                        frame,
+                        frame.area(),
+                        Rect::new(90, 0, 3, 1),
+                        &support,
+                        &prompts,
+                    );
+                    chip = targets
+                        .scopes
+                        .into_iter()
+                        .find(|(_, scope)| *scope == PromptScope::Space)
+                        .map(|(rect, _)| rect);
+                })
+                .unwrap();
+            let rect = chip.unwrap();
+            terminal.backend().buffer()[(rect.x, rect.y)].bg
+        };
+        assert_eq!(ground_of(None), theme::color(Token::SurfaceRaised));
+        assert_eq!(
+            ground_of(Some(PromptScope::Space)),
+            theme::color(Token::SurfaceHover)
+        );
     }
 }

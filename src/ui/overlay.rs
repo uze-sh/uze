@@ -518,7 +518,6 @@ impl Confirmation {
                 grant: TrustGrant::Ask,
             },
             Self::ApplyContext => Intent::ContextApply(model.workspace_root()),
-            Self::ClearPromptHistory => Intent::ClearPromptHistory,
             Self::ProtectedPlugin(_) => Intent::None,
             Self::DeleteProfile(id) => Intent::DeleteProfile(id),
             Self::Trust { retry, .. } => match retry {
@@ -584,13 +583,6 @@ impl Confirmation {
                 None,
                 "Reconciles AGENTS.md and the bridge each harness reads.",
                 Some("Apply"),
-            ),
-            Self::ClearPromptHistory => dialog(
-                Tone::Danger,
-                "Clear prompt history",
-                None,
-                "Deletes every prompt recorded for this workspace. This cannot be undone.",
-                Some("Clear"),
             ),
             Self::ProtectedPlugin(id) => dialog(
                 Tone::Caution,

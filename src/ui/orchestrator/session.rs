@@ -140,7 +140,7 @@ impl Attach<'_> {
         // nothing below can be reached around it.
         if self.model.manage.is_some() {
             return match event {
-                Event::Key(key) => self.manage_key(key, viewport),
+                Event::Key(key) => self.manage_key(key),
                 Event::Mouse(mouse) => self.manage_mouse(mouse, viewport),
                 _ => Flow::Continue,
             };
@@ -280,7 +280,7 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    fn manage_key(&mut self, key: KeyEvent, viewport: &Viewport) -> Flow {
+    fn manage_key(&mut self, key: KeyEvent) -> Flow {
         let intent = self
             .model
             .manage
@@ -288,7 +288,7 @@ impl Attach<'_> {
             .map_or(crate::ui::worker::Intent::None, |manage| {
                 manage.apply_key(key)
             });
-        self.manage_intent(intent, viewport)
+        self.manage_intent(intent)
     }
 
     /// A click inside the modal is the modal's; one beside it closes it,
@@ -334,12 +334,12 @@ impl Attach<'_> {
             .map_or(crate::ui::worker::Intent::None, |manage| {
                 manage.apply_mouse(mouse, inner)
             });
-        self.manage_intent(intent, viewport)
+        self.manage_intent(intent)
     }
 
     /// What the modal answered a gesture with: a way out of it, or work
     /// for one of its own workers.
-    fn manage_intent(&mut self, intent: crate::ui::worker::Intent, viewport: &Viewport) -> Flow {
+    fn manage_intent(&mut self, intent: crate::ui::worker::Intent) -> Flow {
         use crate::ui::worker::Intent;
         self.model.dirty = true;
         match intent {
@@ -349,25 +349,6 @@ impl Attach<'_> {
             }
             Intent::CloseModal => {
                 self.close_manage();
-                Flow::Continue
-            }
-            Intent::CloseToTab(tab) => {
-                self.close_manage();
-                // `select_tab` moves the selected space too when the tab
-                // lives in another one, so the space needs no separate
-                // request. A tab closed since its prompt was logged
-                // simply selects nothing.
-                let tab = TabId(tab);
-                let _ = send_request(&mut self.stream, &ClientRequest::SelectTab { tab });
-                if let Some(pane) = self.model.pane_for_tab(tab) {
-                    resize_pane(
-                        &mut self.stream,
-                        &mut self.model,
-                        pane,
-                        viewport.columns,
-                        viewport.rows,
-                    );
-                }
                 Flow::Continue
             }
             intent => {
@@ -403,7 +384,9 @@ impl Attach<'_> {
             scopes.push(Scope::ReleaseNotes);
             return scopes;
         }
-        scopes.push(if self.model.root_picker.is_some() {
+        scopes.push(if self.model.support_dropdown.is_some() {
+            Scope::AgentDrawer
+        } else if self.model.root_picker.is_some() {
             Scope::RootPicker
         } else if self.model.renaming.is_some() {
             Scope::Rename
@@ -440,15 +423,10 @@ impl Attach<'_> {
     /// means. Which key that was is `crate::ui::keys`'s business.
     fn key(&mut self, key: KeyEvent, viewport: &Viewport) -> Flow {
         self.drop_selection();
-        // Three surfaces are notices rather than questions — read, then
+        // Two surfaces are notices rather than questions — read, then
         // gone — so any keystroke dismisses one. That is a property of a
         // surface with nothing to answer, not a binding, and so not the
         // keymap's to hold.
-        if self.model.support_dropdown.is_some() {
-            self.model.support_dropdown = None;
-            self.model.dirty = true;
-            return Flow::Continue;
-        }
         if self.model.commit_detail_open() {
             self.model.dismiss_commit_detail();
             return Flow::Continue;
@@ -488,6 +466,9 @@ impl Attach<'_> {
     fn unclaimed(&mut self, key: KeyEvent, chord: Chord) {
         if self.model.action_index.is_some() {
             self.model.action_index = None;
+            self.model.dirty = true;
+        } else if self.model.support_dropdown.is_some() {
+            self.model.support_dropdown = None;
             self.model.dirty = true;
         } else if self.model.agent_picker.is_some() {
             self.model.agent_picker = None;
@@ -601,6 +582,10 @@ impl Attach<'_> {
                 Outcome::OpenLink(url) => crate::ui::worker::open_link(url, |_, _| {}),
             }
             self.model.dirty = true;
+            return Flow::Continue;
+        }
+        if self.model.support_dropdown.is_some() {
+            self.drawer_action(action, viewport);
             return Flow::Continue;
         }
         if self.model.root_picker.is_some() {
@@ -942,6 +927,119 @@ impl Attach<'_> {
                     }
                 }
             }
+        }
+        self.model.dirty = true;
+    }
+
+    /// The agent drawer: walk its prompts, go to the tab one was typed
+    /// into, switch whose prompts are listed, or clear the space's.
+    fn drawer_action(&mut self, action: Action, viewport: &Viewport) {
+        let listed = self.drawer_prompt_count();
+        let space_has_prompts = self.space_has_prompts();
+        let Some(drawer) = self.model.support_dropdown.as_mut() else {
+            return;
+        };
+        let clearing = std::mem::take(&mut drawer.clearing);
+        match action {
+            Action::SelectPrevious => drawer.selected = drawer.selected.saturating_sub(1),
+            Action::SelectNext => {
+                drawer.selected = (drawer.selected + 1).min(listed.saturating_sub(1));
+            }
+            Action::FocusNext | Action::FocusPrevious => {
+                let scope = match drawer.scope {
+                    PromptScope::Agent => PromptScope::Space,
+                    PromptScope::Space => PromptScope::Agent,
+                };
+                self.show_drawer_scope(scope);
+            }
+            Action::Activate => {
+                let selected = drawer.selected;
+                self.open_drawer_prompt(selected, viewport);
+            }
+            Action::ClearPromptHistory if clearing => {
+                let root = drawer.space_root.clone();
+                spawn_clear_prompt_history(self.home, root, self.channels.prompts.sender.clone());
+            }
+            Action::ClearPromptHistory => drawer.clearing = space_has_prompts,
+            _ => self.model.support_dropdown = None,
+        }
+        self.model.dirty = true;
+    }
+
+    /// How many prompts the open drawer lists.
+    fn drawer_prompt_count(&self) -> usize {
+        match (
+            &self.model.support_dropdown,
+            &self.model.remembered.drawer_prompts,
+        ) {
+            (Some(drawer), Some(history)) if history.root == drawer.space_root => {
+                drawer.prompts(&history.entries).len()
+            }
+            _ => 0,
+        }
+    }
+
+    fn space_has_prompts(&self) -> bool {
+        match (
+            &self.model.support_dropdown,
+            &self.model.remembered.drawer_prompts,
+        ) {
+            (Some(drawer), Some(history)) => {
+                history.root == drawer.space_root && !history.entries.is_empty()
+            }
+            _ => false,
+        }
+    }
+
+    /// Switches whose prompts are listed. The agent's own are only
+    /// offered when UZE knows which agent this is.
+    fn show_drawer_scope(&mut self, scope: PromptScope) {
+        if let Some(drawer) = self.model.support_dropdown.as_mut()
+            && (scope == PromptScope::Space || drawer.agent.is_some())
+        {
+            drawer.scope = scope;
+            drawer.selected = 0;
+        }
+        self.model.dirty = true;
+    }
+
+    /// Keeps the drawer's selection on a row that is still listed after
+    /// its history was read again.
+    fn keep_drawer_selection(&mut self) {
+        let listed = self.drawer_prompt_count();
+        if let Some(drawer) = self.model.support_dropdown.as_mut() {
+            drawer.selected = drawer.selected.min(listed.saturating_sub(1));
+        }
+    }
+
+    /// Goes to the tab the `index`th listed prompt was typed into, and
+    /// closes the drawer. The tab is found by the agent it was launched
+    /// for, since tab ids are minted again when the runtime restores a
+    /// workspace; an entry from before agents were recorded falls back to
+    /// its tab id, and only while that tab still carries the same label.
+    fn open_drawer_prompt(&mut self, index: usize, viewport: &Viewport) {
+        let (Some(drawer), Some(history)) = (
+            self.model.support_dropdown.as_ref(),
+            self.model.remembered.drawer_prompts.as_ref(),
+        ) else {
+            return;
+        };
+        if history.root != drawer.space_root {
+            return;
+        }
+        let Some(entry) = drawer.prompts(&history.entries).get(index).copied() else {
+            return;
+        };
+        let tab = self.model.tabs().find_map(|tab| {
+            let same_agent =
+                entry.agent.is_some() && launched_agent_id(tab) == entry.agent.as_deref();
+            let same_tab =
+                entry.agent.is_none() && tab.id.0 == entry.tab_id && tab.label == entry.tab_label;
+            (same_agent || same_tab).then_some(tab.id)
+        });
+        self.model.support_dropdown = None;
+        if let Some(tab) = tab {
+            self.land_on_tab(tab, viewport.columns, viewport.rows);
         }
         self.model.dirty = true;
     }
@@ -2107,9 +2205,16 @@ impl Attach<'_> {
                 self.model.dirty = true;
             }
             _ if self.model.support_dropdown.is_some() => {
-                // Informational dropdown: every click simply dismisses
-                // it, preventing the click from leaking into the pane.
-                self.model.support_dropdown = None;
+                // A click on the drawer's own rows acts; anywhere else
+                // dismisses it, and never leaks into the pane beneath.
+                match self.model.hit_at(mouse.column, mouse.row) {
+                    Some(WorkspaceHit::DrawerPrompt(index)) => {
+                        self.open_drawer_prompt(index, viewport);
+                    }
+                    Some(WorkspaceHit::DrawerScope(scope)) => self.show_drawer_scope(scope),
+                    Some(WorkspaceHit::DrawerBody) => {}
+                    _ => self.model.support_dropdown = None,
+                }
                 self.model.dirty = true;
             }
             _ if self.model.commit_detail_open() => {
@@ -3267,9 +3372,14 @@ impl Attach<'_> {
                 // `NewAgentMenu` above.
                 self.model.dirty = true;
             }
+            // Answered by the drawer's own arm in `press`, which sees them
+            // before any other.
+            WorkspaceHit::DrawerPrompt(_)
+            | WorkspaceHit::DrawerScope(_)
+            | WorkspaceHit::DrawerBody => {}
             WorkspaceHit::OpenAgentSupport(anchor) => {
-                self.model.support_dropdown = selected_agent_context(&self.model, &self.identities)
-                    .map(|key| AgentSupportDropdown { key, anchor });
+                self.model.support_dropdown =
+                    selected_agent_drawer(&self.model, &self.identities, anchor);
                 // Opening always re-reads, even when an answer
                 // for this key is already held: `AGENTS.md` and
                 // `.agents/` can change under an open workspace,
@@ -3281,6 +3391,11 @@ impl Attach<'_> {
                         self.home,
                         dropdown.key.clone(),
                         self.channels.support.sender.clone(),
+                    );
+                    spawn_prompt_history(
+                        self.home,
+                        dropdown.space_root.clone(),
+                        self.channels.prompts.sender.clone(),
                     );
                 }
                 self.model.dirty = true;
@@ -3850,6 +3965,11 @@ impl Attach<'_> {
                 self.model.remembered.agent_support_pending = None;
             }
             self.model.remembered.agent_support = Some(resolution);
+            self.model.dirty = true;
+        }
+        while let Ok(resolution) = self.channels.prompts.receiver.try_recv() {
+            self.model.remembered.drawer_prompts = Some(resolution);
+            self.keep_drawer_selection();
             self.model.dirty = true;
         }
         // A space this client asked for may have arrived; the tab that was
