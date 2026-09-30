@@ -168,7 +168,7 @@ export default function HomePage() {
           theme. */}
       <section className="flex w-full max-w-[1296px] min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-12">
         <SectionHeading
-          eyebrow="Packages"
+          eyebrow="Package manager"
           title="One plugin, every agent."
           body="Install it once. uze keeps the bytes in its Store and delivers each capability through the most native route each harness has."
         />
