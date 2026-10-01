@@ -36,7 +36,7 @@ scenes:
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
-      - click: "✦ new"
+      - click: "new"
         say: open the new-agent picker
         in: sidebar
         expect: new agent
@@ -105,7 +105,7 @@ scenes:
 
   - scene: the next agent takes the freed slot rather than a new directory
     when:
-      - click: "✦ new"
+      - click: "new"
         say: open the picker again
         in: sidebar
         expect: new agent
