@@ -42,7 +42,6 @@ scenes:
   - scene: a delivered plugin, whole
     when:
       - shell: "{uze} setup"
-        check: false
       - shell: "{uze} market add {world}/market"
       - shell: "{uze} install -m flow@demo"
         say: install and deliver it

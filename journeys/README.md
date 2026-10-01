@@ -169,7 +169,7 @@ scenes:
 | `drag` | the left button pressed on the target, moved across `span:` cells (default the target's width) and released; `shift: true` holds Shift throughout |
 | `type` | one character at a time; `submit: false` to leave Enter out, `clear: all` to empty a field |
 | `key` | one key or a list (`Escape`, `C-g`, `BSpace`) |
-| `shell` | a command in the world (what an agent would do to its own checkout) |
+| `shell` | a command in the world (what an agent would do to its own checkout), with a controlling terminal nobody answers and 120s to finish (see stand-ins) |
 | `wait` | `screen` / `file` / `shell` with `until:` and a `timeout:` |
 
 Aiming a click: `in:` bands the search (`strip`, `sidebar`, `pane`),
@@ -278,3 +278,10 @@ A stand-in is a shell script named after the harness binary, because
 `/proc/<pid>/comm` reports a script by its own file name — which is how UZE
 recognizes the agent running in a pane. It prints a banner and echoes what it
 is sent. No network, no credentials, no model.
+
+Each vendor's update verb, and every installer the stand-in `curl` serves,
+asks a question on `/dev/tty` the way the Codex installer does. `shell` and
+`cmd`, and the `uze setup` a world is built with, run with a controlling
+terminal while stdin and the captured streams stay off it, so `uze setup` is
+always met by a vendor that asks: one that lets its child reach the terminal
+hangs, and the 120s deadline fails it.

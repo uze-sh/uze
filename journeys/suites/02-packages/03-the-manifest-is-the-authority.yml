@@ -42,7 +42,6 @@ scenes:
     when:
       - shell: "{uze} setup"
         say: provision every registered harness
-        check: false
       - shell: |
           set -e
           printf 'marketplaces:\n  demo:\n    path: %s/market\n    plugins:\n      - flow\n' "{world}" > {project}/agents.yaml

@@ -42,7 +42,6 @@ scenes:
     when:
       - shell: "{uze} setup"
         say: provision every registered harness
-        check: false
       - shell: "{uze} market add {world}/market"
         say: register the staged marketplace
       - shell: "cd {project} && {uze} flow@demo && {uze} install && cp agents.lock {world}/lock.before"

@@ -25,8 +25,10 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
+import termios
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -477,6 +479,71 @@ def this_build_opens_first(spec: dict) -> bool:
     return "{uze}" in next(opened, "")
 
 
+def kill_session(session: int) -> None:
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            fields = (entry / "stat").read_text().rsplit(")", 1)[1].split()
+        except (OSError, IndexError):
+            continue
+        if int(fields[3]) == session:
+            try:
+                os.kill(int(entry.name), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def run_with_a_terminal(
+    command, timeout: float = 120, **options
+) -> subprocess.CompletedProcess:
+    """`subprocess.run`, with a controlling terminal nobody answers.
+
+    stdin and the captured streams stay off the terminal, so UZE behaves as
+    it does under any script. What changes is `/dev/tty`: a person's machine
+    has one, and a vendor installer that asks on it hangs a provisioning step
+    that let it through — which no world without one could ever show. The
+    deadline turns that hang into a failure that says so.
+
+    A string runs under `sh -m`, as an interactive shell would: a job sent to
+    the background gets a process group of its own, so the hangup the
+    terminal's session sends when the shell exits does not take it along.
+    """
+    if isinstance(command, str):
+        command = ["/bin/sh", "-m", "-c", command]
+    controller, terminal = os.openpty()
+    path = os.ttyname(terminal)
+    os.close(terminal)
+
+    def take_the_terminal() -> None:
+        descriptor = os.open(path, os.O_RDWR)
+        fcntl.ioctl(descriptor, termios.TIOCSCTTY, 0)
+        os.close(descriptor)
+
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+            preexec_fn=take_the_terminal,
+            **options,
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_session(process.pid)
+            stdout, stderr = process.communicate()
+            stderr += f"\n[journey] still running after {timeout:.0f}s, killed\n"
+        return subprocess.CompletedProcess(
+            process.args, process.returncode, stdout, stderr
+        )
+    finally:
+        os.close(controller)
+
+
 def set_up_the_machine(root: Path, binary: Path, env: dict) -> None:
     """A machine somebody works in is one where `uze setup` has run.
 
@@ -490,14 +557,7 @@ def set_up_the_machine(root: Path, binary: Path, env: dict) -> None:
     """
     if (Path(env["UZE_HOME"]) / "state").is_dir():
         return
-    result = subprocess.run(
-        [str(binary), "setup"],
-        cwd=root,
-        env=env,
-        capture_output=True,
-        text=True,
-        stdin=subprocess.DEVNULL,
-    )
+    result = run_with_a_terminal([str(binary), "setup"], cwd=root, env=env)
     if result.returncode != 0:
         die(
             f"`uze setup` failed while building the world: {result.stdout}{result.stderr}"
@@ -933,13 +993,10 @@ class Runner:
 
     def _shell(self, step: dict) -> None:
         command = self.resolve(step["shell"])
-        result = subprocess.run(
+        result = run_with_a_terminal(
             command,
-            shell=True,
             cwd=self.world.project,
             env=self.world.shell_env(),
-            capture_output=True,
-            text=True,
         )
         if result.returncode != 0 and step.get("check", True):
             raise Failed(
@@ -1459,13 +1516,10 @@ class Checker:
         return True, f"{pattern}: {found if found else 'not running'}"
 
     def _cmd(self, spec: dict) -> tuple[bool, str]:
-        result = subprocess.run(
+        result = run_with_a_terminal(
             spec["cmd"]["run"],
-            shell=True,
             cwd=self.world.project,
             env=self.world.shell_env(),
-            capture_output=True,
-            text=True,
         )
         if result.returncode != spec["cmd"].get("exit", 0):
             return False, (

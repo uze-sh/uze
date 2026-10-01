@@ -37,7 +37,6 @@ scenes:
     when:
       - shell: "{uze} setup"
         say: the operator provisions their harnesses, which is what installs the launcher
-        check: false
       - open: ["{uze}", "workspace"]
         expect: demo-app
         expect_timeout: 20
