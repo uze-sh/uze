@@ -125,11 +125,24 @@ while IFS= read -r line; do
 done
 "#;
 
+/// What the Codex installer ends with: a question asked on `/dev/tty`,
+/// whatever stdin is, answered by nobody when no one is watching. Every
+/// stand-in's update verb and every installer the stand-in `curl` serves
+/// asks it, so a provisioning step that leaves its child a terminal hangs.
+const ASKS_ON_THE_TERMINAL: &str = r#"if ( : </dev/tty ) 2>/dev/null; then
+  printf 'Start now? [y/N] ' >/dev/tty
+  read -r answer </dev/tty
+fi"#;
+
 /// Vendor flavor for [`Action::VendorMarketplace`].
 #[derive(Clone, Copy)]
 pub enum MarketplaceVendor {
     Claude,
     Codex,
+}
+
+fn asks_on_the_terminal() -> Action {
+    Action::Script(format!("{ASKS_ON_THE_TERMINAL}\nexit 0"))
 }
 
 impl Action {
@@ -655,6 +668,7 @@ impl Standard<'_> {
                 self.conversational(
                     FakeHarness::new(self.bin_dir, "claude")
                         .version_line("9.9.9 (Fake Claude)")
+                        .on(["update"], asks_on_the_terminal())
                         .on_prefix(
                             ["plugin"],
                             Action::VendorMarketplace {
@@ -671,6 +685,7 @@ impl Standard<'_> {
             self.interactive(
                 FakeHarness::new(self.bin_dir, "codex")
                     .version_line("codex-cli 9.9.9")
+                    .on(["update"], asks_on_the_terminal())
                     .on_prefix(
                         ["plugin"],
                         Action::VendorMarketplace {
@@ -683,7 +698,8 @@ impl Standard<'_> {
             .build(),
             self.interactive(
                 FakeHarness::new(self.bin_dir, self.opencode_binary)
-                    .version_line("opencode2 v9.9.9"),
+                    .version_line("opencode2 v9.9.9")
+                    .on(["upgrade"], asks_on_the_terminal()),
                 session("OpenCode", "v9.9.9 (fake)"),
             )
             .build(),
@@ -695,6 +711,7 @@ impl Standard<'_> {
                 // right to do and what the real vendor never produces.
                 FakeHarness::new(self.bin_dir, "agy")
                     .version_line("9.9.9")
+                    .on(["update"], asks_on_the_terminal())
                     .on_prefix(
                         ["plugin"],
                         Action::VendorAgy {
@@ -708,22 +725,23 @@ impl Standard<'_> {
         ]
     }
 
-    /// A `curl` that fetches nothing.
+    /// A `curl` that fetches an installer which only asks its question.
     ///
     /// OpenCode's provisioning route for the legacy `opencode2` name is
     /// `sh -c "curl -fsSL https://opencode.ai/v2/install | bash"`, and a
     /// suite that pins that name to keep the path proven was reaching the
     /// public Internet to do it — the run failed whenever the network was
     /// down, and piped a remote script into `bash` when it was up. A
-    /// stand-in first on `$PATH` answers with nothing and exits zero, so
-    /// the pipeline succeeds offline and UZE still runs the command it
-    /// would really run; the invocation log is what proves it did.
+    /// stand-in first on `$PATH` answers offline and exits zero, so UZE
+    /// still runs the command it would really run; the invocation log is
+    /// what proves it did.
     ///
     /// Not returned with the harnesses: callers print that list as the set
     /// of harness stand-ins, and this is not one.
     fn install_installer_fetcher(&self) {
         FakeHarness::new(self.bin_dir, "curl")
             .version_line("curl 9.9.9 (fake)")
+            .on_prefix(["-fsSL"], Action::stdout(ASKS_ON_THE_TERMINAL))
             .build();
     }
 

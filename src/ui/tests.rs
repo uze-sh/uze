@@ -2291,7 +2291,7 @@ fn the_sidebar_announces_a_release_above_the_steps() {
         "the version, whole, with the mark on its row: {version:?}"
     );
     assert!(
-        action.contains("restart uze to use it"),
+        action.contains("restart to use it"),
         "what to do, on one row: {action:?}"
     );
     assert_eq!(

@@ -48,7 +48,6 @@ scenes:
   - scene: a marketplace that is a repository, with its one plugin delivered
     when:
       - shell: "{uze} setup"
-        check: false
         say: provision every registered harness
       - shell: "{uze} market add file://{world}/market"
         say: |

@@ -2624,7 +2624,6 @@ impl uze_application::ProcessRunner for CapturingRunner {
         );
         let _entered = span.enter();
         let mut command = Command::new(&spec.program);
-        command.args(&spec.arguments).stdin(Stdio::null());
         match spec.output {
             uze_application::ProcessOutput::Quiet => {
                 command.stdout(Stdio::null()).stderr(Stdio::null());
@@ -2667,27 +2666,10 @@ impl uze_application::ProcessRunner for CapturingRunner {
                 }
             }
         }
-        // The same grouping `SystemProcessRunner` makes, for the same
-        // reason: a quiet child is killed as a tree on timeout, and one
-        // whose output an operator asked for stays in the terminal's
-        // foreground group so Ctrl-C still reaches it.
-        let mut command = match spec.output {
-            uze_application::ProcessOutput::Quiet => uze_application::with_process_group(command),
-            uze_application::ProcessOutput::Inherit => command,
-        };
-        let process_error = |source| uze_application::UzeError::Process {
-            program: spec.program.clone(),
-            source,
-        };
-        let mut child = command.spawn().map_err(process_error)?;
-        let (status, timed_out) =
-            uze_application::wait_with_timeout(&mut child, spec.timeout).map_err(process_error)?;
-        span.record("success", status.success() && !timed_out);
-        span.record("timed_out", timed_out);
-        Ok(uze_application::ProcessResult {
-            success: status.success() && !timed_out,
-            timed_out,
-        })
+        let result = uze_application::run_provisioning(command, spec)?;
+        span.record("success", result.success);
+        span.record("timed_out", result.timed_out);
+        Ok(result)
     }
 }
 

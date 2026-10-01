@@ -44,16 +44,13 @@ pub use uze_core::{
     }, // What one `setup` did to a harness, as `SetupResult` reports it.
     provisioning::{
         ProcessOutput, ProcessResult, ProcessRunner, ProcessSpec, ProvisionAction, ProvisionStatus,
-        ProvisioningResult, SystemProcessRunner,
+        ProvisioningResult, SystemProcessRunner, run_provisioning,
     }, // What a blocked removal or update carries, so a surface can say which
     // receipt stood in the way.
     reconciliation::ReconciliationReport,
     router::CompatibilityRoute,
     router::HarnessCapabilities,
-    store::{parse_plugin_marketplace_spec, typed_name}, // For a runner of the binary's own that sends a child's output
-    // somewhere `ProcessOutput` cannot name: its timeout must still reach
-    // the whole tree the way every other child's does.
-    subprocess::{wait_with_timeout, with_process_group},
+    store::{parse_plugin_marketplace_spec, typed_name},
     trust::{AlwaysTrust, NoTrustAuthority, TrustAuthority, TrustOutcome, TrustRequest},
 };
 pub use uze_workspace::{

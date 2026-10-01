@@ -5268,7 +5268,7 @@ mod workspace_tests {
                 && rows[y].contains(&theme::glyph(theme::Symbol::MarkClose)),
             "the version, whole, with the mark on its row: {rows:?}"
         );
-        assert!(rows[y + 1].contains("restart uze to use it"), "{rows:?}");
+        assert!(rows[y + 1].contains("restart to use it"), "{rows:?}");
         assert_eq!(
             hits.iter()
                 .filter(|(_, hit)| matches!(hit, WorkspaceHit::OpenReleaseNotes))

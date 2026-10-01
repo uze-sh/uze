@@ -45,12 +45,44 @@ pub fn with_process_group(mut command: Command) -> Command {
 /// a descendant forked between the two can otherwise survive the group
 /// signal) and the direct child was reaped so it cannot stay a zombie.
 pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<(ExitStatus, bool)> {
+    let (status, ending) = wait_until(child, timeout, || false)?;
+    Ok((status, ending == Ending::TimedOut))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ending {
+    Exited,
+    TimedOut,
+    Interrupted,
+}
+
+/// [`wait_with_timeout`] for a child started [`without_controlling_terminal`]:
+/// the terminal's Ctrl-C no longer reaches it, so an interrupt `watch` saw
+/// kills its group the way the deadline would.
+pub fn wait_with_timeout_or_interrupt(
+    child: &mut Child,
+    timeout: Duration,
+    watch: &InterruptWatch,
+) -> io::Result<(ExitStatus, Ending)> {
+    wait_until(child, timeout, || watch.interrupted())
+}
+
+fn wait_until(
+    child: &mut Child,
+    timeout: Duration,
+    interrupted: impl Fn() -> bool,
+) -> io::Result<(ExitStatus, Ending)> {
     let pid = child.id();
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
-            Ok(Some(status)) => return Ok((status, false)),
-            Ok(None) if Instant::now() >= deadline => {
+            Ok(Some(status)) => return Ok((status, Ending::Exited)),
+            Ok(None) if interrupted() || Instant::now() >= deadline => {
+                let ending = if interrupted() {
+                    Ending::Interrupted
+                } else {
+                    Ending::TimedOut
+                };
                 kill_process_group(pid);
                 // The second sweep happens while the child is dead but not
                 // yet reaped: until it is, neither its pid nor its group id
@@ -59,7 +91,7 @@ pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<(Ex
                 wait_without_reaping(pid);
                 kill_process_group(pid);
                 let status = child.wait()?;
-                return Ok((status, true));
+                return Ok((status, ending));
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
             Err(source) => {
@@ -67,6 +99,95 @@ pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<(Ex
                 let _ = child.wait();
                 return Err(source);
             }
+        }
+    }
+}
+
+/// Starts `command` in a session of its own: its own process group, and no
+/// controlling terminal. A vendor installer that asks a question on
+/// `/dev/tty` then gets no terminal to ask on and takes its default, rather
+/// than waiting for an answer nobody is shown until its deadline.
+pub fn without_controlling_terminal(mut command: Command) -> Command {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: `setsid` is async-signal-safe and touches no memory.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    command
+}
+
+#[cfg(unix)]
+static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(unix)]
+extern "C" fn note_interrupt(_signal: libc::c_int) {
+    INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Catches `SIGINT` while it lives, restoring whatever handled it before.
+pub struct InterruptWatch {
+    #[cfg(unix)]
+    previous: libc::sigaction,
+}
+
+impl InterruptWatch {
+    #[cfg(unix)]
+    pub fn install() -> Self {
+        INTERRUPTED.store(false, std::sync::atomic::Ordering::SeqCst);
+        // SAFETY: both structs are plain data, zeroed is valid for them, and
+        // the handler only stores to an atomic.
+        unsafe {
+            let mut action: libc::sigaction = std::mem::zeroed();
+            action.sa_sigaction = note_interrupt as extern "C" fn(libc::c_int) as usize;
+            libc::sigemptyset(&mut action.sa_mask);
+            let mut previous: libc::sigaction = std::mem::zeroed();
+            libc::sigaction(libc::SIGINT, &action, &mut previous);
+            Self { previous }
+        }
+    }
+
+    #[cfg(not(unix))]
+    pub fn install() -> Self {
+        Self {}
+    }
+
+    pub fn interrupted(&self) -> bool {
+        #[cfg(unix)]
+        {
+            INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    }
+
+    /// Restores the previous handler and delivers the interrupt to it, so
+    /// the process ends the way the Ctrl-C would have ended it.
+    pub fn deliver(self) {
+        drop(self);
+        #[cfg(unix)]
+        // SAFETY: plain `raise(3)`.
+        unsafe {
+            libc::raise(libc::SIGINT);
+        }
+    }
+}
+
+impl Drop for InterruptWatch {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        // SAFETY: `previous` is what `sigaction` handed back on install.
+        unsafe {
+            libc::sigaction(libc::SIGINT, &self.previous, std::ptr::null_mut());
         }
     }
 }
@@ -422,6 +543,36 @@ fn combine_streams(stdout: &Stream, stderr: &Stream) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(unix)]
+    #[test]
+    fn an_interrupt_kills_a_child_the_terminal_no_longer_reaches() {
+        let watch = InterruptWatch::install();
+        let mut child = without_controlling_terminal({
+            let mut command = Command::new("sh");
+            command.args(["-c", "sleep 30 & sleep 30"]);
+            command
+        })
+        .spawn()
+        .unwrap();
+        let group = child.id();
+        // SAFETY: plain `raise(3)`; the watch catches it.
+        unsafe {
+            libc::raise(libc::SIGINT);
+        }
+
+        let started = Instant::now();
+        let (_, ending) =
+            wait_with_timeout_or_interrupt(&mut child, Duration::from_secs(60), &watch).unwrap();
+
+        assert_eq!(ending, Ending::Interrupted);
+        assert!(started.elapsed() < Duration::from_secs(10));
+        drop(watch);
+        assert!(
+            process_group_members(group).is_empty(),
+            "the whole tree is gone"
+        );
+    }
     #[test]
     fn a_program_is_found_only_where_path_actually_holds_an_executable() {
         assert!(super::program_on_path("sh"), "the system shell is on PATH");

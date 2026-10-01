@@ -131,7 +131,6 @@ scenes:
     when:
       - shell: "{uze} setup"
         say: provision every registered harness
-        check: false
       - shell: |
           set -e
           mkdir -p {world}/forge/team

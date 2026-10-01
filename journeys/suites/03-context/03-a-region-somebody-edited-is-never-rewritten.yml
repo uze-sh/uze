@@ -59,7 +59,6 @@ scenes:
   - scene: a contribution composed into the region UZE owns
     when:
       - shell: "{uze} setup"
-        check: false
       - shell: "{uze} market add {world}/market"
       - shell: "{uze} install -m house-rules@demo"
       - shell: "{uze} agent context reconcile"

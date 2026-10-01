@@ -40,7 +40,6 @@ scenes:
     when:
       - shell: "{uze} setup"
         say: provision every registered harness
-        check: false
     then:
       - json: "{uze_home}/cache/harnesses.json"
         at: integrations.claude-code.version

@@ -83,7 +83,7 @@ impl Notice {
 
     /// What the row says. Clicking it opens the release's notes.
     pub(crate) fn action(&self) -> &'static str {
-        "restart uze to use it"
+        "restart to use it"
     }
 }
 
