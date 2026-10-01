@@ -118,7 +118,7 @@ mod tests {
             .with_ansi(false)
             .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
             .with_writer(writer)
-            .with_filter(super::super::output(EnvFilter::new(directives)));
+            .with_filter(crate::telemetry::output(EnvFilter::new(directives)));
         let subscriber = tracing_subscriber::registry()
             .with(crate::steps::layer())
             .with(text);
