@@ -16,7 +16,7 @@ use crate::ui::widget::{
 use uze_application::{PromptClock, PromptEntry};
 
 use uze_application::application::{
-    AgentContextStatus, HarnessHealth, ProfileSummary, ResourceDelivery, UndeliveredReason,
+    AgentContextStatus, HarnessHealth, ResourceDelivery, UndeliveredReason,
 };
 
 /// The small, immutable slice of the read model one workspace agent tab
@@ -35,7 +35,6 @@ pub(super) struct AgentSupport {
     project_skills_label: &'static str,
     project_agents: State,
     project_agents_label: &'static str,
-    profile: String,
 }
 
 #[derive(Clone, Copy)]
@@ -51,11 +50,7 @@ enum State {
 }
 
 impl AgentSupport {
-    pub(super) fn resolve(
-        health: HarnessHealth,
-        context: &AgentContextStatus,
-        profile: Option<&ProfileSummary>,
-    ) -> Self {
+    pub(super) fn resolve(health: HarnessHealth, context: &AgentContextStatus) -> Self {
         let (instructions, instructions_label) = describe(&context.instructions);
         let (project_skills, project_skills_label) = describe(&context.project_skills);
         let (project_agents, project_agents_label) = describe(&context.project_agents);
@@ -72,9 +67,6 @@ impl AgentSupport {
             project_skills_label,
             project_agents,
             project_agents_label,
-            profile: profile
-                .map(|profile| profile.id.clone())
-                .unwrap_or_else(|| "default".to_owned()),
         }
     }
 }
@@ -359,7 +351,6 @@ fn context_lines(support: &AgentSupport, agent: &DrawerAgent, width: usize) -> V
             "agents",
             delivery_value(support.project_agents, support.project_agents_label),
         ),
-        context_line("profile", plain(&support.profile)),
     ];
     lines.extend(caps_lines(support, room));
     lines
@@ -713,7 +704,7 @@ mod tests {
             project_skills: agents_directory,
             project_agents,
         };
-        AgentSupport::resolve(health(present), &context, None)
+        AgentSupport::resolve(health(present), &context)
     }
 
     #[test]
@@ -775,7 +766,7 @@ mod tests {
             project_skills: ResourceDelivery::Native,
             project_agents: ResourceDelivery::Undelivered(UndeliveredReason::Unsupported),
         };
-        let support = AgentSupport::resolve(health(true), &context, None);
+        let support = AgentSupport::resolve(health(true), &context);
         assert_eq!(support.project_skills_label, "native");
         assert!(matches!(support.project_skills, State::Ready));
         assert_eq!(support.project_agents_label, "not supported");
@@ -895,7 +886,6 @@ mod tests {
             ("path", "~/dev/uze/.worktrees/efjkdg"),
             ("branch", "feat/cli-logs"),
             ("AGENTS.md", "native"),
-            ("profile", "default"),
             ("caps", "skills"),
         ] {
             let keyed = format!("{key:<KEY_WIDTH$}");

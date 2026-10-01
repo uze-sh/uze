@@ -70,7 +70,7 @@ pub(crate) fn render_overview(
     );
     y += 3;
 
-    // 3-column stat grid, each cell divided from its neighbor by a left
+    // Stat grid, each cell divided from its neighbor by a left
     // hairline border — the design's `border-left:1px solid rgba(...)`.
     let stats = [
         Stat {
@@ -83,17 +83,6 @@ pub(crate) fn render_overview(
             label: "Plugins installed".to_owned(),
             value: model.remembered.plugins.len().to_string(),
             hue: Token::TextBright,
-            mark: None,
-        },
-        Stat {
-            label: "Active profile".to_owned(),
-            value: model
-                .remembered
-                .profiles
-                .iter()
-                .find(|profile| profile.active)
-                .map_or_else(|| "none".to_owned(), |profile| profile.id.clone()),
-            hue: Token::StateSuccess,
             mark: None,
         },
     ];

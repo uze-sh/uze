@@ -269,12 +269,8 @@ fn spawn_support_refresh(home: &UzeHome, key: SupportKey, sender: mpsc::Sender<S
                 super::tui_application(support_home).ok().and_then(|app| {
                     let context = app.context().agent_context_for(&key.0, &key.1).ok()?;
                     let health = app.health().harness(&key.0).ok()?;
-                    let profiles = app.profiles().list().unwrap_or_default();
-                    let active_profile = profiles.iter().find(|profile| profile.active);
                     Some(super::agent_support::AgentSupport::resolve(
-                        health,
-                        &context,
-                        active_profile,
+                        health, &context,
                     ))
                 })
             },
