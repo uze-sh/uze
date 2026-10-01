@@ -32,7 +32,7 @@ use crate::ui::agent_support::{capability_label, resource_groups};
 use crate::ui::hit::Hit;
 use crate::ui::model::{PluginPane, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{self, Button, RowState, mark, row, text};
+use crate::ui::widget::{Button, Edge, RowState, Rule, mark, row, text};
 use crate::ui::{content_area, render_screen_header};
 
 /// Both status labels are 9 characters (`Installed`/`Available`), but that's
@@ -92,9 +92,8 @@ pub(crate) fn render_plugins(
         ),
         theme::fg(Token::TextMuted),
     );
-    let trailer_width = trailer.width() as u16;
-    let content = render_screen_header(frame, side, Route::Plugins, Some(trailer));
-    render_add_marketplace(frame, side, trailer_width, model, hits);
+    let content = render_screen_header(frame, side, Route::Plugins, None);
+    render_header_trailer(frame, side, trailer, model, hits);
     let filter_area = Rect::new(content.x, content.y, content.width, 2);
     super::filter_box(
         frame,
@@ -198,11 +197,7 @@ fn render_rail(
     market: Option<&str>,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    // A container on the drawers' ground rather than a rule beside it: the
-    // rail is a list of its own, and a ground says so where a hairline only
-    // divided. A column of air after the last character.
-    widget::fill(frame, area, Token::SurfaceRecessed);
-    let inner = area;
+    let inner = Rule::new(Edge::Right).render(frame, area);
     let width = inner.width.saturating_sub(1);
     // On the row the plugin table heads its columns on, so the two lists
     // start on one line.
@@ -256,7 +251,7 @@ fn render_rail(
         let hang = |spans: Vec<Span<'static>>| {
             let mut line = vec![Span::raw(" ".repeat(usize::from(RAIL_GUTTER)))];
             line.extend(spans);
-            row::fill(&mut line, area.width, state);
+            row::fill(&mut line, inner.width, state);
             Line::from(line)
         };
         targets.push((lines.len(), Hit::PluginMarket(entry.map(str::to_owned))));
@@ -275,32 +270,50 @@ fn render_rail(
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-/// The way to register a marketplace, on the header's row beside the count
-/// it would change — a button like every other offer in the modal, in the
-/// accent and filled under the pointer, where it used to be a dim `+ add`
-/// at the foot of the list that read as one more entry in it.
-fn render_add_marketplace(
+/// The header's right end: the count of what is registered, a divider,
+/// and the button that registers another — pinned to the edge, like every
+/// other offer in the modal, in the accent and filled under the pointer.
+/// It used to be a dim `+ add` at the foot of the list, which read as one
+/// more entry in it. Where the title leaves no room, the button goes
+/// before the count does.
+fn render_header_trailer(
     frame: &mut ratatui::Frame<'_>,
     header: Rect,
-    trailer_width: u16,
+    count: Span<'static>,
     model: &TuiModel,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     const GAP: u16 = 2;
     let action = uze_keys::Action::AddMarketplace;
-    let button =
-        Button::new(action.label(), Token::Accent).strong(model.hovered_offer == Some(action));
-    // The title row ends a column short of the header, and the trailer is
-    // pinned to its end.
-    let trailer_x = header.right().saturating_sub(1 + trailer_width);
-    let x = trailer_x.saturating_sub(GAP + button.width());
+    // "Add" alone: the title, the rail and the count beside it already say
+    // marketplace three times over.
+    let button = Button::new("Add", Token::Accent).strong(model.hovered_offer == Some(action));
+    let divider = theme::glyph(Symbol::TreeColumnDivider);
+    let divider_width = theme::width(Symbol::TreeColumnDivider);
+    // The title row ends a column short of the header, as every screen's
+    // trailer does.
+    let right = header.right().saturating_sub(1);
     let title_end = header.x + Route::Plugins.label().len() as u16 + GAP;
-    if x < title_end {
-        return;
+    let count_width = count.width() as u16;
+    let with_button = button.width() + GAP + divider_width + GAP + count_width;
+    let mut x = right.saturating_sub(count_width);
+    if right.saturating_sub(with_button) >= title_end {
+        let rect = Rect::new(right - button.width(), header.y, button.width(), 1);
+        button.render(frame, rect);
+        hits.push((rect, Hit::OfferedAction(action)));
+        let divider_x = rect.x - GAP - divider_width;
+        frame.render_widget(
+            Paragraph::new(Span::styled(divider, theme::fg(Token::SurfaceHover))),
+            Rect::new(divider_x, header.y, divider_width, 1),
+        );
+        x = divider_x - GAP - count_width;
     }
-    let rect = Rect::new(x, header.y, button.width(), 1);
-    button.render(frame, rect);
-    hits.push((rect, Hit::OfferedAction(action)));
+    if x >= title_end {
+        frame.render_widget(
+            Paragraph::new(count),
+            Rect::new(x, header.y, count_width, 1),
+        );
+    }
 }
 
 /// What a marketplace's second row says: the one thing about it that asks

@@ -5545,14 +5545,17 @@ fn a_marketplace_in_the_rail_is_its_name_over_what_needs_saying() {
         "the count beside the name: {text}"
     );
     assert!(rows[uze + 1].contains("built in"), "{text}");
-    // The rail sits on the drawers' ground, not beside a rule.
+    // A rule divides the rail from the plugin table, rather than a ground
+    // of its own.
     let rail = hits
         .iter()
         .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
         .map(|(rect, _)| *rect)
         .expect("the marketplace is a target");
-    assert_eq!(
-        terminal.backend().buffer()[(rail.x, rail.bottom())].bg,
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(rail.right(), rail.y)].symbol(), "│", "{text}");
+    assert_ne!(
+        buffer[(rail.x, rail.bottom())].bg,
         theme::color(Token::SurfaceRecessed),
         "{text}"
     );
@@ -5565,9 +5568,25 @@ fn a_marketplace_in_the_rail_is_its_name_over_what_needs_saying() {
         .map(|(rect, _)| *rect)
         .expect("the button is a target");
     let header = &rows[button.y as usize];
+    let divider = theme::glyph(theme::Symbol::TreeColumnDivider);
+    let at = |needle: &str| {
+        header
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle} not on the header row: {header}"))
+    };
+    let count = at("marketplaces ·");
+    let button_at = at("  Add  ");
     assert!(
-        header.contains("Add marketplace") && header.contains("marketplaces ·"),
-        "{header}"
+        header[count..button_at].contains(&divider),
+        "the count, a divider, then the button: {header}"
+    );
+    let header_hits: Vec<_> = hits
+        .iter()
+        .filter(|(rect, _)| rect.y == button.y && rect.x > button.x)
+        .collect();
+    assert!(
+        header_hits.is_empty(),
+        "the button ends the header's row: {header_hits:?}"
     );
     assert!(
         rows[row_of("│  local ") + 1].contains("1 update"),
