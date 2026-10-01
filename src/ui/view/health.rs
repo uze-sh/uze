@@ -1,4 +1,5 @@
-//! Actionable machine-health signals for the Overview.
+//! Actionable machine-health signals, for the management footer's
+//! status and the dialog it opens.
 
 use uze_application::AttachmentState;
 use uze_application::application::DoctorReport;

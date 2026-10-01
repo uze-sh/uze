@@ -36,7 +36,9 @@ impl TuiModel {
         }
         let overlay = self.overlay.clone();
         match overlay {
-            Overlay::None | Overlay::HarnessHelp | Overlay::ReleaseNotes(_) => Intent::None,
+            Overlay::None | Overlay::HarnessHelp | Overlay::Health | Overlay::ReleaseNotes(_) => {
+                Intent::None
+            }
             Overlay::ActionIndex {
                 scopes,
                 filter,
@@ -361,6 +363,57 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
     frame.render_widget(
         Paragraph::new(lines)
             .block(modal(" Harness status ").into_block())
+            .wrap(ratatui::widgets::Wrap { trim: true }),
+        popup,
+    );
+}
+
+/// What the footer's health status stands for: every problem an operator
+/// can act on, worst first, or a line saying there is none.
+pub(crate) fn render_health(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    alerts: &[crate::ui::view::health::Alert],
+) {
+    use crate::ui::view::health::Severity;
+    let mut sorted: Vec<_> = alerts.iter().collect();
+    sorted.sort_by_key(|alert| alert.severity);
+    let mut lines: Vec<Line<'static>> = if sorted.is_empty() {
+        vec![Line::from(Span::styled(
+            "Nothing needs attention.",
+            theme::fg(Token::TextMuted),
+        ))]
+    } else {
+        sorted
+            .into_iter()
+            .map(|alert| {
+                let (symbol, hue) = match alert.severity {
+                    Severity::High => (Symbol::MarkClose, Token::StateDanger),
+                    Severity::Medium => (Symbol::MarkAttention, Token::StateWarning),
+                    Severity::Low => (Symbol::MarkDot, Token::Accent),
+                };
+                Line::from(vec![
+                    Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(hue)),
+                    Span::styled(alert.label.clone(), theme::fg(Token::TextBright)),
+                    Span::styled(format!(" — {}", alert.detail), theme::fg(Token::TextMuted)),
+                ])
+            })
+            .collect()
+    };
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "any key to close",
+        theme::fg(Token::TextMuted),
+    )));
+    let width = (lines.iter().map(Line::width).max().unwrap_or(0) as u16 + 4)
+        .max(40)
+        .min(area.width);
+    let height = (lines.len() as u16 + 4).min(area.height.saturating_sub(2));
+    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(modal(" Health ").into_block())
             .wrap(ratatui::widgets::Wrap { trim: true }),
         popup,
     );

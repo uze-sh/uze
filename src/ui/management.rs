@@ -26,7 +26,7 @@ use super::worker::{
     Intent, WorkerResult, dispatch, drain_worker_results, spawn_refresh, spawn_startup,
 };
 use super::{overlay, view};
-use crate::ui::theme::{self, Token};
+use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{self, Edge, Rule, hint, modal, text};
 
 /// How long a resolution of the machine stands for before opening the
@@ -362,6 +362,7 @@ pub(crate) fn render(
             selected,
         } => overlay::render_action_index(frame, area, model, scopes, filter, *selected, hits),
         Overlay::HarnessHelp => overlay::render_harness_help(frame, area),
+        Overlay::Health => overlay::render_health(frame, area, &model.alerts()),
         Overlay::ReleaseNotes(modal) => {
             let targets =
                 super::release_notes::render(frame, area, modal, model.release_notes_close_hovered);
@@ -620,9 +621,54 @@ fn render_footer(
         format!("v{}", crate::self_update::running()),
         theme::fg(tone),
     );
-    if let Some(rect) = widget::footer::render(frame, area, footer_line(model), Some(version)) {
-        hits.push((rect, Hit::RunningReleaseNotes));
+    let health = health_status(model);
+    let rects = widget::footer::render(
+        frame,
+        area,
+        footer_line(model),
+        std::iter::once(version).chain(health.clone()).collect(),
+    );
+    if let Some(rect) = rects.first() {
+        hits.push((*rect, Hit::RunningReleaseNotes));
     }
+    if health.is_some()
+        && let Some(rect) = rects.get(1)
+    {
+        hits.push((*rect, Hit::HealthStatus));
+    }
+}
+
+/// The machine's health in a few words, beside the version: the one place
+/// it is said, on every screen of the modal. `None` until the first health
+/// read lands, rather than a "healthy" nobody checked.
+fn health_status(model: &TuiModel) -> Option<Span<'static>> {
+    model.remembered.doctor.as_ref()?;
+    let alerts = model.alerts();
+    let (symbol, hue, words) = match alerts.iter().map(|alert| alert.severity).min() {
+        None => (
+            Symbol::StatusSelected,
+            Token::StateSuccess,
+            "healthy".to_owned(),
+        ),
+        Some(severity) => (
+            Symbol::MarkAttention,
+            if severity == view::health::Severity::High {
+                Token::StateDanger
+            } else {
+                Token::StateWarning
+            },
+            format!("{} need attention", alerts.len()),
+        ),
+    };
+    let style = if model.health_hovered {
+        theme::fg_bold(hue)
+    } else {
+        theme::fg(hue)
+    };
+    Some(Span::styled(
+        format!("{} {words}", theme::glyph(symbol)),
+        style,
+    ))
 }
 
 /// The hint line: what can be done here, with the keys that do it.

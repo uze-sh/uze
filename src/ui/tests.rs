@@ -3684,13 +3684,17 @@ fn a_screen_behind_a_feature_is_absent_or_whole() {
 // drawn into the label column, and pushing the count off its own would
 // trade one signal for another.
 #[test]
-fn the_unsettled_route_is_the_only_badged_one_in_either_layout() {
+fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
     use ratatui::{Terminal, backend::TestBackend};
     let badge = crate::ui::widget::text::small_caps(
         Route::Profiles
             .badge()
             .expect("a screen behind a feature says so"),
     );
+    let unsettled: Vec<Route> = super::model::routes()
+        .into_iter()
+        .filter(|route| route.feature().is_some())
+        .collect();
     for (width, height) in [(150u16, 26u16), (80, 20)] {
         for route in [Route::Profiles, Route::Plugins] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -3710,20 +3714,25 @@ fn the_unsettled_route_is_the_only_badged_one_in_either_layout() {
                 .collect();
             assert_eq!(
                 badged.len(),
-                1,
+                unsettled.len(),
                 "at {width}x{height} on {route:?}, {} rows carry the badge: {badged:?}",
                 badged.len()
             );
-            assert!(
-                badged[0].contains(Route::Profiles.label()),
-                "the badge landed on the wrong row: {:?}",
-                badged[0]
-            );
-            assert!(
-                badged[0].contains(&crate::ui::widget::text::small_digits(2)),
-                "the badge pushed the route count off its row: {:?}",
-                badged[0]
-            );
+            for row in &badged {
+                assert!(
+                    unsettled.iter().any(|route| row.contains(route.label())),
+                    "the badge landed on a settled row: {row:?}"
+                );
+            }
+            if let Some(profiles) = badged
+                .iter()
+                .find(|row| row.contains(Route::Profiles.label()))
+            {
+                assert!(
+                    profiles.contains(&crate::ui::widget::text::small_digits(2)),
+                    "the badge pushed the route count off its row: {profiles:?}"
+                );
+            }
         }
     }
 }
@@ -5440,4 +5449,59 @@ fn both_columns_reach_the_terminals_last_row() {
     let (sidebar, column) = super::sidebar_and_column(frame, None);
     assert_eq!(sidebar.bottom(), frame.bottom());
     assert_eq!(column.bottom(), frame.bottom());
+}
+
+/// Health is said in one place, beside the version, on every screen of
+/// the modal — and a click on it opens what it is about.
+#[test]
+fn the_footer_says_the_machines_health_and_opens_what_needs_attention() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    if let Some(doctor) = model.remembered.doctor.as_mut() {
+        doctor.ledger_error = Some("the ledger is not JSON".to_owned());
+    }
+    let draw = |model: &TuiModel| {
+        let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .unwrap();
+        (buffer_rows(&terminal), hits)
+    };
+    let (rows, hits) = draw(&model);
+    let footer = rows.last().expect("a footer row");
+    let version = format!("v{}", crate::self_update::running());
+    assert!(footer.contains("need attention"), "{footer}");
+    assert!(
+        footer.find("need attention") < footer.find(&version),
+        "the status sits beside the version, before it: {footer}"
+    );
+
+    let (rect, _) = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::HealthStatus)
+        .expect("the status answers a click");
+    model.hits = hits.clone();
+    model.click(rect.x, rect.y);
+    assert_eq!(model.overlay, Overlay::Health);
+    let (rows, _) = draw(&model);
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("Attachment ledger unreadable")),
+        "{}",
+        rows.join("\n")
+    );
+
+    // Nothing read yet is nothing said, rather than a "healthy" nobody
+    // checked.
+    model.overlay = Overlay::None;
+    model.remembered.doctor = None;
+    let (rows, hits) = draw(&model);
+    assert!(!rows.last().unwrap().contains("healthy"));
+    assert!(!hits.iter().any(|(_, hit)| *hit == Hit::HealthStatus));
 }

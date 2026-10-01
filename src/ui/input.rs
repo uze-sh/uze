@@ -46,7 +46,7 @@ impl TuiModel {
             scopes.push(Scope::Filter);
         }
         match self.overlay {
-            Overlay::None | Overlay::HarnessHelp => {}
+            Overlay::None | Overlay::HarnessHelp | Overlay::Health => {}
             Overlay::ActionIndex { .. } => scopes.push(Scope::ActionIndex),
             Overlay::AddMarketplace(_) | Overlay::NewProfile(_) => scopes.push(Scope::TextPrompt),
             Overlay::ThemePicker { .. } => scopes.push(Scope::ThemePicker),
@@ -60,7 +60,7 @@ impl TuiModel {
         // A glossary has nothing to answer — it is read, and then gone —
         // so any keystroke closes it. That is a property of the surface,
         // not a binding, and so not the keymap's to hold.
-        if self.overlay == Overlay::HarnessHelp {
+        if matches!(self.overlay, Overlay::HarnessHelp | Overlay::Health) {
             self.close_overlay();
             return Intent::None;
         }
@@ -700,6 +700,7 @@ impl TuiModel {
                 let hovered = self.hit_at(event.column, event.row).cloned();
                 self.source_link_hovered = matches!(hovered, Some(Hit::OpenLink(_)));
                 self.version_hovered = matches!(hovered, Some(Hit::RunningReleaseNotes));
+                self.health_hovered = matches!(hovered, Some(Hit::HealthStatus));
                 self.release_notes_close_hovered = false;
                 self.hovered_offer = match hovered {
                     Some(Hit::OfferedAction(action)) => Some(action),

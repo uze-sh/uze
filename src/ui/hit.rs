@@ -64,6 +64,8 @@ pub(crate) enum Hit {
     ReleaseNotesClose,
     /// The footer's version: the notes of the release this binary is.
     RunningReleaseNotes,
+    /// The footer's health status: what needs attention, if anything.
+    HealthStatus,
     /// A detail view's button for one of the selected row's offers.
     OfferedAction(uze_keys::Action),
     /// One line of the Keys screen.
@@ -241,6 +243,10 @@ impl TuiModel {
             }
             Hit::CloseFirstSteps => {
                 self.first_steps_closed = true;
+                Intent::None
+            }
+            Hit::HealthStatus => {
+                self.overlay = Overlay::Health;
                 Intent::None
             }
             Hit::RunningReleaseNotes => {

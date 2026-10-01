@@ -320,7 +320,7 @@ pub(super) fn render_work(
             &[uze_keys::Scope::Global, uze_keys::Scope::Work],
             &section.hints,
         ),
-        None,
+        Vec::new(),
     );
 
     // Last of the modal's own, so a click on anything in it finds that

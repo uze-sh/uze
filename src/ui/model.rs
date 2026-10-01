@@ -180,8 +180,15 @@ impl Route {
     pub(crate) fn feature(self) -> Option<uze_application::Feature> {
         match self {
             Route::Profiles => Some(uze_application::Feature::Profiles),
+            Route::Overview => Some(uze_application::Feature::Overview),
             _ => None,
         }
+    }
+
+    /// The screen the modal opens on when it remembers none this build
+    /// offers: the first in sidebar order.
+    pub(crate) fn first_offered() -> Route {
+        routes().first().copied().unwrap_or(Route::Plugins)
     }
 
     /// Where this screen sits among the ones on offer. A screen this
@@ -448,6 +455,9 @@ pub(crate) enum Overlay {
     /// The notes of the release the sidebar's notice names, and of every
     /// other the changelog carries.
     ReleaseNotes(crate::ui::release_notes::ReleaseNotesModal),
+    /// What the footer's health status stands for: each problem an
+    /// operator can act on, read and then put away.
+    Health,
     /// The Harnesses screen's own glossary — what each status/delivery/
     /// compatibility label actually means. Reference material about what
     /// the data *means*, which is a different question from what can be
@@ -689,6 +699,8 @@ pub(crate) struct TuiModel {
     /// Whether the pointer is on the footer's version, which opens this
     /// release's notes. Colour is the only answer a terminal has to hover.
     pub(crate) version_hovered: bool,
+    /// Whether the pointer is on the footer's health status.
+    pub(crate) health_hovered: bool,
     /// Whether the pointer is on the release notes' close mark.
     pub(crate) release_notes_close_hovered: bool,
     /// The detail drawer's button under the pointer, if any.
@@ -796,7 +808,8 @@ impl TuiModel {
                 .route
                 .as_deref()
                 .and_then(Route::from_id)
-                .unwrap_or(Route::Overview),
+                .filter(|route| routes().contains(route))
+                .unwrap_or_else(Route::first_offered),
             focus: Focus::Sidebar,
             overlay: Overlay::None,
             key_screen: ListScreen::default(),
@@ -845,6 +858,7 @@ impl TuiModel {
             context_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             source_link_hovered: false,
             version_hovered: false,
+            health_hovered: false,
             release_notes_close_hovered: false,
             hovered_offer: None,
             tick: 0,
