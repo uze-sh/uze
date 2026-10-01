@@ -229,9 +229,7 @@ pub(super) fn render(
             layout.pane,
             support,
             &crate::ui::agent_support::DrawerAgent {
-                name: drawer.name.clone(),
                 path: drawer.path.clone(),
-                branch: drawer.branch.clone(),
             },
             &prompts,
         );

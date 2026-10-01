@@ -101,11 +101,8 @@ pub(crate) enum PromptScope {
 
 /// The agent the drawer is about, as the sidebar names it.
 pub(super) struct DrawerAgent {
-    /// The tab's label: what the operator calls this agent.
-    pub(super) name: String,
     /// Its working directory, with the home directory written `~`.
     pub(super) path: String,
-    pub(super) branch: Option<String>,
 }
 
 /// What the drawer lists under the agent's facts.
@@ -139,25 +136,28 @@ const DRAWER_SCOPES: [uze_keys::Scope; 3] = [
 
 /// Columns the drawer takes, its border included, and the fewest it is
 /// drawn in.
-const DRAWER_WIDTH: u16 = 56;
+const DRAWER_WIDTH: u16 = 58;
 const DRAWER_MIN_WIDTH: u16 = 44;
 /// Columns between the drawer's border and its content: the selection
-/// mark, and a column of air on either side of it.
-const DRAWER_INSET: u16 = 3;
+/// mark and the column after it.
+const DRAWER_INSET: u16 = 2;
 /// The context block's keys, and the air after them.
+const ITEM_GAP: usize = 2;
+/// The column the two capability rows' keys take, and the air after them.
 const KEY_WIDTH: usize = 10;
-const KEY_GAP: usize = 2;
 /// The column in front of a record that carries the selection mark.
 const GUTTER: usize = 2;
 /// A prompt is wrapped to this many lines, then elided.
 const PROMPT_LINES: usize = 2;
 /// Blank rows between two records, so each reads as one thing.
 const RECORD_GAP: usize = 1;
-/// Blank rows between the drawer's top edge and its title.
-const TOP_INSET: u16 = 1;
-/// Blank rows between the agent's facts and the prompts heading: the
-/// facts are about the agent, the list is about what it was asked.
-const HEADING_GAP: usize = 2;
+/// Blank rows between the drawer's top edge and its title: none, the
+/// border is edge enough.
+const TOP_INSET: u16 = 0;
+/// Blank rows between the harness's name and the prompts heading.
+const HEADING_GAP: usize = 1;
+/// Columns between the facts card's border and its text.
+const CARD_PAD: u16 = 1;
 
 /// Draws the agent drawer down the right-hand side, from the control that
 /// opened it to the bottom of the frame: the agent's name, what it runs on
@@ -175,14 +175,30 @@ pub(super) fn render(
     prompts: &DrawerPrompts<'_>,
 ) -> DrawerTargets {
     let width = DRAWER_WIDTH.max(DRAWER_MIN_WIDTH).min(pane.width).max(1);
+    // The border, then the inset, each side.
+    let inner_width = width.saturating_sub(2 + 2 * DRAWER_INSET);
+
+    // Where the agent works and what reaches it, in a card at the foot:
+    // facts about the agent, set apart from the list of what it was asked.
+    let card_lines = {
+        // The card's border and its padding, both sides.
+        let room = (inner_width as usize).saturating_sub(2 + 2 * CARD_PAD as usize);
+        capability_lines(support, room)
+    };
+    let card_height = card_lines.len() as u16 + 2;
+
+    // As tall as what it holds, and never more than three quarters of the
+    // pane: a drawer the height of the pane over a handful of prompts was
+    // mostly air, and one that left no pane beside it read as a screen.
     // Over the pane and nothing else: the tab strip above it and the
     // frame's last row stay the workspace's.
-    let drawer = Rect::new(
-        pane.right().saturating_sub(width),
-        pane.y,
-        width,
-        pane.height,
-    );
+    let chrome =
+        2 + TOP_INSET + 1 + HEADING_GAP as u16 + 2 + 1 + card_height + u16::from(prompts.clearing);
+    let list = records_height(prompts, inner_width as usize).max(1);
+    let height = (chrome + list)
+        .min((pane.height * 3 / 4).max(chrome + 1))
+        .min(pane.height);
+    let drawer = Rect::new(pane.right().saturating_sub(width), pane.y, width, height);
     frame.render_widget(Clear, drawer);
     // The floating surface's hairline is what sets the drawer apart from
     // the pane under it; a ground alone is too close to the backdrop to.
@@ -204,16 +220,38 @@ pub(super) fn render(
         return targets;
     }
 
-    let mut lines = vec![title_line("agent context", inner.width), Line::default()];
-    lines.extend(context_lines(support, agent, inner.width as usize));
-    lines.extend(std::iter::repeat_n(Line::default(), HEADING_GAP));
-    let heading_y = inner.y + lines.len() as u16;
-    frame.render_widget(Paragraph::new(lines), inner);
-    // The heading, its rule, at least one record, the row of air under
-    // it, and the footer's two.
-    if heading_y + 6 > inner.bottom() {
+    // The harness heads it; the agent itself is the section selected in
+    // the sidebar.
+    frame.render_widget(
+        Paragraph::new(title_line(support, inner.width)),
+        Rect::new(inner.x, inner.y, inner.width, 1),
+    );
+    let heading_y = inner.y + 1 + HEADING_GAP as u16;
+
+    // At the foot, only while it stands: the question a first `x` asked.
+    // The keys themselves are the action index's to list.
+    let mut bottom = inner.bottom();
+    if prompts.clearing && bottom > heading_y {
+        bottom -= 1;
+        frame.render_widget(
+            Paragraph::new(clearing_question(inner.width)),
+            Rect::new(inner.x, bottom, inner.width, 1),
+        );
+    }
+
+    // The heading, its rule, at least one record, a row of air, the card.
+    if heading_y + 4 + card_height > bottom {
         return targets;
     }
+    let card = Rect::new(inner.x, bottom - card_height, inner.width, card_height);
+    // The card is named after where the agent works: the branch is the
+    // timeline's to say, and a path needs no key to be read as one.
+    let title_room = (inner.width as usize).saturating_sub(4);
+    let card_inner = Surface::card()
+        .title(format!(" {} ", text::elide_head(&agent.path, title_room)))
+        .padding(Padding::horizontal(CARD_PAD))
+        .render(frame, card);
+    frame.render_widget(Paragraph::new(card_lines), card_inner);
 
     frame.render_widget(
         Paragraph::new(Span::styled("PROMPTS", theme::fg(Token::TextDim))),
@@ -222,21 +260,12 @@ pub(super) fn render(
     targets.scopes = render_scope_tabs(frame, inner, heading_y, prompts);
     Rule::new(Edge::Top).render(frame, Rect::new(inner.x, heading_y + 1, inner.width, 1));
 
-    let footer_y = inner.bottom().saturating_sub(1);
-    Rule::new(Edge::Top).render(frame, Rect::new(inner.x, footer_y - 1, inner.width, 1));
-    let listed = prompts.entries.as_ref().map_or(0, Vec::len);
-    frame.render_widget(
-        Paragraph::new(footer(prompts, listed, inner.width)),
-        Rect::new(inner.x, footer_y, inner.width, 1),
-    );
-
-    // A blank row above the footer's rule, so the last record never sits
-    // against the keys.
+    // A blank row above the card, so the last record never sits against it.
     let list = Rect::new(
         inner.x,
         heading_y + 2,
         inner.width,
-        (footer_y - 2).saturating_sub(heading_y + 2),
+        (card.y - 1).saturating_sub(heading_y + 2),
     );
     let Some(entries) = &prompts.entries else {
         render_note(frame, list, "reading…");
@@ -307,75 +336,129 @@ pub(super) fn render(
     targets
 }
 
-/// The agent's name, and the key that puts the drawer away.
-fn title_line(name: &str, width: u16) -> Line<'static> {
-    let name = text::elide(name, (width as usize).saturating_sub(5));
-    let gap = (width as usize)
-        .saturating_sub(name.chars().count() + 3)
-        .max(1);
-    Line::from(vec![
-        Span::styled(name, theme::fg_bold(Token::TextBright)),
-        Span::raw(" ".repeat(gap)),
-        Span::styled("esc", theme::fg(Token::TextMuted)),
-    ])
-}
-
-/// Two columns, a fixed order: where the agent is, then what reaches it.
-fn context_lines(support: &AgentSupport, agent: &DrawerAgent, width: usize) -> Vec<Line<'static>> {
-    let room = width.saturating_sub(KEY_WIDTH + KEY_GAP);
-    let plain = |text: &str| {
-        vec![Span::styled(
-            text::elide(text, room),
-            theme::fg(Token::TextPrimary),
-        )]
-    };
-    let muted = |text: &str| {
-        vec![Span::styled(
-            text::elide(text, room),
-            theme::fg(Token::TextMuted),
-        )]
-    };
-    let harness = if support.present {
-        plain(&support.display_name)
-    } else {
-        let mut spans = plain(&support.display_name);
+/// The harness the agent runs on, and the key that puts the drawer away.
+fn title_line(support: &AgentSupport, width: u16) -> Line<'static> {
+    let mut spans = vec![Span::styled(
+        support.display_name.clone(),
+        theme::fg_bold(Token::TextBright),
+    )];
+    if !support.present {
         spans.push(Span::styled(
             " (not installed)",
             theme::fg(Token::StateDanger),
         ));
-        spans
-    };
-    let branch = agent.branch.as_deref().map_or_else(|| muted("none"), plain);
-    let mut lines = vec![
-        context_line("agent", plain(&agent.name)),
-        context_line("harness", harness),
-        context_line("path", plain(&agent.path)),
-        context_line("branch", branch),
-        // Where the agent is, then what reaches it there.
-        Line::default(),
-        context_line(
+    }
+    let used: usize = spans.iter().map(Span::width).sum();
+    spans.push(Span::raw(
+        " ".repeat((width as usize).saturating_sub(used + 3).max(1)),
+    ));
+    spans.push(Span::styled("esc", theme::fg(Token::TextMuted)));
+    let mut line = Line::from(spans);
+    text::clip(&mut line, width as usize);
+    line
+}
+
+/// Two rows: what this project hands the agent (`AGENTS.md`, `.agents/`),
+/// and what the harness can do. A mark says each is there; a muted name
+/// says it is not. Kept apart because a missing one means a different
+/// thing on each: the project does not carry it, or the harness cannot.
+fn capability_lines(support: &AgentSupport, width: usize) -> Vec<Line<'static>> {
+    let project = vec![
+        delivery_item(
             "AGENTS.md",
-            delivery_item("loaded", support.instructions, support.instructions_label),
+            support.instructions,
+            support.instructions_label,
         ),
+        agents_directory_item(support),
     ];
-    // One key for the directory, and what each of its two halves does:
-    // `skills` and `agents` on keys of their own read as the harness's
-    // capabilities, which `caps` already lists under the same words.
-    let directory = [
-        delivery_item(
-            "skills",
-            support.project_skills,
-            support.project_skills_label,
-        ),
-        delivery_item(
-            "agents",
-            support.project_agents,
-            support.project_agents_label,
-        ),
+    let supports: Vec<Vec<Span<'static>>> = [
+        (CapabilityKind::AgentSkill, "skills"),
+        (CapabilityKind::Agent, "agents"),
+        (CapabilityKind::Hook, "hooks"),
+        (CapabilityKind::Mcp, "mcp"),
+    ]
+    .into_iter()
+    .map(|(kind, name)| {
+        let (symbol, mark, label) = match capability_state(support, kind) {
+            CapabilityState::Supported => (Symbol::MarkOk, Token::StateSuccess, Token::TextPrimary),
+            CapabilityState::Limited => (
+                Symbol::MarkAttention,
+                Token::StateWarning,
+                Token::TextPrimary,
+            ),
+            CapabilityState::Unavailable => (Symbol::MarkDot, Token::TextMuted, Token::TextMuted),
+        };
+        vec![
+            Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(mark)),
+            Span::styled(name.to_owned(), theme::fg(label)),
+        ]
+    })
+    .collect();
+    let room = width.saturating_sub(KEY_WIDTH);
+    let rows = [project, supports];
+    match tabulated(&rows, room) {
+        Some(mut rows) => {
+            let supports = rows.pop().expect("two rows");
+            let project = rows.pop().expect("two rows");
+            let mut lines = keyed("project", vec![project]);
+            lines.extend(keyed("supports", vec![supports]));
+            lines
+        }
+        // Too narrow for columns: each row wraps on its own instead.
+        None => {
+            let [project, supports] = rows;
+            let mut lines = keyed("project", wrapped_items(project, room));
+            lines.extend(keyed("supports", wrapped_items(supports, room)));
+            lines
+        }
+    }
+}
+
+/// `.agents/` as one item: delivered when either half reaches the agent,
+/// absent when the project carries neither, and the worse of the two when
+/// one of them has a problem to say.
+fn agents_directory_item(support: &AgentSupport) -> Vec<Span<'static>> {
+    let halves = [
+        (support.project_skills, support.project_skills_label),
+        (support.project_agents, support.project_agents_label),
     ];
-    lines.extend(marked_lines(".agents", directory.into(), room));
-    lines.extend(caps_lines(support, room));
+    let problem = halves
+        .iter()
+        .find(|(state, _)| matches!(state, State::Error))
+        .or_else(|| {
+            halves
+                .iter()
+                .find(|(state, _)| matches!(state, State::Warning))
+        });
+    if let Some(&(state, label)) = problem {
+        return delivery_item(".agents", state, label);
+    }
+    let state = if halves
+        .iter()
+        .any(|(state, _)| matches!(state, State::Ready))
+    {
+        State::Ready
+    } else {
+        State::Neutral
+    };
+    delivery_item(".agents", state, "")
+}
+
+/// `lines` behind `key`, the first carrying it and the rest under it.
+fn keyed(key: &str, lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
     lines
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let key = if index == 0 { key } else { "" };
+            let mut spans = vec![Span::styled(
+                format!("{key:<KEY_WIDTH$}"),
+                theme::fg(Token::TextMuted),
+            )];
+            spans.extend(line.spans);
+            Line::from(spans)
+        })
+        .collect()
 }
 
 /// What reaches the agent, as a mark and a name: how it reaches it is a
@@ -403,71 +486,65 @@ fn delivery_item(name: &str, state: State, label: &'static str) -> Vec<Span<'sta
     spans
 }
 
-fn context_line(key: &str, value: Vec<Span<'static>>) -> Line<'static> {
-    let mut spans = vec![Span::styled(
-        format!("{key:<KEY_WIDTH$}{}", " ".repeat(KEY_GAP)),
-        theme::fg(Token::TextMuted),
-    )];
-    spans.extend(value);
-    Line::from(spans)
+/// `rows` laid out as a table: every item padded to the widest item in its
+/// column, so the n-th item of each row starts in the same column. `None`
+/// when the widest row does not fit in `width`.
+fn tabulated(rows: &[Vec<Vec<Span<'static>>>], width: usize) -> Option<Vec<Line<'static>>> {
+    let item_width = |item: &Vec<Span<'static>>| item.iter().map(Span::width).sum::<usize>();
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let widths: Vec<usize> = (0..columns)
+        .map(|column| {
+            rows.iter()
+                .filter_map(|row| row.get(column))
+                .map(item_width)
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+    let total = widths.iter().sum::<usize>() + ITEM_GAP * columns.saturating_sub(1);
+    if total > width {
+        return None;
+    }
+    Some(
+        rows.iter()
+            .map(|row| {
+                let mut spans = Vec::new();
+                for (column, item) in row.iter().enumerate() {
+                    if column > 0 {
+                        spans.push(Span::raw(" ".repeat(ITEM_GAP)));
+                    }
+                    let pad = widths[column] - item_width(item);
+                    spans.extend(item.iter().cloned());
+                    if column + 1 < row.len() {
+                        spans.push(Span::raw(" ".repeat(pad)));
+                    }
+                }
+                Line::from(spans)
+            })
+            .collect(),
+    )
 }
 
-/// The capabilities on one line, a mark and a name each, wrapped onto a
-/// second under the same column when they do not fit.
-fn caps_lines(support: &AgentSupport, room: usize) -> Vec<Line<'static>> {
-    // The order `.agents` lists its halves in, so `skills` and `agents`
-    // stand in the same columns on both lines.
-    let items: Vec<Vec<Span<'static>>> = [
-        CapabilityKind::AgentSkill,
-        CapabilityKind::Agent,
-        CapabilityKind::Mcp,
-        CapabilityKind::Hook,
-    ]
-    .into_iter()
-    .map(|kind| {
-        let name = capability_label(kind).to_lowercase();
-        let (symbol, mark, label) = match capability_state(support, kind) {
-            CapabilityState::Supported => (Symbol::MarkOk, Token::StateSuccess, Token::TextPrimary),
-            CapabilityState::Limited => (
-                Symbol::MarkAttention,
-                Token::StateWarning,
-                Token::TextPrimary,
-            ),
-            CapabilityState::Unavailable => (Symbol::MarkDot, Token::TextMuted, Token::TextMuted),
-        };
-        vec![
-            Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(mark)),
-            Span::styled(name, theme::fg(label)),
-        ]
-    })
-    .collect();
-    marked_lines("caps", items, room)
-}
-
-/// `items` after `key`, two columns apart, wrapped onto further lines
-/// under the same column when they do not fit in `room`.
-fn marked_lines(key: &str, items: Vec<Vec<Span<'static>>>, room: usize) -> Vec<Line<'static>> {
+/// `items` two columns apart, onto as many lines as `width` needs.
+fn wrapped_items(items: Vec<Vec<Span<'static>>>, width: usize) -> Vec<Line<'static>> {
     let mut rows: Vec<Vec<Span<'static>>> = vec![Vec::new()];
     let mut used = 0;
     for item in items {
-        let width: usize = item.iter().map(Span::width).sum();
+        let item_width: usize = item.iter().map(Span::width).sum();
         let row = rows.last_mut().expect("one row");
-        if !row.is_empty() && used + KEY_GAP + width > room {
+        if !row.is_empty() && used + ITEM_GAP + item_width > width {
             rows.push(item);
-            used = width;
+            used = item_width;
             continue;
         }
         if !row.is_empty() {
-            row.push(Span::raw(" ".repeat(KEY_GAP)));
-            used += KEY_GAP;
+            row.push(Span::raw(" ".repeat(ITEM_GAP)));
+            used += ITEM_GAP;
         }
         row.extend(item);
-        used += width;
+        used += item_width;
     }
-    rows.into_iter()
-        .enumerate()
-        .map(|(index, spans)| context_line(if index == 0 { key } else { "" }, spans))
-        .collect()
+    rows.into_iter().map(Line::from).collect()
 }
 
 /// `agent · space`: the tab in force filled, the other plain text that
@@ -537,7 +614,7 @@ fn record_lines(
     };
     let mut head = vec![gutter, Span::styled(entry.compact_age(clock), meta)];
     if scope == PromptScope::Space {
-        head.push(Span::raw(" ".repeat(KEY_GAP)));
+        head.push(Span::raw(" ".repeat(ITEM_GAP)));
         head.push(Span::styled(
             text::elide(&entry.tab_label, width.saturating_sub(6)),
             meta,
@@ -569,6 +646,20 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// The rows every record `prompts` lists would take, gaps included: what
+/// the drawer has to hold to show them all.
+fn records_height(prompts: &DrawerPrompts<'_>, width: usize) -> u16 {
+    let Some(entries) = &prompts.entries else {
+        return 1;
+    };
+    let clock = PromptClock::now();
+    let rows: usize = entries
+        .iter()
+        .map(|entry| record_lines(entry, &clock, prompts.scope, width, RowState::Resting).len())
+        .sum();
+    (rows + RECORD_GAP * entries.len().saturating_sub(1)) as u16
+}
+
 /// The first record to draw so the selected one is on screen, with as
 /// many before it as fit.
 fn first_shown(blocks: &[Vec<Line<'static>>], selected: usize, room: usize) -> usize {
@@ -581,43 +672,17 @@ fn first_shown(blocks: &[Vec<Line<'static>>], selected: usize, room: usize) -> u
     first
 }
 
-/// The keys that act here and the position in the list — or, while it
-/// stands, the question a first `x` asked.
-fn footer(prompts: &DrawerPrompts<'_>, listed: usize, width: u16) -> Line<'static> {
-    use uze_keys::Action;
-    if prompts.clearing {
-        let mut line = hint::named_within(
-            width,
-            &DRAWER_SCOPES,
-            &[(
-                Action::ClearPromptHistory,
-                "again to forget every prompt in this space".to_owned(),
-            )],
-        );
-        line.style = theme::fg(Token::StateWarning);
-        return line;
-    }
-    let counter = if listed == 0 {
-        String::new()
-    } else {
-        format!("{}/{listed}", prompts.selected + 1)
-    };
-    let mut actions = Vec::new();
-    if prompts.agent_known {
-        actions.push((Action::FocusNext, "agent/space".to_owned()));
-    }
-    actions.push((Action::ClearPromptHistory, "clear".to_owned()));
-    // The keys first: the counter is where the reader is, which the
-    // selection already shows, so it is the one left out when both do
-    // not fit.
-    let mut line = hint::named_within(width, &DRAWER_SCOPES, &actions);
-    let used: usize = line.spans.iter().map(Span::width).sum();
-    let gap = (width as usize).saturating_sub(used + counter.chars().count());
-    if gap > 0 {
-        line.spans.push(Span::raw(" ".repeat(gap)));
-        line.spans
-            .push(Span::styled(counter, theme::fg(Token::TextFaint)));
-    }
+/// What a first `x` asked, with the key that answers it.
+fn clearing_question(width: u16) -> Line<'static> {
+    let mut line = hint::named_within(
+        width,
+        &DRAWER_SCOPES,
+        &[(
+            uze_keys::Action::ClearPromptHistory,
+            "again to forget every prompt in this space".to_owned(),
+        )],
+    );
+    line.style = theme::fg(Token::StateWarning);
     line
 }
 
@@ -864,9 +929,7 @@ mod tests {
 
     fn agent() -> DrawerAgent {
         DrawerAgent {
-            name: "cli logs".to_owned(),
             path: "~/dev/uze/.worktrees/efjkdg".to_owned(),
-            branch: Some("feat/cli-logs".to_owned()),
         }
     }
 
@@ -919,23 +982,23 @@ mod tests {
                 .position(|row| row.contains(needle))
                 .unwrap_or_else(|| panic!("{needle} not drawn:\n{text}"))
         };
-        assert!(rows[row_of("esc")].contains("agent context"), "{text}");
-        for (key, value) in [
-            ("agent", "cli logs"),
-            ("harness", "Claude Code"),
-            ("path", "~/dev/uze/.worktrees/efjkdg"),
-            ("branch", "feat/cli-logs"),
-            ("AGENTS.md", "loaded"),
-            ("caps", "skills"),
-        ] {
-            let keyed = format!("{key:<KEY_WIDTH$}");
-            assert!(rows[row_of(&keyed)].contains(value), "{key}: {text}");
-        }
-        assert!(
-            !text.contains("RUNTIME") && !text.contains("CAPABILITIES"),
-            "{text}"
-        );
-        assert!(row_of("caps") < row_of("PROMPTS"), "{text}");
+        // The harness heads it; the agent itself is the sidebar's
+        // selection. Where it works and what reaches it are a card at the
+        // foot, under the list, and no row of keys follows it.
+        let title = row_of("esc");
+        assert!(rows[title].contains("Claude Code"), "{text}");
+        // The card is named after the path, on its top border, and says
+        // nothing of the branch, which the timeline already does.
+        let location = row_of("~/dev/uze/.worktrees/efjkdg");
+        assert_eq!(row_of("project"), location + 1, "{text}");
+        assert!(!text.contains("branch"), "{text}");
+        assert!(row_of("an older prompt") < location, "{text}");
+        assert!(rows[row_of("project")].contains("AGENTS.md"), "{text}");
+        assert!(row_of("project") < row_of("supports"), "{text}");
+        assert!(!text.contains("x clear") && !text.contains("1/2"), "{text}");
+        // As tall as what it holds: two prompts stop well short of the
+        // three quarters of the pane a long list may take.
+        assert!(targets.body.height < 39 * 3 / 4, "{text}");
         assert!(row_of("PROMPTS") < row_of("the newest prompt"), "{text}");
         assert!(row_of("the newest prompt") < row_of("an older prompt"));
         assert_eq!(
@@ -957,12 +1020,11 @@ mod tests {
             rows[first_rect.y as usize].contains(&theme::glyph(Symbol::ChevronRight)),
             "the selected record carries the mark on its meta line: {text}"
         );
-        assert!(rows[row_of("1/2")].contains("clear"), "{text}");
         // The selection mark sits in the inset, so a prompt's words start
-        // in the column the keys above them do.
+        // in the column the title above them does.
         assert_eq!(
             rows[row_of("the newest prompt")].find("the newest"),
-            rows[row_of("harness")].find("harness"),
+            rows[row_of("Claude Code")].find("Claude Code"),
             "{text}"
         );
         let (second_rect, _) = targets.prompts[1];
@@ -1048,14 +1110,15 @@ mod tests {
         );
         assert!(targets.prompts.iter().any(|(_, index)| *index == 45));
         assert!(!targets.prompts.iter().any(|(_, index)| *index == 0));
-        let footer = rows
+        let card = rows
             .iter()
-            .position(|row| row.contains("clear"))
-            .expect("the footer is drawn");
+            .position(|row| row.contains("project"))
+            .expect("the card is drawn")
+            - 1;
         let last = targets.prompts.last().expect("a record is drawn").0;
         assert!(
-            usize::from(last.bottom()) + 1 < footer,
-            "a blank row and the rule stand between the last record and the keys"
+            usize::from(last.bottom()) < card,
+            "a blank row stands between the last record and the card"
         );
     }
 
@@ -1102,57 +1165,91 @@ mod tests {
         );
     }
 
-    /// `.agents/` is one key with each half marked, in the order `caps`
-    /// lists the same words, so the two lines read as columns.
+    /// What the project hands the agent and what the harness can do are
+    /// two rows, each a mark for what is there and a muted name for what is
+    /// not, and neither says how it is delivered.
     #[test]
-    fn the_agents_directory_is_one_key_with_each_half_marked() {
-        let context = AgentContextStatus {
+    fn the_project_and_the_harness_are_two_marked_rows() {
+        let context = |skills, agents| AgentContextStatus {
             integration: "claude-code".to_owned(),
             display_name: "Claude Code".to_owned(),
             present: true,
             root: std::path::PathBuf::from("/project"),
             instructions: ResourceDelivery::Projected,
-            project_skills: ResourceDelivery::Projected,
-            project_agents: ResourceDelivery::AbsentFromProject,
+            project_skills: skills,
+            project_agents: agents,
         };
-        let support = AgentSupport::resolve(health(true), &context);
-        let lines = context_lines(&support, &agent(), 46);
-        let text: Vec<String> = lines
+        let rows = |skills, agents| -> Vec<(String, Vec<Span<'static>>)> {
+            let support = AgentSupport::resolve(health(true), &context(skills, agents));
+            capability_lines(&support, 52)
+                .into_iter()
+                .map(|line| {
+                    let text: String = line
+                        .spans
+                        .iter()
+                        .map(|span| span.content.as_ref())
+                        .collect();
+                    (text, line.spans)
+                })
+                .collect()
+        };
+        let hue_of = |spans: &[Span<'static>], name: &str| {
+            spans
+                .iter()
+                .find(|span| span.content == name)
+                .unwrap_or_else(|| panic!("{name} not drawn"))
+                .style
+                .fg
+        };
+
+        let drawn = rows(
+            ResourceDelivery::Projected,
+            ResourceDelivery::AbsentFromProject,
+        );
+        assert_eq!(drawn.len(), 2, "{drawn:?}");
+        let (project, project_spans) = &drawn[0];
+        let (supports, _) = &drawn[1];
+        assert!(project.starts_with("project"), "{project}");
+        assert!(supports.starts_with("supports"), "{supports}");
+        assert!(
+            !project.contains("(shim)"),
+            "how it is delivered is the CLI's"
+        );
+        assert_eq!(
+            hue_of(project_spans, ".agents"),
+            Some(theme::color(Token::TextPrimary)),
+            "one half of .agents/ reaching the agent is .agents/ delivered"
+        );
+        let order: Vec<usize> = ["skills", "agents", "hooks", "mcp"]
             .iter()
-            .map(|line| {
-                line.spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect()
+            .map(|name| {
+                supports
+                    .find(name)
+                    .unwrap_or_else(|| panic!("{name}: {supports}"))
             })
             .collect();
-        let row = text
-            .iter()
-            .find(|row| row.starts_with(".agents"))
-            .unwrap_or_else(|| panic!("no .agents row: {text:#?}"));
-        assert!(row.contains("skills") && row.contains("agents"), "{row}");
-        assert!(
-            !text.iter().any(|row| row.contains("(shim)")),
-            "how a resource reaches the agent is left to the CLI: {text:#?}"
-        );
-        let caps = text.iter().find(|row| row.starts_with("caps")).unwrap();
-        // The column a word starts in, past the keys.
+        assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{supports}");
+        // A table: the n-th item of each row starts in the same column.
         let column = |row: &str, name: &str| {
-            let value: String = row.chars().skip(KEY_WIDTH + KEY_GAP).collect();
-            value.find(name).map(|byte| value[..byte].chars().count())
+            row.find(name)
+                .map(|byte| row[..byte].chars().count())
+                .unwrap_or_else(|| panic!("{name}: {row}"))
         };
-        for name in ["skills", "agents"] {
-            assert_eq!(
-                column(row, name),
-                column(caps, name),
-                "{name} stands in the same column on both lines:\n{row}\n{caps}"
-            );
-        }
-        assert!(
-            !text
-                .iter()
-                .any(|row| row.starts_with("skills") || row.starts_with("agents ")),
-            "no key of its own for either half: {text:#?}"
+        assert_eq!(column(project, "AGENTS.md"), column(supports, "skills"));
+        assert_eq!(
+            column(project, ".agents"),
+            column(supports, "agents"),
+            "{project}\n{supports}"
+        );
+
+        let empty = rows(
+            ResourceDelivery::AbsentFromProject,
+            ResourceDelivery::AbsentFromProject,
+        );
+        assert_eq!(
+            hue_of(&empty[0].1, ".agents"),
+            Some(theme::color(Token::TextMuted)),
+            "a project carrying neither half is muted"
         );
     }
 
@@ -1230,5 +1327,27 @@ mod tests {
         assert_eq!(selected.fg, theme::color(Token::StateSuccess));
         assert!(!selected.modifier.contains(ratatui::style::Modifier::BOLD));
         assert_eq!(meta_of(records[1].0).fg, theme::color(Token::TextMuted));
+    }
+
+    /// The drawer is as narrow as the facts card allows and no narrower:
+    /// at its width, `project` and `supports` are a row each, every item in
+    /// its column. A narrower drawer wraps them, which is what reducing it
+    /// past this would quietly do.
+    #[test]
+    fn the_facts_card_fits_the_drawers_width() {
+        let support = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
+        let room = usize::from(DRAWER_WIDTH - 2 - 2 * DRAWER_INSET - 2 - 2 * CARD_PAD);
+        let item = |mark: &str, name: &str| vec![Span::raw(format!("{mark} {name}"))];
+        let rows = [
+            vec![item("✓", "AGENTS.md"), item("✓", ".agents")],
+            ["skills", "agents", "hooks", "mcp"]
+                .map(|name| item("✓", name))
+                .to_vec(),
+        ];
+        assert!(
+            tabulated(&rows, room.saturating_sub(KEY_WIDTH)).is_some(),
+            "the table needs more than the {room} columns the card gives it"
+        );
+        assert_eq!(capability_lines(&support, room).len(), 2);
     }
 }

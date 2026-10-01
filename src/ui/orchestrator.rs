@@ -2320,11 +2320,9 @@ struct AgentSupportDropdown {
     agent: Option<String>,
     /// The space's root: the history is kept per space, keyed on it.
     space_root: PathBuf,
-    /// The tab's label, its directory as the operator reads it, and its
-    /// branch, taken when the drawer opened.
-    name: String,
+    /// The agent's directory as the operator reads it, taken when the
+    /// drawer opened.
     path: String,
-    branch: Option<String>,
     scope: PromptScope,
     /// Index into the prompts `scope` shows, newest first.
     selected: usize,
@@ -2669,16 +2667,6 @@ fn selected_agent_drawer(
     let tab = context_agent(model, identities)
         .and_then(|tab| space.tabs.iter().find(|candidate| candidate.id == tab))?;
     let agent = launched_agent_id(tab).map(str::to_owned);
-    let branch = model
-        .tab_task(tab.id)
-        .map(|task| task.branch.clone())
-        .or_else(|| {
-            model
-                .remembered
-                .branches
-                .get(&evaluation_key(&key.1))
-                .cloned()
-        });
     // The tab the operator last chose, when this agent can show it.
     let scope = match model.remembered.drawer_scope {
         Some(PromptScope::Agent) | None if agent.is_some() => PromptScope::Agent,
@@ -2695,9 +2683,7 @@ fn selected_agent_drawer(
         scope,
         agent,
         space_root: space.root.clone(),
-        name: tab.label.clone(),
         path: crate::ui::display_project_path(&key.1),
-        branch,
         key,
         selected: 0,
         clearing: false,

@@ -4373,7 +4373,6 @@ mod workspace_tests {
             "a1".to_owned(),
         )];
         let drawer = drawer_over(&model);
-        assert_eq!(drawer.name, "Agent");
         assert_eq!(drawer.agent.as_deref(), Some("a1"));
         assert_eq!(drawer.scope, PromptScope::Agent);
 
@@ -4435,7 +4434,7 @@ mod workspace_tests {
         });
         let rows = frame_rows(&mut model);
         assert!(
-            rows.iter().any(|row| row.contains("agent context")),
+            rows.iter().any(|row| row.contains("AGENTS.md")),
             "{}",
             rows.join("\n")
         );
@@ -11262,9 +11261,7 @@ mod drawer_tests {
             support: None,
             agent: agent.map(str::to_owned),
             space_root: PathBuf::from("/repo"),
-            name: "agent".to_owned(),
             path: "/repo".to_owned(),
-            branch: None,
             scope,
             selected: 0,
             clearing: false,
