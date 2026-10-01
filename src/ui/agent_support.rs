@@ -283,7 +283,12 @@ pub(super) fn render(
             .map(|line| {
                 let mut spans = vec![Span::raw(" ".repeat(lead))];
                 spans.extend(line.spans);
-                row::fill(&mut spans, bleed.width, state);
+                // The grey the pickers lay under the row the keyboard is
+                // on, rather than the selection tint: a record is read,
+                // and the tint is the colour of a choice being made.
+                if state == RowState::Selected {
+                    row::pad_to(&mut spans, bleed.width, theme::color(Token::SurfaceRaised));
+                }
                 Line::from(spans)
             })
             .collect();
@@ -1128,6 +1133,43 @@ mod tests {
                 .iter()
                 .any(|row| row.starts_with("skills") || row.starts_with("agents ")),
             "no key of its own for either half: {text:#?}"
+        );
+    }
+
+    /// The record the keyboard is on wears the pickers' grey, not the
+    /// selection tint.
+    #[test]
+    fn the_selected_record_wears_the_pickers_grey() {
+        let first = entry("cli logs", Some("a"), "the selected prompt");
+        let prompts = DrawerPrompts {
+            entries: Some(vec![&first]),
+            scope: PromptScope::Agent,
+            agent_known: true,
+            selected: 0,
+            hovered_scope: None,
+            clearing: false,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
+        let support = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
+        let mut record = None;
+        terminal
+            .draw(|frame| {
+                let targets = render(
+                    frame,
+                    Rect::new(0, 1, 100, 39),
+                    &support,
+                    &agent(),
+                    &prompts,
+                );
+                record = targets.prompts.first().map(|(rect, _)| *rect);
+            })
+            .unwrap();
+        let rect = record.unwrap();
+        let buffer = terminal.backend().buffer();
+        assert_eq!(
+            buffer[(rect.x + 4, rect.y + 1)].bg,
+            theme::color(Token::SurfaceRaised)
         );
     }
 }
