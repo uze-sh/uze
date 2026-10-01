@@ -4,6 +4,7 @@
 //! deliberately models only how UZE invokes and records an opaque command.
 
 use std::{
+    io,
     path::PathBuf,
     process::{Command, Stdio},
     time::Duration,
@@ -14,7 +15,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{Result, UzeError},
     integration::HarnessDetection,
-    subprocess::{wait_with_timeout, with_process_group},
+    subprocess::{
+        Ending, InterruptWatch, wait_with_timeout_or_interrupt, without_controlling_terminal,
+    },
 };
 
 /// One integration-owned command. `program` and `arguments` are never
@@ -26,6 +29,8 @@ pub struct ProcessSpec {
     pub arguments: Vec<String>,
     pub timeout: Duration,
     pub output: ProcessOutput,
+    /// Set on top of the inherited environment.
+    pub environment: Vec<(String, String)>,
 }
 
 impl ProcessSpec {
@@ -38,7 +43,13 @@ impl ProcessSpec {
             arguments: arguments.into_iter().map(Into::into).collect(),
             timeout: Duration::from_secs(300),
             output: ProcessOutput::Quiet,
+            environment: Vec::new(),
         }
+    }
+
+    pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.environment.push((key.into(), value.into()));
+        self
     }
 
     /// Lets an explicit operator-visible action (such as an official vendor
@@ -87,7 +98,6 @@ impl ProcessRunner for SystemProcessRunner {
         );
         let _entered = span.enter();
         let mut command = Command::new(&spec.program);
-        command.args(&spec.arguments).stdin(Stdio::null());
         match spec.output {
             ProcessOutput::Quiet => {
                 command.stdout(Stdio::null()).stderr(Stdio::null());
@@ -96,37 +106,42 @@ impl ProcessRunner for SystemProcessRunner {
                 command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
             }
         }
-        // `Quiet` runs (verification probes, background installs) are never
-        // watched by a user, so isolating into a new process group buys a
-        // reliable whole-tree kill on timeout — the installer can fork
-        // helpers (curl | bash), and the timeout must reach all of them.
-        //
-        // `Inherit` runs are the opposite: an operator is watching the
-        // terminal and expects Ctrl-C to reach the child directly. A new
-        // process group is detached from the terminal's foreground group,
-        // so the terminal's SIGINT would stop reaching only `uze` itself,
-        // leaving the child running invisibly in the background — worse
-        // than the single-process kill this mode falls back to on timeout.
-        let mut command = match spec.output {
-            ProcessOutput::Quiet => with_process_group(command),
-            ProcessOutput::Inherit => command,
-        };
-        let mut child = command.spawn().map_err(|source| UzeError::Process {
-            program: spec.program.clone(),
-            source,
-        })?;
-        let (status, timed_out) =
-            wait_with_timeout(&mut child, spec.timeout).map_err(|source| UzeError::Process {
-                program: spec.program.clone(),
-                source,
-            })?;
-        span.record("success", status.success() && !timed_out);
-        span.record("timed_out", timed_out);
-        Ok(ProcessResult {
-            success: status.success() && !timed_out,
-            timed_out,
-        })
+        let result = run_provisioning(command, spec)?;
+        span.record("success", result.success);
+        span.record("timed_out", result.timed_out);
+        Ok(result)
     }
+}
+
+/// Runs `spec` through `command`, whose output the caller has already
+/// directed. The child gets no terminal of its own (see
+/// [`without_controlling_terminal`]), so the Ctrl-C the terminal no longer
+/// delivers to it is forwarded here: its whole tree is killed, then `uze`
+/// takes the interrupt as it would have.
+pub fn run_provisioning(mut command: Command, spec: &ProcessSpec) -> Result<ProcessResult> {
+    command
+        .args(&spec.arguments)
+        .envs(spec.environment.iter().map(|(key, value)| (key, value)))
+        .stdin(Stdio::null());
+    let process_error = |source| UzeError::Process {
+        program: spec.program.clone(),
+        source,
+    };
+    let watch = InterruptWatch::install();
+    let mut child = without_controlling_terminal(command)
+        .spawn()
+        .map_err(process_error)?;
+    let (status, ending) =
+        wait_with_timeout_or_interrupt(&mut child, spec.timeout, &watch).map_err(process_error)?;
+    if ending == Ending::Interrupted {
+        watch.deliver();
+        return Err(process_error(io::Error::from(io::ErrorKind::Interrupted)));
+    }
+    let timed_out = ending == Ending::TimedOut;
+    Ok(ProcessResult {
+        success: status.success() && !timed_out,
+        timed_out,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -221,6 +236,18 @@ mod tests {
         assert_eq!(probe.output, ProcessOutput::Quiet);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_vendor_switch_reaches_the_child_on_top_of_the_inherited_environment() {
+        let check = ProcessSpec::new(
+            "sh",
+            ["-c", r#"test "$UZE_PROBE_SWITCH" = 1 && test -n "$PATH""#],
+        );
+        assert!(!SystemProcessRunner.run(&check).unwrap().success);
+        let switched = check.with_env("UZE_PROBE_SWITCH", "1");
+        assert!(SystemProcessRunner.run(&switched).unwrap().success);
+    }
+
     /// Linux, not `unix`: the property under test is portable — `setsid`
     /// versus the caller's group is set by the same code everywhere — but
     /// *observing* it needs the child's pid and its process group, and the
@@ -293,33 +320,32 @@ mod tests {
             after_comm.split_whitespace().nth(1)?.parse().ok()
         }
 
-        #[test]
-        fn quiet_output_isolates_the_child_into_its_own_process_group() {
-            std::thread::spawn(|| {
-                let _ = SystemProcessRunner.run(&ProcessSpec::new("/bin/sleep", ["2"]));
+        /// A session leader holds no controlling terminal until it opens
+        /// one, so nothing it starts can ask a question on `/dev/tty`.
+        fn assert_runs_in_a_session_of_its_own(spec: ProcessSpec, marker: &'static str) {
+            std::thread::spawn(move || {
+                let _ = SystemProcessRunner.run(&spec);
             });
-            let child_pid = find_marked_sleep_child("2", Instant::now() + Duration::from_secs(5));
+            let child = find_marked_sleep_child(marker, Instant::now() + Duration::from_secs(5));
             assert_eq!(
-                pgid_of(child_pid),
-                child_pid,
-                "a Quiet-output child must become its own process-group leader so a timeout can \
-                 reliably kill the whole tree it may fork"
+                pgid_of(child),
+                child,
+                "its own process group, killed whole on timeout"
             );
+            assert_eq!(stat_field(child, 3), Some(child), "its own session");
+            assert_eq!(stat_field(child, 4), Some(0), "no controlling terminal");
         }
 
         #[test]
-        fn inherited_output_child_stays_in_the_callers_process_group() {
-            let our_pgid = pgid_of(std::process::id());
-            std::thread::spawn(|| {
-                let _ = SystemProcessRunner
-                    .run(&ProcessSpec::new("/bin/sleep", ["3"]).with_inherited_output());
-            });
-            let child_pid = find_marked_sleep_child("3", Instant::now() + Duration::from_secs(5));
-            assert_eq!(
-                pgid_of(child_pid),
-                our_pgid,
-                "an Inherit-output child must stay in the caller's process group, or a terminal \
-                 SIGINT (Ctrl-C) would stop reaching it once it only reaches uze's own group"
+        fn a_quiet_child_has_no_terminal_to_prompt_on() {
+            assert_runs_in_a_session_of_its_own(ProcessSpec::new("/bin/sleep", ["2"]), "2");
+        }
+
+        #[test]
+        fn an_inherited_output_child_has_no_terminal_to_prompt_on() {
+            assert_runs_in_a_session_of_its_own(
+                ProcessSpec::new("/bin/sleep", ["3"]).with_inherited_output(),
+                "3",
             );
         }
     }

@@ -271,11 +271,14 @@ impl IntegrationPort for CodexIntegration {
         let route = OfficialRoute {
             label: "Codex",
             program: "codex",
-            install: official_installer("https://chatgpt.com/codex/install.sh", "sh"),
+            install: official_installer("https://chatgpt.com/codex/install.sh", "sh")
+                .with_env(NON_INTERACTIVE, "1"),
             // Real-CLI dogfood against codex-cli 0.148.0 found `--upgrade` is not
             // a recognized flag — `codex --help` lists `update` as a
             // subcommand instead.
-            update: ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
+            update: ProcessSpec::new(executable.clone(), ["update"])
+                .with_inherited_output()
+                .with_env(NON_INTERACTIVE, "1"),
             method: "official-native-installer",
             manual_route: "https://github.com/openai/codex/blob/main/README.md",
         };
@@ -711,6 +714,50 @@ const FACTS: &[HarnessFact] = &[
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "0.158.0";
+
+/// The installer's documented switch for skipping its "Start Codex now?" prompt.
+const NON_INTERACTIVE: &str = "CODEX_NON_INTERACTIVE";
+
+#[cfg(test)]
+mod provision_tests {
+    use std::sync::Mutex;
+
+    use uze_core::provisioning::{ProcessResult, ProcessSpec};
+
+    use super::*;
+
+    struct RecordingRunner(Mutex<Vec<ProcessSpec>>);
+
+    impl ProcessRunner for RecordingRunner {
+        fn run(&self, spec: &ProcessSpec) -> Result<ProcessResult> {
+            self.0.lock().unwrap().push(spec.clone());
+            Ok(ProcessResult {
+                success: false,
+                timed_out: false,
+            })
+        }
+    }
+
+    #[test]
+    fn the_official_route_runs_without_prompting() {
+        let root = uze_testkit::temp::scratch("codex-provision-non-interactive");
+        let integration = CodexIntegration::new(root.join("agents"), UzeHome::at(root.join("uze")));
+        let runner = RecordingRunner(Mutex::new(Vec::new()));
+
+        integration.provision(&runner).unwrap();
+
+        let commands = runner.0.into_inner().unwrap();
+        assert_eq!(commands.len(), 1, "{commands:?}");
+        assert!(
+            commands[0]
+                .environment
+                .contains(&(NON_INTERACTIVE.to_owned(), "1".to_owned())),
+            "{:?}",
+            commands[0]
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
 
 #[cfg(test)]
 mod agent_toml_tests {
