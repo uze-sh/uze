@@ -4,6 +4,21 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.7](https://github.com/uze-sh/uze/compare/v1.0.0-beta.6...v1.0.0-beta.7) - 2026-10-01
+
+### Features
+
+- **ui:** Add host text selection to the agent drawer ([#169](https://github.com/uze-sh/uze/pull/169)) ([c8928ef](https://github.com/uze-sh/uze/commit/c8928ef2f9e2b1199024c2fafdcb51f7612ce5f3))
+
+### Fixes
+
+- **telemetry:** Silence spans opened under timer-driven TUI passes ([#170](https://github.com/uze-sh/uze/pull/170)) ([1c09d41](https://github.com/uze-sh/uze/commit/1c09d41f568fd3a806336a9715b9122dbbebc1ae))
+
+### Dependencies
+
+- **deps:** Bump taiki-e/install-action from 2.87.19 to 2.87.21 ([#167](https://github.com/uze-sh/uze/pull/167)) ([501f52d](https://github.com/uze-sh/uze/commit/501f52d4038190ba38d12dc86da7c5577cb6a562))
+- **deps:** Bump rmcp and thiserror ([#168](https://github.com/uze-sh/uze/pull/168)) ([5d035da](https://github.com/uze-sh/uze/commit/5d035daafe0272d219e4a074f6db36f9411cf6de))
+
 ## [1.0.0-beta.6](https://github.com/uze-sh/uze/compare/v1.0.0-beta.5...v1.0.0-beta.6) - 2026-10-01
 
 ### Features
