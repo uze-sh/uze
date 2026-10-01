@@ -910,9 +910,19 @@ impl Workspace<'_> {
                 .iter_mut()
                 .filter(|agent| agent.parent.is_none())
             {
+                let was = (agent.state.clone(), agent.label.clone());
                 if let Some(read) = pass.evaluate(agent) {
                     ask_the_remote.extend(read.ask_the_remote);
                     notices.extend(read.notice);
+                }
+                if was != (agent.state.clone(), agent.label.clone()) {
+                    tracing::info!(
+                        agent = %agent.id.as_str(),
+                        label = %agent.label,
+                        from = ?was.0,
+                        to = ?agent.state,
+                        "an agent's work changed"
+                    );
                 }
             }
             Ok(task_views(&primary, store, completion, &target))
@@ -1274,6 +1284,7 @@ impl Workspace<'_> {
                     continue;
                 }
                 agent.end();
+                tracing::info!(agent = %agent.id.as_str(), "an agent no tab runs any more was ended");
                 ended.push(agent.id.as_str().to_owned());
             }
             Ok(ended)
@@ -1325,6 +1336,7 @@ impl Workspace<'_> {
                     continue;
                 }
                 let slot = checkout::release(&primary, agent, &target);
+                tracing::info!(agent = %id.as_str(), ?slot, "an agent no pane holds was released");
                 released.push(ReleasedTask {
                     id: id.as_str().to_owned(),
                     label,
@@ -1367,11 +1379,15 @@ impl Workspace<'_> {
             pool,
             &checkout::Presence::observe_with(occupied),
         );
-        collected
+        let collected: Vec<String> = collected
             .branches
             .into_iter()
             .chain(collected.slots.into_iter().map(|slot| slot.to_string()))
-            .collect()
+            .collect();
+        if !collected.is_empty() {
+            tracing::info!(?collected, "merged branches and spare slots were removed");
+        }
+        collected
     }
 
     /// The operator declares a handed-off task done: its slot is free and

@@ -263,7 +263,7 @@ fn spawn_support_refresh(home: &UzeHome, key: SupportKey, sender: mpsc::Sender<S
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.support_refresh").entered();
+        let _pass = crate::telemetry::background_pass!("tui.support_refresh");
         let support = answered_or(
             || {
                 super::tui_application(support_home).ok().and_then(|app| {
@@ -299,7 +299,7 @@ fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAgent>) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.conversation_refresh").entered();
+        let _pass = crate::telemetry::background_pass!("tui.conversation_refresh");
         let Ok(app) = tui_application(home) else {
             return;
         };
@@ -342,7 +342,7 @@ fn spawn_policy_region_sync(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.policy_region_sync").entered();
+        let _pass = crate::telemetry::background_pass!("tui.policy_region_sync");
         let Ok(app) = tui_application(home) else {
             return;
         };
@@ -532,7 +532,7 @@ fn spawn_preserved_sweep(home: &UzeHome, sender: mpsc::Sender<PreservedResolutio
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.preserved_sweep").entered();
+        let _pass = crate::telemetry::background_pass!("tui.preserved_sweep");
         let work = answered_or(
             || {
                 super::tui_application(home)
@@ -557,7 +557,7 @@ fn spawn_task_evaluation(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.task_evaluation").entered();
+        let _pass = crate::telemetry::background_pass!("tui.task_evaluation");
         // Every path out of here answers, including the ones that found
         // nothing: a request that returns in silence never releases its
         // key, and the directory is then never evaluated again.
@@ -731,7 +731,7 @@ fn spawn_checkouts(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.checkouts_read").entered();
+        let _pass = crate::telemetry::background_pass!("tui.checkouts_read");
         let view = answered_or(
             || {
                 tui_application(home)
@@ -907,7 +907,7 @@ fn spawn_git_read(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.git_read").entered();
+        let _pass = crate::telemetry::background_pass!("tui.git_read");
         let started = Instant::now();
         let answer = answered_or(
             || {
@@ -1139,7 +1139,7 @@ fn spawn_occupancy_reconcile(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.occupancy_reconcile").entered();
+        let _pass = crate::telemetry::background_pass!("tui.occupancy_reconcile");
         let reconciliation = answered_or(
             || {
                 tui_application(home)
@@ -1199,7 +1199,7 @@ fn spawn_file_request(
     sender: mpsc::Sender<FileResolution>,
 ) {
     thread::spawn(move || {
-        let _span = tracing::debug_span!("tui.code_file_request").entered();
+        let _pass = crate::telemetry::background_pass!("tui.code_file_request");
         // Highlighting runs syntect over whatever the tree listed, which
         // is the one read here whose input nobody controls.
         let silence = code::unanswered(&request, "reading it failed");
@@ -1218,7 +1218,7 @@ fn spawn_diff_read(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.code_diff_read").entered();
+        let _pass = crate::telemetry::background_pass!("tui.code_diff_read");
         let silence = code::DiffAnswer::failed(&request, "reading the diff failed".to_owned());
         let answer = answered_or(
             || code::CodeView::read_diff(&WorkspaceHost, &root, request),
@@ -1236,7 +1236,7 @@ fn spawn_changes_refresh(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.code_changes_refresh").entered();
+        let _pass = crate::telemetry::background_pass!("tui.code_changes_refresh");
         let silence =
             code::RefreshedChanges::failed(placement.clone(), "reading the changes".to_owned());
         let refreshed = answered_or(
@@ -1289,7 +1289,7 @@ fn spawn_artifacts_read(root: PathBuf, sender: mpsc::Sender<ArtifactsResolution>
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.architect_artifacts").entered();
+        let _pass = crate::telemetry::background_pass!("tui.architect_artifacts");
         let silence = architect::ArtifactsAnswer {
             branch: String::new(),
             artifacts: architect::Artifacts::Nothing {
@@ -1318,7 +1318,7 @@ fn spawn_spec_summary(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.spec_summary").entered();
+        let _pass = crate::telemetry::background_pass!("tui.spec_summary");
         let summary = answered_or(
             || spec::summary(&WorkspaceHost, &cwd, target.as_deref()),
             None,
@@ -1336,7 +1336,7 @@ fn spawn_spec_read(home: &UzeHome, root: PathBuf, sender: mpsc::Sender<SpecResol
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.spec_read").entered();
+        let _pass = crate::telemetry::background_pass!("tui.spec_read");
         let silence = spec::SpecAnswer {
             root: root.clone(),
             branch: String::new(),
@@ -1364,7 +1364,7 @@ fn spawn_code_measure(root: PathBuf, sender: mpsc::Sender<MeasureResolution>) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.code_measure").entered();
+        let _pass = crate::telemetry::background_pass!("tui.code_measure");
         let measure = answered_or(|| code::measure(&WorkspaceHost, &root).ok(), None);
         let _ = sender.send(MeasureResolution { root, measure });
     });
@@ -2368,7 +2368,7 @@ fn spawn_prompt_history(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.prompt_history").entered();
+        let _pass = crate::telemetry::background_pass!("tui.prompt_history");
         let entries = answered_or(
             || {
                 tui_application(home)
@@ -2393,7 +2393,7 @@ fn spawn_clear_prompt_history(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _parent = parent.enter();
-        let _span = tracing::debug_span!("tui.clear_prompt_history").entered();
+        let _span = tracing::info_span!("tui.clear_prompt_history").entered();
         let entries = answered_or(
             || {
                 tui_application(home)

@@ -29,7 +29,15 @@
 
 use std::{path::PathBuf, process::Command};
 
-use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    EnvFilter, Layer,
+    filter::{FilterExt, LevelFilter, dynamic_filter_fn},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
+
+pub(crate) mod background;
+pub(crate) use background::background_pass;
 
 /// The environment variable that switches the text layer on and filters
 /// every layer.
@@ -160,14 +168,14 @@ pub fn init(sink: Sink) -> Telemetry {
     };
     let registry = tracing_subscriber::registry()
         .with(crate::steps::layer())
-        .with(text.with_filter(env_filter()));
+        .with(text.with_filter(output(env_filter())));
     #[cfg(feature = "telemetry")]
     if let Some(endpoint) = endpoint {
         use opentelemetry::trace::TracerProvider as _;
         let provider = otlp::provider(&endpoint);
         let layer = tracing_opentelemetry::layer()
             .with_tracer(provider.tracer("uze"))
-            .with_filter(env_filter());
+            .with_filter(output(env_filter()));
         let _ = registry.with(layer).try_init();
         return Telemetry {
             provider: Some(provider),
@@ -182,6 +190,34 @@ pub fn init(sink: Sink) -> Telemetry {
     };
     #[cfg(not(feature = "telemetry"))]
     Telemetry { journal }
+}
+
+/// What an output shows: what `env` enables, outside any silenced
+/// background pass. Asked per span, never per callsite: the same service
+/// is shown under a gesture and hidden under a timer. The hint is the
+/// widest there is so the environment's own stays the process's ceiling.
+fn output<S>(env: EnvFilter) -> impl tracing_subscriber::layer::Filter<S>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    env.and(
+        dynamic_filter_fn(|metadata, _| !metadata.is_span() || !background::silenced())
+            .with_max_level_hint(LevelFilter::TRACE),
+    )
+}
+
+/// Held by every test that installs a subscriber of its own. Whether a
+/// callsite is enabled is cached process-wide and rebuilt as dispatchers
+/// come and go; two tests registering theirs at once can leave a span
+/// created that the running test's filters would have refused, which is
+/// exactly the question `background_pass!` asks of its root. A process
+/// runs one subscriber, so only tests can race on it.
+#[cfg(test)]
+pub(crate) fn one_subscriber_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    static SUBSCRIBERS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SUBSCRIBERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The text layer, and the writer thread it is to be kept alive by.
@@ -542,6 +578,7 @@ mod tests {
         let scratch = uze_testkit::temp::scratch("telemetry-journal");
         let (layer, guard) = text_layer(Sink::journal(scratch.clone(), "probe"));
         let subscriber = tracing_subscriber::registry().with(layer);
+        let _alone = one_subscriber_at_a_time();
         tracing::subscriber::with_default(subscriber, || {
             tracing::info!(root = "/somewhere", "a space was created");
         });
@@ -618,6 +655,7 @@ mod tests {
         };
         let subscriber =
             tracing_subscriber::registry().with(tracing_opentelemetry::layer().with_tracer(tracer));
+        let _alone = one_subscriber_at_a_time();
         tracing::subscriber::with_default(subscriber, || {
             let parent = tracing::info_span!("shim");
             let parent_trace = {
