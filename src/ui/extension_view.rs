@@ -97,14 +97,13 @@ pub(crate) fn prose(lines: &[ContentLine]) -> Vec<Line<'static>> {
 /// boundaries, with each continuation hung under where its line's text
 /// began.
 ///
-/// [`folded_rows`] breaks at the cell, which is right for code in an
-/// editor, where every column is a place the caret stands, and wrong for a
-/// paragraph, where "re" and "nders" on two rows is a word the reader has
-/// to put back together. And a continuation that starts back at the edge
-/// reads as a new item: under a bullet it should sit under the bullet's
-/// text, in a quote it should still be quoted, and in a code block it
-/// should sit clear of the block's own indentation, so it reads as the same
-/// line carried on rather than as a line of its own.
+/// Apart from [`fold`]'s word breaking, which is what content a reader
+/// may mark goes through: these rows are drawn for the plugins drawer and
+/// the release notes, where nothing is marked yet. A continuation that
+/// starts back at the edge reads as a new item: under a bullet it should
+/// sit under the bullet's text, in a quote it should still be quoted, and
+/// in a code block it should sit clear of the block's own indentation, so
+/// it reads as the same line carried on rather than as a line of its own.
 pub(crate) fn prose_rows(line: &ContentLine, width: usize) -> Vec<Line<'static>> {
     let width = width.max(1);
     let hang = hanging_indent(line, width);
@@ -661,6 +660,25 @@ pub(crate) struct NavigatorFrame {
 }
 
 pub(crate) fn render(
+    frame: &mut ratatui::Frame<'_>,
+    view: &View,
+    area: Rect,
+    held: NavigatorFrame,
+    scope: uze_keys::Scope,
+    selection: Option<&TextSelection>,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) -> Rendered {
+    let mut rendered = render_surface(frame, view, area, held, scope, selection, hits);
+    // A question is drawn over the content by the caller, with a scrim
+    // and nothing else to point at: what lies under it is not text a
+    // press can start marking until it is answered.
+    if view.confirm.is_some() {
+        rendered.text_rows.clear();
+    }
+    rendered
+}
+
+fn render_surface(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
@@ -2178,8 +2196,13 @@ fn text_rows(
                 ..TextRow::default()
             });
         }
-        let x = row.x + gutter + across as u16;
-        if x < row.right() {
+        // Checked, because a line cut at the edge rather than folded is
+        // walked to its end however far past the row it runs.
+        let x = u16::try_from(across)
+            .ok()
+            .and_then(|across| (row.x + gutter).checked_add(across))
+            .filter(|x| *x < row.right());
+        if let Some(x) = x {
             rows[down].glyphs.push(Glyph {
                 x,
                 width: cell_width(glyph) as u16,
@@ -4311,7 +4334,7 @@ mod tests {
             unreachable!("the sample shows lines");
         };
         let mut selection = TextSelection::pressed(Caret { line: 0, column: 3 }, heading.clone());
-        selection.gesture.carry(Caret { line: 0, column: 6 });
+        selection.carry(Caret { line: 0, column: 6 });
 
         let mut terminal = Terminal::new(TestBackend::new(90, 14)).unwrap();
         let mut hits = Vec::new();
@@ -4407,6 +4430,118 @@ mod tests {
                 "a row starts at a word"
             );
         }
+    }
+
+    fn prose(text: &str) -> ContentLine {
+        ContentLine {
+            gutter: String::new(),
+            number: String::new(),
+            tone: LineTone::Neutral,
+            spans: vec![Span::new(text, Role::Default)],
+        }
+    }
+
+    /// Where [`fold`] puts each character, as `(row, cell, character)`.
+    fn folded(text: &str, width: usize, breaks: Breaks) -> Vec<(usize, usize, char)> {
+        let mut placed = Vec::new();
+        fold(&prose(text), width, breaks, |row, cell, _, character| {
+            placed.push((row, cell, character));
+        });
+        placed
+    }
+
+    /// The row each character of `text` lands on, as a string per row.
+    fn rows_of(text: &str, width: usize, breaks: Breaks) -> Vec<String> {
+        let mut rows: Vec<String> = Vec::new();
+        for (row, _, character) in folded(text, width, breaks) {
+            if rows.len() <= row {
+                rows.push(String::new());
+            }
+            rows[row].push(character);
+        }
+        rows
+    }
+
+    #[test]
+    fn prose_folds_before_a_word_and_a_space_hangs_past_the_edge() {
+        assert_eq!(rows_of("ab cd ef", 4, Breaks::Words), ["ab ", "cd ", "ef"]);
+        // The space after "abcde" does not open a row of its own.
+        assert_eq!(rows_of("abcde fg", 5, Breaks::Words), ["abcde ", "fg"]);
+    }
+
+    /// A word wider than the whole row starts a row of its own, then
+    /// breaks at the cell, since there is no word boundary left to use.
+    #[test]
+    fn a_word_wider_than_the_row_breaks_at_the_cell() {
+        assert_eq!(
+            rows_of("ab cdefghij", 4, Breaks::Words),
+            ["ab ", "cdef", "ghij"]
+        );
+    }
+
+    #[test]
+    fn a_tab_and_a_wide_glyph_take_the_cells_they_are_drawn_in() {
+        assert_eq!(
+            folded("a\tb", 80, Breaks::Cells),
+            [(0, 0, 'a'), (0, 1, '\t'), (0, 1 + TAB_WIDTH, 'b')]
+        );
+        // Two cells left on the row is room for a wide glyph; one is not.
+        assert_eq!(rows_of("abc世", 4, Breaks::Cells), ["abc", "世"]);
+        assert_eq!(rows_of("ab世", 4, Breaks::Cells), ["ab世"]);
+    }
+
+    /// Past the last glyph of a folded row is that glyph; past the last
+    /// glyph of the row the line ends on is the line's end.
+    #[test]
+    fn beyond_a_folded_row_is_its_last_character_and_beyond_the_line_its_end() {
+        let rows = text_rows(
+            &prose("ab cd"),
+            7,
+            Rect::new(0, 0, 3, 4),
+            0,
+            3,
+            Breaks::Words,
+        );
+        let beyond: Vec<usize> = rows.iter().map(|row| row.beyond).collect();
+        assert_eq!(beyond, [2, 5]);
+        assert!(rows.iter().all(|row| row.line == 7));
+    }
+
+    /// A line cut at the edge is walked to its end, however far past the
+    /// row it runs, without a cell past the row being taken for one in it.
+    #[test]
+    fn a_line_far_wider_than_the_row_records_only_what_fits() {
+        let long = "x".repeat(70_000);
+        let rows = text_rows(
+            &prose(&long),
+            0,
+            Rect::new(2, 0, 10, 1),
+            0,
+            usize::MAX,
+            Breaks::Cells,
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].glyphs.len(), 10);
+        assert_eq!(rows[0].beyond, 70_000);
+    }
+
+    /// Under a question there is nothing to mark: the press belongs to the
+    /// question, which the caller draws over the content.
+    #[test]
+    fn a_question_over_the_content_leaves_no_text_to_mark() {
+        let view = View {
+            confirm: Some(uze_extensions::view::Confirm {
+                title: "Discard changes?".to_owned(),
+                subject: "a.txt".to_owned(),
+                body: "The edits are lost.".to_owned(),
+                confirm: "Discard".to_owned(),
+                on_confirm: false,
+            }),
+            ..sample()
+        };
+
+        assert!(!drawn_rows(&sample()).1.text_rows.is_empty());
+        assert!(drawn_rows(&view).1.text_rows.is_empty());
     }
 
     /// A drawing is pointed at, never marked: the frame records no text.

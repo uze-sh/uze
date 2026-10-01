@@ -1542,21 +1542,7 @@ impl Attach<'_> {
     /// row it drew, and only the pointer knows how far along it landed.
     fn architect_press(&mut self, column: u16, row: u16) {
         let hit = self.architect_hit_at(column, row);
-        let view_hit = hit.map(|(rect, hit)| match hit {
-            // The same arithmetic the code surface does, through the same
-            // function: a second copy of it here was missing the gutter
-            // term, and subtracted without saturating.
-            ViewHit::PlaceCaret { line, cell } => ViewHit::PlaceCaret {
-                line,
-                cell: crate::ui::extension_view::caret_cell_at(
-                    rect,
-                    cell,
-                    column,
-                    self.model.code_scrollbars.content_gutter,
-                ),
-            },
-            other => other,
-        });
+        let view_hit = hit.map(|(rect, hit)| self.finished(rect, hit, column));
         if let Some(click @ ViewHit::PlaceCaret { .. }) = view_hit {
             self.model.architect_grab = Some(DiagramGrab {
                 last: (column, row),
@@ -1693,11 +1679,18 @@ impl Attach<'_> {
         else {
             return;
         };
-        if let Some(direction) = scroll {
-            self.scroll_surface_content(direction);
-        }
         if let Some(Selection::Text(marking)) = self.model.selection.as_mut() {
-            marking.gesture.carry(at);
+            marking.carry(at);
+        }
+        match scroll {
+            Some(direction) => self.scroll_surface_content(direction),
+            // An editor's caret goes with the drag, so what is typed next
+            // lands where the drag ended rather than where it began.
+            None => {
+                if let Some(caret) = self.caret_hit_near(column, row) {
+                    self.surface_mouse(caret);
+                }
+            }
         }
         self.model.dirty = true;
     }
@@ -1710,11 +1703,7 @@ impl Attach<'_> {
         let Some(Selection::Text(marking)) = self.model.selection.as_mut() else {
             return;
         };
-        let marked = marking
-            .gesture
-            .release()
-            .then(|| marking.marked())
-            .flatten();
+        let marked = marking.release();
         let copied = marked
             .map(|marked| marked.text(&self.surface_text(marked.lines())))
             .filter(|text| !text.is_empty());
@@ -1765,7 +1754,20 @@ impl Attach<'_> {
             .area;
         let column = column.clamp(nearest.x, nearest.right().saturating_sub(1));
         match self.surface_hit_at(column, nearest.y)? {
-            (rect, ViewHit::PlaceCaret { line, cell }) => Some(ViewHit::PlaceCaret {
+            (rect, hit @ ViewHit::PlaceCaret { .. }) => Some(self.finished(rect, hit, column)),
+            _ => None,
+        }
+    }
+
+    /// A hit the last frame recorded, finished with where the pointer is.
+    ///
+    /// The render knew which line a row was and where it began; only the
+    /// pointer knows how far along it landed, so a [`ViewHit::PlaceCaret`]
+    /// is completed here rather than recorded a cell at a time. Every
+    /// other hit is already whole.
+    fn finished(&self, rect: Rect, hit: ViewHit, column: u16) -> ViewHit {
+        match hit {
+            ViewHit::PlaceCaret { line, cell } => ViewHit::PlaceCaret {
                 line,
                 cell: crate::ui::extension_view::caret_cell_at(
                     rect,
@@ -1773,8 +1775,8 @@ impl Attach<'_> {
                     column,
                     self.model.code_scrollbars.content_gutter,
                 ),
-            }),
-            _ => None,
+            },
+            other => other,
         }
     }
 
@@ -2386,26 +2388,9 @@ impl Attach<'_> {
                 // resize handle's drag lifecycle belongs to this
                 // workspace client, not the extension.
                 let view_hit = match hit {
-                    // The render knew which line the row was and where it
-                    // began; only the pointer knows how far along it
-                    // landed, so the hit is finished here rather than
-                    // recorded a cell at a time.
-                    Some((
-                        rect,
-                        WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret {
-                            line,
-                            cell,
-                        })),
-                    )) => Some(ViewHit::PlaceCaret {
-                        line,
-                        cell: crate::ui::extension_view::caret_cell_at(
-                            rect,
-                            cell,
-                            mouse.column,
-                            self.model.code_scrollbars.content_gutter,
-                        ),
-                    }),
-                    Some((_, WorkspaceHit::Extension(ExtensionHit::Code(hit)))) => Some(hit),
+                    Some((rect, WorkspaceHit::Extension(ExtensionHit::Code(hit)))) => {
+                        Some(self.finished(rect, hit, mouse.column))
+                    }
                     _ => None,
                 };
                 // Three of the surface's gestures are the host's rather
@@ -2493,7 +2478,7 @@ impl Attach<'_> {
                     self.send_selection_request(request, mouse, layout.pane);
                 }
             }
-            _ if matches!(&self.model.selection, Some(Selection::Text(marking)) if marking.gesture.held()) =>
+            _ if matches!(&self.model.selection, Some(Selection::Text(marking)) if marking.held()) =>
             {
                 self.mark_text_to(mouse.column, mouse.row);
             }
@@ -2601,7 +2586,7 @@ impl Attach<'_> {
                 self.release_selection(mouse, layout.pane);
                 return Flow::Continue;
             }
-            Some(Selection::Text(marking)) if marking.gesture.held() => {
+            Some(Selection::Text(marking)) if marking.held() => {
                 self.release_text(mouse.column, mouse.row);
                 return Flow::Continue;
             }

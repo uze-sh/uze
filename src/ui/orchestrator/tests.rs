@@ -8528,10 +8528,49 @@ mod workspace_tests {
         assert!(
             matches!(
                 &driven.attach.model.selection,
-                Some(crate::ui::selection::Selection::Text(marking)) if !marking.gesture.held()
+                Some(crate::ui::selection::Selection::Text(marking)) if !marking.held()
             ),
             "the drag is over, and what was taken stays drawn"
         );
+
+        // Typing into the file, the caret goes with the drag while it is
+        // still held, so what is typed next lands where the drag ended.
+        if let Some(view) = driven.attach.model.code.as_mut() {
+            code::handle_command(view, uze_extensions::view::Command::Edit, space);
+        }
+        driven.frame();
+        let row_of = |driven: &Driven<'_>, line: usize| {
+            driven
+                .attach
+                .model
+                .code_scrollbars
+                .text_rows
+                .iter()
+                .find(|row| row.line == line)
+                .cloned()
+                .unwrap_or_else(|| panic!("line {line} is drawn"))
+        };
+        let (first, second) = (row_of(&driven, 0), row_of(&driven, 1));
+        driven.press(first.glyphs[6].x, first.area.y);
+        driven.mouse(
+            second.glyphs[2].x,
+            second.area.y,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+        let caret = match code::view(driven.attach.model.code.as_ref().unwrap(), space).content {
+            uze_extensions::view::Content::Lines { caret, .. } => caret,
+            uze_extensions::view::Content::Message { .. } => None,
+        };
+        assert_eq!(
+            caret,
+            Some(uze_extensions::view::Caret { line: 1, column: 2 })
+        );
+        driven.mouse(
+            second.glyphs[2].x,
+            second.area.y,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+        assert_eq!(driven.attach.model.clipboard.as_deref(), Some("world\nsec"));
     }
 
     #[test]

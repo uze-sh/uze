@@ -112,7 +112,8 @@ impl<P: Copy + Eq> Gesture<P> {
 /// at how the line was folded.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TextRow {
-    /// The row's text cells, the gutter left out.
+    /// The whole row, gutter included: a press on a line's number starts
+    /// marking at its first character.
     pub(crate) area: Rect,
     /// Which line of the content, counted from its start.
     pub(crate) line: usize,
@@ -194,7 +195,7 @@ pub(crate) fn on_text(rows: &[TextRow], column: u16, row: u16) -> bool {
 /// Text marked in content the client laid out, in the text's own terms.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TextSelection {
-    pub(crate) gesture: Gesture<Caret>,
+    gesture: Gesture<Caret>,
     /// The heading of the content it was made on. Positions only mean
     /// something in the text they were taken from, and a surface that
     /// moved on to another file under a released selection would
@@ -208,6 +209,22 @@ impl TextSelection {
             gesture: Gesture::pressed(at),
             heading,
         }
+    }
+
+    /// The pointer carried to `at` with the button held.
+    pub(crate) fn carry(&mut self, at: Caret) {
+        self.gesture.carry(at);
+    }
+
+    /// The button came up: what the drag marked, or nothing for a click.
+    pub(crate) fn release(&mut self) -> Option<Marked> {
+        self.gesture.release();
+        self.marked()
+    }
+
+    /// Whether the button is still down, so a movement still extends it.
+    pub(crate) fn held(&self) -> bool {
+        self.gesture.held()
     }
 
     /// What is marked, once the pointer has moved: nothing for a click.

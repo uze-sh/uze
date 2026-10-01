@@ -4828,14 +4828,18 @@ impl WorkspaceModel {
 
     fn absorb_diff(&mut self, resolution: DiffResolution) -> bool {
         self.code_diff_pending = false;
-        let Some(view) = self
+        if self
             .code
-            .as_mut()
-            .filter(|view| view.root() == resolution.root)
-        else {
+            .as_ref()
+            .is_none_or(|view| view.root() != resolution.root)
+        {
             return false;
-        };
-        view.absorb_diff(resolution.answer);
+        }
+        let marked = self.code_marked_text();
+        if let Some(view) = self.code.as_mut() {
+            view.absorb_diff(resolution.answer);
+        }
+        self.forget_marking_if_moved(marked);
         true
     }
 
@@ -4932,15 +4936,37 @@ impl WorkspaceModel {
     /// answer still describes where the viewer is.
     fn absorb_changes(&mut self, resolution: ChangesResolution) -> bool {
         self.code_changes_pending = false;
-        let Some(view) = self
+        if self
             .code
-            .as_mut()
-            .filter(|view| view.root() == resolution.root)
-        else {
+            .as_ref()
+            .is_none_or(|view| view.root() != resolution.root)
+        {
             return false;
-        };
-        view.absorb_changes(resolution.refreshed);
+        }
+        let marked = self.code_marked_text();
+        if let Some(view) = self.code.as_mut() {
+            view.absorb_changes(resolution.refreshed);
+        }
+        self.forget_marking_if_moved(marked);
         true
+    }
+
+    /// The text a marking on the code surface covers right now.
+    fn code_marked_text(&self) -> Option<Vec<String>> {
+        let Some(Selection::Text(marking)) = &self.selection else {
+            return None;
+        };
+        Some(code::text(self.code.as_ref()?, marking.marked()?.lines()))
+    }
+
+    /// Drops a marking whose text a refresh changed. A marking is a
+    /// position in the text, and the same lines of a different diff are
+    /// not what was marked; a refresh that found everything as it was —
+    /// most of them — leaves it drawn.
+    fn forget_marking_if_moved(&mut self, before: Option<Vec<String>>) {
+        if before.is_some_and(|before| self.code_marked_text() != Some(before)) {
+            self.selection = None;
+        }
     }
 }
 
