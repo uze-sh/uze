@@ -2,15 +2,14 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Padding, Paragraph},
+    widgets::{Clear, Paragraph},
 };
 use uze_application::{CapabilityKind, HarnessCapabilities};
 
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
-    Chip, ChipState, POPUP_H_PAD, POPUP_V_PAD, Surface, hint,
+    Chip, ChipState, Edge, Rule, hint,
     row::{self, RowState},
     text,
 };
@@ -107,6 +106,15 @@ pub(crate) enum PromptScope {
     Space,
 }
 
+/// The agent the drawer is about, as the sidebar names it.
+pub(super) struct DrawerAgent {
+    /// The tab's label: what the operator calls this agent.
+    pub(super) name: String,
+    /// Its working directory, with the home directory written `~`.
+    pub(super) path: String,
+    pub(super) branch: Option<String>,
+}
+
 /// What the drawer lists under the agent's facts.
 pub(super) struct DrawerPrompts<'a> {
     /// `None` while the history is still being read.
@@ -117,7 +125,7 @@ pub(super) struct DrawerPrompts<'a> {
     pub(super) agent_known: bool,
     pub(super) selected: usize,
     pub(super) hovered: Option<usize>,
-    /// The scope chip under the pointer, which lightens like every other
+    /// The scope tab under the pointer, which lightens like every other
     /// control the pointer is over.
     pub(super) hovered_scope: Option<PromptScope>,
     pub(super) clearing: bool,
@@ -137,28 +145,36 @@ const DRAWER_SCOPES: [uze_keys::Scope; 3] = [
     uze_keys::Scope::AgentDrawer,
 ];
 
-/// Columns an age takes (`55m`, `now`), and the air after it.
-const AGE_WIDTH: usize = 4;
-/// A tab label longer than this is clipped so the prompt keeps its share.
-const MAX_TAB_WIDTH: usize = 14;
+/// Columns the drawer takes, and the fewest it is drawn in.
+const DRAWER_WIDTH: u16 = 52;
+const DRAWER_MIN_WIDTH: u16 = 44;
+/// Columns between the drawer's edge and its content.
+const DRAWER_INSET: u16 = 2;
+/// The context block's keys, and the air after them.
+const KEY_WIDTH: usize = 10;
+const KEY_GAP: usize = 2;
+/// The column in front of a record that carries the selection mark.
+const GUTTER: usize = 2;
+/// A prompt is wrapped to this many lines, then elided.
+const PROMPT_LINES: usize = 2;
 
-/// Draws the agent drawer: the agent's facts, then its prompts, down the
-/// right-hand side from the control that opened it to the bottom of the
-/// frame.
+/// Draws the agent drawer down the right-hand side, from the control that
+/// opened it to the bottom of the frame: the agent's name, what it runs on
+/// and what reaches it here, then the prompts it — or its space — was
+/// given.
 ///
-/// A drawer rather than a dropdown because the prompts are a list that
-/// grows, and a popup measured from its lines had no room to give one.
 /// It hangs over the pane without resizing it: a pane that changes size
 /// makes the program in it redraw everything, once to open and once to
-/// close.
+/// close. Only the prompts scroll; the facts above them stay put.
 pub(super) fn render(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     anchor: Rect,
     support: &AgentSupport,
+    agent: &DrawerAgent,
     prompts: &DrawerPrompts<'_>,
 ) -> DrawerTargets {
-    let width = (area.width * 2 / 5).clamp(44, 72).min(area.width).max(1);
+    let width = DRAWER_WIDTH.max(DRAWER_MIN_WIDTH).min(area.width).max(1);
     let top = (anchor.y + anchor.height).min(area.bottom());
     let drawer = Rect::new(
         area.right().saturating_sub(width),
@@ -167,193 +183,372 @@ pub(super) fn render(
         area.bottom().saturating_sub(top),
     );
     frame.render_widget(Clear, drawer);
-    let inner = Surface::floating()
-        .padding(Padding::new(
-            POPUP_H_PAD,
-            POPUP_H_PAD,
-            POPUP_V_PAD,
-            POPUP_V_PAD,
-        ))
+    // The management screens' drawers' own ground and edge, so a drawer
+    // reads as one kind of thing on either surface.
+    let ground = Rule::new(Edge::Left)
+        .tone(Token::SurfaceRecessed)
+        .ground(Token::SurfaceRecessed)
         .render(frame, drawer);
-    let inner_width = inner.width as usize;
-
-    // "agent", not "support": what this panel answers is what the agent
-    // in front of the operator is running on and what reaches it here —
-    // the harness, this checkout's context, the capabilities delivered.
-    // "Support" named the read model behind it (`AgentSupport`), which is
-    // this codebase's word, not the operator's question.
-    let mut lines = vec![row::title_row("agent", "esc", inner_width), Line::default()];
-    lines.extend(fact_lines(support, inner_width));
-    lines.push(Line::default());
-
+    let inner = Rect::new(
+        ground.x + DRAWER_INSET,
+        drawer.y + 1,
+        ground.width.saturating_sub(2 * DRAWER_INSET),
+        drawer.height.saturating_sub(1),
+    );
     let mut targets = DrawerTargets {
         body: drawer,
         prompts: Vec::new(),
         scopes: Vec::new(),
     };
+    if inner.width == 0 || inner.height == 0 {
+        return targets;
+    }
+
+    let mut lines = vec![title_line(&agent.name, inner.width), Line::default()];
+    lines.extend(context_lines(support, agent, inner.width as usize));
+    lines.push(Line::default());
     let heading_y = inner.y + lines.len() as u16;
     frame.render_widget(Paragraph::new(lines), inner);
-    if heading_y >= inner.bottom() {
+    // The heading, its rule, at least one record, and the footer's two.
+    if heading_y + 5 > inner.bottom() {
         return targets;
     }
 
     frame.render_widget(
-        Paragraph::new(section_header("PROMPTS")),
+        Paragraph::new(Span::styled("PROMPTS", theme::fg(Token::TextDim))),
         Rect::new(inner.x, heading_y, inner.width, 1),
     );
+    targets.scopes = render_scope_tabs(frame, inner, heading_y, prompts);
+    Rule::new(Edge::Top).render(frame, Rect::new(inner.x, heading_y + 1, inner.width, 1));
+
+    let footer_y = inner.bottom().saturating_sub(1);
+    Rule::new(Edge::Top).render(frame, Rect::new(inner.x, footer_y - 1, inner.width, 1));
+    let listed = prompts.entries.as_ref().map_or(0, Vec::len);
+    frame.render_widget(
+        Paragraph::new(footer(prompts, listed, inner.width)),
+        Rect::new(inner.x, footer_y, inner.width, 1),
+    );
+
+    let list = Rect::new(
+        inner.x,
+        heading_y + 2,
+        inner.width,
+        (footer_y - 1).saturating_sub(heading_y + 2),
+    );
+    let Some(entries) = &prompts.entries else {
+        render_note(frame, list, "reading…");
+        return targets;
+    };
+    if entries.is_empty() {
+        render_note(
+            frame,
+            list,
+            match prompts.scope {
+                PromptScope::Agent => "nothing asked of this agent yet",
+                PromptScope::Space => "nothing asked in this space yet",
+            },
+        );
+        return targets;
+    }
+
+    // A selection bleeds to the drawer's edges, past the inset the text
+    // keeps: the block it marks is the record, not the words in it.
+    let bleed = Rect::new(ground.x, list.y, ground.width, list.height);
+    let clock = PromptClock::now();
+    let text_width = (list.width as usize).saturating_sub(GUTTER);
+    let blocks: Vec<Vec<Line<'static>>> = entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let state = RowState::of(
+                index == prompts.selected,
+                prompts.hovered == Some(index) && prompts.scope == PromptScope::Space,
+            );
+            record_lines(entry, &clock, prompts.scope, text_width, state)
+        })
+        .collect();
+    let mut y = list.y;
+    for (index, block) in
+        blocks
+            .iter()
+            .enumerate()
+            .skip(first_shown(&blocks, prompts.selected, list.height as usize))
+    {
+        let height = block.len() as u16;
+        if y + height > list.bottom() {
+            break;
+        }
+        let rect = Rect::new(bleed.x, y, bleed.width, height);
+        let state = RowState::of(
+            index == prompts.selected,
+            prompts.hovered == Some(index) && prompts.scope == PromptScope::Space,
+        );
+        let padded: Vec<Line<'static>> = block
+            .iter()
+            .cloned()
+            .map(|line| {
+                let mut spans = vec![Span::raw(" ".repeat(usize::from(list.x - bleed.x)))];
+                spans.extend(line.spans);
+                row::fill(&mut spans, bleed.width, state);
+                Line::from(spans)
+            })
+            .collect();
+        frame.render_widget(Paragraph::new(padded), rect);
+        targets.prompts.push((rect, index));
+        y += height;
+    }
+    targets
+}
+
+/// The agent's name, and the key that puts the drawer away.
+fn title_line(name: &str, width: u16) -> Line<'static> {
+    let name = text::elide(name, (width as usize).saturating_sub(5));
+    let gap = (width as usize)
+        .saturating_sub(name.chars().count() + 3)
+        .max(1);
+    Line::from(vec![
+        Span::styled(name, theme::fg_bold(Token::TextBright)),
+        Span::raw(" ".repeat(gap)),
+        Span::styled("esc", theme::fg(Token::TextMuted)),
+    ])
+}
+
+/// Two columns, a fixed order: where the agent is, then what reaches it.
+fn context_lines(support: &AgentSupport, agent: &DrawerAgent, width: usize) -> Vec<Line<'static>> {
+    let room = width.saturating_sub(KEY_WIDTH + KEY_GAP);
+    let plain = |text: &str| {
+        vec![Span::styled(
+            text::elide(text, room),
+            theme::fg(Token::TextPrimary),
+        )]
+    };
+    let muted = |text: &str| {
+        vec![Span::styled(
+            text::elide(text, room),
+            theme::fg(Token::TextMuted),
+        )]
+    };
+    let harness = if support.present {
+        plain(&support.display_name)
+    } else {
+        let mut spans = plain(&support.display_name);
+        spans.push(Span::styled(
+            " (not installed)",
+            theme::fg(Token::StateDanger),
+        ));
+        spans
+    };
+    let branch = agent.branch.as_deref().map_or_else(|| muted("none"), plain);
+    let mut lines = vec![
+        context_line("harness", harness),
+        context_line("path", plain(&agent.path)),
+        context_line("branch", branch),
+        context_line(
+            "AGENTS.md",
+            delivery_value(support.instructions, support.instructions_label),
+        ),
+        context_line(
+            "skills",
+            delivery_value(support.project_skills, support.project_skills_label),
+        ),
+        context_line(
+            "agents",
+            delivery_value(support.project_agents, support.project_agents_label),
+        ),
+        context_line("profile", plain(&support.profile)),
+    ];
+    lines.extend(caps_lines(support, room));
+    lines
+}
+
+fn context_line(key: &str, value: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = vec![Span::styled(
+        format!("{key:<KEY_WIDTH$}{}", " ".repeat(KEY_GAP)),
+        theme::fg(Token::TextMuted),
+    )];
+    spans.extend(value);
+    Line::from(spans)
+}
+
+/// A delivery as the context block shows it: the value, and the mechanism
+/// behind it in parentheses in the muted hue — `loaded (shim)`.
+fn delivery_value(state: State, label: &'static str) -> Vec<Span<'static>> {
+    let hue = match state {
+        State::Ready => Token::TextPrimary,
+        State::Neutral => Token::TextMuted,
+        State::Warning => Token::StateWarning,
+        State::Error => Token::StateDanger,
+    };
+    match label.split_once(" (") {
+        Some((value, qualifier)) => vec![
+            Span::styled(value, theme::fg(hue)),
+            Span::styled(format!(" ({qualifier}"), theme::fg(Token::TextMuted)),
+        ],
+        None => vec![Span::styled(label, theme::fg(hue))],
+    }
+}
+
+/// The capabilities on one line, a mark and a name each, wrapped onto a
+/// second under the same column when they do not fit.
+fn caps_lines(support: &AgentSupport, room: usize) -> Vec<Line<'static>> {
+    let items: Vec<Vec<Span<'static>>> = [
+        CapabilityKind::AgentSkill,
+        CapabilityKind::Mcp,
+        CapabilityKind::Hook,
+        CapabilityKind::Agent,
+    ]
+    .into_iter()
+    .map(|kind| {
+        let name = capability_label(kind).to_lowercase();
+        let (symbol, mark, label) = match capability_state(support, kind) {
+            CapabilityState::Supported => (Symbol::MarkOk, Token::StateSuccess, Token::TextPrimary),
+            CapabilityState::Limited => (
+                Symbol::MarkAttention,
+                Token::StateWarning,
+                Token::TextPrimary,
+            ),
+            CapabilityState::Unavailable => (Symbol::MarkDot, Token::TextMuted, Token::TextMuted),
+        };
+        vec![
+            Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(mark)),
+            Span::styled(name, theme::fg(label)),
+        ]
+    })
+    .collect();
+    let mut rows: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    let mut used = 0;
+    for item in items {
+        let width: usize = item.iter().map(Span::width).sum();
+        let row = rows.last_mut().expect("one row");
+        if !row.is_empty() && used + KEY_GAP + width > room {
+            rows.push(item);
+            used = width;
+            continue;
+        }
+        if !row.is_empty() {
+            row.push(Span::raw(" ".repeat(KEY_GAP)));
+            used += KEY_GAP;
+        }
+        row.extend(item);
+        used += width;
+    }
+    rows.into_iter()
+        .enumerate()
+        .map(|(index, spans)| context_line(if index == 0 { "caps" } else { "" }, spans))
+        .collect()
+}
+
+/// `agent · space`: the tab in force filled, the other plain text that
+/// lightens under the pointer. Laid from the right edge inward.
+fn render_scope_tabs(
+    frame: &mut ratatui::Frame<'_>,
+    inner: Rect,
+    y: u16,
+    prompts: &DrawerPrompts<'_>,
+) -> Vec<(Rect, PromptScope)> {
+    let mut placed = Vec::new();
     let mut right = inner.right();
     for (scope, label) in [(PromptScope::Space, "space"), (PromptScope::Agent, "agent")] {
         if scope == PromptScope::Agent && !prompts.agent_known {
             continue;
         }
-        let state = if prompts.scope == scope {
-            ChipState::Pressed
-        } else if prompts.hovered_scope == Some(scope) {
-            ChipState::Hovered
+        let rect = if prompts.scope == scope {
+            let chip = Chip::new(label, theme::color(Token::TextPrimary), ChipState::Pressed);
+            let rect = chip.rect_ending_at(right, y);
+            chip.render(frame, rect);
+            rect
         } else {
-            ChipState::Resting
+            let hue = if prompts.hovered_scope == Some(scope) {
+                Token::TextBright
+            } else {
+                Token::TextMuted
+            };
+            let width = label.len() as u16 + 2;
+            let rect = Rect::new(right.saturating_sub(width), y, width, 1);
+            frame.render_widget(
+                Paragraph::new(Span::styled(format!(" {label} "), theme::fg(hue))),
+                rect,
+            );
+            rect
         };
-        let chip = Chip::new(label, theme::color(Token::TextSecondary), state);
-        let rect = chip.rect_ending_at(right, heading_y);
-        chip.render(frame, rect);
-        targets.scopes.push((rect, scope));
-        right = rect.x.saturating_sub(1);
+        placed.push((rect, scope));
+        right = rect.x;
     }
-
-    // Two rows at the bottom: air, and the keys that act here.
-    let list_top = heading_y + 2;
-    let footer_y = inner.bottom().saturating_sub(1);
-    let room = footer_y.saturating_sub(list_top + 1) as usize;
-    if footer_y > heading_y {
-        frame.render_widget(
-            Paragraph::new(footer(prompts, inner.width)),
-            Rect::new(inner.x, footer_y, inner.width, 1),
-        );
-    }
-    let Some(entries) = &prompts.entries else {
-        render_note(frame, inner, list_top, room, "reading…");
-        return targets;
-    };
-    if entries.is_empty() {
-        let note = match prompts.scope {
-            PromptScope::Agent => "nothing asked of this agent yet",
-            PromptScope::Space => "nothing asked in this space yet",
-        };
-        render_note(frame, inner, list_top, room, note);
-        return targets;
-    }
-
-    let clock = PromptClock::now();
-    let first = prompts.selected.saturating_sub(room.saturating_sub(1));
-    for (offset, (index, entry)) in entries
-        .iter()
-        .enumerate()
-        .skip(first)
-        .take(room)
-        .enumerate()
-    {
-        let rect = Rect::new(inner.x, list_top + offset as u16, inner.width, 1);
-        let state = RowState::of(index == prompts.selected, prompts.hovered == Some(index));
-        frame.render_widget(
-            Paragraph::new(prompt_line(
-                entry,
-                &clock,
-                prompts.scope,
-                inner.width,
-                state,
-            )),
-            rect,
-        );
-        targets.prompts.push((rect, index));
-    }
-    targets
+    placed
 }
 
-/// The agent's facts: what it runs on, and what reaches it here.
-fn fact_lines(support: &AgentSupport, inner_width: usize) -> Vec<Line<'static>> {
-    let mut lines = vec![section_header("RUNTIME")];
-    lines.push(fact_line(
-        harness_state(support),
-        "Harness",
-        &support.display_name,
-        inner_width,
-    ));
-    lines.push(fact_line(
-        support.instructions,
-        "AGENTS.md",
-        support.instructions_label,
-        inner_width,
-    ));
-    lines.push(fact_line(
-        support.project_skills,
-        ".agents/skills",
-        support.project_skills_label,
-        inner_width,
-    ));
-    lines.push(fact_line(
-        support.project_agents,
-        ".agents/agents",
-        support.project_agents_label,
-        inner_width,
-    ));
-    lines.push(fact_line(
-        State::Ready,
-        "Profile",
-        &support.profile,
-        inner_width,
-    ));
-
-    lines.push(Line::default());
-    lines.push(section_header("CAPABILITIES"));
-    for capability in [
-        CapabilityKind::AgentSkill,
-        CapabilityKind::Mcp,
-        CapabilityKind::Hook,
-        CapabilityKind::Agent,
-    ] {
-        let state = capability_state(support, capability);
-        lines.push(capability_line(
-            state.row_state(),
-            capability_label(capability),
-            state.label(),
-            inner_width,
+/// One record: when it was asked (and in which tab, across the space),
+/// then the prompt wrapped to two lines.
+fn record_lines(
+    entry: &PromptEntry,
+    clock: &PromptClock,
+    scope: PromptScope,
+    width: usize,
+    state: RowState,
+) -> Vec<Line<'static>> {
+    let selected = state == RowState::Selected;
+    let meta = theme::fg(if selected {
+        Token::TextSecondary
+    } else {
+        Token::TextMuted
+    });
+    let gutter = if selected {
+        Span::styled(
+            format!("{:<GUTTER$}", theme::glyph(Symbol::ChevronRight)),
+            theme::fg_bold(Token::StateSuccess),
+        )
+    } else {
+        Span::raw(" ".repeat(GUTTER))
+    };
+    let mut head = vec![gutter, Span::styled(entry.compact_age(clock), meta)];
+    if scope == PromptScope::Space {
+        head.push(Span::raw(" ".repeat(KEY_GAP)));
+        head.push(Span::styled(
+            text::elide(&entry.tab_label, width.saturating_sub(6)),
+            meta,
         ));
-        if matches!(state, CapabilityState::Unavailable) {
-            lines.push(reason_line(support, capability, inner_width));
-        }
+    }
+    let body = theme::fg(if selected {
+        Token::TextBright
+    } else {
+        Token::TextPrimary
+    });
+    let mut lines = vec![Line::from(head)];
+    lines.extend(wrapped(&entry.preview, width).into_iter().map(|text| {
+        Line::from(vec![
+            Span::raw(" ".repeat(GUTTER)),
+            Span::styled(text, body),
+        ])
+    }));
+    lines
+}
+
+/// `text` folded to `width`, kept to [`PROMPT_LINES`] with the last one
+/// elided when there was more.
+fn wrapped(text: &str, width: usize) -> Vec<String> {
+    let mut lines = text::fold(text, width.max(1));
+    if lines.len() > PROMPT_LINES {
+        let rest = lines.split_off(PROMPT_LINES - 1).join(" ");
+        lines.push(text::elide(&rest, width));
     }
     lines
 }
 
-/// One prompt: how long ago, which tab when the whole space is listed,
-/// and the prompt itself.
-fn prompt_line(
-    entry: &PromptEntry,
-    clock: &PromptClock,
-    scope: PromptScope,
-    width: u16,
-    state: RowState,
-) -> Line<'static> {
-    let mut spans = vec![Span::styled(
-        format!("{:>3} ", entry.compact_age(clock)),
-        theme::fg(Token::TextMuted),
-    )];
-    let mut used = AGE_WIDTH;
-    if scope == PromptScope::Space {
-        let tab = text::elide(&entry.tab_label, MAX_TAB_WIDTH);
-        used += tab.chars().count() + 2;
-        spans.push(Span::styled(tab, theme::fg(Token::Accent)));
-        spans.push(Span::raw("  "));
+/// The first record to draw so the selected one is on screen, with as
+/// many before it as fit.
+fn first_shown(blocks: &[Vec<Line<'static>>], selected: usize, room: usize) -> usize {
+    let mut first = selected.min(blocks.len().saturating_sub(1));
+    let mut used = blocks.get(first).map_or(0, Vec::len);
+    while first > 0 && used + blocks[first - 1].len() <= room {
+        first -= 1;
+        used += blocks[first].len();
     }
-    let prompt = text::elide(&entry.preview, (width as usize).saturating_sub(used));
-    spans.push(Span::styled(prompt, theme::fg(Token::TextPrimary)));
-    row::fill(&mut spans, width, state);
-    Line::from(spans)
+    first
 }
 
-/// The keys that act here, or — while it stands — the question a first
-/// `x` asked.
-fn footer(prompts: &DrawerPrompts<'_>, width: u16) -> Line<'static> {
+/// The keys that act here and the position in the list — or, while it
+/// stands, the question a first `x` asked.
+fn footer(prompts: &DrawerPrompts<'_>, listed: usize, width: u16) -> Line<'static> {
     use uze_keys::Action;
     if prompts.clearing {
         let mut line = hint::named_within(
@@ -367,109 +562,46 @@ fn footer(prompts: &DrawerPrompts<'_>, width: u16) -> Line<'static> {
         line.style = theme::fg(Token::StateWarning);
         return line;
     }
-    let mut actions = vec![(Action::Activate, "go to tab".to_owned())];
+    let counter = if listed == 0 {
+        String::new()
+    } else {
+        format!("{}/{listed}", prompts.selected + 1)
+    };
+    let mut actions = Vec::new();
+    // This agent's own prompts are read here, not acted on: the tab they
+    // went to is the one in front.
+    if prompts.scope == PromptScope::Space {
+        actions.push((Action::Activate, "go to tab".to_owned()));
+    }
     if prompts.agent_known {
         actions.push((Action::FocusNext, "agent/space".to_owned()));
     }
     actions.push((Action::ClearPromptHistory, "clear".to_owned()));
-    hint::named_within(width, &DRAWER_SCOPES, &actions)
+    // The keys first: the counter is where the reader is, which the
+    // selection already shows, so it is the one left out when both do
+    // not fit.
+    let mut line = hint::named_within(width, &DRAWER_SCOPES, &actions);
+    let used: usize = line.spans.iter().map(Span::width).sum();
+    let gap = (width as usize).saturating_sub(used + counter.chars().count());
+    if gap > 0 {
+        line.spans.push(Span::raw(" ".repeat(gap)));
+        line.spans
+            .push(Span::styled(counter, theme::fg(Token::TextFaint)));
+    }
+    line
 }
 
-fn render_note(frame: &mut ratatui::Frame<'_>, inner: Rect, y: u16, room: usize, note: &str) {
-    if room == 0 {
+fn render_note(frame: &mut ratatui::Frame<'_>, list: Rect, note: &str) {
+    if list.height == 0 {
         return;
     }
     frame.render_widget(
-        Paragraph::new(Span::styled(note.to_owned(), theme::fg(Token::TextMuted))),
-        Rect::new(inner.x, y, inner.width, 1),
+        Paragraph::new(Span::styled(
+            format!("{}{note}", " ".repeat(GUTTER)),
+            theme::fg(Token::TextMuted),
+        )),
+        Rect::new(list.x, list.y, list.width, 1),
     );
-}
-
-fn harness_state(support: &AgentSupport) -> State {
-    if support.present {
-        State::Ready
-    } else {
-        State::Error
-    }
-}
-
-fn section_header(label: &'static str) -> Line<'static> {
-    Line::from(Span::styled(label, theme::fg_bold(Token::TextMuted)))
-}
-
-/// Lays out one `<icon> <label> ... <value>` row, right-aligning `value`
-/// within `width` — the shape every row in this popup shares. `fact_line`
-/// and `capability_line` only differ in which styles they hand in for
-/// `label`/`value`; the icon, clipping, and gap math live here once.
-fn styled_row(
-    state: State,
-    label: &str,
-    label_style: Style,
-    value: &str,
-    value_style: Style,
-    width: usize,
-) -> Line<'static> {
-    let (icon, icon_color) = icon_for(state);
-    let value = text::elide(value, width.saturating_sub(3 + label.chars().count()));
-    let gap = width
-        .saturating_sub(2 + label.chars().count() + value.chars().count())
-        .max(1);
-    Line::from(vec![
-        Span::styled(format!("{icon} "), Style::default().fg(icon_color)),
-        Span::styled(label.to_owned(), label_style),
-        Span::raw(" ".repeat(gap)),
-        Span::styled(value, value_style),
-    ])
-}
-
-/// A runtime fact row: label and value both read as plain information, only
-/// the leading icon carries state color — used for things like the active
-/// profile, never anything the user needs to act on.
-fn fact_line(state: State, label: &str, value: &str, width: usize) -> Line<'static> {
-    let plain = theme::fg(Token::TextBright);
-    styled_row(state, label, plain, value, plain, width)
-}
-
-/// A capability status row: the value color itself carries the severity —
-/// muted for the unremarkable "supported"/"limited" states, a loud danger
-/// color for "unavailable" — and an unavailable capability's own label is
-/// struck through to read as switched off.
-fn capability_line(state: State, label: &str, value: &str, width: usize) -> Line<'static> {
-    let label_style = match state {
-        State::Error => Style::default()
-            .fg(theme::color(Token::TextMuted))
-            .add_modifier(Modifier::CROSSED_OUT),
-        _ => theme::fg(Token::TextBright),
-    };
-    let value_style = match state {
-        State::Ready | State::Neutral | State::Warning => theme::fg(Token::TextMuted),
-        State::Error => Style::default()
-            .fg(theme::color(Token::StateDanger))
-            .add_modifier(Modifier::BOLD),
-    };
-    styled_row(state, label, label_style, value, value_style, width)
-}
-
-fn reason_line(support: &AgentSupport, capability: CapabilityKind, width: usize) -> Line<'static> {
-    let text = format!(
-        "{} does not expose {}",
-        support.display_name,
-        capability_label(capability).to_lowercase()
-    );
-    Line::from(Span::styled(
-        format!("  {}", text::elide(&text, width.saturating_sub(2))),
-        theme::fg(Token::TextMuted),
-    ))
-}
-
-fn icon_for(state: State) -> (String, ratatui::style::Color) {
-    let (symbol, color) = match state {
-        State::Ready => (Symbol::MarkOk, theme::color(Token::Accent)),
-        State::Neutral => (Symbol::MarkDot, theme::color(Token::TextMuted)),
-        State::Warning => (Symbol::MarkAttention, theme::color(Token::StateWarning)),
-        State::Error => (Symbol::MarkClose, theme::color(Token::StateDanger)),
-    };
-    (theme::glyph(symbol), color)
 }
 
 /// A harness capability's support level. Deliberately its own enum rather
@@ -481,24 +613,6 @@ enum CapabilityState {
     Supported,
     Limited,
     Unavailable,
-}
-
-impl CapabilityState {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Supported => "supported",
-            Self::Limited => "limited",
-            Self::Unavailable => "unavailable",
-        }
-    }
-
-    fn row_state(self) -> State {
-        match self {
-            Self::Supported => State::Ready,
-            Self::Limited => State::Warning,
-            Self::Unavailable => State::Error,
-        }
-    }
 }
 
 fn capability_state(support: &AgentSupport, kind: CapabilityKind) -> CapabilityState {
@@ -721,6 +835,14 @@ mod tests {
         PromptEntry::new(&origin, preview).unwrap()
     }
 
+    fn agent() -> DrawerAgent {
+        DrawerAgent {
+            name: "cli logs".to_owned(),
+            path: "~/dev/uze/.worktrees/efjkdg".to_owned(),
+            branch: Some("feat/cli-logs".to_owned()),
+        }
+    }
+
     fn drawn(prompts: &DrawerPrompts<'_>) -> (Vec<String>, DrawerTargets) {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
@@ -733,6 +855,7 @@ mod tests {
                     frame.area(),
                     Rect::new(90, 0, 3, 1),
                     &support,
+                    &agent(),
                     prompts,
                 ));
             })
@@ -748,8 +871,9 @@ mod tests {
         (rows, targets.unwrap())
     }
 
-    /// The drawer keeps the agent's facts and lists its prompts under
-    /// them, each one a row a click lands on.
+    /// The drawer heads with the agent's name, lays its facts out as keys
+    /// and values with no section titles, and lists the prompts under
+    /// them: a meta line, then the prompt.
     #[test]
     fn the_drawer_lists_the_prompts_under_the_agents_facts() {
         let first = entry("cli logs", Some("a"), "the newest prompt");
@@ -765,17 +889,29 @@ mod tests {
         };
         let (rows, targets) = drawn(&prompts);
         let text = rows.join("\n");
-        let row_of = |needle: &str| rows.iter().position(|row| row.contains(needle));
-        assert!(row_of("RUNTIME").is_some(), "{text}");
+        let row_of = |needle: &str| {
+            rows.iter()
+                .position(|row| row.contains(needle))
+                .unwrap_or_else(|| panic!("{needle} not drawn:\n{text}"))
+        };
+        assert!(rows[row_of("esc")].contains("cli logs"), "{text}");
+        for (key, value) in [
+            ("harness", "Claude Code"),
+            ("path", "~/dev/uze/.worktrees/efjkdg"),
+            ("branch", "feat/cli-logs"),
+            ("AGENTS.md", "native"),
+            ("profile", "default"),
+            ("caps", "skills"),
+        ] {
+            assert!(rows[row_of(key)].contains(value), "{key}: {text}");
+        }
         assert!(
-            row_of("CAPABILITIES").unwrap() < row_of("PROMPTS").unwrap(),
+            !text.contains("RUNTIME") && !text.contains("CAPABILITIES"),
             "{text}"
         );
-        assert!(
-            row_of("PROMPTS").unwrap() < row_of("the newest prompt").unwrap(),
-            "{text}"
-        );
-        assert!(row_of("the newest prompt").unwrap() < row_of("an older prompt").unwrap());
+        assert!(row_of("caps") < row_of("PROMPTS"), "{text}");
+        assert!(row_of("PROMPTS") < row_of("the newest prompt"), "{text}");
+        assert!(row_of("the newest prompt") < row_of("an older prompt"));
         assert_eq!(
             targets
                 .prompts
@@ -784,21 +920,26 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0, 1]
         );
+        let (first_rect, _) = targets.prompts[0];
+        assert_eq!(first_rect.height, 2, "a meta line and one line of prompt");
         assert_eq!(
-            targets.prompts[0].0.y as usize,
-            row_of("the newest prompt").unwrap()
+            first_rect.y as usize + 1,
+            row_of("the newest prompt"),
+            "the prompt sits under its meta line"
         );
         assert!(
-            !rows[row_of("the newest prompt").unwrap()].contains("cli logs"),
-            "one agent's prompts need no tab beside them: {text}"
+            rows[first_rect.y as usize].contains(&theme::glyph(Symbol::ChevronRight)),
+            "the selected record carries the mark on its meta line: {text}"
         );
+        assert!(rows[row_of("1/2")].contains("clear"), "{text}");
     }
 
-    /// Listing the whole space names the tab each prompt went to, since
-    /// they are no longer all the same agent's.
+    /// Listing the whole space names the tab each prompt went to on its
+    /// meta line, and a long prompt is wrapped to two lines, then elided.
     #[test]
-    fn the_space_listing_names_each_prompts_tab() {
-        let prompt = entry("harness detection", None, "submit PR");
+    fn the_space_listing_names_each_prompts_tab_and_wraps_its_prompt() {
+        let long = "word ".repeat(40);
+        let prompt = entry("harness detection", None, &long);
         let prompts = DrawerPrompts {
             entries: Some(vec![&prompt]),
             scope: PromptScope::Space,
@@ -809,8 +950,17 @@ mod tests {
             clearing: false,
         };
         let (rows, targets) = drawn(&prompts);
-        let row = rows.iter().find(|row| row.contains("submit PR")).unwrap();
-        assert!(row.contains("harness detec"), "{row}");
+        let text = rows.join("\n");
+        let (rect, _) = targets.prompts[0];
+        assert_eq!(rect.height, 3, "meta, then two lines of prompt: {text}");
+        assert!(
+            rows[rect.y as usize].contains("harness detection"),
+            "{text}"
+        );
+        assert!(
+            rows[rect.y as usize + 2].contains(&theme::glyph(Symbol::Ellipsis)),
+            "{text}"
+        );
         assert_eq!(
             targets
                 .scopes
@@ -864,11 +1014,11 @@ mod tests {
         assert!(!targets.prompts.iter().any(|(_, index)| *index == 0));
     }
 
-    /// The chip that is not in force lightens under the pointer, as every
-    /// control does; the one in force keeps its filled skin.
+    /// The scope tab that is not in force is plain text, and brightens
+    /// under the pointer as every control does.
     #[test]
-    fn a_scope_chip_lightens_under_the_pointer() {
-        let ground_of = |hovered_scope| {
+    fn a_scope_tab_lightens_under_the_pointer() {
+        let hue_of = |hovered_scope| {
             let prompts = DrawerPrompts {
                 entries: Some(Vec::new()),
                 scope: PromptScope::Agent,
@@ -881,7 +1031,7 @@ mod tests {
             let mut terminal =
                 ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
             let support = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
-            let mut chip = None;
+            let mut tab = None;
             terminal
                 .draw(|frame| {
                     let targets = render(
@@ -889,22 +1039,23 @@ mod tests {
                         frame.area(),
                         Rect::new(90, 0, 3, 1),
                         &support,
+                        &agent(),
                         &prompts,
                     );
-                    chip = targets
+                    tab = targets
                         .scopes
                         .into_iter()
                         .find(|(_, scope)| *scope == PromptScope::Space)
                         .map(|(rect, _)| rect);
                 })
                 .unwrap();
-            let rect = chip.unwrap();
-            terminal.backend().buffer()[(rect.x, rect.y)].bg
+            let rect = tab.unwrap();
+            terminal.backend().buffer()[(rect.x + 1, rect.y)].fg
         };
-        assert_eq!(ground_of(None), theme::color(Token::SurfaceRaised));
+        assert_eq!(hue_of(None), theme::color(Token::TextMuted));
         assert_eq!(
-            ground_of(Some(PromptScope::Space)),
-            theme::color(Token::SurfaceHover)
+            hue_of(Some(PromptScope::Space)),
+            theme::color(Token::TextBright)
         );
     }
 }

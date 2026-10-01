@@ -230,8 +230,18 @@ pub(super) fn render(
             },
             clearing: drawer.clearing,
         };
-        let targets =
-            crate::ui::agent_support::render(frame, frame.area(), drawer.anchor, support, &prompts);
+        let targets = crate::ui::agent_support::render(
+            frame,
+            frame.area(),
+            drawer.anchor,
+            support,
+            &crate::ui::agent_support::DrawerAgent {
+                name: drawer.name.clone(),
+                path: drawer.path.clone(),
+                branch: drawer.branch.clone(),
+            },
+            &prompts,
+        );
         // Innermost first, so a row wins over the drawer's own body.
         hits.splice(
             0..0,

@@ -952,6 +952,9 @@ impl Attach<'_> {
                 };
                 self.show_drawer_scope(scope);
             }
+            // This agent's own prompts went to the tab in front: they are
+            // read here, and there is nowhere to go.
+            Action::Activate if drawer.scope == PromptScope::Agent => {}
             Action::Activate => {
                 let selected = drawer.selected;
                 self.open_drawer_prompt(selected, viewport);
@@ -999,6 +1002,7 @@ impl Attach<'_> {
         {
             drawer.scope = scope;
             drawer.selected = 0;
+            self.model.remembered.drawer_scope = Some(scope);
         }
         self.model.dirty = true;
     }
@@ -2209,7 +2213,12 @@ impl Attach<'_> {
                 // dismisses it, and never leaks into the pane beneath.
                 match self.model.hit_at(mouse.column, mouse.row) {
                     Some(WorkspaceHit::DrawerPrompt(index)) => {
-                        self.open_drawer_prompt(index, viewport);
+                        match self.model.support_dropdown.as_mut() {
+                            Some(drawer) if drawer.scope == PromptScope::Agent => {
+                                drawer.selected = index;
+                            }
+                            _ => self.open_drawer_prompt(index, viewport),
+                        }
                     }
                     Some(WorkspaceHit::DrawerScope(scope)) => self.show_drawer_scope(scope),
                     Some(WorkspaceHit::DrawerBody) => {}

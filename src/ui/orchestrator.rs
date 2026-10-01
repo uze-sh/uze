@@ -2319,6 +2319,11 @@ struct AgentSupportDropdown {
     agent: Option<String>,
     /// The space's root: the history is kept per space, keyed on it.
     space_root: PathBuf,
+    /// The tab's label, its directory as the operator reads it, and its
+    /// branch, taken when the drawer opened.
+    name: String,
+    path: String,
+    branch: Option<String>,
     scope: PromptScope,
     /// Index into the prompts `scope` shows, newest first.
     selected: usize,
@@ -2661,23 +2666,50 @@ fn selected_agent_drawer(
 ) -> Option<AgentSupportDropdown> {
     let key = selected_agent_context(model, identities)?;
     let space = model.session.as_ref()?.selected_space();
-    let agent = context_agent(model, identities)
-        .and_then(|tab| space.tabs.iter().find(|candidate| candidate.id == tab))
-        .and_then(launched_agent_id)
-        .map(str::to_owned);
+    let tab = context_agent(model, identities)
+        .and_then(|tab| space.tabs.iter().find(|candidate| candidate.id == tab))?;
+    let agent = launched_agent_id(tab).map(str::to_owned);
+    let branch = model
+        .tab_task(tab.id)
+        .map(|task| task.branch.clone())
+        .or_else(|| {
+            model
+                .remembered
+                .branches
+                .get(&evaluation_key(&key.1))
+                .cloned()
+        });
+    // The tab the operator last chose, when this agent can show it.
+    let scope = match model.remembered.drawer_scope {
+        Some(PromptScope::Agent) | None if agent.is_some() => PromptScope::Agent,
+        _ => PromptScope::Space,
+    };
     Some(AgentSupportDropdown {
-        key,
         anchor,
-        scope: if agent.is_some() {
-            PromptScope::Agent
-        } else {
-            PromptScope::Space
-        },
+        scope,
         agent,
         space_root: space.root.clone(),
+        name: tab.label.clone(),
+        path: home_relative(&key.1),
+        branch,
+        key,
         selected: 0,
         clearing: false,
     })
+}
+
+/// `path` with the home directory written `~`, the way a shell prompt
+/// shows it.
+fn home_relative(path: &Path) -> String {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    match home
+        .as_deref()
+        .and_then(|home| path.strip_prefix(home).ok())
+    {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
 }
 
 /// Every live agent pane as `(integration, directory)` — the same pair
@@ -2873,6 +2905,8 @@ struct Remembered {
     agent_support_pending: Option<SupportKey>,
     /// The last prompt history the drawer read, tagged with its space.
     drawer_prompts: Option<PromptHistoryResolution>,
+    /// Whose prompts the drawer listed last, so it opens on them again.
+    drawer_scope: Option<PromptScope>,
     /// Cached Git summary for the selected agent/shell tab's live cwd.
     /// Stored client-side because it is display chrome, not terminal session
     /// state that belongs in `uze-terminal`.

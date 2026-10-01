@@ -38,22 +38,24 @@ mod workspace_tests {
     use super::WorkspaceHit;
     use super::{
         AGENT_BEATS, AGENT_ECHO_GRACE, AGENT_PASTE_GRACE, AGENT_QUIET_AFTER, AgentGroup,
-        AgentIdentity, AgentTabStatus, AgentView, Attach, CHIME_COOLDOWN, CHIME_SETTLE,
-        CommitDetailPopup, CommitDetailResolution, CompletionBehavior, DeliveryResolution,
-        DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution, PendingDrop,
-        PlacementResolution, RootPicker, ScrollDirection, SpecResolution, SpecSummaryState,
-        TabDragGroup, UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView,
-        WorkspaceModel, adopt_agent_labels, agent_activity_frame, agent_identity_for_tab,
-        answered_or, blank_pane, can_close_tab_from_menu, checkout_lost, encode_mouse,
-        evaluation_key, forward_paste, forward_scroll, next_agent_label, next_shell_label,
-        open_architect, open_code, open_commit_detail, open_spec, pane_relative, pending_tab_drop,
+        AgentIdentity, AgentSupportDropdown, AgentTabStatus, AgentView, Attach, CHIME_COOLDOWN,
+        CHIME_SETTLE, CommitDetailPopup, CommitDetailResolution, CompletionBehavior,
+        DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution,
+        PendingDrop, PlacementResolution, PromptScope, RootPicker, ScrollDirection, SpecResolution,
+        SpecSummaryState, TabDragGroup, UpstreamSync, Viewport, WorkOverlay, WorkResolution,
+        WorkStateView, WorkspaceModel, adopt_agent_labels, agent_activity_frame,
+        agent_identity_for_tab, answered_or, blank_pane, can_close_tab_from_menu, checkout_lost,
+        encode_mouse, evaluation_key, forward_paste, forward_scroll, next_agent_label,
+        next_shell_label, open_architect, open_code, open_commit_detail, open_spec, pane_relative,
+        pending_tab_drop,
         render::{
             self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
         },
-        scroll_timeline, scroll_tree, selected_pane_cwd, space_context_agent, space_cwd,
-        space_own_tab, strip_tabs, sync_slot_occupancy, tab_drag_group, tab_drag_group_members,
-        tab_needs_replacement_shell, toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
+        scroll_timeline, scroll_tree, selected_agent_drawer, selected_pane_cwd,
+        space_context_agent, space_cwd, space_own_tab, strip_tabs, sync_slot_occupancy,
+        tab_drag_group, tab_drag_group_members, tab_needs_replacement_shell,
+        toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
         workspace_has_active_agent_operation,
     };
     use crossterm::event::{MouseButton, MouseEventKind};
@@ -4355,6 +4357,40 @@ mod workspace_tests {
         tab.pane.process = "agent".into();
         tab.pane.cwd = cwd.into();
         model_of(session)
+    }
+
+    fn drawer_over(model: &WorkspaceModel) -> AgentSupportDropdown {
+        selected_agent_drawer(model, &identities_fixture(), Rect::default())
+            .expect("an agent is in front")
+    }
+
+    /// The drawer is named after the agent and opens on the prompts the
+    /// operator chose last time, rather than starting over on every open.
+    #[test]
+    fn the_agent_drawer_opens_on_the_scope_last_chosen() {
+        let mut model = agent_session_in("/repo/.worktrees/a");
+        model.session.as_mut().unwrap().workspace.spaces[0].tabs[0].env = vec![(
+            uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
+            "a1".to_owned(),
+        )];
+        let drawer = drawer_over(&model);
+        assert_eq!(drawer.name, "Agent");
+        assert_eq!(drawer.agent.as_deref(), Some("a1"));
+        assert_eq!(drawer.scope, PromptScope::Agent);
+
+        model.remembered.drawer_scope = Some(PromptScope::Space);
+        assert_eq!(drawer_over(&model).scope, PromptScope::Space);
+    }
+
+    /// An agent nothing identifies has no prompts of its own to list, so
+    /// its drawer opens on the space's whatever was chosen last.
+    #[test]
+    fn an_agent_started_by_hand_opens_its_drawer_on_the_space() {
+        let mut model = agent_session_in("/repo");
+        model.remembered.drawer_scope = Some(PromptScope::Agent);
+        let drawer = drawer_over(&model);
+        assert_eq!(drawer.agent, None);
+        assert_eq!(drawer.scope, PromptScope::Space);
     }
 
     /// Two agents in one space, the first of them selected: `Agent` in
@@ -11167,6 +11203,9 @@ mod drawer_tests {
             anchor: Rect::default(),
             agent: agent.map(str::to_owned),
             space_root: PathBuf::from("/repo"),
+            name: "agent".to_owned(),
+            path: "/repo".to_owned(),
+            branch: None,
             scope,
             selected: 0,
             clearing: false,
