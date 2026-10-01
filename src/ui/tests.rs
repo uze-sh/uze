@@ -5505,3 +5505,166 @@ fn the_footer_says_the_machines_health_and_opens_what_needs_attention() {
     assert!(!rows.last().unwrap().contains("healthy"));
     assert!(!hits.iter().any(|(_, hit)| *hit == Hit::HealthStatus));
 }
+
+/// A marketplace in the rail is its name and how much of it is installed,
+/// over the one thing worth knowing about it: what asks for action, that
+/// it ships with uze, or how long ago it was last checked.
+#[test]
+fn a_marketplace_in_the_rail_is_its_name_over_what_needs_saying() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .unwrap();
+    let rows = buffer_rows(&terminal);
+    let text = rows.join("\n");
+    let row_of = |needle: &str| {
+        rows.iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} not drawn:\n{text}"))
+    };
+    let heading = row_of("MARKETPLACES");
+    assert!(
+        rows[heading].contains("PLUGIN"),
+        "the rail's heading shares the plugin table's heading row: {text}"
+    );
+    assert!(
+        rows[heading + 2].contains("all") && rows[heading + 2].contains("flow"),
+        "a row of air under both headings, then the first entry of each: {text}"
+    );
+    let uze = row_of("│  uze ");
+    assert!(
+        rows[uze].contains("1/1"),
+        "the count beside the name: {text}"
+    );
+    assert!(rows[uze + 1].contains("built in"), "{text}");
+    // The rail sits on the drawers' ground, not beside a rule.
+    let rail = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
+        .map(|(rect, _)| *rect)
+        .expect("the marketplace is a target");
+    assert_eq!(
+        terminal.backend().buffer()[(rail.x, rail.bottom())].bg,
+        theme::color(Token::SurfaceRecessed),
+        "{text}"
+    );
+    // Adding one is a button on the header's row, beside the count it
+    // would change, not an entry at the foot of the list.
+    assert!(!text.contains("+ add"), "{text}");
+    let button = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::AddMarketplace))
+        .map(|(rect, _)| *rect)
+        .expect("the button is a target");
+    let header = &rows[button.y as usize];
+    assert!(
+        header.contains("Add marketplace") && header.contains("marketplaces ·"),
+        "{header}"
+    );
+    assert!(
+        rows[row_of("│  local ") + 1].contains("1 update"),
+        "what asks for action under the name:\n{text}"
+    );
+    let market = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
+        .map(|(rect, _)| *rect)
+        .expect("the marketplace is a target");
+    assert_eq!(market.height, 2, "either of its rows picks it");
+}
+
+/// The whole row answers, not the chevron alone: a click puts the keyboard
+/// on a plugin, and a click on the plugin it is already on opens or folds
+/// its resources.
+#[test]
+fn a_click_on_the_selected_plugin_row_opens_and_folds_it() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Sidebar,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    let click_row = |model: &mut TuiModel, index: usize| {
+        let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .unwrap();
+        let rect = hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::MarketplaceRow(index))
+            .map(|(rect, _)| *rect)
+            .expect("the row is a target");
+        model.hits = hits;
+        // Past the chevron, on the name.
+        model.click(rect.x + 6, rect.y);
+    };
+    let expanded = |model: &TuiModel| {
+        let plugin = model.selected_marketplace_plugin().expect("a plugin");
+        model
+            .expanded_plugins
+            .contains(&model.marketplace_plugin_id(&plugin))
+    };
+
+    click_row(&mut model, 1);
+    assert_eq!(model.remembered.plugin_screen.selected, 1);
+    assert!(
+        !expanded(&model),
+        "the first click selects and nothing more"
+    );
+    click_row(&mut model, 1);
+    assert!(expanded(&model), "a click on the selected row opens it");
+    click_row(&mut model, 1);
+    assert!(!expanded(&model), "and another folds it");
+}
+
+/// The marketplace the plugins on the right belong to keeps its ground
+/// while the keyboard is down among them, so the reader does not lose which
+/// one they are looking into — and the ground, across the whole rail, is
+/// the only mark: no bar beside it.
+#[test]
+fn the_selected_marketplace_keeps_its_ground_while_a_plugin_is_selected() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    model.select_plugin_market(Some("local".to_owned()));
+    model.plugin_pane = super::model::PluginPane::Plugins;
+    let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .unwrap();
+    let rows = buffer_rows(&terminal);
+    let rail = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
+        .map(|(rect, _)| *rect)
+        .expect("the marketplace is a target");
+    let buffer = terminal.backend().buffer();
+    for x in [rail.x, rail.right() - 1] {
+        assert_eq!(
+            buffer[(x, rail.y)].bg,
+            theme::color(Token::SurfaceSelected),
+            "the selection tint spans the rail, edge to edge, at column {x}"
+        );
+    }
+    let bar = theme::glyph(theme::Symbol::TreeColumnDivider);
+    assert!(
+        !rows[rail.y as usize].contains(&format!("{bar} local")),
+        "no bar beside it: {:?}",
+        rows[rail.y as usize]
+    );
+}

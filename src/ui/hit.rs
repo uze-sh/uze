@@ -149,10 +149,20 @@ impl TuiModel {
                 self.focus = Focus::Content;
                 entering
             }
+            // The first click puts the keyboard on the plugin; a click on
+            // the plugin it is already on opens or folds its resources, so
+            // the whole row answers rather than the chevron alone.
             Hit::MarketplaceRow(index) => {
+                let again = self.plugin_pane == PluginPane::Plugins
+                    && self.remembered.plugin_screen.selected == index
+                    && self.selected_resource.is_none();
                 self.select_plugin_row(index, None);
                 self.plugin_pane = PluginPane::Plugins;
                 self.focus = Focus::Content;
+                if again && let Some(plugin) = self.selected_marketplace_plugin() {
+                    let id = self.marketplace_plugin_id(&plugin);
+                    self.toggle_plugin_expanded(&id);
+                }
                 self.marketplace_inspect_intent()
             }
             Hit::TogglePluginResources(index) => {
