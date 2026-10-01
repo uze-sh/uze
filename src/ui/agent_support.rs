@@ -3,13 +3,13 @@
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::{Clear, Padding, Paragraph},
 };
 use uze_application::{CapabilityKind, HarnessCapabilities};
 
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
-    Chip, ChipState, Edge, Rule, hint,
+    Chip, ChipState, Edge, Rule, Surface, hint,
     row::{self, RowState},
     text,
 };
@@ -145,11 +145,13 @@ const DRAWER_SCOPES: [uze_keys::Scope; 3] = [
     uze_keys::Scope::AgentDrawer,
 ];
 
-/// Columns the drawer takes, and the fewest it is drawn in.
-const DRAWER_WIDTH: u16 = 52;
+/// Columns the drawer takes, its border included, and the fewest it is
+/// drawn in.
+const DRAWER_WIDTH: u16 = 56;
 const DRAWER_MIN_WIDTH: u16 = 44;
-/// Columns between the drawer's edge and its content.
-const DRAWER_INSET: u16 = 2;
+/// Columns between the drawer's border and its content: the selection
+/// mark, and a column of air on either side of it.
+const DRAWER_INSET: u16 = 3;
 /// The context block's keys, and the air after them.
 const KEY_WIDTH: usize = 10;
 const KEY_GAP: usize = 2;
@@ -170,32 +172,31 @@ const RECORD_GAP: usize = 1;
 /// close. Only the prompts scroll; the facts above them stay put.
 pub(super) fn render(
     frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    anchor: Rect,
+    pane: Rect,
     support: &AgentSupport,
     agent: &DrawerAgent,
     prompts: &DrawerPrompts<'_>,
 ) -> DrawerTargets {
-    let width = DRAWER_WIDTH.max(DRAWER_MIN_WIDTH).min(area.width).max(1);
-    let top = (anchor.y + anchor.height).min(area.bottom());
+    let width = DRAWER_WIDTH.max(DRAWER_MIN_WIDTH).min(pane.width).max(1);
+    // Over the pane and nothing else: the tab strip above it and the
+    // frame's last row stay the workspace's.
     let drawer = Rect::new(
-        area.right().saturating_sub(width),
-        top,
+        pane.right().saturating_sub(width),
+        pane.y,
         width,
-        area.bottom().saturating_sub(top),
+        pane.height,
     );
     frame.render_widget(Clear, drawer);
-    // The management screens' drawers' own ground and edge, so a drawer
-    // reads as one kind of thing on either surface.
-    let ground = Rule::new(Edge::Left)
-        .tone(Token::SurfaceRecessed)
-        .ground(Token::SurfaceRecessed)
+    // The floating surface's hairline is what sets the drawer apart from
+    // the pane under it; a ground alone is too close to the backdrop to.
+    let ground = Surface::floating()
+        .padding(Padding::ZERO)
         .render(frame, drawer);
     let inner = Rect::new(
         ground.x + DRAWER_INSET,
-        drawer.y + 1,
+        ground.y + 1,
         ground.width.saturating_sub(2 * DRAWER_INSET),
-        drawer.height.saturating_sub(1),
+        ground.height.saturating_sub(1),
     );
     let mut targets = DrawerTargets {
         body: drawer,
@@ -206,7 +207,7 @@ pub(super) fn render(
         return targets;
     }
 
-    let mut lines = vec![title_line(&agent.name, inner.width), Line::default()];
+    let mut lines = vec![title_line("agent context", inner.width), Line::default()];
     lines.extend(context_lines(support, agent, inner.width as usize));
     lines.push(Line::default());
     let heading_y = inner.y + lines.len() as u16;
@@ -345,6 +346,7 @@ fn context_lines(support: &AgentSupport, agent: &DrawerAgent, width: usize) -> V
     };
     let branch = agent.branch.as_deref().map_or_else(|| muted("none"), plain);
     let mut lines = vec![
+        context_line("agent", plain(&agent.name)),
         context_line("harness", harness),
         context_line("path", plain(&agent.path)),
         context_line("branch", branch),
@@ -856,8 +858,7 @@ mod tests {
             .draw(|frame| {
                 targets = Some(render(
                     frame,
-                    frame.area(),
-                    Rect::new(90, 0, 3, 1),
+                    Rect::new(0, 1, 100, 39),
                     &support,
                     &agent(),
                     prompts,
@@ -875,7 +876,7 @@ mod tests {
         (rows, targets.unwrap())
     }
 
-    /// The drawer heads with the agent's name, lays its facts out as keys
+    /// The drawer heads as the agent's context, lays its facts out as keys
     /// and values with no section titles, and lists the prompts under
     /// them: a meta line, then the prompt.
     #[test]
@@ -898,8 +899,9 @@ mod tests {
                 .position(|row| row.contains(needle))
                 .unwrap_or_else(|| panic!("{needle} not drawn:\n{text}"))
         };
-        assert!(rows[row_of("esc")].contains("cli logs"), "{text}");
+        assert!(rows[row_of("esc")].contains("agent context"), "{text}");
         for (key, value) in [
+            ("agent", "cli logs"),
             ("harness", "Claude Code"),
             ("path", "~/dev/uze/.worktrees/efjkdg"),
             ("branch", "feat/cli-logs"),
@@ -907,7 +909,8 @@ mod tests {
             ("profile", "default"),
             ("caps", "skills"),
         ] {
-            assert!(rows[row_of(key)].contains(value), "{key}: {text}");
+            let keyed = format!("{key:<KEY_WIDTH$}");
+            assert!(rows[row_of(&keyed)].contains(value), "{key}: {text}");
         }
         assert!(
             !text.contains("RUNTIME") && !text.contains("CAPABILITIES"),
@@ -1053,8 +1056,7 @@ mod tests {
                 .draw(|frame| {
                     let targets = render(
                         frame,
-                        frame.area(),
-                        Rect::new(90, 0, 3, 1),
+                        Rect::new(0, 1, 100, 39),
                         &support,
                         &agent(),
                         &prompts,

@@ -4360,8 +4360,7 @@ mod workspace_tests {
     }
 
     fn drawer_over(model: &WorkspaceModel) -> AgentSupportDropdown {
-        selected_agent_drawer(model, &identities_fixture(), Rect::default())
-            .expect("an agent is in front")
+        selected_agent_drawer(model, &identities_fixture()).expect("an agent is in front")
     }
 
     /// The drawer is named after the agent and opens on the prompts the
@@ -11200,7 +11199,6 @@ mod drawer_tests {
     fn drawer(agent: Option<&str>, scope: PromptScope) -> AgentSupportDropdown {
         AgentSupportDropdown {
             key: ("claude-code".to_owned(), PathBuf::from("/repo")),
-            anchor: Rect::default(),
             agent: agent.map(str::to_owned),
             space_root: PathBuf::from("/repo"),
             name: "agent".to_owned(),

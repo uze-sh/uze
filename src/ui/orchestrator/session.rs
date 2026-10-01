@@ -2934,6 +2934,16 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
+            // The drawer's prompts are a list over the pane: the wheel walks
+            // them the way the arrows do, and nothing behind it scrolls.
+            _ if self.model.support_dropdown.is_some() => {
+                let action = if mouse.kind == MouseEventKind::ScrollUp {
+                    Action::SelectPrevious
+                } else {
+                    Action::SelectNext
+                };
+                self.drawer_action(action, viewport);
+            }
             // The index is nothing but a long list, so the wheel walks it
             // the way the arrows do. It sits ahead of every surface below
             // because it is drawn over all of them.
@@ -3386,9 +3396,8 @@ impl Attach<'_> {
             WorkspaceHit::DrawerPrompt(_)
             | WorkspaceHit::DrawerScope(_)
             | WorkspaceHit::DrawerBody => {}
-            WorkspaceHit::OpenAgentSupport(anchor) => {
-                self.model.support_dropdown =
-                    selected_agent_drawer(&self.model, &self.identities, anchor);
+            WorkspaceHit::OpenAgentSupport(_) => {
+                self.model.support_dropdown = selected_agent_drawer(&self.model, &self.identities);
                 // Opening always re-reads, even when an answer
                 // for this key is already held: `AGENTS.md` and
                 // `.agents/` can change under an open workspace,

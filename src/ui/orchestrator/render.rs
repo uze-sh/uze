@@ -232,8 +232,7 @@ pub(super) fn render(
         };
         let targets = crate::ui::agent_support::render(
             frame,
-            frame.area(),
-            drawer.anchor,
+            layout.pane,
             support,
             &crate::ui::agent_support::DrawerAgent {
                 name: drawer.name.clone(),

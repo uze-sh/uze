@@ -2312,7 +2312,6 @@ struct ResumeTarget {
 /// unrenderable here.
 struct AgentSupportDropdown {
     key: SupportKey,
-    anchor: Rect,
     /// The agent UZE launched in the tab, which is what "this agent's
     /// prompts" is matched on. `None` for a harness started by hand, whose
     /// drawer can only offer the space's.
@@ -2655,14 +2654,13 @@ fn selected_agent_context(
     Some((identity.integration.to_owned(), tab.pane.cwd.clone()))
 }
 
-/// The drawer for the agent in front, opened at `anchor`: the same agent
+/// The drawer for the agent in front: the same agent
 /// [`selected_agent_context`] resolves, with what its prompts are kept
 /// under. Opens on the agent's own prompts when UZE launched it, and on the
 /// space's when nothing identifies it.
 fn selected_agent_drawer(
     model: &WorkspaceModel,
     identities: &[AgentIdentity],
-    anchor: Rect,
 ) -> Option<AgentSupportDropdown> {
     let key = selected_agent_context(model, identities)?;
     let space = model.session.as_ref()?.selected_space();
@@ -2685,7 +2683,6 @@ fn selected_agent_drawer(
         _ => PromptScope::Space,
     };
     Some(AgentSupportDropdown {
-        anchor,
         scope,
         agent,
         space_root: space.root.clone(),
