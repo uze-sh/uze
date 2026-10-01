@@ -128,6 +128,11 @@ impl Attach<'_> {
             }
         )
         .entered();
+        if let Event::Mouse(mouse) = event
+            && let Some(flow) = self.toast_gesture(mouse, viewport)
+        {
+            return flow;
+        }
         // The modal seals the client: while it is open every key and every
         // click is its own, resolved against its own scopes and its own
         // hit list, and the workspace behind it answers nothing. One
@@ -146,6 +151,40 @@ impl Attach<'_> {
             Event::Mouse(mouse) => self.mouse(mouse, viewport),
             _ => Flow::Continue,
         }
+    }
+
+    /// A gesture on a toast, asked before anything that is open: a toast
+    /// is drawn over every surface, so whatever surface it covers — a
+    /// modal, a dropdown, an extension resolving clicks its own way — must
+    /// not be the one that answers.
+    ///
+    /// The whole gesture, not only the press. A release handed on to the
+    /// surface below finished whatever that surface was holding: a pane's
+    /// selection, which stays after it is copied, was copied again by the
+    /// release of the click that put its "copied" toast away — raising the
+    /// toast that click had just dismissed.
+    fn toast_gesture(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Option<Flow> {
+        match mouse.kind {
+            MouseEventKind::Drag(MouseButton::Left) if self.model.pressing_toast => {
+                return Some(Flow::Continue);
+            }
+            MouseEventKind::Up(MouseButton::Left)
+                if std::mem::take(&mut self.model.pressing_toast) =>
+            {
+                return Some(Flow::Continue);
+            }
+            MouseEventKind::Down(MouseButton::Left) => {}
+            _ => return None,
+        }
+        let (rect, hit) = self.model.hit_rect_at(mouse.column, mouse.row)?;
+        if !matches!(
+            hit,
+            WorkspaceHit::DismissToast(_) | WorkspaceHit::ToastAction(_)
+        ) {
+            return None;
+        }
+        self.model.pressing_toast = true;
+        Some(self.click(hit, rect, mouse, viewport))
     }
 
     // --- The management modal --------------------------------------------

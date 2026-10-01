@@ -146,10 +146,6 @@ pub(super) fn render(
         render_pane(frame, layout.pane, model);
     }
     let question = extension.and_then(|drawn| drawn.question);
-    // Over the pane, under the modals: an outcome is worth covering some
-    // output for, and worth nothing at all if it draws over the dialog the
-    // reader is answering.
-    render_toasts(frame, layout.pane, model, hits);
     // Drawn last so it sits on top of the pane — same ordering the
     // management modal's dialogs use in its own `render`. Anchored to
     // `picker.anchor` (the "✦" button's own rect) rather than centered on
@@ -251,6 +247,13 @@ pub(super) fn render(
             ],
         );
     }
+    // Over everything, the management modal included. Drawn beneath the
+    // popups, a toast was covered by the very dropdowns that hang off the
+    // strip above its corner, and one raised while a dialog was open sat
+    // dimmed under the scrim with nothing able to reach its `✕`. It is
+    // narrow and leaves on its own, so the corner it takes from a dialog
+    // costs less than a message nobody can read or put away.
+    render_toasts(frame, layout.pane, model, hits);
 }
 
 /// The open extension, drawn where the pane is — a third kind of thing
@@ -3528,7 +3531,7 @@ fn render_toasts(
         targets.push((placed.close, WorkspaceHit::DismissToast(index)));
         targets.push((placed.box_rect, WorkspaceHit::DismissToast(index)));
     }
-    // Prepended: the pane underneath answers a click anywhere, so a toast
-    // asked after it would never be the answer.
+    // Prepended: everything underneath answers a click somewhere, so a
+    // toast asked after it would never be the answer.
     hits.splice(0..0, targets);
 }

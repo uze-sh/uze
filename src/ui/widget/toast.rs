@@ -30,7 +30,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Clear, Paragraph},
 };
 use uze_theme::Token;
 
@@ -211,7 +211,10 @@ impl Toast {
         if area.width == 0 || area.height < ROWS {
             return nothing;
         }
-        let ground = theme::color(Token::SurfaceRaised);
+        // The plate the strip's `+` stands on, a step above the switches
+        // beside it: a toast sits right under them, and on their own plate
+        // it read as one more of them rather than something that arrived.
+        let ground = theme::color(Token::SurfaceRaisedBright);
         let on = |style: Style| style.bg(ground);
         let pad = |columns: u16| {
             Span::styled(
@@ -220,7 +223,11 @@ impl Toast {
             )
         };
 
-        super::fill(frame, area, Token::SurfaceRaised);
+        // Cleared first, like every other floating thing: a ground and an
+        // ink set over a cell keep whatever modifier was already on it, so
+        // a selection drawn reversed underneath showed through the box.
+        frame.render_widget(Clear, area);
+        super::fill(frame, area, Token::SurfaceRaisedBright);
         let head = Rect::new(area.x, area.y, area.width, 1);
         let foot = Rect::new(area.x, area.y + 1, area.width, 1);
 

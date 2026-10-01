@@ -8305,6 +8305,47 @@ mod workspace_tests {
         driven.pump();
     }
 
+    /// Putting the "copied" toast away copies nothing again.
+    ///
+    /// The pane's selection stays drawn after its copy, and the release of
+    /// the click on the toast's `✕` used to reach it — copying it once more
+    /// and raising the toast that click had just dismissed, on every click.
+    #[test]
+    fn dismissing_the_copied_toast_does_not_copy_again() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-toast-recopy"));
+        let mut model = model_of(session("/tmp"));
+        pane_showing(&mut model, "hello world", false);
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        drag_across_the_first_word(&mut driven, crossterm::event::KeyModifiers::empty());
+        copy_answered(&mut driven, "hello");
+        assert_eq!(driven.attach.model.toast_stack().len(), 1, "it said so");
+        let _ = driven.sent();
+
+        driven.frame();
+        let close = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find(|(_, hit)| matches!(hit, WorkspaceHit::DismissToast(_)))
+            .map(|(rect, _)| *rect)
+            .expect("the toast registered a target");
+        driven.press(close.x, close.y);
+        driven.mouse(close.x, close.y, MouseEventKind::Up(MouseButton::Left));
+
+        assert!(
+            driven.attach.model.toast_stack().is_empty(),
+            "the toast went"
+        );
+        assert!(
+            !driven
+                .sent()
+                .iter()
+                .any(|request| matches!(request, ClientRequest::CopySelection { .. })),
+            "and the selection under it was not copied again"
+        );
+    }
+
     /// The code surface answers the same gesture a pane does: press on a
     /// file's text, drag, let go, and what was passed over is on the
     /// clipboard.
@@ -10628,6 +10669,83 @@ mod workspace_tests {
              between the two, and a second one reads as the message \
              floating rather than answering what is above it"
         );
+    }
+
+    /// The first target a drawn toast registered: its `✕`, ahead of the
+    /// box behind it.
+    fn toast_close(driven: &Driven<'_>) -> Rect {
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find(|(_, hit)| matches!(hit, WorkspaceHit::DismissToast(_)))
+            .map(|(rect, _)| *rect)
+            .expect("the toast registered a target")
+    }
+
+    /// A toast's `✕` puts it away over an open extension.
+    ///
+    /// The surface resolves presses in the pane its own way, against its
+    /// own hits, so a press on a toast drawn over it reached the surface
+    /// and the message stayed.
+    #[test]
+    fn a_toast_over_an_open_extension_answers_its_own_close() {
+        use crate::ui::widget::ToastKind;
+
+        let home = UzeHome::at(uze_testkit::temp::scratch(
+            "orchestrator-toast-over-extension",
+        ));
+        let mut model = agent_with_task(WorkStateView::Ready, 3);
+        model.code = Some(uze_extensions::code::CodeView::opening(
+            PathBuf::from("/w"),
+            "/w".to_owned(),
+            uze_extensions::code::ContentMode::Contents,
+        ));
+        model.raise_toast(ToastKind::Done, "synced", "to main", None);
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let close = toast_close(&driven);
+
+        driven.press(close.x, close.y);
+
+        assert!(
+            driven.attach.model.toast_stack().is_empty(),
+            "the toast went"
+        );
+        assert!(driven.attach.model.code.is_some(), "and the surface stayed");
+    }
+
+    /// A toast raised while the management modal is open is drawn over
+    /// it and put away from there, leaving the modal open. Beneath the
+    /// modal's scrim it could be neither read nor reached.
+    #[test]
+    fn a_toast_over_the_management_modal_is_drawn_and_answers_there() {
+        use crate::ui::widget::ToastKind;
+
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-toast-over-manage"));
+        let mut driven =
+            driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+        driven.press_key(key_event(manage_chord()));
+        driven
+            .attach
+            .model
+            .raise_toast(ToastKind::Done, "installed", "the plugin", None);
+        driven.frame();
+        let close = toast_close(&driven);
+        assert_eq!(
+            driven.attach.model.hit_at(close.x, close.y),
+            Some(WorkspaceHit::DismissToast(0)),
+            "nothing the modal registered stands over the toast"
+        );
+
+        driven.press(close.x, close.y);
+
+        assert!(
+            driven.attach.model.toast_stack().is_empty(),
+            "the toast went"
+        );
+        assert!(driven.attach.model.manage.is_some(), "and the modal stayed");
     }
 }
 
