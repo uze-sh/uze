@@ -343,17 +343,58 @@ fn context_lines(support: &AgentSupport, agent: &DrawerAgent, width: usize) -> V
             "AGENTS.md",
             delivery_value(support.instructions, support.instructions_label),
         ),
-        context_line(
+    ];
+    // One key for the directory, and what each of its two halves does:
+    // `skills` and `agents` on keys of their own read as the harness's
+    // capabilities, which `caps` already lists under the same words.
+    let directory = [
+        directory_item(
             "skills",
-            delivery_value(support.project_skills, support.project_skills_label),
+            support.project_skills,
+            support.project_skills_label,
         ),
-        context_line(
+        directory_item(
             "agents",
-            delivery_value(support.project_agents, support.project_agents_label),
+            support.project_agents,
+            support.project_agents_label,
         ),
     ];
+    lines.extend(marked_lines(".agents", directory.into(), room));
     lines.extend(caps_lines(support, room));
     lines
+}
+
+/// One half of `.agents/`: a mark for whether it reaches the agent, its
+/// name, and the mechanism or the reason in parentheses. A half the
+/// project does not carry is the muted dot and nothing more.
+fn directory_item(name: &str, state: State, label: &'static str) -> Vec<Span<'static>> {
+    let (symbol, mark, note) = match state {
+        State::Ready => (Symbol::MarkOk, Token::StateSuccess, Token::TextMuted),
+        State::Neutral => {
+            return vec![
+                Span::styled(
+                    format!("{} ", theme::glyph(Symbol::MarkDot)),
+                    theme::fg(Token::TextMuted),
+                ),
+                Span::styled(name.to_owned(), theme::fg(Token::TextMuted)),
+            ];
+        }
+        State::Warning => (
+            Symbol::MarkAttention,
+            Token::StateWarning,
+            Token::StateWarning,
+        ),
+        State::Error => (Symbol::MarkClose, Token::StateDanger, Token::StateDanger),
+    };
+    // `loaded (shim)` is said `(shim)` here: the mark already says loaded.
+    let reason = label
+        .split_once(" (")
+        .map_or(label, |(_, mechanism)| mechanism.trim_end_matches(')'));
+    vec![
+        Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(mark)),
+        Span::styled(name.to_owned(), theme::fg(Token::TextPrimary)),
+        Span::styled(format!(" ({reason})"), theme::fg(note)),
+    ]
 }
 
 fn context_line(key: &str, value: Vec<Span<'static>>) -> Line<'static> {
@@ -410,6 +451,12 @@ fn caps_lines(support: &AgentSupport, room: usize) -> Vec<Line<'static>> {
         ]
     })
     .collect();
+    marked_lines("caps", items, room)
+}
+
+/// `items` after `key`, two columns apart, wrapped onto further lines
+/// under the same column when they do not fit in `room`.
+fn marked_lines(key: &str, items: Vec<Vec<Span<'static>>>, room: usize) -> Vec<Line<'static>> {
     let mut rows: Vec<Vec<Span<'static>>> = vec![Vec::new()];
     let mut used = 0;
     for item in items {
@@ -429,7 +476,7 @@ fn caps_lines(support: &AgentSupport, room: usize) -> Vec<Line<'static>> {
     }
     rows.into_iter()
         .enumerate()
-        .map(|(index, spans)| context_line(if index == 0 { "caps" } else { "" }, spans))
+        .map(|(index, spans)| context_line(if index == 0 { key } else { "" }, spans))
         .collect()
 }
 
@@ -1050,6 +1097,45 @@ mod tests {
         assert_eq!(
             hue_of(Some(PromptScope::Space)),
             theme::color(Token::TextBright)
+        );
+    }
+
+    /// `.agents/` is one key: each half says on its own line whether it
+    /// reaches the agent, so a project carrying only `skills/` reads as
+    /// that rather than as two unrelated words beside `caps`.
+    #[test]
+    fn the_agents_directory_is_one_key_with_each_half_marked() {
+        let context = AgentContextStatus {
+            integration: "claude-code".to_owned(),
+            display_name: "Claude Code".to_owned(),
+            present: true,
+            root: std::path::PathBuf::from("/project"),
+            instructions: ResourceDelivery::Projected,
+            project_skills: ResourceDelivery::Projected,
+            project_agents: ResourceDelivery::AbsentFromProject,
+        };
+        let support = AgentSupport::resolve(health(true), &context);
+        let lines = context_lines(&support, &agent(), 46);
+        let text: Vec<String> = lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect();
+        let row = text
+            .iter()
+            .find(|row| row.starts_with(".agents"))
+            .unwrap_or_else(|| panic!("no .agents row: {text:#?}"));
+        assert!(row.contains("skills (shim)"), "{row}");
+        assert!(row.contains("agents") && !row.contains("agents ("), "{row}");
+        assert!(
+            !text
+                .iter()
+                .any(|row| row.starts_with("skills") || row.starts_with("agents ")),
+            "no key of its own for either half: {text:#?}"
         );
     }
 }
