@@ -157,6 +157,8 @@ const KEY_GAP: usize = 2;
 const GUTTER: usize = 2;
 /// A prompt is wrapped to this many lines, then elided.
 const PROMPT_LINES: usize = 2;
+/// Blank rows between two records, so each reads as one thing.
+const RECORD_GAP: usize = 1;
 
 /// Draws the agent drawer down the right-hand side, from the control that
 /// opened it to the bottom of the frame: the agent's name, what it runs on
@@ -252,10 +254,13 @@ pub(super) fn render(
     }
 
     // A selection bleeds to the drawer's edges, past the inset the text
-    // keeps: the block it marks is the record, not the words in it.
+    // keeps: the block it marks is the record, not the words in it. The
+    // selection mark sits in that inset, so a record's words start in the
+    // column the keys above them do.
     let bleed = Rect::new(ground.x, list.y, ground.width, list.height);
+    let lead = usize::from(list.x - bleed.x).saturating_sub(GUTTER);
     let clock = PromptClock::now();
-    let text_width = (list.width as usize).saturating_sub(GUTTER);
+    let text_width = list.width as usize;
     let blocks: Vec<Vec<Line<'static>>> = entries
         .iter()
         .enumerate()
@@ -287,7 +292,7 @@ pub(super) fn render(
             .iter()
             .cloned()
             .map(|line| {
-                let mut spans = vec![Span::raw(" ".repeat(usize::from(list.x - bleed.x)))];
+                let mut spans = vec![Span::raw(" ".repeat(lead))];
                 spans.extend(line.spans);
                 row::fill(&mut spans, bleed.width, state);
                 Line::from(spans)
@@ -295,7 +300,7 @@ pub(super) fn render(
             .collect();
         frame.render_widget(Paragraph::new(padded), rect);
         targets.prompts.push((rect, index));
-        y += height;
+        y += height + RECORD_GAP as u16;
     }
     targets
 }
@@ -343,6 +348,8 @@ fn context_lines(support: &AgentSupport, agent: &DrawerAgent, width: usize) -> V
         context_line("harness", harness),
         context_line("path", plain(&agent.path)),
         context_line("branch", branch),
+        // Where the agent is, then what reaches it there.
+        Line::default(),
         context_line(
             "AGENTS.md",
             delivery_value(support.instructions, support.instructions_label),
@@ -539,9 +546,9 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
 fn first_shown(blocks: &[Vec<Line<'static>>], selected: usize, room: usize) -> usize {
     let mut first = selected.min(blocks.len().saturating_sub(1));
     let mut used = blocks.get(first).map_or(0, Vec::len);
-    while first > 0 && used + blocks[first - 1].len() <= room {
+    while first > 0 && used + RECORD_GAP + blocks[first - 1].len() <= room {
         first -= 1;
-        used += blocks[first].len();
+        used += RECORD_GAP + blocks[first].len();
     }
     first
 }
@@ -596,10 +603,7 @@ fn render_note(frame: &mut ratatui::Frame<'_>, list: Rect, note: &str) {
         return;
     }
     frame.render_widget(
-        Paragraph::new(Span::styled(
-            format!("{}{note}", " ".repeat(GUTTER)),
-            theme::fg(Token::TextMuted),
-        )),
+        Paragraph::new(Span::styled(note.to_owned(), theme::fg(Token::TextMuted))),
         Rect::new(list.x, list.y, list.width, 1),
     );
 }
@@ -932,6 +936,19 @@ mod tests {
             "the selected record carries the mark on its meta line: {text}"
         );
         assert!(rows[row_of("1/2")].contains("clear"), "{text}");
+        // The selection mark sits in the inset, so a prompt's words start
+        // in the column the keys above them do.
+        assert_eq!(
+            rows[row_of("the newest prompt")].find("the newest"),
+            rows[row_of("harness")].find("harness"),
+            "{text}"
+        );
+        let (second_rect, _) = targets.prompts[1];
+        assert_eq!(
+            second_rect.y,
+            first_rect.y + first_rect.height + RECORD_GAP as u16,
+            "a blank row between two records: {text}"
+        );
     }
 
     /// Listing the whole space names the tab each prompt went to on its
