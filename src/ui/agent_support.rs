@@ -342,19 +342,19 @@ fn context_lines(support: &AgentSupport, agent: &DrawerAgent, width: usize) -> V
         Line::default(),
         context_line(
             "AGENTS.md",
-            delivery_value(support.instructions, support.instructions_label),
+            delivery_item("loaded", support.instructions, support.instructions_label),
         ),
     ];
     // One key for the directory, and what each of its two halves does:
     // `skills` and `agents` on keys of their own read as the harness's
     // capabilities, which `caps` already lists under the same words.
     let directory = [
-        directory_item(
+        delivery_item(
             "skills",
             support.project_skills,
             support.project_skills_label,
         ),
-        directory_item(
+        delivery_item(
             "agents",
             support.project_agents,
             support.project_agents_label,
@@ -365,37 +365,29 @@ fn context_lines(support: &AgentSupport, agent: &DrawerAgent, width: usize) -> V
     lines
 }
 
-/// One half of `.agents/`: a mark for whether it reaches the agent, its
-/// name, and the mechanism or the reason in parentheses. A half the
-/// project does not carry is the muted dot and nothing more.
-fn directory_item(name: &str, state: State, label: &'static str) -> Vec<Span<'static>> {
-    let (symbol, mark, note) = match state {
-        State::Ready => (Symbol::MarkOk, Token::StateSuccess, Token::TextMuted),
-        State::Neutral => {
-            return vec![
-                Span::styled(
-                    format!("{} ", theme::glyph(Symbol::MarkDot)),
-                    theme::fg(Token::TextMuted),
-                ),
-                Span::styled(name.to_owned(), theme::fg(Token::TextMuted)),
-            ];
-        }
+/// What reaches the agent, as a mark and a name: how it reaches it is a
+/// detail the CLI reports and the drawer leaves out. A problem is the one
+/// thing said beside the name, since it asks something of the reader;
+/// something the project does not carry is the muted dot and nothing more.
+fn delivery_item(name: &str, state: State, label: &'static str) -> Vec<Span<'static>> {
+    let (symbol, mark, text) = match state {
+        State::Ready => (Symbol::MarkOk, Token::StateSuccess, Token::TextPrimary),
+        State::Neutral => (Symbol::MarkDot, Token::TextMuted, Token::TextMuted),
         State::Warning => (
             Symbol::MarkAttention,
             Token::StateWarning,
-            Token::StateWarning,
+            Token::TextPrimary,
         ),
-        State::Error => (Symbol::MarkClose, Token::StateDanger, Token::StateDanger),
+        State::Error => (Symbol::MarkClose, Token::StateDanger, Token::TextPrimary),
     };
-    // `loaded (shim)` is said `(shim)` here: the mark already says loaded.
-    let reason = label
-        .split_once(" (")
-        .map_or(label, |(_, mechanism)| mechanism.trim_end_matches(')'));
-    vec![
+    let mut spans = vec![
         Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(mark)),
-        Span::styled(name.to_owned(), theme::fg(Token::TextPrimary)),
-        Span::styled(format!(" ({reason})"), theme::fg(note)),
-    ]
+        Span::styled(name.to_owned(), theme::fg(text)),
+    ];
+    if matches!(state, State::Warning | State::Error) {
+        spans.push(Span::styled(format!(" ({label})"), theme::fg(mark)));
+    }
+    spans
 }
 
 fn context_line(key: &str, value: Vec<Span<'static>>) -> Line<'static> {
@@ -407,32 +399,16 @@ fn context_line(key: &str, value: Vec<Span<'static>>) -> Line<'static> {
     Line::from(spans)
 }
 
-/// A delivery as the context block shows it: the value, and the mechanism
-/// behind it in parentheses in the muted hue — `loaded (shim)`.
-fn delivery_value(state: State, label: &'static str) -> Vec<Span<'static>> {
-    let hue = match state {
-        State::Ready => Token::TextPrimary,
-        State::Neutral => Token::TextMuted,
-        State::Warning => Token::StateWarning,
-        State::Error => Token::StateDanger,
-    };
-    match label.split_once(" (") {
-        Some((value, qualifier)) => vec![
-            Span::styled(value, theme::fg(hue)),
-            Span::styled(format!(" ({qualifier}"), theme::fg(Token::TextMuted)),
-        ],
-        None => vec![Span::styled(label, theme::fg(hue))],
-    }
-}
-
 /// The capabilities on one line, a mark and a name each, wrapped onto a
 /// second under the same column when they do not fit.
 fn caps_lines(support: &AgentSupport, room: usize) -> Vec<Line<'static>> {
+    // The order `.agents` lists its halves in, so `skills` and `agents`
+    // stand in the same columns on both lines.
     let items: Vec<Vec<Span<'static>>> = [
         CapabilityKind::AgentSkill,
+        CapabilityKind::Agent,
         CapabilityKind::Mcp,
         CapabilityKind::Hook,
-        CapabilityKind::Agent,
     ]
     .into_iter()
     .map(|kind| {
@@ -933,7 +909,7 @@ mod tests {
             ("harness", "Claude Code"),
             ("path", "~/dev/uze/.worktrees/efjkdg"),
             ("branch", "feat/cli-logs"),
-            ("AGENTS.md", "native"),
+            ("AGENTS.md", "loaded"),
             ("caps", "skills"),
         ] {
             let keyed = format!("{key:<KEY_WIDTH$}");
@@ -1101,9 +1077,8 @@ mod tests {
         );
     }
 
-    /// `.agents/` is one key: each half says on its own line whether it
-    /// reaches the agent, so a project carrying only `skills/` reads as
-    /// that rather than as two unrelated words beside `caps`.
+    /// `.agents/` is one key with each half marked, in the order `caps`
+    /// lists the same words, so the two lines read as columns.
     #[test]
     fn the_agents_directory_is_one_key_with_each_half_marked() {
         let context = AgentContextStatus {
@@ -1130,8 +1105,24 @@ mod tests {
             .iter()
             .find(|row| row.starts_with(".agents"))
             .unwrap_or_else(|| panic!("no .agents row: {text:#?}"));
-        assert!(row.contains("skills (shim)"), "{row}");
-        assert!(row.contains("agents") && !row.contains("agents ("), "{row}");
+        assert!(row.contains("skills") && row.contains("agents"), "{row}");
+        assert!(
+            !text.iter().any(|row| row.contains("(shim)")),
+            "how a resource reaches the agent is left to the CLI: {text:#?}"
+        );
+        let caps = text.iter().find(|row| row.starts_with("caps")).unwrap();
+        // The column a word starts in, past the keys.
+        let column = |row: &str, name: &str| {
+            let value: String = row.chars().skip(KEY_WIDTH + KEY_GAP).collect();
+            value.find(name).map(|byte| value[..byte].chars().count())
+        };
+        for name in ["skills", "agents"] {
+            assert_eq!(
+                column(row, name),
+                column(caps, name),
+                "{name} stands in the same column on both lines:\n{row}\n{caps}"
+            );
+        }
         assert!(
             !text
                 .iter()
