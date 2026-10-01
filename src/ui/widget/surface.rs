@@ -110,6 +110,13 @@ impl Surface {
         self
     }
 
+    /// The ground under the content, when this surface sits apart from the
+    /// one it is drawn on rather than continuing it.
+    pub(crate) fn ground(mut self, ground: Token) -> Self {
+        self.ground = Some(ground);
+        self
+    }
+
     /// Room around the content, when this surface needs other than its
     /// kind's own. Reach for it only with a reason worth a comment: the
     /// paddings that disagreed before this module existed all looked

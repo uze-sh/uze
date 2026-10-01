@@ -571,6 +571,7 @@ mod workspace_tests {
             model.code_tree_scroll = rendered.navigator_scroll;
             model.code_scrollbars = rendered;
         }
+        model.drawer_text = metrics.drawer.unwrap_or_default();
         model.absorb_manage_frame(metrics.manage);
         compute_layout(area, model.sidebar_width)
     }
@@ -4437,6 +4438,117 @@ mod workspace_tests {
             rows.iter().any(|row| row.contains("AGENTS.md")),
             "{}",
             rows.join("\n")
+        );
+    }
+
+    /// The drawer floats over the pane, so the host's selection reaches
+    /// it as it reaches a pane: a drag over a prompt copies it, whole
+    /// however it was elided, and a click on a record still only selects
+    /// it.
+    #[test]
+    fn a_drag_over_the_drawer_copies_and_a_click_selects() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-drawer-copy"));
+        let mut model = agent_session_in("/repo");
+        let mut drawer = drawer_over(&model);
+        drawer.support = Some(support_fixture());
+        drawer.scope = PromptScope::Space;
+        let root = drawer.space_root.clone();
+        model.support_dropdown = Some(drawer);
+        let origin = uze_application::PromptOrigin {
+            space_label: "uze".to_owned(),
+            tab_id: 1,
+            tab_label: "Agent".to_owned(),
+            agent_binary: "claude".to_owned(),
+            agent: None,
+        };
+        let long = "rebase onto main ".repeat(6);
+        model.remembered.drawer_prompts = Some(crate::ui::orchestrator::PromptHistoryResolution {
+            root,
+            entries: vec![
+                uze_application::PromptEntry::new(&origin, "fix the pipeline").unwrap(),
+                uze_application::PromptEntry::new(&origin, &long).unwrap(),
+            ],
+        });
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let row_of = |driven: &Driven<'_>, text: &str| {
+            let text_of = &driven.attach.model.drawer_text;
+            let line = text_of
+                .lines
+                .iter()
+                .position(|line| line == text)
+                .unwrap_or_else(|| panic!("{text} is not drawer text: {:?}", text_of.lines));
+            text_of
+                .rows
+                .iter()
+                .filter(|row| row.line == line)
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+
+        let first = row_of(&driven, "fix the pipeline")[0].clone();
+        driven.press(first.glyphs[4].x, first.area.y);
+        driven.mouse(
+            first.glyphs[6].x,
+            first.area.y,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+        driven.mouse(
+            first.glyphs[6].x,
+            first.area.y,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+        assert_eq!(driven.attach.model.clipboard.as_deref(), Some("the"));
+        driven.frame();
+        assert!(
+            matches!(
+                &driven.attach.model.selection,
+                Some(crate::ui::selection::Selection::Drawer(marking)) if !marking.held()
+            ),
+            "what was taken stays drawn"
+        );
+
+        // From the long prompt's first row to past its elided end: the
+        // whole prompt, not the rows it was drawn as.
+        assert!(
+            row_of(&driven, long.trim()).len() > 1,
+            "the prompt is folded"
+        );
+        driven.attach.model.clipboard = None;
+        let rows = row_of(&driven, long.trim());
+        let (top, bottom) = (rows[0].clone(), rows.last().unwrap().clone());
+        driven.press(top.glyphs[0].x, top.area.y);
+        driven.mouse(
+            bottom.area.right() - 1,
+            bottom.area.y,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+        driven.mouse(
+            bottom.area.right() - 1,
+            bottom.area.y,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+        assert_eq!(driven.attach.model.clipboard.as_deref(), Some(long.trim()));
+
+        // A click is not a drag: it marks nothing and selects the record.
+        driven.attach.model.clipboard = None;
+        driven.press(top.glyphs[0].x, top.area.y);
+        driven.mouse(
+            top.glyphs[0].x,
+            top.area.y,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+        assert_eq!(driven.attach.model.clipboard, None);
+        assert_eq!(driven.attach.model.selection, None);
+        assert_eq!(
+            driven
+                .attach
+                .model
+                .support_dropdown
+                .as_ref()
+                .unwrap()
+                .selected,
+            1
         );
     }
 

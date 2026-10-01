@@ -107,6 +107,8 @@ pub(super) struct FrameMetrics {
     /// clock turns for spinners and for work in flight, and a caption
     /// passing under the pointer is neither.
     pub(super) marquee: bool,
+    /// The text the agent drawer drew, when it was open.
+    pub(super) drawer: Option<crate::ui::agent_support::DrawerText>,
 }
 
 /// One frame of the management modal: where it was drawn, and the hit
@@ -223,6 +225,16 @@ pub(super) fn render(
                 _ => None,
             },
             clearing: drawer.clearing,
+            live_labels: model
+                .tabs()
+                .filter_map(|tab| {
+                    super::launched_agent_id(tab).map(|id| (id.to_owned(), tab.label.clone()))
+                })
+                .collect(),
+            selection: match &model.selection {
+                Some(Selection::Drawer(marking)) => Some(marking),
+                _ => None,
+            },
         };
         let targets = crate::ui::agent_support::render(
             frame,
@@ -233,6 +245,7 @@ pub(super) fn render(
             },
             &prompts,
         );
+        metrics.drawer = Some(targets.text);
         // Innermost first, so a row wins over the drawer's own body.
         hits.splice(
             0..0,
