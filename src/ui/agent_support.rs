@@ -153,6 +153,11 @@ const GUTTER: usize = 2;
 const PROMPT_LINES: usize = 2;
 /// Blank rows between two records, so each reads as one thing.
 const RECORD_GAP: usize = 1;
+/// Blank rows between the drawer's top edge and its title.
+const TOP_INSET: u16 = 1;
+/// Blank rows between the agent's facts and the prompts heading: the
+/// facts are about the agent, the list is about what it was asked.
+const HEADING_GAP: usize = 2;
 
 /// Draws the agent drawer down the right-hand side, from the control that
 /// opened it to the bottom of the frame: the agent's name, what it runs on
@@ -186,9 +191,9 @@ pub(super) fn render(
         .render(frame, drawer);
     let inner = Rect::new(
         ground.x + DRAWER_INSET,
-        ground.y + 1,
+        ground.y + TOP_INSET,
         ground.width.saturating_sub(2 * DRAWER_INSET),
-        ground.height.saturating_sub(1),
+        ground.height.saturating_sub(TOP_INSET),
     );
     let mut targets = DrawerTargets {
         body: drawer,
@@ -201,11 +206,12 @@ pub(super) fn render(
 
     let mut lines = vec![title_line("agent context", inner.width), Line::default()];
     lines.extend(context_lines(support, agent, inner.width as usize));
-    lines.push(Line::default());
+    lines.extend(std::iter::repeat_n(Line::default(), HEADING_GAP));
     let heading_y = inner.y + lines.len() as u16;
     frame.render_widget(Paragraph::new(lines), inner);
-    // The heading, its rule, at least one record, and the footer's two.
-    if heading_y + 5 > inner.bottom() {
+    // The heading, its rule, at least one record, the row of air under
+    // it, and the footer's two.
+    if heading_y + 6 > inner.bottom() {
         return targets;
     }
 
@@ -224,11 +230,13 @@ pub(super) fn render(
         Rect::new(inner.x, footer_y, inner.width, 1),
     );
 
+    // A blank row above the footer's rule, so the last record never sits
+    // against the keys.
     let list = Rect::new(
         inner.x,
         heading_y + 2,
         inner.width,
-        (footer_y - 1).saturating_sub(heading_y + 2),
+        (footer_y - 2).saturating_sub(heading_y + 2),
     );
     let Some(entries) = &prompts.entries else {
         render_note(frame, list, "reading…");
@@ -511,8 +519,11 @@ fn record_lines(
     state: RowState,
 ) -> Vec<Line<'static>> {
     let selected = state == RowState::Selected;
+    // The selected record's when and where light up with it, so the eye
+    // finds the line the mark is on rather than the prompt alone.
+    // In the mark's own hue, so the line the mark is on reads as the mark.
     let meta = theme::fg(if selected {
-        Token::TextSecondary
+        Token::StateSuccess
     } else {
         Token::TextMuted
     });
@@ -1037,6 +1048,15 @@ mod tests {
         );
         assert!(targets.prompts.iter().any(|(_, index)| *index == 45));
         assert!(!targets.prompts.iter().any(|(_, index)| *index == 0));
+        let footer = rows
+            .iter()
+            .position(|row| row.contains("clear"))
+            .expect("the footer is drawn");
+        let last = targets.prompts.last().expect("a record is drawn").0;
+        assert!(
+            usize::from(last.bottom()) + 1 < footer,
+            "a blank row and the rule stand between the last record and the keys"
+        );
     }
 
     /// The scope tab that is not in force is plain text, and brightens
@@ -1171,5 +1191,44 @@ mod tests {
             buffer[(rect.x + 4, rect.y + 1)].bg,
             theme::color(Token::SurfaceRaised)
         );
+    }
+
+    /// The selected record's meta line lights up with it; the others stay
+    /// muted.
+    #[test]
+    fn the_selected_records_meta_line_is_lit() {
+        let first = entry("cli logs", Some("a"), "the selected prompt");
+        let second = entry("cli logs", Some("a"), "another prompt");
+        let prompts = DrawerPrompts {
+            entries: Some(vec![&first, &second]),
+            scope: PromptScope::Space,
+            agent_known: true,
+            selected: 0,
+            hovered_scope: None,
+            clearing: false,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
+        let support = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
+        let mut records = Vec::new();
+        terminal
+            .draw(|frame| {
+                records = render(
+                    frame,
+                    Rect::new(0, 1, 100, 39),
+                    &support,
+                    &agent(),
+                    &prompts,
+                )
+                .prompts;
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        // The age starts where the prompt text does, past the gutter.
+        let meta_of = |rect: Rect| buffer[(rect.x + 4, rect.y)].clone();
+        let selected = meta_of(records[0].0);
+        assert_eq!(selected.fg, theme::color(Token::StateSuccess));
+        assert!(!selected.modifier.contains(ratatui::style::Modifier::BOLD));
+        assert_eq!(meta_of(records[1].0).fg, theme::color(Token::TextMuted));
     }
 }

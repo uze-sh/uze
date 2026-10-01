@@ -2696,26 +2696,12 @@ fn selected_agent_drawer(
         agent,
         space_root: space.root.clone(),
         name: tab.label.clone(),
-        path: home_relative(&key.1),
+        path: crate::ui::display_project_path(&key.1),
         branch,
         key,
         selected: 0,
         clearing: false,
     })
-}
-
-/// `path` with the home directory written `~`, the way a shell prompt
-/// shows it.
-fn home_relative(path: &Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    match home
-        .as_deref()
-        .and_then(|home| path.strip_prefix(home).ok())
-    {
-        Some(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
-        Some(rest) => format!("~/{}", rest.display()),
-        None => path.display().to_string(),
-    }
 }
 
 /// Every live agent pane as `(integration, directory)` — the same pair
