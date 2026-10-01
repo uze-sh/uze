@@ -4,13 +4,13 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::{Clear, Padding, Paragraph},
 };
 use uze_application::{CapabilityKind, HarnessCapabilities};
 
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
-    Chip, ChipState, Edge, Rule, hint,
+    Chip, ChipState, POPUP_H_PAD, POPUP_V_PAD, Surface, hint,
     row::{self, RowState},
     text,
 };
@@ -167,18 +167,14 @@ pub(super) fn render(
         area.bottom().saturating_sub(top),
     );
     frame.render_widget(Clear, drawer);
-    // The management screens' drawers' own ground and edge, and their
-    // inset, so a drawer reads as one kind of thing on either surface.
-    let edged = Rule::new(Edge::Left)
-        .tone(Token::SurfaceRecessed)
-        .ground(Token::SurfaceRecessed)
+    let inner = Surface::floating()
+        .padding(Padding::new(
+            POPUP_H_PAD,
+            POPUP_H_PAD,
+            POPUP_V_PAD,
+            POPUP_V_PAD,
+        ))
         .render(frame, drawer);
-    let inner = Rect::new(
-        edged.x + 1,
-        drawer.y + 1,
-        drawer.width.saturating_sub(3),
-        drawer.height.saturating_sub(2),
-    );
     let inner_width = inner.width as usize;
 
     // "agent", not "support": what this panel answers is what the agent
