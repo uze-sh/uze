@@ -25,6 +25,7 @@ use uze_application::application::{
 /// `AgentContextStatus`, resolved against *this agent pane's own working
 /// directory* rather than the session's attach root — see
 /// `uze_application::application::agent_context`.
+#[derive(Clone)]
 pub(super) struct AgentSupport {
     display_name: String,
     present: bool,

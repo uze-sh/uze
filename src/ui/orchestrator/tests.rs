@@ -42,8 +42,8 @@ mod workspace_tests {
         CHIME_SETTLE, CommitDetailPopup, CommitDetailResolution, CompletionBehavior,
         DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution,
         PendingDrop, PlacementResolution, PromptScope, RootPicker, ScrollDirection, SpecResolution,
-        SpecSummaryState, TabDragGroup, UpstreamSync, Viewport, WorkOverlay, WorkResolution,
-        WorkStateView, WorkspaceModel, adopt_agent_labels, agent_activity_frame,
+        SpecSummaryState, SupportResolution, TabDragGroup, UpstreamSync, Viewport, WorkOverlay,
+        WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels, agent_activity_frame,
         agent_identity_for_tab, answered_or, blank_pane, can_close_tab_from_menu, checkout_lost,
         encode_mouse, evaluation_key, forward_paste, forward_scroll, next_agent_label,
         next_shell_label, open_architect, open_code, open_commit_detail, open_spec, pane_relative,
@@ -4379,6 +4379,66 @@ mod workspace_tests {
 
         model.remembered.drawer_scope = Some(PromptScope::Space);
         assert_eq!(drawer_over(&model).scope, PromptScope::Space);
+    }
+
+    fn support_fixture() -> crate::ui::agent_support::AgentSupport {
+        use uze_application::application::{
+            AgentContextStatus, ContextMechanism, HarnessContextSupport, HarnessHealth,
+            ResourceDelivery,
+        };
+        let health = HarnessHealth {
+            integration: "claude-code".to_owned(),
+            display_name: "Claude Code".to_owned(),
+            description: String::new(),
+            detection: uze_core::integration::HarnessDetection {
+                present: true,
+                version: None,
+            },
+            setup: "installed".to_owned(),
+            strategy: None,
+            provisioning: None,
+            publication: uze_core::integration::PublicationStatus::NotApplicable,
+            capabilities: Default::default(),
+            runtime_shim_active: true,
+            context_support: HarnessContextSupport {
+                instructions: ContextMechanism::RuntimeShim,
+                project_skills: ContextMechanism::RuntimeShim,
+                project_agents: ContextMechanism::RuntimeShim,
+            },
+        };
+        let context = AgentContextStatus {
+            integration: "claude-code".to_owned(),
+            display_name: "Claude Code".to_owned(),
+            present: true,
+            root: PathBuf::from("/repo"),
+            instructions: ResourceDelivery::Projected,
+            project_skills: ResourceDelivery::Projected,
+            project_agents: ResourceDelivery::AbsentFromProject,
+        };
+        crate::ui::agent_support::AgentSupport::resolve(health, &context)
+    }
+
+    /// The client keeps one support answer, for whatever agent is in
+    /// front, and replaces it when that agent's harness or directory
+    /// changes. An open drawer holds its own: read from the shared one, it
+    /// stopped being drawn the moment the agent ran something, while it
+    /// still held the keyboard.
+    #[test]
+    fn an_open_drawer_is_drawn_whatever_the_client_resolved_since() {
+        let mut model = agent_session_in("/repo/.worktrees/a");
+        let mut drawer = drawer_over(&model);
+        drawer.support = Some(support_fixture());
+        model.support_dropdown = Some(drawer);
+        model.remembered.agent_support = Some(SupportResolution {
+            key: ("codex".to_owned(), PathBuf::from("/elsewhere")),
+            support: None,
+        });
+        let rows = frame_rows(&mut model);
+        assert!(
+            rows.iter().any(|row| row.contains("agent context")),
+            "{}",
+            rows.join("\n")
+        );
     }
 
     /// An agent nothing identifies has no prompts of its own to list, so
@@ -11199,6 +11259,7 @@ mod drawer_tests {
     fn drawer(agent: Option<&str>, scope: PromptScope) -> AgentSupportDropdown {
         AgentSupportDropdown {
             key: ("claude-code".to_owned(), PathBuf::from("/repo")),
+            support: None,
             agent: agent.map(str::to_owned),
             space_root: PathBuf::from("/repo"),
             name: "agent".to_owned(),

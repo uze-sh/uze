@@ -3945,6 +3945,12 @@ impl Attach<'_> {
             if self.model.remembered.agent_support_pending.as_ref() == Some(&resolution.key) {
                 self.model.remembered.agent_support_pending = None;
             }
+            if let Some(drawer) = self.model.support_dropdown.as_mut()
+                && drawer.key == resolution.key
+                && resolution.support.is_some()
+            {
+                drawer.support = resolution.support.clone();
+            }
             self.model.remembered.agent_support = Some(resolution);
             self.model.dirty = true;
         }

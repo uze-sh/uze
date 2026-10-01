@@ -2308,6 +2308,12 @@ struct ResumeTarget {
 /// unrenderable here.
 struct AgentSupportDropdown {
     key: SupportKey,
+    /// The answer for `key`, held by the drawer itself. The client keeps
+    /// one support answer, for whatever agent is in front, and replaces it
+    /// whenever that agent's harness or directory changes; read from
+    /// there, an open drawer stopped being drawn the moment the agent ran
+    /// something, while it still held the keyboard.
+    support: Option<super::agent_support::AgentSupport>,
     /// The agent UZE launched in the tab, which is what "this agent's
     /// prompts" is matched on. `None` for a harness started by hand, whose
     /// drawer can only offer the space's.
@@ -2678,7 +2684,14 @@ fn selected_agent_drawer(
         Some(PromptScope::Agent) | None if agent.is_some() => PromptScope::Agent,
         _ => PromptScope::Space,
     };
+    let support = model
+        .remembered
+        .agent_support
+        .as_ref()
+        .filter(|resolution| resolution.key == key)
+        .and_then(|resolution| resolution.support.clone());
     Some(AgentSupportDropdown {
+        support,
         scope,
         agent,
         space_root: space.root.clone(),

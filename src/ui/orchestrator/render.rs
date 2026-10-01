@@ -206,9 +206,7 @@ pub(super) fn render(
         render_agent_picker(frame, frame.area(), picker.anchor, picker, hits);
     }
     if let Some(drawer) = &model.support_dropdown
-        && let Some(resolution) = &model.remembered.agent_support
-        && resolution.key == drawer.key
-        && let Some(support) = &resolution.support
+        && let Some(support) = &drawer.support
     {
         let history = model
             .remembered
