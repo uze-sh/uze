@@ -102,11 +102,7 @@ pub(crate) use background_pass;
 
 #[cfg(test)]
 mod tests {
-    use tracing_subscriber::{
-        EnvFilter, Layer,
-        filter::{FilterExt, dynamic_filter_fn},
-        layer::SubscriberExt,
-    };
+    use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt};
 
     use super::*;
 
@@ -122,14 +118,11 @@ mod tests {
             .with_ansi(false)
             .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
             .with_writer(writer)
-            .with_filter(
-                EnvFilter::new(directives).and(dynamic_filter_fn(|metadata, _| {
-                    !metadata.is_span() || !silenced()
-                })),
-            );
+            .with_filter(super::super::output(EnvFilter::new(directives)));
         let subscriber = tracing_subscriber::registry()
             .with(crate::steps::layer())
             .with(text);
+        let _alone = crate::telemetry::one_subscriber_at_a_time();
         tracing::subscriber::with_default(subscriber, body);
         drop(guard);
         let written = std::fs::read_to_string(scratch.join("probe.log")).unwrap_or_default();

@@ -96,6 +96,7 @@ mod tests {
             listen(move |step| seen.lock().unwrap().push(step.clone()));
         }
         let subscriber = tracing_subscriber::registry().with(layer());
+        let _alone = crate::telemetry::one_subscriber_at_a_time();
         tracing::subscriber::with_default(subscriber, || {
             tracing::info!(target: TARGET, step = "deliver", harness = "some-harness");
             tracing::info!(target: "uze::other", step = "ignored");
