@@ -1542,21 +1542,7 @@ impl Attach<'_> {
     /// row it drew, and only the pointer knows how far along it landed.
     fn architect_press(&mut self, column: u16, row: u16) {
         let hit = self.architect_hit_at(column, row);
-        let view_hit = hit.map(|(rect, hit)| match hit {
-            // The same arithmetic the code surface does, through the same
-            // function: a second copy of it here was missing the gutter
-            // term, and subtracted without saturating.
-            ViewHit::PlaceCaret { line, cell } => ViewHit::PlaceCaret {
-                line,
-                cell: crate::ui::extension_view::caret_cell_at(
-                    rect,
-                    cell,
-                    column,
-                    self.model.code_scrollbars.content_gutter,
-                ),
-            },
-            other => other,
-        });
+        let view_hit = hit.map(|(rect, hit)| self.finished(rect, hit, column));
         if let Some(click @ ViewHit::PlaceCaret { .. }) = view_hit {
             self.model.architect_grab = Some(DiagramGrab {
                 last: (column, row),
@@ -1666,69 +1652,176 @@ impl Attach<'_> {
         }
     }
 
-    /// The pointer carried, button held, over the code surface's text.
-    ///
-    /// Resolved against the rows the last frame drew, clamped to them: a
-    /// drag beside the text means the nearest character of its row, and
-    /// one past the top or the bottom scrolls that way and names the line
-    /// beyond the edge — which is how a selection reaches text that was
-    /// not on screen when it began.
-    fn mark_code_text(&mut self, column: u16, row: u16) {
-        let rows: Vec<(Rect, usize, usize)> = self
-            .model
-            .hits
-            .iter()
-            .filter_map(|(rect, hit)| match hit {
-                WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { line, cell })) => {
-                    Some((*rect, *line, *cell))
-                }
-                _ => None,
-            })
-            .collect();
-        let (Some(top), Some(bottom)) = (
-            rows.iter().min_by_key(|(rect, ..)| rect.y),
-            rows.iter().max_by_key(|(rect, ..)| rect.y),
-        ) else {
-            return;
-        };
-        let (line, cell, scroll) = if row < top.0.y {
-            (top.1.saturating_sub(1), 0, Some(ScrollDirection::Up))
-        } else if row >= bottom.0.bottom() {
-            (bottom.1 + 1, usize::MAX, Some(ScrollDirection::Down))
-        } else {
-            let Some((rect, line, cell)) = rows.iter().find(|(rect, ..)| rect.y == row) else {
-                return;
-            };
-            let column = column.clamp(rect.x, rect.right().saturating_sub(1));
-            let cell = crate::ui::extension_view::caret_cell_at(
-                *rect,
-                *cell,
-                column,
-                self.model.code_scrollbars.content_gutter,
-            );
-            (*line, cell, None)
-        };
-        if let Some(direction) = scroll {
-            let at_end = self.model.code_scrollbars.content_at_end;
-            if let Some(view) = self.model.code.as_mut() {
-                code::handle_scroll(view, direction, at_end);
-            }
+    /// A press on text an open surface drew: where a selection would
+    /// start. Nothing is marked until the pointer moves, and what the
+    /// press means to the surface itself — a caret placed — is said on
+    /// release, once it is known whether this was a click or a drag.
+    fn mark_text_from(&mut self, column: u16, row: u16) {
+        if let Some((at, _)) = selection::locate(&self.model.code_scrollbars.text_rows, column, row)
+        {
+            self.model.selection = Some(Selection::Text(selection::TextSelection::pressed(
+                at,
+                self.model.code_scrollbars.heading.clone(),
+            )));
         }
-        self.code_mouse(ViewHit::SelectTo { line, cell });
     }
 
-    /// Hands the code surface a pointer gesture the host finished itself.
-    fn code_mouse(&mut self, hit: ViewHit) {
+    /// The pointer carried, button held, over an open surface's text.
+    ///
+    /// Resolved against the rows the last frame drew: a drag beside the
+    /// text means the nearest character of its row, and one past the top
+    /// or the bottom scrolls that way and names the line beyond the edge
+    /// — which is how a selection reaches text that was not on screen
+    /// when it began.
+    fn mark_text_to(&mut self, column: u16, row: u16) {
+        let Some((at, scroll)) =
+            selection::locate(&self.model.code_scrollbars.text_rows, column, row)
+        else {
+            return;
+        };
+        if let Some(Selection::Text(marking)) = self.model.selection.as_mut() {
+            marking.carry(at);
+        }
+        match scroll {
+            Some(direction) => self.scroll_surface_content(direction),
+            // An editor's caret goes with the drag, so what is typed next
+            // lands where the drag ended rather than where it began.
+            None => {
+                if let Some(caret) = self.caret_hit_near(column, row) {
+                    self.surface_mouse(caret);
+                }
+            }
+        }
+        self.model.dirty = true;
+    }
+
+    /// The button came up over an open surface's text. A drag copies what
+    /// it marked, which stays drawn until the next press or key; either
+    /// way the surface is then told where the pointer came to rest, the
+    /// click it would have had without a selection to tell apart from.
+    fn release_text(&mut self, column: u16, row: u16) {
+        let Some(Selection::Text(marking)) = self.model.selection.as_mut() else {
+            return;
+        };
+        let marked = marking.release();
+        let copied = marked
+            .map(|marked| marked.text(&self.surface_text(marked.lines())))
+            .filter(|text| !text.is_empty());
+        match copied {
+            Some(text) => self.model.copy_selected(text),
+            None => self.model.selection = None,
+        }
+        if let Some(click) = self.caret_hit_near(column, row) {
+            self.surface_mouse(click);
+        }
+        self.model.dirty = true;
+    }
+
+    /// Whether a press here starts a selection: on a row of text the last
+    /// frame drew, with nothing of the surface's own — a menu, a
+    /// question — lying over it.
+    fn presses_on_text(&self, column: u16, row: u16) -> bool {
+        selection::on_text(&self.model.code_scrollbars.text_rows, column, row)
+            && matches!(
+                self.surface_hit_at(column, row),
+                Some((_, ViewHit::PlaceCaret { .. }))
+            )
+    }
+
+    /// The open surface's own hit under a point, resolved the way that
+    /// surface orders its hits.
+    fn surface_hit_at(&self, column: u16, row: u16) -> Option<(Rect, ViewHit)> {
+        if self.model.architect.is_some() {
+            return self.architect_hit_at(column, row);
+        }
+        match self.model.hit_rect_at(column, row) {
+            Some((
+                rect,
+                WorkspaceHit::Extension(ExtensionHit::Code(hit) | ExtensionHit::Spec(hit)),
+            )) => Some((rect, hit)),
+            _ => None,
+        }
+    }
+
+    /// The caret position the text nearest a point names, finished the
+    /// way a press on it is: a pointer that came to rest past the text's
+    /// edge means the nearest of its rows.
+    fn caret_hit_near(&self, column: u16, row: u16) -> Option<ViewHit> {
+        let rows = &self.model.code_scrollbars.text_rows;
+        let nearest = rows
+            .iter()
+            .min_by_key(|text| text.area.y.abs_diff(row))?
+            .area;
+        let column = column.clamp(nearest.x, nearest.right().saturating_sub(1));
+        match self.surface_hit_at(column, nearest.y)? {
+            (rect, hit @ ViewHit::PlaceCaret { .. }) => Some(self.finished(rect, hit, column)),
+            _ => None,
+        }
+    }
+
+    /// A hit the last frame recorded, finished with where the pointer is.
+    ///
+    /// The render knew which line a row was and where it began; only the
+    /// pointer knows how far along it landed, so a [`ViewHit::PlaceCaret`]
+    /// is completed here rather than recorded a cell at a time. Every
+    /// other hit is already whole.
+    fn finished(&self, rect: Rect, hit: ViewHit, column: u16) -> ViewHit {
+        match hit {
+            ViewHit::PlaceCaret { line, cell } => ViewHit::PlaceCaret {
+                line,
+                cell: crate::ui::extension_view::caret_cell_at(
+                    rect,
+                    cell,
+                    column,
+                    self.model.code_scrollbars.content_gutter,
+                ),
+            },
+            other => other,
+        }
+    }
+
+    /// Hands the open surface a pointer gesture the host finished itself.
+    fn surface_mouse(&mut self, hit: ViewHit) {
         let space = self.code_space();
-        if let Some(outcome) = self
-            .model
-            .code
-            .as_mut()
-            .map(|view| code::handle_mouse(view, Some(hit), space))
-        {
+        if let Some(view) = self.model.architect.as_mut() {
+            let outcome = architect::handle_mouse(view, Some(hit), space);
+            self.follow_architect(Some(outcome));
+        } else if let Some(view) = self.model.spec.as_mut() {
+            let outcome = spec::handle_mouse(view, Some(hit), space);
+            self.follow_spec(Some(outcome));
+        } else if let Some(view) = self.model.code.as_mut() {
+            let outcome = code::handle_mouse(view, Some(hit), space);
             self.follow_code(outcome);
         }
         self.model.dirty = true;
+    }
+
+    /// The text of `lines` of what the open surface shows — asked of it
+    /// rather than read off the frame, because a selection reaches lines
+    /// scrolled out of what was drawn.
+    fn surface_text(&self, lines: std::ops::Range<usize>) -> Vec<String> {
+        if let Some(view) = self.model.architect.as_ref() {
+            architect::text(view, lines)
+        } else if let Some(view) = self.model.spec.as_ref() {
+            spec::text(view, lines)
+        } else if let Some(view) = self.model.code.as_ref() {
+            code::text(view, lines)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Scrolls what the open surface shows a step, the way its wheel does.
+    fn scroll_surface_content(&mut self, direction: ScrollDirection) {
+        let space = self.code_space();
+        let at_end = self.model.code_scrollbars.content_at_end;
+        if let Some(view) = self.model.architect.as_mut() {
+            architect::handle_scroll(view, direction, space);
+        } else if let Some(view) = self.model.spec.as_mut() {
+            spec::handle_scroll(view, direction);
+        } else if let Some(view) = self.model.code.as_mut() {
+            code::handle_scroll(view, direction, at_end);
+        }
     }
 
     /// Whether a point is on the groove an open surface drew for its
@@ -1899,7 +1992,6 @@ impl Attach<'_> {
                     .raise_toast(ToastKind::Done, "copied", text.clone(), None);
                 self.model.clipboard = Some(text);
             }
-            code::CodeOutcome::CopySelection(text) => self.model.copy_selected(text),
         }
     }
 
@@ -2257,6 +2349,9 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
+            _ if in_pane && self.presses_on_text(mouse.column, mouse.row) => {
+                self.mark_text_from(mouse.column, mouse.row);
+            }
             _ if self.model.architect.is_some() && in_pane => {
                 self.architect_press(mouse.column, mouse.row);
             }
@@ -2293,26 +2388,9 @@ impl Attach<'_> {
                 // resize handle's drag lifecycle belongs to this
                 // workspace client, not the extension.
                 let view_hit = match hit {
-                    // The render knew which line the row was and where it
-                    // began; only the pointer knows how far along it
-                    // landed, so the hit is finished here rather than
-                    // recorded a cell at a time.
-                    Some((
-                        rect,
-                        WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret {
-                            line,
-                            cell,
-                        })),
-                    )) => Some(ViewHit::PlaceCaret {
-                        line,
-                        cell: crate::ui::extension_view::caret_cell_at(
-                            rect,
-                            cell,
-                            mouse.column,
-                            self.model.code_scrollbars.content_gutter,
-                        ),
-                    }),
-                    Some((_, WorkspaceHit::Extension(ExtensionHit::Code(hit)))) => Some(hit),
+                    Some((rect, WorkspaceHit::Extension(ExtensionHit::Code(hit)))) => {
+                        Some(self.finished(rect, hit, mouse.column))
+                    }
                     _ => None,
                 };
                 // Three of the surface's gestures are the host's rather
@@ -2329,15 +2407,6 @@ impl Attach<'_> {
                     self.model.dragging_code_content = true;
                     self.scroll_code_content_to(mouse.row);
                 } else {
-                    // The map is drawn from the same hits and is clicked,
-                    // never marked.
-                    self.model.marking_code_text =
-                        matches!(view_hit, Some(ViewHit::PlaceCaret { .. }))
-                            && self
-                                .model
-                                .code
-                                .as_ref()
-                                .is_some_and(|view| view.showing() != code::ContentMode::Map);
                     let space = self.code_space();
                     if let Some(outcome) = self
                         .model
@@ -2357,12 +2426,13 @@ impl Attach<'_> {
                         return Flow::Continue;
                     }
                     if self.selects_in_pane(mouse, layout.pane) {
-                        self.model.selection = Some(selection::PaneSelection::pressed(
-                            self.model.focused_pane(),
-                            layout.pane,
-                            mouse.column,
-                            mouse.row,
-                        ));
+                        self.model.selection =
+                            Some(Selection::Pane(selection::PaneSelection::pressed(
+                                self.model.focused_pane(),
+                                layout.pane,
+                                mouse.column,
+                                mouse.row,
+                            )));
                     } else {
                         forward_mouse(&mut self.stream, &self.model, layout.pane, mouse);
                     }
@@ -2397,25 +2467,26 @@ impl Attach<'_> {
             size, ref layout, ..
         } = *viewport;
         match mouse {
-            _ if self.model.selection.is_some() => {
-                let requests = self
-                    .model
-                    .selection
-                    .as_mut()
-                    .map(|selection| selection.follow(layout.pane, mouse.column, mouse.row))
-                    .unwrap_or_default();
+            _ if matches!(self.model.selection, Some(Selection::Pane(_))) => {
+                let requests = match self.model.selection.as_mut() {
+                    Some(Selection::Pane(selection)) => {
+                        selection.follow(layout.pane, mouse.column, mouse.row)
+                    }
+                    _ => Vec::new(),
+                };
                 for request in requests {
                     self.send_selection_request(request, mouse, layout.pane);
                 }
+            }
+            _ if matches!(&self.model.selection, Some(Selection::Text(marking)) if marking.held()) =>
+            {
+                self.mark_text_to(mouse.column, mouse.row);
             }
             _ if self.model.architect_grab.is_some() => {
                 self.drag_diagram(mouse.column, mouse.row);
             }
             _ if self.model.dragging_code_content => {
                 self.scroll_code_content_to(mouse.row);
-            }
-            _ if self.model.marking_code_text => {
-                self.mark_code_text(mouse.column, mouse.row);
             }
             _ if self.model.code_edge_drag.is_some() => {
                 self.drag_code_edge(mouse.column, mouse.row, layout.pane);
@@ -2510,13 +2581,16 @@ impl Attach<'_> {
     /// it would.
     fn release(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
         let Viewport { ref layout, .. } = *viewport;
-        if self.model.selection.is_some() {
-            self.release_selection(mouse, layout.pane);
-            return Flow::Continue;
-        }
-        if std::mem::take(&mut self.model.marking_code_text) {
-            self.code_mouse(ViewHit::LetGo);
-            return Flow::Continue;
+        match &self.model.selection {
+            Some(Selection::Pane(_)) => {
+                self.release_selection(mouse, layout.pane);
+                return Flow::Continue;
+            }
+            Some(Selection::Text(marking)) if marking.held() => {
+                self.release_text(mouse.column, mouse.row);
+                return Flow::Continue;
+            }
+            _ => {}
         }
         // A drag this client never owned (no flag was set, no
         // tab drag was in progress, and nothing modal was open
@@ -2606,7 +2680,7 @@ impl Attach<'_> {
     /// held back only until it could not be the start of a drag, and is
     /// delivered now, press and release together.
     fn release_selection(&mut self, mouse: MouseEvent, pane: Rect) {
-        let Some(selection) = self.model.selection.as_mut() else {
+        let Some(Selection::Pane(selection)) = self.model.selection.as_mut() else {
             return;
         };
         if selection.release() {
@@ -2635,11 +2709,14 @@ impl Attach<'_> {
     /// scrollback to move, and the program scrolls itself, so it gets the
     /// wheel — the server follows what it redraws.
     fn send_selection_request(&mut self, request: ClientRequest, mouse: MouseEvent, pane: Rect) {
-        let alternate_screen = self
-            .model
-            .selection
-            .and_then(|selection| self.model.panes.get(&selection.pane))
-            .is_some_and(|snapshot| snapshot.alternate_screen);
+        let alternate_screen = match &self.model.selection {
+            Some(Selection::Pane(selection)) => self
+                .model
+                .panes
+                .get(&selection.pane)
+                .is_some_and(|snapshot| snapshot.alternate_screen),
+            _ => false,
+        };
         match request {
             ClientRequest::Scroll { lines, .. } if alternate_screen => {
                 let wheel = MouseEvent {
@@ -2660,13 +2737,11 @@ impl Attach<'_> {
         }
     }
 
-    /// Drops the selection a press or a key ends, and the server's with it.
+    /// Drops the selection a press or a key ends, and a pane's server's
+    /// with it.
     fn drop_selection(&mut self) {
-        if let Some(clear) = self
-            .model
-            .selection
-            .take()
-            .and_then(|selection| selection.cleared())
+        if let Some(Selection::Pane(selection)) = self.model.selection.take()
+            && let Some(clear) = selection.cleared()
         {
             let _ = send_request(&mut self.stream, &clear);
         }
@@ -3058,11 +3133,8 @@ impl Attach<'_> {
             }
             _ if self.model.no_modal_open() => {
                 forward_scroll(&mut self.stream, &self.model, layout.pane, mouse);
-                if let Some(extend) = self
-                    .model
-                    .selection
-                    .as_ref()
-                    .and_then(|selection| selection.rescrolled())
+                if let Some(Selection::Pane(selection)) = self.model.selection.as_ref()
+                    && let Some(extend) = selection.rescrolled()
                 {
                     let _ = send_request(&mut self.stream, &extend);
                 }
@@ -3424,8 +3496,6 @@ impl Attach<'_> {
                 | ViewHit::ChooseItem
                 | ViewHit::SelectTrail(_)
                 | ViewHit::PlaceCaret { .. }
-                | ViewHit::SelectTo { .. }
-                | ViewHit::LetGo
                 | ViewHit::SelectMode(_)
                 | ViewHit::SelectSubject(_)
                 | ViewHit::DragContentScrollbar

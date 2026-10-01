@@ -2717,91 +2717,37 @@ fn switching_to_the_changes_keeps_a_changed_file_selected() {
     assert_eq!(view.selected(), Some(Path::new("/repo/src/ui.rs")));
 }
 
-fn drag(view: &mut CodeView, from: (usize, usize), to: (usize, usize)) -> CodeOutcome {
-    let (line, cell) = from;
-    handle_mouse(view, Some(ViewHit::PlaceCaret { line, cell }), space());
-    let (line, cell) = to;
-    handle_mouse(view, Some(ViewHit::SelectTo { line, cell }), space());
-    handle_mouse(view, Some(ViewHit::LetGo), space())
-}
-
-fn diff_selection(view: &CodeView) -> Option<crate::view::TextSelection> {
-    match render::view(view, space()).content {
-        Content::Lines { selection, .. } => selection,
-        Content::Message { .. } => None,
-    }
-}
-
-/// Pressing on a diff, dragging and letting go copies what was passed
-/// over — the lines' text, without the gutter that says how they changed —
-/// and leaves it marked where it was drawn.
+/// What the host copies from a diff is the lines' text, without the
+/// gutter that says how they changed.
 #[test]
-fn dragging_over_a_diff_copies_the_text_it_passed_over() {
-    let mut view = fixture();
-    let texts: Vec<String> = view
-        .changes
-        .diff
-        .iter()
-        .map(|line| {
-            diff::content_line(line)
-                .spans
-                .into_iter()
-                .map(|span| span.text)
-                .collect()
-        })
-        .collect();
-    assert_eq!(texts, ["context", "removed line", "added line"]);
-
-    let outcome = drag(&mut view, (1, 2), (2, 5));
+fn a_diff_reads_as_its_lines_without_the_gutter() {
+    let view = fixture();
 
     assert_eq!(
-        outcome,
-        CodeOutcome::CopySelection("moved line\nadded".to_owned())
-    );
-    let marked = diff_selection(&view).expect("the drag stays marked");
-    assert_eq!((marked.from.line, marked.from.column), (1, 2));
-    assert_eq!((marked.to.line, marked.to.column), (2, 5));
-}
-
-/// Dragging upwards marks the same text as dragging down to it, and a
-/// drag past the last line reaches the end of it.
-#[test]
-fn a_drag_backwards_or_past_the_end_marks_what_it_covers() {
-    let mut view = fixture();
-    assert_eq!(
-        drag(&mut view, (2, 5), (1, 2)),
-        CodeOutcome::CopySelection("moved line\nadded".to_owned())
-    );
-    assert_eq!(
-        drag(&mut view, (2, 6), (9, 0)),
-        CodeOutcome::CopySelection("line".to_owned())
+        text(&view, 1..3),
+        ["removed line".to_owned(), "added line".to_owned()]
     );
 }
 
-/// A press that never moved is a click: nothing is copied, nothing stays
-/// marked — and a key after a drag puts the marking away.
+/// A range that runs past the end gives back the lines there are.
 #[test]
-fn a_click_marks_nothing_and_a_key_puts_a_marking_away() {
-    let mut view = fixture();
-    assert_eq!(drag(&mut view, (1, 2), (1, 2)), CodeOutcome::Stay);
-    assert_eq!(diff_selection(&view), None);
+fn text_past_the_end_is_only_the_lines_there_are() {
+    let view = fixture();
 
-    drag(&mut view, (0, 0), (0, 3));
-    assert!(diff_selection(&view).is_some());
-    press(&mut view, Command::ScrollPageDown);
-    assert_eq!(diff_selection(&view), None);
+    assert_eq!(text(&view, 2..9), ["added line".to_owned()]);
 }
 
-/// In a file being edited the drag marks the text too, and the caret
-/// follows it, so what is typed next lands where the drag ended.
+/// A file being read or edited reads as it is in the file; the map is a
+/// drawing and has no text.
 #[test]
-fn dragging_in_the_editor_marks_the_text_and_carries_the_caret() {
-    let machine = FakeMachine::default().with_file("/w/notes.txt", "one two\nthree\n");
+fn a_file_reads_as_it_is_and_the_map_as_nothing() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\ttwo\nthree\n");
     let mut view = editing(&machine, "/w/notes.txt");
 
-    let outcome = drag(&mut view, (0, 4), (1, 3));
-
-    assert_eq!(outcome, CodeOutcome::CopySelection("two\nthr".to_owned()));
-    let open = view.open.as_ref().expect("the file is open");
-    assert_eq!((open.caret.line, open.caret.column), (1, 3));
+    assert_eq!(
+        text(&view, 0..2),
+        ["one\ttwo".to_owned(), "three".to_owned()]
+    );
+    view.content = ContentMode::Map;
+    assert!(text(&view, 0..2).is_empty());
 }

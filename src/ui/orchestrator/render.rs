@@ -355,6 +355,10 @@ fn render_extension(
                 .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
         },
         scope,
+        match &model.selection {
+            Some(Selection::Text(marking)) => Some(marking),
+            _ => None,
+        },
         &mut view_hits,
     ));
     crate::ui::extension_view::render_row_menu(

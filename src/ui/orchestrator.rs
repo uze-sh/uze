@@ -9,6 +9,7 @@ use super::tui_application;
 use crate::ui::extension_host::WorkspaceHost;
 use crate::ui::extension_view;
 use crate::ui::root_picker::RootPicker;
+use crate::ui::selection::{self, Selection};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::ToastKind;
 use crate::ui::widget::{action_index, text};
@@ -195,7 +196,6 @@ const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 mod checkouts;
 mod input;
 mod render;
-mod selection;
 mod session;
 mod work;
 mod work_list;
@@ -3183,15 +3183,13 @@ struct WorkspaceModel {
     /// Whether the content's own scrollbar is being held. Unambiguous, so
     /// it needs nothing but a flag.
     dragging_code_content: bool,
-    /// Whether the pointer is held since a press on the code surface's
-    /// text, so a movement marks what it passes over.
-    marking_code_text: bool,
     /// Whether the pointer is held since a press on a toast, so the rest
     /// of that gesture is the toast's and reaches nothing beneath it.
     pressing_toast: bool,
-    /// Text being selected in a pane with the pointer, and — once released
-    /// — the selection still drawn until the next press or key.
-    selection: Option<selection::PaneSelection>,
+    /// Text being selected with the pointer — in a pane, or in what an
+    /// open surface drew — and, once released, the selection still drawn
+    /// until the next press or key.
+    selection: Option<Selection>,
     /// What a release selected, waiting for the frame loop to hand it to
     /// the host terminal's clipboard through the handle the frames go
     /// through, so it cannot land inside one.
@@ -3504,10 +3502,7 @@ impl WorkspaceModel {
     /// has already put it away; an answer about a selection this client
     /// has since dropped is not one anybody is waiting for.
     fn copy(&mut self, pane: uze_terminal::PaneId, text: String) {
-        if self
-            .selection
-            .is_none_or(|selection| selection.pane != pane)
-        {
+        if !matches!(&self.selection, Some(Selection::Pane(selection)) if selection.pane == pane) {
             return;
         }
         if text.is_empty() {
@@ -4833,14 +4828,18 @@ impl WorkspaceModel {
 
     fn absorb_diff(&mut self, resolution: DiffResolution) -> bool {
         self.code_diff_pending = false;
-        let Some(view) = self
+        if self
             .code
-            .as_mut()
-            .filter(|view| view.root() == resolution.root)
-        else {
+            .as_ref()
+            .is_none_or(|view| view.root() != resolution.root)
+        {
             return false;
-        };
-        view.absorb_diff(resolution.answer);
+        }
+        let marked = self.code_marked_text();
+        if let Some(view) = self.code.as_mut() {
+            view.absorb_diff(resolution.answer);
+        }
+        self.forget_marking_if_moved(marked);
         true
     }
 
@@ -4937,15 +4936,37 @@ impl WorkspaceModel {
     /// answer still describes where the viewer is.
     fn absorb_changes(&mut self, resolution: ChangesResolution) -> bool {
         self.code_changes_pending = false;
-        let Some(view) = self
+        if self
             .code
-            .as_mut()
-            .filter(|view| view.root() == resolution.root)
-        else {
+            .as_ref()
+            .is_none_or(|view| view.root() != resolution.root)
+        {
             return false;
-        };
-        view.absorb_changes(resolution.refreshed);
+        }
+        let marked = self.code_marked_text();
+        if let Some(view) = self.code.as_mut() {
+            view.absorb_changes(resolution.refreshed);
+        }
+        self.forget_marking_if_moved(marked);
         true
+    }
+
+    /// The text a marking on the code surface covers right now.
+    fn code_marked_text(&self) -> Option<Vec<String>> {
+        let Some(Selection::Text(marking)) = &self.selection else {
+            return None;
+        };
+        Some(code::text(self.code.as_ref()?, marking.marked()?.lines()))
+    }
+
+    /// Drops a marking whose text a refresh changed. A marking is a
+    /// position in the text, and the same lines of a different diff are
+    /// not what was marked; a refresh that found everything as it was —
+    /// most of them — leaves it drawn.
+    fn forget_marking_if_moved(&mut self, before: Option<Vec<String>>) {
+        if before.is_some_and(|before| self.code_marked_text() != Some(before)) {
+            self.selection = None;
+        }
     }
 }
 

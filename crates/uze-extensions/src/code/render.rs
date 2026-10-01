@@ -17,7 +17,7 @@ use super::{
 use crate::Unreadable;
 use crate::shared::{canvas::Glyphs, checkout};
 use crate::view::{
-    Command, Confirm, Content, ContentLine, Layout, LineTone, MarkerSide, Mode, Navigator,
+    Command, Confirm, Content, ContentLine, Layout, LineTone, MarkerSide, Medium, Mode, Navigator,
     NavigatorRow, Role, RowIcon, Size, Span, TrailStep, View,
 };
 
@@ -131,7 +131,7 @@ fn map_content(code: &CodeView, space: Size) -> Content {
         total: lines.len(),
         lines,
         caret: None,
-        selection: None,
+        medium: Medium::Drawing,
     }
 }
 
@@ -457,7 +457,7 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
     let diff = &code.changes.diff;
     Content::Lines {
         caret: None,
-        selection: code.text_selection(),
+        medium: Medium::Text,
         total: diff.len(),
         heading: format!(
             "DIFF · {}",
@@ -500,7 +500,7 @@ fn preview_content(code: &CodeView, space: Size) -> Content {
     );
     Content::Lines {
         caret: None,
-        selection: code.text_selection(),
+        medium: Medium::Text,
         total,
         heading: format!(
             "{} · preview",
@@ -634,6 +634,6 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
             })
             .collect(),
         caret: (open.editing && code.content == ContentMode::Contents).then_some(open.caret),
-        selection: code.text_selection(),
+        medium: Medium::Text,
     }
 }

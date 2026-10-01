@@ -1,40 +1,29 @@
-//! Text selected in a pane with the pointer, and the clipboard it goes to.
+//! A pane's selection: the gesture is the client's, the text the
+//! terminal server's.
 //!
-//! The client owns the mouse (it has to, for its own chrome), which takes
-//! the host terminal's native selection away from the panes it draws. This
-//! gives it back the way every terminal does it: press, drag, release — and
-//! the release copies, so selecting is the whole gesture and no key a pane's
-//! program might bind has to be taken from it.
+//! The server anchors what is covered to the lines under it, so it stays
+//! on them while the view scrolls and copies what scrolled away — which is
+//! why the client sends it the gesture as it goes rather than keeping a
+//! range of its own.
 
 use ratatui::layout::Rect;
 use uze_terminal::{ClientRequest, PaneId, SelectionGesture};
 
+use super::Gesture;
+
 /// A press in a pane and where the pointer has carried it since, in the
-/// pane's own 0-indexed cells. Only the gesture lives here: what it covers
-/// is the terminal server's, which anchors it to the lines under it, so it
-/// stays on them while the view scrolls and copies what scrolled away.
+/// pane's own 0-indexed cells.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct PaneSelection {
-    pub(super) pane: PaneId,
-    anchor: (u16, u16),
-    head: (u16, u16),
-    /// Whether the pointer has left the cell it was pressed in. A press
-    /// that never moved is a click, and a click selects nothing.
-    moved: bool,
-    /// Whether the button is still down, so the view moving means the
-    /// selection's end moves with it.
-    held: bool,
+pub(crate) struct PaneSelection {
+    pub(crate) pane: PaneId,
+    gesture: Gesture<(u16, u16)>,
 }
 
 impl PaneSelection {
-    pub(super) fn pressed(pane: PaneId, area: Rect, column: u16, row: u16) -> Self {
-        let at = cell_in(area, column, row);
+    pub(crate) fn pressed(pane: PaneId, area: Rect, column: u16, row: u16) -> Self {
         Self {
             pane,
-            anchor: at,
-            head: at,
-            moved: false,
-            held: true,
+            gesture: Gesture::pressed(cell_in(area, column, row)),
         }
     }
 
@@ -43,8 +32,7 @@ impl PaneSelection {
     /// last column without the pointer landing exactly on it. Past the top
     /// or the bottom it also scrolls by the overshoot, which is how a
     /// selection reaches text that is not on screen.
-    pub(super) fn follow(&mut self, area: Rect, column: u16, row: u16) -> Vec<ClientRequest> {
-        let head = cell_in(area, column, row);
+    pub(crate) fn follow(&mut self, area: Rect, column: u16, row: u16) -> Vec<ClientRequest> {
         let lines = if row < area.y {
             i32::from(area.y - row)
         } else if row >= area.bottom() {
@@ -52,16 +40,22 @@ impl PaneSelection {
         } else {
             0
         };
-        if head == self.head && lines == 0 {
+        let had_moved = self.gesture.moved();
+        let carried = self.gesture.carry(cell_in(area, column, row));
+        if lines != 0 {
+            // Scrolling under the pointer covers new text even where the
+            // pointer stays on its cell.
+            self.gesture.begin();
+        }
+        if !carried && lines == 0 {
             return Vec::new();
         }
-        self.head = head;
-        let gesture = if self.moved {
+        let head = self.gesture.head();
+        let gesture = if had_moved {
             SelectionGesture::Extend { head }
-        } else if head != self.anchor || lines != 0 {
-            self.moved = true;
+        } else if self.gesture.moved() {
             SelectionGesture::Begin {
-                anchor: self.anchor,
+                anchor: self.gesture.anchor(),
                 head,
             }
         } else {
@@ -80,21 +74,25 @@ impl PaneSelection {
 
     /// What to say after the view moved under a held pointer: the cell it
     /// rests on now holds a different line.
-    pub(super) fn rescrolled(&self) -> Option<ClientRequest> {
-        (self.held && self.moved)
-            .then(|| self.request(SelectionGesture::Extend { head: self.head }))
+    pub(crate) fn rescrolled(&self) -> Option<ClientRequest> {
+        self.gesture.dragging().then(|| {
+            self.request(SelectionGesture::Extend {
+                head: self.gesture.head(),
+            })
+        })
     }
 
     /// The button came up; whether this was a drag rather than a click.
-    pub(super) fn release(&mut self) -> bool {
-        self.held = false;
-        self.moved
+    pub(crate) fn release(&mut self) -> bool {
+        self.gesture.release()
     }
 
     /// What to say when the selection is dropped: nothing for a click,
     /// which never reached the server.
-    pub(super) fn cleared(&self) -> Option<ClientRequest> {
-        self.moved.then(|| self.request(SelectionGesture::Clear))
+    pub(crate) fn cleared(&self) -> Option<ClientRequest> {
+        self.gesture
+            .moved()
+            .then(|| self.request(SelectionGesture::Clear))
     }
 
     fn request(&self, gesture: SelectionGesture) -> ClientRequest {
@@ -109,39 +107,6 @@ fn cell_in(area: Rect, column: u16, row: u16) -> (u16, u16) {
     let column = column.clamp(area.x, area.right().saturating_sub(1)) - area.x;
     let row = row.clamp(area.y, area.bottom().saturating_sub(1)) - area.y;
     (column, row)
-}
-
-/// The OSC 52 sequence that sets the system clipboard to `text` through the
-/// host terminal. The terminal is the only thing that can reach the
-/// clipboard of the machine the operator sits at — over SSH, from WSL into
-/// Windows — so writing it there rather than calling a platform tool is
-/// what makes the copy land where the reader will paste it.
-pub(super) fn osc52(text: &str) -> Vec<u8> {
-    let mut sequence = b"\x1b]52;c;".to_vec();
-    sequence.extend(base64(text.as_bytes()).into_bytes());
-    sequence.extend(b"\x07");
-    sequence
-}
-
-fn base64(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut encoded = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let bytes = [
-            chunk[0],
-            *chunk.get(1).unwrap_or(&0),
-            *chunk.get(2).unwrap_or(&0),
-        ];
-        let triple = u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]]);
-        for (position, shift) in [18, 12, 6, 0].into_iter().enumerate() {
-            if position <= chunk.len() {
-                encoded.push(ALPHABET[(triple >> shift & 0x3f) as usize] as char);
-            } else {
-                encoded.push('=');
-            }
-        }
-    }
-    encoded
 }
 
 #[cfg(test)]
@@ -239,13 +204,5 @@ mod tests {
         assert!(selection.release());
         assert_eq!(selection.rescrolled(), None);
         assert_eq!(selection.cleared(), Some(select(SelectionGesture::Clear)));
-    }
-
-    #[test]
-    fn osc52_carries_the_text_base64_encoded() {
-        assert_eq!(osc52("hi!"), b"\x1b]52;c;aGkh\x07");
-        assert_eq!(base64(b"f"), "Zg==");
-        assert_eq!(base64(b"fo"), "Zm8=");
-        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
     }
 }
