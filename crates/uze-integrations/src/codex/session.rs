@@ -42,11 +42,12 @@ pub(super) fn observe(sessions_root: &Path, ctx: &ObservationContext) -> Option<
         let Some(meta) = session_meta(&path) else {
             continue;
         };
-        if Path::new(&meta.cwd) != ctx.cwd {
+        let session = SessionId::new(meta.session_id);
+        if Path::new(&meta.cwd) != ctx.cwd || !ctx.is_unclaimed(&session) {
             continue;
         }
         if newest.as_ref().is_none_or(|(latest, _)| modified > *latest) {
-            newest = Some((modified, SessionId::new(meta.session_id)));
+            newest = Some((modified, session));
         }
     }
     newest.map(|(_, session)| session)
@@ -183,6 +184,7 @@ mod tests {
                     cwd: Path::new("/work/slot"),
                     since_unix: 50,
                     preceded_by: None,
+                    claimed_elsewhere: &[],
                 },
             ),
             Some(SessionId::new("newer"))
@@ -201,6 +203,7 @@ mod tests {
                     cwd: Path::new("/work/slot"),
                     since_unix: 500,
                     preceded_by: None,
+                    claimed_elsewhere: &[],
                 },
             ),
             None

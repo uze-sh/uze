@@ -180,8 +180,15 @@ impl Route {
     pub(crate) fn feature(self) -> Option<uze_application::Feature> {
         match self {
             Route::Profiles => Some(uze_application::Feature::Profiles),
+            Route::Overview => Some(uze_application::Feature::Overview),
             _ => None,
         }
+    }
+
+    /// The screen the modal opens on when it remembers none this build
+    /// offers: the first in sidebar order.
+    pub(crate) fn first_offered() -> Route {
+        routes().first().copied().unwrap_or(Route::Plugins)
     }
 
     /// Where this screen sits among the ones on offer. A screen this
@@ -448,6 +455,9 @@ pub(crate) enum Overlay {
     /// The notes of the release the sidebar's notice names, and of every
     /// other the changelog carries.
     ReleaseNotes(crate::ui::release_notes::ReleaseNotesModal),
+    /// What the footer's health status stands for: each problem an
+    /// operator can act on, read and then put away.
+    Health,
     /// The Harnesses screen's own glossary — what each status/delivery/
     /// compatibility label actually means. Reference material about what
     /// the data *means*, which is a different question from what can be
@@ -490,9 +500,6 @@ pub(crate) enum Confirmation {
         marketplace: String,
     },
     ApplyContext,
-    /// Deleting the workspace's recorded prompts. Destructive and not
-    /// undoable, so it is confirmed like any other removal.
-    ClearPromptHistory,
     /// Why a plugin from the embedded official snapshot cannot be removed.
     /// Nothing to agree to: it explains a refusal.
     ProtectedPlugin(String),
@@ -534,7 +541,6 @@ pub(crate) struct RefreshData {
     /// The Overview's workspace-aware read model — present from the very
     /// first refresh onward (there is always a kind, even `NoWorkspace`).
     pub(crate) workspace: Option<OverviewWorkspaceSummary>,
-    pub(crate) prompt_history: Vec<uze_application::PromptEntry>,
     /// Qualified ids of the plugins the startup worker updated on its own
     /// this session. Only ever non-empty on the one startup refresh; every
     /// later refresh reports nothing, so badges already raised are never
@@ -684,7 +690,6 @@ pub(crate) struct TuiModel {
     pub(crate) profile_preview_asked: Option<PreviewQuestion>,
 
     pub(crate) context_root: PathBuf,
-    pub(crate) overview_prompt_hovered: Option<usize>,
 
     /// Whether the pointer is on the plugin drawer's source address.
     /// A link in a terminal has no cursor to change shape, so the colour
@@ -694,6 +699,8 @@ pub(crate) struct TuiModel {
     /// Whether the pointer is on the footer's version, which opens this
     /// release's notes. Colour is the only answer a terminal has to hover.
     pub(crate) version_hovered: bool,
+    /// Whether the pointer is on the footer's health status.
+    pub(crate) health_hovered: bool,
     /// Whether the pointer is on the release notes' close mark.
     pub(crate) release_notes_close_hovered: bool,
     /// The detail drawer's button under the pointer, if any.
@@ -774,9 +781,6 @@ pub(crate) struct Remembered {
     /// The detected UZE workspace (`agents.lock`/`marketplace.json`), loaded on
     /// the first refresh. `None` only before the startup worker returns.
     pub(crate) workspace: Option<OverviewWorkspaceSummary>,
-    /// Recent prompts for the detected workspace, newest first. Read-only
-    /// here: the workspace client owns writing them.
-    pub(crate) prompt_history: Vec<uze_application::PromptEntry>,
     /// Plugins updated automatically this session, badged as "Updated" on
     /// the Plugins screen until [`UPDATE_BADGE_TTL`] after the operator has
     /// actually had that screen in front of them.
@@ -791,7 +795,6 @@ pub(crate) struct Remembered {
     pub(crate) extension_screen: ListScreen,
     pub(crate) harness_screen: ListScreen,
     pub(crate) profiles_selected: usize,
-    pub(crate) overview_prompt_selected: usize,
 }
 
 impl TuiModel {
@@ -805,7 +808,8 @@ impl TuiModel {
                 .route
                 .as_deref()
                 .and_then(Route::from_id)
-                .unwrap_or(Route::Overview),
+                .filter(|route| routes().contains(route))
+                .unwrap_or_else(Route::first_offered),
             focus: Focus::Sidebar,
             overlay: Overlay::None,
             key_screen: ListScreen::default(),
@@ -852,9 +856,9 @@ impl TuiModel {
             profile_preview_epoch: 0,
             profile_preview_asked: None,
             context_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            overview_prompt_hovered: None,
             source_link_hovered: false,
             version_hovered: false,
+            health_hovered: false,
             release_notes_close_hovered: false,
             hovered_offer: None,
             tick: 0,
@@ -2013,34 +2017,6 @@ impl TuiModel {
         screen.selected = step_within(screen.selected, delta, len);
     }
 
-    fn clamp_prompt_selection(&mut self) {
-        self.remembered.overview_prompt_selected = self
-            .remembered
-            .overview_prompt_selected
-            .min(self.remembered.prompt_history.len().saturating_sub(1));
-        self.overview_prompt_hovered = self
-            .overview_prompt_hovered
-            .filter(|index| *index < self.remembered.prompt_history.len());
-    }
-
-    pub(crate) fn move_prompt_selection(&mut self, delta: isize) {
-        let len = self.remembered.prompt_history.len();
-        if len == 0 {
-            return;
-        }
-        self.remembered.overview_prompt_selected =
-            step_within(self.remembered.overview_prompt_selected, delta, len);
-    }
-
-    /// Leaves management for the tab the selected prompt was typed into.
-    pub(crate) fn activate_selected_prompt(&mut self) -> super::worker::Intent {
-        self.remembered
-            .prompt_history
-            .get(self.remembered.overview_prompt_selected)
-            .map(|entry| super::worker::Intent::CloseToTab(entry.tab_id))
-            .unwrap_or(super::worker::Intent::None)
-    }
-
     pub(crate) fn refreshed(&mut self, data: RefreshData) {
         self.remembered.plugins = data.plugins;
         self.remembered.doctor = data.doctor;
@@ -2082,8 +2058,6 @@ impl TuiModel {
         if data.workspace.is_some() {
             self.remembered.workspace = data.workspace;
         }
-        self.remembered.prompt_history = data.prompt_history;
-        self.clamp_prompt_selection();
         // Additive, never a replacement: only the startup refresh carries
         // auto-updates, so an ordinary reload (or a mutation's own refresh)
         // must leave badges already raised exactly where they are.
@@ -2143,9 +2117,6 @@ impl TuiModel {
         }
         if route == Route::Profiles {
             self.profile_panel = ProfilePanel::List;
-        }
-        if route != Route::Overview {
-            self.overview_prompt_hovered = None;
         }
         self.route = route;
         // Settings reads its two lists on arrival rather than per frame:

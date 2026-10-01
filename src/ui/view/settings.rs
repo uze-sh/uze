@@ -35,12 +35,12 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-use super::super::hit::Hit;
-use super::super::model::{ResizablePanel, Route, SettingsRow, TuiModel};
-use super::super::{content_area, render_screen_header};
 use crate::ui::chime;
+use crate::ui::hit::Hit;
+use crate::ui::model::{ResizablePanel, Route, SettingsRow, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{self, Scrollbar, Surface};
+use crate::ui::{content_area, render_screen_header};
 
 /// The marks a preview shows. Chosen to be the ones that differ most
 /// between sets, and to include a two-cell glyph (`arrow.to` is `->` in

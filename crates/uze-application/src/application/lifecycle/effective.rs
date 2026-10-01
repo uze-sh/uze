@@ -19,8 +19,8 @@ use uze_core::{
     store::StoredPackage,
 };
 
-use super::super::*;
 use super::attach::{CapabilityShortfall, refuses_one_name};
+use crate::application::*;
 
 /// One package's delivery to one harness, as planned.
 pub(crate) struct PlannedDelivery {

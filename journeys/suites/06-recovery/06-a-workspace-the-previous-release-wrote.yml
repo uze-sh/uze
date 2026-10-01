@@ -54,7 +54,7 @@ scenes:
         expect: from-before
         expect_timeout: 25
         pause: 2.0
-      - click: "✦ new"
+      - click: "new"
         say: the product works — place an agent
         in: sidebar
         expect: new agent

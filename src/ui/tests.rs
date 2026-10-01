@@ -352,10 +352,6 @@ fn every_overlay_renders_without_panicking() {
             focus: None,
         },
         Overlay::Confirm {
-            kind: Confirmation::ClearPromptHistory,
-            focus: None,
-        },
-        Overlay::Confirm {
             kind: Confirmation::ProtectedPlugin("one".to_owned()),
             focus: None,
         },
@@ -557,7 +553,6 @@ fn a_return_visit_draws_what_the_last_one_resolved() {
     model.remembered.resolved_at = Some(std::time::Instant::now());
     model.remembered.plugin_screen.selected = 1;
     model.remembered.plugin_screen.drawer_width = Some(46);
-    model.remembered.prompt_history = Vec::new();
     // What one visit ends holding — including work it was in the middle
     // of, which the next visit must not inherit.
     model.status = Status::Working("Inspecting one…".to_owned());
@@ -3156,6 +3151,12 @@ fn a_harness_card_says_its_state_at_its_foot() {
         foot.contains("Enabled"),
         "the one UZE set up says so: {foot:?}"
     );
+    // Pinned to the card's right edge, past its two columns of inset, so
+    // every card in a row says it in the same column.
+    assert!(
+        foot.trim_end_matches(' ').ends_with("Enabled") && foot.ends_with("Enabled  "),
+        "the state sits at the right edge: {foot:?}"
+    );
     let (title, foot) = card(&wide, "Codex");
     assert_eq!(title.trim(), "Codex");
     assert!(
@@ -3551,348 +3552,6 @@ fn overview_install_intent_reaches_install_project_environment() {
     std::fs::remove_dir_all(&base).ok();
 }
 
-// --- Prompt history -----------------------------------------------------
-
-/// The Overview's history is seeded before the first frame, and must find
-/// what the workspace client wrote — keyed the same way, from anywhere
-/// inside the workspace. Reading it out of the startup worker instead is
-/// what made an opened management screen say "no history yet" while
-/// plugins were being seeded and the official snapshot auto-updated.
-#[test]
-fn the_seeded_history_reads_what_the_workspace_client_recorded() {
-    let base = uze_testkit::temp::scratch("ui-prompt-history-seed");
-    let home = UzeHome::at(base.join("home"));
-    let project = base.join("project");
-    let nested = project.join("crates").join("inner");
-    std::fs::create_dir_all(&nested).unwrap();
-    // The manifest is what anchors a project: the lock is derived, and a
-    // derived file cannot be what identifies one. A fixture that only
-    // resolved would not be found from a subdirectory at all.
-    std::fs::write(project.join("agents.yaml"), "worktrees: {}\n").unwrap();
-
-    let app = super::tui_application(home.clone()).unwrap();
-    let root = app.workspace().root(&project);
-    app.workspace()
-        .record_prompt(
-            &root,
-            &uze_application::PromptOrigin {
-                space_label: "project".to_owned(),
-                tab_id: 7,
-                tab_label: "agent 1".to_owned(),
-                agent_binary: "claude".to_owned(),
-            },
-            "ship the thing",
-        )
-        .unwrap();
-
-    // From a subdirectory, the way a `uze` launched deep inside one asks.
-    let seeded = super::worker::recent_prompts(home, &nested);
-
-    let previews: Vec<&str> = seeded.iter().map(|entry| entry.preview.as_str()).collect();
-    assert_eq!(previews, ["ship the thing"]);
-    assert_eq!(seeded[0].tab_id, 7);
-
-    std::fs::remove_dir_all(&base).ok();
-}
-
-fn prompt(tab_id: u64, preview: &str) -> uze_workspace::prompt_history::PromptEntry {
-    uze_workspace::prompt_history::PromptEntry {
-        space_label: "space 1".to_owned(),
-        tab_id,
-        tab_label: format!("tab {tab_id}"),
-        agent_binary: "agent".to_owned(),
-        preview: preview.to_owned(),
-        timestamp_secs: 0,
-    }
-}
-
-fn overview_with_prompts(count: u64) -> TuiModel {
-    TuiModel {
-        route: Route::Overview,
-        focus: Focus::Content,
-        remembered: Remembered {
-            prompt_history: (0..count)
-                .map(|index| prompt(index + 1, &format!("prompt {index}")))
-                .collect(),
-            ..TuiModel::default().remembered
-        },
-        ..TuiModel::default()
-    }
-}
-
-#[test]
-fn overview_arrows_move_the_prompt_selection_within_bounds() {
-    let mut model = overview_with_prompts(3);
-
-    for _ in 0..5 {
-        model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    }
-    assert_eq!(model.remembered.overview_prompt_selected, 2);
-
-    for _ in 0..5 {
-        model.apply_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-    }
-    assert_eq!(model.remembered.overview_prompt_selected, 0);
-}
-
-#[test]
-fn overview_arrows_still_navigate_routes_from_the_sidebar() {
-    let mut model = TuiModel {
-        route: Route::Overview,
-        focus: Focus::Sidebar,
-        remembered: Remembered {
-            prompt_history: vec![prompt(1, "prompt")],
-            ..TuiModel::default().remembered
-        },
-        ..TuiModel::default()
-    };
-
-    model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-
-    assert_eq!(model.route, Route::Plugins);
-    assert_eq!(model.remembered.overview_prompt_selected, 0);
-}
-
-#[test]
-fn activating_a_prompt_returns_to_its_tab() {
-    let mut model = overview_with_prompts(3);
-    model.remembered.overview_prompt_selected = 2;
-
-    let intent = model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert_eq!(intent, Intent::CloseToTab(3));
-}
-
-#[test]
-fn an_empty_history_leaves_enter_to_the_routes_own_action() {
-    let mut model = TuiModel {
-        route: Route::Overview,
-        focus: Focus::Content,
-        ..TuiModel::default()
-    };
-
-    assert_ne!(
-        model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-        Intent::CloseToTab(0)
-    );
-}
-
-#[test]
-fn clearing_the_history_is_confirmed_before_it_happens() {
-    let mut model = overview_with_prompts(2);
-
-    let intent = model.apply_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
-    assert_eq!(intent, Intent::None);
-    assert_eq!(
-        model.overlay,
-        Overlay::Confirm {
-            kind: Confirmation::ClearPromptHistory,
-            focus: None,
-        }
-    );
-
-    let intent = model.apply_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
-    assert_eq!(intent, Intent::ClearPromptHistory);
-    assert_eq!(model.overlay, Overlay::None);
-}
-
-#[test]
-fn declining_the_clear_confirmation_does_nothing() {
-    let mut model = overview_with_prompts(2);
-    model.apply_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
-
-    let intent = model.apply_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-
-    assert_eq!(intent, Intent::None);
-    assert_eq!(model.overlay, Overlay::None);
-    assert_eq!(model.remembered.prompt_history.len(), 2);
-}
-
-#[test]
-fn a_prompt_row_is_clickable_and_hoverable_at_the_same_rect() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut model = overview_with_prompts(3);
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    model.hits = hits;
-
-    let (rect, _) = model
-        .hits
-        .iter()
-        .find(|(_, hit)| matches!(hit, Hit::PromptHistory(1)))
-        .expect("the second prompt row registers a hit");
-    let (column, row) = (rect.x + 1, rect.y);
-
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Moved,
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-    assert_eq!(model.overview_prompt_hovered, Some(1));
-
-    assert_eq!(model.click(column, row), Intent::CloseToTab(2));
-    assert_eq!(model.remembered.overview_prompt_selected, 1);
-}
-
-#[test]
-fn moving_off_every_row_drops_the_hover() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut model = overview_with_prompts(2);
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    model.hits = hits;
-    model.overview_prompt_hovered = Some(0);
-
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Moved,
-            column: 99,
-            row: 39,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-
-    assert_eq!(model.overview_prompt_hovered, None);
-}
-
-#[test]
-fn a_refresh_that_shrinks_the_history_clamps_selection_and_hover() {
-    let mut model = overview_with_prompts(5);
-    model.remembered.overview_prompt_selected = 4;
-    model.overview_prompt_hovered = Some(4);
-
-    model.refreshed(RefreshData {
-        prompt_history: vec![prompt(1, "only one")],
-        ..RefreshData::default()
-    });
-
-    assert_eq!(model.remembered.overview_prompt_selected, 0);
-    assert_eq!(model.overview_prompt_hovered, None);
-}
-
-#[test]
-fn the_prompt_table_groups_rows_by_age_and_marks_the_selection() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let recent =
-        |tab_id: u64, agent: &str, preview: &str| uze_workspace::prompt_history::PromptEntry {
-            agent_binary: agent.to_owned(),
-            timestamp_secs: now - 8 * 60,
-            ..prompt(tab_id, preview)
-        };
-    let model = TuiModel {
-        route: Route::Overview,
-        focus: Focus::Content,
-        remembered: Remembered {
-            overview_prompt_selected: 1,
-            prompt_history: vec![
-                recent(1, "claude", "first prompt"),
-                recent(2, "codex", "second prompt"),
-                prompt(3, "from long ago"),
-            ],
-            ..TuiModel::default().remembered
-        },
-        ..TuiModel::default()
-    };
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    let rows = buffer_rows(&terminal);
-
-    let title = rows
-        .iter()
-        .find(|row| row.contains("Recent prompts — 3 recorded"))
-        .expect("the title counts the entries");
-    assert!(title.ends_with("claude 1 · codex 1 · agent 1"), "{title}");
-    assert!(
-        rows.iter()
-            .any(|row| row.contains("HARNESS") && row.contains("WHEN") && row.contains("PROMPT")),
-        "column headings are drawn"
-    );
-    let selected = rows
-        .iter()
-        .find(|row| row.contains("second prompt"))
-        .expect("the selected entry is drawn");
-    let content = selected.rsplit('│').next().unwrap().trim_start();
-    assert!(content.starts_with("❯ codex"), "{selected}");
-    assert!(selected.contains("8m"), "{selected}");
-    assert!(selected.contains("space 1/tab 2"), "{selected}");
-    let first = rows
-        .iter()
-        .find(|row| row.contains("first prompt"))
-        .unwrap();
-    assert!(!first.contains('❯'), "{first}");
-
-    let older_heading = rows
-        .iter()
-        .position(|row| row.contains("── OLDER"))
-        .expect("entries from before yesterday sit under their own heading");
-    let older_entry = rows
-        .iter()
-        .position(|row| row.contains("from long ago"))
-        .unwrap();
-    assert_eq!(older_entry, older_heading + 1);
-    let content_of = |row: &String| row.rsplit('│').next().unwrap().trim().to_owned();
-    assert!(
-        content_of(&rows[older_heading - 1]).is_empty(),
-        "a blank separates groups"
-    );
-    assert!(
-        !rows[older_heading].ends_with('…'),
-        "the heading's rule stops at the edge instead of being clipped"
-    );
-    assert!(
-        !rows.iter().any(|row| row.contains("── EARLIER TODAY")),
-        "recent entries open the listing without a heading"
-    );
-}
-
-#[test]
-fn a_selection_below_the_fold_scrolls_the_prompt_table() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
-    let mut model = overview_with_prompts(40);
-    model.remembered.overview_prompt_selected = 30;
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-
-    assert!(
-        hits.iter()
-            .any(|(_, hit)| matches!(hit, Hit::PromptHistory(30))),
-        "the selected row is drawn even though it is not among the newest"
-    );
-    assert!(
-        !hits
-            .iter()
-            .any(|(_, hit)| matches!(hit, Hit::PromptHistory(0))),
-        "rows above scroll away to make room"
-    );
-}
-
-#[test]
-fn an_overview_with_no_room_for_the_history_still_renders() {
-    let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
-    let model = overview_with_prompts(40);
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-}
-
 /// A row eliding text stays inside the width it was given, whatever the
 /// active theme's elision marker costs.
 ///
@@ -4025,13 +3684,17 @@ fn a_screen_behind_a_feature_is_absent_or_whole() {
 // drawn into the label column, and pushing the count off its own would
 // trade one signal for another.
 #[test]
-fn the_unsettled_route_is_the_only_badged_one_in_either_layout() {
+fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
     use ratatui::{Terminal, backend::TestBackend};
     let badge = crate::ui::widget::text::small_caps(
         Route::Profiles
             .badge()
             .expect("a screen behind a feature says so"),
     );
+    let unsettled: Vec<Route> = super::model::routes()
+        .into_iter()
+        .filter(|route| route.feature().is_some())
+        .collect();
     for (width, height) in [(150u16, 26u16), (80, 20)] {
         for route in [Route::Profiles, Route::Plugins] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -4051,20 +3714,25 @@ fn the_unsettled_route_is_the_only_badged_one_in_either_layout() {
                 .collect();
             assert_eq!(
                 badged.len(),
-                1,
+                unsettled.len(),
                 "at {width}x{height} on {route:?}, {} rows carry the badge: {badged:?}",
                 badged.len()
             );
-            assert!(
-                badged[0].contains(Route::Profiles.label()),
-                "the badge landed on the wrong row: {:?}",
-                badged[0]
-            );
-            assert!(
-                badged[0].contains(&crate::ui::widget::text::small_digits(2)),
-                "the badge pushed the route count off its row: {:?}",
-                badged[0]
-            );
+            for row in &badged {
+                assert!(
+                    unsettled.iter().any(|route| row.contains(route.label())),
+                    "the badge landed on a settled row: {row:?}"
+                );
+            }
+            if let Some(profiles) = badged
+                .iter()
+                .find(|row| row.contains(Route::Profiles.label()))
+            {
+                assert!(
+                    profiles.contains(&crate::ui::widget::text::small_digits(2)),
+                    "the badge pushed the route count off its row: {profiles:?}"
+                );
+            }
         }
     }
 }
@@ -5781,4 +5449,241 @@ fn both_columns_reach_the_terminals_last_row() {
     let (sidebar, column) = super::sidebar_and_column(frame, None);
     assert_eq!(sidebar.bottom(), frame.bottom());
     assert_eq!(column.bottom(), frame.bottom());
+}
+
+/// Health is said in one place, beside the version, on every screen of
+/// the modal — and a click on it opens what it is about.
+#[test]
+fn the_footer_says_the_machines_health_and_opens_what_needs_attention() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    if let Some(doctor) = model.remembered.doctor.as_mut() {
+        doctor.ledger_error = Some("the ledger is not JSON".to_owned());
+    }
+    let draw = |model: &TuiModel| {
+        let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .unwrap();
+        (buffer_rows(&terminal), hits)
+    };
+    let (rows, hits) = draw(&model);
+    let footer = rows.last().expect("a footer row");
+    let version = format!("v{}", crate::self_update::running());
+    assert!(footer.contains("need attention"), "{footer}");
+    assert!(
+        footer.find("need attention") < footer.find(&version),
+        "the status sits beside the version, before it: {footer}"
+    );
+
+    let (rect, _) = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::HealthStatus)
+        .expect("the status answers a click");
+    model.hits = hits.clone();
+    model.click(rect.x, rect.y);
+    assert_eq!(model.overlay, Overlay::Health);
+    let (rows, _) = draw(&model);
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("Attachment ledger unreadable")),
+        "{}",
+        rows.join("\n")
+    );
+
+    // Nothing read yet is nothing said, rather than a "healthy" nobody
+    // checked.
+    model.overlay = Overlay::None;
+    model.remembered.doctor = None;
+    let (rows, hits) = draw(&model);
+    assert!(!rows.last().unwrap().contains("healthy"));
+    assert!(!hits.iter().any(|(_, hit)| *hit == Hit::HealthStatus));
+}
+
+/// A marketplace in the rail is its name and how much of it is installed,
+/// over the one thing worth knowing about it: what asks for action, that
+/// it ships with uze, or how long ago it was last checked.
+#[test]
+fn a_marketplace_in_the_rail_is_its_name_over_what_needs_saying() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .unwrap();
+    let rows = buffer_rows(&terminal);
+    let text = rows.join("\n");
+    let row_of = |needle: &str| {
+        rows.iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} not drawn:\n{text}"))
+    };
+    let heading = row_of("MARKETPLACES");
+    assert!(
+        rows[heading].contains("PLUGIN"),
+        "the rail's heading shares the plugin table's heading row: {text}"
+    );
+    assert!(
+        rows[heading + 2].contains("all") && rows[heading + 2].contains("flow"),
+        "a row of air under both headings, then the first entry of each: {text}"
+    );
+    let uze = row_of("│  uze ");
+    assert!(
+        rows[uze].contains("1/1"),
+        "the count beside the name: {text}"
+    );
+    assert!(rows[uze + 1].contains("built in"), "{text}");
+    // A rule divides the rail from the plugin table, rather than a ground
+    // of its own.
+    let rail = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
+        .map(|(rect, _)| *rect)
+        .expect("the marketplace is a target");
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(rail.right(), rail.y)].symbol(), "│", "{text}");
+    assert_ne!(
+        buffer[(rail.x, rail.bottom())].bg,
+        theme::color(Token::SurfaceRecessed),
+        "{text}"
+    );
+    // Adding one is a button on the header's row, beside the count it
+    // would change, not an entry at the foot of the list.
+    assert!(!text.contains("+ add"), "{text}");
+    let button = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::AddMarketplace))
+        .map(|(rect, _)| *rect)
+        .expect("the button is a target");
+    let header = &rows[button.y as usize];
+    let divider = theme::glyph(theme::Symbol::TreeColumnDivider);
+    let at = |needle: &str| {
+        header
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle} not on the header row: {header}"))
+    };
+    let count = at("marketplaces ·");
+    let button_at = at("  Add  ");
+    assert!(
+        header[count..button_at].contains(&divider),
+        "the count, a divider, then the button: {header}"
+    );
+    let header_hits: Vec<_> = hits
+        .iter()
+        .filter(|(rect, _)| rect.y == button.y && rect.x > button.x)
+        .collect();
+    assert!(
+        header_hits.is_empty(),
+        "the button ends the header's row: {header_hits:?}"
+    );
+    assert!(
+        rows[row_of("│  local ") + 1].contains("1 update"),
+        "what asks for action under the name:\n{text}"
+    );
+    let market = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
+        .map(|(rect, _)| *rect)
+        .expect("the marketplace is a target");
+    assert_eq!(market.height, 2, "either of its rows picks it");
+}
+
+/// The whole row answers, not the chevron alone: a click puts the keyboard
+/// on a plugin, and a click on the plugin it is already on opens or folds
+/// its resources.
+#[test]
+fn a_click_on_the_selected_plugin_row_opens_and_folds_it() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Sidebar,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    let click_row = |model: &mut TuiModel, index: usize| {
+        let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .unwrap();
+        let rect = hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::MarketplaceRow(index))
+            .map(|(rect, _)| *rect)
+            .expect("the row is a target");
+        model.hits = hits;
+        // Past the chevron, on the name.
+        model.click(rect.x + 6, rect.y);
+    };
+    let expanded = |model: &TuiModel| {
+        let plugin = model.selected_marketplace_plugin().expect("a plugin");
+        model
+            .expanded_plugins
+            .contains(&model.marketplace_plugin_id(&plugin))
+    };
+
+    click_row(&mut model, 1);
+    assert_eq!(model.remembered.plugin_screen.selected, 1);
+    assert!(
+        !expanded(&model),
+        "the first click selects and nothing more"
+    );
+    click_row(&mut model, 1);
+    assert!(expanded(&model), "a click on the selected row opens it");
+    click_row(&mut model, 1);
+    assert!(!expanded(&model), "and another folds it");
+}
+
+/// The marketplace the plugins on the right belong to keeps its ground
+/// while the keyboard is down among them, so the reader does not lose which
+/// one they are looking into — and the ground, across the whole rail, is
+/// the only mark: no bar beside it.
+#[test]
+fn the_selected_marketplace_keeps_its_ground_while_a_plugin_is_selected() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    model.select_plugin_market(Some("local".to_owned()));
+    model.plugin_pane = super::model::PluginPane::Plugins;
+    let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .unwrap();
+    let rows = buffer_rows(&terminal);
+    let rail = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
+        .map(|(rect, _)| *rect)
+        .expect("the marketplace is a target");
+    let buffer = terminal.backend().buffer();
+    for x in [rail.x, rail.right() - 1] {
+        assert_eq!(
+            buffer[(x, rail.y)].bg,
+            theme::color(Token::SurfaceSelected),
+            "the selection tint spans the rail, edge to edge, at column {x}"
+        );
+    }
+    let bar = theme::glyph(theme::Symbol::TreeColumnDivider);
+    assert!(
+        !rows[rail.y as usize].contains(&format!("{bar} local")),
+        "no bar beside it: {:?}",
+        rows[rail.y as usize]
+    );
 }

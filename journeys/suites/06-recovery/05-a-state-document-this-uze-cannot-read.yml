@@ -37,7 +37,7 @@ scenes:
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
-      - click: "✦ new"
+      - click: "new"
         say: open the new-agent picker from the space's row
         in: sidebar
         expect: new agent
@@ -79,7 +79,7 @@ scenes:
             printf '{"schema_version": 1, "tasks": []}' > "$document"
           done
         say: the machine is left holding the state an older uze wrote
-      - click: "✦ new"
+      - click: "new"
         say: open the picker again
         in: sidebar
         expect: new agent

@@ -41,7 +41,7 @@ scenes:
         pause: 1.5
       # The released binary's own strip, which carried the "✦" beside the
       # "+" with a divider between them. Every other journey clicks this
-      # build's, where "✦ new" is on the selected space's row in the
+      # build's, where "new" is on the selected space's row in the
       # sidebar — this is the one gesture aimed at a screen this
       # repository no longer draws.
       - click: "+ │ ✦"
@@ -81,7 +81,7 @@ scenes:
         expect: demo-app
         expect_timeout: 30
         pause: 2.0
-      - click: "✦ new"
+      - click: "new"
         say: the product works — place an agent
         in: sidebar
         expect: new agent

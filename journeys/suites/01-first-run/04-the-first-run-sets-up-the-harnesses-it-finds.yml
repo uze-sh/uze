@@ -44,7 +44,7 @@ scenes:
 
   - scene: an agent picked in that workspace starts
     when:
-      - click: "✦ new"
+      - click: "new"
         say: open the new-agent picker from the space's row
         in: sidebar
         expect: new agent

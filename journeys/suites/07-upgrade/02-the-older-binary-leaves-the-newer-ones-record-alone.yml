@@ -34,7 +34,7 @@ scenes:
         expect: demo-app
         expect_timeout: 30
         pause: 1.5
-      - click: "✦ new"
+      - click: "new"
         say: open the new-agent picker
         in: sidebar
         expect: new agent

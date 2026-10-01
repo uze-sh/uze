@@ -264,8 +264,8 @@ mod generated_native_tests {
     use uze_core::home::UzeHome;
     use uze_core::integration::IntegrationPort;
 
-    use super::super::AntigravityIntegration;
     use super::*;
+    use crate::antigravity::AntigravityIntegration;
 
     fn temp_root(label: &str) -> PathBuf {
         uze_testkit::temp::scratch(label)

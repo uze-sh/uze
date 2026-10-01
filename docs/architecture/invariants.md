@@ -589,6 +589,15 @@ another's entries, the file and its directory are `0600`/`0700`, and
 > `crates/uze-workspace/src/prompt_history.rs::tests::each_workspace_keeps_its_own_history`
 > `crates/uze-workspace/src/prompt_history.rs::tests::clear_removes_only_the_named_workspace_and_tolerates_absence`
 
+### An agent's prompts are matched on the agent, never on its tab
+
+The terminal runtime mints tab ids again when it restores a workspace, so a
+tab id names different agents on either side of a restart. Each entry
+records the agent UZE launched in the tab, and the drawer's "this agent"
+listing matches on that alone.
+
+> `src/ui/orchestrator/tests.rs::drawer_tests::an_agents_prompts_are_its_own_whatever_tab_ids_were_reused`
+
 ---
 
 ## The workspace client (ADR-038 companion)
@@ -1665,6 +1674,14 @@ runtime's launch vocabulary, and core never spells it.
 > `crates/uze-workspace/src/conversation.rs::a_claim_no_record_backs_has_no_owner`
 > `crates/uze-workspace/src/continuity.rs::two_agents_in_one_directory_keep_their_own_conversations`
 > `tests/acceptance/session_continuity.rs::an_identity_claimed_from_the_wrong_directory_is_launched_untouched`
+
+Reading back which conversation an agent moved to is held to the same
+rule. Agents sharing a directory each see the others' conversations as the
+newest one there, so a read-back never adopts a conversation another agent
+of the project already holds.
+
+> `crates/uze-workspace/src/continuity.rs::a_conversation_another_agent_holds_is_never_taken_over`
+> `crates/uze-integrations/src/claude/session.rs::a_conversation_another_agent_holds_is_never_adopted`
 > `tests/architecture/layering.rs::architecture_rules_hold` (the identity variable has one owner)
 
 ### An identity has an owner, and a launch inside a launch is ordinary

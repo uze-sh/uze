@@ -8,8 +8,8 @@ use uze_core::{
     trust::{self, TrustAuthority},
 };
 
-use super::super::services::Plugins;
-use super::super::*;
+use crate::application::services::Plugins;
+use crate::application::*;
 
 impl Plugins<'_> {
     /// The package re-read from the checkout its marketplace is linked to,
@@ -26,11 +26,12 @@ impl Plugins<'_> {
         let marketplace = installed.id.marketplace();
         let record = uze_core::state::marketplace_get(&self.0.home, marketplace).ok()??;
         record.link?;
-        let request = super::super::marketplace::MarketplaceRequest::of(&record.source).ok()?;
+        let request =
+            crate::application::marketplace::MarketplaceRequest::of(&record.source).ok()?;
         request
             .materialize_plugin(
                 installed.id.plugin_name(),
-                super::super::marketplace::MirrorAt {
+                crate::application::marketplace::MirrorAt {
                     home: &self.0.home,
                     marketplace,
                     recent: None,

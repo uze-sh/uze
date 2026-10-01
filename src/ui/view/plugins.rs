@@ -27,13 +27,13 @@ use uze_application::application::{
     DoctorReport, FreshnessState, MarketplacePluginSummary, PluginCapability, Revision,
 };
 
-use super::super::agent_support::{capability_label, resource_groups};
-use super::super::hit::Hit;
-use super::super::model::{PluginPane, ResizablePanel, Route, TuiModel};
-use super::super::{content_area, render_screen_header};
 use super::{DrawerStatus, render_drawer_footer};
+use crate::ui::agent_support::{capability_label, resource_groups};
+use crate::ui::hit::Hit;
+use crate::ui::model::{PluginPane, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Edge, RowState, Rule, mark, row, text};
+use crate::ui::widget::{Button, Edge, RowState, Rule, mark, row, text};
+use crate::ui::{content_area, render_screen_header};
 
 /// Both status labels are 9 characters (`Installed`/`Available`), but that's
 /// incidental — pad explicitly so alignment holds even if a future status
@@ -51,12 +51,10 @@ const RAIL_SHARE: u16 = 30;
 const RAIL_MIN: u16 = 16;
 const RAIL_MAX: u16 = 26;
 
-/// What the rail hangs into the content inset: its selection bar and the
-/// gap after it.
-const RAIL_GUTTER: u16 = 2;
-
-/// Where the rail's counts go: `installed/offered` for up to 999 of each.
-const COUNT_WIDTH: usize = 7;
+/// What the rail hangs into the content inset: the column of its own
+/// padding, so every name inside it lines up with the title above it and a
+/// column of the inset still stands between it and the modal's navigation.
+const RAIL_GUTTER: u16 = 1;
 
 pub(crate) fn render_plugins(
     frame: &mut ratatui::Frame<'_>,
@@ -94,7 +92,8 @@ pub(crate) fn render_plugins(
         ),
         theme::fg(Token::TextMuted),
     );
-    let content = render_screen_header(frame, side, Route::Plugins, Some(trailer));
+    let content = render_screen_header(frame, side, Route::Plugins, None);
+    render_header_trailer(frame, side, trailer, model, hits);
     let filter_area = Rect::new(content.x, content.y, content.width, 2);
     super::filter_box(
         frame,
@@ -112,9 +111,6 @@ pub(crate) fn render_plugins(
     );
 
     let rail_width = (body.width * RAIL_SHARE / 100).clamp(RAIL_MIN, RAIL_MAX);
-    // Two columns into the inset, so the selection bar and its gap sit in
-    // the margin and every name lines up with the title and the filter
-    // above it, the way the sidebar's own entries hang their bar.
     let gutter = body.x.min(RAIL_GUTTER);
     let rail = Rect::new(
         body.x - gutter,
@@ -203,12 +199,13 @@ fn render_rail(
 ) {
     let inner = Rule::new(Edge::Right).render(frame, area);
     let width = inner.width.saturating_sub(1);
-    let focused = model.plugin_pane == PluginPane::Markets
-        && model.focus == super::super::model::Focus::Content;
-    let mut lines = vec![Line::from(Span::styled(
-        "  MARKETPLACES",
-        theme::fg(Token::TextMuted),
-    ))];
+    // On the row the plugin table heads its columns on, so the two lists
+    // start on one line.
+    // A row of air under it, as under the plugin table's column heading.
+    let mut lines = vec![
+        Line::from(Span::styled(" MARKETPLACES", theme::fg(Token::TextMuted))),
+        Line::from(""),
+    ];
     let mut targets = Vec::new();
 
     let entries = std::iter::once(None).chain(markets.iter().map(|name| Some(name.as_str())));
@@ -218,82 +215,170 @@ fn render_rail(
             .filter(|plugin| entry.is_none_or(|name| plugin.marketplace == name))
             .collect();
         let installed = offered.iter().filter(|plugin| plugin.installed).count();
-        let count = match entry {
-            None => offered.len().to_string(),
-            Some(_) => format!("{installed}/{}", offered.len()),
+        let selected = entry == market;
+        // The ground alone says which one is selected, across the whole
+        // container: a bar beside a row that already fills its box said it
+        // twice. The selection tint, whether the keyboard is here or down
+        // among its plugins: it is the marketplace being looked into either
+        // way, and a fainter ground read as having let go of it.
+        let state = if selected {
+            RowState::Selected
+        } else {
+            RowState::Resting
         };
-        let (badge, badge_style) = entry.map_or((String::new(), Style::default()), |name| {
-            market_badge(model, name, &offered)
-        });
-        let (state, bar) = selection(entry == market, focused);
         let name = entry.map_or(EVERY_MARKET, group_display_name);
-        let name_room =
-            (width as usize).saturating_sub(2 + COUNT_WIDTH + text::columns(&badge) + 1);
-        let name_style = if entry == market {
+        let name_style = if selected {
             theme::fg_bold(Token::TextBright)
         } else {
-            theme::fg(Token::TextSecondary)
+            theme::fg(Token::TextPrimary)
         };
-        let mut spans = vec![
-            Span::styled(bar, theme::fg(Token::Accent)),
-            Span::raw(" "),
-            Span::styled(
-                format!("{:<name_room$}", text::elide(name, name_room)),
-                name_style,
-            ),
-            Span::styled(badge, badge_style),
-            Span::styled(
-                format!("{count:>COUNT_WIDTH$}"),
-                theme::fg(Token::TextMuted),
-            ),
+        let room = (width as usize).saturating_sub(usize::from(RAIL_GUTTER));
+        let count = format!("{installed}/{}", offered.len());
+        let name_room = room.saturating_sub(count.len() + 1);
+        let name = text::elide(name, name_room);
+        let gap = room.saturating_sub(text::columns(&name) + count.len());
+        let head = vec![
+            Span::styled(name, name_style),
+            Span::raw(" ".repeat(gap)),
+            Span::styled(count, theme::fg(Token::TextMuted)),
         ];
-        row::fill(&mut spans, width, state);
+        let (note, note_style) = market_status(model, entry, &offered);
+        let caption = vec![Span::styled(note, note_style)];
+        // Cut at the rail's edge rather than wrapped: a marketplace is two
+        // rows, whatever it has to say.
+        let mut caption = Line::from(caption);
+        text::clip(&mut caption, room);
+        let hang = |spans: Vec<Span<'static>>| {
+            let mut line = vec![Span::raw(" ".repeat(usize::from(RAIL_GUTTER)))];
+            line.extend(spans);
+            row::fill(&mut line, inner.width, state);
+            Line::from(line)
+        };
         targets.push((lines.len(), Hit::PluginMarket(entry.map(str::to_owned))));
-        lines.push(Line::from(spans));
+        lines.push(hang(head));
+        lines.push(hang(caption.spans));
     }
-    lines.push(Line::from(""));
-    targets.push((
-        lines.len(),
-        Hit::OfferedAction(uze_keys::Action::AddMarketplace),
-    ));
-    lines.push(Line::from(Span::styled(
-        "  + add",
-        theme::fg(Token::TextDim),
-    )));
-
+    // A marketplace is two rows, its name and what is worth knowing about
+    // it; either one picks it.
     for (offset, hit) in targets {
         let y = inner.y + offset as u16;
         if y < inner.bottom() {
-            hits.push((Rect::new(inner.x, y, width, 1), hit));
+            let height = 2.min(inner.bottom() - y);
+            hits.push((Rect::new(inner.x, y, inner.width, height), hit));
         }
     }
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-/// The one thing worth knowing about a marketplace before opening it:
-/// that something it delivered is behind what it now offers, or that it
-/// follows a checkout on this machine. That one is official is said by its
-/// drawer, not here.
-fn market_badge(
+/// The header's right end: the count of what is registered, a divider,
+/// and the button that registers another — pinned to the edge, like every
+/// other offer in the modal, in the accent and filled under the pointer.
+/// It used to be a dim `+ add` at the foot of the list, which read as one
+/// more entry in it. Where the title leaves no room, the button goes
+/// before the count does.
+fn render_header_trailer(
+    frame: &mut ratatui::Frame<'_>,
+    header: Rect,
+    count: Span<'static>,
     model: &TuiModel,
-    name: &str,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    const GAP: u16 = 2;
+    let action = uze_keys::Action::AddMarketplace;
+    // "Add" alone: the title, the rail and the count beside it already say
+    // marketplace three times over.
+    let button = Button::new("Add", Token::Accent).strong(model.hovered_offer == Some(action));
+    let divider = theme::glyph(Symbol::TreeColumnDivider);
+    let divider_width = theme::width(Symbol::TreeColumnDivider);
+    // The title row ends a column short of the header, as every screen's
+    // trailer does.
+    let right = header.right().saturating_sub(1);
+    let title_end = header.x + Route::Plugins.label().len() as u16 + GAP;
+    let count_width = count.width() as u16;
+    let with_button = button.width() + GAP + divider_width + GAP + count_width;
+    let mut x = right.saturating_sub(count_width);
+    if right.saturating_sub(with_button) >= title_end {
+        let rect = Rect::new(right - button.width(), header.y, button.width(), 1);
+        button.render(frame, rect);
+        hits.push((rect, Hit::OfferedAction(action)));
+        let divider_x = rect.x - GAP - divider_width;
+        frame.render_widget(
+            Paragraph::new(Span::styled(divider, theme::fg(Token::SurfaceHover))),
+            Rect::new(divider_x, header.y, divider_width, 1),
+        );
+        x = divider_x - GAP - count_width;
+    }
+    if x >= title_end {
+        frame.render_widget(
+            Paragraph::new(count),
+            Rect::new(x, header.y, count_width, 1),
+        );
+    }
+}
+
+/// What a marketplace's second row says: the one thing about it that asks
+/// something of the reader, or else how fresh the rest of the screen is.
+/// In that order — updates it delivered that are now behind, that it
+/// follows a checkout rather than a pinned commit, that it ships with uze —
+/// and when none applies, how long ago its mirror was last brought up to
+/// date, which is what says whether "nothing to update" is still true.
+fn market_status(
+    model: &TuiModel,
+    market: Option<&str>,
     offered: &[&MarketplacePluginSummary],
 ) -> (String, Style) {
-    if offered.iter().any(|plugin| plugin.freshness.behind()) {
+    let behind = offered
+        .iter()
+        .filter(|plugin| plugin.freshness.behind())
+        .count();
+    if behind > 0 {
         return (
-            format!("{} ", theme::glyph(Symbol::ArrowUp)),
+            format!(
+                "{} {behind} update{}",
+                theme::glyph(Symbol::ArrowUp),
+                plural(behind)
+            ),
             theme::fg(Token::StateWarning),
         );
     }
-    let linked = model
-        .remembered
-        .marketplaces
-        .iter()
-        .any(|market| market.name == name && market.linked_to.is_some());
-    if linked {
-        return ("linked ".to_owned(), theme::fg(Token::TextDim));
+    let summary = market.and_then(|name| {
+        model
+            .remembered
+            .marketplaces
+            .iter()
+            .find(|summary| summary.name == name)
+    });
+    if summary.is_some_and(|summary| summary.linked_to.is_some()) {
+        return ("linked".to_owned(), theme::fg(Token::TextDim));
     }
-    (String::new(), Style::default())
+    if summary.is_some_and(|summary| summary.source.starts_with("embedded:")) {
+        return ("built in".to_owned(), theme::fg(Token::TextDim));
+    }
+    // The oldest check among them: "2m ago" over a list whose
+    // other half was last looked at a week ago would be a promise the
+    // list does not keep.
+    let checked = offered
+        .iter()
+        .filter_map(|plugin| plugin.freshness.established_at_unix)
+        .min();
+    match checked {
+        Some(at) => (ago(at), theme::fg(Token::TextDim)),
+        None => (String::new(), Style::default()),
+    }
+}
+
+/// How long ago `at_unix` was, in the largest whole unit: `just now`,
+/// `5m ago`, `3h ago`, `2d ago`.
+fn ago(at_unix: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(at_unix, |elapsed| elapsed.as_secs());
+    match now.saturating_sub(at_unix) {
+        seconds if seconds < 60 => "just now".to_owned(),
+        seconds if seconds < 3_600 => format!("{}m ago", seconds / 60),
+        seconds if seconds < 86_400 => format!("{}h ago", seconds / 3_600),
+        seconds => format!("{}d ago", seconds / 86_400),
+    }
 }
 
 /// One line of the plugin list, and what a click on it means.
@@ -347,8 +432,8 @@ fn render_list(
     });
     let columns = Columns::fitted(name_width, market_width, area.width.into());
 
-    let focused = model.plugin_pane == PluginPane::Plugins
-        && model.focus == super::super::model::Focus::Content;
+    let focused =
+        model.plugin_pane == PluginPane::Plugins && model.focus == crate::ui::model::Focus::Content;
     let selected_resource = model.selected_resource().map(|resource| resource.identity);
     let mut lines: Vec<ListLine> = Vec::new();
     let mut selected_line = 0;
@@ -395,9 +480,10 @@ fn render_list(
     }
 
     frame.render_widget(Paragraph::new(columns.heading()), area);
+    // A row of air between the column heading and the first plugin.
     let list = Rect {
-        y: area.y + 1,
-        height: area.height.saturating_sub(1),
+        y: area.y + 2,
+        height: area.height.saturating_sub(2),
         ..area
     };
     // Scrolled only as far as keeps the keyboard's row in view: nothing
@@ -1330,5 +1416,22 @@ fn plugin_health(doctor: Option<&DoctorReport>, plugin: &str) -> &'static str {
         "missing"
     } else {
         "ready"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_check_is_said_in_its_largest_whole_unit() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(ago(now), "just now");
+        assert_eq!(ago(now - 5 * 60), "5m ago");
+        assert_eq!(ago(now - 3 * 3_600), "3h ago");
+        assert_eq!(ago(now - 2 * 86_400), "2d ago");
     }
 }

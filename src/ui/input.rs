@@ -46,7 +46,7 @@ impl TuiModel {
             scopes.push(Scope::Filter);
         }
         match self.overlay {
-            Overlay::None | Overlay::HarnessHelp => {}
+            Overlay::None | Overlay::HarnessHelp | Overlay::Health => {}
             Overlay::ActionIndex { .. } => scopes.push(Scope::ActionIndex),
             Overlay::AddMarketplace(_) | Overlay::NewProfile(_) => scopes.push(Scope::TextPrompt),
             Overlay::ThemePicker { .. } => scopes.push(Scope::ThemePicker),
@@ -60,7 +60,7 @@ impl TuiModel {
         // A glossary has nothing to answer — it is read, and then gone —
         // so any keystroke closes it. That is a property of the surface,
         // not a binding, and so not the keymap's to hold.
-        if self.overlay == Overlay::HarnessHelp {
+        if matches!(self.overlay, Overlay::HarnessHelp | Overlay::Health) {
             self.close_overlay();
             return Intent::None;
         }
@@ -179,9 +179,6 @@ impl TuiModel {
                 if self.focus == Focus::Sidebar {
                     self.focus = Focus::Content;
                     return Intent::None;
-                }
-                if self.route == Route::Overview && !self.remembered.prompt_history.is_empty() {
-                    return self.activate_selected_prompt();
                 }
                 if self.route == Route::Keys {
                     // The one screen where Enter asks for a key rather
@@ -304,15 +301,6 @@ impl TuiModel {
                     .map(Intent::InstallProjectEnvironment)
                     .unwrap_or(Intent::None)
             }
-            Action::ClearPromptHistory => {
-                if !self.remembered.prompt_history.is_empty() {
-                    self.overlay = Overlay::Confirm {
-                        kind: Confirmation::ClearPromptHistory,
-                        focus: None,
-                    };
-                }
-                Intent::None
-            }
             Action::SetupHarness => self.selected_harness().map_or(Intent::None, |harness| {
                 Intent::Setup(harness.integration.clone())
             }),
@@ -406,11 +394,6 @@ impl TuiModel {
             }
             Route::Settings => {
                 self.move_settings_selection(delta);
-                Intent::None
-            }
-            // The Overview's only navigable list is its prompt history.
-            Route::Overview if !self.remembered.prompt_history.is_empty() => {
-                self.move_prompt_selection(delta);
                 Intent::None
             }
             Route::Plugins if self.plugin_pane == PluginPane::Markets => {
@@ -715,12 +698,9 @@ impl TuiModel {
                 // honest if it lights up for the same rect the click
                 // resolves against.
                 let hovered = self.hit_at(event.column, event.row).cloned();
-                self.overview_prompt_hovered = match hovered {
-                    Some(Hit::PromptHistory(index)) if self.route == Route::Overview => Some(index),
-                    _ => None,
-                };
                 self.source_link_hovered = matches!(hovered, Some(Hit::OpenLink(_)));
                 self.version_hovered = matches!(hovered, Some(Hit::RunningReleaseNotes));
+                self.health_hovered = matches!(hovered, Some(Hit::HealthStatus));
                 self.release_notes_close_hovered = false;
                 self.hovered_offer = match hovered {
                     Some(Hit::OfferedAction(action)) => Some(action),
@@ -746,8 +726,8 @@ mod tests {
 
     use ratatui::layout::Rect;
 
-    use super::super::keys::press;
-    use super::super::model::{Confirmation, Overlay, ResizablePanel, Route, TuiModel};
+    use crate::ui::keys::press;
+    use crate::ui::model::{Confirmation, Overlay, ResizablePanel, Route, TuiModel};
 
     #[test]
     fn dragging_a_content_divider_records_its_route_local_width() {
@@ -786,7 +766,7 @@ mod tests {
         let mut model = TuiModel {
             route: Route::Plugins,
             overlay: Overlay::Confirm {
-                kind: Confirmation::ClearPromptHistory,
+                kind: Confirmation::ApplyContext,
                 focus: None,
             },
             ..TuiModel::default()
@@ -796,7 +776,7 @@ mod tests {
         assert!(matches!(
             model.overlay,
             Overlay::Confirm {
-                kind: Confirmation::ClearPromptHistory,
+                kind: Confirmation::ApplyContext,
                 ..
             }
         ));

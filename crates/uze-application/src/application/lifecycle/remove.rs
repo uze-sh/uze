@@ -12,8 +12,8 @@ use uze_core::{
 
 use crate::bootstrap;
 
-use super::super::services::Plugins;
-use super::super::*;
+use crate::application::services::Plugins;
+use crate::application::*;
 
 impl Plugins<'_> {
     #[tracing::instrument(name = "plugins.remove", skip_all, fields(id = %id), err)]

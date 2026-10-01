@@ -13,7 +13,7 @@ use std::{
 use uze_application::Preferences;
 
 use uze_application::{
-    PromptEntry, Result, UzeApplication, UzeError, UzeHome,
+    Result, UzeApplication, UzeError, UzeHome,
     application::{
         ContextPlan, ContextReconciliationReport, InstallReport, MarketplaceRemovalReport,
         ProfileApplyResult, ProfilePreview, ProjectContextStatus, RemovePluginReport,
@@ -38,12 +38,6 @@ pub(crate) enum Intent {
     /// Closes the modal — the same action that opened it, or the close
     /// mark on its title.
     CloseModal,
-    /// Leave management and re-select this tab in the workspace. Carries
-    /// no space id: `Session::select_tab` moves the selected space along
-    /// with the tab when they differ.
-    CloseToTab(u64),
-    /// Delete the current workspace's recorded prompts.
-    ClearPromptHistory,
     /// Write the operator's keyboard to `keys.json`. The keymap is already
     /// in force when this is sent — the screen swapped it between frames,
     /// which is what lets a rebinding be felt immediately. This is only
@@ -132,8 +126,6 @@ impl Intent {
             Self::None => "none",
             Self::Quit => "quit",
             Self::CloseModal => "close_modal",
-            Self::CloseToTab(_) => "close_to_tab",
-            Self::ClearPromptHistory => "clear_prompt_history",
             Self::PersistKeymap => "persist_keymap",
             Self::OpenThemePicker => "open_theme_picker",
             Self::SelectGlyphSet(_) => "select_glyph_set",
@@ -225,7 +217,7 @@ pub(crate) fn dispatch(
     // parent, so a refresh's spans belong to the press that asked for it.
     let _span = tracing::info_span!("tui.intent", intent = intent.name()).entered();
     match intent {
-        Intent::None | Intent::Quit | Intent::CloseModal | Intent::CloseToTab(_) => {}
+        Intent::None | Intent::Quit | Intent::CloseModal => {}
         Intent::OpenThemePicker => open_theme_picker(home, model),
         Intent::SelectTheme(id) => match select_theme(home, &id) {
             Ok(()) => {
@@ -260,7 +252,6 @@ pub(crate) fn dispatch(
         }
         Intent::LoadSettings => load_settings(home, model),
         Intent::PersistKeymap => persist_keymap(home, model),
-        Intent::ClearPromptHistory => clear_prompt_history(home, model),
         Intent::Refresh => {
             if model.maintenance_in_flight {
                 return;
@@ -405,20 +396,6 @@ fn persist_keymap(home: &UzeHome, model: &mut TuiModel) {
         Ok(()) => Status::Success("Keyboard saved".to_owned()),
         Err(error) => Status::Error(format!("{}: {error}", path.display())),
     };
-}
-
-fn clear_prompt_history(home: &UzeHome, model: &mut TuiModel) {
-    let root = model.workspace_root();
-    match tui_application(home.clone()).and_then(|app| app.workspace().clear_prompt_history(&root))
-    {
-        Ok(()) => {
-            model.remembered.prompt_history.clear();
-            model.remembered.overview_prompt_selected = 0;
-            model.overview_prompt_hovered = None;
-            model.status = Status::Success("Prompt history cleared".to_owned());
-        }
-        Err(error) => model.status = Status::Error(error.to_string()),
-    }
 }
 
 fn inspect_plugin(id: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
@@ -813,33 +790,9 @@ pub(crate) fn spawn_startup(home: UzeHome, sender: Sender<WorkerResult>, context
     });
 }
 
-/// How many prompts a listing carries.
-const PROMPT_HISTORY_LIMIT: usize = 20;
-
-/// The workspace's recent prompts, read on the caller's thread.
-///
-/// One small owner-only file under `UzeHome`, and the one part of a
-/// refresh with no reason to wait on the rest of it. `spawn_startup` seeds
-/// default plugins and runs the official-snapshot auto-update — harness
-/// detection, possibly the network — before it composes a `RefreshData`,
-/// so a management screen that learned its history only from that worker
-/// opened reading "no history yet" for as long as those took. That is the
-/// same words the Overview says when there genuinely is none, which made
-/// prompts already on disk look lost.
-pub(crate) fn recent_prompts(home: UzeHome, context_root: &std::path::Path) -> Vec<PromptEntry> {
-    let Ok(app) = tui_application(home) else {
-        return Vec::new();
-    };
-    // The root the workspace client records against — resolved the same
-    // way `load_refresh_data` resolves it, so the seed and the refresh
-    // that replaces it read one file.
-    let root = app.workspace().root(context_root);
-    app.workspace().prompt_history(&root, PROMPT_HISTORY_LIMIT)
-}
-
 fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<RefreshData> {
     let app = tui_application(home)?;
-    let snapshot = app.machine_snapshot(context_root, PROMPT_HISTORY_LIMIT)?;
+    let snapshot = app.machine_snapshot(context_root)?;
     let mut plugins = snapshot.plugins;
     // Official plugins always lead the list — a stable sort keeps every
     // other ordering (whatever `list_plugins` returns) untouched within
@@ -853,7 +806,6 @@ fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<Re
         profiles: snapshot.profiles,
         context_status: snapshot.context_status,
         workspace: snapshot.workspace,
-        prompt_history: snapshot.prompt_history,
         // Only `spawn_startup` ever fills this in; an ordinary refresh
         // reports no auto-updates rather than re-raising old badges.
         auto_updated: Vec::new(),
@@ -1562,8 +1514,8 @@ mod tests {
 
     fn browsing(ids: &[&str]) -> TuiModel {
         let mut model = TuiModel {
-            focus: super::super::model::Focus::Content,
-            route: super::super::model::Route::Plugins,
+            focus: crate::ui::model::Focus::Content,
+            route: crate::ui::model::Route::Plugins,
             ..TuiModel::default()
         };
         model.remembered.plugins = ids

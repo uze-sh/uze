@@ -35,7 +35,7 @@ scenes:
       - click: "="
         say: open the management modal from the sidebar
         in: sidebar
-        expect: Overview
+        expect: Marketplace
         expect_timeout: 20
         pause: 1.0
       - click: "Profiles"

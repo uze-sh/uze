@@ -600,6 +600,50 @@ fn chrome_is_built_from_the_widget_vocabulary() {
     );
 }
 
+/// A path that climbs two modules names its target by where the caller
+/// sits, not by what it is.
+///
+/// `super::super::model::Route` reads differently from every file that
+/// reaches the same item, and moves with the caller: a module nested one
+/// level deeper, or a test lifted into a module of its own, silently names
+/// something else or nothing. `crate::ui::model::Route` is the same item
+/// from anywhere. One `super` stays: a child naming its own parent is the
+/// relation a reader expects.
+#[test]
+fn no_path_climbs_two_modules() {
+    let root = repository_root();
+    let mut files = Vec::new();
+    for scope in ["src", "crates", "tests"] {
+        collect_rust_files(&root.join(scope), &mut files);
+    }
+    // Spelled in two halves so this file does not match itself.
+    let needle = ["super", "super"].join("::");
+    let mut climbing = Vec::new();
+    for path in files {
+        let Ok(contents) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let relative = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (number, line) in contents.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or_default();
+            if code.contains(&needle) {
+                climbing.push(format!("  {relative}:{}", number + 1));
+            }
+        }
+    }
+    assert!(
+        climbing.is_empty(),
+        "\n\npaths climbing two modules:\n\n{}\n\n\
+         Name the item from the crate root (`crate::ui::model::Route`), or \
+         import it once at the top of the module.\n",
+        climbing.join("\n")
+    );
+}
+
 /// A widget knows neither client's model, and reaches nothing outside the
 /// frame it draws into.
 ///

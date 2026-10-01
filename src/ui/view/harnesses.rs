@@ -16,12 +16,12 @@ use uze_application::{
     application::{ContextMechanism, HarnessContextSupport, HarnessHealth},
 };
 
-use super::super::hit::Hit;
-use super::super::model::{ResizablePanel, Route, TuiModel};
-use super::super::{content_area, render_screen_header};
 use super::catalog::{Card, render_card};
 use super::{DrawerStatus, render_drawer_footer};
+use crate::ui::hit::Hit;
+use crate::ui::model::{ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
+use crate::ui::{content_area, render_screen_header};
 
 /// Two states, because there are two answers a person can act on: UZE has
 /// set this harness up, or it has not. A binary that is not on the machine
@@ -95,11 +95,11 @@ fn status_note(harness: &HarnessHealth) -> &'static str {
 }
 
 /// Width of the drawer's label column, shared by the key/value rows (
-/// `Version`, `Status`, …) and the COMPATIBILITY rows. The longest label
-/// in use is "Provisioning" (12 chars), so 14 guarantees at least a
-/// two-space gap — a fixed pad equal to the longest label would glue the
-/// value flush against it.
-const LABEL_COL: usize = 14;
+/// `Version`, `Provisioning`) and the COMPATIBILITY rows. The longest
+/// labels in use are `.agents/skills` and `.agents/agents` (14 chars), so
+/// 16 keeps a two-space gap — a pad equal to the longest label glues the
+/// value flush against it, which is what it did once those two joined.
+const LABEL_COL: usize = 16;
 
 pub(crate) fn render_harnesses(
     frame: &mut ratatui::Frame<'_>,
@@ -619,6 +619,22 @@ mod tests {
                 "Agents",
                 "Hooks"
             ]
+        );
+    }
+
+    /// Every label the drawer prints leaves two columns before its value,
+    /// whatever row it heads.
+    #[test]
+    fn every_label_leaves_room_before_its_value() {
+        let longest = compatibility_rows(&configured_harness(true))
+            .into_iter()
+            .map(|(label, _, _)| label.chars().count())
+            .chain(["Version", "Provisioning"].map(str::len))
+            .max()
+            .unwrap();
+        assert!(
+            longest + 2 <= LABEL_COL,
+            "a {longest}-column label leaves no gap in a {LABEL_COL}-column field"
         );
     }
 }

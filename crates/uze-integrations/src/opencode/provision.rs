@@ -148,8 +148,8 @@ mod provision_tests {
     use uze_core::integration::IntegrationPort;
     use uze_core::provisioning::{ProcessResult, ProcessRunner, ProcessSpec};
 
-    use super::super::OpenCodeIntegration;
     use super::resolve_opencode_binary;
+    use crate::opencode::OpenCodeIntegration;
 
     struct RecordingRunner {
         commands: std::sync::Mutex<Vec<ProcessSpec>>,

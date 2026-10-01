@@ -18,12 +18,12 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-use super::super::hit::Hit;
-use super::super::model::{ResizablePanel, Route, TuiModel};
-use super::super::{content_area, render_screen_header};
 use super::catalog::{Badge, Card, render_card};
 use super::{DrawerStatus, render_drawer_footer};
+use crate::ui::hit::Hit;
+use crate::ui::model::{ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
+use crate::ui::{content_area, render_screen_header};
 
 pub(crate) fn render_extensions(
     frame: &mut ratatui::Frame<'_>,

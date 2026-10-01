@@ -58,6 +58,8 @@ pub struct PromptOrigin {
     pub tab_label: String,
     /// Short agent binary/alias the tab was recognized as.
     pub agent_binary: String,
+    /// The agent UZE launched in the tab, when it launched one.
+    pub agent: Option<String>,
 }
 
 /// One prompt submitted to an agent tab.
@@ -69,6 +71,13 @@ pub struct PromptEntry {
     pub tab_id: u64,
     pub tab_label: String,
     pub agent_binary: String,
+    /// The agent UZE launched in the tab. Unlike `tab_id`, which the
+    /// terminal runtime mints again on every restore, this names the same
+    /// agent across restarts, so "this agent's prompts" means one agent.
+    /// Absent for a harness started by hand in a shell tab, and on entries
+    /// written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
     /// The prompt, whitespace-collapsed to one line and truncated to
     /// `MAX_PREVIEW_CHARS`. Only a preview is stored: the history is a
     /// navigation aid, and keeping full prompt bodies on disk would be a
@@ -90,6 +99,7 @@ impl PromptEntry {
             tab_id: origin.tab_id,
             tab_label: origin.tab_label.clone(),
             agent_binary: origin.agent_binary.clone(),
+            agent: origin.agent.clone(),
             preview: truncate_chars(&preview, MAX_PREVIEW_CHARS),
             timestamp_secs: now_secs(),
         })
@@ -393,6 +403,7 @@ mod tests {
             tab_id,
             tab_label: "tab 1".into(),
             agent_binary: agent.into(),
+            agent: None,
         }
     }
 

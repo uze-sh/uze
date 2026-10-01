@@ -45,11 +45,10 @@ pub struct MachineSnapshot {
     pub profiles: Vec<ProfileSummary>,
     /// The root the workspace-scoped halves were read at — the detected
     /// workspace's, so a session opened in a subdirectory reads its own
-    /// project's context and history, not a cwd-scoped miss.
+    /// project's context, not a cwd-scoped miss.
     pub root: PathBuf,
     pub workspace: Option<OverviewWorkspaceSummary>,
     pub context_status: Option<ProjectContextStatus>,
-    pub prompt_history: Vec<uze_workspace::prompt_history::PromptEntry>,
 }
 
 impl UzeApplication {
@@ -57,11 +56,7 @@ impl UzeApplication {
     /// `context_root`. The workspace and context halves are best-effort:
     /// a snapshot is always producible, and one screen's miss must not
     /// empty the others.
-    pub fn machine_snapshot(
-        &self,
-        context_root: &Path,
-        prompt_limit: usize,
-    ) -> Result<MachineSnapshot> {
+    pub fn machine_snapshot(&self, context_root: &Path) -> Result<MachineSnapshot> {
         let _span = tracing::info_span!("snapshot.machine").entered();
         // Full health on every refresh: the inspection cache makes the
         // per-receipt vendor probing milliseconds in steady state, so every
@@ -87,7 +82,6 @@ impl UzeApplication {
                 context_status.as_ref().map(|status| &status.portability),
             )
         });
-        let prompt_history = self.workspace().prompt_history(&root, prompt_limit);
         Ok(MachineSnapshot {
             plugins,
             doctor,
@@ -97,7 +91,6 @@ impl UzeApplication {
             root,
             workspace,
             context_status,
-            prompt_history,
         })
     }
 }

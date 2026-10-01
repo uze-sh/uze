@@ -66,6 +66,7 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
     };
     let mut record = conversation::load(home, &owner.project_root, &owner.agent);
     let id = integration.id();
+    let claimed = conversation::claimed_by_others(home, &owner.project_root, &owner.agent, id);
 
     // A launch whose read-back never happened — the client was not running,
     // or the agent was relaunched before the refresh came round — would
@@ -81,6 +82,7 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
             cwd: claim.cwd,
             since_unix: entry.launched_at_unix,
             preceded_by: entry.preceded_by.as_ref(),
+            claimed_elsewhere: &claimed,
         })
     {
         let launched_at = entry.launched_at_unix;
@@ -166,10 +168,12 @@ pub fn refresh(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPo
     };
     let launched_at = entry.launched_at_unix;
     let known = entry.conversation.clone();
+    let claimed = conversation::claimed_by_others(home, &owner.project_root, &owner.agent, id);
     let observed = integration.observe_session(&ObservationContext {
         cwd: claim.cwd,
         since_unix: launched_at,
         preceded_by: entry.preceded_by.as_ref(),
+        claimed_elsewhere: &claimed,
     });
     let Some(observed) = observed else {
         return false;
@@ -189,7 +193,7 @@ mod tests {
     use crate::{
         checkout::CheckoutId,
         integration::HarnessDetection,
-        task::{self, Agent, AgentStore, Base},
+        task::{self, Agent, AgentId, AgentStore, Base},
     };
     use std::{
         path::PathBuf,
@@ -241,8 +245,12 @@ mod tests {
         fn session_recorded_for(&self, _cwd: &Path) -> Option<SessionId> {
             self.recorded_for.clone()
         }
-        fn observe_session(&self, _ctx: &ObservationContext) -> Option<SessionId> {
-            self.observed.lock().unwrap().clone()
+        fn observe_session(&self, ctx: &ObservationContext) -> Option<SessionId> {
+            self.observed
+                .lock()
+                .unwrap()
+                .clone()
+                .filter(|session| ctx.is_unclaimed(session))
         }
         fn session_exists(&self, _session: &SessionId, _cwd: &Path) -> bool {
             self.exists
@@ -518,5 +526,29 @@ mod tests {
             vec![OsString::from("--resume"), OsString::from("moved-to")]
         );
         assert_ne!(recorded(&home, &primary), Some(started_in));
+    }
+
+    /// Agents sharing a directory each see the others' conversations as
+    /// the newest one there. Adopting it is how several agents came back
+    /// from a restart as one.
+    #[test]
+    fn a_conversation_another_agent_holds_is_never_taken_over() {
+        let (home, primary, slot, id) = managed("continuity-claimed-elsewhere");
+        let harness = Harness::new(SessionContinuity::Assigned);
+        plan(&home, claim(&id, &slot), &harness);
+        let own = recorded(&home, &primary).unwrap();
+
+        let mut neighbour = conversation::ConversationRecord::new(AgentId::generate());
+        neighbour.launched(
+            "harness",
+            ConversationOrigin::Assigned,
+            Some(SessionId::new("neighbour")),
+            None,
+        );
+        conversation::save(&home, &primary, &neighbour).unwrap();
+
+        *harness.observed.lock().unwrap() = Some(SessionId::new("neighbour"));
+        assert!(!refresh(&home, claim(&id, &slot), &harness));
+        assert_eq!(recorded(&home, &primary), Some(own));
     }
 }

@@ -21,12 +21,12 @@ use uze_application::{
     PreferenceApplyOutcome, SandboxScope,
 };
 
-use super::super::hit::Hit;
-use super::super::model::{ProfilePanel, ResizablePanel, TuiModel};
-use super::super::{content_area, side_panel_area};
 use super::{DrawerStatus, drawer_footer_height, render_drawer_footer};
+use crate::ui::hit::Hit;
+use crate::ui::model::{ProfilePanel, ResizablePanel, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{self, mark, text};
+use crate::ui::{content_area, side_panel_area};
 
 pub(crate) fn render_profiles(
     frame: &mut ratatui::Frame<'_>,

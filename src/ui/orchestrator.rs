@@ -4,6 +4,7 @@
 //! layout conventions (hairline dividers, no filled panels) so the modal
 //! it opens over itself reads as one product, not two.
 
+use super::agent_support::PromptScope;
 use super::tui_application;
 use crate::ui::extension_host::WorkspaceHost;
 use crate::ui::extension_view;
@@ -268,12 +269,8 @@ fn spawn_support_refresh(home: &UzeHome, key: SupportKey, sender: mpsc::Sender<S
                 super::tui_application(support_home).ok().and_then(|app| {
                     let context = app.context().agent_context_for(&key.0, &key.1).ok()?;
                     let health = app.health().harness(&key.0).ok()?;
-                    let profiles = app.profiles().list().unwrap_or_default();
-                    let active_profile = profiles.iter().find(|profile| profile.active);
                     Some(super::agent_support::AgentSupport::resolve(
-                        health,
-                        &context,
-                        active_profile,
+                        health, &context,
                     ))
                 })
             },
@@ -1786,7 +1783,7 @@ pub(super) enum WorkspaceHit {
     CloseTab(TabId),
     NewTab,
     /// Opens the agent picker (`WorkspaceModel::agent_picker`) — the
-    /// "✦ new" on the selected space's header in the sidebar, creating a
+    /// "new" on the selected space's header in the sidebar, creating a
     /// new agent tab inside that space.
     NewAgentMenu,
     /// One row of the open agent picker, by index into its `options`.
@@ -1834,6 +1831,12 @@ pub(super) enum WorkspaceHit {
     OpenSpec,
     /// Opens contextual support details for the selected agent tab.
     OpenAgentSupport(Rect),
+    /// A prompt listed in the agent drawer, by position in its list.
+    DrawerPrompt(usize),
+    /// Whose prompts the agent drawer lists.
+    DrawerScope(PromptScope),
+    /// The rest of the drawer, so a click inside it does not close it.
+    DrawerBody,
     /// The task mark on a sidebar agent row — opens the catalog of what
     /// every glyph in both columns means, anchored to the mark. A status
     /// column is a wordless vocabulary; this is where it is written down.
@@ -2279,7 +2282,7 @@ struct AgentOption {
 struct AgentPicker {
     options: Vec<AgentOption>,
     selected: usize,
-    /// The "✦ new" button's own rect — the popup anchors just
+    /// The "new" button's own rect — the popup anchors just
     /// under it.
     anchor: Rect,
     /// A preserved task to continue: placement answers with its slot, or
@@ -2298,13 +2301,111 @@ struct ResumeTarget {
     replacing: Option<TabId>,
 }
 
-/// Open state for the informational support dropdown in an active agent
-/// session. The `(harness, cwd)` key keeps it tied to the exact live agent
-/// it was opened over, rather than to a mutable display label or process
-/// name — and makes a resolution for some other pane unrenderable here.
+/// Open state for the agent drawer: what the agent in front runs on, and
+/// the prompts it was given. The `(harness, cwd)` key keeps it tied to the
+/// exact live agent it was opened over, rather than to a mutable display
+/// label or process name — and makes a resolution for some other pane
+/// unrenderable here.
 struct AgentSupportDropdown {
     key: SupportKey,
-    anchor: Rect,
+    /// The answer for `key`, held by the drawer itself. The client keeps
+    /// one support answer, for whatever agent is in front, and replaces it
+    /// whenever that agent's harness or directory changes; read from
+    /// there, an open drawer stopped being drawn the moment the agent ran
+    /// something, while it still held the keyboard.
+    support: Option<super::agent_support::AgentSupport>,
+    /// The agent UZE launched in the tab, which is what "this agent's
+    /// prompts" is matched on. `None` for a harness started by hand, whose
+    /// drawer can only offer the space's.
+    agent: Option<String>,
+    /// The space's root: the history is kept per space, keyed on it.
+    space_root: PathBuf,
+    /// The agent's directory as the operator reads it, taken when the
+    /// drawer opened.
+    path: String,
+    scope: PromptScope,
+    /// Index into the prompts `scope` shows, newest first.
+    selected: usize,
+    /// `x` asked whether to clear the space's history; a second `x`
+    /// answers, anything else withdraws the question.
+    clearing: bool,
+}
+
+impl AgentSupportDropdown {
+    /// The prompts `scope` shows, newest first.
+    fn prompts<'a>(
+        &self,
+        history: &'a [uze_application::PromptEntry],
+    ) -> Vec<&'a uze_application::PromptEntry> {
+        history
+            .iter()
+            .filter(|entry| match self.scope {
+                PromptScope::Space => true,
+                PromptScope::Agent => self.agent.is_some() && entry.agent == self.agent,
+            })
+            .collect()
+    }
+}
+
+/// A space's recorded prompts, tagged with the root they were read for.
+struct PromptHistoryResolution {
+    root: PathBuf,
+    entries: Vec<uze_application::PromptEntry>,
+}
+
+/// How many of a space's prompts the drawer reads.
+const DRAWER_PROMPT_LIMIT: usize = 100;
+
+/// Reads a space's prompt history off the render thread. One small file,
+/// but a file all the same, and nothing the client draws waits on one.
+fn spawn_prompt_history(
+    home: &UzeHome,
+    root: PathBuf,
+    sender: mpsc::Sender<PromptHistoryResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::debug_span!("tui.prompt_history").entered();
+        let entries = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| app.workspace().prompt_history(&root, DRAWER_PROMPT_LIMIT))
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(PromptHistoryResolution { root, entries });
+    });
+}
+
+/// Forgets a space's prompts, and answers with the empty history that
+/// leaves, so the drawer redraws from what is on disk rather than from a
+/// guess about it.
+fn spawn_clear_prompt_history(
+    home: &UzeHome,
+    root: PathBuf,
+    sender: mpsc::Sender<PromptHistoryResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _span = tracing::debug_span!("tui.clear_prompt_history").entered();
+        let entries = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| {
+                        let _ = app.workspace().clear_prompt_history(&root);
+                        app.workspace().prompt_history(&root, DRAWER_PROMPT_LIMIT)
+                    })
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(PromptHistoryResolution { root, entries });
+    });
 }
 
 /// What a right-click-opened [`ContextMenu`] targets — the space or tab its
@@ -2553,6 +2654,42 @@ fn selected_agent_context(
     Some((identity.integration.to_owned(), tab.pane.cwd.clone()))
 }
 
+/// The drawer for the agent in front: the same agent
+/// [`selected_agent_context`] resolves, with what its prompts are kept
+/// under. Opens on the agent's own prompts when UZE launched it, and on the
+/// space's when nothing identifies it.
+fn selected_agent_drawer(
+    model: &WorkspaceModel,
+    identities: &[AgentIdentity],
+) -> Option<AgentSupportDropdown> {
+    let key = selected_agent_context(model, identities)?;
+    let space = model.session.as_ref()?.selected_space();
+    let tab = context_agent(model, identities)
+        .and_then(|tab| space.tabs.iter().find(|candidate| candidate.id == tab))?;
+    let agent = launched_agent_id(tab).map(str::to_owned);
+    // The tab the operator last chose, when this agent can show it.
+    let scope = match model.remembered.drawer_scope {
+        Some(PromptScope::Agent) | None if agent.is_some() => PromptScope::Agent,
+        _ => PromptScope::Space,
+    };
+    let support = model
+        .remembered
+        .agent_support
+        .as_ref()
+        .filter(|resolution| resolution.key == key)
+        .and_then(|resolution| resolution.support.clone());
+    Some(AgentSupportDropdown {
+        support,
+        scope,
+        agent,
+        space_root: space.root.clone(),
+        path: crate::ui::display_project_path(&key.1),
+        key,
+        selected: 0,
+        clearing: false,
+    })
+}
+
 /// Every live agent pane as `(integration, directory)` — the same pair
 /// [`selected_agent_context`] resolves, for every tab rather than for the
 /// one the workspace is about, since an agent nobody is looking at is
@@ -2677,6 +2814,8 @@ pub(crate) struct WorkspaceMemory {
 #[derive(Default)]
 struct Channels {
     support: Answers<SupportResolution>,
+    /// The agent drawer's prompt history, read and cleared.
+    prompts: Answers<PromptHistoryResolution>,
     tasks: Answers<WorkResolution>,
     deliveries: Answers<DeliveryResolution>,
     /// Finishing and discarding a preserved task. Off-thread for the same
@@ -2742,6 +2881,10 @@ struct Remembered {
     /// The key a background resolution is currently in flight for, so the
     /// per-frame check cannot queue the same read repeatedly.
     agent_support_pending: Option<SupportKey>,
+    /// The last prompt history the drawer read, tagged with its space.
+    drawer_prompts: Option<PromptHistoryResolution>,
+    /// Whose prompts the drawer listed last, so it opens on them again.
+    drawer_scope: Option<PromptScope>,
     /// Cached Git summary for the selected agent/shell tab's live cwd.
     /// Stored client-side because it is display chrome, not terminal session
     /// state that belongs in `uze-terminal`.
@@ -3687,6 +3830,7 @@ impl WorkspaceModel {
                             tab_id: tab.id.0,
                             tab_label: tab.label.clone(),
                             agent_binary: binary.to_owned(),
+                            agent: launched_agent_id(tab).map(str::to_owned),
                         }
                     })
                 })

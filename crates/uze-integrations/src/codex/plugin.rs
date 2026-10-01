@@ -420,8 +420,8 @@ mod codex_native_coverage_tests {
     use uze_core::home::UzeHome;
     use uze_core::integration::IntegrationPort;
 
-    use super::super::CodexIntegration;
     use super::codex_exact_coverage;
+    use crate::codex::CodexIntegration;
 
     fn temp_root(label: &str) -> PathBuf {
         uze_testkit::temp::scratch(label)

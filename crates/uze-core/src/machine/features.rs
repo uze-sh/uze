@@ -82,6 +82,11 @@ features! {
     /// (autonomy, sandbox, model) UZE applies to a harness. The domain
     /// behind it is real; what is undecided is the surface.
     Profiles => "profiles", "The Profiles screen: preference axes applied to a harness";
+    /// The management modal's Overview screen. With the prompt history
+    /// moved to the agent context drawer it held two counts and the
+    /// health line, which the modal's footer now carries; what it should
+    /// be is undecided.
+    Overview => "overview", "The Overview screen: machine counts and health";
 }
 
 /// Whether this build offers `feature`.
@@ -132,7 +137,13 @@ mod tests {
         // The claim is about the build, not about the test: a release
         // build answers false and a development one answers true, and
         // this suite runs in both.
-        assert_eq!(resolve(Feature::Profiles, None), cfg!(debug_assertions));
+        for feature in ALL_FEATURES {
+            assert_eq!(
+                resolve(*feature, None),
+                cfg!(debug_assertions),
+                "{feature:?}"
+            );
+        }
     }
 
     #[test]

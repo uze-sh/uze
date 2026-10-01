@@ -36,7 +36,9 @@ impl TuiModel {
         }
         let overlay = self.overlay.clone();
         match overlay {
-            Overlay::None | Overlay::HarnessHelp | Overlay::ReleaseNotes(_) => Intent::None,
+            Overlay::None | Overlay::HarnessHelp | Overlay::Health | Overlay::ReleaseNotes(_) => {
+                Intent::None
+            }
             Overlay::ActionIndex {
                 scopes,
                 filter,
@@ -366,6 +368,57 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
     );
 }
 
+/// What the footer's health status stands for: every problem an operator
+/// can act on, worst first, or a line saying there is none.
+pub(crate) fn render_health(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    alerts: &[crate::ui::view::health::Alert],
+) {
+    use crate::ui::view::health::Severity;
+    let mut sorted: Vec<_> = alerts.iter().collect();
+    sorted.sort_by_key(|alert| alert.severity);
+    let mut lines: Vec<Line<'static>> = if sorted.is_empty() {
+        vec![Line::from(Span::styled(
+            "Nothing needs attention.",
+            theme::fg(Token::TextMuted),
+        ))]
+    } else {
+        sorted
+            .into_iter()
+            .map(|alert| {
+                let (symbol, hue) = match alert.severity {
+                    Severity::High => (Symbol::MarkClose, Token::StateDanger),
+                    Severity::Medium => (Symbol::MarkAttention, Token::StateWarning),
+                    Severity::Low => (Symbol::MarkDot, Token::Accent),
+                };
+                Line::from(vec![
+                    Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(hue)),
+                    Span::styled(alert.label.clone(), theme::fg(Token::TextBright)),
+                    Span::styled(format!(" — {}", alert.detail), theme::fg(Token::TextMuted)),
+                ])
+            })
+            .collect()
+    };
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "any key to close",
+        theme::fg(Token::TextMuted),
+    )));
+    let width = (lines.iter().map(Line::width).max().unwrap_or(0) as u16 + 4)
+        .max(40)
+        .min(area.width);
+    let height = (lines.len() as u16 + 4).min(area.height.saturating_sub(2));
+    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(modal(" Health ").into_block())
+            .wrap(ratatui::widgets::Wrap { trim: true }),
+        popup,
+    );
+}
+
 /// What a dialog asking for one line of text says: its heading, what
 /// answering does, what the field is waiting for, and the affirmative's own
 /// word.
@@ -518,7 +571,6 @@ impl Confirmation {
                 grant: TrustGrant::Ask,
             },
             Self::ApplyContext => Intent::ContextApply(model.workspace_root()),
-            Self::ClearPromptHistory => Intent::ClearPromptHistory,
             Self::ProtectedPlugin(_) => Intent::None,
             Self::DeleteProfile(id) => Intent::DeleteProfile(id),
             Self::Trust { retry, .. } => match retry {
@@ -584,13 +636,6 @@ impl Confirmation {
                 None,
                 "Reconciles AGENTS.md and the bridge each harness reads.",
                 Some("Apply"),
-            ),
-            Self::ClearPromptHistory => dialog(
-                Tone::Danger,
-                "Clear prompt history",
-                None,
-                "Deletes every prompt recorded for this workspace. This cannot be undone.",
-                Some("Clear"),
             ),
             Self::ProtectedPlugin(id) => dialog(
                 Tone::Caution,

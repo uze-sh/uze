@@ -23,7 +23,7 @@ mod workspace_tests {
     #[test]
     fn the_palette_a_pane_is_told_about_is_the_one_being_drawn() {
         let theme = uze_theme::active();
-        let palette = super::super::active_palette();
+        let palette = crate::ui::orchestrator::active_palette();
         let triple = |token| {
             let rgb = theme.color(token);
             (rgb.0, rgb.1, rgb.2)
@@ -38,22 +38,24 @@ mod workspace_tests {
     use super::WorkspaceHit;
     use super::{
         AGENT_BEATS, AGENT_ECHO_GRACE, AGENT_PASTE_GRACE, AGENT_QUIET_AFTER, AgentGroup,
-        AgentIdentity, AgentTabStatus, AgentView, Attach, CHIME_COOLDOWN, CHIME_SETTLE,
-        CommitDetailPopup, CommitDetailResolution, CompletionBehavior, DeliveryResolution,
-        DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution, PendingDrop,
-        PlacementResolution, RootPicker, ScrollDirection, SpecResolution, SpecSummaryState,
-        TabDragGroup, UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView,
-        WorkspaceModel, adopt_agent_labels, agent_activity_frame, agent_identity_for_tab,
-        answered_or, blank_pane, can_close_tab_from_menu, checkout_lost, encode_mouse,
-        evaluation_key, forward_paste, forward_scroll, next_agent_label, next_shell_label,
-        open_architect, open_code, open_commit_detail, open_spec, pane_relative, pending_tab_drop,
+        AgentIdentity, AgentSupportDropdown, AgentTabStatus, AgentView, Attach, CHIME_COOLDOWN,
+        CHIME_SETTLE, CommitDetailPopup, CommitDetailResolution, CompletionBehavior,
+        DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution,
+        PendingDrop, PlacementResolution, PromptScope, RootPicker, ScrollDirection, SpecResolution,
+        SpecSummaryState, SupportResolution, TabDragGroup, UpstreamSync, Viewport, WorkOverlay,
+        WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels, agent_activity_frame,
+        agent_identity_for_tab, answered_or, blank_pane, can_close_tab_from_menu, checkout_lost,
+        encode_mouse, evaluation_key, forward_paste, forward_scroll, next_agent_label,
+        next_shell_label, open_architect, open_code, open_commit_detail, open_spec, pane_relative,
+        pending_tab_drop,
         render::{
             self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
         },
-        scroll_timeline, scroll_tree, selected_pane_cwd, space_context_agent, space_cwd,
-        space_own_tab, strip_tabs, sync_slot_occupancy, tab_drag_group, tab_drag_group_members,
-        tab_needs_replacement_shell, toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
+        scroll_timeline, scroll_tree, selected_agent_drawer, selected_pane_cwd,
+        space_context_agent, space_cwd, space_own_tab, strip_tabs, sync_slot_occupancy,
+        tab_drag_group, tab_drag_group_members, tab_needs_replacement_shell,
+        toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
         workspace_has_active_agent_operation,
     };
     use crossterm::event::{MouseButton, MouseEventKind};
@@ -2808,7 +2810,7 @@ mod workspace_tests {
         }
         label_every_tab(&mut model, "agent 1");
 
-        let requests = super::super::adopt_task_names(&mut model);
+        let requests = crate::ui::orchestrator::adopt_task_names(&mut model);
 
         assert!(
             requests.iter().any(|request| matches!(
@@ -2821,7 +2823,7 @@ mod workspace_tests {
         // task says and nothing more is owed.
         label_every_tab(&mut model, "branch naming");
         assert!(
-            super::super::adopt_task_names(&mut model).is_empty(),
+            crate::ui::orchestrator::adopt_task_names(&mut model).is_empty(),
             "a tab already carrying its task's name is left alone"
         );
     }
@@ -2836,14 +2838,14 @@ mod workspace_tests {
             tasks[0].label = "branch naming".to_owned();
         }
         label_every_tab(&mut model, "agent 1");
-        let first = super::super::adopt_task_names(&mut model);
+        let first = crate::ui::orchestrator::adopt_task_names(&mut model);
         assert_eq!(first.len(), 1);
         label_every_tab(&mut model, "branch naming");
 
         for tasks in model.remembered.tasks.values_mut() {
             tasks[0].label = "renamed by hand".to_owned();
         }
-        let second = super::super::adopt_task_names(&mut model);
+        let second = crate::ui::orchestrator::adopt_task_names(&mut model);
 
         assert!(
             second.iter().any(|request| matches!(
@@ -2864,7 +2866,7 @@ mod workspace_tests {
         }
         label_every_tab(&mut model, "my own name");
 
-        assert!(super::super::adopt_task_names(&mut model).is_empty());
+        assert!(crate::ui::orchestrator::adopt_task_names(&mut model).is_empty());
     }
 
     /// A task still carrying its generated identifier has no name to give.
@@ -2877,7 +2879,7 @@ mod workspace_tests {
         }
         label_every_tab(&mut model, "agent 1");
 
-        assert!(super::super::adopt_task_names(&mut model).is_empty());
+        assert!(crate::ui::orchestrator::adopt_task_names(&mut model).is_empty());
     }
 
     /// A named task reads as its name, once. The label *is* the branch's
@@ -4357,6 +4359,98 @@ mod workspace_tests {
         model_of(session)
     }
 
+    fn drawer_over(model: &WorkspaceModel) -> AgentSupportDropdown {
+        selected_agent_drawer(model, &identities_fixture()).expect("an agent is in front")
+    }
+
+    /// The drawer is named after the agent and opens on the prompts the
+    /// operator chose last time, rather than starting over on every open.
+    #[test]
+    fn the_agent_drawer_opens_on_the_scope_last_chosen() {
+        let mut model = agent_session_in("/repo/.worktrees/a");
+        model.session.as_mut().unwrap().workspace.spaces[0].tabs[0].env = vec![(
+            uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
+            "a1".to_owned(),
+        )];
+        let drawer = drawer_over(&model);
+        assert_eq!(drawer.agent.as_deref(), Some("a1"));
+        assert_eq!(drawer.scope, PromptScope::Agent);
+
+        model.remembered.drawer_scope = Some(PromptScope::Space);
+        assert_eq!(drawer_over(&model).scope, PromptScope::Space);
+    }
+
+    fn support_fixture() -> crate::ui::agent_support::AgentSupport {
+        use uze_application::application::{
+            AgentContextStatus, ContextMechanism, HarnessContextSupport, HarnessHealth,
+            ResourceDelivery,
+        };
+        let health = HarnessHealth {
+            integration: "claude-code".to_owned(),
+            display_name: "Claude Code".to_owned(),
+            description: String::new(),
+            detection: uze_core::integration::HarnessDetection {
+                present: true,
+                version: None,
+            },
+            setup: "installed".to_owned(),
+            strategy: None,
+            provisioning: None,
+            publication: uze_core::integration::PublicationStatus::NotApplicable,
+            capabilities: Default::default(),
+            runtime_shim_active: true,
+            context_support: HarnessContextSupport {
+                instructions: ContextMechanism::RuntimeShim,
+                project_skills: ContextMechanism::RuntimeShim,
+                project_agents: ContextMechanism::RuntimeShim,
+            },
+        };
+        let context = AgentContextStatus {
+            integration: "claude-code".to_owned(),
+            display_name: "Claude Code".to_owned(),
+            present: true,
+            root: PathBuf::from("/repo"),
+            instructions: ResourceDelivery::Projected,
+            project_skills: ResourceDelivery::Projected,
+            project_agents: ResourceDelivery::AbsentFromProject,
+        };
+        crate::ui::agent_support::AgentSupport::resolve(health, &context)
+    }
+
+    /// The client keeps one support answer, for whatever agent is in
+    /// front, and replaces it when that agent's harness or directory
+    /// changes. An open drawer holds its own: read from the shared one, it
+    /// stopped being drawn the moment the agent ran something, while it
+    /// still held the keyboard.
+    #[test]
+    fn an_open_drawer_is_drawn_whatever_the_client_resolved_since() {
+        let mut model = agent_session_in("/repo/.worktrees/a");
+        let mut drawer = drawer_over(&model);
+        drawer.support = Some(support_fixture());
+        model.support_dropdown = Some(drawer);
+        model.remembered.agent_support = Some(SupportResolution {
+            key: ("codex".to_owned(), PathBuf::from("/elsewhere")),
+            support: None,
+        });
+        let rows = frame_rows(&mut model);
+        assert!(
+            rows.iter().any(|row| row.contains("AGENTS.md")),
+            "{}",
+            rows.join("\n")
+        );
+    }
+
+    /// An agent nothing identifies has no prompts of its own to list, so
+    /// its drawer opens on the space's whatever was chosen last.
+    #[test]
+    fn an_agent_started_by_hand_opens_its_drawer_on_the_space() {
+        let mut model = agent_session_in("/repo");
+        model.remembered.drawer_scope = Some(PromptScope::Agent);
+        let drawer = drawer_over(&model);
+        assert_eq!(drawer.agent, None);
+        assert_eq!(drawer.scope, PromptScope::Space);
+    }
+
     /// Two agents in one space, the first of them selected: `Agent` in
     /// `first`, `Second` in `second`. The second resolves by its pane's
     /// process rather than its label, so the two never answer to the same
@@ -5472,7 +5566,7 @@ mod workspace_tests {
     #[test]
     fn with_one_harness_set_up_a_new_agent_starts_without_a_picker() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-single"));
-        let only = super::super::agent_identities(&home)
+        let only = crate::ui::orchestrator::agent_identities(&home)
             .into_iter()
             .next()
             .expect("a harness is registered");
@@ -8180,7 +8274,7 @@ mod workspace_tests {
     /// The picker offers only harnesses set up on this machine, so a test
     /// that launches one sets them up first.
     fn set_up_every_harness(home: &UzeHome) {
-        for identity in super::super::agent_identities(home) {
+        for identity in crate::ui::orchestrator::agent_identities(home) {
             set_up_harness(home, &identity);
         }
     }
@@ -8702,7 +8796,7 @@ mod workspace_tests {
     /// agent the strip was showing: it is the way back to the space's
     /// shells. A space whose first shell became an agent when a harness
     /// was typed into it has no such tab, so the click opens one — the
-    /// space ends where "✦ new" leaves it, not bound to the agent.
+    /// space ends where "new" leaves it, not bound to the agent.
     #[test]
     fn a_space_row_lands_on_its_own_shell_and_otherwise_opens_one() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-space-row"));
@@ -8764,7 +8858,7 @@ mod workspace_tests {
         );
     }
 
-    /// The selected space alone carries "✦ new", at its header's right
+    /// The selected space alone carries "new", at its header's right
     /// edge, and it opens the agent picker under itself: the new agent
     /// lands in the space in front, so no other header offers one.
     #[test]
@@ -11145,4 +11239,74 @@ fn a_rename_edits_at_the_caret() {
     buffer.right();
     buffer.erase_forward();
     assert_eq!(buffer.text(), "Agent 1é", "edges are where the caret stops");
+}
+
+mod drawer_tests {
+    use super::*;
+
+    fn entry(tab_id: u64, agent: Option<&str>, preview: &str) -> uze_application::PromptEntry {
+        let origin = uze_application::PromptOrigin {
+            space_label: "uze".to_owned(),
+            tab_id,
+            tab_label: "agent".to_owned(),
+            agent_binary: "claude".to_owned(),
+            agent: agent.map(str::to_owned),
+        };
+        uze_application::PromptEntry::new(&origin, preview).unwrap()
+    }
+
+    fn drawer(agent: Option<&str>, scope: PromptScope) -> AgentSupportDropdown {
+        AgentSupportDropdown {
+            key: ("claude-code".to_owned(), PathBuf::from("/repo")),
+            support: None,
+            agent: agent.map(str::to_owned),
+            space_root: PathBuf::from("/repo"),
+            path: "/repo".to_owned(),
+            scope,
+            selected: 0,
+            clearing: false,
+        }
+    }
+
+    /// Tab ids are minted again when the runtime restores a workspace, so
+    /// after a restart another agent's tab can carry the id this one had.
+    /// "This agent's prompts" is therefore matched on the agent, never on
+    /// the tab.
+    #[test]
+    fn an_agents_prompts_are_its_own_whatever_tab_ids_were_reused() {
+        let history = vec![
+            entry(1, Some("mevx3y"), "mine, after the restart"),
+            entry(
+                1,
+                Some("xum3gz"),
+                "another agent's, in a tab with my old id",
+            ),
+            entry(2, Some("mevx3y"), "mine, before the restart"),
+            entry(1, None, "a harness started by hand"),
+        ];
+        let listed: Vec<&str> = drawer(Some("mevx3y"), PromptScope::Agent)
+            .prompts(&history)
+            .iter()
+            .map(|entry| entry.preview.as_str())
+            .collect();
+        assert_eq!(
+            listed,
+            vec!["mine, after the restart", "mine, before the restart"]
+        );
+
+        let space = drawer(Some("mevx3y"), PromptScope::Space).prompts(&history);
+        assert_eq!(space.len(), history.len(), "the space lists every one");
+    }
+
+    /// An agent UZE did not launch has nothing to match its own prompts
+    /// on, so its own listing holds none rather than everyone's.
+    #[test]
+    fn an_agent_nothing_identifies_has_no_listing_of_its_own() {
+        let history = vec![entry(1, None, "a harness started by hand")];
+        assert!(
+            drawer(None, PromptScope::Agent)
+                .prompts(&history)
+                .is_empty()
+        );
+    }
 }

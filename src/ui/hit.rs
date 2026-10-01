@@ -54,9 +54,6 @@ pub(crate) enum Hit {
     ResizeSidebar,
     /// A route-local divider between two content panels.
     ResizePanel(ResizablePanel),
-    /// A row of the Overview's prompt history, by index into
-    /// `TuiModel::prompt_history`.
-    PromptHistory(usize),
     /// One row of the open index of everything, by position in it.
     ActionIndexEntry(usize),
     /// An overlay's own area — the release notes, a dialog: a click on it
@@ -67,6 +64,8 @@ pub(crate) enum Hit {
     ReleaseNotesClose,
     /// The footer's version: the notes of the release this binary is.
     RunningReleaseNotes,
+    /// The footer's health status: what needs attention, if anything.
+    HealthStatus,
     /// A detail view's button for one of the selected row's offers.
     OfferedAction(uze_keys::Action),
     /// One line of the Keys screen.
@@ -150,10 +149,20 @@ impl TuiModel {
                 self.focus = Focus::Content;
                 entering
             }
+            // The first click puts the keyboard on the plugin; a click on
+            // the plugin it is already on opens or folds its resources, so
+            // the whole row answers rather than the chevron alone.
             Hit::MarketplaceRow(index) => {
+                let again = self.plugin_pane == PluginPane::Plugins
+                    && self.remembered.plugin_screen.selected == index
+                    && self.selected_resource.is_none();
                 self.select_plugin_row(index, None);
                 self.plugin_pane = PluginPane::Plugins;
                 self.focus = Focus::Content;
+                if again && let Some(plugin) = self.selected_marketplace_plugin() {
+                    let id = self.marketplace_plugin_id(&plugin);
+                    self.toggle_plugin_expanded(&id);
+                }
                 self.marketplace_inspect_intent()
             }
             Hit::TogglePluginResources(index) => {
@@ -246,6 +255,10 @@ impl TuiModel {
                 self.first_steps_closed = true;
                 Intent::None
             }
+            Hit::HealthStatus => {
+                self.overlay = Overlay::Health;
+                Intent::None
+            }
             Hit::RunningReleaseNotes => {
                 let version = crate::self_update::running().to_owned();
                 self.overlay = Overlay::ReleaseNotes(
@@ -303,11 +316,6 @@ impl TuiModel {
                 self.filtering = true;
                 self.focus = Focus::Content;
                 Intent::None
-            }
-            Hit::PromptHistory(index) => {
-                self.focus = Focus::Content;
-                self.remembered.overview_prompt_selected = index;
-                self.activate_selected_prompt()
             }
         }
     }

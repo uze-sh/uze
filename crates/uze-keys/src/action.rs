@@ -182,7 +182,7 @@ actions! {
     InstallProjectEnvironment => "install-project-environment", false,
         "Install the project's environment", "Install what this project declares but the machine lacks";
     ClearPromptHistory => "clear-prompt-history", true,
-        "Clear history", "Forget the prompts this machine has recorded";
+        "Clear history", "Forget the prompts recorded for this space, having been asked once";
 
     // --- Management, things done to a harness ---------------------------
     SetupHarness => "setup-harness", false,

@@ -557,6 +557,6 @@ fn removals_meet_the_budget() {
 fn machine_snapshot_meets_the_budget() {
     let world = World::build("budget-snapshot");
     world.within_budget("machine snapshot", |app| {
-        app.machine_snapshot(&world.project, 20)
+        app.machine_snapshot(&world.project)
     });
 }
