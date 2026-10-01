@@ -803,7 +803,7 @@ fn a_toast_is_neutral_and_says_what_kind_it_is_with_its_mark_alone() {
     let done = ground_of(ToastKind::Done);
     assert_eq!(
         done[0],
-        theme::color(Token::SurfaceRaised),
+        theme::color(Token::SurfaceRaisedBright),
         "one neutral surface"
     );
     assert_eq!(done[1], done[0], "and both its rows carry it");
@@ -965,6 +965,35 @@ fn a_toast_never_draws_wider_than_the_room_it_was_given() {
             assert!(box_rect.x < box_rect.right(), "{width}: {box_rect:?}");
         });
     }
+}
+
+/// What was drawn under a toast does not show through it.
+///
+/// The code surface marks a selection by reversing its cells, and a ground
+/// and an ink set over a reversed cell leave it reversed: the selection
+/// read straight through the box.
+#[test]
+fn a_toast_hides_what_was_drawn_under_it() {
+    let toast = Toast::new(ToastKind::Done, "copied", "5 characters to the clipboard");
+    drawn(80, 6, |frame| {
+        let area = Rect::new(0, 0, 80, 6);
+        frame.buffer_mut().set_style(
+            area,
+            ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::REVERSED),
+        );
+        let placed = toast::stack(frame, area, std::slice::from_ref(&toast));
+        let box_rect = placed[0].box_rect;
+        for y in box_rect.y..box_rect.bottom() {
+            for x in box_rect.x..box_rect.right() {
+                assert!(
+                    !frame.buffer_mut()[(x, y)]
+                        .modifier
+                        .contains(ratatui::style::Modifier::REVERSED),
+                    "({x}, {y}) still reversed"
+                );
+            }
+        }
+    });
 }
 
 /// One width for the whole column, whatever each toast has to say.

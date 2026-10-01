@@ -3043,6 +3043,9 @@ struct WorkspaceModel {
     /// Whether the pointer is held since a press on the code surface's
     /// text, so a movement marks what it passes over.
     marking_code_text: bool,
+    /// Whether the pointer is held since a press on a toast, so the rest
+    /// of that gesture is the toast's and reaches nothing beneath it.
+    pressing_toast: bool,
     /// Text being selected in a pane with the pointer, and — once released
     /// — the selection still drawn until the next press or key.
     selection: Option<selection::PaneSelection>,
