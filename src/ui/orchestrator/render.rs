@@ -220,10 +220,6 @@ pub(super) fn render(
             scope: drawer.scope,
             agent_known: drawer.agent.is_some(),
             selected: drawer.selected,
-            hovered: match model.hovered {
-                Some(WorkspaceHit::DrawerPrompt(index)) => Some(index),
-                _ => None,
-            },
             hovered_scope: match model.hovered {
                 Some(WorkspaceHit::DrawerScope(scope)) => Some(scope),
                 _ => None,

@@ -124,7 +124,6 @@ pub(super) struct DrawerPrompts<'a> {
     /// told from the space's.
     pub(super) agent_known: bool,
     pub(super) selected: usize,
-    pub(super) hovered: Option<usize>,
     /// The scope tab under the pointer, which lightens like every other
     /// control the pointer is over.
     pub(super) hovered_scope: Option<PromptScope>,
@@ -266,10 +265,9 @@ pub(super) fn render(
         .iter()
         .enumerate()
         .map(|(index, entry)| {
-            let state = RowState::of(
-                index == prompts.selected,
-                prompts.hovered == Some(index) && prompts.scope == PromptScope::Space,
-            );
+            // No hover: a record is read, and a ground under the pointer
+            // would promise a click that does nothing.
+            let state = RowState::of(index == prompts.selected, false);
             record_lines(entry, &clock, prompts.scope, text_width, state)
         })
         .collect();
@@ -285,10 +283,7 @@ pub(super) fn render(
             break;
         }
         let rect = Rect::new(bleed.x, y, bleed.width, height);
-        let state = RowState::of(
-            index == prompts.selected,
-            prompts.hovered == Some(index) && prompts.scope == PromptScope::Space,
-        );
+        let state = RowState::of(index == prompts.selected, false);
         let padded: Vec<Line<'static>> = block
             .iter()
             .cloned()
@@ -577,11 +572,6 @@ fn footer(prompts: &DrawerPrompts<'_>, listed: usize, width: u16) -> Line<'stati
         format!("{}/{listed}", prompts.selected + 1)
     };
     let mut actions = Vec::new();
-    // This agent's own prompts are read here, not acted on: the tab they
-    // went to is the one in front.
-    if prompts.scope == PromptScope::Space {
-        actions.push((Action::Activate, "go to tab".to_owned()));
-    }
     if prompts.agent_known {
         actions.push((Action::FocusNext, "agent/space".to_owned()));
     }
@@ -888,7 +878,6 @@ mod tests {
             scope: PromptScope::Agent,
             agent_known: true,
             selected: 0,
-            hovered: None,
             hovered_scope: None,
             clearing: false,
         };
@@ -965,7 +954,6 @@ mod tests {
             scope: PromptScope::Space,
             agent_known: false,
             selected: 0,
-            hovered: None,
             hovered_scope: None,
             clearing: false,
         };
@@ -1001,7 +989,6 @@ mod tests {
             scope: PromptScope::Agent,
             agent_known: true,
             selected: 0,
-            hovered: None,
             hovered_scope: None,
             clearing: false,
         };
@@ -1021,7 +1008,6 @@ mod tests {
             scope: PromptScope::Agent,
             agent_known: true,
             selected: 45,
-            hovered: None,
             hovered_scope: None,
             clearing: false,
         };
@@ -1044,7 +1030,6 @@ mod tests {
                 scope: PromptScope::Agent,
                 agent_known: true,
                 selected: 0,
-                hovered: None,
                 hovered_scope,
                 clearing: false,
             };

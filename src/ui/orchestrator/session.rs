@@ -585,7 +585,7 @@ impl Attach<'_> {
             return Flow::Continue;
         }
         if self.model.support_dropdown.is_some() {
-            self.drawer_action(action, viewport);
+            self.drawer_action(action);
             return Flow::Continue;
         }
         if self.model.root_picker.is_some() {
@@ -931,9 +931,9 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// The agent drawer: walk its prompts, go to the tab one was typed
-    /// into, switch whose prompts are listed, or clear the space's.
-    fn drawer_action(&mut self, action: Action, viewport: &Viewport) {
+    /// The agent drawer: walk its prompts, switch whose prompts are
+    /// listed, or clear the space's.
+    fn drawer_action(&mut self, action: Action) {
         let listed = self.drawer_prompt_count();
         let space_has_prompts = self.space_has_prompts();
         let Some(drawer) = self.model.support_dropdown.as_mut() else {
@@ -952,13 +952,9 @@ impl Attach<'_> {
                 };
                 self.show_drawer_scope(scope);
             }
-            // This agent's own prompts went to the tab in front: they are
-            // read here, and there is nowhere to go.
-            Action::Activate if drawer.scope == PromptScope::Agent => {}
-            Action::Activate => {
-                let selected = drawer.selected;
-                self.open_drawer_prompt(selected, viewport);
-            }
+            // The prompts are read here, not acted on: `enter` keeps the
+            // drawer open rather than closing it as if it had done something.
+            Action::Activate => {}
             Action::ClearPromptHistory if clearing => {
                 let root = drawer.space_root.clone();
                 spawn_clear_prompt_history(self.home, root, self.channels.prompts.sender.clone());
@@ -1014,38 +1010,6 @@ impl Attach<'_> {
         if let Some(drawer) = self.model.support_dropdown.as_mut() {
             drawer.selected = drawer.selected.min(listed.saturating_sub(1));
         }
-    }
-
-    /// Goes to the tab the `index`th listed prompt was typed into, and
-    /// closes the drawer. The tab is found by the agent it was launched
-    /// for, since tab ids are minted again when the runtime restores a
-    /// workspace; an entry from before agents were recorded falls back to
-    /// its tab id, and only while that tab still carries the same label.
-    fn open_drawer_prompt(&mut self, index: usize, viewport: &Viewport) {
-        let (Some(drawer), Some(history)) = (
-            self.model.support_dropdown.as_ref(),
-            self.model.remembered.drawer_prompts.as_ref(),
-        ) else {
-            return;
-        };
-        if history.root != drawer.space_root {
-            return;
-        }
-        let Some(entry) = drawer.prompts(&history.entries).get(index).copied() else {
-            return;
-        };
-        let tab = self.model.tabs().find_map(|tab| {
-            let same_agent =
-                entry.agent.is_some() && launched_agent_id(tab) == entry.agent.as_deref();
-            let same_tab =
-                entry.agent.is_none() && tab.id.0 == entry.tab_id && tab.label == entry.tab_label;
-            (same_agent || same_tab).then_some(tab.id)
-        });
-        self.model.support_dropdown = None;
-        if let Some(tab) = tab {
-            self.land_on_tab(tab, viewport.columns, viewport.rows);
-        }
-        self.model.dirty = true;
     }
 
     /// The "+ new agent" popup — pick a harness, or leave.
@@ -2209,15 +2173,14 @@ impl Attach<'_> {
                 self.model.dirty = true;
             }
             _ if self.model.support_dropdown.is_some() => {
-                // A click on the drawer's own rows acts; anywhere else
-                // dismisses it, and never leaks into the pane beneath.
+                // A click on a record selects it and nothing more: the
+                // drawer is read, so a click inside it never closes it.
+                // Anywhere else dismisses it, and never leaks into the pane
+                // beneath.
                 match self.model.hit_at(mouse.column, mouse.row) {
                     Some(WorkspaceHit::DrawerPrompt(index)) => {
-                        match self.model.support_dropdown.as_mut() {
-                            Some(drawer) if drawer.scope == PromptScope::Agent => {
-                                drawer.selected = index;
-                            }
-                            _ => self.open_drawer_prompt(index, viewport),
+                        if let Some(drawer) = self.model.support_dropdown.as_mut() {
+                            drawer.selected = index;
                         }
                     }
                     Some(WorkspaceHit::DrawerScope(scope)) => self.show_drawer_scope(scope),
@@ -2942,7 +2905,7 @@ impl Attach<'_> {
                 } else {
                     Action::SelectNext
                 };
-                self.drawer_action(action, viewport);
+                self.drawer_action(action);
             }
             // The index is nothing but a long list, so the wheel walks it
             // the way the arrows do. It sits ahead of every surface below
