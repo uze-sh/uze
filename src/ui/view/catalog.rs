@@ -108,19 +108,24 @@ pub(crate) fn render_card(
     );
 }
 
-/// The caption and the state after it, or the state alone where both do
-/// not fit: the state is what a person scans the catalog for, and a word
-/// clipped to "Ena" says nothing.
+/// The caption on the left and the state pinned to the right edge, or the
+/// state alone where both do not fit: the state is what a person scans the
+/// catalog for, and a word clipped to "Ena" says nothing. Pinned so every
+/// card in a row says it in the same column, whatever its caption's
+/// length.
 fn foot<'a>(caption: Span<'a>, state: Option<Span<'a>>, width: u16) -> Line<'a> {
     let Some(state) = state else {
         return Line::from(caption);
     };
-    const GAP: &str = "  ";
-    if caption.width() + GAP.len() + state.width() <= usize::from(width) {
-        Line::from(vec![caption, Span::raw(GAP), state])
+    const GAP: usize = 2;
+    let width = usize::from(width);
+    let caption = if caption.width() + GAP + state.width() <= width {
+        caption
     } else {
-        Line::from(state)
-    }
+        Span::raw("")
+    };
+    let gap = width.saturating_sub(caption.width() + state.width());
+    Line::from(vec![caption, Span::raw(" ".repeat(gap)), state])
 }
 
 /// The name, and right-aligned beside it only what fits with a gap

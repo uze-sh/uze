@@ -3151,6 +3151,12 @@ fn a_harness_card_says_its_state_at_its_foot() {
         foot.contains("Enabled"),
         "the one UZE set up says so: {foot:?}"
     );
+    // Pinned to the card's right edge, past its two columns of inset, so
+    // every card in a row says it in the same column.
+    assert!(
+        foot.trim_end_matches(' ').ends_with("Enabled") && foot.ends_with("Enabled  "),
+        "the state sits at the right edge: {foot:?}"
+    );
     let (title, foot) = card(&wide, "Codex");
     assert_eq!(title.trim(), "Codex");
     assert!(
