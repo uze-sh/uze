@@ -9,6 +9,7 @@ use super::tui_application;
 use crate::ui::extension_host::WorkspaceHost;
 use crate::ui::extension_view;
 use crate::ui::root_picker::RootPicker;
+use crate::ui::selection::{self, Selection};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::ToastKind;
 use crate::ui::widget::{action_index, text};
@@ -195,7 +196,6 @@ const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 mod checkouts;
 mod input;
 mod render;
-mod selection;
 mod session;
 mod work;
 mod work_list;
@@ -3183,15 +3183,13 @@ struct WorkspaceModel {
     /// Whether the content's own scrollbar is being held. Unambiguous, so
     /// it needs nothing but a flag.
     dragging_code_content: bool,
-    /// Whether the pointer is held since a press on the code surface's
-    /// text, so a movement marks what it passes over.
-    marking_code_text: bool,
     /// Whether the pointer is held since a press on a toast, so the rest
     /// of that gesture is the toast's and reaches nothing beneath it.
     pressing_toast: bool,
-    /// Text being selected in a pane with the pointer, and — once released
-    /// — the selection still drawn until the next press or key.
-    selection: Option<selection::PaneSelection>,
+    /// Text being selected with the pointer — in a pane, or in what an
+    /// open surface drew — and, once released, the selection still drawn
+    /// until the next press or key.
+    selection: Option<Selection>,
     /// What a release selected, waiting for the frame loop to hand it to
     /// the host terminal's clipboard through the handle the frames go
     /// through, so it cannot land inside one.
@@ -3504,10 +3502,7 @@ impl WorkspaceModel {
     /// has already put it away; an answer about a selection this client
     /// has since dropped is not one anybody is waiting for.
     fn copy(&mut self, pane: uze_terminal::PaneId, text: String) {
-        if self
-            .selection
-            .is_none_or(|selection| selection.pane != pane)
-        {
+        if !matches!(&self.selection, Some(Selection::Pane(selection)) if selection.pane == pane) {
             return;
         }
         if text.is_empty() {

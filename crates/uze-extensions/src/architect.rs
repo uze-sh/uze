@@ -37,9 +37,9 @@ use crate::{
     Host,
     registry::BuiltinExtension,
     view::{
-        Choosing, Command, Content, ContentLine, Layout, LineTone, MarkerSide, Mode, Navigator,
-        NavigatorRow, PanDirection, Role, RowIcon, ScrollDirection, Size, Span, TrailStep, View,
-        ViewHit,
+        Choosing, Command, Content, ContentLine, Layout, LineTone, MarkerSide, Medium, Mode,
+        Navigator, NavigatorRow, PanDirection, Role, RowIcon, ScrollDirection, Size, Span,
+        TrailStep, View, ViewHit,
     },
 };
 
@@ -1219,7 +1219,7 @@ fn content(state: &ArchitectView, space: Size) -> Content {
                 total: lines.len(),
                 lines,
                 caret: None,
-                selection: None,
+                medium: Medium::Text,
             }
         }
         // A board hands over its screen and nothing else: there is no
@@ -1234,7 +1234,7 @@ fn content(state: &ArchitectView, space: Size) -> Content {
                 total: lines.len(),
                 lines,
                 caret: None,
-                selection: None,
+                medium: Medium::Drawing,
             }
         }
     }
@@ -1373,6 +1373,23 @@ pub fn scroll_to(state: &mut ArchitectView, first: usize, space: Size) {
     let corner = state.corner(space);
     state.corner = Some((corner.0, first as i32));
     state.corner = Some(state.corner(space));
+}
+
+/// The text of `lines` of the artifact's source, when the source is what
+/// is on show — what the host copies when a reader marked them. A drawn
+/// diagram has none: it is a [`Medium::Drawing`].
+pub fn text(state: &ArchitectView, lines: std::ops::Range<usize>) -> Vec<String> {
+    if state.showing != Showing::Source {
+        return Vec::new();
+    }
+    let count = lines.len();
+    state
+        .source()
+        .lines()
+        .skip(lines.start)
+        .take(count)
+        .map(str::to_owned)
+        .collect()
 }
 
 #[cfg(test)]

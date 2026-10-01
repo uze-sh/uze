@@ -68,7 +68,7 @@ use std::{
 use crate::{
     Host,
     shared::checkout,
-    view::{Caret, Command, Role, ScrollDirection, Size, Span, ViewHit},
+    view::{Caret, Command, ContentLine, Role, ScrollDirection, Size, Span, ViewHit},
 };
 
 mod change_menu;
@@ -78,7 +78,6 @@ mod editor;
 mod files;
 mod history;
 mod map;
-mod marking;
 mod render;
 mod request;
 mod treemap;
@@ -126,9 +125,6 @@ pub enum CodeOutcome {
     /// Put this text on the clipboard. The host's, because the clipboard
     /// is the terminal's and reaching it is a sequence written to it.
     Copy(String),
-    /// The same, for text marked with the pointer — told apart because
-    /// what is said about it is how much was taken, not the text itself.
-    CopySelection(String),
 }
 
 /// Which list the navigator is showing — always the one the content mode
@@ -262,8 +258,6 @@ pub struct CodeView {
     menu: Option<change_menu::ChangeMenu>,
     /// A discard asked for and not yet answered.
     discarding: Option<change_menu::Discarding>,
-    /// Text marked with the pointer in the content on show.
-    marking: Option<marking::Marking>,
 }
 
 /// Where a viewer was on a checkout's code surface, so that opening it
@@ -368,7 +362,6 @@ impl CodeView {
             confirming_discard: false,
             menu: None,
             discarding: None,
-            marking: None,
         };
         if view.navigator() == NavigatorMode::Files {
             view.expand(view.root.clone());
@@ -589,9 +582,6 @@ impl CodeView {
             // where it stays — the cells were never sent back.
             changes.diff = std::mem::take(&mut self.changes.diff);
             changes.diff_binary = self.changes.diff_binary;
-        } else if self.content == ContentMode::Diff {
-            // What was marked named lines of a diff that is not this one.
-            self.marking = None;
         }
         self.changes = changes;
         if self.selected.is_none() {
@@ -828,7 +818,6 @@ impl CodeView {
         if self.open.as_ref().is_some_and(|open| open.path != path) {
             self.open = None;
         }
-        self.marking = None;
         self.selected = Some(path);
         self.scroll = 0;
         self.changes.diff = Vec::new();
@@ -869,10 +858,8 @@ impl CodeView {
         if self.content == mode {
             return;
         }
-        // The menu was opened on the list this leaves, and what was marked
-        // on the lines it shows.
+        // The menu was opened on the list this leaves.
         self.menu = None;
-        self.marking = None;
         let line = self.line_in_view();
         self.content = mode;
         match mode {
@@ -1239,7 +1226,6 @@ impl CodeView {
     /// caret as one edit. Anything else open ignores a paste: there is
     /// nothing in a read-only surface for it to land in.
     pub fn paste(&mut self, text: &str, space: Size) {
-        self.marking = None;
         if let Some(open) = self
             .open
             .as_mut()
@@ -1406,9 +1392,6 @@ fn map_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcom
 /// nothing but keeping the caret and the page keys inside the file.
 pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcome {
     view.notice = None;
-    // What was marked stays drawn until something else is done, the way a
-    // pane's selection does.
-    view.marking = None;
     // Typing is modal, and the host says so by asking in the editing
     // scope. What is left here is the same command set the reading modes
     // answer, plus the two that leave typing.
@@ -1725,13 +1708,6 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
                     column: open.column_at_cell(line, cell),
                 };
             }
-            view.mark_from(line, cell);
-        }
-        Some(ViewHit::SelectTo { line, cell }) => view.mark_to(line, cell),
-        Some(ViewHit::LetGo) => {
-            if let Some(text) = view.let_go() {
-                return CodeOutcome::CopySelection(text);
-            }
         }
         // The order is `render::modes`' own, and it is the only side
         // that knows it — which is why the hit carries an index rather
@@ -1815,6 +1791,35 @@ pub fn handle_scroll(view: &mut CodeView, direction: ScrollDirection, at_end: bo
         ScrollDirection::Down if at_end => view.scroll,
         ScrollDirection::Down => view.scroll.saturating_add(3),
     };
+}
+
+/// The text of `lines` of the content on show, as it reads: a diff's
+/// lines without the gutter that says how they changed, a file's as they
+/// are in it. What the host copies when a reader marked them; a range
+/// past the end gives back only the lines there are, and the map, being
+/// a drawing, has none.
+pub fn text(view: &CodeView, lines: std::ops::Range<usize>) -> Vec<String> {
+    let count = lines.len();
+    match view.content {
+        ContentMode::Diff => view.changes.diff[lines.start.min(view.changes.diff.len())..]
+            .iter()
+            .take(count)
+            .map(|line| diff::content_line(line).text())
+            .collect(),
+        ContentMode::Contents => view.open.as_ref().map_or_else(Vec::new, |open| {
+            open.lines
+                .iter()
+                .skip(lines.start)
+                .take(count)
+                .cloned()
+                .collect()
+        }),
+        ContentMode::Preview => view.open.as_ref().map_or_else(Vec::new, |open| {
+            let (_, preview) = open.preview(lines.start, count);
+            preview.iter().map(ContentLine::text).collect()
+        }),
+        ContentMode::Map => Vec::new(),
+    }
 }
 
 #[cfg(test)]

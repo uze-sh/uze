@@ -461,44 +461,30 @@ pub enum Content {
         /// than reading. `None` for content nobody is typing into, which
         /// is every view that only shows.
         caret: Option<Caret>,
-        /// The text marked with the pointer, which the host draws
-        /// inverted. `None` when nothing is.
-        selection: Option<TextSelection>,
+        /// Whether the lines are text a reader may mark and copy, or a
+        /// drawing whose cells are places to point at.
+        medium: Medium,
     },
 }
 
-/// A run of text marked in [`Content::Lines`], in the same terms as a
-/// [`Caret`] and for the same reason: the host knows where a glyph was
-/// drawn, and only the extension knows which character it is.
+/// What [`Content::Lines`] are made of, which decides what a drag over
+/// them means.
 ///
-/// Ordered, and half-open: `from` is the first character marked and `to`
-/// the position just past the last, so an empty selection is never one.
+/// Said by the extension because nothing else can tell: a diagram and a
+/// file are both lines of glyphs, but a press on a box is a choice and a
+/// press on a word is the start of a selection, and the host would
+/// otherwise have to guess from the glyphs which one it is drawing.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct TextSelection {
-    pub from: Caret,
-    pub to: Caret,
-}
-
-impl TextSelection {
-    /// Which characters of `line` are marked, as a range of character
-    /// indices; the end is `usize::MAX` where the selection carries on
-    /// past the line. `None` for a line it does not reach.
-    pub fn on_line(&self, line: usize) -> Option<std::ops::Range<usize>> {
-        if line < self.from.line || line > self.to.line {
-            return None;
-        }
-        let start = if line == self.from.line {
-            self.from.column
-        } else {
-            0
-        };
-        let end = if line == self.to.line {
-            self.to.column
-        } else {
-            usize::MAX
-        };
-        Some(start..end)
-    }
+pub enum Medium {
+    /// Read as text: pressing and dragging marks it, and the release
+    /// copies what was marked — the host does both, asking the extension
+    /// only for the text of the lines the marking covers.
+    #[default]
+    Text,
+    /// A picture drawn in glyphs — a diagram, a map. Pointing at it is a
+    /// click on whatever is drawn there, and copying its box-drawing
+    /// characters would hand over nothing anyone could paste.
+    Drawing,
 }
 
 /// The caret in editable [`Content::Lines`].
@@ -523,6 +509,14 @@ pub struct ContentLine {
     pub number: String,
     pub tone: LineTone,
     pub spans: Vec<Span>,
+}
+
+impl ContentLine {
+    /// The line's text as it reads, without its gutter or its number —
+    /// what a reader who marked the whole of it meant to take.
+    pub fn text(&self) -> String {
+        self.spans.iter().map(|span| span.text.as_str()).collect()
+    }
 }
 
 /// What a line means, which the host turns into a background wash. Naming
@@ -636,17 +630,6 @@ pub enum ViewHit {
         /// Display cells from the start of that line's text.
         cell: usize,
     },
-    /// The pointer, held down since a [`ViewHit::PlaceCaret`], has been
-    /// carried here: everything between the two is being marked. Resolved
-    /// the way that one is, and clamped to the text drawn — a drag past
-    /// the last line names the line after it, which is how a selection
-    /// reaches what the host scrolled into view to follow it.
-    SelectTo {
-        line: usize,
-        cell: usize,
-    },
-    /// The pointer held since a [`ViewHit::PlaceCaret`] came up.
-    LetGo,
     /// One of the [`View::modes`] offered, chosen — by its index into
     /// that list, which is the extension's own order.
     SelectMode(usize),

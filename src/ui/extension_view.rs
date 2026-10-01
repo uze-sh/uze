@@ -16,14 +16,15 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span as TextSpan},
-    widgets::{Clear, Padding, Paragraph, Wrap},
+    widgets::{Clear, Padding, Paragraph},
 };
 use uze_extensions::view::{
     Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
-    Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget, Section,
-    Size, Span, TAB_WIDTH, TextSelection, TrailStep, View, ViewHit,
+    Medium, Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget,
+    Section, Size, Span, TAB_WIDTH, TrailStep, View, ViewHit,
 };
 
+use crate::ui::selection::{Glyph, TextRow, TextSelection};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
     self, Edge, Rule, Scrollbar, Surface, TRAILING_PAD, hint, mark, row, text,
@@ -286,40 +287,84 @@ fn cell_width(character: char) -> usize {
     }
 }
 
+/// Where a line that does not fit may be broken: code at any cell, since
+/// every character of it is the text and a caret stands on each; prose
+/// only between its words.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Breaks {
+    Cells,
+    Words,
+}
+
+impl Breaks {
+    /// Numbered lines are code, and unnumbered ones prose — the same
+    /// line [`gutter_width`] draws.
+    fn for_gutter(gutter: u16) -> Self {
+        match gutter {
+            0 => Self::Words,
+            _ => Self::Cells,
+        }
+    }
+}
+
 /// Folds `line` at `width` cells, calling `visit` with the row and cell
 /// each character lands on, and answers where the next one would.
 ///
-/// One walk for the three things that must agree about it — which row a
-/// character is drawn on, how many rows the line takes, and where the
-/// caret stands — because the paragraph wrap this replaced broke at
-/// words while the other two counted cells, and a caret on a long line
-/// drifted a word further off with every row.
+/// One walk for everything that must agree about it — which row a
+/// character is drawn on, how many rows the line takes, where the caret
+/// stands and which character a pointer is over — because a paragraph
+/// wrap that broke at words while the rest counted cells drew prose on
+/// rows nothing else knew it was on.
+///
+/// Prose breaks before a word that would not fit, and a space that would
+/// not fit hangs past the edge rather than opening the next row; a word
+/// wider than the whole row is broken at the cell, as code is.
 fn fold(
     line: &ContentLine,
     width: usize,
+    breaks: Breaks,
     mut visit: impl FnMut(usize, usize, &Span, char),
 ) -> (usize, usize) {
     let width = width.max(1);
+    let characters: Vec<(&Span, char)> = line
+        .spans
+        .iter()
+        .flat_map(|span| span.text.chars().map(move |character| (span, character)))
+        .collect();
     let (mut row, mut cell) = (0usize, 0usize);
-    for span in &line.spans {
-        for character in span.text.chars() {
-            let taken = cell_width(character);
-            if cell > 0 && cell + taken > width {
-                row += 1;
-                cell = 0;
+    for (index, &(span, character)) in characters.iter().enumerate() {
+        let taken = cell_width(character);
+        let overflows = match breaks {
+            Breaks::Cells => cell + taken > width,
+            Breaks::Words if character.is_whitespace() => false,
+            Breaks::Words => {
+                let starts_a_word = index == 0 || characters[index - 1].1.is_whitespace();
+                let word: usize = match starts_a_word {
+                    true => characters[index..]
+                        .iter()
+                        .take_while(|(_, character)| !character.is_whitespace())
+                        .map(|&(_, character)| cell_width(character))
+                        .sum(),
+                    false => taken,
+                };
+                cell + word.min(width) > width
             }
-            visit(row, cell, span, character);
-            cell += taken;
+        };
+        if cell > 0 && overflows {
+            row += 1;
+            cell = 0;
         }
+        visit(row, cell, span, character);
+        cell += taken;
     }
     (row, cell)
 }
 
 /// `line`'s spans, styled and folded into the rows [`fold`] puts them on.
-fn folded_rows(line: &ContentLine, width: usize) -> Vec<Vec<TextSpan<'static>>> {
+fn folded_rows(line: &ContentLine, width: usize, breaks: Breaks) -> Vec<Vec<TextSpan<'static>>> {
     let mut rows: Vec<Vec<TextSpan<'static>>> = vec![Vec::new()];
     let mut last: Option<*const Span> = None;
-    fold(line, width, |row, _, span, character| {
+    fold(line, width, breaks, |row, _, span, character| {
         if rows.len() <= row {
             rows.push(Vec::new());
             last = None;
@@ -561,8 +606,9 @@ impl NavigatorScroll {
 }
 
 /// What one frame of an extension surface left behind for the next event
-/// to read: where its list settled, and the two scrollbars it drew.
-#[derive(Clone, Copy, Debug, Default)]
+/// to read: where its list settled, the two scrollbars it drew, and where
+/// its text landed.
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Rendered {
     pub(crate) navigator_scroll: NavigatorScroll,
     pub(crate) navigator_bar: Option<Scrollbar>,
@@ -594,6 +640,14 @@ pub(crate) struct Rendered {
     /// pane's width and below its height belonged to no tile at all, and
     /// everything else belonged to the wrong one.
     pub(crate) content_space: uze_extensions::view::Size,
+    /// Every row of text drawn, with the character in each of its cells:
+    /// what a press is resolved against to start a selection, and a drag
+    /// to extend one. Empty for a [`Medium::Drawing`], which is pointed
+    /// at, never marked.
+    pub(crate) text_rows: Vec<TextRow>,
+    /// The heading of the content drawn, which names what a selection
+    /// started on it was made in.
+    pub(crate) heading: String,
 }
 
 /// Where the host holds the navigator this frame: the width it was
@@ -612,6 +666,7 @@ pub(crate) fn render(
     area: Rect,
     held: NavigatorFrame,
     scope: uze_keys::Scope,
+    selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
     // The pane's own ground, and nothing drawn around it: the surface
@@ -621,7 +676,7 @@ pub(crate) fn render(
     frame.render_widget(Clear, area);
     widget::fill(frame, area, Token::SurfaceBackground);
     if view.layout == ViewLayout::Board {
-        let mut rendered = render_board(frame, view, area, scope, hits);
+        let mut rendered = render_board(frame, view, area, scope, selection, hits);
         rendered.content_space = board_space(area);
         return rendered;
     }
@@ -695,10 +750,15 @@ pub(crate) fn render(
             lines,
             total,
             caret,
-            selection,
+            medium,
         } => {
             rendered.content_gutter = gutter_width(lines);
-            (rendered.content_bar, rendered.content_at_end) = render_lines(
+            rendered.heading = heading.clone();
+            (
+                rendered.content_bar,
+                rendered.content_at_end,
+                rendered.text_rows,
+            ) = render_lines(
                 frame,
                 content_area,
                 Lines {
@@ -708,7 +768,8 @@ pub(crate) fn render(
                     lines,
                     total: *total,
                     caret: *caret,
-                    selection: *selection,
+                    medium: *medium,
+                    selection,
                     modes: column_modes,
                 },
                 hits,
@@ -816,6 +877,7 @@ fn render_board(
     view: &View,
     area: Rect,
     scope: uze_keys::Scope,
+    selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
     let (menu, board, footer) = board_rows(area);
@@ -833,14 +895,18 @@ fn render_board(
             render_message(frame, board, text, hint.as_deref(), color(*role));
         }
         Content::Lines {
+            heading,
             scroll,
             first,
             lines,
             total,
+            medium,
             ..
         } => {
             let gutter = gutter_width(lines);
             rendered.content_gutter = gutter;
+            rendered.heading = heading.clone();
+            let marked = selection.and_then(|selection| selection.marked_in(heading));
             for (row, (offset, line)) in lines
                 .iter()
                 .enumerate()
@@ -851,6 +917,15 @@ fn render_board(
             {
                 let rect = Rect::new(board.x, board.y + row as u16, board.width, 1);
                 render_line(frame, rect, line, gutter, false);
+                // Cut at the edge rather than folded: the whole line is
+                // one row, however far past the edge it runs.
+                if *medium == Medium::Text {
+                    let rows = text_rows(line, offset, rect, gutter, usize::MAX, Breaks::Cells);
+                    if let Some(marked) = marked.and_then(|marked| marked.on_line(offset)) {
+                        render_marked(frame, &rows, marked);
+                    }
+                    rendered.text_rows.extend(rows);
+                }
                 // The whole row, gutter included: where in it the pointer
                 // landed is settled once, by `caret_cell_at`, against the
                 // gutter this frame actually drew.
@@ -1619,7 +1694,8 @@ struct Lines<'a> {
     lines: &'a [ContentLine],
     total: usize,
     caret: Option<Caret>,
-    selection: Option<TextSelection>,
+    medium: Medium,
+    selection: Option<&'a TextSelection>,
     modes: &'a [Mode],
 }
 
@@ -1628,7 +1704,7 @@ fn render_lines(
     area: Rect,
     content_lines: Lines<'_>,
     hits: &mut Vec<(Rect, ViewHit)>,
-) -> (Option<Scrollbar>, bool) {
+) -> (Option<Scrollbar>, bool, Vec<TextRow>) {
     let Lines {
         heading,
         scroll,
@@ -1636,9 +1712,12 @@ fn render_lines(
         lines,
         total,
         caret,
+        medium,
         selection,
         modes,
     } = content_lines;
+    let marked = selection.and_then(|selection| selection.marked_in(heading));
+    let mut drawn = Vec::new();
     frame.render_widget(
         Paragraph::new(TextSpan::styled(
             heading.to_owned(),
@@ -1697,8 +1776,19 @@ fn render_lines(
         }
         let row = Rect::new(content.x, y, content.width, height);
         render_line(frame, row, line, gutter, true);
-        if let Some(marked) = selection.and_then(|selection| selection.on_line(offset)) {
-            render_marked(frame, row, line, marked, gutter);
+        if medium == Medium::Text {
+            let rows = text_rows(
+                line,
+                offset,
+                row,
+                gutter,
+                text_width,
+                Breaks::for_gutter(gutter),
+            );
+            if let Some(marked) = marked.and_then(|marked| marked.on_line(offset)) {
+                render_marked(frame, &rows, marked);
+            }
+            drawn.extend(rows);
         }
         // One hit per *visual* row, not per line: a wrapped line covers
         // several, and which one the pointer is on is half of where in
@@ -1729,7 +1819,7 @@ fn render_lines(
         hits,
         ViewHit::DragContentScrollbar,
     );
-    (bar, at_end)
+    (bar, at_end, drawn)
 }
 
 /// An empty surface, or one that failed: what is the matter, and — when
@@ -2037,12 +2127,17 @@ fn render_caret(
     let width = text_width(row.width, gutter);
     let mut seen = 0usize;
     let mut at = None;
-    let end = fold(line, width, |row, cell, _, _| {
-        if seen == column {
-            at = Some((row, cell));
-        }
-        seen += 1;
-    });
+    let end = fold(
+        line,
+        width,
+        Breaks::for_gutter(gutter),
+        |row, cell, _, _| {
+            if seen == column {
+                at = Some((row, cell));
+            }
+            seen += 1;
+        },
+    );
     // A caret past the last character sits one cell beyond it, which is
     // where the next one will be typed — on the next row when this one is
     // full.
@@ -2060,36 +2155,83 @@ fn render_caret(
     cell.set_fg(theme::color(Token::SurfaceBackground));
 }
 
-/// The characters of `line` a selection covers, inverted where they were
-/// drawn — found by the same walk that drew them, so a wrapped line is
-/// marked on the rows its characters actually landed on.
+/// Where each character of `line` landed in `row`, one [`TextRow`] per
+/// screen row it took — found by the walk that drew them, so the pointer
+/// is resolved against the rows a character is actually on. `width` is
+/// how many cells the text was given before it folds, which for a
+/// drawing that is cut at the edge rather than folded is all of them.
+fn text_rows(
+    line: &ContentLine,
+    index: usize,
+    row: Rect,
+    gutter: u16,
+    width: usize,
+    breaks: Breaks,
+) -> Vec<TextRow> {
+    let mut rows: Vec<TextRow> = Vec::new();
+    let mut character = 0usize;
+    let (last, _) = fold(line, width, breaks, |down, across, _, glyph| {
+        while rows.len() <= down {
+            rows.push(TextRow {
+                area: Rect::new(row.x, row.y + rows.len() as u16, row.width, 1),
+                line: index,
+                ..TextRow::default()
+            });
+        }
+        let x = row.x + gutter + across as u16;
+        if x < row.right() {
+            rows[down].glyphs.push(Glyph {
+                x,
+                width: cell_width(glyph) as u16,
+                index: character,
+            });
+        }
+        character += 1;
+    });
+    if rows.is_empty() {
+        rows.push(TextRow {
+            area: Rect::new(row.x, row.y, row.width, 1),
+            line: index,
+            ..TextRow::default()
+        });
+    }
+    for (down, text) in rows.iter_mut().enumerate() {
+        text.beyond = match (down == last, text.glyphs.last()) {
+            (false, Some(glyph)) => glyph.index,
+            _ => character,
+        };
+    }
+    rows.retain(|text| text.area.y < row.bottom());
+    rows
+}
+
+/// The marked characters of the rows one line was drawn on, inverted
+/// where they landed.
 ///
 /// Inverted rather than tinted, as a pane's selection is: a diff's rows
 /// already carry a wash of their own, and inversion is the one mark that
 /// reads over every one of them.
 fn render_marked(
     frame: &mut ratatui::Frame<'_>,
-    row: Rect,
-    line: &ContentLine,
-    marked: std::ops::Range<usize>,
-    gutter: u16,
+    rows: &[TextRow],
+    marked: std::ops::RangeInclusive<usize>,
 ) {
-    let width = text_width(row.width, gutter);
     let area = frame.area();
     let buffer = frame.buffer_mut();
-    let mut index = 0usize;
-    fold(line, width, |down, across, _, character| {
-        if marked.contains(&index) {
-            for offset in 0..cell_width(character) {
-                let x = row.x + gutter + (across + offset) as u16;
-                let y = row.y + down as u16;
-                if x < row.right() && y < row.bottom() && area.contains((x, y).into()) {
-                    buffer[(x, y)].set_style(Style::default().add_modifier(Modifier::REVERSED));
+    for text in rows {
+        for glyph in text
+            .glyphs
+            .iter()
+            .filter(|glyph| marked.contains(&glyph.index))
+        {
+            for x in glyph.x..glyph.x.saturating_add(glyph.width) {
+                let at = (x, text.area.y);
+                if x < text.area.right() && area.contains(at.into()) {
+                    buffer[at].set_style(Style::default().add_modifier(Modifier::REVERSED));
                 }
             }
         }
-        index += 1;
-    });
+    }
 }
 
 /// Draws the groove for a surface, and makes the whole of it the drag
@@ -2112,7 +2254,12 @@ fn render_scrollbar(
 }
 
 fn line_height(line: &ContentLine, width: u16, gutter: u16) -> u16 {
-    let (row, _) = fold(line, text_width(width, gutter), |_, _, _, _| {});
+    let (row, _) = fold(
+        line,
+        text_width(width, gutter),
+        Breaks::for_gutter(gutter),
+        |_, _, _, _| {},
+    );
     u16::try_from(row + 1).unwrap_or(u16::MAX)
 }
 
@@ -2156,30 +2303,25 @@ fn render_line(
             columns[0],
         );
     }
-    // A drawing is cut at the edge and prose breaks at its words. Code
-    // is folded at the cell, by the same walk that places the caret on
-    // it, since a caret is only ever drawn on a numbered line.
-    if wrapped && gutter == 0 {
-        let text = Paragraph::new(Line::from(content_spans))
-            .style(
-                Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))),
-            )
-            .wrap(Wrap { trim: false });
-        frame.render_widget(text, columns[1]);
-        return;
-    }
+    // A drawing is cut at the edge; prose breaks at its words and code at
+    // the cell, both by the walk that places the caret and resolves the
+    // pointer, so what is drawn is where everything else thinks it is.
     let lines = match wrapped {
-        true => folded_rows(line, usize::from(columns[1].width))
-            .into_iter()
-            .map(|mut row| {
-                if let Some(background) = background {
-                    for span in &mut row {
-                        span.style = span.style.bg(background);
-                    }
+        true => folded_rows(
+            line,
+            usize::from(columns[1].width),
+            Breaks::for_gutter(gutter),
+        )
+        .into_iter()
+        .map(|mut row| {
+            if let Some(background) = background {
+                for span in &mut row {
+                    span.style = span.style.bg(background);
                 }
-                Line::from(row)
-            })
-            .collect(),
+            }
+            Line::from(row)
+        })
+        .collect(),
         false => vec![Line::from(content_spans)],
     };
     let text = Paragraph::new(lines)
@@ -2726,7 +2868,7 @@ mod tests {
             content: Content::Lines {
                 first: 0,
                 caret: None,
-                selection: None,
+                medium: Medium::Text,
                 total: 1,
                 heading: "DIFF · src/ui.rs".to_owned(),
                 scroll: 0,
@@ -2832,6 +2974,7 @@ mod tests {
                         resizing: false,
                     },
                     uze_keys::Scope::Code,
+                    None,
                     &mut hits,
                 );
             })
@@ -2932,6 +3075,7 @@ mod tests {
                         resizing: false,
                     },
                     uze_keys::Scope::Code,
+                    None,
                     &mut Vec::new(),
                 );
             })
@@ -3084,7 +3228,7 @@ mod tests {
                     spans: vec![Span::new("fn main() {}", Role::Default)],
                 }],
                 caret: None,
-                selection: None,
+                medium: Medium::Text,
             },
             footer: Vec::new(),
             notice: None,
@@ -3324,6 +3468,7 @@ mod tests {
                         resizing: false,
                     },
                     uze_keys::Scope::Code,
+                    None,
                     &mut hits,
                 );
                 render_row_menu(frame, view, frame.area(), at, &mut hits);
@@ -3353,7 +3498,7 @@ mod tests {
             content: Content::Lines {
                 first: 0,
                 caret: None,
-                selection: None,
+                medium: Medium::Text,
                 total: 1,
                 heading: "3 boxes · 2 edges · containers.mmd".to_owned(),
                 scroll: 0,
@@ -3418,6 +3563,7 @@ mod tests {
                         resizing: false,
                     },
                     uze_keys::Scope::Architect,
+                    None,
                     &mut hits,
                 );
             })
@@ -3469,7 +3615,7 @@ mod tests {
                     total: lines.len(),
                     lines,
                     caret: None,
-                    selection: None,
+                    medium: Medium::Text,
                 },
                 footer: vec![Command::Close],
                 notice: None,
@@ -3495,6 +3641,7 @@ mod tests {
                             resizing: false,
                         },
                         uze_keys::Scope::Architect,
+                        None,
                         &mut hits,
                     )
                     .content_space;
@@ -3584,7 +3731,7 @@ mod tests {
                 lines: Vec::new(),
                 total: 0,
                 caret: None,
-                selection: None,
+                medium: Medium::Text,
             },
             footer: vec![Command::Close],
             notice: None,
@@ -3741,7 +3888,7 @@ mod tests {
                 lines: Vec::new(),
                 total: 0,
                 caret: None,
-                selection: None,
+                medium: Medium::Text,
             },
             footer: vec![Command::Close],
             notice: None,
@@ -4159,14 +4306,12 @@ mod tests {
     /// and nothing either side of it is.
     #[test]
     fn marked_text_is_inverted_where_it_was_drawn() {
-        let mut view = sample();
-        let Content::Lines { selection, .. } = &mut view.content else {
+        let view = sample();
+        let Content::Lines { heading, .. } = &view.content else {
             unreachable!("the sample shows lines");
         };
-        *selection = Some(TextSelection {
-            from: Caret { line: 0, column: 3 },
-            to: Caret { line: 0, column: 7 },
-        });
+        let mut selection = TextSelection::pressed(Caret { line: 0, column: 3 }, heading.clone());
+        selection.gesture.carry(Caret { line: 0, column: 6 });
 
         let mut terminal = Terminal::new(TestBackend::new(90, 14)).unwrap();
         let mut hits = Vec::new();
@@ -4182,6 +4327,7 @@ mod tests {
                         resizing: false,
                     },
                     uze_keys::Scope::Code,
+                    Some(&selection),
                     &mut hits,
                 );
             })
@@ -4201,6 +4347,80 @@ mod tests {
             })
             .collect();
         assert_eq!(inverted, [3, 4, 5, 6]);
+    }
+
+    /// Draws `view` and answers the screen and what the frame recorded.
+    fn drawn_rows(view: &View) -> (ratatui::buffer::Buffer, Rendered) {
+        let mut terminal = Terminal::new(TestBackend::new(60, 14)).unwrap();
+        let mut rendered = Rendered::default();
+        terminal
+            .draw(|frame| {
+                rendered = render(
+                    frame,
+                    view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                    },
+                    uze_keys::Scope::Code,
+                    None,
+                    &mut Vec::new(),
+                );
+            })
+            .unwrap();
+        (terminal.backend().buffer().clone(), rendered)
+    }
+
+    /// Prose breaks between its words, and every character recorded is
+    /// the one drawn in that cell — so a pointer over a letter names that
+    /// letter, on whichever row the fold put it.
+    #[test]
+    fn prose_breaks_at_words_and_each_character_is_recorded_where_it_was_drawn() {
+        let text = "the quick brown fox jumps over the lazy dog again and again";
+        let mut view = sample();
+        let Content::Lines { lines, .. } = &mut view.content else {
+            unreachable!("the sample shows lines");
+        };
+        *lines = vec![ContentLine {
+            gutter: String::new(),
+            number: String::new(),
+            tone: LineTone::Neutral,
+            spans: vec![Span::new(text, Role::Default)],
+        }];
+
+        let (buffer, rendered) = drawn_rows(&view);
+
+        assert!(rendered.text_rows.len() > 1, "the line is folded");
+        let characters: Vec<char> = text.chars().collect();
+        for row in &rendered.text_rows {
+            for glyph in &row.glyphs {
+                assert_eq!(
+                    buffer[(glyph.x, row.area.y)].symbol(),
+                    characters[glyph.index].to_string()
+                );
+            }
+            let first = row.glyphs.first().expect("no row is empty").index;
+            assert!(
+                first == 0 || characters[first - 1] == ' ',
+                "a row starts at a word"
+            );
+        }
+    }
+
+    /// A drawing is pointed at, never marked: the frame records no text.
+    #[test]
+    fn a_drawing_records_no_text() {
+        let mut view = sample();
+        let Content::Lines { medium, .. } = &mut view.content else {
+            unreachable!("the sample shows lines");
+        };
+        *medium = Medium::Drawing;
+
+        let (_, rendered) = drawn_rows(&view);
+
+        assert!(rendered.text_rows.is_empty());
     }
 
     #[test]
@@ -4227,6 +4447,7 @@ mod tests {
                         resizing: false,
                     },
                     uze_keys::Scope::Code,
+                    None,
                     &mut hits,
                 );
             })
@@ -4352,6 +4573,7 @@ mod tests {
                         resizing: false,
                     },
                     uze_keys::Scope::Code,
+                    None,
                     &mut Vec::new(),
                 );
             })
@@ -4475,6 +4697,7 @@ mod tests {
                         resizing: false,
                     },
                     uze_keys::Scope::Code,
+                    None,
                     &mut Vec::new(),
                 )
                 .navigator_scroll;

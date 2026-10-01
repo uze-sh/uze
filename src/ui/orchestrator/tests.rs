@@ -8514,18 +8514,24 @@ mod workspace_tests {
 
         driven.press(text, first_line.y);
         driven.mouse(
-            text + 5,
+            text + 4,
             first_line.y,
             MouseEventKind::Drag(MouseButton::Left),
         );
         driven.mouse(
-            text + 5,
+            text + 4,
             first_line.y,
             MouseEventKind::Up(MouseButton::Left),
         );
 
         assert_eq!(driven.attach.model.clipboard.as_deref(), Some("hello"));
-        assert!(!driven.attach.model.marking_code_text, "the drag is over");
+        assert!(
+            matches!(
+                &driven.attach.model.selection,
+                Some(crate::ui::selection::Selection::Text(marking)) if !marking.gesture.held()
+            ),
+            "the drag is over, and what was taken stays drawn"
+        );
     }
 
     #[test]
@@ -8790,6 +8796,68 @@ mod workspace_tests {
         let first = row_of(&driven, 0);
         driven.mouse(first.x + 1, first.y, MouseEventKind::Moved);
         assert_eq!(highlighted(&driven), Some(Choosing::Item(0)), "and back");
+    }
+
+    /// The architect's source is text like any other: press, drag, let go,
+    /// and what was passed over is on the clipboard. Its diagram is a
+    /// drawing, which a press points at and never marks.
+    #[test]
+    fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
+        use uze_extensions::architect;
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-copy"));
+        let source = include_str!("../../../docs/architecture/crate-layering.mmd");
+        let mut view = architect::ArchitectView::opening("~/repo".to_owned());
+        view.absorb(architect::ArtifactsAnswer {
+            branch: "main".to_owned(),
+            artifacts: architect::Artifacts::Found {
+                artifacts: [architect::Artifact::read("crate-layering.mmd", source)].into(),
+                project: PathBuf::from("/repo"),
+            },
+        });
+        let mut model = model_of(session("/repo"));
+        model.architect = Some(view);
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+
+        driven.frame();
+        assert!(
+            driven.attach.model.code_scrollbars.text_rows.is_empty(),
+            "a diagram has no text to mark"
+        );
+
+        let space = driven.attach.model.code_scrollbars.content_space;
+        if let Some(view) = driven.attach.model.architect.as_mut() {
+            architect::handle_mouse(view, Some(ViewHit::SelectMode(2)), space);
+        }
+        driven.frame();
+        let row_of = |driven: &Driven<'_>, line: usize| {
+            driven
+                .attach
+                .model
+                .code_scrollbars
+                .text_rows
+                .iter()
+                .find(|row| row.line == line)
+                .cloned()
+                .unwrap_or_else(|| panic!("line {line} of the source is drawn"))
+        };
+        let (title, rule) = (row_of(&driven, 1), row_of(&driven, 2));
+        driven.press(title.glyphs[0].x, title.area.y);
+        driven.mouse(
+            rule.glyphs[2].x,
+            rule.area.y,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+        driven.mouse(
+            rule.glyphs[2].x,
+            rule.area.y,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+
+        let expected: Vec<&str> = source.lines().skip(1).take(2).collect();
+        assert_eq!(
+            driven.attach.model.clipboard.as_deref(),
+            Some(expected.join("\n").as_str())
+        );
     }
 
     /// A space's own row lands on a shell of the space's, not on whichever

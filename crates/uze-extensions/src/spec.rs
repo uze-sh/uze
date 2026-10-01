@@ -46,8 +46,8 @@ use crate::{
     registry::BuiltinExtension,
     shared::{checkout, highlight, markdown},
     view::{
-        Command, Content, ContentLine, Layout, LineTone, MarkerSide, Mode, Navigator, NavigatorRow,
-        Role as Tone, RowIcon, ScrollDirection, Size, Span, View, ViewHit,
+        Command, Content, ContentLine, Layout, LineTone, MarkerSide, Medium, Mode, Navigator,
+        NavigatorRow, Role as Tone, RowIcon, ScrollDirection, Size, Span, View, ViewHit,
     },
 };
 
@@ -905,7 +905,7 @@ fn content(state: &SpecView, space: Size) -> Content {
             .collect(),
         total: state.lines.len(),
         caret: None,
-        selection: None,
+        medium: Medium::Text,
     }
 }
 
@@ -978,4 +978,18 @@ pub fn handle_scroll(state: &mut SpecView, direction: ScrollDirection) {
 /// Shows the content from line `first`, as a point on its scrollbar asks.
 pub fn scroll_to(state: &mut SpecView, first: usize) {
     state.scroll = first.min(state.lines.len().saturating_sub(1));
+}
+
+/// The text of `lines` of the document on show, as it reads rendered —
+/// what the host copies when a reader marked them. A range past the end
+/// gives back only the lines there are.
+pub fn text(state: &SpecView, lines: std::ops::Range<usize>) -> Vec<String> {
+    let count = lines.len();
+    state
+        .lines
+        .iter()
+        .skip(lines.start)
+        .take(count)
+        .map(ContentLine::text)
+        .collect()
 }
