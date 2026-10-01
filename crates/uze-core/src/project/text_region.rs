@@ -631,7 +631,15 @@ pub fn converge(
     }
     let changed = !convergence.removed.is_empty() || attached.contains(&true);
     let written = if changed {
-        write_lines(target_file, &lines).map_err(|error| error.to_string())
+        let written = write_lines(target_file, &lines).map_err(|error| error.to_string());
+        if written.is_ok() {
+            tracing::info!(
+                file = %target_file.display(),
+                removed = ?convergence.removed,
+                "managed regions were rewritten"
+            );
+        }
+        written
     } else {
         Ok(())
     };

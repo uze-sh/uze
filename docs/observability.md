@@ -37,13 +37,42 @@ Under a root:
   and the detection cache's hit and miss events.
 
 **What decides the level is who asked, not what it cost.** A span a
-*person* opened — a gesture, a command, a placement, a delivery — is
-`info`; a span a *timer* opened is `debug`. The TUI refreshes its badge
-every 750 ms and evaluates its tasks every 20 s, so at `info` those two
-alone wrote four fifths of a 64 MB day and buried the gesture that a
-report is actually about. The operation's own span still carries what it
-cost, which is the number an operator reads; `UZE_LOG=uze_git=debug`
-brings every invocation back.
+*person* opened (a gesture, a command, a placement, a delivery) is
+`info`; a pass a *timer* opened is `debug`, and so is everything under
+it. The TUI refreshes its badge every 750 ms and evaluates its tasks at
+least every 20 s, so when the services those passes call wrote their own
+`info` spans, the passes alone were 95% of a 12 MB day and buried the
+gesture that a report is actually about.
+
+A timer's pass is entered with `background_pass!("tui.git_read")`
+(`src/telemetry/background.rs`), never a bare `debug_span!`: `tracing`
+judges each span by its own level, and the service methods a pass calls
+are `info` because the same methods answer a gesture. While a pass no
+output shows is entered on a thread, no span opened on that thread is
+shown. A gesture keeps its whole tree. `UZE_LOG=debug`, or a directive
+naming the module the pass is opened in (`UZE_LOG=info,uze::ui=debug`),
+shows the passes again, children and all; `UZE_LOG=info,uze_git=debug`
+shows the Git invocations a gesture makes and leaves the timers silent.
+
+**Events keep their own level.** A pass that *changed* something says
+so at `info`, and that is the line worth reading:
+
+| Event | Written by |
+|---|---|
+| `an agent's work changed` (`from`, `to`, `label`) | the task evaluation, on a state or name change |
+| `an agent no pane holds was released` | the occupancy reconciliation |
+| `an agent no tab runs any more was ended` | the occupancy reconciliation |
+| `merged branches and spare slots were removed` | the slot collection |
+| `managed regions were rewritten` | any write to a managed region of `AGENTS.md` and its kin |
+
+A failure is a failure whoever asked: an `err` on a silenced span is
+still written at `error`.
+
+**A silenced pass that runs slow is reported.** A pass that takes a
+second or more writes one `WARN a background pass ran slow` with its
+name and duration, because a routine refresh that started costing
+seconds is the one fact about it somebody should act on. A pass that is
+shown already says what it cost on its own close line.
 
 A worker thread in the TUI enters the span that started it, so a refresh
 is a child of the key that asked for it. `tests/architecture/
@@ -60,8 +89,9 @@ without being asked:
 ~/.uze/cache/logs/terminal.<date>.log    # the terminal server
 ```
 
-Rolled daily and pruned to seven days, at `info` — every action, every
-integration call, and every failure. Written from a thread of its own
+Rolled daily and pruned to seven days, at `info`: every action a person
+took, with everything it caused, every change a timer made, every slow
+timer pass, and every failure. An idle workspace writes almost nothing. Written from a thread of its own
 (`tracing-appender`'s non-blocking writer, never lossy), so a render loop
 never waits on a disk, and flushed by the `Telemetry` guard when the
 process ends.

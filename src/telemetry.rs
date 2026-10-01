@@ -29,7 +29,15 @@
 
 use std::{path::PathBuf, process::Command};
 
-use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    EnvFilter, Layer,
+    filter::{FilterExt, LevelFilter, dynamic_filter_fn},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
+
+pub(crate) mod background;
+pub(crate) use background::background_pass;
 
 /// The environment variable that switches the text layer on and filters
 /// every layer.
@@ -158,16 +166,25 @@ pub fn init(sink: Sink) -> Telemetry {
             (Some(layer), guard)
         }
     };
+    // Asked per span, never per callsite: the same service is shown under
+    // a gesture and hidden under a timer. The hint is the widest there is
+    // so the environment's own stays the process's ceiling.
+    let output = || {
+        env_filter().and(
+            dynamic_filter_fn(|metadata, _| !metadata.is_span() || !background::silenced())
+                .with_max_level_hint(LevelFilter::TRACE),
+        )
+    };
     let registry = tracing_subscriber::registry()
         .with(crate::steps::layer())
-        .with(text.with_filter(env_filter()));
+        .with(text.with_filter(output()));
     #[cfg(feature = "telemetry")]
     if let Some(endpoint) = endpoint {
         use opentelemetry::trace::TracerProvider as _;
         let provider = otlp::provider(&endpoint);
         let layer = tracing_opentelemetry::layer()
             .with_tracer(provider.tracer("uze"))
-            .with_filter(env_filter());
+            .with_filter(output());
         let _ = registry.with(layer).try_init();
         return Telemetry {
             provider: Some(provider),
