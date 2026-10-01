@@ -4,6 +4,12 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.8](https://github.com/uze-sh/uze/compare/v1.0.0-beta.7...v1.0.0-beta.8) - 2026-10-01
+
+### Fixes
+
+- **setup:** Run provisioning commands without a controlling terminal ([#172](https://github.com/uze-sh/uze/pull/172)) ([a68e873](https://github.com/uze-sh/uze/commit/a68e8738d241a275098c0dc19e3a1d0f50dc06a0))
+
 ## [1.0.0-beta.7](https://github.com/uze-sh/uze/compare/v1.0.0-beta.6...v1.0.0-beta.7) - 2026-10-01
 
 ### Features
