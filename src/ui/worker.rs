@@ -1514,8 +1514,8 @@ mod tests {
 
     fn browsing(ids: &[&str]) -> TuiModel {
         let mut model = TuiModel {
-            focus: super::super::model::Focus::Content,
-            route: super::super::model::Route::Plugins,
+            focus: crate::ui::model::Focus::Content,
+            route: crate::ui::model::Route::Plugins,
             ..TuiModel::default()
         };
         model.remembered.plugins = ids

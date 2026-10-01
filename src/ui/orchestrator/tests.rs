@@ -23,7 +23,7 @@ mod workspace_tests {
     #[test]
     fn the_palette_a_pane_is_told_about_is_the_one_being_drawn() {
         let theme = uze_theme::active();
-        let palette = super::super::active_palette();
+        let palette = crate::ui::orchestrator::active_palette();
         let triple = |token| {
             let rgb = theme.color(token);
             (rgb.0, rgb.1, rgb.2)
@@ -2810,7 +2810,7 @@ mod workspace_tests {
         }
         label_every_tab(&mut model, "agent 1");
 
-        let requests = super::super::adopt_task_names(&mut model);
+        let requests = crate::ui::orchestrator::adopt_task_names(&mut model);
 
         assert!(
             requests.iter().any(|request| matches!(
@@ -2823,7 +2823,7 @@ mod workspace_tests {
         // task says and nothing more is owed.
         label_every_tab(&mut model, "branch naming");
         assert!(
-            super::super::adopt_task_names(&mut model).is_empty(),
+            crate::ui::orchestrator::adopt_task_names(&mut model).is_empty(),
             "a tab already carrying its task's name is left alone"
         );
     }
@@ -2838,14 +2838,14 @@ mod workspace_tests {
             tasks[0].label = "branch naming".to_owned();
         }
         label_every_tab(&mut model, "agent 1");
-        let first = super::super::adopt_task_names(&mut model);
+        let first = crate::ui::orchestrator::adopt_task_names(&mut model);
         assert_eq!(first.len(), 1);
         label_every_tab(&mut model, "branch naming");
 
         for tasks in model.remembered.tasks.values_mut() {
             tasks[0].label = "renamed by hand".to_owned();
         }
-        let second = super::super::adopt_task_names(&mut model);
+        let second = crate::ui::orchestrator::adopt_task_names(&mut model);
 
         assert!(
             second.iter().any(|request| matches!(
@@ -2866,7 +2866,7 @@ mod workspace_tests {
         }
         label_every_tab(&mut model, "my own name");
 
-        assert!(super::super::adopt_task_names(&mut model).is_empty());
+        assert!(crate::ui::orchestrator::adopt_task_names(&mut model).is_empty());
     }
 
     /// A task still carrying its generated identifier has no name to give.
@@ -2879,7 +2879,7 @@ mod workspace_tests {
         }
         label_every_tab(&mut model, "agent 1");
 
-        assert!(super::super::adopt_task_names(&mut model).is_empty());
+        assert!(crate::ui::orchestrator::adopt_task_names(&mut model).is_empty());
     }
 
     /// A named task reads as its name, once. The label *is* the branch's
@@ -5508,7 +5508,7 @@ mod workspace_tests {
     #[test]
     fn with_one_harness_set_up_a_new_agent_starts_without_a_picker() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-single"));
-        let only = super::super::agent_identities(&home)
+        let only = crate::ui::orchestrator::agent_identities(&home)
             .into_iter()
             .next()
             .expect("a harness is registered");
@@ -8216,7 +8216,7 @@ mod workspace_tests {
     /// The picker offers only harnesses set up on this machine, so a test
     /// that launches one sets them up first.
     fn set_up_every_harness(home: &UzeHome) {
-        for identity in super::super::agent_identities(home) {
+        for identity in crate::ui::orchestrator::agent_identities(home) {
             set_up_harness(home, &identity);
         }
     }

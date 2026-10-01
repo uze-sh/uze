@@ -18,12 +18,12 @@ use ratatui::{
 
 use uze_keys::CaveatKind;
 
-use super::super::hit::Hit;
-use super::super::model::{KeyRow, ResizablePanel, Route, TuiModel};
-use super::super::{content_area, render_screen_header};
 use super::{DrawerStatus, render_drawer_footer};
+use crate::ui::hit::Hit;
+use crate::ui::model::{KeyRow, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{RowState, row, text};
+use crate::ui::{content_area, render_screen_header};
 
 pub(crate) fn render_keys(
     frame: &mut ratatui::Frame<'_>,

@@ -177,9 +177,9 @@ mod generated_native_tests {
     use uze_core::home::UzeHome;
     use uze_core::integration::IntegrationPort;
 
-    use super::super::CodexIntegration;
-    use super::super::plugin::CodexMarketplace;
     use super::*;
+    use crate::codex::CodexIntegration;
+    use crate::codex::plugin::CodexMarketplace;
     use crate::shared::marketplace;
     use uze_core::store::StoredPackage;
 

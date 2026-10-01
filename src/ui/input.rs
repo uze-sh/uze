@@ -725,8 +725,8 @@ mod tests {
 
     use ratatui::layout::Rect;
 
-    use super::super::keys::press;
-    use super::super::model::{Confirmation, Overlay, ResizablePanel, Route, TuiModel};
+    use crate::ui::keys::press;
+    use crate::ui::model::{Confirmation, Overlay, ResizablePanel, Route, TuiModel};
 
     #[test]
     fn dragging_a_content_divider_records_its_route_local_width() {

@@ -14,7 +14,7 @@ use uze_core::{
     store::StoredPackage,
 };
 
-use super::super::*;
+use crate::application::*;
 
 /// Whether an integration's own package-level plan may be used for this
 /// delivery. `Skipped` when the derived view a native package reads failed

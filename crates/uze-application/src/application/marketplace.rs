@@ -862,8 +862,8 @@ fn suggesting_other_hosts(
 
 #[cfg(test)]
 mod mirror_tests {
-    use super::super::marketplace_catalogue::mirror_dir;
     use crate::UzeApplication;
+    use crate::application::marketplace_catalogue::mirror_dir;
     use std::fs;
     use uze_core::UzeHome;
 

@@ -27,13 +27,13 @@ use uze_application::application::{
     DoctorReport, FreshnessState, MarketplacePluginSummary, PluginCapability, Revision,
 };
 
-use super::super::agent_support::{capability_label, resource_groups};
-use super::super::hit::Hit;
-use super::super::model::{PluginPane, ResizablePanel, Route, TuiModel};
-use super::super::{content_area, render_screen_header};
 use super::{DrawerStatus, render_drawer_footer};
+use crate::ui::agent_support::{capability_label, resource_groups};
+use crate::ui::hit::Hit;
+use crate::ui::model::{PluginPane, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{Edge, RowState, Rule, mark, row, text};
+use crate::ui::{content_area, render_screen_header};
 
 /// Both status labels are 9 characters (`Installed`/`Available`), but that's
 /// incidental — pad explicitly so alignment holds even if a future status
@@ -203,8 +203,8 @@ fn render_rail(
 ) {
     let inner = Rule::new(Edge::Right).render(frame, area);
     let width = inner.width.saturating_sub(1);
-    let focused = model.plugin_pane == PluginPane::Markets
-        && model.focus == super::super::model::Focus::Content;
+    let focused =
+        model.plugin_pane == PluginPane::Markets && model.focus == crate::ui::model::Focus::Content;
     let mut lines = vec![Line::from(Span::styled(
         "  MARKETPLACES",
         theme::fg(Token::TextMuted),
@@ -347,8 +347,8 @@ fn render_list(
     });
     let columns = Columns::fitted(name_width, market_width, area.width.into());
 
-    let focused = model.plugin_pane == PluginPane::Plugins
-        && model.focus == super::super::model::Focus::Content;
+    let focused =
+        model.plugin_pane == PluginPane::Plugins && model.focus == crate::ui::model::Focus::Content;
     let selected_resource = model.selected_resource().map(|resource| resource.identity);
     let mut lines: Vec<ListLine> = Vec::new();
     let mut selected_line = 0;

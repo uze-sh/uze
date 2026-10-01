@@ -22,8 +22,8 @@ use uze_workspace::{
     worktree::{self, CompletionBehavior, WorktreePolicy},
 };
 
-use super::super::{ManagedRegionStatus, managed_region};
 use super::Workspace;
+use crate::application::{ManagedRegionStatus, managed_region};
 
 /// The workspace's region as it stands in the primary checkout's
 /// `AGENTS.md`, beside the declaration it renders.

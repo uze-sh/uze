@@ -244,8 +244,8 @@ mod runtime_projection_tests {
     use uze_core::home::UzeHome;
     use uze_core::integration::IntegrationPort;
 
-    use super::super::ClaudeIntegration;
     use super::RUNTIME_PROJECTION_ENV_VAR;
+    use crate::claude::ClaudeIntegration;
 
     #[test]
     fn no_agents_md_is_pure_passthrough() {

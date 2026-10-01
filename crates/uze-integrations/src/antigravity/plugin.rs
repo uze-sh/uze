@@ -384,8 +384,8 @@ mod plugin_tests {
     use uze_core::integration::{AttachmentState, IntegrationPort};
     use uze_core::store::StoredPackage;
 
-    use super::super::AntigravityIntegration;
     use super::*;
+    use crate::antigravity::AntigravityIntegration;
 
     fn temp_root(label: &str) -> PathBuf {
         uze_testkit::temp::scratch(label)
@@ -528,7 +528,7 @@ mod plugin_tests {
         let r_out = skill_resource(&pkg, "extra", "outside");
         let r_mcp = mcp_resource(&pkg, "mcp-a");
         let resources = vec![&r_skill, &r_out, &r_mcp];
-        let covered = super::super::generate::generated_exact_coverage(&pkg, &resources);
+        let covered = crate::antigravity::generate::generated_exact_coverage(&pkg, &resources);
         assert_eq!(
             covered,
             BTreeSet::from([r_skill.identity(), r_mcp.identity()])
@@ -543,7 +543,9 @@ mod plugin_tests {
         let (_root, pkg) = make_package("explicit-no-mcp", r#"{"name":"flow"}"#);
         let r_m = mcp_resource(&pkg, "mcp-a");
         let resources = vec![&r_m];
-        assert!(super::super::generate::generated_exact_coverage(&pkg, &resources).is_empty());
+        assert!(
+            crate::antigravity::generate::generated_exact_coverage(&pkg, &resources).is_empty()
+        );
         let _ = fs::remove_dir_all(_root);
     }
 
@@ -553,7 +555,7 @@ mod plugin_tests {
         let (_root, pkg) = make_package("explicit-malformed", r#"{"name":"flow"}"#);
         fs::write(pkg.root.join("mcp_config.json"), "{not json").unwrap();
         let r_m = mcp_resource(&pkg, "mcp-a");
-        let covered = super::super::generate::generated_exact_coverage(&pkg, &[&r_m]);
+        let covered = crate::antigravity::generate::generated_exact_coverage(&pkg, &[&r_m]);
         assert!(covered.is_empty());
         let _ = fs::remove_dir_all(_root);
     }

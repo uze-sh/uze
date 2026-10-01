@@ -11,12 +11,12 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::super::hit::Hit;
-use super::super::model::{Route, TuiModel};
-use super::super::{content_area, render_screen_header};
 use super::health::Severity;
+use crate::ui::hit::Hit;
+use crate::ui::model::{Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::stat::{self, Stat};
+use crate::ui::{content_area, render_screen_header};
 
 pub(crate) fn render_overview(
     frame: &mut ratatui::Frame<'_>,

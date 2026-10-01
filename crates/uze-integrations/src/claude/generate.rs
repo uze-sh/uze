@@ -204,8 +204,8 @@ mod generated_native_tests {
     use uze_core::home::UzeHome;
     use uze_core::integration::IntegrationPort;
 
-    use super::super::ClaudeIntegration;
-    use super::super::plugin::ClaudeMarketplace;
+    use crate::claude::ClaudeIntegration;
+    use crate::claude::plugin::ClaudeMarketplace;
     use crate::shared::marketplace;
     use uze_core::store::StoredPackage;
 

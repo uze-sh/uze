@@ -653,8 +653,8 @@ mod claude_native_coverage_tests {
     use uze_core::home::UzeHome;
     use uze_core::integration::IntegrationPort;
 
-    use super::super::ClaudeIntegration;
     use super::ClaudeMarketplace;
+    use crate::claude::ClaudeIntegration;
     use crate::shared::marketplace::{Origin, catalogue_document};
 
     fn claude_catalogue_document(packages: &[uze_core::store::StoredPackage]) -> serde_json::Value {

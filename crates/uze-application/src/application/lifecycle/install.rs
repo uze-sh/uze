@@ -16,9 +16,9 @@ use uze_core::{
 
 use crate::bootstrap;
 
-use super::super::services::Plugins;
-use super::super::*;
 use super::attach::{NativeDelivery, PackageDelivery};
+use crate::application::services::Plugins;
+use crate::application::*;
 
 impl Plugins<'_> {
     pub(crate) fn acquire(&self, source: &PackageSource) -> Result<uze_core::MaterializedPackage> {

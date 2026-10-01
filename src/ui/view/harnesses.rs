@@ -16,12 +16,12 @@ use uze_application::{
     application::{ContextMechanism, HarnessContextSupport, HarnessHealth},
 };
 
-use super::super::hit::Hit;
-use super::super::model::{ResizablePanel, Route, TuiModel};
-use super::super::{content_area, render_screen_header};
 use super::catalog::{Card, render_card};
 use super::{DrawerStatus, render_drawer_footer};
+use crate::ui::hit::Hit;
+use crate::ui::model::{ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
+use crate::ui::{content_area, render_screen_header};
 
 /// Two states, because there are two answers a person can act on: UZE has
 /// set this harness up, or it has not. A binary that is not on the machine
