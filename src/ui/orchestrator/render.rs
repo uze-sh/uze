@@ -2376,7 +2376,7 @@ fn push_trailing_controls(
     if !selected {
         return;
     }
-    let label = surface_label(Symbol::MarkSparkle, "new");
+    let label = "new".to_owned();
     let width = Span::raw(label.as_str()).width() as u16;
     let Some(gap) = rect.width.checked_sub(
         spans.iter().map(|span| span.width() as u16).sum::<u16>() + width + TRAILING_PAD,

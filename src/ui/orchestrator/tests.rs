@@ -8702,7 +8702,7 @@ mod workspace_tests {
     /// agent the strip was showing: it is the way back to the space's
     /// shells. A space whose first shell became an agent when a harness
     /// was typed into it has no such tab, so the click opens one — the
-    /// space ends where "✦ new" leaves it, not bound to the agent.
+    /// space ends where "new" leaves it, not bound to the agent.
     #[test]
     fn a_space_row_lands_on_its_own_shell_and_otherwise_opens_one() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-space-row"));
@@ -8764,7 +8764,7 @@ mod workspace_tests {
         );
     }
 
-    /// The selected space alone carries "✦ new", at its header's right
+    /// The selected space alone carries "new", at its header's right
     /// edge, and it opens the agent picker under itself: the new agent
     /// lands in the space in front, so no other header offers one.
     #[test]

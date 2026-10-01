@@ -3289,7 +3289,7 @@ impl Attach<'_> {
                 // A space of nothing but agents — its first
                 // shell became one when a harness was typed
                 // into it — is given a shell of its own, so it
-                // ends where "✦ new" leaves it rather than
+                // ends where "new" leaves it rather than
                 // bound to the agent.
                 self.land_on_space(space, columns, rows);
                 let bound = self.model.session.as_ref().is_some_and(|session| {
