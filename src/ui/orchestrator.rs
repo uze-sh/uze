@@ -1657,6 +1657,7 @@ pub(crate) fn attach_workspace(
                 attach.model.code_tree_scroll = rendered.navigator_scroll;
                 attach.model.code_scrollbars = rendered;
             }
+            attach.model.drawer_text = metrics.drawer.unwrap_or_default();
             attach.model.absorb_manage_frame(metrics.manage);
             attach.model.dirty = false;
         }
@@ -3174,6 +3175,9 @@ struct WorkspaceModel {
     /// the content* the pointer went. Geometry belongs to the render, so
     /// it travels from there rather than being derived twice.
     code_scrollbars: extension_view::Rendered,
+    /// The text the agent drawer drew last frame, for a drag over it to
+    /// resolve against, and for its release to copy out of.
+    drawer_text: crate::ui::agent_support::DrawerText,
     /// Where the pointer asked for the code surface's row menu, which is
     /// where it opens. `None` when the keyboard asked, and the menu opens
     /// under its row instead.

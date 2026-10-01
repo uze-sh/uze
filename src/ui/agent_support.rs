@@ -1,5 +1,7 @@
 //! Contextual harness support dropdown for an active agent session.
 
+use std::collections::HashMap;
+
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
@@ -7,6 +9,7 @@ use ratatui::{
 };
 use uze_application::{CapabilityKind, HarnessCapabilities};
 
+use crate::ui::selection::{self, TextRow, TextSelection};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
     Chip, ChipState, Edge, Rule, Surface, hint,
@@ -118,6 +121,24 @@ pub(super) struct DrawerPrompts<'a> {
     /// control the pointer is over.
     pub(super) hovered_scope: Option<PromptScope>,
     pub(super) clearing: bool,
+    /// What each agent still open is called now, by its id. A record
+    /// carries the name its tab had when it was asked, and a tab is
+    /// renamed after that — by the work it was named for, or by hand — so
+    /// the stored one is only for an agent no longer here.
+    pub(super) live_labels: HashMap<String, String>,
+    /// What the pointer last marked, drawn only over the listing it was
+    /// made on.
+    pub(super) selection: Option<&'a TextSelection>,
+}
+
+impl DrawerPrompts<'_> {
+    fn label_of<'e>(&'e self, entry: &'e PromptEntry) -> &'e str {
+        entry
+            .agent
+            .as_ref()
+            .and_then(|agent| self.live_labels.get(agent))
+            .unwrap_or(&entry.tab_label)
+    }
 }
 
 /// Where the drawer put what can be clicked.
@@ -125,6 +146,51 @@ pub(super) struct DrawerTargets {
     pub(super) body: Rect,
     pub(super) prompts: Vec<(Rect, usize)>,
     pub(super) scopes: Vec<(Rect, PromptScope)>,
+    /// The text it drew, for the pointer to mark.
+    pub(super) text: DrawerText,
+}
+
+/// The drawer's text as the host's selection reads it, in the order it is
+/// on screen: each record drawn, its meta line and then its prompt whole —
+/// a marking that reaches a prompt's elided end takes what was elided —
+/// and the card's lines under them.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DrawerText {
+    /// Which listing this is, so a marking made on one is not drawn over
+    /// another: the agent's path, the scope it lists, and the first record
+    /// shown, since the lines are what was drawn and a scroll redraws them.
+    pub(crate) heading: String,
+    pub(crate) lines: Vec<String>,
+    pub(crate) rows: Vec<TextRow>,
+}
+
+impl DrawerText {
+    /// Records `drawn` at `area` as the next line, whose text is `source`.
+    fn push(&mut self, source: String, area: Rect, drawn: &str) {
+        self.push_folded(source, &[(area, drawn.to_owned())]);
+    }
+
+    /// Records one line drawn as `rows`, folded across them.
+    fn push_folded(&mut self, source: String, rows: &[(Rect, String)]) {
+        let line = self.lines.len();
+        let mut cursor = 0;
+        for (offset, (area, drawn)) in rows.iter().enumerate() {
+            let last = offset + 1 == rows.len();
+            self.rows.push(selection::place(
+                &source,
+                &mut cursor,
+                line,
+                *area,
+                drawn,
+                last,
+            ));
+        }
+        self.lines.push(source);
+    }
+}
+
+fn plain(spans: &[Span<'_>]) -> String {
+    spans.iter().map(|span| span.content.as_ref()).collect()
 }
 
 /// The scopes the drawer's own keys are read from.
@@ -144,7 +210,9 @@ const DRAWER_INSET: u16 = 2;
 /// The context block's keys, and the air after them.
 const ITEM_GAP: usize = 2;
 /// The column the two capability rows' keys take, and the air after them.
-const KEY_WIDTH: usize = 10;
+/// The keys are the two sources, `project` and `harness`: one length, so
+/// the column is no wider than either needs.
+const KEY_WIDTH: usize = 9;
 /// The column in front of a record that carries the selection mark.
 const GUTTER: usize = 2;
 /// A prompt is wrapped to this many lines, then elided.
@@ -158,6 +226,8 @@ const TOP_INSET: u16 = 0;
 const HEADING_GAP: usize = 1;
 /// Columns between the facts card's border and its text.
 const CARD_PAD: u16 = 1;
+/// Blank rows under the card, so it does not sit on the drawer's border.
+const CARD_FOOT_GAP: u16 = 1;
 
 /// Draws the agent drawer down the right-hand side, from the control that
 /// opened it to the bottom of the frame: the agent's name, what it runs on
@@ -187,23 +257,45 @@ pub(super) fn render(
     };
     let card_height = card_lines.len() as u16 + 2;
 
-    // As tall as what it holds, and never more than three quarters of the
-    // pane: a drawer the height of the pane over a handful of prompts was
-    // mostly air, and one that left no pane beside it read as a screen.
-    // Over the pane and nothing else: the tab strip above it and the
-    // frame's last row stay the workspace's.
-    let chrome =
-        2 + TOP_INSET + 1 + HEADING_GAP as u16 + 2 + 1 + card_height + u16::from(prompts.clearing);
-    let list = records_height(prompts, inner_width as usize).max(1);
-    let height = (chrome + list)
-        .min((pane.height * 3 / 4).max(chrome + 1))
-        .min(pane.height);
+    // Three quarters of the pane whatever it lists: sized to its records,
+    // it changed height with the scope, with the read finishing and with
+    // every prompt asked, and carried the card at its foot along with it.
+    // Never the whole pane, since one that left no pane beside it read as
+    // a screen. Over the pane and nothing else: the tab strip above it and
+    // the frame's last row stay the workspace's.
+    let chrome = 2
+        + TOP_INSET
+        + 1
+        + HEADING_GAP as u16
+        + 2
+        + 1
+        + card_height
+        + CARD_FOOT_GAP
+        + u16::from(prompts.clearing);
+    let height = (pane.height * 3 / 4).max(chrome + 1).min(pane.height);
     let drawer = Rect::new(pane.right().saturating_sub(width), pane.y, width, height);
     frame.render_widget(Clear, drawer);
+    // Where the agent works, on the drawer's foot: the branch is the
+    // timeline's to say, a path needs no key to be read as one, and muted
+    // because it locates the drawer rather than being what it is about.
+    // The border's corners and a space each side of it.
+    let path = text::elide_head(&agent.path, usize::from(width.saturating_sub(4)));
+    let path_at = Rect::new(
+        drawer
+            .right()
+            .saturating_sub(2 + text::columns(&path) as u16),
+        drawer.bottom().saturating_sub(1),
+        text::columns(&path) as u16,
+        1,
+    );
     // The floating surface's hairline is what sets the drawer apart from
     // the pane under it; a ground alone is too close to the backdrop to.
     let ground = Surface::floating()
         .padding(Padding::ZERO)
+        .hint(Line::from(Span::styled(
+            format!(" {path} "),
+            theme::fg(Token::TextMuted),
+        )))
         .render(frame, drawer);
     let inner = Rect::new(
         ground.x + DRAWER_INSET,
@@ -215,6 +307,10 @@ pub(super) fn render(
         body: drawer,
         prompts: Vec::new(),
         scopes: Vec::new(),
+        text: DrawerText {
+            heading: format!("{}\n{:?}", agent.path, prompts.scope),
+            ..DrawerText::default()
+        },
     };
     if inner.width == 0 || inner.height == 0 {
         return targets;
@@ -240,17 +336,34 @@ pub(super) fn render(
     }
 
     // The heading, its rule, at least one record, a row of air, the card.
-    if heading_y + 4 + card_height > bottom {
+    if heading_y + 4 + card_height + CARD_FOOT_GAP > bottom {
         return targets;
     }
-    let card = Rect::new(inner.x, bottom - card_height, inner.width, card_height);
-    // The card is named after where the agent works: the branch is the
-    // timeline's to say, and a path needs no key to be read as one.
-    let title_room = (inner.width as usize).saturating_sub(4);
+    let card = Rect::new(
+        inner.x,
+        bottom - CARD_FOOT_GAP - card_height,
+        inner.width,
+        card_height,
+    );
+    // A shade lifted off the drawer, and one below the selected record's,
+    // so the card reads as set apart without reading as chosen.
     let card_inner = Surface::card()
-        .title(format!(" {} ", text::elide_head(&agent.path, title_room)))
+        .ground(Token::SurfaceRaisedSubtle)
         .padding(Padding::horizontal(CARD_PAD))
         .render(frame, card);
+    // Drawn first, and read last: the card is under the records, and the
+    // path under the card.
+    let mut card_text = Vec::new();
+    for (offset, line) in card_lines.iter().enumerate() {
+        let row = Rect::new(
+            card_inner.x,
+            card_inner.y + offset as u16,
+            card_inner.width,
+            1,
+        );
+        card_text.push((plain(&line.spans), row));
+    }
+    card_text.push((path, path_at));
     frame.render_widget(Paragraph::new(card_lines), card_inner);
 
     frame.render_widget(
@@ -269,7 +382,7 @@ pub(super) fn render(
     );
     let Some(entries) = &prompts.entries else {
         render_note(frame, list, "reading…");
-        return targets;
+        return marked(frame, targets, prompts, card_text, None);
     };
     if entries.is_empty() {
         render_note(
@@ -280,7 +393,7 @@ pub(super) fn render(
                 PromptScope::Space => "nothing asked in this space yet",
             },
         );
-        return targets;
+        return marked(frame, targets, prompts, card_text, None);
     }
 
     // A selection bleeds to the drawer's edges, past the inset the text
@@ -298,16 +411,16 @@ pub(super) fn render(
             // No hover: a record is read, and a ground under the pointer
             // would promise a click that does nothing.
             let state = RowState::of(index == prompts.selected, false);
-            record_lines(entry, &clock, prompts.scope, text_width, state)
+            let label = prompts.label_of(entry);
+            record_lines(entry, label, &clock, prompts.scope, text_width, state)
         })
         .collect();
+    // Past the lead and the gutter, where a record's words start.
+    let text_at = bleed.x + (lead + GUTTER) as u16;
+    let lane = Rect::new(text_at, 0, list.right().saturating_sub(text_at), 0);
     let mut y = list.y;
-    for (index, block) in
-        blocks
-            .iter()
-            .enumerate()
-            .skip(first_shown(&blocks, prompts.selected, list.height as usize))
-    {
+    let first = first_shown(&blocks, prompts.selected, list.height as usize);
+    for (index, block) in blocks.iter().enumerate().skip(first) {
         let height = block.len() as u16;
         if y + height > list.bottom() {
             break;
@@ -331,7 +444,56 @@ pub(super) fn render(
             .collect();
         frame.render_widget(Paragraph::new(padded), rect);
         targets.prompts.push((rect, index));
+        place_record(&mut targets.text, entries[index], block, lane, y);
         y += height + RECORD_GAP as u16;
+    }
+    marked(frame, targets, prompts, card_text, Some(first))
+}
+
+/// Where a record's meta line and its prompt landed, as two lines of the
+/// drawer's text: the meta line as drawn, the prompt whole. `lane` is the
+/// columns a record's words take, past its gutter.
+fn place_record(
+    text: &mut DrawerText,
+    entry: &PromptEntry,
+    block: &[Line<'static>],
+    lane: Rect,
+    y: u16,
+) {
+    let row = |offset: usize| Rect::new(lane.x, y + offset as u16, lane.width, 1);
+    let words = |line: &Line<'static>| plain(line.spans.get(1..).unwrap_or_default());
+    if let Some(meta) = block.first() {
+        let meta = words(meta);
+        text.push(meta.clone(), row(0), &meta);
+    }
+    let prompt: Vec<(Rect, String)> = block
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(offset, line)| (row(offset), words(line)))
+        .collect();
+    text.push_folded(entry.preview.clone(), &prompt);
+}
+
+/// `targets` finished: the card's text under the records', and what the
+/// pointer marked in this listing inverted over it. `first` is the first
+/// record shown, `None` when none are.
+fn marked(
+    frame: &mut ratatui::Frame<'_>,
+    mut targets: DrawerTargets,
+    prompts: &DrawerPrompts<'_>,
+    card_text: Vec<(String, Rect)>,
+    first: Option<usize>,
+) -> DrawerTargets {
+    for (source, area) in card_text {
+        targets.text.push(source.clone(), area, &source);
+    }
+    targets.text.heading.push_str(&format!("\n{first:?}"));
+    if let Some(marked) = prompts
+        .selection
+        .and_then(|selection| selection.marked_in(&targets.text.heading))
+    {
+        selection::invert(frame, &targets.text.rows, &marked);
     }
     targets
 }
@@ -401,14 +563,14 @@ fn capability_lines(support: &AgentSupport, width: usize) -> Vec<Line<'static>> 
             let supports = rows.pop().expect("two rows");
             let project = rows.pop().expect("two rows");
             let mut lines = keyed("project", vec![project]);
-            lines.extend(keyed("supports", vec![supports]));
+            lines.extend(keyed("harness", vec![supports]));
             lines
         }
         // Too narrow for columns: each row wraps on its own instead.
         None => {
             let [project, supports] = rows;
             let mut lines = keyed("project", wrapped_items(project, room));
-            lines.extend(keyed("supports", wrapped_items(supports, room)));
+            lines.extend(keyed("harness", wrapped_items(supports, room)));
             lines
         }
     }
@@ -590,6 +752,7 @@ fn render_scope_tabs(
 /// then the prompt wrapped to two lines.
 fn record_lines(
     entry: &PromptEntry,
+    label: &str,
     clock: &PromptClock,
     scope: PromptScope,
     width: usize,
@@ -616,7 +779,7 @@ fn record_lines(
     if scope == PromptScope::Space {
         head.push(Span::raw(" ".repeat(ITEM_GAP)));
         head.push(Span::styled(
-            text::elide(&entry.tab_label, width.saturating_sub(6)),
+            text::elide(label, width.saturating_sub(6)),
             meta,
         ));
     }
@@ -644,20 +807,6 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
         lines.push(text::elide(&rest, width));
     }
     lines
-}
-
-/// The rows every record `prompts` lists would take, gaps included: what
-/// the drawer has to hold to show them all.
-fn records_height(prompts: &DrawerPrompts<'_>, width: usize) -> u16 {
-    let Some(entries) = &prompts.entries else {
-        return 1;
-    };
-    let clock = PromptClock::now();
-    let rows: usize = entries
-        .iter()
-        .map(|entry| record_lines(entry, &clock, prompts.scope, width, RowState::Resting).len())
-        .sum();
-    (rows + RECORD_GAP * entries.len().saturating_sub(1)) as u16
 }
 
 /// The first record to draw so the selected one is on screen, with as
@@ -960,6 +1109,90 @@ mod tests {
         (rows, targets.unwrap())
     }
 
+    /// The drawer says what it drew, in the order it is on screen, and a
+    /// marking made on this listing is inverted over the characters it
+    /// covers; one made on the other scope's is not drawn here at all.
+    #[test]
+    fn the_drawer_records_its_text_and_inverts_what_is_marked() {
+        let prompt = entry("cli logs", Some("a"), "fix the pipeline");
+        let draw = |selection: Option<&TextSelection>, scope: PromptScope| {
+            let prompts = DrawerPrompts {
+                entries: Some(vec![&prompt]),
+                scope,
+                agent_known: true,
+                selected: 0,
+                hovered_scope: None,
+                clearing: false,
+                live_labels: HashMap::new(),
+                selection,
+            };
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
+            let support = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
+            let mut targets = None;
+            terminal
+                .draw(|frame| {
+                    targets = Some(render(
+                        frame,
+                        Rect::new(0, 1, 100, 39),
+                        &support,
+                        &agent(),
+                        &prompts,
+                    ));
+                })
+                .unwrap();
+            (terminal.backend().buffer().clone(), targets.unwrap().text)
+        };
+        let (_, text) = draw(None, PromptScope::Agent);
+        assert_eq!(text.lines[1], "fix the pipeline");
+        assert!(text.lines[2].starts_with("project"), "{:?}", text.lines);
+        assert_eq!(text.lines[4], "~/dev/uze/.worktrees/efjkdg");
+
+        let mut marking = TextSelection::pressed(
+            uze_extensions::view::Caret { line: 1, column: 4 },
+            text.heading.clone(),
+        );
+        marking.carry(uze_extensions::view::Caret { line: 1, column: 6 });
+        let reversed = |buffer: &ratatui::buffer::Buffer| -> String {
+            let row = text.rows.iter().find(|row| row.line == 1).unwrap();
+            (row.area.x..row.area.right())
+                .filter(|&x| {
+                    buffer[(x, row.area.y)]
+                        .modifier
+                        .contains(ratatui::style::Modifier::REVERSED)
+                })
+                .map(|x| buffer[(x, row.area.y)].symbol().to_owned())
+                .collect()
+        };
+        let (marked, _) = draw(Some(&marking), PromptScope::Agent);
+        assert_eq!(reversed(&marked), "the");
+        let (elsewhere, _) = draw(Some(&marking), PromptScope::Space);
+        assert_eq!(reversed(&elsewhere), "");
+    }
+
+    /// A record names its agent as the sidebar does now, not as the tab was
+    /// called when the prompt was asked; an agent no longer open keeps the
+    /// name it had.
+    #[test]
+    fn a_record_names_its_agent_by_the_label_it_has_now() {
+        let renamed = entry("agent 1", Some("a"), "asked before the rename");
+        let gone = entry("agent 2", Some("b"), "asked of a closed agent");
+        let prompts = DrawerPrompts {
+            entries: Some(vec![&renamed, &gone]),
+            scope: PromptScope::Space,
+            agent_known: true,
+            selected: 0,
+            hovered_scope: None,
+            clearing: false,
+            live_labels: HashMap::from([("a".to_owned(), "context card".to_owned())]),
+            selection: None,
+        };
+        let text = drawn(&prompts).0.join("\n");
+        assert!(text.contains("context card"), "{text}");
+        assert!(!text.contains("agent 1"), "{text}");
+        assert!(text.contains("agent 2"), "{text}");
+    }
+
     /// The drawer heads as the agent's context, lays its facts out as keys
     /// and values with no section titles, and lists the prompts under
     /// them: a meta line, then the prompt.
@@ -974,6 +1207,8 @@ mod tests {
             selected: 0,
             hovered_scope: None,
             clearing: false,
+            live_labels: HashMap::new(),
+            selection: None,
         };
         let (rows, targets) = drawn(&prompts);
         let text = rows.join("\n");
@@ -987,18 +1222,21 @@ mod tests {
         // foot, under the list, and no row of keys follows it.
         let title = row_of("esc");
         assert!(rows[title].contains("Claude Code"), "{text}");
-        // The card is named after the path, on its top border, and says
-        // nothing of the branch, which the timeline already does.
+        // The path sits on the drawer's own foot, right-aligned, and
+        // nothing says the branch, which the timeline already does. A
+        // blank row parts the card from that foot.
         let location = row_of("~/dev/uze/.worktrees/efjkdg");
-        assert_eq!(row_of("project"), location + 1, "{text}");
+        let foot = usize::from(targets.body.bottom()) - 1;
+        assert_eq!(location, foot, "{text}");
+        assert!(rows[foot].trim_end().ends_with("efjkdg ┘"), "{text}");
+        assert_eq!(row_of("harness") + 3, foot, "{text}");
         assert!(!text.contains("branch"), "{text}");
-        assert!(row_of("an older prompt") < location, "{text}");
+        assert!(row_of("an older prompt") < row_of("project"), "{text}");
         assert!(rows[row_of("project")].contains("AGENTS.md"), "{text}");
-        assert!(row_of("project") < row_of("supports"), "{text}");
+        assert!(row_of("project") < row_of("harness"), "{text}");
         assert!(!text.contains("x clear") && !text.contains("1/2"), "{text}");
-        // As tall as what it holds: two prompts stop well short of the
-        // three quarters of the pane a long list may take.
-        assert!(targets.body.height < 39 * 3 / 4, "{text}");
+        // The same height however few prompts it holds.
+        assert_eq!(targets.body.height, 39 * 3 / 4, "{text}");
         assert!(row_of("PROMPTS") < row_of("the newest prompt"), "{text}");
         assert!(row_of("the newest prompt") < row_of("an older prompt"));
         assert_eq!(
@@ -1048,6 +1286,8 @@ mod tests {
             selected: 0,
             hovered_scope: None,
             clearing: false,
+            live_labels: HashMap::new(),
+            selection: None,
         };
         let (rows, targets) = drawn(&prompts);
         let text = rows.join("\n");
@@ -1083,6 +1323,8 @@ mod tests {
             selected: 0,
             hovered_scope: None,
             clearing: false,
+            live_labels: HashMap::new(),
+            selection: None,
         };
         let (rows, targets) = drawn(&prompts);
         assert!(rows.join("\n").contains("nothing asked of this agent yet"));
@@ -1102,6 +1344,8 @@ mod tests {
             selected: 45,
             hovered_scope: None,
             clearing: false,
+            live_labels: HashMap::new(),
+            selection: None,
         };
         let (rows, targets) = drawn(&prompts);
         assert!(
@@ -1134,6 +1378,8 @@ mod tests {
                 selected: 0,
                 hovered_scope,
                 clearing: false,
+                live_labels: HashMap::new(),
+                selection: None,
             };
             let mut terminal =
                 ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
@@ -1210,7 +1456,7 @@ mod tests {
         let (project, project_spans) = &drawn[0];
         let (supports, _) = &drawn[1];
         assert!(project.starts_with("project"), "{project}");
-        assert!(supports.starts_with("supports"), "{supports}");
+        assert!(supports.starts_with("harness"), "{supports}");
         assert!(
             !project.contains("(shim)"),
             "how it is delivered is the CLI's"
@@ -1265,6 +1511,8 @@ mod tests {
             selected: 0,
             hovered_scope: None,
             clearing: false,
+            live_labels: HashMap::new(),
+            selection: None,
         };
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
@@ -1303,6 +1551,8 @@ mod tests {
             selected: 0,
             hovered_scope: None,
             clearing: false,
+            live_labels: HashMap::new(),
+            selection: None,
         };
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
@@ -1330,7 +1580,7 @@ mod tests {
     }
 
     /// The drawer is as narrow as the facts card allows and no narrower:
-    /// at its width, `project` and `supports` are a row each, every item in
+    /// at its width, `project` and `harness` are a row each, every item in
     /// its column. A narrower drawer wraps them, which is what reducing it
     /// past this would quietly do.
     #[test]

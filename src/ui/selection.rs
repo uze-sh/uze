@@ -36,6 +36,10 @@ pub(crate) use pane::PaneSelection;
 pub(crate) enum Selection {
     Pane(PaneSelection),
     Text(TextSelection),
+    /// Text marked in the agent drawer, which floats over the pane and
+    /// any surface open in it: a press there is the drawer's whatever is
+    /// underneath, so its marking is not an open surface's.
+    Drawer(TextSelection),
 }
 
 /// A press and where the pointer has carried it since, in whatever terms
@@ -190,6 +194,86 @@ pub(crate) fn on_text(rows: &[TextRow], column: u16, row: u16) -> bool {
         text.area
             .contains(ratatui::layout::Position::new(column, row))
     })
+}
+
+/// The [`TextRow`] a line of `source` was drawn as, for text a frame lays
+/// out as plain lines rather than through the extension walk.
+///
+/// The drawn row is matched against the source rather than assumed to be
+/// it: a folded line's rows continue one another from `cursor`, the space
+/// a fold broke at lands nowhere, and what the source never said — an
+/// ellipsis, trailing padding — is drawn but marks nothing. `last` is
+/// whether the line ends on this row, so a drag past its end takes the
+/// rest of it, folded away or elided as that may be.
+pub(crate) fn place(
+    source: &str,
+    cursor: &mut usize,
+    line: usize,
+    area: Rect,
+    drawn: &str,
+    last: bool,
+) -> TextRow {
+    let source: Vec<char> = source.chars().collect();
+    let mut glyphs = Vec::new();
+    let mut x = area.x;
+    for character in drawn.chars() {
+        let width = unicode_width::UnicodeWidthChar::width(character).unwrap_or(0) as u16;
+        if source.get(*cursor) != Some(&character)
+            && source.get(*cursor) == Some(&' ')
+            && source.get(*cursor + 1) == Some(&character)
+        {
+            *cursor += 1;
+        }
+        if source.get(*cursor) == Some(&character) && x < area.right() {
+            glyphs.push(Glyph {
+                x,
+                width: width.max(1),
+                index: *cursor,
+            });
+            *cursor += 1;
+        }
+        x = x.saturating_add(width);
+    }
+    let beyond = match (last, glyphs.last()) {
+        (false, Some(glyph)) => glyph.index,
+        _ => source.len(),
+    };
+    TextRow {
+        area,
+        line,
+        glyphs,
+        beyond,
+    }
+}
+
+/// Inverts the marked characters of `rows`, where they landed.
+///
+/// Inverted rather than tinted, as a pane's selection is: what is under
+/// it may already carry a wash of its own, and inversion is the one mark
+/// that reads over every one of them.
+pub(crate) fn invert(frame: &mut ratatui::Frame<'_>, rows: &[TextRow], marked: &Marked) {
+    let area = frame.area();
+    let buffer = frame.buffer_mut();
+    for text in rows {
+        let Some(range) = marked.on_line(text.line) else {
+            continue;
+        };
+        for glyph in text
+            .glyphs
+            .iter()
+            .filter(|glyph| range.contains(&glyph.index))
+        {
+            for x in glyph.x..glyph.x.saturating_add(glyph.width) {
+                let at = (x, text.area.y);
+                if x < text.area.right() && area.contains(at.into()) {
+                    buffer[at].set_style(
+                        ratatui::style::Style::default()
+                            .add_modifier(ratatui::style::Modifier::REVERSED),
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// Text marked in content the client laid out, in the text's own terms.
@@ -462,6 +546,44 @@ mod tests {
         selection.gesture.carry(at(0, 3));
         assert!(selection.marked_in("a.rs").is_some());
         assert_eq!(selection.marked_in("b.rs"), None);
+    }
+
+    /// A line folded at a space and elided at its end: the rows continue
+    /// one another, the break and the ellipsis mark nothing, and past the
+    /// last row is the whole rest of the line.
+    #[test]
+    fn a_drawn_row_is_placed_against_its_source() {
+        let source = "one two three";
+        let mut cursor = 0;
+        let first = place(
+            source,
+            &mut cursor,
+            7,
+            Rect::new(4, 0, 10, 1),
+            "one two",
+            false,
+        );
+        let second = place(
+            source,
+            &mut cursor,
+            7,
+            Rect::new(4, 1, 10, 1),
+            "thr…  ",
+            true,
+        );
+        let indices = |row: &TextRow| {
+            row.glyphs
+                .iter()
+                .map(|glyph| glyph.index)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(indices(&first), vec![0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(first.glyphs[4].x, 8);
+        assert_eq!(indices(&second), vec![8, 9, 10]);
+        assert_eq!(second.glyphs[0].x, 4);
+        assert_eq!(first.beyond, 6);
+        assert_eq!(second.beyond, source.len());
+        assert_eq!(second.line, 7);
     }
 
     #[test]

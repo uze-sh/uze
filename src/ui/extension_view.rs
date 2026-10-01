@@ -939,8 +939,8 @@ fn render_board(
                 // one row, however far past the edge it runs.
                 if *medium == Medium::Text {
                     let rows = text_rows(line, offset, rect, gutter, usize::MAX, Breaks::Cells);
-                    if let Some(marked) = marked.and_then(|marked| marked.on_line(offset)) {
-                        render_marked(frame, &rows, marked);
+                    if let Some(marked) = &marked {
+                        crate::ui::selection::invert(frame, &rows, marked);
                     }
                     rendered.text_rows.extend(rows);
                 }
@@ -1803,8 +1803,8 @@ fn render_lines(
                 text_width,
                 Breaks::for_gutter(gutter),
             );
-            if let Some(marked) = marked.and_then(|marked| marked.on_line(offset)) {
-                render_marked(frame, &rows, marked);
+            if let Some(marked) = &marked {
+                crate::ui::selection::invert(frame, &rows, marked);
             }
             drawn.extend(rows);
         }
@@ -2226,35 +2226,6 @@ fn text_rows(
     }
     rows.retain(|text| text.area.y < row.bottom());
     rows
-}
-
-/// The marked characters of the rows one line was drawn on, inverted
-/// where they landed.
-///
-/// Inverted rather than tinted, as a pane's selection is: a diff's rows
-/// already carry a wash of their own, and inversion is the one mark that
-/// reads over every one of them.
-fn render_marked(
-    frame: &mut ratatui::Frame<'_>,
-    rows: &[TextRow],
-    marked: std::ops::RangeInclusive<usize>,
-) {
-    let area = frame.area();
-    let buffer = frame.buffer_mut();
-    for text in rows {
-        for glyph in text
-            .glyphs
-            .iter()
-            .filter(|glyph| marked.contains(&glyph.index))
-        {
-            for x in glyph.x..glyph.x.saturating_add(glyph.width) {
-                let at = (x, text.area.y);
-                if x < text.area.right() && area.contains(at.into()) {
-                    buffer[at].set_style(Style::default().add_modifier(Modifier::REVERSED));
-                }
-            }
-        }
-    }
 }
 
 /// Draws the groove for a surface, and makes the whole of it the drag

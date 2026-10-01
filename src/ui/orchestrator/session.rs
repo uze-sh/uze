@@ -1717,6 +1717,79 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
+    /// A press on text the agent drawer drew: where a selection would
+    /// start. The press is still the drawer's click — a record pressed is
+    /// a record selected — since a click marks nothing.
+    fn mark_drawer_from(&mut self, column: u16, row: u16) -> bool {
+        let text = &self.model.drawer_text;
+        if selection::on_text(&text.rows, column, row)
+            && let Some((at, _)) = selection::locate(&text.rows, column, row)
+        {
+            self.model.selection = Some(Selection::Drawer(selection::TextSelection::pressed(
+                at,
+                text.heading.clone(),
+            )));
+            return true;
+        }
+        false
+    }
+
+    fn select_drawer_prompt(&mut self, index: usize) {
+        if let Some(drawer) = self.model.support_dropdown.as_mut() {
+            drawer.selected = index;
+        }
+    }
+
+    /// The pointer carried, button held, over the drawer's text. The
+    /// drawer does not scroll under a drag, so past its edge is only the
+    /// nearest of what it drew.
+    fn mark_drawer_to(&mut self, column: u16, row: u16) {
+        let rows = &self.model.drawer_text.rows;
+        let (Some(top), Some(bottom)) = (
+            rows.iter().map(|text| text.area.y).min(),
+            rows.iter().map(|text| text.area.y).max(),
+        ) else {
+            return;
+        };
+        let Some((at, _)) = selection::locate(rows, column, row.clamp(top, bottom)) else {
+            return;
+        };
+        if let Some(Selection::Drawer(marking)) = self.model.selection.as_mut() {
+            marking.carry(at);
+            self.model.dirty = true;
+        }
+    }
+
+    /// The button came up over the drawer: a drag copies what it marked,
+    /// which stays drawn until the next press or key; a click selects the
+    /// record it was on.
+    fn release_drawer_text(&mut self, column: u16, row: u16) {
+        let Some(Selection::Drawer(marking)) = self.model.selection.as_mut() else {
+            return;
+        };
+        let lines = &self.model.drawer_text.lines;
+        let copied = marking
+            .release()
+            .map(|marked| {
+                let range = marked.lines();
+                let reached = lines
+                    .get(range.start.min(lines.len())..range.end.min(lines.len()))
+                    .unwrap_or_default();
+                marked.text(reached)
+            })
+            .filter(|text| !text.is_empty());
+        match copied {
+            Some(text) => self.model.copy_selected(text),
+            None => {
+                self.model.selection = None;
+                if let Some(WorkspaceHit::DrawerPrompt(index)) = self.model.hit_at(column, row) {
+                    self.select_drawer_prompt(index);
+                }
+            }
+        }
+        self.model.dirty = true;
+    }
+
     /// Whether a press here starts a selection: on a row of text the last
     /// frame drew, with nothing of the surface's own — a menu, a
     /// question — lying over it.
@@ -2269,12 +2342,13 @@ impl Attach<'_> {
                 // drawer is read, so a click inside it never closes it.
                 // Anywhere else dismisses it, and never leaks into the pane
                 // beneath.
+                // A press on its text may yet be a drag, and selecting a
+                // record can scroll the list under it: a record pressed
+                // there is selected when the button comes up still a click.
+                let marking = self.mark_drawer_from(mouse.column, mouse.row);
                 match self.model.hit_at(mouse.column, mouse.row) {
-                    Some(WorkspaceHit::DrawerPrompt(index)) => {
-                        if let Some(drawer) = self.model.support_dropdown.as_mut() {
-                            drawer.selected = index;
-                        }
-                    }
+                    Some(WorkspaceHit::DrawerPrompt(_)) if marking => {}
+                    Some(WorkspaceHit::DrawerPrompt(index)) => self.select_drawer_prompt(index),
                     Some(WorkspaceHit::DrawerScope(scope)) => self.show_drawer_scope(scope),
                     Some(WorkspaceHit::DrawerBody) => {}
                     _ => self.model.support_dropdown = None,
@@ -2478,6 +2552,10 @@ impl Attach<'_> {
                     self.send_selection_request(request, mouse, layout.pane);
                 }
             }
+            _ if matches!(&self.model.selection, Some(Selection::Drawer(marking)) if marking.held()) =>
+            {
+                self.mark_drawer_to(mouse.column, mouse.row);
+            }
             _ if matches!(&self.model.selection, Some(Selection::Text(marking)) if marking.held()) =>
             {
                 self.mark_text_to(mouse.column, mouse.row);
@@ -2588,6 +2666,10 @@ impl Attach<'_> {
             }
             Some(Selection::Text(marking)) if marking.held() => {
                 self.release_text(mouse.column, mouse.row);
+                return Flow::Continue;
+            }
+            Some(Selection::Drawer(marking)) if marking.held() => {
+                self.release_drawer_text(mouse.column, mouse.row);
                 return Flow::Continue;
             }
             _ => {}
