@@ -4,6 +4,20 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.6](https://github.com/uze-sh/uze/compare/v1.0.0-beta.5...v1.0.0-beta.6) - 2026-10-01
+
+### Features
+
+- **code:** Add pointer text selection with copy-on-release to the diff and editor ([#161](https://github.com/uze-sh/uze/pull/161)) ([14bb61b](https://github.com/uze-sh/uze/commit/14bb61b6cd257ae46fe9261064568c6ba7119cdb))
+- **cli:** Rewrite command reports around one output grammar ([#160](https://github.com/uze-sh/uze/pull/160)) ([9aa82ec](https://github.com/uze-sh/uze/commit/9aa82ecfcf0bf16ae6d9684c09105082814de964))
+- **workspace:** List prompt history in the agent drawer ([#162](https://github.com/uze-sh/uze/pull/162)) ([1c255f3](https://github.com/uze-sh/uze/commit/1c255f384a81009ec17d72342be9f16ca214e997))
+- **ui:** Move pointer text selection into a host-owned selection module ([#165](https://github.com/uze-sh/uze/pull/165)) ([7380f7a](https://github.com/uze-sh/uze/commit/7380f7a82aaf2838a1e2436a6260c2d01d7556da))
+
+### Fixes
+
+- **ui:** Render toasts above every surface and route their gestures first ([#163](https://github.com/uze-sh/uze/pull/163)) ([f799b40](https://github.com/uze-sh/uze/commit/f799b40a1207b0c8a7c27a09b58fabab598007b9))
+- **web:** Bump next to 16.3.8 for GHSA-vcvr-r3jv-pc5j ([#164](https://github.com/uze-sh/uze/pull/164)) ([b26a439](https://github.com/uze-sh/uze/commit/b26a439a01246e2d5e4936b2517ec11b6b66374a))
+
 ## [1.0.0-beta.5](https://github.com/uze-sh/uze/compare/v1.0.0-beta.4...v1.0.0-beta.5) - 2026-09-30
 
 ### Features
