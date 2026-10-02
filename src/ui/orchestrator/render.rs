@@ -998,13 +998,24 @@ fn render_spec_summary(
         }
         _ => None,
     };
+    let on_show = model
+        .spec
+        .as_ref()
+        .and_then(uze_extensions::spec::SpecView::change_on_show)
+        .and_then(|name| {
+            summary
+                .changes
+                .iter()
+                .position(|change| change.name == name)
+        });
+    let lit_rows: Vec<usize> = hovered_row.into_iter().chain(on_show).collect();
     crate::ui::extension_view::render_section_with(
         frame,
         &section,
         &mut column,
         false,
         None,
-        hovered_row,
+        &lit_rows,
         &mut section_hits,
     );
     hits.extend(section_hits.into_iter().map(|(rect, hit)| {
@@ -1705,7 +1716,7 @@ fn render_timeline(
         &mut column,
         model.dragging_timeline,
         hovered.then_some(model.tick),
-        hovered_row,
+        hovered_row.as_slice(),
         &mut section_hits,
     );
     hits.extend(section_hits.into_iter().map(|(rect, hit)| {

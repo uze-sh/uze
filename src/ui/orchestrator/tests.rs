@@ -1175,6 +1175,39 @@ mod workspace_tests {
             Some(uze_extensions::spec::SpecPlace::change("theirs")),
             "on the change that was clicked"
         );
+
+        // With the pointer gone, the row the surface is showing stays lit
+        // and the other rests.
+        driven.attach.model.hovered = None;
+        let area = driven.area;
+        let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render::render(
+                    frame,
+                    &driven.attach.model,
+                    &identities_fixture(),
+                    &mut hits,
+                    &mut render::FrameMetrics::default(),
+                )
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let bright_name = |wanted: ViewHit, name: &str| {
+            let (rect, _) = hits
+                .iter()
+                .find(|(_, hit)| *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(wanted)))
+                .unwrap_or_else(|| panic!("{wanted:?} is not in the sidebar"));
+            let text: String = (rect.x..rect.right())
+                .map(|column| buffer[(column, rect.y)].symbol())
+                .collect();
+            let byte = text.find(name).expect("the name is drawn");
+            let column = rect.x + text[..byte].chars().count() as u16;
+            buffer[(column, rect.y)].fg == theme::color(Token::TextBright)
+        };
+        assert!(bright_name(ViewHit::SelectItem(1), "theirs"), "on show");
+        assert!(!bright_name(ViewHit::SelectItem(0), "mine"), "at rest");
     }
 
     #[test]
