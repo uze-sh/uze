@@ -56,6 +56,10 @@ use uze_application::UzeHome;
 /// Where releases are published, and where a notice's link points.
 const RELEASES: &str = "https://github.com/uze-sh/uze/releases";
 
+/// Where a CLI command points the reader after an update: the site's
+/// changelog, which opens on the newest release.
+const CHANGELOG: &str = "https://uze.sh/docs/changelog";
+
 /// Where a release's own `CHANGELOG.md` is read from: the file at its tag.
 /// A constant for the same reason [`RELEASES`] is one, although what comes
 /// from here is only ever shown.
@@ -193,9 +197,7 @@ fn updated_line(home: &UzeHome, ledger: Ledger) -> Option<String> {
         return None;
     }
     amend_ledger(home, |stored| stored.told = Some(version.clone()));
-    Some(format!(
-        "uze was updated to {version} · what's new: {RELEASES}/tag/v{version}"
-    ))
+    Some(format!("updated to {version} · {CHANGELOG}"))
 }
 
 /// Starts `uze upgrade --background` in a process group of its own, so the Ctrl+C
@@ -956,10 +958,7 @@ mod tests {
         write_json(&ledger_path(&home), &ledger(None, Some(RUNNING), None)).unwrap();
 
         let line = updated_line(&home, stored()).expect("the first command after it says so");
-        assert!(
-            line.contains(&format!("uze was updated to {RUNNING}")),
-            "{line}"
-        );
+        assert!(line.contains(&format!("updated to {RUNNING}")), "{line}");
         assert_eq!(updated_line(&home, stored()), None, "and only the first");
     }
 
