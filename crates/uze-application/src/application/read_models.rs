@@ -572,13 +572,6 @@ pub struct SetupResult {
 #[derive(Clone, Debug, Serialize)]
 pub struct RuntimeShimSetup {
     pub shim_path: PathBuf,
-    /// The shell startup file an earlier build's `PATH` block was taken back
-    /// from, when there was one. UZE no longer edits shell files; the
-    /// workspace puts the shims on `PATH` in its own panes.
-    pub took_back_from: Option<PathBuf>,
-    /// A shell startup file whose UZE markers did not verify, left as it is,
-    /// and why.
-    pub left_alone: Option<(PathBuf, String)>,
 }
 
 #[derive(Clone, Debug, Serialize)]

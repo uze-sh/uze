@@ -1925,14 +1925,11 @@ region-only change. Both owners take one per-project guard on the file.
 
 ### No shell file is edited, and the shim is the workspace's
 
-`uze setup` creates the shims and never writes a shell startup file; it takes
-back, byte-exactly, the block an earlier build wrote, until 1.0.0. The
+`uze setup` creates the shims and never writes a shell startup file. The
 terminal server puts the shims first on every pane's `PATH`, and no command
 walks the operator's `PATH` to ask about a shim.
 
-> `crates/uze-application/src/application/tests.rs::runtime_shim_takes_back_the_block_an_earlier_build_wrote_and_writes_none`
-> `crates/uze-core/src/machine/shell_path.rs::tests::the_block_is_removed_and_every_other_byte_kept`
-> `crates/uze-core/src/machine/shell_path.rs::tests::the_block_is_taken_back_only_until_1_0_0`
+> `crates/uze-application/src/application/tests.rs::runtime_shim_writes_no_shell_file`
 > `crates/uze-terminal/src/runtime.rs::tests::the_named_directory_leads_the_pane_path_once`
 
 ---

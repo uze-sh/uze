@@ -2454,28 +2454,11 @@ fn run_setup(
                         Some("this shell's PATH does not reach it yet; open a new shell"),
                     ));
                 }
-                if let Some(shim) = &result.runtime_shim {
-                    if verbose {
-                        lines.push_str(&format!(
-                            "  {}\n",
-                            progress::label(format!("shim {}", progress::path(&shim.shim_path)))
-                        ));
-                    }
-                    if let Some(rc) = &shim.took_back_from {
-                        lines.push_str(&format!(
-                            "  {}\n",
-                            progress::label(format!(
-                                "took back the PATH block an earlier uze wrote in {}",
-                                progress::path(rc)
-                            ))
-                        ));
-                    }
-                    if let Some((rc, why)) = &shim.left_alone {
-                        lines.push_str(&format!(
-                            "  {}\n",
-                            progress::label(format!("left {} as it is: {why}", progress::path(rc)))
-                        ));
-                    }
+                if verbose && let Some(shim) = &result.runtime_shim {
+                    lines.push_str(&format!(
+                        "  {}\n",
+                        progress::label(format!("shim {}", progress::path(&shim.shim_path)))
+                    ));
                 }
                 for (what, error) in [
                     ("", result.attach_error.as_ref()),
