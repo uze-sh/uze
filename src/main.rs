@@ -617,6 +617,9 @@ fn main() {
     // argument that is not UTF-8: what to do about one is clap's answer to
     // give, and a replacement character matches none of the words below.
     let args: Vec<String> = argv_lossy();
+    if is_framed(args.get(1..).unwrap_or_default()) {
+        progress::open_frame();
+    }
     if args.iter().skip(1).any(|argument| argument == "-help") {
         usage_error(Cli::command().error(
             ErrorKind::UnknownArgument,
@@ -645,6 +648,21 @@ fn main() {
         std::process::exit(1);
     }
     std::process::exit(EXIT_CODE.load(std::sync::atomic::Ordering::Relaxed));
+}
+
+/// Whether this invocation is answered to a person at a prompt. An agent's
+/// commands are an ABI read by a program, and the TUI and the terminal
+/// server own the whole screen, so none of them is framed.
+fn is_framed(arguments: &[String]) -> bool {
+    let mut words = arguments.iter().filter(|word| !word.starts_with('-'));
+    let quiet = arguments
+        .iter()
+        .any(|word| word == "-q" || word == "--quiet");
+    !quiet
+        && !matches!(
+            (words.next().map(String::as_str), words.next()),
+            (Some("agent" | "terminal"), _) | (Some("workspace"), None)
+        )
 }
 
 /// The status a command that succeeded in running still ends with — a
