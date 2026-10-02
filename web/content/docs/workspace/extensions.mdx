@@ -26,8 +26,8 @@ are found on their own; there is nothing to declare.
 | Specs | The requirements that outlive the changes |
 | Archive | Finished changes, newest first |
 
-A subject appears only when the tool keeps it: Spec Kit archives nothing, so
-a Spec Kit project has no Archive.
+A subject appears only when the tool keeps it: Spec Kit and Superpowers
+archive nothing, so their projects have no Archive.
 
 Changes are grouped by where they stand. **This checkout** is the change the
 agent in the selected tab is working on, found from the files its branch
@@ -48,15 +48,15 @@ the selected checkout only: the rest of the project's changes are in Spec.
 
 ### Supported tools
 
-A tool is recognised by the directory it keeps at the root of the checkout.
+A tool is recognised by the directory it keeps in the checkout.
 
 | Tool | Found by | Status |
 | --- | --- | --- |
 | [OpenSpec](https://github.com/Fission-AI/OpenSpec) | `openspec/` | Supported |
 | [Spec Kit](https://github.com/github/spec-kit) | `.specify/` | Supported |
+| [Superpowers](https://github.com/obra/superpowers) | `docs/superpowers/` | Supported |
+| [GSD](https://github.com/gsd-build/get-shit-done) | `.planning/` | Supported |
 | [Kiro](https://kiro.dev) | `.kiro/specs/` | Planned |
-| [Superpowers](https://github.com/obra/superpowers) | `docs/superpowers/` | Planned |
-| [GSD](https://github.com/gsd-build/get-shit-done) | `.planning/` | Planned |
 
 Each tool is a small table of where its files live and what each one is for:
 the proposal or requirements, the design, the tasks, the specs. The surface
@@ -70,7 +70,20 @@ screen.
 | Specs | `openspec/specs/<capability>/spec.md` | `.specify/memory/constitution.md` |
 | Archive | `openspec/changes/archive/` | none |
 
-A checkout that keeps both lists them together, each change named with its
+| | Superpowers | GSD |
+| --- | --- | --- |
+| A change | one plan, `docs/superpowers/plans/<date>-<feature>.md` | a phase, `.planning/phases/<NN-name>/`, or a quick task, `.planning/quick/<id>-<slug>/` |
+| Why, how, tasks | the plan's checkbox steps | `NN-SPEC.md` and `NN-CONTEXT.md`, `NN-RESEARCH.md` and the UI and AI specs, every `NN-MM-PLAN.md` |
+| Specs | the designs, `docs/superpowers/specs/<date>-<topic>-design.md` | `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md` |
+| Archive | none | `.planning/milestones/` |
+
+Superpowers writes a design and its plan as two files with no link between
+them, so each is listed on its own, newest first. A GSD plan is a list of
+task blocks rather than checkboxes, so a phase counts its plans instead: a
+plan is done once GSD has written its `SUMMARY.md` beside it. Summaries,
+verification and UAT reports are listed after the plans, by name.
+
+A checkout that keeps more than one lists them together, each change named with its
 tool. Contracts written as YAML, JSON, GraphQL or protobuf are listed beside
 the documents and shown as source.
 

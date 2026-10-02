@@ -5,7 +5,7 @@ use uze_testkit::temp::TempDir;
 use super::{
     Found, SpecAnswer, SpecOutcome, SpecPlace, SpecView, Subject,
     catalog::Unit,
-    dialect::{Dialect, OPENSPEC, Role, SPEC_KIT},
+    dialect::{Dialect, GSD, OPENSPEC, Role, SHIPPED, SPEC_KIT, SUPERPOWERS},
     handle_command, handle_mouse, read_with, view,
 };
 use crate::{
@@ -665,7 +665,12 @@ fn no_layout_lists_every_tool_it_reads_in_columns() {
     let tools: Vec<&str> = hint.lines().skip(2).collect();
     assert_eq!(
         tools,
-        ["OpenSpec   openspec/", "Spec Kit   .specify/"],
+        [
+            "OpenSpec      openspec/        ",
+            "Spec Kit      .specify/        ",
+            "Superpowers   docs/superpowers/",
+            "GSD           .planning/       ",
+        ],
         "one line per shipped tool, whatever the checkout was read for"
     );
     assert!(
@@ -744,5 +749,377 @@ fn each_subject_is_marked_by_what_it_holds() {
             crate::view::RowIcon::Contract,
             crate::view::RowIcon::Finished,
         ]
+    );
+}
+
+// --- Superpowers and GSD ---------------------------------------------------
+
+/// A Superpowers project as its skills lay it out (obra/superpowers
+/// `8ca22db`, 5.1.3): `brainstorming` saves
+/// `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, `writing-plans`
+/// saves `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` with each step a
+/// checkbox under a `### Task N` heading and its code in a fence.
+fn superpowers_checkout(label: &str) -> TempDir {
+    let dir = TempDir::new(label);
+    let root = dir.path();
+    let plan = |steps: &str| {
+        format!(
+            "# Share Links Implementation Plan\n\n> **For agentic workers:** REQUIRED SUB-SKILL: \
+             Use superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax \
+             for tracking.\n\n**Goal:** A collection opens read-only from a link.\n\n---\n\n\
+             ### Task 1: Publish\n\n**Files:**\n- Create: `src/publish.ts`\n\n\
+             - [x] **Step 1: Write the failing test**\n\n```ts\n// - [ ] not a step\n```\n\n{steps}"
+        )
+    };
+    write(
+        root,
+        "docs/superpowers/plans/2026-09-29-share-links.md",
+        &plan("- [x] **Step 2: Run it to make sure it fails**\n- [ ] **Step 3: Implement**\n"),
+    );
+    write(
+        root,
+        "docs/superpowers/plans/2026-09-15-offline-sync.md",
+        &plan("- [x] **Step 2: Run it to make sure it fails**\n- [x] **Step 3: Implement**\n"),
+    );
+    write(
+        root,
+        "docs/superpowers/specs/2026-09-28-share-links-design.md",
+        "# Share Links Design\n\n## Approach\n",
+    );
+    write(
+        root,
+        "docs/superpowers/specs/2026-09-14-offline-sync-design.md",
+        "# Offline Sync Design\n\n## Approach\n",
+    );
+    dir
+}
+
+/// A GSD project as its templates lay it out (gsd-build/get-shit-done
+/// `bdcaab2`): the project documents at the root of `.planning/`, every
+/// file in `phases/XX-name/` prefixed with the phase number, plans as
+/// `{phase}-{plan}-PLAN.md` of `<task>` blocks with the `SUMMARY.md` the
+/// executor writes beside each, `quick/YYMMDD-xxx-slug/` for ad-hoc work,
+/// and `complete-milestone`'s copies and moved phases in `milestones/`.
+fn gsd_checkout(label: &str) -> TempDir {
+    let dir = TempDir::new(label);
+    let root = dir.path();
+    let plan = "---\nphase: 03-sync-engine\nplan: 01\ntype: execute\nwave: 1\n---\n\n\
+                <objective>\nChange log.\n</objective>\n\n<tasks>\n<task type=\"auto\">\n  \
+                <name>Task 1: Record every write</name>\n</task>\n</tasks>\n";
+    let summary = "---\nphase: 03-sync-engine\nplan: 01\n---\n\n# Phase 3 Plan 1: Summary\n";
+    write(
+        root,
+        ".planning/config.json",
+        "{\"mode\": \"interactive\"}\n",
+    );
+    write(
+        root,
+        ".planning/PROJECT.md",
+        "# Linkshelf\n\n## Core Value\n",
+    );
+    write(
+        root,
+        ".planning/REQUIREMENTS.md",
+        "# Requirements: Linkshelf\n\n- [ ] **SYNC-01**: Offline saves sync\n",
+    );
+    write(
+        root,
+        ".planning/ROADMAP.md",
+        "# Roadmap: Linkshelf\n\n- [x] **Phase 2: Import**\n- [ ] **Phase 3: Sync Engine**\n",
+    );
+    write(root, ".planning/STATE.md", "# Project State\n");
+    write(
+        root,
+        ".planning/research/SUMMARY.md",
+        "# Research Summary\n",
+    );
+    let phase = ".planning/phases/03-sync-engine";
+    write(
+        root,
+        &format!("{phase}/03-CONTEXT.md"),
+        "# Phase 3: Sync Engine - Context\n",
+    );
+    write(
+        root,
+        &format!("{phase}/03-RESEARCH.md"),
+        "# Phase 3: Sync Engine - Research\n",
+    );
+    write(root, &format!("{phase}/03-01-PLAN.md"), plan);
+    write(root, &format!("{phase}/03-01-SUMMARY.md"), summary);
+    write(root, &format!("{phase}/03-02-PLAN.md"), plan);
+    let phase = ".planning/phases/02-import";
+    write(root, &format!("{phase}/02-01-PLAN.md"), plan);
+    write(root, &format!("{phase}/02-01-SUMMARY.md"), summary);
+    write(
+        root,
+        &format!("{phase}/02-VERIFICATION.md"),
+        "---\nstatus: passed\n---\n",
+    );
+    write(
+        root,
+        &format!("{phase}/02-UAT.md"),
+        "---\nstatus: complete\n---\n",
+    );
+    let phase = ".planning/phases/04-sharing";
+    write(
+        root,
+        &format!("{phase}/04-SPEC.md"),
+        "# Phase 4: Sharing - Specification\n",
+    );
+    write(
+        root,
+        &format!("{phase}/04-CONTEXT.md"),
+        "# Phase 4: Sharing - Context\n",
+    );
+    write(
+        root,
+        &format!("{phase}/04-UI-SPEC.md"),
+        "# Phase 4 - UI Design Contract\n",
+    );
+    write(
+        root,
+        &format!("{phase}/04-DISCUSSION-LOG.md"),
+        "# Discussion Log\n",
+    );
+    let quick = ".planning/quick/260928-k3p-fix-favicon-cache";
+    write(root, &format!("{quick}/260928-k3p-PLAN.md"), plan);
+    write(root, &format!("{quick}/260928-k3p-SUMMARY.md"), summary);
+    write(
+        root,
+        ".planning/milestones/v1.0-ROADMAP.md",
+        "# Milestone v1.0: MVP\n",
+    );
+    write(
+        root,
+        ".planning/milestones/v1.0-REQUIREMENTS.md",
+        "# Requirements Archive\n",
+    );
+    let archived = ".planning/milestones/v1.0-phases/01-foundation";
+    write(
+        root,
+        &format!("{archived}/01-CONTEXT.md"),
+        "# Phase 1 - Context\n",
+    );
+    write(root, &format!("{archived}/01-01-PLAN.md"), plan);
+    write(root, &format!("{archived}/01-01-SUMMARY.md"), summary);
+    write(root, &format!("{archived}/01-02-PLAN.md"), plan);
+    dir
+}
+
+fn listed(unit: &Unit) -> Vec<(Role, &str)> {
+    unit.artifacts
+        .iter()
+        .map(|artifact| (artifact.role, artifact.name.as_str()))
+        .collect()
+}
+
+fn unit<'a>(answer: &'a SpecAnswer, subject: Subject, name: &str) -> &'a Unit {
+    units(answer)
+        .iter()
+        .find(|unit| unit.subject == subject && unit.name == name)
+        .unwrap_or_else(|| panic!("no {name} among {subject:?}"))
+}
+
+fn done_of(unit: &Unit) -> Option<(usize, usize)> {
+    unit.progress
+        .map(|progress| (progress.done, progress.total))
+}
+
+#[test]
+fn a_superpowers_checkout_lists_each_plan_as_a_change_and_each_design_as_a_spec() {
+    let dir = superpowers_checkout("spec-superpowers");
+    let answer = read_with(&DiskHost, dir.path(), None, SHIPPED);
+
+    let Found::Units { dialects, .. } = &answer.found else {
+        panic!("expected Superpowers to be detected");
+    };
+    assert_eq!(dialects, &["Superpowers"]);
+    assert_eq!(answer.subjects, [Subject::Changes, Subject::Specs]);
+    assert_eq!(
+        names(units(&answer), Subject::Changes),
+        ["2026-09-29-share-links", "2026-09-15-offline-sync"],
+        "dated, so newest first"
+    );
+    assert_eq!(
+        names(units(&answer), Subject::Specs),
+        [
+            "2026-09-28-share-links-design",
+            "2026-09-14-offline-sync-design"
+        ]
+    );
+
+    let plan = unit(&answer, Subject::Changes, "2026-09-29-share-links");
+    assert_eq!(
+        plan.relative,
+        "docs/superpowers/plans/2026-09-29-share-links.md"
+    );
+    assert_eq!(listed(plan), [(Role::Steps, "2026-09-29-share-links")]);
+    assert_eq!(
+        done_of(plan),
+        Some((2, 3)),
+        "the steps' checkboxes, never the one in a fenced example"
+    );
+    let finished = unit(&answer, Subject::Changes, "2026-09-15-offline-sync");
+    assert_eq!(done_of(finished), Some((3, 3)));
+
+    let design = unit(&answer, Subject::Specs, "2026-09-28-share-links-design");
+    assert_eq!(
+        listed(design),
+        [(Role::How, "2026-09-28-share-links-design")]
+    );
+}
+
+#[test]
+fn a_finished_superpowers_plan_is_done_where_it_was_written() {
+    let dir = superpowers_checkout("spec-superpowers-bands");
+    let state = opened(read_with(&DiskHost, dir.path(), None, SHIPPED));
+    assert_eq!(
+        row_names(&state),
+        [
+            "# in progress (1)",
+            "  2026-09-29-share-links",
+            "",
+            "# done (1)",
+        ],
+        "Superpowers puts nothing away, so a finished plan is done, folded"
+    );
+}
+
+#[test]
+fn a_gsd_checkout_lists_phases_and_quick_tasks_the_project_documents_and_milestones() {
+    let dir = gsd_checkout("spec-gsd");
+    let answer = read_with(&DiskHost, dir.path(), None, SHIPPED);
+
+    let Found::Units { dialects, .. } = &answer.found else {
+        panic!("expected GSD to be detected");
+    };
+    assert_eq!(dialects, &["GSD"]);
+    assert_eq!(
+        answer.subjects,
+        [Subject::Changes, Subject::Specs, Subject::Archive]
+    );
+    assert_eq!(
+        names(units(&answer), Subject::Changes),
+        [
+            "02-import",
+            "03-sync-engine",
+            "04-sharing",
+            "260928-k3p-fix-favicon-cache"
+        ]
+    );
+    assert_eq!(
+        names(units(&answer), Subject::Specs),
+        ["PROJECT", "REQUIREMENTS", "ROADMAP", "STATE"],
+        "config.json and research/ are the tool's, not documents of intent"
+    );
+    assert_eq!(
+        names(units(&answer), Subject::Archive),
+        ["v1.0-phases", "v1.0-ROADMAP", "v1.0-REQUIREMENTS"]
+    );
+}
+
+#[test]
+fn a_gsd_phase_reads_its_intent_then_research_then_plans_then_what_happened() {
+    let dir = gsd_checkout("spec-gsd-roles");
+    let answer = read_with(&DiskHost, dir.path(), None, SHIPPED);
+
+    assert_eq!(
+        listed(unit(&answer, Subject::Changes, "03-sync-engine")),
+        [
+            (Role::Why, "03-CONTEXT"),
+            (Role::How, "03-RESEARCH"),
+            (Role::Steps, "03-01-PLAN"),
+            (Role::Steps, "03-02-PLAN"),
+            (Role::Other, "03-01-SUMMARY"),
+        ]
+    );
+    assert_eq!(
+        listed(unit(&answer, Subject::Changes, "04-sharing")),
+        [
+            (Role::Why, "04-SPEC"),
+            (Role::Why, "04-CONTEXT"),
+            (Role::How, "04-UI-SPEC"),
+            (Role::Other, "04-DISCUSSION-LOG"),
+        ],
+        "the UI contract ends in SPEC.md and is still a how"
+    );
+    assert_eq!(
+        listed(unit(&answer, Subject::Archive, "v1.0-phases"))[..3],
+        [
+            (Role::Why, "01-foundation/01-CONTEXT"),
+            (Role::Steps, "01-foundation/01-01-PLAN"),
+            (Role::Steps, "01-foundation/01-02-PLAN"),
+        ]
+    );
+    assert_eq!(
+        listed(unit(&answer, Subject::Specs, "REQUIREMENTS")),
+        [(Role::Contract, "REQUIREMENTS")]
+    );
+}
+
+#[test]
+fn a_gsd_plan_is_done_once_its_summary_is_written() {
+    let dir = gsd_checkout("spec-gsd-progress");
+    let answer = read_with(&DiskHost, dir.path(), None, SHIPPED);
+
+    assert_eq!(
+        done_of(unit(&answer, Subject::Changes, "03-sync-engine")),
+        Some((1, 2))
+    );
+    assert_eq!(
+        done_of(unit(&answer, Subject::Changes, "02-import")),
+        Some((1, 1))
+    );
+    assert_eq!(
+        done_of(unit(
+            &answer,
+            Subject::Changes,
+            "260928-k3p-fix-favicon-cache"
+        )),
+        Some((1, 1))
+    );
+    assert_eq!(
+        done_of(unit(&answer, Subject::Changes, "04-sharing")),
+        None,
+        "a phase not yet planned has no steps to count"
+    );
+}
+
+#[test]
+fn a_checkout_is_read_by_every_tool_whose_marker_it_holds() {
+    let dir = gsd_checkout("spec-gsd-and-superpowers");
+    write(
+        dir.path(),
+        "docs/superpowers/plans/2026-09-29-share-links.md",
+        "- [ ] one\n",
+    );
+    let answer = read_with(&DiskHost, dir.path(), None, &[GSD, SUPERPOWERS]);
+    let Found::Units { dialects, .. } = &answer.found else {
+        panic!("expected both to be detected");
+    };
+    assert_eq!(dialects, &["GSD", "Superpowers"]);
+}
+
+#[test]
+fn the_change_on_show_is_named_only_while_a_change_is_on_show() {
+    let dir = openspec_checkout("spec-change-on-show");
+    let state = opened_at(
+        read_with(&DiskHost, dir.path(), None, &[OPENSPEC]),
+        SpecPlace::change("c-open"),
+    );
+    assert_eq!(state.change_on_show().as_deref(), Some("c-open"));
+
+    let state = opened_at(
+        read_with(&DiskHost, dir.path(), None, &[OPENSPEC]),
+        SpecPlace {
+            subject: Subject::Archive,
+            unit: "2026-09-01-old".to_owned(),
+            artifact: None,
+        },
+    );
+    assert_eq!(
+        state.change_on_show(),
+        None,
+        "an archived change is not in flight"
     );
 }
