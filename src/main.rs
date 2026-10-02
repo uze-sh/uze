@@ -1188,9 +1188,16 @@ fn run(cli: Cli) -> Result<()> {
     // a failure's last line is the failure.
     if tells
         && result.is_ok()
-        && let Some(line) = uze::self_update::after_command(&home)
+        && let Some(version) = uze::self_update::after_command(&home)
     {
-        eprintln!("{}", progress::label(line.as_str()));
+        let rows = progress::aligned_rows(vec![
+            vec![progress::label("updated to"), version],
+            vec![
+                progress::label("what's new"),
+                uze::self_update::changelog().to_owned(),
+            ],
+        ]);
+        eprintln!("\n{rows}");
     }
     result
 }
