@@ -111,10 +111,6 @@ Six targets: Linux `x86_64`/`aarch64` × `gnu`/`musl`, and macOS
 verifies its SHA-256 against `SHASUMS256.txt` and refuses to install on a
 mismatch.
 
-**macOS is experimental.** Built and tested on Apple Silicon CI. Not verified:
-a real install on a Mac, the `x86_64` build on an Intel machine, a terminal
-other than `tmux`.
-
 ## Verify
 
 Every asset is checksummed and carries signed build provenance — which

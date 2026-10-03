@@ -56,8 +56,8 @@
       keeps a fail-closed case for an OS that genuinely has no build.
 - [x] 5.4 Release notes and the installation page state the Gatekeeper
       caveat rather than leaving it to be discovered.
-- [ ] 5.5 First release carrying macOS assets, installed by hand on a real
-      Mac. Nothing here has run on hardware anybody owns.
+- [x] 5.5 First release carrying macOS assets, installed by hand on a real
+      Mac: users report it installing and running.
 
 ## 6. Not in this change
 
