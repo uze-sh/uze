@@ -305,18 +305,16 @@ jobs:
         uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
         with:
           tool: cargo-llvm-cov
-      # One `--skip`, and it is an environment fact rather than a code
-      # regression: `foreground_status_reports_*` depends on which shell the
-      # runner reports at runtime.
-      #
-      # Two others used to sit here and no longer do. `real_codex_dogfood_*`
+      # No `--skip`. Three used to sit here. `foreground_status_reports_*`
+      # read whichever shell the runner reported and waited five seconds for
+      # it; it now pins `SHELL` and waits on a deadline. `real_codex_dogfood_*`
       # was deleted with the test it named. `acquisition::*` was excluded for
       # a GPG-agent signing timeout — a libtest *substring* filter, so it took
       # the whole untrusted-remote-clone path out of the measurement, the one
       # module that most deserves to be in it. `uze_testkit::git` neutralizes
       # the ambient Git configuration that caused it, and the fixture now uses
       # it.
-      - run: cargo llvm-cov --workspace --summary-only --fail-under-lines 68 --fail-under-regions 69 -- --skip foreground_status_reports
+      - run: cargo llvm-cov --workspace --summary-only --fail-under-lines 68 --fail-under-regions 69
       - run: cargo llvm-cov report --lcov --output-path lcov.info
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

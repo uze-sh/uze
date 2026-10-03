@@ -79,9 +79,10 @@ attributions: ## Regenerate CREDITS.md from about.hbs + Cargo.lock (cargo-about)
 	$(CARGO) about generate about.hbs -o CREDITS.md
 
 attributions-check: ## Fail if CREDITS.md is stale relative to Cargo.lock.
-	$(CARGO) about generate about.hbs -o /tmp/uze-credits-check.md
-	diff -u CREDITS.md /tmp/uze-credits-check.md || \
-		{ printf 'CREDITS.md is stale - run `make attributions` and commit.\n' >&2; exit 1; }
+	@generated=$$(mktemp) && trap 'rm -f "$$generated"' EXIT && \
+		$(CARGO) about generate about.hbs -o "$$generated" && \
+		{ diff -u CREDITS.md "$$generated" || \
+		{ printf 'CREDITS.md is stale - run `make attributions` and commit.\n' >&2; exit 1; }; }
 
 msrv: ## Build on the MSRV declared in Cargo.toml (needs `rustup toolchain install 1.97`).
 	$(CARGO) +1.97 check --workspace --all-targets --locked
@@ -105,8 +106,8 @@ python-fmt: ## Check Python formatting with ruff (conformance/).
 python-lint: ## Lint Python with ruff (conformance/).
 	ruff check conformance/
 
-coverage: ## Run workspace tests with LLVM coverage (skips the one env-dependent test).
-	cargo llvm-cov --workspace --summary-only --fail-under-lines 68 --fail-under-regions 69 -- --skip foreground_status_reports
+coverage: ## Run workspace tests with LLVM coverage.
+	cargo llvm-cov --workspace --summary-only --fail-under-lines 68 --fail-under-regions 69
 	cargo llvm-cov report --lcov --output-path lcov.info
 
 # Every file under the declared directory, not the eight `uze-extensions`
