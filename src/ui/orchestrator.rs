@@ -3441,6 +3441,10 @@ impl WorkspaceModel {
         if !matches!(event, ClientEvent::Error { .. }) {
             self.error = None;
         }
+        if let ClientEvent::Damage(damage) = event {
+            self.dirty |= self.absorb_damage(damage, identities, Instant::now());
+            return;
+        }
         self.dirty = true;
         match event {
             ClientEvent::Snapshot { session } => {
@@ -3473,34 +3477,48 @@ impl WorkspaceModel {
                 );
                 tracing::warn!(%reason, kept_at = %kept_at.display(), "the workspace was set aside");
             }
-            ClientEvent::Damage(damage) => {
-                if is_incremental_repaint(&damage) {
-                    self.note_agent_output(damage.pane, identities, Instant::now());
-                }
-                let entry = self
-                    .panes
-                    .entry(damage.pane)
-                    .or_insert_with(|| blank_pane(damage.pane, damage.columns, damage.rows));
-                if entry.columns != damage.columns || entry.rows != damage.rows {
-                    *entry = blank_pane(damage.pane, damage.columns, damage.rows);
-                }
-                entry.cursor = damage.cursor;
-                entry.alternate_screen = damage.alternate_screen;
-                entry.mouse = damage.mouse;
-                entry.bracketed_paste = damage.bracketed_paste;
-                for (row, column, cell) in damage.changed {
-                    let index =
-                        usize::from(row) * usize::from(damage.columns) + usize::from(column);
-                    if let Some(slot) = entry.cells.get_mut(index) {
-                        *slot = cell;
-                    }
-                }
-            }
+            ClientEvent::Damage(_) => unreachable!("absorbed above"),
             ClientEvent::SelectionText { pane, text } => self.copy(pane, text),
             ClientEvent::Error { message } => self.error = Some(message),
             ClientEvent::Detached | ClientEvent::Stopped => {}
         }
     }
+    /// Folds a pane's damage into its snapshot, answering whether anything
+    /// on screen changed: only the focused pane is drawn, so a background
+    /// pane's paint is a frame for nobody unless it changed what the
+    /// sidebar says about that agent.
+    fn absorb_damage(
+        &mut self,
+        damage: PaneDamage,
+        identities: &[AgentIdentity],
+        now: Instant,
+    ) -> bool {
+        let was_working = self.agent_is_working(damage.pane);
+        if is_incremental_repaint(&damage) {
+            self.note_agent_output(damage.pane, identities, now);
+        }
+        let seen =
+            damage.pane == self.focused_pane() || was_working != self.agent_is_working(damage.pane);
+        let entry = self
+            .panes
+            .entry(damage.pane)
+            .or_insert_with(|| blank_pane(damage.pane, damage.columns, damage.rows));
+        if entry.columns != damage.columns || entry.rows != damage.rows {
+            *entry = blank_pane(damage.pane, damage.columns, damage.rows);
+        }
+        entry.cursor = damage.cursor;
+        entry.alternate_screen = damage.alternate_screen;
+        entry.mouse = damage.mouse;
+        entry.bracketed_paste = damage.bracketed_paste;
+        for (row, column, cell) in damage.changed {
+            let index = usize::from(row) * usize::from(damage.columns) + usize::from(column);
+            if let Some(slot) = entry.cells.get_mut(index) {
+                *slot = cell;
+            }
+        }
+        seen
+    }
+
     /// Puts a released selection's text on the clipboard. A drag that
     /// covered only blanks copies nothing and says nothing, and the server
     /// has already put it away; an answer about a selection this client
