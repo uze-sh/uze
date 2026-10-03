@@ -335,13 +335,20 @@ fn read_directories(directory: &Path) -> Vec<Candidate> {
     };
     let mut candidates: Vec<Candidate> = entries
         .flatten()
+        // The entry's own file type comes with the listing; a `stat` per
+        // entry does not, and over a 9p mount such as WSL's `/mnt/c` it is
+        // what made a large directory stall typing. Only a symlink is
+        // followed, so one into a checkout is offered like the directory
+        // it is.
+        .filter(|entry| match entry.file_type() {
+            Ok(kind) if kind.is_symlink() => entry.path().is_dir(),
+            Ok(kind) => kind.is_dir(),
+            Err(_) => entry.path().is_dir(),
+        })
         .map(|entry| Candidate {
             name: entry.file_name().to_string_lossy().into_owned(),
             path: entry.path(),
         })
-        // `is_dir` on the path rather than the entry's own file type, so a
-        // symlink into a checkout is offered like the directory it is.
-        .filter(|candidate| candidate.path.is_dir())
         .collect();
     candidates.sort_by_key(|candidate| candidate.name.to_lowercase());
     candidates
