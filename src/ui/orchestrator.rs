@@ -263,15 +263,23 @@ struct PendingAgentTab {
 }
 
 /// Everything reachable with `scopes` open, each with the key that
-/// reaches it. The workspace's counterpart to the management model's own
+/// reaches it, and then what was `offered` there without one. The
+/// workspace's counterpart to the management model's own
 /// `action_index_rows` — the same question, read from the same keymap, so
 /// the two surfaces cannot describe themselves differently.
 fn action_index_rows(
     scopes: &[uze_keys::Scope],
+    offered: &[uze_keys::Action],
     filter: &str,
     disabled: &std::collections::BTreeSet<String>,
 ) -> Vec<(uze_keys::Action, Option<uze_keys::Chord>)> {
-    let mut rows = uze_keys::active().available(scopes);
+    let keymap = uze_keys::active();
+    let mut rows = keymap.available(scopes);
+    for action in offered {
+        if !rows.iter().any(|(listed, _)| listed == action) {
+            rows.push((*action, keymap.chord_for(*action, scopes)));
+        }
+    }
     rows.retain(|(action, _)| super::extension_switch::offered(*action, disabled));
     action_index::narrowed(rows, filter)
 }
@@ -282,6 +290,10 @@ fn action_index_rows(
 /// about what was open underneath, not about the index itself.
 struct ActionIndexOverlay {
     scopes: Vec<uze_keys::Scope>,
+    /// What was on offer underneath that holds no key — a work row's rarer
+    /// moves, delivering a whole space — which the index is the keyboard's
+    /// way to.
+    offered: Vec<uze_keys::Action>,
     filter: String,
     selected: usize,
 }
@@ -738,6 +750,9 @@ pub(super) enum WorkspaceHit {
     WorkRow(usize),
     /// One of the work modal's buttons, by the action it performs.
     WorkAction(Action),
+    /// One of the answers to the question the work modal is asking:
+    /// `true` for going ahead.
+    WorkAnswer(bool),
     /// The mark on the work modal's title that closes it.
     WorkClose,
     /// Anywhere else on the work modal: answers nothing, and is not a

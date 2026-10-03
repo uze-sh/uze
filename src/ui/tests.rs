@@ -368,7 +368,7 @@ fn sidebar_keyboard_navigation_cycles_routes() {
     assert_eq!(model.route, ROUTES[0]);
     model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert_eq!(model.route, ROUTES[1]);
-    model.apply_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert_eq!(model.route, ROUTES[2]);
     model.apply_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
     assert_eq!(model.route, ROUTES[1]);
@@ -440,11 +440,17 @@ fn an_open_drawer_asks_for_the_detail_it_is_missing_exactly_once() {
 #[test]
 fn remove_confirmation_flow() {
     let mut model = model_with_plugins(&["one"]);
-    model.apply_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+    model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert!(
         matches!(model.overlay, Overlay::Confirm { kind: Confirmation::RemovePlugin(ref id), .. } if id == "one")
     );
-    let intent = model.apply_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+    // No letter answers a question: neither `y` nor `n` is heard.
+    for letter in ['y', 'n'] {
+        let intent = model.apply_key(KeyEvent::new(KeyCode::Char(letter), KeyModifiers::NONE));
+        assert_eq!(intent, Intent::None);
+        assert!(matches!(model.overlay, Overlay::Confirm { .. }), "{letter}");
+    }
+    let intent = model.apply_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert_eq!(intent, Intent::None);
     assert_eq!(model.overlay, Overlay::None);
     assert_eq!(model.focus, Focus::Content);
@@ -453,9 +459,30 @@ fn remove_confirmation_flow() {
 #[test]
 fn remove_confirmed_emits_remove_intent() {
     let mut model = model_with_plugins(&["one"]);
-    model.apply_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
-    let intent = model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    model.apply_key(enter);
+    let intent = model.apply_key(enter);
     assert_eq!(intent, Intent::Remove("one".to_owned()));
+}
+
+/// The arrows move between a question's answers, and enter takes the one
+/// the keyboard is on — the way out included.
+#[test]
+fn the_arrows_choose_an_answer_and_enter_takes_it() {
+    let mut model = model_with_plugins(&["one"]);
+    let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+    model.apply_key(key(KeyCode::Enter));
+    model.apply_key(key(KeyCode::Left));
+    assert_eq!(model.apply_key(key(KeyCode::Enter)), Intent::None);
+    assert_eq!(model.overlay, Overlay::None, "enter on cancel declines");
+
+    model.apply_key(key(KeyCode::Enter));
+    model.apply_key(key(KeyCode::Left));
+    model.apply_key(key(KeyCode::Right));
+    assert_eq!(
+        model.apply_key(key(KeyCode::Enter)),
+        Intent::Remove("one".to_owned())
+    );
 }
 
 #[test]
@@ -689,7 +716,7 @@ fn trust_required_overlay_confirm_regrants_with_trust() {
         },
         ..TuiModel::default()
     };
-    let intent = model.apply_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+    let intent = model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(
         intent,
         Intent::Install {
@@ -1569,7 +1596,7 @@ fn d_on_the_list_panel_opens_a_delete_confirmation_that_a_stray_click_cannot_con
 }
 
 #[test]
-fn confirming_delete_with_y_emits_delete_profile_intent() {
+fn confirming_delete_with_enter_emits_delete_profile_intent() {
     let mut model = model_with_data();
     model.set_route(Route::Profiles);
     model.focus = Focus::Content;
@@ -1577,7 +1604,7 @@ fn confirming_delete_with_y_emits_delete_profile_intent() {
     model.remembered.profiles_selected = 0;
     let id = model.remembered.profiles[0].id.clone();
     model.apply_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
-    let intent = model.apply_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+    let intent = model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(intent, Intent::DeleteProfile(id));
     assert_eq!(model.overlay, Overlay::None);
 }
@@ -1794,12 +1821,11 @@ fn extension_filter_narrows_visible_selection() {
     assert_eq!(model.extension_visible_indices(), vec![0, 1]);
 }
 
-/// The screen offers what can still be done to the selection: switching
-/// off one that is on and switching on one that is off, each by its own
-/// key. Enter switches nothing: a toggle that destroys nothing is still
-/// not what "open" promises.
+/// Enter performs a row's first offer, here as on the Marketplace: it
+/// switches an extension whichever way it is not, so the screen spends no
+/// pair of letters on one toggle.
 #[test]
-fn an_extension_is_switched_by_its_key_and_not_by_enter() {
+fn enter_switches_an_extension_whichever_way_it_is_not() {
     use crate::ui::worker::Intent;
 
     let mut model = TuiModel {
@@ -1816,31 +1842,11 @@ fn an_extension_is_switched_by_its_key_and_not_by_enter() {
         name: selected.name.to_owned(),
         enabled,
     };
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
 
-    assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)),
-        Intent::None,
-        "already on"
-    );
-    assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE)),
-        switched(false)
-    );
-    assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-        Intent::None
-    );
-
+    assert_eq!(model.apply_key(enter), switched(false));
     model.disabled_extensions.insert(selected.id.to_owned());
-    assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE)),
-        Intent::None,
-        "already off"
-    );
-    assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)),
-        switched(true)
-    );
+    assert_eq!(model.apply_key(enter), switched(true));
     assert!(
         model
             .selected_offers()
@@ -1961,6 +1967,7 @@ fn removing_on_the_rail_asks_about_the_marketplace() {
 fn add_marketplace_overlay_types_and_submits() {
     let mut model = TuiModel {
         focus: Focus::Content,
+        route: Route::Plugins,
         ..TuiModel::default()
     };
     let intent = model.apply_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
@@ -1999,28 +2006,21 @@ fn a_letter_names_one_action_and_refreshing_has_its_own() {
         ..TuiModel::default()
     };
     assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+        model.apply_key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
         Intent::Refresh,
-        "refreshing carries a modifier: it is not something done to a row"
+        "refreshing is not a letter: it is not something done to a row"
     );
     assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)),
-        Intent::None,
-        "`r` removes, and there is nothing here to remove"
+        model_with_plugins(&["one"]).apply_key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
+        Intent::Refresh,
+        "and it means the same thing on every screen"
     );
 
+    // Enter already removes an installed plugin, after asking, so no
+    // letter says it a second time.
     let mut plugins_model = model_with_plugins(&["one"]);
-    let intent = plugins_model.apply_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
-    assert!(
-        matches!(plugins_model.overlay, Overlay::Confirm { kind: Confirmation::RemovePlugin(ref id), .. } if id == "one")
-    );
-    assert_eq!(intent, Intent::None);
-    assert_eq!(
-        model_with_plugins(&["one"])
-            .apply_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
-        Intent::Refresh,
-        "and refreshing means the same thing on every screen"
-    );
+    plugins_model.apply_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+    assert_eq!(plugins_model.overlay, Overlay::None);
 }
 
 /// A marketplace's panel names where it actually lives, and the address
@@ -2431,14 +2431,14 @@ fn a_hint_line_reads_its_keys_off_the_keymap() {
     let line: Line<'static> = crate::ui::widget::hint::line(
         &scopes,
         &[
-            Action::RemovePlugin,
+            Action::UpdatePlugin,
             Action::Refresh,
             Action::OpenActionIndex,
         ],
     );
     let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
     let keymap = uze_keys::active();
-    for action in [Action::RemovePlugin, Action::Refresh] {
+    for action in [Action::UpdatePlugin, Action::Refresh] {
         let chord = keymap.chord_for(action, &scopes).expect("bound here");
         assert!(
             content.contains(&chord.to_string()),
@@ -3704,50 +3704,26 @@ fn the_keys_list_follows_the_selection_past_the_fold() {
     );
 }
 
-/// Moving between screens used to cost a detour: `left` to put the focus
-/// back on the sidebar, then the arrows, then `right` to get into the
-/// screen you chose. Three gestures for one intention, and nothing on
-/// screen saying which half of it had the keyboard.
-///
-/// The sidebar is a vertical list of screens exactly as the workspace's is
-/// a vertical list of spaces, so the same chord walks it — and it lands in
-/// the screen, because choosing one is wanting to be on it.
+/// A screen is chosen by the number on its tab, from wherever the focus
+/// was, and the keyboard lands in it — choosing one is wanting to be on it.
 #[test]
-fn ctrl_and_an_arrow_walks_the_screens_from_wherever_you_are() {
-    let mut model = TuiModel {
-        route: Route::Overview,
-        focus: Focus::Content,
-        ..model_with_data()
-    };
-    let step =
-        |model: &mut TuiModel, code| model.apply_key(KeyEvent::new(code, KeyModifiers::CONTROL));
-
-    assert_eq!(step(&mut model, KeyCode::Down), Intent::None);
-    assert_eq!(model.route, Route::Plugins);
-    assert_eq!(
-        model.focus,
-        Focus::Content,
-        "and the keyboard is in the screen, not on its name"
-    );
-    step(&mut model, KeyCode::Up);
-    assert_eq!(model.route, Route::Overview);
-    step(&mut model, KeyCode::Up);
-    assert_eq!(
-        model.route,
-        *ROUTES.last().expect("there are screens"),
-        "it wraps, the way the sidebar's own arrows always have"
-    );
-
-    // From the sidebar too — the point is that it does not matter where
-    // the focus was.
-    let mut model = TuiModel {
-        route: Route::Overview,
-        focus: Focus::Sidebar,
-        ..model_with_data()
-    };
-    step(&mut model, KeyCode::Down);
-    assert_eq!(model.route, Route::Plugins);
-    assert_eq!(model.focus, Focus::Content);
+fn a_number_chooses_the_screen_from_wherever_you_are() {
+    for focus in [Focus::Content, Focus::Sidebar] {
+        let mut model = TuiModel {
+            route: Route::Overview,
+            focus,
+            ..model_with_data()
+        };
+        let plugins = Route::Plugins.index() + 1;
+        let digit = char::from_digit(plugins as u32, 10).expect("one digit");
+        model.apply_key(KeyEvent::new(KeyCode::Char(digit), KeyModifiers::NONE));
+        assert_eq!(model.route, Route::Plugins);
+        assert_eq!(
+            model.focus,
+            Focus::Content,
+            "and the keyboard is in the screen, not on its name"
+        );
+    }
 }
 
 /// The selected key is a filled band the width of the list, the way every
@@ -4313,15 +4289,15 @@ fn a_question_is_answered_with_the_pointer_too() {
     let (_terminal, hits) = drawn_at(&model, 100, 40);
     model.hits = hits;
 
-    let button = |model: &TuiModel, action: uze_keys::Action| {
+    let button = |model: &TuiModel, yes: bool| {
         model
             .hits
             .iter()
-            .find(|(_, hit)| *hit == crate::ui::hit::Hit::OfferedAction(action))
+            .find(|(_, hit)| *hit == crate::ui::hit::Hit::Answer(yes))
             .map(|(rect, _)| *rect)
     };
-    let cancel = button(&model, uze_keys::Action::ConfirmNo).expect("a way out you can click");
-    let confirm = button(&model, uze_keys::Action::ConfirmYes).expect("and a way through");
+    let cancel = button(&model, false).expect("a way out you can click");
+    let confirm = button(&model, true).expect("and a way through");
 
     // Anywhere else declines, which is what keeps a stray click from
     // agreeing to a deletion.
@@ -4338,6 +4314,16 @@ fn a_question_is_answered_with_the_pointer_too() {
     model.overlay = Overlay::Confirm {
         kind: Confirmation::RemovePlugin("one".to_owned()),
         focus: Some(1),
+    };
+    assert_eq!(
+        model.click(confirm.x, confirm.y),
+        Intent::Remove("one".to_owned())
+    );
+
+    // A click is its own answer, wherever the keyboard happened to be.
+    model.overlay = Overlay::Confirm {
+        kind: Confirmation::RemovePlugin("one".to_owned()),
+        focus: Some(crate::ui::widget::dialog::CANCEL),
     };
     assert_eq!(
         model.click(confirm.x, confirm.y),
@@ -4616,13 +4602,22 @@ fn opening_settings_asks_for_the_lists_it_chooses_from() {
 /// it.
 #[test]
 fn every_way_of_reaching_settings_carries_the_ask() {
-    let steps = uze_keys::Action::NextScreen;
     let landing = Route::Settings.index();
 
-    let mut walked = TuiModel::default();
+    let mut numbered = TuiModel::default();
+    assert_eq!(
+        numbered.act(uze_keys::Action::SelectTab(landing as u8 + 1)),
+        crate::ui::worker::Intent::LoadSettings,
+        "choosing Settings by its number reached it without asking for its lists"
+    );
+
+    let mut walked = TuiModel {
+        focus: Focus::Sidebar,
+        ..TuiModel::default()
+    };
     let mut asked = None;
     for _ in 0..ROUTES.len() {
-        let intent = walked.act(steps);
+        let intent = walked.act(uze_keys::Action::SelectNext);
         if walked.route.index() == landing {
             asked = Some(intent);
             break;
@@ -4631,7 +4626,7 @@ fn every_way_of_reaching_settings_carries_the_ask() {
     assert_eq!(
         asked,
         Some(crate::ui::worker::Intent::LoadSettings),
-        "walking the screens reached Settings without asking for its lists"
+        "walking the screen tabs reached Settings without asking for its lists"
     );
 
     let mut clicked = TuiModel::default();
@@ -4728,11 +4723,10 @@ fn a_confirmation_dialog_reads_as_heading_subject_body_and_answers() {
         position("esc cancel") > answers,
         "how to answer from the keyboard sits in the bottom border"
     );
-    for action in [uze_keys::Action::ConfirmYes, uze_keys::Action::ConfirmNo] {
+    for yes in [true, false] {
         assert!(
-            hits.iter()
-                .any(|(_, hit)| *hit == Hit::OfferedAction(action)),
-            "each answer is a target: {action:?}"
+            hits.iter().any(|(_, hit)| *hit == Hit::Answer(yes)),
+            "each answer is a target: {yes}"
         );
     }
 }

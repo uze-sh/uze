@@ -156,6 +156,7 @@ impl Attach<'_> {
                         self.model.action_index.as_ref().and_then(|index| {
                             action_index_rows(
                                 &index.scopes,
+                                &index.offered,
                                 &index.filter,
                                 &self.model.disabled_extensions,
                             )
@@ -271,6 +272,12 @@ impl Attach<'_> {
                         }
                     }
                     Some(WorkspaceHit::WorkAction(action)) => self.work_action(action, viewport),
+                    Some(WorkspaceHit::WorkAnswer(yes)) => {
+                        if let Some(work) = self.model.work.as_mut() {
+                            work.on_confirm = yes;
+                        }
+                        self.work_action(Action::Activate, viewport);
+                    }
                     Some(WorkspaceHit::WorkBody) => {}
                     // The close mark, and a click outside the modal, close
                     // it the way they close every other dialog here.
@@ -1334,6 +1341,7 @@ impl Attach<'_> {
             WorkspaceHit::WorkProject(_)
             | WorkspaceHit::WorkRow(_)
             | WorkspaceHit::WorkAction(_)
+            | WorkspaceHit::WorkAnswer(_)
             | WorkspaceHit::WorkClose
             | WorkspaceHit::WorkBody => {}
             WorkspaceHit::ContextMenuAction(_) => {

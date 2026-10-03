@@ -22,7 +22,7 @@ impl Attach<'_> {
             scopes.push(Scope::ReleaseNotes);
             return scopes;
         }
-        scopes.push(if self.model.support_dropdown.is_some() {
+        let surface = if self.model.support_dropdown.is_some() {
             Scope::AgentDrawer
         } else if self.model.root_picker.is_some() {
             Scope::RootPicker
@@ -53,8 +53,32 @@ impl Attach<'_> {
             // Last, and total: anything uze does not claim is the
             // program's in the pane.
             Scope::Pane
-        });
+        };
+        scopes.push(surface);
+        // The doors to the surfaces stand over the pane and over each
+        // surface alike, so a surface is left for another by its own
+        // chord. Innermost, because a surface seals everything behind it.
+        if matches!(
+            surface,
+            Scope::Pane | Scope::Code | Scope::Architect | Scope::Spec
+        ) {
+            scopes.push(Scope::Surfaces);
+        }
         scopes
+    }
+
+    /// What is on offer where the index is opened that holds no key: the
+    /// work modal's row in front, or, over the pane or a surface standing
+    /// in it, delivering every task of the space.
+    fn offered_without_a_key(&self) -> Vec<Action> {
+        if let Some(work) = &self.model.work {
+            return work_list::offered(&self.model, work);
+        }
+        let in_the_pane = self.scopes().last() == Some(&Scope::Surfaces);
+        if in_the_pane && selected_pane_cwd(&self.model).is_some() {
+            return vec![Action::DeliverAllTasks];
+        }
+        Vec::new()
     }
 
     /// Keyboard input: say what is open, then act on what the keystroke
@@ -201,6 +225,7 @@ impl Attach<'_> {
             Action::OpenActionIndex if self.model.action_index.is_none() => {
                 self.model.action_index = Some(ActionIndexOverlay {
                     scopes: self.scopes(),
+                    offered: self.offered_without_a_key(),
                     filter: String::new(),
                     selected: 0,
                 });

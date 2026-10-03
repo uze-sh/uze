@@ -204,7 +204,6 @@ pub(super) fn answer_command(view: &mut CodeView, command: Command) {
             let yes = discarding.on_confirm;
             answer(view, yes);
         }
-        Command::ConfirmDelete => answer(view, true),
         Command::Close => answer(view, false),
         Command::FocusNext | Command::Collapse | Command::Expand => {
             discarding.on_confirm = !discarding.on_confirm;

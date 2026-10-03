@@ -80,21 +80,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
 
     // --- Management -----------------------------------------------------
-    put(
-        Action::NextScreen,
-        Control("the first-steps section, or clicking a sidebar row"),
-    );
-    put(Action::PreviousScreen, Control("clicking a sidebar row"));
     put(Action::FocusSidebar, Control("clicking the sidebar"));
     put(Action::FocusContent, Control("clicking the screen"));
     put(Action::Refresh, Control("the first-steps section"));
     put(Action::StartFilter, Control("clicking the search field"));
-    put(
-        Action::OpenThemePicker,
-        Control("the sidebar's quick strip"),
-    );
-    put(Action::ConfirmYes, Control("the dialog's own button"));
-    put(Action::ConfirmNo, Control("the dialog's own button"));
     put(Action::ChangeKey, Control("the drawer's buttons"));
     put(Action::ResetKey, Control("the drawer's buttons"));
     put(Action::OpenGlossary, Index);
@@ -237,10 +226,6 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::TogglePreview,
         Control("the Preview/Source control on a document's heading row"),
     );
-    put(
-        Action::ConfirmDelete,
-        Control("the Delete button of the dialog that asks about the file"),
-    );
     for caret in [
         Action::CaretLeft,
         Action::CaretRight,
@@ -267,13 +252,9 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::DeliverTask,
         Control("the tab strip's deliver button"),
     );
-    put(
-        Action::DeliverAllTasks,
-        KeyboardOnly(
-            "delivering every task in a space at once is a deliberate bulk \
-             gesture; a button for it would be one misclick from doing it",
-        ),
-    );
+    // A deliberate bulk gesture: no button stands one misclick from it,
+    // and the index lists it only where there is a space to deliver.
+    put(Action::DeliverAllTasks, Index);
     put(Action::ToggleWork, Control("the first-steps section"));
     put(
         Action::NextProject,
@@ -294,10 +275,6 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(
         Action::DiscardTask,
         Control("the work modal's discard or remove button"),
-    );
-    put(
-        Action::ConfirmDiscard,
-        Control("the confirm button the work modal raises"),
     );
     put(
         Action::ShowSpaceWork,
@@ -381,7 +358,6 @@ fn a_bound_action_is_never_reachable_by_keyboard_alone_without_a_reason() {
                 "caret-line-end",
                 "caret-line-start",
                 "caret-right",
-                "deliver-all-tasks",
                 "edit-file",
                 "erase-back",
                 "erase-forward",

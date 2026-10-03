@@ -1299,7 +1299,12 @@ mod workspace_tests {
         );
 
         let listed: Vec<uze_keys::Action> = super::action_index_rows(
-            &[uze_keys::Scope::Global, uze_keys::Scope::Workspace],
+            &[
+                uze_keys::Scope::Global,
+                uze_keys::Scope::Workspace,
+                uze_keys::Scope::Surfaces,
+            ],
+            &[],
             "",
             &driven.attach.model.disabled_extensions,
         )
@@ -2688,13 +2693,19 @@ mod workspace_tests {
         let ask = keymap
             .chord_for(uze_keys::Action::DiscardTask, &scopes)
             .expect("discard is bound here");
-        let confirm = keymap
-            .chord_for(uze_keys::Action::ConfirmDiscard, &scopes)
-            .expect("confirmation is bound here");
+        // The question opens on its way out; the arrow moves onto going
+        // ahead, and enter takes it.
+        let toward_confirm = keymap
+            .chord_for(uze_keys::Action::NextProject, &scopes)
+            .expect("the answers are walked sideways");
+        let answer = keymap
+            .chord_for(uze_keys::Action::Activate, &scopes)
+            .expect("enter answers");
 
         for _ in 0..2 {
             driven.press_key(key_event(ask));
-            driven.press_key(key_event(confirm));
+            driven.press_key(key_event(toward_confirm));
+            driven.press_key(key_event(answer));
         }
 
         assert_eq!(
@@ -5810,7 +5821,7 @@ mod workspace_tests {
         let keymap = uze_keys::active();
         let next = keymap
             .chord_for(
-                uze_keys::Action::NextScreen,
+                uze_keys::Action::SelectTab(2),
                 &[uze_keys::Scope::Global, uze_keys::Scope::Management],
             )
             .expect("screens are walked from the keyboard");
@@ -5876,7 +5887,7 @@ mod workspace_tests {
         driven.press_key(key_event(manage_chord()));
         let next = uze_keys::active()
             .chord_for(
-                uze_keys::Action::NextScreen,
+                uze_keys::Action::SelectTab(2),
                 &[uze_keys::Scope::Global, uze_keys::Scope::Management],
             )
             .expect("bound");

@@ -487,17 +487,6 @@ pub(crate) enum Overlay {
     AddMarketplace(String),
     /// A new profile's id, typed the same way as `AddMarketplace`.
     NewProfile(String),
-    /// Choosing what UZE looks like. Carries the list rather than reading
-    /// it per frame: it is a directory listing, and a list that changed
-    /// under the cursor between two frames would move the selection out
-    /// from under the operator.
-    ThemePicker {
-        /// Each theme's id and whether it is the one in force. The id, not
-        /// the theme's display name: a theme is selected by its file's own
-        /// stem, and `dawn.json` is free to call itself anything.
-        themes: Vec<(String, bool)>,
-        selected: usize,
-    },
 }
 
 /// What a confirmation is about, and so what agreeing to it does.
@@ -593,10 +582,9 @@ pub(crate) struct TuiModel {
     /// The Keys list. Its drawer is always open, so only its width is read.
     pub(crate) key_screen: ListScreen,
     /// The Settings screen's selected row, and the lists it is choosing
-    /// from. Carried rather than read per frame for the reason
-    /// [`Overlay::ThemePicker`] carries its own: the themes are a directory
-    /// listing, and a list that changed between two frames would move the
-    /// selection out from under the operator.
+    /// from. Carried rather than read per frame: the themes are a
+    /// directory listing, and a list that changed between two frames would
+    /// move the selection out from under the operator.
     pub(crate) settings_drawer_width: Option<u16>,
     pub(crate) settings_selected: usize,
     pub(crate) settings_themes: Vec<uze_application::application::ThemeSummary>,
@@ -1712,12 +1700,38 @@ impl TuiModel {
     ) -> Vec<(uze_keys::Action, Option<uze_keys::Chord>)> {
         let keymap = uze_keys::active();
         let mut rows = keymap.available(scopes);
-        for offer in self.selected_offers() {
-            if offer.is_available() && !rows.iter().any(|(action, _)| *action == offer.action) {
-                rows.push((offer.action, keymap.chord_for(offer.action, scopes)));
+        let offered = self
+            .selected_offers()
+            .into_iter()
+            .filter(ActionOffer::is_available)
+            .map(|offer| offer.action)
+            .chain(self.screen_actions());
+        for offered in offered {
+            if !rows.iter().any(|(action, _)| *action == offered) {
+                rows.push((offered, keymap.chord_for(offered, scopes)));
             }
         }
         crate::ui::widget::action_index::narrowed(rows, filter)
+    }
+
+    /// What this screen can do that is about no row of it, and holds no
+    /// key: the index is the keyboard's way to it.
+    fn screen_actions(&self) -> Vec<uze_keys::Action> {
+        match self.route {
+            Route::Harnesses => {
+                let mut actions = vec![uze_keys::Action::AnalyzeContext];
+                if self
+                    .remembered
+                    .context_plan
+                    .as_ref()
+                    .is_some_and(ContextPlan::has_changes)
+                {
+                    actions.push(uze_keys::Action::ApplyContextPlan);
+                }
+                actions
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// What can be done to whatever is selected on this screen.

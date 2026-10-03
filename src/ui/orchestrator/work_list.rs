@@ -392,6 +392,23 @@ pub(super) fn question_to_say(
     }
 }
 
+/// What the row in front offers now, for the index: nothing while a
+/// question stands, since the only answers then are the question's.
+pub(super) fn offered(model: &WorkspaceModel, overlay: &WorkOverlay) -> Vec<Action> {
+    if overlay.asking.is_some() {
+        return Vec::new();
+    }
+    let Some((_, project)) = super::work::front(model, overlay) else {
+        return Vec::new();
+    };
+    let rows = rows_of(model, overlay, &project);
+    buttons_for(model, rows.get(overlay.selected), &rows)
+        .into_iter()
+        .filter(|(button, _)| button.is_enabled())
+        .map(|(_, action)| action)
+        .collect()
+}
+
 /// The actions the row in front offers, each enabled only where it would
 /// do something now, and clean-up for the whole project.
 fn buttons_for(
@@ -583,7 +600,10 @@ pub(super) fn project_section(
 
     let row = rows.get(overlay.selected);
     match overlay.asking {
-        Some(question) => section.ask(question_to_say(question, row, &rows, target)),
+        Some(question) => section.ask(
+            question_to_say(question, row, &rows, target),
+            overlay.on_confirm,
+        ),
         None => section.offer(buttons_for(model, row, &rows)),
     }
     section

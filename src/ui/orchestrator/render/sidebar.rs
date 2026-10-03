@@ -1116,8 +1116,11 @@ pub(in crate::ui::orchestrator) const FIRST_STEPS: [Action; 6] = [
 
 /// Named from the mode rather than from what is open: the key beside a
 /// step must not change because an overlay is up.
-pub(in crate::ui::orchestrator) const FIRST_STEP_SCOPES: &[uze_keys::Scope] =
-    &[uze_keys::Scope::Global, uze_keys::Scope::Workspace];
+pub(in crate::ui::orchestrator) const FIRST_STEP_SCOPES: &[uze_keys::Scope] = &[
+    uze_keys::Scope::Global,
+    uze_keys::Scope::Workspace,
+    uze_keys::Scope::Surfaces,
+];
 
 /// The rows the tree above the timeline keeps whatever the section is
 /// dragged to — a space header, an agent and its caption, and the blank

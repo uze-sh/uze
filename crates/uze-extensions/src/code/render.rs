@@ -270,8 +270,10 @@ fn notice(code: &CodeView) -> Option<Span> {
 /// them. Commands, never keys: the host prints each with whatever chord
 /// currently reaches it, so a rebound key needs no change here.
 fn footer(code: &CodeView) -> Vec<Command> {
-    if code.confirming_delete.is_some() {
-        return vec![Command::ConfirmDelete, Command::Close];
+    // A question names its own keys in its border, by what each does now;
+    // the footer would name enter by what it does on a row.
+    if code.confirming_delete.is_some() || code.discarding.is_some() {
+        return Vec::new();
     }
     if code.confirming_discard {
         return vec![Command::Close];
@@ -281,9 +283,6 @@ fn footer(code: &CodeView) -> Vec<Command> {
     }
     if code.menu.is_some() {
         return vec![Command::SelectNext, Command::Activate, Command::Close];
-    }
-    if code.discarding.is_some() {
-        return vec![Command::Activate, Command::Close];
     }
     // The map is the same checkout seen another way, so it is offered
     // wherever the checkout is — and from inside it, the way back out is

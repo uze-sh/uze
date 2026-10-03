@@ -339,16 +339,11 @@ pub(crate) fn render_confirm(
         }),
         field: None,
     };
-    let keys = widget::dialog::Keys {
-        scopes: &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, scope],
-        yes: uze_keys::Action::ConfirmDelete,
-        no: uze_keys::Action::Dismiss,
-    };
     let answers = widget::dialog::render(
         frame,
         area,
         &dialog,
-        &keys,
+        &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, scope],
         ViewHit::Answer(false),
         ViewHit::Answer(true),
     );

@@ -83,8 +83,8 @@ scenes:
         # The change is a file the last commit does not have, so throwing
         # it away is deleting it — and the dialog says so.
         expect: "cannot be undone"
-      - key: "y"
-        say: confirm
+      - key: ["Right", "Enter"]
+        say: move onto the answer that goes ahead, and take it
         pause: 0.5
       - wait: shell
         until: test "$(ls {project}/.worktrees/*/src/mine_*.rs | wc -l)" -eq 1

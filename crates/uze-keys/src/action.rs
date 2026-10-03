@@ -134,10 +134,6 @@ actions! {
         "Erase", "Delete the character before the cursor";
 
     // --- Management, screen-wide ----------------------------------------
-    NextScreen => "next-screen", false,
-        "Next screen", "Move to the next screen on the tab strip, from wherever you are";
-    PreviousScreen => "previous-screen", false,
-        "Previous screen", "Move to the previous screen on the tab strip, from wherever you are";
     FocusSidebar => "focus-sidebar", false,
         "Back to the tabs", "Move focus from the content back to the screen tabs";
     FocusContent => "focus-content", false,
@@ -146,12 +142,6 @@ actions! {
         "Refresh", "Re-read the machine: harnesses, plugins, marketplaces";
     StartFilter => "start-filter", false,
         "Search", "Narrow the list by typing";
-    OpenThemePicker => "open-theme-picker", false,
-        "Appearance", "Choose the theme every uze surface draws in";
-    ConfirmYes => "confirm-yes", false,
-        "Yes", "Answer the open question with yes";
-    ConfirmNo => "confirm-no", false,
-        "No", "Answer the open question with no";
 
     // --- Management, things done to a key ------------------------------
     ChangeKey => "change-key", false,
@@ -290,8 +280,6 @@ actions! {
         "Actions", "Open what can be done to the selected change: open it, copy its path, discard it";
     DeleteFile => "delete-file", true,
         "Delete", "Delete the selected file, having been asked once";
-    ConfirmDelete => "confirm-delete", true,
-        "Confirm delete", "Confirm deleting the file, having been asked once";
     CaretLeft => "caret-left", false,
         "Left", "Move the caret one character left";
     CaretRight => "caret-right", false,
@@ -330,10 +318,6 @@ actions! {
     DiscardTask => "discard-task", true,
         "Discard",
         "Discard the selected task's work, or remove the selected checkout, keeping its branch";
-    // Answers whichever question the work modal is asking, which was only
-    // ever a discard when this id shipped.
-    ConfirmDiscard => "confirm-discard", true,
-        "Confirm", "Go ahead with what the work modal asked, having been asked once";
     ShowSpaceWork => "show-space-work", false,
         "Work", "Open the work modal on this space's project";
     AdoptCheckout => "adopt-checkout", false,
@@ -418,8 +402,6 @@ mod tests {
                     "clean-up-checkouts",
                     "clear-prompt-history",
                     "close-tab",
-                    "confirm-delete",
-                    "confirm-discard",
                     "delete-file",
                     "delete-profile",
                     "discard-task",

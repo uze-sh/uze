@@ -2317,8 +2317,10 @@ rather than the way in.
 ### Modality is a value, not an order of match arms
 
 What is open is a stack of scopes; the innermost answers first, a sealing
-surface answers for everything but `global`, and the pane is last and
-total. This replaced two hand-ordered `match` guards — one of which was
+surface answers for everything but `global`, and the pane is total:
+what nothing claims is the program's. The doors to the surfaces are one
+scope pushed innermost over the pane and over each surface, rather than
+the same four chords written once per surface. This replaced two hand-ordered `match` guards — one of which was
 wrong, firing three chords through an open overlay while five others were
 correctly swallowed.
 
@@ -2335,13 +2337,36 @@ order, which is what retired `r` meaning both *remove* and *refresh*.
 > `uze-keys::keymap::tests::one_chord_names_one_action_within_a_keyboard`
 > `src/ui/tests.rs::a_letter_names_one_action_and_refreshing_has_its_own`
 
+### A question is answered with the arrows and enter
+
+Every question the product asks — a dialog, the work modal's prompt, the
+code surface's delete — has two answers drawn as buttons. The arrows move
+between them, enter takes the one the keyboard is on, esc withdraws it,
+and no letter answers it: a second, invisible way to say yes is a key
+pressed by habit on the wrong question.
+
+> `src/ui/tests.rs::remove_confirmation_flow`
+> `src/ui/tests.rs::the_arrows_choose_an_answer_and_enter_takes_it`
+> `src/ui/orchestrator/tests.rs::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
+
+### A move with no key is still reachable from the keyboard
+
+One chord per meaning keeps the keymap short, so the rarer moves hold
+none. Each is then a row of the index (F1) wherever it applies — the
+management screen's offers and screen-wide actions, the work modal's row
+in front, delivering a whole space — so leaving a move unbound never
+leaves a keyboard user without it.
+
+> `src/ui/orchestrator/tests/work.rs::a_clean_up_asks_with_what_would_go_and_how_much`
+> `src/ui/orchestrator/tests/work.rs::a_parked_agents_subagent_is_joined_on_asking_and_a_running_ones_is_not_offered`
+
 ### Leaving uze is never one bare keystroke away
 
 Management owns the whole keyboard, which is why its actions may hold bare
 letters — and it is a modal over a session full of running agents, so the
 one action that cannot be taken back is the one that may not be a single
-letter. `q` there closes the modal, the way the theme picker's does;
-quitting is `ctrl+q`, global and named as such.
+letter. `esc` there closes the modal; quitting is `ctrl+q`, global and
+named as such.
 
 > `uze-keys::load::tests::leaving_uze_is_never_one_bare_keystroke_away`
 

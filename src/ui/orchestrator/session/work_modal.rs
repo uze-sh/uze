@@ -11,6 +11,11 @@ impl Attach<'_> {
         };
         match action {
             Action::ToggleWork => self.model.work = None,
+            // While a question stands, the keys that walk sideways walk
+            // between its answers instead of between projects.
+            Action::NextProject | Action::PreviousProject if work.asking.is_some() => {
+                work.on_confirm = !work.on_confirm;
+            }
             Action::NextProject | Action::PreviousProject => {
                 self.step_project(action == Action::NextProject);
             }
@@ -154,9 +159,12 @@ impl Attach<'_> {
         }
     }
 
+    /// Asks before a change, with the keyboard on the way out when the
+    /// change takes something away and on going ahead when it does not.
     pub(super) fn ask_about_work(&mut self, question: WorkQuestion) {
         if let Some(work) = self.model.work.as_mut() {
             work.asking = Some(question);
+            work.on_confirm = !question.takes_away();
         }
     }
 
@@ -178,8 +186,10 @@ impl Attach<'_> {
                 work.selected = (work.selected + 1).min(rows.len().saturating_sub(1));
             }
             Action::SelectPrevious => work.selected = work.selected.saturating_sub(1),
-            Action::ConfirmDiscard => {
-                if let Some(question) = asking {
+            // Enter takes the answer the keyboard is on; taking it is what
+            // withdraws the question, whichever answer it was.
+            Action::Activate if asking.is_some() => {
+                if let Some(question) = asking.filter(|_| work.on_confirm) {
                     self.go_ahead(question, &project, row.as_ref());
                 }
             }

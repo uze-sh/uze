@@ -50,7 +50,6 @@ impl TuiModel {
             Overlay::None | Overlay::HarnessHelp | Overlay::Health => {}
             Overlay::ActionIndex { .. } => scopes.push(Scope::ActionIndex),
             Overlay::AddMarketplace(_) | Overlay::NewProfile(_) => scopes.push(Scope::TextPrompt),
-            Overlay::ThemePicker { .. } => scopes.push(Scope::ThemePicker),
             Overlay::Confirm { .. } => scopes.push(Scope::Confirm),
             Overlay::ReleaseNotes(_) => scopes.push(Scope::ReleaseNotes),
         }
@@ -119,9 +118,6 @@ impl TuiModel {
     fn step_landed(&self, action: Action, intent: &Intent) -> bool {
         match action {
             Action::SwitchMode => *intent == Intent::CloseModal,
-            // Wraps, so it always moves.
-            Action::NextScreen | Action::PreviousScreen => true,
-            Action::OpenThemePicker => *intent == Intent::OpenThemePicker,
             Action::Refresh => *intent == Intent::Refresh,
             Action::OpenActionIndex => matches!(self.overlay, Overlay::ActionIndex { .. }),
             _ => false,
@@ -150,19 +146,12 @@ impl TuiModel {
             Action::SwitchMode => Intent::CloseModal,
             Action::Quit => Intent::Quit,
             Action::Refresh => Intent::Refresh,
-            // Settings is machine-wide, so it is not a route's own
-            // action: every screen answers it the same way.
-            Action::OpenThemePicker => Intent::OpenThemePicker,
             Action::SelectNext => self.move_by(1),
             Action::SelectPrevious => self.move_by(-1),
             Action::FocusNext => self.cycle_focus(true),
             Action::FocusPrevious => self.cycle_focus(false),
-            // Walking the tabs without being on them — the same gesture
-            // the workspace uses for its own vertical list. It lands in
-            // the screen rather than on its name, because choosing a
-            // screen is wanting to be on it.
-            Action::NextScreen => self.step_route(1),
-            Action::PreviousScreen => self.step_route(-1),
+            // Choosing a screen is wanting to be on it, so the focus lands
+            // in the screen rather than on its name.
             Action::SelectTab(position) => match model::routes().get(usize::from(position) - 1) {
                 Some(&route) => {
                     let entering = self.set_route(route);
@@ -361,18 +350,6 @@ impl TuiModel {
         }
     }
 
-    /// One screen along the tab strip, wrapping, wherever the focus was.
-    ///
-    /// Answers with whatever arriving asks for. A screen that reads its own
-    /// data on arrival is empty if it is reached this way and the ask is
-    /// dropped — and stays empty, because arriving is the only moment it
-    /// asks.
-    fn step_route(&mut self, delta: isize) -> Intent {
-        let entering = self.set_route(self.route.neighbour(delta));
-        self.focus = Focus::Content;
-        entering
-    }
-
     /// Where the selection goes, which depends on what the screen is a
     /// list *of* — screens on the tab strip, prompts on the Overview, a
     /// profile's three panels, or the ordinary content rows.
@@ -381,6 +358,13 @@ impl TuiModel {
             return self.set_route(self.route.neighbour(delta));
         }
         match self.route {
+            // Enter switches an extension whichever way it is not.
+            Route::Extensions => match self.selected_extension() {
+                Some(extension) => {
+                    self.switch_selected_extension(!self.extension_enabled(extension.id))
+                }
+                None => Intent::None,
+            },
             Route::Profiles if self.profile_preview_open => {
                 self.move_profile_preview_cursor(delta);
                 Intent::None
@@ -569,6 +553,13 @@ impl TuiModel {
             // drawer elsewhere. Editor: change the highlighted value.
             // Harnesses: no-op — toggling is the toggle action's job,
             // deliberately not doubled onto Enter.
+            // Enter switches an extension whichever way it is not.
+            Route::Extensions => match self.selected_extension() {
+                Some(extension) => {
+                    self.switch_selected_extension(!self.extension_enabled(extension.id))
+                }
+                None => Intent::None,
+            },
             Route::Profiles if self.profile_preview_open => {
                 self.toggle_profile_preview_harness(self.profile_preview_cursor);
                 Intent::None

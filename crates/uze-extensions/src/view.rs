@@ -270,8 +270,8 @@ pub struct Navigator {
 /// agreeing does, and the word agreeing is said in — "Discard", not "OK".
 /// The answer comes back as [`ViewHit::Answer`], or as the commands an
 /// open question answers: `Activate` for the one the keyboard is on,
-/// `Close` for no, `ConfirmDelete` for yes, and `FocusNext`, `Collapse`
-/// and `Expand` to move between the two.
+/// `Close` for no, and `FocusNext`, `Collapse` and `Expand` to move
+/// between the two.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Confirm {
     pub title: String,
@@ -728,8 +728,6 @@ pub enum Command {
     Save,
     /// Remove what is selected. The host asks before this is acted on.
     Delete,
-    /// Confirm a removal already asked about.
-    ConfirmDelete,
     /// One character of text, resolved by the host from a key it does not
     /// interpret any further.
     Type(char),

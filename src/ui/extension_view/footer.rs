@@ -58,7 +58,7 @@ pub(super) fn render_footer(
 /// is bound to. Kept here, beside the render that needs it, rather than in
 /// the extension, which knows nothing of either. Where two actions reach
 /// one command, the first row is the one a footer names.
-pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 39] = [
+pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 38] = [
     (Command::Close, uze_keys::Action::Dismiss),
     (Command::FocusNext, uze_keys::Action::FocusNext),
     (Command::FocusNext, uze_keys::Action::FocusPrevious),
@@ -74,7 +74,6 @@ pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 39] = [
     (Command::TogglePreview, uze_keys::Action::TogglePreview),
     (Command::Save, uze_keys::Action::SaveFile),
     (Command::Delete, uze_keys::Action::DeleteFile),
-    (Command::ConfirmDelete, uze_keys::Action::ConfirmDelete),
     (Command::CaretLeft, uze_keys::Action::CaretLeft),
     (Command::CaretRight, uze_keys::Action::CaretRight),
     (Command::CaretLineStart, uze_keys::Action::CaretLineStart),

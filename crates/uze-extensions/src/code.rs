@@ -1424,7 +1424,6 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
                 let yes = deleting.on_confirm;
                 answer_delete(view, yes);
             }
-            Command::ConfirmDelete => answer_delete(view, true),
             Command::Close => answer_delete(view, false),
             Command::FocusNext | Command::Collapse | Command::Expand => {
                 deleting.on_confirm = !deleting.on_confirm;

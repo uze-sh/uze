@@ -36,6 +36,9 @@ pub(super) struct WorkOverlay {
     pub(super) selected: usize,
     /// A change was asked for and waits for its confirmation.
     pub(super) asking: Option<WorkQuestion>,
+    /// Whether the keyboard is on going ahead rather than on the way out,
+    /// while a question is asked.
+    pub(super) on_confirm: bool,
     /// Each project's checkouts, read the first time it comes in front and
     /// kept while the modal is open: the read measures every checkout.
     pub(super) reads: BTreeMap<PathBuf, ProjectRead>,
@@ -47,6 +50,7 @@ impl WorkOverlay {
             project,
             selected: 0,
             asking: None,
+            on_confirm: false,
             reads: BTreeMap::new(),
         }
     }
@@ -87,6 +91,13 @@ pub(super) enum WorkQuestion {
     Adopt,
     Join,
     CleanUp,
+}
+
+impl WorkQuestion {
+    /// Whether going ahead takes something away that cannot be had back.
+    pub(super) fn takes_away(self) -> bool {
+        matches!(self, Self::Discard | Self::Remove | Self::CleanUp)
+    }
 }
 
 /// One entry of the sidebar.
@@ -174,7 +185,7 @@ pub(super) struct Section {
     /// The first and last line of the selected row, kept on screen.
     pub(super) focus: Option<(usize, usize)>,
     prompt: Option<String>,
-    buttons: Vec<(Button, Action)>,
+    buttons: Vec<(Button, WorkspaceHit)>,
     /// Each action the foot names, under the name it goes by here.
     hints: Vec<(Action, String)>,
 }
@@ -205,17 +216,29 @@ impl Section {
     }
 
     /// A question waiting for the confirmation, which takes the button row.
-    pub(super) fn ask(&mut self, question: String) {
+    /// Answered the way every question is: the arrows move between its two
+    /// answers, enter takes the one the keyboard is on, esc withdraws it.
+    pub(super) fn ask(&mut self, question: String, on_confirm: bool) {
+        const CONFIRM: &str = "Confirm";
+        const CANCEL: &str = "Cancel";
         self.prompt = Some(question);
         self.buttons = vec![
             (
-                Button::new(Action::ConfirmDiscard.label(), Token::StateDanger).strong(true),
-                Action::ConfirmDiscard,
+                Button::new(CONFIRM, Token::StateDanger).strong(on_confirm),
+                WorkspaceHit::WorkAnswer(true),
             ),
-            (Button::new("Cancel", Token::TextSecondary), Action::Dismiss),
+            (
+                Button::new(CANCEL, Token::TextSecondary).strong(!on_confirm),
+                WorkspaceHit::WorkAnswer(false),
+            ),
         ];
-        self.hints = [Action::ConfirmDiscard, Action::Dismiss]
-            .map(|action| (action, action.label().to_owned()))
+        let hints = if on_confirm {
+            [(Action::Activate, CONFIRM), (Action::Dismiss, CANCEL)]
+        } else {
+            [(Action::Activate, CANCEL), (Action::NextProject, CONFIRM)]
+        };
+        self.hints = hints
+            .map(|(action, word)| (action, word.to_owned()))
             .to_vec();
     }
 
@@ -231,7 +254,10 @@ impl Section {
                     .map(|action| (action, action.label().to_owned())),
             )
             .collect();
-        self.buttons = buttons;
+        self.buttons = buttons
+            .into_iter()
+            .map(|(button, action)| (button, WorkspaceHit::WorkAction(action)))
+            .collect();
     }
 }
 
@@ -464,14 +490,14 @@ fn draw_section(
         ),
         prompt_area,
     );
-    let buttons: Vec<(Button, Option<Action>)> = section
+    let buttons: Vec<(Button, Option<WorkspaceHit>)> = section
         .buttons
         .iter()
-        .map(|(button, action)| (button.clone(), button.is_enabled().then_some(*action)))
+        .map(|(button, hit)| (button.clone(), button.is_enabled().then_some(*hit)))
         .collect();
-    for (rect, action) in button_row(frame, buttons_area, &buttons, Align::Left) {
-        if let Some(action) = action {
-            mine.push((rect, WorkspaceHit::WorkAction(action)));
+    for (rect, hit) in button_row(frame, buttons_area, &buttons, Align::Left) {
+        if let Some(hit) = hit {
+            mine.push((rect, hit));
         }
     }
 }

@@ -116,11 +116,77 @@ fn sidebar(line: &str) -> String {
     line.chars().take(33).collect()
 }
 
+/// Performs `action` from the keyboard: by its key where it holds one,
+/// and otherwise the way a keyboard reaches a move that holds none —
+/// through the index.
 fn press(driven: &mut super::workspace_tests::Driven<'_>, action: Action) {
-    let chord = uze_keys::active()
-        .chord_for(action, &[uze_keys::Scope::Work])
-        .unwrap_or_else(|| panic!("{action} is bound in the work modal"));
-    driven.press_key(key_event(chord));
+    match uze_keys::active().chord_for(action, &[uze_keys::Scope::Work]) {
+        Some(chord) => driven.press_key(key_event(chord)),
+        None => from_the_index(driven, action),
+    }
+}
+
+/// Whether the index would offer `action` for the row in front: a move
+/// that holds no key and does not apply here is simply not listed.
+fn offered_in_index(driven: &super::workspace_tests::Driven<'_>, action: Action) -> bool {
+    let model = &driven.attach.model;
+    model.work.as_ref().is_some_and(|work| {
+        crate::ui::orchestrator::work_list::offered(model, work).contains(&action)
+    })
+}
+
+fn from_the_index(driven: &mut super::workspace_tests::Driven<'_>, action: Action) {
+    let keymap = uze_keys::active();
+    let chord = |action, scope| {
+        keymap
+            .chord_for(action, &[uze_keys::Scope::Global, scope])
+            .unwrap_or_else(|| panic!("{action} is bound"))
+    };
+    driven.press_key(key_event(chord(
+        Action::OpenActionIndex,
+        uze_keys::Scope::Work,
+    )));
+    let index = driven
+        .attach
+        .model
+        .action_index
+        .as_ref()
+        .expect("the index opened");
+    let position = crate::ui::orchestrator::action_index_rows(
+        &index.scopes,
+        &index.offered,
+        "",
+        &driven.attach.model.disabled_extensions,
+    )
+    .iter()
+    .position(|(listed, _)| *listed == action)
+    .unwrap_or_else(|| panic!("{action} is offered in the index"));
+    for _ in 0..position {
+        driven.press_key(key_event(chord(
+            Action::SelectNext,
+            uze_keys::Scope::ActionIndex,
+        )));
+    }
+    driven.press_key(key_event(chord(
+        Action::Activate,
+        uze_keys::Scope::ActionIndex,
+    )));
+}
+
+/// Answers the question the modal is asking with going ahead: onto that
+/// answer with the arrow, when the keyboard is not already there, then
+/// enter.
+fn go_ahead(driven: &mut super::workspace_tests::Driven<'_>) {
+    let on_confirm = driven
+        .attach
+        .model
+        .work
+        .as_ref()
+        .is_some_and(|work| work.on_confirm);
+    if !on_confirm {
+        press(driven, Action::NextProject);
+    }
+    press(driven, Action::Activate);
 }
 
 fn asking(model: &WorkspaceModel) -> Option<WorkQuestion> {
@@ -491,8 +557,8 @@ fn each_row_offers_only_what_applies_to_it() {
         .find(|line| line.contains("esc"))
         .unwrap();
     assert!(
-        foot.contains("d remove") && foot.contains("j join"),
-        "the foot names the key under what it does here: {foot}"
+        foot.contains("d remove") && !foot.contains("join"),
+        "the foot names the key under what it does here, and only a key: {foot}"
     );
 }
 
@@ -530,9 +596,9 @@ fn the_same_key_discards_a_task_and_removes_a_checkout_and_says_which() {
         &lines,
         "remove branch-done? its branch is kept, and 2.0 KB is freed",
     );
-    press(&mut driven, Action::ConfirmDiscard);
+    go_ahead(&mut driven);
     press(&mut driven, Action::DiscardTask);
-    press(&mut driven, Action::ConfirmDiscard);
+    go_ahead(&mut driven);
     assert!(
         driven.attach.model.remembered.checkout_change_pending,
         "confirmed once, started once"
@@ -621,19 +687,15 @@ fn a_clean_up_asks_with_what_would_go_and_how_much() {
 
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-work-nothing"));
     let model = showing(vec![checkout(".worktrees/slot", slot(None, false))]);
-    let mut driven = super::workspace_tests::driven(model, &home);
-    press(&mut driven, Action::CleanUpCheckouts);
-    assert_eq!(
-        asking(&driven.attach.model),
-        None,
-        "nothing to remove is said, not asked"
+    let driven = super::workspace_tests::driven(model, &home);
+    assert!(
+        !offered_in_index(&driven, Action::CleanUpCheckouts),
+        "nothing to remove is not offered"
     );
-    let toast = driven.attach.model.remembered.toasts.back().unwrap();
-    assert_eq!(toast.text, "nothing to clean up");
 }
 
 #[test]
-fn a_parked_agents_subagent_is_joined_on_asking_and_a_running_ones_is_refused() {
+fn a_parked_agents_subagent_is_joined_on_asking_and_a_running_ones_is_not_offered() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-work-join"));
     let model = showing(vec![checkout(".worktrees/child", subagent(true))]);
     let lines = drawn(&model);
@@ -647,22 +709,17 @@ fn a_parked_agents_subagent_is_joined_on_asking_and_a_running_ones_is_refused() 
         &lines,
         "join lexer into parser? its commits are replayed onto parser's branch",
     );
-    press(&mut driven, Action::ConfirmDiscard);
+    go_ahead(&mut driven);
     assert!(driven.attach.model.remembered.checkout_change_pending);
 
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-work-join-no"));
-    let mut driven = super::workspace_tests::driven(
+    let driven = super::workspace_tests::driven(
         showing(vec![checkout(".worktrees/child", subagent(false))]),
         &home,
     );
-    press(&mut driven, Action::JoinCheckout);
-    assert_eq!(asking(&driven.attach.model), None);
-    let toast = driven.attach.model.remembered.toasts.back().unwrap();
-    assert_eq!(toast.text, "not joined");
     assert!(
-        toast.detail.contains("parser is still running"),
-        "{}",
-        toast.detail
+        !offered_in_index(&driven, Action::JoinCheckout),
+        "a running agent's subagent is not offered for joining"
     );
 }
 
