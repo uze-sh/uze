@@ -66,8 +66,17 @@ plugin to it directly.
 
 ```bash
 uze agent plugin create <name> --market <market> [--description "…"] \
-    [--hook] [--mcp] [--agent] [--instructions]
+    [--category <word>] [--hook] [--mcp] [--agent] [--instructions]
 ```
+
+Each field has one file that owns it. `plugin.json` describes the plugin:
+`--description` is written there, and so are `keywords`, `author`,
+`homepage`, `repository` and `license` when you add them — the listing
+reads them from there and from nowhere else. The `marketplace.json` entry
+only locates and files it: `name`, `source`, and `--category`, the one
+word a catalogue is browsed by (`productivity`, `development`,
+`security`, ...); reuse a category the marketplace already has before
+inventing one.
 
 Every name here (the marketplace's, the plugin's, each skill's) is
 lowercase kebab-case: `a-z`, `0-9` and single `-` between them, at most
@@ -134,6 +143,14 @@ arrives here, before anything is delivered. Its `Agent Plugins 1.0`
 section says whether the plugin is a valid plugin of the standard or names
 what keeps it from being one; that is advice, never a reason the check
 fails.
+
+A warning does not fail the check, but it is still yours to resolve: each
+one names the file and the one change that clears it. A marketplace
+written before `plugin.json` owned the describing fields is brought over
+this way — `market check` warns on every `description` or `keywords` left
+on an entry and says whether to move it into the plugin's `plugin.json`,
+delete it because `plugin.json` already says the same, or keep one of two
+values that differ. Apply each, then check again until no warning is left.
 
 ## 4. Install and iterate
 

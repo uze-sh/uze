@@ -102,6 +102,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
             name,
             market,
             description,
+            category,
             hook,
             mcp,
             agent,
@@ -113,6 +114,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                     &market,
                     &name,
                     description.as_deref(),
+                    category.as_deref(),
                     uze_application::ScaffoldCapabilities {
                         hook,
                         mcp,

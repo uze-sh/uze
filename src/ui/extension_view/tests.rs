@@ -5,7 +5,7 @@ use uze_extensions::view::{ContentLine, LineTone, Rgb, RowMenu};
 /// Rendered Markdown as the rows `prose_rows` folds it to, in plain
 /// text.
 fn prose_at(markdown: &str, width: usize) -> Vec<String> {
-    uze_extensions::code::markdown(markdown, "base16-ocean.dark")
+    uze_extensions::code::markdown(markdown, "base16-ocean.dark", width)
         .iter()
         .flat_map(|line| prose_rows(line, width))
         .map(|row| row.spans.iter().map(|span| span.content.as_ref()).collect())
@@ -35,6 +35,18 @@ fn prose_breaks_between_words_and_hangs_under_the_item() {
             "",
         ]
     );
+}
+
+/// A span boundary is a change of style, not a place to break: the full
+/// stop after a bold word stays on the word's row.
+#[test]
+fn prose_never_breaks_where_markup_meets_punctuation() {
+    let rows = prose_at("Every file is one **artifact**. The rest wraps.\n", 25);
+    assert!(
+        rows.iter().any(|row| row.contains("artifact.")),
+        "{rows:#?}"
+    );
+    assert!(!rows.iter().any(|row| row.starts_with('.')), "{rows:#?}");
 }
 
 /// A quote stays quoted on every row it takes, and a code line carries

@@ -236,10 +236,14 @@ fn missing_git_identity(at: &Path) -> Option<&'static str> {
 /// skill carrying the canonical `invoke:` policy block, the optional
 /// capability files for each flag — and adds the `plugins[]` entry that
 /// makes it installable. Refuses to overwrite an existing plugin.
+///
+/// The description lands in `plugin.json` only, and `category` on the
+/// marketplace entry only: each field has the one file that owns it.
 pub fn scaffold_plugin(
     market_root: &Path,
     name: &str,
     description: Option<&str>,
+    category: Option<&str>,
     caps: &ScaffoldCapabilities,
 ) -> Result<PathBuf> {
     if !store::is_valid_package_name(name) {
@@ -283,6 +287,15 @@ pub fn scaffold_plugin(
 
     write_plugin_files(&plugin_root, name, description, caps)?;
 
+    // The entry locates and files the plugin; what describes it is
+    // `plugin.json`'s, written above, and nowhere else.
+    let mut entry = serde_json::json!({
+        "name": name,
+        "source": format!("./{plugins_directory}/{name}"),
+    });
+    if let Some(category) = category {
+        entry["category"] = serde_json::json!(category);
+    }
     manifest
         .as_object_mut()
         .expect("a marketplace manifest is an object")
@@ -290,11 +303,7 @@ pub fn scaffold_plugin(
         .or_insert_with(|| serde_json::json!([]))
         .as_array_mut()
         .expect("`plugins` is a list")
-        .push(serde_json::json!({
-            "name": name,
-            "source": format!("./{plugins_directory}/{name}"),
-            "description": description.unwrap_or("What this plugin offers."),
-        }));
+        .push(entry);
     write_json(&manifest_path, &manifest)?;
     Ok(plugin_root)
 }
@@ -831,6 +840,7 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
         }
     };
     let mut divergences = Vec::new();
+    let warnings = describing_fields_on_entries(&bytes, &manifest, root);
     for entry in &manifest.plugins {
         if !store::is_valid_package_name(&entry.name) {
             findings.push(format!(
@@ -863,9 +873,69 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
     Ok(ValidationReport {
         delivers,
         findings,
-        warnings: Vec::new(),
+        warnings,
         agent_plugins: Some(StandardConformance::from_divergences(divergences)),
     })
+}
+
+/// The fields that describe a plugin, which its `plugin.json` owns and a
+/// marketplace entry may still carry from before that was so.
+const DESCRIBING_FIELDS: [&str; 2] = ["description", "keywords"];
+
+/// One warning per describing field left on a `plugins[]` entry, each with
+/// the one action that resolves it: move it to `plugin.json`, delete it
+/// because `plugin.json` already says the same, or keep one of two values
+/// that differ. Read from the raw manifest, since the parsed entry no
+/// longer has the fields to report.
+fn describing_fields_on_entries(
+    bytes: &[u8],
+    manifest: &marketplace::MarketplaceManifest,
+    root: &Path,
+) -> Vec<String> {
+    let Ok(raw) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return Vec::new();
+    };
+    let entries = raw
+        .get("plugins")
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut warnings = Vec::new();
+    for entry in entries {
+        let Some(name) = entry.get("name").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let plugin_manifest = marketplace::resolve_plugin_source(manifest, name, root)
+            .map(|directory| directory.join("plugin.json"))
+            .ok();
+        let declared = plugin_manifest
+            .as_deref()
+            .and_then(|path| fs::read(path).ok())
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+        let shown = plugin_manifest.as_deref().map_or_else(
+            || "its `plugin.json`".to_owned(),
+            |path| format!("`{}`", path.display()),
+        );
+        for field in DESCRIBING_FIELDS {
+            let Some(on_entry) = entry.get(field) else {
+                continue;
+            };
+            let action = match declared.as_ref().and_then(|declared| declared.get(field)) {
+                None => format!("move it to {shown}, where it is read"),
+                Some(owned) if owned == on_entry => {
+                    format!("delete it from the entry: {shown} already says the same")
+                }
+                Some(owned) => format!(
+                    "it differs from {shown}'s, which is the one shown ({on_entry} here, \
+                     {owned} there); keep one of the two in {shown} and delete the entry's"
+                ),
+            };
+            warnings.push(format!(
+                "{name}: `{field}` on its marketplace entry is not read; {action}"
+            ));
+        }
+    }
+    warnings
 }
 
 #[cfg(test)]

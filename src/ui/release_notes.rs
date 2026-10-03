@@ -157,7 +157,7 @@ fn layout(area: Rect, modal: &ReleaseNotesModal) -> Layout {
         inner.width,
         inner.height.saturating_sub(2),
     );
-    let lines = body_lines(modal);
+    let lines = body_lines(modal, body.width);
     let wrap = usize::from(body.width.max(1));
     let rows = lines
         .iter()
@@ -185,7 +185,7 @@ fn surface() -> Surface {
 /// inset every dialog keeps.
 const DIALOG_PAD: u16 = 3;
 
-fn body_lines(modal: &ReleaseNotesModal) -> Vec<Line<'static>> {
+fn body_lines(modal: &ReleaseNotesModal, width: u16) -> Vec<Line<'static>> {
     let muted = |text: &str| {
         vec![Line::from(Span::styled(
             text.to_owned(),
@@ -200,32 +200,47 @@ fn body_lines(modal: &ReleaseNotesModal) -> Vec<Line<'static>> {
             lines.push(hint::line(&[Scope::ReleaseNotes], &[Action::Activate]));
             lines
         }
-        Notes::Ready(notes) => rendered_notes(&notes.body),
+        Notes::Ready(notes) => rendered_notes(&notes.body, width),
     }
 }
 
 thread_local! {
-    static RENDERED_NOTES: std::cell::RefCell<Option<(String, String, Vec<Line<'static>>)>> =
+    static RENDERED_NOTES: std::cell::RefCell<Option<RenderedNotes>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// The notes as prose, rendered once per text and theme rather than once
+/// The notes as last laid out, and the text, theme and width they were
+/// laid out for.
+struct RenderedNotes {
+    body: String,
+    theme: String,
+    width: u16,
+    lines: Vec<Line<'static>>,
+}
+
+/// The notes as prose, rendered once per text, theme and width rather than once
 /// per frame: the layout is asked on every draw and every scroll, and a
 /// Markdown parse with a syntect pass over each fenced block is
 /// milliseconds a scroll should not pay.
-fn rendered_notes(body: &str) -> Vec<Line<'static>> {
+fn rendered_notes(body: &str, width: u16) -> Vec<Line<'static>> {
     let theme = uze_theme::active().syntax_theme().to_owned();
     RENDERED_NOTES.with_borrow_mut(|cached| {
         if !cached
             .as_ref()
-            .is_some_and(|(text, drawn_in, _)| text == body && *drawn_in == theme)
+            .is_some_and(|notes| notes.body == body && notes.theme == theme && notes.width == width)
         {
-            let lines = extension_view::prose(&uze_extensions::code::markdown(body, &theme));
-            *cached = Some((body.to_owned(), theme, lines));
+            let lines =
+                extension_view::prose(&uze_extensions::code::markdown(body, &theme, width.into()));
+            *cached = Some(RenderedNotes {
+                body: body.to_owned(),
+                theme,
+                width,
+                lines,
+            });
         }
         cached
             .as_ref()
-            .map(|(_, _, lines)| lines.clone())
+            .map(|notes| notes.lines.clone())
             .unwrap_or_default()
     })
 }

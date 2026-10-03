@@ -30,15 +30,18 @@ The [Agent Plugins](https://agent-plugins.org) 1.0 manifest:
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "flow",
-  "description": "What this plugin does, in one sentence."
+  "description": "What this plugin does, in one sentence.",
+  "keywords": ["review", "commits"]
 }
 ```
 
-Only `name` is read. The standard also allows `version`, `description`,
-`author` (`name`, `email`, `url`), `homepage`, `repository`, `license`,
-`keywords` and `extensions`, and nothing else at the top level. Settings for
-one tool go under `extensions`, keyed by that tool's namespace; uze's is
-`sh.uze`, which holds no settings yet.
+`plugin.json` is the one place that describes a plugin. uze installs it by
+`name`, and shows its `description` and `keywords` wherever the plugin is
+listed: the plugins screen, `uze market inspect` and the JSON reports. The
+standard also allows `version`, `author` (`name`, `email`, `url`),
+`homepage`, `repository`, `license` and `extensions`, and nothing else at
+the top level. Settings for one tool go under `extensions`, keyed by that
+tool's namespace; uze's is `sh.uze`, which holds no settings yet.
 
 ## Agent Plugins 1.0
 
@@ -260,7 +263,22 @@ A marketplace is a Git repository with a `marketplace.json` at its root:
   "name": "my-marketplace",
   "owner": { "name": "you" },
   "plugins": [
-    { "name": "my-plugin", "source": "./plugins/my-plugin", "description": "One sentence." }
+    {
+      "name": "my-plugin",
+      "source": "./plugins/my-plugin",
+      "category": "productivity"
+    }
   ]
 }
 ```
+
+An entry locates and files a plugin, and nothing else. It needs `name` and
+`source`, a path inside the repository, and may carry `category`, one word
+for the kind of work the plugin is for, such as `productivity`, `development`
+or `security`: the catalogue's classification, which is why it lives here and
+not in `plugin.json`.
+
+What describes the plugin belongs in its `plugin.json`. A `description` or
+`keywords` left on an entry is not read, and `uze agent market check` warns
+on each one with what to do: move it into `plugin.json`, delete it because
+`plugin.json` already says the same, or keep one of two values that differ.

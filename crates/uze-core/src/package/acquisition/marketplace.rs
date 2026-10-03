@@ -299,6 +299,11 @@ pub struct MarketplaceOwner {
     pub url: Option<String>,
 }
 
+/// One plugin as a catalogue names it: where it is, and how the catalogue
+/// files it. Nothing here describes the plugin — that is its own
+/// `plugin.json`'s, read as a [`PluginListing`] — and a field this type
+/// does not name is ignored, so an entry written with `description` or
+/// `keywords` still parses (`agent market check` says where they belong).
 #[derive(Clone, Debug, Deserialize)]
 pub struct MarketplacePluginEntry {
     pub name: String,
@@ -306,10 +311,55 @@ pub struct MarketplacePluginEntry {
     /// yet — a bare Git or registry reference here would need its own
     /// acquisition pass this module deliberately does not perform.
     pub source: String,
+    /// What kind of work the plugin is for — `productivity`,
+    /// `development`, `security` — the one word a catalogue is browsed
+    /// by. The catalogue's, not the plugin's: the marketplace's owner
+    /// files it, the way a store files an app.
     #[serde(default)]
+    pub category: Option<String>,
+}
+
+/// What a listing shows about a plugin, from its own `plugin.json`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, Deserialize)]
+pub struct PluginListing {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keywords: Vec<String>,
+}
+
+impl PluginListing {
+    /// The listing `bytes` hold — a plugin's `plugin.json`, when there is
+    /// one. Never an error: a manifest that is missing, is not JSON or
+    /// carries a field of the wrong type lists its plugin without that
+    /// field, because one broken plugin must not empty a catalogue.
+    /// `agent plugin check` is where it is reported.
+    pub fn read(bytes: Option<&[u8]>) -> Self {
+        let Some(manifest) =
+            bytes.and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+        else {
+            return Self::default();
+        };
+        let description = manifest
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        let keywords = manifest
+            .get("keywords")
+            .and_then(serde_json::Value::as_array)
+            .map(|keywords| {
+                keywords
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            description,
+            keywords,
+        }
+    }
 }
 
 /// Parses and validates a `marketplace.json` payload. Validation is limited
@@ -554,6 +604,53 @@ mod tests {
         .unwrap();
         assert_eq!(manifest.name, "uze");
         assert_eq!(manifest.plugins.len(), 1);
+        assert_eq!(manifest.plugins[0].category, None, "a category is optional");
+    }
+
+    /// An entry written when it still described its plugin is a valid
+    /// entry: the fields are ignored, never refused.
+    #[test]
+    fn an_entry_that_still_describes_its_plugin_parses() {
+        let manifest = parse_manifest(
+            br#"{"name":"uze","plugins":[{"name":"uze","source":"./plugins/uze","description":"x","keywords":["a"]}]}"#,
+        )
+        .unwrap();
+        assert_eq!(manifest.plugins[0].name, "uze");
+    }
+
+    #[test]
+    fn a_listing_reads_what_the_manifest_says() {
+        let listing = PluginListing::read(Some(
+            br#"{"name":"x","description":"Says hi","keywords":["a","b"]}"#,
+        ));
+        assert_eq!(listing.description.as_deref(), Some("Says hi"));
+        assert_eq!(listing.keywords, ["a", "b"]);
+    }
+
+    /// A broken manifest lists its plugin without the field, never fails.
+    #[test]
+    fn a_listing_is_empty_rather_than_wrong() {
+        for bytes in [
+            None,
+            Some(&b"not json"[..]),
+            Some(&br#"{"description":3,"keywords":"a"}"#[..]),
+        ] {
+            assert_eq!(PluginListing::read(bytes), PluginListing::default());
+        }
+        let mixed = PluginListing::read(Some(br#"{"keywords":["a",1]}"#));
+        assert_eq!(mixed.keywords, ["a"], "a non-string keyword is skipped");
+    }
+
+    #[test]
+    fn an_entry_carries_its_category() {
+        let manifest = parse_manifest(
+            br#"{"name":"uze","plugins":[{"name":"uze","source":"./plugins/uze","category":"productivity"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            manifest.plugins[0].category.as_deref(),
+            Some("productivity")
+        );
     }
 
     #[test]

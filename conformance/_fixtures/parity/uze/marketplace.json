@@ -1,1 +1,1 @@
-{"name": "parity-uze", "description": "Parity twin in the UZE format", "plugins": [{"name": "kit", "source": "./plugins/kit", "description": "Parity reference plugin"}]}
+{"name": "parity-uze", "description": "Parity twin in the UZE format", "plugins": [{"name": "kit", "source": "./plugins/kit"}]}

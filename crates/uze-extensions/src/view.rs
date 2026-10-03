@@ -686,6 +686,26 @@ pub enum ScrollDirection {
 /// tab is almost always leading indentation, where the two agree.
 pub const TAB_WIDTH: usize = 4;
 
+/// Margin on each side of unnumbered content.
+///
+/// A numbered line already starts a gutter's width in, and ends well
+/// short of the edge because code is short; that is where every other
+/// mode's breathing room comes from. A rendered document has neither — it
+/// has no gutter, and its paragraphs wrap to the full width — so without
+/// this it runs into both borders. Two columns, the same as the
+/// management screens' own content inset, so the two surfaces indent
+/// their text by the same amount.
+///
+/// A contract for the same reason [`TAB_WIDTH`] is: a document laid out
+/// ahead of the host (a table fitted to its columns) has to know the
+/// width the host will draw it in.
+pub const PROSE_INSET: u16 = 2;
+
+/// The columns prose is drawn in, within a content area `space` wide.
+pub fn prose_width(space: Size) -> usize {
+    usize::from(space.width.saturating_sub(PROSE_INSET.saturating_mul(2)))
+}
+
 /// Something the host asks an extension's own surface to do.
 ///
 /// An extension answers a *meaning*, never a key — the same relationship

@@ -1814,7 +1814,7 @@ pub fn text(view: &CodeView, lines: std::ops::Range<usize>) -> Vec<String> {
                 .collect()
         }),
         ContentMode::Preview => view.open.as_ref().map_or_else(Vec::new, |open| {
-            let (_, preview) = open.preview(lines.start, count);
+            let (_, preview) = open.preview(lines.start, count, None);
             preview.iter().map(ContentLine::text).collect()
         }),
         ContentMode::Map => Vec::new(),
