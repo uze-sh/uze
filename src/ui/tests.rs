@@ -3603,6 +3603,50 @@ fn an_unfolded_plugin_groups_its_resources_by_kind() {
     );
 }
 
+/// Inspecting a resource keeps its plugin's actions, labelled the way the
+/// plugin's own row labels them rather than repeating the plugin's name.
+#[test]
+fn a_selected_resource_offers_its_plugins_action_by_its_plain_label() {
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        remembered: Remembered {
+            marketplace_plugins: vec![marketplace_plugin("team", "kit", false)],
+            ..TuiModel::default().remembered
+        },
+        ..TuiModel::default()
+    };
+    model.expanded_plugins.insert("kit@team".to_owned());
+    model.plugin_resources.insert(
+        "kit@team".to_owned(),
+        vec![uze_application::application::PluginCapability {
+            identity: "review".to_owned(),
+            name: "review".to_owned(),
+            kind: uze_application::CapabilityKind::AgentSkill,
+            preview: Default::default(),
+        }],
+    );
+    model.select_plugin_row(0, Some("review".to_owned()));
+    assert!(model.selected_resource().is_some());
+
+    let (terminal, hits) = drawn_at(&model, 140, 40);
+    let (rect, _) = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::InstallPlugin))
+        .unwrap_or_else(|| panic!("the install button: {hits:?}"));
+    let row = &buffer_rows(&terminal)[rect.y as usize];
+    let label: String = row
+        .chars()
+        .skip(rect.x as usize)
+        .take(rect.width as usize)
+        .collect();
+    assert_eq!(
+        label.trim(),
+        uze_keys::Action::InstallPlugin.label(),
+        "{row}"
+    );
+}
+
 /// The search field is drawn on three screens and, until this, clicking it
 /// did nothing at all — it was rendered without a hit of its own.
 #[test]

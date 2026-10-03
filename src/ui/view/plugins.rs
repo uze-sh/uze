@@ -862,8 +862,6 @@ struct Detail {
     /// A newer revision to take, said above the action.
     update: Option<String>,
     offers: Vec<ActionOffer>,
-    /// The plugin a resource's action is about, named on its button.
-    acting_on: Option<String>,
 }
 
 fn render_panel(
@@ -1075,11 +1073,8 @@ fn render_panel_footer(
             } else {
                 Token::TextSecondary
             };
-            let label = match &detail.acting_on {
-                Some(plugin) => format!("{} {plugin}", action.label()),
-                None => action.label(),
-            };
-            let button = Button::new(label, hue).strong(model.hovered_offer == Some(action));
+            let button =
+                Button::new(action.label(), hue).strong(model.hovered_offer == Some(action));
             (button, Hit::OfferedAction(action))
         })
         .collect();
@@ -1175,7 +1170,6 @@ fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
         fields,
         update: (behind > 0).then(|| format!("{} with a new revision", counted(behind, "plugin"))),
         offers: summary.map(MarketplaceSummary::offers).unwrap_or_default(),
-        acting_on: None,
     }
 }
 
@@ -1238,7 +1232,6 @@ fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail 
             )
         }),
         offers: plugin.offers(),
-        acting_on: None,
     }
 }
 
@@ -1265,8 +1258,9 @@ fn resource_detail(plugin: &MarketplacePluginSummary, resource: &PluginCapabilit
                 group_display_name(&plugin.marketplace)
             )
         }),
+        // Its plugin's actions, labelled as the plugin's row labels them:
+        // the panel above already names which plugin they are about.
         offers: plugin.offers(),
-        acting_on: Some(plugin.name.clone()),
     }
 }
 
