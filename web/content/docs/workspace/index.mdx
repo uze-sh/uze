@@ -36,6 +36,16 @@ uze workspace
 A shell you open while an agent is selected belongs to that agent: it starts in
 the agent's checkout and closes with it.
 
+## Selecting text
+
+The workspace owns the mouse, so it does the selecting your terminal would
+otherwise do. Drag over text in a pane, a diff, a file, a spec or the agent
+drawer, and releasing copies it to the clipboard. A drag past the edge scrolls
+and keeps selecting, and a pane's selection reaches into its scrollback. The
+copy travels as an OSC 52 escape, so your terminal has to allow it. In most
+terminals, holding `Shift` while dragging skips uze and uses the terminal's
+own selection instead.
+
 ## Nothing is lost when you close it
 
 Your agents keep running when you quit the workspace, and are exactly where you

@@ -58,8 +58,10 @@ video:
   # a still. The box count is what says the diagram finished drawing; the
   # ladder in the header is on screen from the first cell and proves
   # nothing, and the file name alone is gone the moment there is a
-  # selection to describe instead.
-  poster_when: '3 boxes · 2 edges · system-context\.mmd'
+  # selection to describe instead. The count alone, because the terminal
+  # writes the file name after it in a separate event, which a regex over
+  # one event cannot span.
+  poster_when: '3 boxes · 2 edges'
   sidebar: 31
 sandbox:
   root: ~/.uzedemo          # never on screen
@@ -67,6 +69,7 @@ sandbox:
   cwd: '{fixtures}/demo-app'
   command:
     - '{project}/target/release/uze'
+    - workspace
   shell: '{home}/demoshell'
   path:
     - '{home}/.uze/shims'
@@ -116,6 +119,9 @@ sandbox:
         "first_steps": { "collapsed": true, "closed": false, "taken": [] }
       }
       LAYOUT
+    # The appearance demo shares this home and ends on another theme: every
+    # take starts from the default, the one the site's own palette matches.
+    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set default >/dev/null
   clear:
     # The rewind removes the checkouts but leaves the directory that held
     # them, and the `clean` above deliberately spares it — so an empty

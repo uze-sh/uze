@@ -34,6 +34,7 @@ sandbox:
   cwd: '{fixtures}/demo-app'
   command:
     - '{project}/target/release/uze'
+    - workspace
   shell: '{home}/demoshell'
   path:
     - '{home}/.uze/shims'
@@ -389,7 +390,7 @@ beats:
     pause: 1.2
   - say: every key lives in management, under shortcuts
     key: C-o
-    expect: status & health
+    expect: theme & notifications
     expect_timeout: 8
     pause: 0.6
   - click: Shortcuts
@@ -420,7 +421,7 @@ beats:
     pause: 2.4
   - say: back in the workspace, F4 opens a shell
     key: C-o
-    refuse: status & health
+    refuse: theme & notifications
     pause: 0.8
   - key: F4
     expect_in: strip
