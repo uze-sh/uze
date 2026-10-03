@@ -451,10 +451,6 @@ impl AgentStore {
         self.agents.iter().filter(|agent| agent.is_isolated())
     }
 
-    pub fn isolated_mut(&mut self) -> impl Iterator<Item = &mut Agent> {
-        self.agents.iter_mut().filter(|agent| agent.is_isolated())
-    }
-
     /// The agent standing in `checkout` now: the newest to have been given
     /// it. A slot outlives the agents that ran in it and each went on
     /// naming it; anything older is history, and answering for it would

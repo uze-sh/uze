@@ -33,7 +33,6 @@
     "file.legal": "",
 
     "task.ready": "^",
-    "task.retry": "@",
 
     "status.working": ["|", "/", "-", "\\"],
     "status.completed": "*",
@@ -62,7 +61,6 @@
     "arrow.up": "^",
     "arrow.down": "v",
     "arrow.external": ">",
-    "arrow.swap": "~",
     "arrow.to": "->",
     "chevron.right": ">",
     "step.previous": "<",

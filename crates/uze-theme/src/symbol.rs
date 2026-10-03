@@ -190,9 +190,6 @@ vocabulary! {
         /// is not a direction, and a theme repainting the arrows must not
         /// silently repaint it too.
         TaskReady = "task.ready",
-        /// A gate that failed, offered again. Running a check again is its
-        /// own meaning, so it is its own mark.
-        TaskRetry = "task.retry",
 
         // ── an agent's standing in the sidebar ─────────────────────────
         /// Producing output right now. The one animated symbol.
@@ -252,8 +249,6 @@ vocabulary! {
         ArrowDown = "arrow.down",
         /// Leads somewhere outside UZE.
         ArrowExternal = "arrow.external",
-        /// Two things exchange places.
-        ArrowSwap = "arrow.swap",
         /// Points from a thing to where it is going — a delivery's target,
         /// a mapping's right-hand side.
         ArrowTo = "arrow.to",
