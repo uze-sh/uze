@@ -31,8 +31,7 @@ cargo test --test package_containment                       # one top-level inte
 
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings                  # CI uses --all-targets; plain `clippy -- -D warnings` is the Makefile default
-cargo llvm-cov --workspace --summary-only --fail-under-lines 68 --fail-under-regions 69 \
-  -- --skip foreground_status_reports
+cargo llvm-cov --workspace --summary-only --fail-under-lines 68 --fail-under-regions 69
 
 cargo deny check                                           # licences, advisories, bans, sources (deny.toml); part of `make check`
 make attributions                                          # regenerate CREDITS.md (about.hbs + Cargo.lock); CI fails when it drifts
@@ -189,7 +188,9 @@ Cargo workspace, edition 2024, MSRV 1.97. Single version source:
 inherits it; bump it before any binary is distributed (dev rebuilds don't
 need to).
 
-- `.` (binary crate `uze`) — CLI parsing (`src/main.rs`), the terminal UI
+- `.` (binary crate `uze`) — the CLI (`src/main.rs` parses and
+  dispatches; `src/cli/` holds the grammar, the help and one module per
+  command family), the terminal UI
   (`src/ui.rs`, `src/ui/`), the runtime PATH shim (`src/shim.rs`), and
   `src/command_performance.rs`.
 - `crates/uze-core` — the shared foundation and the package manager's
@@ -226,8 +227,10 @@ need to).
 - `crates/uze-application` — the product-facing facade
   (`UzeApplication`) that orchestrates Core + Integrations into
   install/remove/update/context lifecycle operations. `src/application.rs`
-  is the large orchestration surface; `src/application/lifecycle/` holds
-  the per-operation modules (add/install/remove/update/attach).
+  is the facade and its service accessors; `src/application/lifecycle/`
+  holds the per-operation modules (add/install/remove/update/attach), and
+  `src/application/services/` the workspace's services (tasks, checkouts,
+  work), each a directory once it outgrows one file.
 - `crates/uze-git` — the one transport for speaking to the Git binary:
   spawn convention, `read`/`write` entry points, and Git's exit code
   reported rather than classified (a non-zero exit is an answer for
@@ -497,11 +500,13 @@ changes overlay and its per-file diff — runs on a thread and answers
 through a channel, and so do the two other unbounded operations: placing a
 new agent (`git worktree add` plus the project's `setup`) and slot
 reconciliation. Two tests hold it: `src/ui/orchestrator/` (the render and
-input halves) may not name `WorkspaceHost` at all, and every mention of it
-in `src/ui/orchestrator.rs` must sit inside a `thread::spawn`. Every answer
+input halves) may not name `WorkspaceHost` at all, save `reads.rs`, where
+the reads live; and every mention of it there and in
+`src/ui/orchestrator.rs` must sit inside a `thread::spawn`. Every answer
 carries the question it was asked, so one that arrives after the viewer
-moved on is dropped rather than drawn. Adding a read means a
-`spawn_*`/`absorb_*` pair beside the existing ones, never an inline call.
+moved on is dropped rather than drawn. Adding a read means a `spawn_*` in
+`orchestrator/reads.rs` and an `absorb_*` beside the existing ones, never
+an inline call.
 
 **Speak to Git through `uze-git`.** Never spawn `git` directly: two callers
 with two exit-code conventions is what this replaced, and a repository

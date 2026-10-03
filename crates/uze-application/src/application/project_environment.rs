@@ -235,7 +235,9 @@ impl Project<'_> {
         // entry recording something nobody declared is a line that cannot
         // be acted on. A directory that is no project takes the same road:
         // the machine half alone, and the report says nothing was declared.
-        if marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE || canonical.is_none() {
+        let declared =
+            canonical.filter(|_| marketplace != uze_core::manifest::BUILT_IN_MARKETPLACE);
+        let Some(canonical) = declared else {
             // No mutation lock taken here: the call below takes it, and it
             // is not re-entrant.
             return self.0.marketplace().install_plugin_resolving(
@@ -243,8 +245,7 @@ impl Project<'_> {
                 authority,
                 name_authority,
             );
-        }
-        let canonical = canonical.unwrap();
+        };
 
         // Taken before the lock is read, so what gets written back is not a
         // copy another command changed in the meantime.
@@ -1133,10 +1134,7 @@ impl Project<'_> {
         let Some(expected) = &locked.integrity else {
             return Ok(());
         };
-        let found = uze_core::digest::tree_sha256(acquired).map_err(|source| UzeError::Read {
-            path: acquired.to_path_buf(),
-            source,
-        })?;
+        let found = uze_core::digest::tree_sha256(acquired).map_err(UzeError::read(acquired))?;
         if &found == expected {
             return Ok(());
         }

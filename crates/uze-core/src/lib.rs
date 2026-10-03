@@ -79,7 +79,7 @@ pub use uze_document as document;
 
 pub use acquisition::{MaterializedPackage, PackageSource, Provenance, ResolvedSource};
 pub use capability::Resource;
-pub use error::{ProjectionConflictDetails, Result, UzeError};
+pub use error::{Result, UzeError};
 pub use exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan};
 pub use home::UzeHome;
 pub use skill::SkillInvocationPolicy;

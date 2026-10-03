@@ -113,18 +113,12 @@ impl AgentsMdGuard {
     pub fn acquire(home: &UzeHome, project_root: &Path) -> Result<Self> {
         let path = home.agents_md_lock_path(&project_id_for(project_root));
         let parent = path.parent().expect("UZE state paths have a parent");
-        fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-            path: parent.to_path_buf(),
-            source,
-        })?;
+        fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .map_err(|source| UzeError::Write {
-                path: path.clone(),
-                source,
-            })?;
+            .map_err(UzeError::write(&path))?;
         let started = Instant::now();
         while let Err(error) = crate::persistence::try_lock_exclusive(&file) {
             if error.kind() != std::io::ErrorKind::WouldBlock {

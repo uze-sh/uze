@@ -424,3 +424,20 @@ fn choosing_an_agents_slot_opens_the_repository_it_was_cut_from() {
     assert_eq!(typed.match_count(), 0);
     assert_eq!(typed.chosen(), Some(repository));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_to_a_directory_is_offered_and_a_file_is_not() {
+    let root = TempDir::new("root-picker-links");
+    std::fs::create_dir_all(root.join("elsewhere/checkout")).unwrap();
+    std::fs::create_dir_all(root.join("listed")).unwrap();
+    std::fs::write(root.join("listed/notes.txt"), "").unwrap();
+    std::fs::write(root.join("elsewhere/file"), "").unwrap();
+    std::os::unix::fs::symlink(root.join("elsewhere/checkout"), root.join("listed/linked"))
+        .unwrap();
+    std::os::unix::fs::symlink(root.join("elsewhere/file"), root.join("listed/to-a-file")).unwrap();
+
+    let picker = RootPicker::opened_in(&root.join("listed").display().to_string(), None);
+
+    assert_eq!(names(&picker), vec!["linked".to_owned()]);
+}

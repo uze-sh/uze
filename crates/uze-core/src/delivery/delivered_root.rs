@@ -23,10 +23,8 @@ pub fn materialize(home: &UzeHome, package: &StoredPackage) -> Result<PathBuf> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let destination = home.delivered_package_dir(&package.id);
-    let wanted = crate::digest::tree_sha256(&package.root).map_err(|source| UzeError::Read {
-        path: package.root.clone(),
-        source,
-    })?;
+    let wanted =
+        crate::digest::tree_sha256(&package.root).map_err(UzeError::read(&package.root))?;
     if destination.is_dir()
         && crate::digest::tree_sha256(&destination).is_ok_and(|present| present == wanted)
     {

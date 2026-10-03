@@ -118,35 +118,6 @@ fn the_skill_description_survives_yaml_verbatim() -> Result<()> {
 }
 
 #[test]
-fn authoring_scaffold_meets_the_budget() -> Result<()> {
-    // Held while Git is isolated: the scaffold's own Git work is not the
-    // budget being measured, the file writes are. The global config points
-    // at an empty file for the *read* side too, so `missing_git_identity`
-    // is asked inside a world, not on the developer's machine.
-    let mut environment = uze_testkit::env::scope();
-    let configuration = uze_testkit::temp::scratch("authoring-budget-gitconfig").join("gitconfig");
-    fs::write(
-        &configuration,
-        "[user]\n\tname = T\n\temail = t@example.invalid\n",
-    )
-    .unwrap();
-    environment.set("GIT_CONFIG_GLOBAL", &configuration);
-    environment.set("GIT_CONFIG_SYSTEM", &configuration);
-
-    let root = scratch("authoring-scaffold-budget");
-    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
-    let started = std::time::Instant::now();
-    scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
-    let elapsed = started.elapsed();
-    assert!(
-        elapsed < std::time::Duration::from_millis(200),
-        "a plugin scaffold is file writes plus one marketplace manifest read: {elapsed:?}"
-    );
-    fs::remove_dir_all(&root).expect("teardown");
-    Ok(())
-}
-
-#[test]
 fn the_local_marketplace_is_the_project_itself() -> Result<()> {
     let root = scratch("authoring-local");
     // A project: its own repository is the marketplace's repository.

@@ -334,9 +334,16 @@ mod tests {
                 version: Some("1.0.0".to_owned()),
             },
         );
-        // Simulate an update: replace the file with a distinct mtime.
-        std::thread::sleep(Duration::from_millis(10));
+        // Simulate an update: replace the file, dated past the old one by
+        // more than any filesystem's mtime resolution.
+        let before = fs::metadata(&bin).unwrap().modified().unwrap();
         fs::write(&bin, "#!/bin/sh\necho updated\n").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&bin)
+            .unwrap()
+            .set_modified(before + Duration::from_secs(5))
+            .unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

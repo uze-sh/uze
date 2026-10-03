@@ -165,10 +165,7 @@ pub fn load(root: &Path) -> Result<Option<ProjectManifest>> {
     if !path.exists() {
         return Ok(None);
     }
-    let bytes = fs::read(&path).map_err(|source| UzeError::Read {
-        path: path.clone(),
-        source,
-    })?;
+    let bytes = fs::read(&path).map_err(UzeError::read(&path))?;
     let text = String::from_utf8(bytes).map_err(|_| UzeError::MalformedManifest {
         path: path.clone(),
         reason: format!("{MANIFEST_FILE_NAME} is not valid UTF-8"),

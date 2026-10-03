@@ -249,6 +249,11 @@ pub(crate) fn render_drawer_footer(
     hits.extend(button_row(frame, row, &buttons, Align::Left));
 }
 
+/// The plural suffix a count takes in a screen's English: `""` for one.
+fn plural(count: usize) -> &'static str {
+    if count == 1 { "" } else { "s" }
+}
+
 #[cfg(test)]
 mod drawer_tests {
     use super::*;

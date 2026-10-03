@@ -226,8 +226,6 @@ fn model_with_data() -> TuiModel {
 /// not cut at the column's edge.
 #[test]
 fn every_route_subtitle_fits_the_narrowest_sidebar() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
     let model = TuiModel {
         sidebar_width: Some(super::MIN_SIDEBAR_WIDTH),
@@ -257,8 +255,6 @@ fn every_route_subtitle_fits_the_narrowest_sidebar() {
 
 #[test]
 fn every_route_renders_without_panicking() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
     let base = model_with_data();
     for route in ROUTES {
@@ -291,16 +287,10 @@ fn every_route_renders_without_panicking() {
 /// mark that is never on screen.
 #[test]
 fn the_harness_legend_names_the_words_a_card_carries() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut model = model_with_data();
     model.set_route(Route::Harnesses);
     model.overlay = Overlay::HarnessHelp;
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 120, 40);
     let legend = buffer_rows(&terminal).join("\n");
 
     assert!(
@@ -321,8 +311,6 @@ fn the_harness_legend_names_the_words_a_card_carries() {
 
 #[test]
 fn every_overlay_renders_without_panicking() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
     let base = model_with_data();
     let overlays = [
@@ -1339,17 +1327,12 @@ fn v_opens_the_preview_and_esc_closes_it_before_anything_else() {
 /// and the pointer changes it with them.
 #[test]
 fn a_preference_steps_through_its_values_from_its_arrows() {
-    use ratatui::{Terminal, backend::TestBackend};
     use uze_core::preference::Autonomy;
 
     let mut model = model_with_data();
     model.set_route(Route::Profiles);
     model.focus = Focus::Content;
-    let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 160, 40);
     let rows = buffer_rows(&terminal);
     let next = crate::ui::theme::glyph(crate::ui::theme::Symbol::StepNext);
     let stepper_columns: Vec<usize> = ["autonomy", "sandbox", "model"]
@@ -1401,16 +1384,10 @@ fn a_preference_steps_through_its_values_from_its_arrows() {
 /// row itself only names the profile.
 #[test]
 fn a_profile_row_carries_no_action_of_its_own() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut model = model_with_data();
     model.set_route(Route::Profiles);
     model.focus = Focus::Content;
-    let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 160, 40);
     let rows = buffer_rows(&terminal);
     let row = rows
         .iter()
@@ -1439,18 +1416,12 @@ fn a_profile_row_carries_no_action_of_its_own() {
 
 #[test]
 fn the_preview_shows_each_key_as_it_is_and_as_it_will_be() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut model = model_with_data();
     model.set_route(Route::Profiles);
     model.focus = Focus::Content;
     answer_preview(&mut model);
     model.profile_preview_open = true;
-    let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 160, 40);
     let rows = buffer_rows(&terminal);
     let row = |needle: &str| {
         rows.iter()
@@ -2084,11 +2055,7 @@ fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
         is_default: true,
     }];
 
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 100, 40);
     model.hits = hits;
     let rows = buffer_rows(&terminal);
     assert!(
@@ -2146,11 +2113,7 @@ fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
         is_default: true,
     }];
 
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 100, 40);
     model.hits = hits;
 
     let rows = buffer_rows(&terminal);
@@ -2198,11 +2161,7 @@ fn the_source_link_lights_up_only_under_the_pointer() {
         is_default: true,
     }];
 
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (_terminal, hits) = drawn_at(&model, 100, 40);
     model.hits = hits;
     let rect = model
         .hits
@@ -2271,11 +2230,7 @@ fn attachment_health_is_never_unknown_after_a_refresh() {
         leftovers: Default::default(),
         maintenance: MaintenanceReport::default(),
     });
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 100, 40);
     let rows = buffer_rows(&terminal);
     assert!(
         rows.iter().any(|row| row.to_lowercase().contains("ready")),
@@ -2294,11 +2249,7 @@ fn attachment_health_is_never_unknown_after_a_refresh() {
 #[test]
 fn the_sidebar_announces_a_release_above_the_steps() {
     let mut model = model_with_plugins(&["flow"]);
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (mut terminal, hits) = drawn_at(&model, 120, 40);
     assert!(
         !hits
             .iter()
@@ -2412,11 +2363,7 @@ fn a_dialog_in_the_manage_modal_recedes_its_title_too() {
 #[test]
 fn the_footers_version_opens_this_releases_notes() {
     let mut model = model_with_plugins(&["flow"]);
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 120, 40);
     let version = format!("v{}", crate::self_update::running());
     let (rect, _) = *hits
         .iter()
@@ -2456,11 +2403,7 @@ fn the_sidebars_foot_lists_the_first_steps_and_ticks_the_taken_ones() {
     let mut model = model_with_plugins(&["flow"]);
     let taken = crate::ui::management::FIRST_STEPS[0];
     model.steps_taken = [taken.name()].into_iter().collect();
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (mut terminal, hits) = drawn_at(&model, 120, 40);
     let drawn = buffer_rows(&terminal);
 
     let header = drawn
@@ -2519,11 +2462,7 @@ fn the_sidebars_foot_lists_the_first_steps_and_ticks_the_taken_ones() {
 #[test]
 fn a_finished_list_offers_to_leave() {
     let mut model = model_with_plugins(&["flow"]);
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (mut terminal, hits) = drawn_at(&model, 120, 40);
     assert!(
         !hits.iter().any(|(_, hit)| *hit == Hit::CloseFirstSteps),
         "unfinished, so nothing to close"
@@ -2702,8 +2641,6 @@ fn a_hint_line_reads_its_keys_off_the_keymap() {
 
 #[test]
 fn sidebar_resize_drag_updates_width() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
     let mut model = TuiModel::default();
     let mut hits = Vec::new();
@@ -2774,8 +2711,6 @@ fn sidebar_resize_drag_updates_width() {
 
 #[test]
 fn sidebar_resize_drag_clamps_to_bounds() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
     let mut model = TuiModel::default();
     let mut hits = Vec::new();
@@ -3151,11 +3086,7 @@ fn a_harness_card_says_its_state_at_its_foot() {
     // By each card's own hit rect, so this reads a card's rows rather than
     // the first mention of a name anywhere on the screen.
     let cards = |width: u16| {
-        let mut terminal = Terminal::new(TestBackend::new(width, 40)).unwrap();
-        let mut hits = Vec::new();
-        terminal
-            .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-            .unwrap();
+        let (terminal, hits) = drawn_at(&model, width, 40);
         let rows = buffer_rows(&terminal);
         let row_of = |rect: Rect, offset: u16| -> String {
             rows[(rect.y + offset) as usize]
@@ -3291,6 +3222,21 @@ fn a_modal_pushes_the_screen_it_interrupts_behind_it() {
 
 /// All rows of the rendered buffer, right-trimmed — the cheap,
 /// snapshot-free way to assert on what the TUI actually drew.
+/// `model` drawn once into a `width`×`height` test terminal, with the hit
+/// regions the frame registered.
+fn drawn_at(
+    model: &TuiModel,
+    width: u16,
+    height: u16,
+) -> (Terminal<TestBackend>, Vec<(Rect, Hit)>) {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| render(frame, frame.area(), model, &mut hits))
+        .unwrap();
+    (terminal, hits)
+}
+
 fn buffer_rows(terminal: &Terminal<TestBackend>) -> Vec<String> {
     let buffer = terminal.backend().buffer();
     let area = buffer.area;
@@ -3345,8 +3291,6 @@ fn overview_does_not_render_project_context() {
 
 #[test]
 fn overview_render_does_not_mutate_project_state() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let base = uze_testkit::temp::scratch("ui-overview-immutable");
     let root = base.join("project");
     std::fs::create_dir_all(&root).unwrap();
@@ -3373,11 +3317,7 @@ fn overview_render_does_not_mutate_project_state() {
         },
         ..TuiModel::default()
     };
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 100, 40);
     let rows = buffer_rows(&terminal);
 
     // The render must leave the workspace exactly as found.
@@ -3395,8 +3335,6 @@ fn overview_render_does_not_mutate_project_state() {
 
 #[test]
 fn no_workspace_render_creates_nothing() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let base = uze_testkit::temp::scratch("ui-noworkspace");
     let root = base.join("random");
     std::fs::create_dir_all(&root).unwrap();
@@ -3424,11 +3362,7 @@ fn no_workspace_render_creates_nothing() {
         },
         ..TuiModel::default()
     };
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 100, 40);
     let rows = buffer_rows(&terminal);
     assert!(rows.iter().any(|row| row.contains("Overview")));
     assert!(!rows.iter().any(|row| row.contains("PROJECT")));
@@ -3721,7 +3655,6 @@ fn a_screen_behind_a_feature_is_absent_or_whole() {
 // trade one signal for another.
 #[test]
 fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
-    use ratatui::{Terminal, backend::TestBackend};
     let badge = crate::ui::widget::text::small_caps(
         Route::Profiles
             .badge()
@@ -3833,11 +3766,7 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
         },
         ..TuiModel::default()
     };
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (mut terminal, hits) = drawn_at(&model, 120, 40);
     model.hits = hits;
     let buttons: Vec<_> = model
         .hits
@@ -3935,11 +3864,7 @@ fn an_unfolded_plugin_groups_its_resources_by_kind_and_the_drawer_does_not_repea
         ],
     );
     model.remembered.plugin_screen.drawer_width = Some(52);
-    let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 140, 40);
     let rows = buffer_rows(&terminal);
 
     let skills = rows
@@ -3967,11 +3892,7 @@ fn clicking_the_search_field_starts_a_search() {
     for route in [Route::Plugins, Route::Extensions, Route::Harnesses] {
         let mut model = model_with_data();
         model.set_route(route);
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-        let mut hits = Vec::new();
-        terminal
-            .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-            .unwrap();
+        let (_terminal, hits) = drawn_at(&model, 100, 40);
         model.hits = hits;
         let (rect, _) = model
             .hits
@@ -4011,11 +3932,7 @@ fn the_keys_screen_rebinds_from_a_click_and_a_keystroke() {
         .expect("the workspace's new-shell key is listed");
     model.key_screen.selected = row;
 
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (_terminal, hits) = drawn_at(&model, 120, 40);
     model.hits = hits;
     let (rect, _) = model
         .hits
@@ -4069,11 +3986,7 @@ fn the_keys_list_follows_the_selection_past_the_fold() {
     model.key_screen.selected = last;
     let wanted = rows[last].action.label();
 
-    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 140, 30);
     let drawn = buffer_rows(&terminal);
     assert!(
         drawn.iter().any(|row| row.contains(&wanted)),
@@ -4154,11 +4067,7 @@ fn the_selected_key_is_a_band_across_the_list() {
         ..TuiModel::default()
     };
     model.key_screen.selected = 2;
-    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 140, 30);
 
     let (rect, _) = hits
         .iter()
@@ -4201,11 +4110,7 @@ fn the_track_can_be_dragged() {
         focus: Focus::Content,
         ..TuiModel::default()
     };
-    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (_terminal, hits) = drawn_at(&model, 140, 30);
     model.hits = hits;
     let track = model
         .hits
@@ -4278,11 +4183,7 @@ fn a_list_taller_than_the_screen_says_where_the_window_is() {
             .collect()
     };
 
-    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (mut terminal, mut hits) = drawn_at(&model, 140, 30);
     let top = column(&terminal);
     assert!(!top.is_empty(), "the track is drawn at all");
 
@@ -4346,11 +4247,7 @@ fn the_wheel_walks_the_keys_list_and_the_window_follows() {
 
     let rows = model.key_rows();
     let wanted = rows[40].action.label();
-    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 140, 30);
     assert!(
         buffer_rows(&terminal)
             .iter()
@@ -4398,11 +4295,7 @@ fn a_group_of_keys_is_set_apart_from_the_one_above_it() {
         focus: Focus::Content,
         ..TuiModel::default()
     };
-    let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 140, 40);
     let drawn = buffer_rows(&terminal);
     // Columns rather than byte offsets: these rows carry the sidebar's own
     // glyphs, and half of them are more than one byte wide.
@@ -4451,11 +4344,7 @@ fn a_key_is_listed_with_the_sentence_that_explains_it() {
         focus: Focus::Content,
         ..TuiModel::default()
     };
-    let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 160, 40);
     let drawn = buffer_rows(&terminal);
     let row = drawn
         .iter()
@@ -4579,11 +4468,7 @@ fn every_drawer_draws_what_its_row_can_do_as_buttons() {
             route == Route::Plugins || !available.is_empty(),
             "{route:?} offers nothing to do"
         );
-        let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
-        let mut hits = Vec::new();
-        terminal
-            .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-            .unwrap();
+        let (_terminal, hits) = drawn_at(&model, 140, 40);
         for action in available {
             assert!(
                 hits.iter()
@@ -4622,11 +4507,7 @@ fn every_drawer_runs_the_full_height_of_its_screen() {
         }];
         model.settle_settings_selection();
 
-        let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
-        let mut hits = Vec::new();
-        terminal
-            .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-            .unwrap();
+        let (_terminal, hits) = drawn_at(&model, 140, 40);
         let rule = hits
             .iter()
             .find_map(|(rect, hit)| matches!(hit, Hit::ResizePanel(_)).then_some(*rect))
@@ -4720,11 +4601,7 @@ fn a_question_is_answered_with_the_pointer_too() {
         kind: Confirmation::RemovePlugin("one".to_owned()),
         focus: Some(1),
     };
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (_terminal, hits) = drawn_at(&model, 100, 40);
     model.hits = hits;
 
     let button = |model: &TuiModel, action: uze_keys::Action| {
@@ -4856,11 +4733,7 @@ fn the_fill_that_marks_what_is_in_force_leaves_the_frame_alone() {
         "the case this guards is the card in force that the keyboard is not on"
     );
 
-    let mut terminal = Terminal::new(TestBackend::new(190, 30)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 190, 30);
 
     let card = hits
         .iter()
@@ -5051,11 +4924,7 @@ fn every_way_of_reaching_settings_carries_the_ask() {
     );
 
     let mut clicked = TuiModel::default();
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &clicked, &mut hits))
-        .unwrap();
+    let (_terminal, hits) = drawn_at(&clicked, 120, 40);
     clicked.hits = hits;
     let (rect, _) = clicked
         .hits
@@ -5111,18 +4980,12 @@ fn clicking_a_glyph_set_chooses_it() {
 /// right, the affirmative last, with the keys for them in the border.
 #[test]
 fn a_confirmation_dialog_reads_as_heading_subject_body_and_answers() {
-    use ratatui::{Terminal, backend::TestBackend};
-
     let mut model = model_with_data();
     model.overlay = Overlay::Confirm {
         kind: Confirmation::DeleteProfile("default".to_owned()),
         focus: Some(1),
     };
-    let mut terminal = Terminal::new(TestBackend::new(90, 24)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 90, 24);
     let rows = buffer_rows(&terminal);
     let position = |needle: &str| {
         rows.iter()
@@ -5249,11 +5112,7 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
     };
     let width = 52;
     model.remembered.plugin_screen.drawer_width = Some(width);
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, _hits) = drawn_at(&model, 120, 40);
     let rows = buffer_rows(&terminal);
 
     // The drawer is what follows the last rule on each row; the list
@@ -5296,11 +5155,7 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
 fn a_text_prompt_is_answered_by_its_buttons_and_a_click_inside_keeps_it() {
     let mut model = two_market_model();
     model.overlay = Overlay::AddMarketplace("https://example.com/team".to_owned());
-    let mut terminal = Terminal::new(TestBackend::new(110, 26)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (_terminal, hits) = drawn_at(&model, 110, 26);
     model.hits = hits;
     let rect_of = |model: &TuiModel, wanted: Hit| {
         model
@@ -5417,11 +5272,7 @@ fn the_arrows_walk_an_unfolded_plugins_resources_in_drawn_order() {
 fn a_selected_resource_is_previewed_in_the_drawer() {
     let mut model = unfolded_git();
     model.select_plugin_row(1, Some("commit".to_owned()));
-    let mut terminal = Terminal::new(TestBackend::new(150, 30)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 150, 30);
     let drawer: Vec<String> = buffer_rows(&terminal)
         .iter()
         .map(|row| row.rsplit('│').next().unwrap_or_default().to_owned())
@@ -5491,7 +5342,6 @@ fn both_columns_reach_the_terminals_last_row() {
 /// the modal — and a click on it opens what it is about.
 #[test]
 fn the_footer_says_the_machines_health_and_opens_what_needs_attention() {
-    use ratatui::{Terminal, backend::TestBackend};
     let mut model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Content,
@@ -5547,18 +5397,13 @@ fn the_footer_says_the_machines_health_and_opens_what_needs_attention() {
 /// it ships with uze, or how long ago it was last checked.
 #[test]
 fn a_marketplace_in_the_rail_is_its_name_over_what_needs_saying() {
-    use ratatui::{Terminal, backend::TestBackend};
     let model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Content,
         overlay: Overlay::None,
         ..model_with_data()
     };
-    let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 150, 26);
     let rows = buffer_rows(&terminal);
     let text = rows.join("\n");
     let row_of = |needle: &str| {
@@ -5641,7 +5486,6 @@ fn a_marketplace_in_the_rail_is_its_name_over_what_needs_saying() {
 /// its resources.
 #[test]
 fn a_click_on_the_selected_plugin_row_opens_and_folds_it() {
-    use ratatui::{Terminal, backend::TestBackend};
     let mut model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Sidebar,
@@ -5688,7 +5532,6 @@ fn a_click_on_the_selected_plugin_row_opens_and_folds_it() {
 /// the only mark: no bar beside it.
 #[test]
 fn the_selected_marketplace_keeps_its_ground_while_a_plugin_is_selected() {
-    use ratatui::{Terminal, backend::TestBackend};
     let mut model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Content,
@@ -5697,11 +5540,7 @@ fn the_selected_marketplace_keeps_its_ground_while_a_plugin_is_selected() {
     };
     model.select_plugin_market(Some("local".to_owned()));
     model.plugin_pane = super::model::PluginPane::Plugins;
-    let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
+    let (terminal, hits) = drawn_at(&model, 150, 26);
     let rows = buffer_rows(&terminal);
     let rail = hits
         .iter()

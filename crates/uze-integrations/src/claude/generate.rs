@@ -72,10 +72,7 @@ pub(super) const NOT_PORTABLE: &[&str] = &[
 /// portable files, then the generated manifest, then the rewritten skill
 /// and agent definitions.
 pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Result<()> {
-    let package_root = fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
-        path: package.root.clone(),
-        source,
-    })?;
+    let package_root = fs::canonicalize(&package.root).map_err(UzeError::read(&package.root))?;
     mirror_tree(&package.root, dir, &package_root, NOT_PORTABLE)?;
     write_manifest(package, dir)?;
     let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;
@@ -129,10 +126,7 @@ fn write_manifest(package: &StoredPackage, dir: &Path) -> Result<()> {
         manifest["mcpServers"] = servers;
     }
     let plugin_dir = dir.join(".claude-plugin");
-    fs::create_dir_all(&plugin_dir).map_err(|source| UzeError::Write {
-        path: plugin_dir.clone(),
-        source,
-    })?;
+    fs::create_dir_all(&plugin_dir).map_err(UzeError::write(&plugin_dir))?;
     write_file(
         &plugin_dir.join("plugin.json"),
         &serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
@@ -144,10 +138,7 @@ fn rewrite_skill(package: &StoredPackage, resource: &Resource, dir: &Path) -> Re
     if policy.is_invalid() {
         let copied = envelope_path(package, resource, dir);
         if let Some(skill_dir) = copied.parent() {
-            fs::remove_dir_all(skill_dir).map_err(|source| UzeError::Write {
-                path: skill_dir.to_path_buf(),
-                source,
-            })?;
+            fs::remove_dir_all(skill_dir).map_err(UzeError::write(skill_dir))?;
         }
         return Ok(());
     }

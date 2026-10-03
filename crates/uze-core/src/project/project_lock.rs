@@ -147,12 +147,7 @@ impl LockedPlugin {
     /// digest they were owed would reproduce anything a teammate fetched.
     pub fn resolved(marketplace: &str, root: &Path, reproducible: bool) -> Result<Self> {
         let integrity = if reproducible {
-            Some(
-                crate::digest::tree_sha256(root).map_err(|source| UzeError::Read {
-                    path: root.to_path_buf(),
-                    source,
-                })?,
-            )
+            Some(crate::digest::tree_sha256(root).map_err(UzeError::read(root))?)
         } else {
             None
         };
@@ -258,10 +253,7 @@ pub fn load_lock(root: &Path) -> Result<Option<ProjectLock>> {
     if !path.exists() {
         return Ok(None);
     }
-    let bytes = fs::read(&path).map_err(|source| UzeError::Read {
-        path: path.clone(),
-        source,
-    })?;
+    let bytes = fs::read(&path).map_err(UzeError::read(&path))?;
     let text = String::from_utf8(bytes).map_err(|_| UzeError::MalformedLock {
         path: path.clone(),
         reason: "agents.lock is not valid UTF-8".to_owned(),

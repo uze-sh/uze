@@ -114,19 +114,13 @@ pub(crate) fn cleanup_unused_wrapper(
         return Ok(());
     }
     let referenced = std::fs::read_dir(skills_dir)
-        .map_err(|source| UzeError::Read {
-            path: skills_dir.to_path_buf(),
-            source,
-        })?
+        .map_err(UzeError::read(skills_dir))?
         .filter_map(std::result::Result::ok)
         .any(|entry| std::fs::read_link(entry.path()).ok().as_deref() == Some(target));
     if referenced || !is_uze_wrapper(target) {
         return Ok(());
     }
-    std::fs::remove_dir_all(target).map_err(|source| UzeError::Write {
-        path: target.to_path_buf(),
-        source,
-    })?;
+    std::fs::remove_dir_all(target).map_err(UzeError::write(target))?;
     prune_empty_package_dir(target, prune_root);
     Ok(())
 }

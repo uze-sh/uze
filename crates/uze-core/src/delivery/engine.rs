@@ -196,18 +196,12 @@ pub fn discover_files(root: &Path, matches: impl Fn(&Path) -> bool) -> Result<Ve
     while let Some(directory) = pending.pop() {
         let entries = fs::read_dir(&directory)
             .and_then(|entries| entries.collect::<std::io::Result<Vec<_>>>())
-            .map_err(|source| UzeError::Read {
-                path: directory.clone(),
-                source,
-            })?;
+            .map_err(UzeError::read(&directory))?;
         for entry in entries {
             let path = entry.path();
             // `symlink_metadata` deliberately, not `is_dir()`: the latter
             // follows the link and is exactly how a cycle gets entered.
-            let metadata = fs::symlink_metadata(&path).map_err(|source| UzeError::Read {
-                path: path.clone(),
-                source,
-            })?;
+            let metadata = fs::symlink_metadata(&path).map_err(UzeError::read(&path))?;
             if metadata.file_type().is_symlink() {
                 continue;
             }

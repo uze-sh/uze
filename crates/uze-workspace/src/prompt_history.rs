@@ -243,16 +243,10 @@ fn append_line(file: &Path, line: &[u8]) -> Result<()> {
     create_private_dir(parent)?;
     let mut handle = private_append_options()
         .open(file)
-        .map_err(|source| UzeError::Write {
-            path: file.to_path_buf(),
-            source,
-        })?;
+        .map_err(UzeError::write(file))?;
     // Deliberately not fsynced: this runs on the keystroke path, and losing
     // the most recent line to a crash costs a log entry, not correctness.
-    handle.write_all(line).map_err(|source| UzeError::Write {
-        path: file.to_path_buf(),
-        source,
-    })
+    handle.write_all(line).map_err(UzeError::write(file))
 }
 
 fn compact(file: &Path) -> Result<()> {
@@ -282,18 +276,12 @@ fn create_private_dir(dir: &Path) -> Result<()> {
         .recursive(true)
         .mode(0o700)
         .create(dir)
-        .map_err(|source| UzeError::Write {
-            path: dir.to_path_buf(),
-            source,
-        })
+        .map_err(UzeError::write(dir))
 }
 
 #[cfg(not(unix))]
 fn create_private_dir(dir: &Path) -> Result<()> {
-    fs::create_dir_all(dir).map_err(|source| UzeError::Write {
-        path: dir.to_path_buf(),
-        source,
-    })
+    fs::create_dir_all(dir).map_err(UzeError::write(dir))
 }
 
 #[cfg(unix)]

@@ -317,16 +317,10 @@ pub(super) fn fingerprint_dir(dir: &Path) -> Result<String> {
     let mut files: Vec<PathBuf> = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
-        let entries = fs::read_dir(&current).map_err(|source| UzeError::Read {
-            path: current.clone(),
-            source,
-        })?;
+        let entries = fs::read_dir(&current).map_err(UzeError::read(&current))?;
         for entry in entries.flatten() {
             let path = entry.path();
-            let metadata = fs::symlink_metadata(&path).map_err(|source| UzeError::Read {
-                path: path.clone(),
-                source,
-            })?;
+            let metadata = fs::symlink_metadata(&path).map_err(UzeError::read(&path))?;
             if metadata.is_symlink() {
                 // Never follow symlinks out of the tree; a symlink adds no
                 // content of its own and the install verb dereferences it.
@@ -345,10 +339,7 @@ pub(super) fn fingerprint_dir(dir: &Path) -> Result<String> {
         let relative = path.strip_prefix(dir).map_err(|_| {
             UzeError::ExposureUnavailable("fingerprint path escaped its root".to_owned())
         })?;
-        let bytes = fs::read(&path).map_err(|source| UzeError::Read {
-            path: path.clone(),
-            source,
-        })?;
+        let bytes = fs::read(&path).map_err(UzeError::read(&path))?;
         digest.push_str(&relative.to_string_lossy());
         digest.push('\0');
         digest.push_str(&bytes.len().to_string());

@@ -2104,7 +2104,17 @@ mod task_service_tests {
     #[test]
     fn a_gate_that_runs_long_does_not_hold_the_tasks_document() {
         let repository = repository("svc-slow-gate");
-        declare(&repository, "  completion: merge\n  gate: sleep 3\n");
+        // The gate runs until this test lets it finish, so the document is
+        // asked for while it is certainly still running — not while a fixed
+        // wait happened to be.
+        let release = uze_testkit::temp::scratch("svc-slow-gate-release").join("release");
+        declare(
+            &repository,
+            &format!(
+                "  completion: merge\n  gate: 'while [ ! -e {} ]; do sleep 0.05; done'\n",
+                release.display()
+            ),
+        );
         let root = repository.root().to_path_buf();
         let app = application("svc-slow-gate-home");
         let home = app.home.clone();
@@ -2125,26 +2135,19 @@ mod task_service_tests {
         // The claim is what says the delivery started: the record is
         // `Integrating` and the document is back.
         let spawned = std::time::Instant::now();
-        let claimed = loop {
+        loop {
             let store = task::load(&home, &root).expect("the document is readable");
             if store.agents[0].state == WorkState::Integrating {
-                break std::time::Instant::now();
+                break;
             }
             assert!(
                 spawned.elapsed() < std::time::Duration::from_secs(10),
                 "the delivery never claimed its task"
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
-        };
+        }
         task::locked(&home, &root, |_| Ok(())).expect("the document is free while the gate runs");
-        // The gate is three seconds from about the moment the claim was
-        // seen, so taking the document inside two proves it was taken
-        // while the gate was still running.
-        assert!(
-            claimed.elapsed() < std::time::Duration::from_secs(2),
-            "another mutation waited {:?} on a gate that had not finished",
-            claimed.elapsed()
-        );
+        std::fs::write(&release, "").unwrap();
 
         let report = deliverer.join().unwrap();
         assert_eq!(report.outcome, DeliveryOutcome::Merged, "{report:?}");

@@ -200,11 +200,34 @@ fn body_lines(modal: &ReleaseNotesModal) -> Vec<Line<'static>> {
             lines.push(hint::line(&[Scope::ReleaseNotes], &[Action::Activate]));
             lines
         }
-        Notes::Ready(notes) => extension_view::prose(&uze_extensions::code::markdown(
-            &notes.body,
-            uze_theme::active().syntax_theme(),
-        )),
+        Notes::Ready(notes) => rendered_notes(&notes.body),
     }
+}
+
+thread_local! {
+    static RENDERED_NOTES: std::cell::RefCell<Option<(String, String, Vec<Line<'static>>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The notes as prose, rendered once per text and theme rather than once
+/// per frame: the layout is asked on every draw and every scroll, and a
+/// Markdown parse with a syntect pass over each fenced block is
+/// milliseconds a scroll should not pay.
+fn rendered_notes(body: &str) -> Vec<Line<'static>> {
+    let theme = uze_theme::active().syntax_theme().to_owned();
+    RENDERED_NOTES.with_borrow_mut(|cached| {
+        if !cached
+            .as_ref()
+            .is_some_and(|(text, drawn_in, _)| text == body && *drawn_in == theme)
+        {
+            let lines = extension_view::prose(&uze_extensions::code::markdown(body, &theme));
+            *cached = Some((body.to_owned(), theme, lines));
+        }
+        cached
+            .as_ref()
+            .map(|(_, _, lines)| lines.clone())
+            .unwrap_or_default()
+    })
 }
 
 /// The release's version and, once the notes say it, its date.

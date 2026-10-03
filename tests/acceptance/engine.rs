@@ -52,7 +52,7 @@ impl Engine {
         // The application runs in this process and spawns Git and the forge
         // CLI, so this process must see the isolated HOME, UZE_HOME and the
         // fake bin on PATH for as long as the engine lives.
-        let guard: ProcessEnvGuard<'static> = unsafe { std::mem::transmute(env.apply()) };
+        let guard = env.apply();
         let project = env.project.clone();
         let git = |args: &[&str]| {
             let output = env.command("git").args(args).output().unwrap();

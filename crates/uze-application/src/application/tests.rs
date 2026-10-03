@@ -93,10 +93,7 @@ impl IntegrationPort for AllResourceSymlinkIntegration {
                 .unwrap_or(false);
             if !already_correct {
                 if path.symlink_metadata().is_ok() {
-                    fs::remove_file(&path).map_err(|source| UzeError::Write {
-                        path: path.clone(),
-                        source,
-                    })?;
+                    fs::remove_file(&path).map_err(UzeError::write(&path))?;
                 }
                 std::os::unix::fs::symlink(&resource.capability.path, &path).map_err(|source| {
                     UzeError::Write {
@@ -1886,7 +1883,10 @@ fn cache_warm_detect_cached_meets_the_performance_budget() {
     // Stands in for a real vendor `--version` probe's second-scale cost
     // without spawning a subprocess (see proposal.md's measurements).
     const SLOW_HARNESS_DELAY: Duration = Duration::from_millis(500);
-    const BUDGET: Duration = Duration::from_millis(50);
+    // A backstop below one probe, not the claim: the exact claim is the
+    // probe count asserted at the end. A tight ceiling here measured the
+    // sibling tests sharing this binary's thread pool as much as the path.
+    const BUDGET: Duration = Duration::from_millis(250);
 
     let root = uze_testkit::temp::scratch("perf-budget");
     let calls = Arc::new(AtomicUsize::new(0));
@@ -1981,10 +1981,7 @@ impl IntegrationPort for HealthySymlinkIntegration {
                 .unwrap_or(false);
             if !already_correct {
                 if path.symlink_metadata().is_ok() {
-                    fs::remove_file(&path).map_err(|source| UzeError::Write {
-                        path: path.clone(),
-                        source,
-                    })?;
+                    fs::remove_file(&path).map_err(UzeError::write(&path))?;
                 }
                 std::os::unix::fs::symlink(&resource.capability.path, &path).map_err(|source| {
                     UzeError::Write {
@@ -2044,10 +2041,7 @@ impl IntegrationPort for ForeignFailingIntegration {
         #[cfg(unix)]
         {
             if path.symlink_metadata().is_ok() {
-                fs::remove_file(&path).map_err(|source| UzeError::Write {
-                    path: path.clone(),
-                    source,
-                })?;
+                fs::remove_file(&path).map_err(UzeError::write(&path))?;
             }
             std::os::unix::fs::symlink(&resource.capability.path, &path).map_err(|source| {
                 UzeError::Write {

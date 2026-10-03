@@ -412,10 +412,7 @@ impl UzeHome {
             self.cache_dir(),
             self.runtime_dir(),
         ] {
-            fs::create_dir_all(&directory).map_err(|source| UzeError::Write {
-                path: directory,
-                source,
-            })?;
+            fs::create_dir_all(&directory).map_err(UzeError::write(directory))?;
         }
         Ok(())
     }

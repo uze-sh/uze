@@ -290,14 +290,9 @@ impl MarketplaceCatalogues {
             commit: Some(commit.clone()),
         };
         let payload = serde_json::to_vec_pretty(&meta).expect("catalogue meta is serializable");
-        fs::create_dir_all(&entry).map_err(|source| UzeError::Write {
-            path: entry.clone(),
-            source,
-        })?;
-        fs::write(entry.join(META_FILE), payload).map_err(|source| UzeError::Write {
-            path: entry.join(META_FILE),
-            source,
-        })?;
+        fs::create_dir_all(&entry).map_err(UzeError::write(&entry))?;
+        fs::write(entry.join(META_FILE), payload)
+            .map_err(UzeError::write(entry.join(META_FILE)))?;
         // A plugin materialized from an older commit is not this one's.
         let _ = fs::remove_dir_all(entry.join(MATERIALIZED_DIR));
 
@@ -357,29 +352,18 @@ impl MarketplaceCatalogues {
         let repository = entry.join(REPOSITORY_DIR);
         let moved = (|| {
             if entry.exists() {
-                fs::remove_dir_all(&entry).map_err(|source| UzeError::Write {
-                    path: entry.clone(),
-                    source,
-                })?;
+                fs::remove_dir_all(&entry).map_err(UzeError::write(&entry))?;
             }
-            fs::create_dir_all(&entry).map_err(|source| UzeError::Write {
-                path: entry.clone(),
-                source,
-            })?;
-            fs::rename(&staging, &repository).map_err(|source| UzeError::Write {
-                path: repository.clone(),
-                source,
-            })?;
+            fs::create_dir_all(&entry).map_err(UzeError::write(&entry))?;
+            fs::rename(&staging, &repository).map_err(UzeError::write(&repository))?;
             let meta = Meta {
                 source: source.clone(),
                 cached_at_unix_nanos: now_unix_nanos(),
                 commit: Some(commit.clone()),
             };
             let payload = serde_json::to_vec_pretty(&meta).expect("catalogue meta is serializable");
-            fs::write(entry.join(META_FILE), payload).map_err(|source| UzeError::Write {
-                path: entry.join(META_FILE),
-                source,
-            })
+            fs::write(entry.join(META_FILE), payload)
+                .map_err(UzeError::write(entry.join(META_FILE)))
         })();
         if moved.is_err() {
             let _ = fs::remove_dir_all(&staging);
@@ -451,10 +435,7 @@ fn subpath_of(source: &PackageSource) -> Result<MarketplaceSubpath> {
 /// The marketplace manifest at `root`, read where it is.
 pub(crate) fn read_in_place(root: &Path) -> Result<Catalogue> {
     let path = root.join(MARKETPLACE_MANIFEST_NAME);
-    let bytes = fs::read(&path).map_err(|source| UzeError::Read {
-        path: path.clone(),
-        source,
-    })?;
+    let bytes = fs::read(&path).map_err(UzeError::read(&path))?;
     Ok(Catalogue {
         manifest: acquisition::marketplace::parse_manifest(&bytes)?,
         reach: Reach::InPlace {

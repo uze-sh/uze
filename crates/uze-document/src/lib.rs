@@ -47,6 +47,8 @@
 //! read, and what UZE remembered from observing, are produced or observed
 //! again when they cannot be read — there is nothing in them to carry.
 
+#![forbid(unsafe_code)]
+
 use std::{
     fs,
     path::{Path, PathBuf},

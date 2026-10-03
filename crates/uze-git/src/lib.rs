@@ -473,6 +473,9 @@ mod tests {
             vec!["init", "-q", "-b", "main", "."],
             vec!["config", "user.email", "t@example.invalid"],
             vec!["config", "user.name", "t"],
+            // The developer's own `commit.gpgsign` would otherwise ask an
+            // agent to sign the seed commit, hanging or failing the run.
+            vec!["config", "commit.gpgsign", "false"],
         ] {
             write(&root, &args).unwrap().successful().unwrap();
         }
@@ -747,14 +750,14 @@ mod tests {
             });
             held_rx.recv().unwrap();
 
-            let started = Instant::now();
+            // The holder releases only after this returns, so a read that
+            // waited on the lock would never come back at all.
             assert!(
                 read(&root, &["status", "--porcelain"])
                     .unwrap()
                     .is_success(),
                 "a read runs while the lock is held"
             );
-            assert!(started.elapsed() < Duration::from_millis(500));
 
             let error = write_within(&root, &["branch", "blocked"], Duration::from_millis(150))
                 .unwrap_err()

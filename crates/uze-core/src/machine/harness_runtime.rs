@@ -347,10 +347,7 @@ fn remove(path: &Path) -> bool {
 }
 
 fn create_dir(path: &Path) -> Result<()> {
-    fs::create_dir_all(path).map_err(|source| UzeError::Write {
-        path: path.to_path_buf(),
-        source,
-    })
+    fs::create_dir_all(path).map_err(UzeError::write(path))
 }
 
 /// Idempotent for the same reason the projected instruction file is: two

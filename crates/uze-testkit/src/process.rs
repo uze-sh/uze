@@ -15,8 +15,14 @@ pub const XDG_BASE_DIRS: [&str; 4] = [
     "XDG_STATE_HOME",
 ];
 
+/// What points Git past `HOME` at a global or system configuration. A
+/// sibling test holding a [`crate::git::Repository`] has these set for the
+/// whole process, and a child that inherited them read that fixture's
+/// configuration instead of the `.gitconfig` in the home it was given.
+pub const GIT_CONFIG_REDIRECTS: [&str; 2] = ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"];
+
 /// Points a child process at a test's own `HOME`, and every XDG base
-/// directory with it.
+/// directory and Git configuration with it.
 pub trait IsolatedHome {
     fn isolated_home(&mut self, home: impl AsRef<OsStr>) -> &mut Self;
 }
@@ -24,7 +30,7 @@ pub trait IsolatedHome {
 impl IsolatedHome for Command {
     fn isolated_home(&mut self, home: impl AsRef<OsStr>) -> &mut Self {
         self.env("HOME", home);
-        for key in XDG_BASE_DIRS {
+        for key in XDG_BASE_DIRS.into_iter().chain(GIT_CONFIG_REDIRECTS) {
             self.env_remove(key);
         }
         self

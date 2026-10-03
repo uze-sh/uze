@@ -560,3 +560,46 @@ fn machine_snapshot_meets_the_budget() {
         app.machine_snapshot(&world.project)
     });
 }
+
+/// `config theme`, its `list`/`set`/`show`, and `config icons`. Nothing
+/// here probes a harness or resolves a theme, and what this guards is that
+/// it stays that way.
+#[test]
+fn theme_selection_meets_the_budget() {
+    let root = uze_testkit::temp::scratch("budget-theme");
+    let home = UzeHome::at(&root);
+    fs::create_dir_all(home.themes_dir()).expect("themes dir");
+    for index in 0..32 {
+        fs::write(home.themes_dir().join(format!("theme-{index}.json")), "{}").expect("theme file");
+    }
+    let app = || UzeApplication::new(home.clone(), Vec::new());
+    app().themes().select("theme-7").expect("selected");
+
+    let read = |app: &UzeApplication| {
+        let listed = app.themes().list(&["default"]).expect("listed");
+        let sets = app
+            .themes()
+            .glyph_sets(&["default", "ascii", "nerd"])
+            .expect("sets");
+        let active = app.themes().active().expect("active");
+        let path = app.themes().path_of("theme-7").expect("path");
+        assert_eq!(listed.len(), 33);
+        assert_eq!(sets.len(), 3);
+        assert_eq!(active.as_deref(), Some("theme-7"));
+        assert!(path.is_some());
+    };
+    read(&app());
+    let measuring = meter();
+    let runs: Vec<Duration> = (0..ATTEMPTS)
+        .map(|_| {
+            let started = Instant::now();
+            read(&app());
+            started.elapsed()
+        })
+        .collect();
+    let (_, calls) = git_calls(|| read(&app()));
+    drop(measuring);
+    assert_eq!(calls, 0, "theme selection reached for the Git binary");
+    assert_best_within_budget("theme selection", &runs);
+    let _ = fs::remove_dir_all(&root);
+}

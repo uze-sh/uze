@@ -178,10 +178,8 @@ impl MarketplaceRequest {
         let manifest_path = subpath
             .directory_in(checkout)?
             .join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME);
-        let manifest_bytes = std::fs::read(&manifest_path).map_err(|source| UzeError::Read {
-            path: manifest_path.clone(),
-            source,
-        })?;
+        let manifest_bytes =
+            std::fs::read(&manifest_path).map_err(UzeError::read(&manifest_path))?;
         let manifest = marketplace::parse_manifest(&manifest_bytes)?;
         let within = subpath.plugin_path(&manifest, plugin)?;
 
@@ -478,10 +476,7 @@ impl Marketplace<'_> {
     /// is how the working copy comes to be. Returns whether it cloned.
     #[tracing::instrument(name = "marketplace.link", skip_all, fields(name = %name), err)]
     pub fn link(&self, name: &str, checkout: &Path) -> Result<bool> {
-        let checkout = std::path::absolute(checkout).map_err(|source| UzeError::Read {
-            path: checkout.to_path_buf(),
-            source,
-        })?;
+        let checkout = std::path::absolute(checkout).map_err(UzeError::read(checkout))?;
         let cloned = uze_core::acquisition::marketplace::checkout_is_vacant(&checkout);
         if cloned {
             let record = uze_core::state::marketplace_list(&self.0.home)?

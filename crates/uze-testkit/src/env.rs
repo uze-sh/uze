@@ -74,15 +74,3 @@ pub fn scope() -> ProcessEnvGuard<'static> {
         mutated: Vec::new(),
     }
 }
-
-/// Runs `f` with `key` temporarily set to `value`, serialized against every
-/// other env mutation in the binary and restored afterwards.
-pub fn with_env_var<R>(
-    key: &'static str,
-    value: impl AsRef<std::ffi::OsStr>,
-    f: impl FnOnce() -> R,
-) -> R {
-    let mut scope = scope();
-    scope.set(key, value);
-    f()
-}

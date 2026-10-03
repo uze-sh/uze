@@ -536,14 +536,19 @@ fn analyze_context(
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.worker").entered();
-        let result = tui_application(home).and_then(|app| {
-            let status = app.context().inspect(&root)?;
-            let plan = app.context().plan(&root)?;
-            Ok((status, plan))
-        });
-        let _ = sender.send(WorkerResult::ContextAnalyzed(
-            result.map_err(|error| error.to_string()),
-        ));
+        let result = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| {
+                        let status = app.context().inspect(&root)?;
+                        let plan = app.context().plan(&root)?;
+                        Ok((status, plan))
+                    })
+                    .map_err(|error| error.to_string())
+            },
+            Err("Analyzing project context failed".to_owned()),
+        );
+        let _ = sender.send(WorkerResult::ContextAnalyzed(result));
     });
 }
 
@@ -610,10 +615,15 @@ fn apply_context(
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.worker").entered();
-        let result = tui_application(home)
-            .and_then(|app| app.context().reconcile(&root))
-            .map(|report| ("Context reconciled".to_owned(), report))
-            .map_err(|error| error.to_string());
+        let result = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.context().reconcile(&root))
+                    .map(|report| ("Context reconciled".to_owned(), report))
+                    .map_err(|error| error.to_string())
+            },
+            Err("Applying context reconciliation failed".to_owned()),
+        );
         let _ = sender.send(WorkerResult::ContextApplied(result));
     });
 }
@@ -630,12 +640,17 @@ fn preview_profile(
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.worker").entered();
-        let result = tui_application(home)
-            .map(|app| {
-                app.profiles()
-                    .preview(&question.preferences, &question.harness_ids)
-            })
-            .map_err(|error| error.to_string());
+        let result = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| {
+                        app.profiles()
+                            .preview(&question.preferences, &question.harness_ids)
+                    })
+                    .map_err(|error| error.to_string())
+            },
+            Err("Previewing the profile failed".to_owned()),
+        );
         let _ = sender.send(WorkerResult::ProfilePreviewed(question, result));
     });
 }
@@ -646,8 +661,16 @@ fn update_preferences(id: String, preferences: Preferences, home: &UzeHome) {
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.worker").entered();
-        if let Ok(app) = tui_application(home) {
-            let _ = app.profiles().update_preferences(&id, preferences);
+        let written = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.profiles().update_preferences(&id, preferences))
+                    .map_err(|error| error.to_string())
+            },
+            Err("the write panicked".to_owned()),
+        );
+        if let Err(error) = written {
+            tracing::warn!(profile = %id, %error, "could not save the profile's preferences");
         }
     });
 }
@@ -709,18 +732,24 @@ fn apply_profile(
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.worker").entered();
-        let result = tui_application(home.clone())
-            .and_then(|app| {
-                app.profiles().update_preferences(&id, preferences)?;
-                app.profiles().set_active(&id)?;
-                let results = app.profiles().apply(&id, &harness_ids)?;
-                let data = load_refresh_data(home, &context_root)?;
-                Ok({
-                    let message = apply_message(&id, &results);
-                    (message, results, data)
-                })
-            })
-            .map_err(|error| error.to_string());
+        let failed = format!("Applying \"{id}\" failed");
+        let result = answered_or(
+            || {
+                tui_application(home.clone())
+                    .and_then(|app| {
+                        app.profiles().update_preferences(&id, preferences)?;
+                        app.profiles().set_active(&id)?;
+                        let results = app.profiles().apply(&id, &harness_ids)?;
+                        let data = load_refresh_data(home, &context_root)?;
+                        Ok({
+                            let message = apply_message(&id, &results);
+                            (message, results, data)
+                        })
+                    })
+                    .map_err(|error| error.to_string())
+            },
+            Err(failed),
+        );
         let _ = sender.send(WorkerResult::ProfileApplied(result));
     });
 }
@@ -730,7 +759,7 @@ pub(crate) fn spawn_refresh(home: UzeHome, sender: Sender<WorkerResult>, context
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.refresh").entered();
-        let result = load_refresh_data(home, &context_root).map_err(|error| error.to_string());
+        let result = answered_refresh(home, &context_root);
         let _ = sender.send(WorkerResult::Refreshed(result));
     });
 }
@@ -753,15 +782,19 @@ pub(crate) fn spawn_startup(home: UzeHome, sender: Sender<WorkerResult>, context
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.startup").entered();
-        if let Ok(app) = tui_application(home.clone()) {
-            let _ = app.ensure_default_plugins();
-        }
+        answered_or(
+            || {
+                if let Ok(app) = tui_application(home.clone()) {
+                    let _ = app.ensure_default_plugins();
+                }
+            },
+            (),
+        );
         // The screen's own data goes first and on its own. Bringing
         // packages up to date reaches a remote, and chaining it ahead of
         // this made every screen wait on the slowest one — which is the
         // opposite of what a background pass is for.
-        let refreshed =
-            load_refresh_data(home.clone(), &context_root).map_err(|error| error.to_string());
+        let refreshed = answered_refresh(home.clone(), &context_root);
         let _ = sender.send(WorkerResult::Refreshed(refreshed));
 
         // Opening uze is the explicit, interactive act the CLI's read-only
@@ -770,24 +803,41 @@ pub(crate) fn spawn_startup(home: UzeHome, sender: Sender<WorkerResult>, context
         // settle alone — a revision asking to execute something new,
         // managed state it refuses to disturb — stays reported, and the
         // `u` action with its trust dialog is still the way through.
-        let Ok(app) = tui_application(home.clone()) else {
-            return;
-        };
-        let applied: Vec<String> = app
-            .plugins()
-            .auto_update()
-            .into_iter()
-            .filter(|outcome| outcome.applied)
-            .map(|outcome| outcome.plugin)
-            .collect();
+        let applied: Vec<String> = answered_or(
+            || {
+                let Ok(app) = tui_application(home.clone()) else {
+                    return Vec::new();
+                };
+                app.plugins()
+                    .auto_update()
+                    .into_iter()
+                    .filter(|outcome| outcome.applied)
+                    .map(|outcome| outcome.plugin)
+                    .collect()
+            },
+            Vec::new(),
+        );
         if applied.is_empty() {
             return;
         }
         // Only when something actually moved: a second refresh nothing
         // asked for is a screen that flickers for no reason.
-        let data = load_refresh_data(home, &context_root).map_err(|error| error.to_string());
+        let data = answered_refresh(home, &context_root);
         let _ = sender.send(WorkerResult::AutoUpdated { applied, data });
     });
+}
+
+/// A refresh that always answers: a worker that panicked without sending
+/// leaves its screen's spinner up and every later refresh coalesced behind
+/// it for the rest of the session.
+fn answered_refresh(
+    home: UzeHome,
+    context_root: &std::path::Path,
+) -> std::result::Result<RefreshData, String> {
+    answered_or(
+        || load_refresh_data(home, context_root).map_err(|error| error.to_string()),
+        Err("Refreshing failed".to_owned()),
+    )
 }
 
 fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<RefreshData> {
@@ -822,14 +872,19 @@ fn spawn_mutation(
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.mutation").entered();
-        let result = tui_application(home.clone()).and_then(|app| {
-            let message = operation(&app)?;
-            let data = load_refresh_data(home, &context_root)?;
-            Ok((message, data))
-        });
-        let _ = sender.send(WorkerResult::Mutated(
-            result.map_err(|error| error.to_string()),
-        ));
+        let result = answered_or(
+            || {
+                tui_application(home.clone())
+                    .and_then(|app| {
+                        let message = operation(&app)?;
+                        let data = load_refresh_data(home, &context_root)?;
+                        Ok((message, data))
+                    })
+                    .map_err(|error| error.to_string())
+            },
+            Err("The operation failed".to_owned()),
+        );
+        let _ = sender.send(WorkerResult::Mutated(result));
     });
 }
 
@@ -854,22 +909,27 @@ fn spawn_trust_sensitive(
     thread::spawn(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.trust_sensitive").entered();
-        let outcome = tui_application(home.clone()).and_then(|app| {
-            let result = match grant {
-                TrustGrant::Ask => operation(&app, &uze_application::NoTrustAuthority),
-                TrustGrant::Granted => operation(&app, &uze_application::AlwaysTrust),
-            };
-            result.map(|message| (message, ()))
-        });
-        match outcome {
-            Ok((message, ())) => match load_refresh_data(home, &context_root) {
-                Ok(data) => {
-                    let _ = sender.send(WorkerResult::Mutated(Ok((message, data))));
-                }
-                Err(error) => {
-                    let _ = sender.send(WorkerResult::Mutated(Err(error.to_string())));
-                }
+        let outcome = answered_or(
+            || {
+                Some(tui_application(home.clone()).and_then(|app| match grant {
+                    TrustGrant::Ask => operation(&app, &uze_application::NoTrustAuthority),
+                    TrustGrant::Granted => operation(&app, &uze_application::AlwaysTrust),
+                }))
             },
+            None,
+        );
+        let Some(outcome) = outcome else {
+            let _ = sender.send(WorkerResult::Mutated(
+                Err("The operation failed".to_owned()),
+            ));
+            return;
+        };
+        match outcome {
+            Ok(message) => {
+                let _ = sender.send(WorkerResult::Mutated(
+                    answered_refresh(home, &context_root).map(|data| (message, data)),
+                ));
+            }
             Err(UzeError::TrustRequired { package, detail }) => {
                 let _ = sender.send(WorkerResult::TrustRequired {
                     plugin: if package.is_empty() {
@@ -1388,6 +1448,26 @@ mod tests {
     };
 
     use super::*;
+
+    /// A mutation that panics still answers: the screen showed a working
+    /// status when it was dispatched, and only an answer takes it down.
+    #[test]
+    fn a_mutation_that_panicked_answers_with_a_failure() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("worker-panic"));
+        let (sender, receiver) = mpsc::channel();
+
+        spawn_mutation(home, sender, PathBuf::from("/"), |_| {
+            panic!("the operation panicked")
+        });
+
+        let answer = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("the worker answered");
+        assert!(
+            matches!(&answer, WorkerResult::Mutated(Err(error)) if error == "The operation failed"),
+            "a panic is a failure the screen can say"
+        );
+    }
 
     fn refreshed_with_repair() -> RefreshData {
         RefreshData {

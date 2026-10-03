@@ -186,18 +186,12 @@ pub(super) fn materialize_generated_plugin(
             staging.join("plugin.json"),
             serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
         )
-        .map_err(|source| UzeError::Write {
-            path: staging.join("plugin.json"),
-            source,
-        })?;
+        .map_err(UzeError::write(staging.join("plugin.json")))?;
 
         let skills_source = package.root.join("skills");
         if skills_source.is_dir() {
             let package_root =
-                fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
-                    path: package.root.clone(),
-                    source,
-                })?;
+                fs::canonicalize(&package.root).map_err(UzeError::read(&package.root))?;
             mirror_tree(&skills_source, &staging.join("skills"), &package_root, &[])?;
             for resource in uze_core::engine::package_resources_at(&package.id, &package.root)? {
                 if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {
@@ -227,10 +221,7 @@ pub(super) fn materialize_generated_plugin(
                 staging.join("mcp_config.json"),
                 serde_json::to_vec_pretty(&mcp).expect("generated MCP config is serializable"),
             )
-            .map_err(|source| UzeError::Write {
-                path: staging.join("mcp_config.json"),
-                source,
-            })?;
+            .map_err(UzeError::write(staging.join("mcp_config.json")))?;
         }
         // No `hooks.json` is written here. AGY 1.1.24 reads hooks from its
         // shared customization roots and never opens a plugin's `hooks.json`,

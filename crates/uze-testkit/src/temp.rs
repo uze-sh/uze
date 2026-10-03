@@ -428,7 +428,7 @@ impl TestEnvironment {
     /// crate-wide process-env lock and fully restored on drop. Only for
     /// tests that exercise code reading the ambient process env; everything
     /// that can go through a child process should use [`TestEnvironment::command`].
-    pub fn apply(&self) -> ProcessEnvGuard<'_> {
+    pub fn apply(&self) -> ProcessEnvGuard<'static> {
         let mut scope = crate::env::scope();
         scope
             .set("HOME", &self.home)

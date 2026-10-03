@@ -451,10 +451,6 @@ impl AgentStore {
         self.agents.iter().filter(|agent| agent.is_isolated())
     }
 
-    pub fn isolated_mut(&mut self) -> impl Iterator<Item = &mut Agent> {
-        self.agents.iter_mut().filter(|agent| agent.is_isolated())
-    }
-
     /// The agent standing in `checkout` now: the newest to have been given
     /// it. A slot outlives the agents that ran in it and each went on
     /// naming it; anything older is history, and answering for it would
@@ -707,18 +703,12 @@ impl MutationGuard {
             return Ok(Self { owned: None });
         }
         let parent = path.parent().expect("UZE state paths have a parent");
-        fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-            path: parent.to_path_buf(),
-            source,
-        })?;
+        fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .map_err(|source| UzeError::Write {
-                path: path.clone(),
-                source,
-            })?;
+            .map_err(UzeError::write(&path))?;
         let started = Instant::now();
         while let Err(error) = crate::persistence::try_lock_exclusive(&file) {
             if error.kind() != std::io::ErrorKind::WouldBlock {
@@ -1108,12 +1098,17 @@ mod tests {
         })
         .unwrap();
 
+        // Both start contending together, and each holds its pass open long
+        // enough that, were the lock missing, the other would have read the
+        // document before it is written back. The outcome does not depend
+        // on the timing; only how surely a missing lock is caught does.
+        let together = std::sync::Arc::new(std::sync::Barrier::new(2));
         let deliverer = {
             let (home, root, id) = (home.clone(), root.clone(), first.id.clone());
+            let together = together.clone();
             std::thread::spawn(move || {
+                together.wait();
                 locked(&home, &root, |store| {
-                    // Long enough that an unlocked pass would certainly
-                    // have read this document before it is written back.
                     std::thread::sleep(Duration::from_millis(80));
                     store.get_mut(&id).unwrap().state = WorkState::Integrated;
                     Ok(())
@@ -1124,6 +1119,7 @@ mod tests {
         let evaluator = {
             let (home, root, id) = (home.clone(), root.clone(), second.id.clone());
             std::thread::spawn(move || {
+                together.wait();
                 locked(&home, &root, |store| {
                     std::thread::sleep(Duration::from_millis(80));
                     store.get_mut(&id).unwrap().state = WorkState::Ready;

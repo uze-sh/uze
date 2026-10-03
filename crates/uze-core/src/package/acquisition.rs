@@ -442,10 +442,7 @@ pub fn scratch_directory() -> Result<PathBuf> {
         use std::os::unix::fs::DirBuilderExt;
         builder.mode(0o700);
     }
-    builder.create(&path).map_err(|source| UzeError::Write {
-        path: path.clone(),
-        source,
-    })?;
+    builder.create(&path).map_err(UzeError::write(&path))?;
     Ok(path)
 }
 
@@ -456,10 +453,7 @@ fn checked_directory(root: &Path) -> Result<PathBuf> {
     if !root.is_dir() {
         return Err(UzeError::NotDirectory(root.to_path_buf()));
     }
-    root.canonicalize().map_err(|source| UzeError::Read {
-        path: root.to_path_buf(),
-        source,
-    })
+    root.canonicalize().map_err(UzeError::read(root))
 }
 
 /// What a materialized package declares, read **before** the Store has

@@ -37,17 +37,17 @@ mod workspace_tests {
 
     use super::WorkspaceHit;
     use super::{
-        AGENT_BEATS, AGENT_ECHO_GRACE, AGENT_PASTE_GRACE, AGENT_QUIET_AFTER, AgentGroup,
-        AgentIdentity, AgentSupportDropdown, AgentTabStatus, AgentView, Attach, CHIME_COOLDOWN,
-        CHIME_SETTLE, CommitDetailPopup, CommitDetailResolution, CompletionBehavior,
-        DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution,
-        PendingDrop, PlacementResolution, PromptScope, RootPicker, ScrollDirection, SpecResolution,
-        SpecSummaryState, SupportResolution, TabDragGroup, UpstreamSync, Viewport, WorkOverlay,
-        WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels, agent_activity_frame,
-        agent_identity_for_tab, answered_or, blank_pane, can_close_tab_from_menu, checkout_lost,
-        encode_mouse, evaluation_key, forward_paste, forward_scroll, next_agent_label,
-        next_shell_label, open_architect, open_code, open_commit_detail, open_spec, pane_relative,
-        pending_tab_drop,
+        AGENT_BEAT_SPAN, AGENT_BEATS, AGENT_ECHO_GRACE, AGENT_PASTE_GRACE, AGENT_QUIET_AFTER,
+        AgentGroup, AgentIdentity, AgentSupportDropdown, AgentTabStatus, AgentView, Attach,
+        CHIME_COOLDOWN, CHIME_SETTLE, CommitDetailPopup, CommitDetailResolution,
+        CompletionBehavior, DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer,
+        GitBadge, GitResolution, PendingDrop, PlacementResolution, PromptScope, RootPicker,
+        ScrollDirection, SpecResolution, SpecSummaryState, SupportResolution, TabDragGroup,
+        UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView, WorkspaceModel,
+        adopt_agent_labels, agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
+        can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
+        forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
+        open_commit_detail, open_spec, pane_relative, pending_tab_drop,
         render::{
             self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
@@ -8121,6 +8121,55 @@ mod workspace_tests {
         // raw process read alone.
         let tab = tab_with("shell", "2.1.251");
         assert_eq!(agent_identity_for_tab(&identities(), &tab), None);
+    }
+
+    #[test]
+    fn only_the_focused_panes_paint_asks_for_a_frame() {
+        let mut model = model_of(session("/tmp"));
+        let focused = model.focused_pane();
+        let background = PaneId(focused.0 + 100);
+
+        model.dirty = false;
+        model.apply(painted(background), &[]);
+        assert!(!model.dirty, "a pane nobody sees asked for a frame");
+        assert!(model.panes.contains_key(&background));
+
+        model.apply(painted(focused), &[]);
+        assert!(model.dirty);
+    }
+
+    #[test]
+    fn a_background_agent_starting_to_work_still_asks_for_a_frame() {
+        let (mut model, first, second) = two_agents_with_shells();
+        let identities = identities_fixture();
+        let session = model.session.as_mut().expect("session");
+        session.select_tab(second);
+        let background = session
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| &space.tabs)
+            .find(|tab| tab.id == first)
+            .expect("first agent")
+            .pane
+            .id;
+        assert_ne!(background, model.focused_pane());
+
+        let start = Instant::now();
+        let beat = AGENT_BEAT_SPAN / (AGENT_BEATS as u32 - 1);
+        let mut asked = Vec::new();
+        for n in 0..=AGENT_BEATS as u32 {
+            let ClientEvent::Damage(damage) = painted(background) else {
+                unreachable!()
+            };
+            asked.push(model.absorb_damage(damage, &identities, start + beat * n));
+        }
+        assert!(model.agent_is_working(background));
+        assert_eq!(
+            asked.iter().filter(|seen| **seen).count(),
+            1,
+            "only the paint that started the turn changes the sidebar: {asked:?}"
+        );
     }
 
     #[test]

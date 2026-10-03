@@ -21,7 +21,13 @@
 
 use std::path::PathBuf;
 
-use uze_core::{UzeHome, UzeStore, capability::CapabilityKind, exposure::{ExposureMechanism, ManagedArtifact}, integration::IntegrationPort, router::CompatibilityRoute};
+use uze_core::{
+    UzeHome, UzeStore,
+    capability::CapabilityKind,
+    exposure::{ExposureMechanism, ManagedArtifact},
+    integration::IntegrationPort,
+    router::CompatibilityRoute,
+};
 
 use uze_integrations::{
     antigravity::AntigravityIntegration, claude::ClaudeIntegration, codex::CodexIntegration,
@@ -32,9 +38,11 @@ fn install(
     store: &UzeStore,
     path: impl Into<std::path::PathBuf>,
 ) -> uze_core::Result<uze_core::StoredPackage> {
-    store.ingest(&uze_core::acquisition::acquire(&uze_core::PackageSource::local(
-        path,
-    ))?, "local", None)
+    store.ingest(
+        &uze_core::acquisition::acquire(&uze_core::PackageSource::local(path))?,
+        "local",
+        None,
+    )
 }
 
 fn fixture() -> PathBuf {
@@ -81,10 +89,9 @@ fn one_canonical_package_reaches_every_harness_through_its_most_native_safe_repr
     let home = UzeHome::at(&root);
     let store = UzeStore::new(home.clone());
     let package = install(&store, fixture()).unwrap();
-    assert_eq!(package.id.as_str(), "flow");
+    assert_eq!(package.id.as_str(), "flow@local");
 
-    let resources = uze_core::engine::package_resources(&package)
-        .unwrap();
+    let resources = uze_core::engine::package_resources(&package).unwrap();
     assert_eq!(resources.len(), 1, "exactly the commit Skill");
     let resources: Vec<_> = resources.iter().collect();
     let commit_skill = resources[0];

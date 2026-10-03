@@ -800,10 +800,7 @@ impl UzeStore {
 pub(crate) fn assert_self_contained(root: &Path) -> Result<()> {
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
-        let entries = fs::read_dir(&directory).map_err(|source| UzeError::Read {
-            path: directory.clone(),
-            source,
-        })?;
+        let entries = fs::read_dir(&directory).map_err(UzeError::read(&directory))?;
         // Two names in one directory that a case-insensitive filesystem
         // cannot tell apart. macOS and Windows are both such filesystems by
         // default, and the copy below writes entry by entry, so the second
@@ -816,10 +813,7 @@ pub(crate) fn assert_self_contained(root: &Path) -> Result<()> {
         // rejected must not depend on where the install happens to run.
         let mut folded: BTreeMap<String, PathBuf> = BTreeMap::new();
         for entry in entries {
-            let entry = entry.map_err(|source| UzeError::Read {
-                path: directory.clone(),
-                source,
-            })?;
+            let entry = entry.map_err(UzeError::read(&directory))?;
             let path = entry.path();
             let folded_name = entry.file_name().to_string_lossy().to_lowercase();
             if let Some(first) = folded.insert(folded_name, path.clone()) {
@@ -828,15 +822,9 @@ pub(crate) fn assert_self_contained(root: &Path) -> Result<()> {
                     second: path,
                 });
             }
-            let metadata = fs::symlink_metadata(&path).map_err(|source| UzeError::Read {
-                path: path.clone(),
-                source,
-            })?;
+            let metadata = fs::symlink_metadata(&path).map_err(UzeError::read(&path))?;
             if metadata.file_type().is_symlink() {
-                let target = fs::read_link(&path).map_err(|source| UzeError::Read {
-                    path: path.clone(),
-                    source,
-                })?;
+                let target = fs::read_link(&path).map_err(UzeError::read(&path))?;
                 // An absolute target is refused whatever it names, including a
                 // path inside the source being read right now. Containment is
                 // judged here against the *source* root, but `copy_symlink`

@@ -21,7 +21,7 @@ use uze_application::{
     PreferenceApplyOutcome, SandboxScope,
 };
 
-use super::{DrawerStatus, drawer_footer_height, render_drawer_footer};
+use super::{DrawerStatus, drawer_footer_height, plural, render_drawer_footer};
 use crate::ui::hit::Hit;
 use crate::ui::model::{ProfilePanel, ResizablePanel, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
@@ -618,10 +618,6 @@ fn drawer_status(
         }
     };
     (color, headline, subtitle)
-}
-
-fn plural(count: usize) -> &'static str {
-    if count == 1 { "" } else { "s" }
 }
 
 /// Keys applying would change, on the harnesses it would be applied to.

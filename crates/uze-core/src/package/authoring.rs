@@ -450,10 +450,7 @@ fn is_plain_directory_name(value: &str) -> bool {
 }
 
 fn read_json(path: &Path) -> Result<serde_json::Value> {
-    let bytes = fs::read(path).map_err(|source| UzeError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let bytes = fs::read(path).map_err(UzeError::read(path))?;
     serde_json::from_slice(&bytes).map_err(|source| UzeError::Json {
         path: path.to_path_buf(),
         source,
@@ -466,17 +463,11 @@ fn write_json(path: &Path, value: &serde_json::Value) -> Result<()> {
 }
 
 fn write_file(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
-    fs::write(path, contents).map_err(|source| UzeError::Write {
-        path: path.to_path_buf(),
-        source,
-    })
+    fs::write(path, contents).map_err(UzeError::write(path))
 }
 
 fn create_dir(path: &Path) -> Result<()> {
-    fs::create_dir_all(path).map_err(|source| UzeError::Write {
-        path: path.to_path_buf(),
-        source,
-    })
+    fs::create_dir_all(path).map_err(UzeError::write(path))
 }
 
 /// What `check` found. Empty `findings` is a clean artifact; every finding
@@ -826,10 +817,7 @@ pub fn check_marketplace(root: &Path) -> Result<ValidationReport> {
             agent_plugins: None,
         });
     }
-    let bytes = fs::read(&manifest_path).map_err(|source| UzeError::Read {
-        path: manifest_path.clone(),
-        source,
-    })?;
+    let bytes = fs::read(&manifest_path).map_err(UzeError::read(&manifest_path))?;
     let manifest = match marketplace::parse_manifest(&bytes) {
         Ok(manifest) => manifest,
         Err(error) => {

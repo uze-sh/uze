@@ -34,10 +34,7 @@ impl ManifestDocument {
     /// rather than at the first write, so a malformed manifest never gets
     /// half-edited.
     pub fn open(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).map_err(|source| UzeError::Read {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        let text = std::fs::read_to_string(path).map_err(UzeError::read(path))?;
         Self::from_source(path, &text)
     }
 

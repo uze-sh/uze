@@ -929,11 +929,11 @@ below).
 
 > `tests/integrations/hooks.rs::the_generated_wrapper_is_owned_alongside_the_entry_it_serves`
 > `tests/integrations/hooks.rs::reinstalling_replaces_a_previous_packager_entry_and_leaves_foreign_ones`
-> `crates/uze-integrations/src/hooks.rs::the_wrapper_is_one_byte_identical_file_per_harness`
-> `crates/uze-integrations/src/hooks.rs::a_wrapper_that_lost_its_executable_bit_is_drift_and_is_repaired`
-> `crates/uze-integrations/src/hooks.rs::the_last_detached_hook_entry_takes_the_shared_wrapper_with_it`
-> `crates/uze-integrations/src/hooks.rs::an_unreadable_ledger_keeps_the_shared_wrapper`
-> `crates/uze-integrations/src/hooks.rs::an_entry_that_drifted_still_counts_as_using_the_wrapper`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::the_wrapper_is_one_byte_identical_file_per_harness`
+> `crates/uze-integrations/src/hooks/tests.rs::a_wrapper_that_lost_its_executable_bit_is_drift_and_is_repaired`
+> `crates/uze-integrations/src/hooks/tests.rs::the_last_detached_hook_entry_takes_the_shared_wrapper_with_it`
+> `crates/uze-integrations/src/hooks/tests.rs::an_unreadable_ledger_keeps_the_shared_wrapper`
+> `crates/uze-integrations/src/hooks/tests.rs::an_entry_that_drifted_still_counts_as_using_the_wrapper`
 > `tests/integrations/hooks.rs::an_unreadable_ledger_leaves_the_shared_wrapper_where_it_is`
 
 ### One vocabulary drives matchers, wrappers and handlers
@@ -944,9 +944,9 @@ from. A matcher intercepts every native name its alias binds, a handler
 receives the same `HOOK_*` values on every harness that delivers the hook,
 and a `native:` tool yields raw input only.
 
-> `crates/uze-integrations/src/hooks.rs::every_alias_is_bound_on_every_harness_and_carries_its_portable_fields`
-> `crates/uze-integrations/src/hooks.rs::a_renamed_vendor_tool_still_normalizes_to_its_alias`
-> `crates/uze-integrations/src/hooks.rs::a_native_tool_the_vocabulary_does_not_bind_carries_raw_input_only`
+> `crates/uze-integrations/src/hooks/tests.rs::every_alias_is_bound_on_every_harness_and_carries_its_portable_fields`
+> `crates/uze-integrations/src/hooks/tests.rs::a_renamed_vendor_tool_still_normalizes_to_its_alias`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_native_tool_the_vocabulary_does_not_bind_carries_raw_input_only`
 
 ### Hook delivery is receipt-owned and content-identity safe
 
@@ -959,8 +959,8 @@ intact, so one attached hook does not reshuffle a hand-organised file.
 
 > `tests/integrations/hooks.rs::claude_merges_into_settings_json_preserving_foreign_content`
 > `tests/integrations/hooks.rs::foreign_codex_hooks_survive_attach_and_detach`
-> `crates/uze-integrations/src/hooks.rs::drift_blocks_removal_and_an_empty_file_is_removed`
-> `crates/uze-integrations/src/hooks.rs::a_merge_keeps_the_users_own_key_order`
+> `crates/uze-integrations/src/hooks/tests.rs::drift_blocks_removal_and_an_empty_file_is_removed`
+> `crates/uze-integrations/src/hooks/tests.rs::a_merge_keeps_the_users_own_key_order`
 > `crates/uze-integrations/src/shared/json_config.rs::a_merge_keeps_the_users_own_key_order`
 
 ### A package's hooks attach once per harness, idempotently
@@ -1006,16 +1006,16 @@ document, the exit status and the reason — is a golden per harness, taken
 from the in-binary runtime that used to be the second implementation of this
 contract, before it was removed (ADR-040, amended).
 
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::the_wrapper_answers_every_fixture_as_recorded`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::a_handler_that_cannot_run_follows_the_groups_effect`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::a_missing_wrapper_dependency_follows_the_groups_effect`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::a_denial_is_relayed_in_each_harnesss_own_dialect`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::a_handler_is_stopped_at_the_deadline_its_author_declared`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::a_handler_that_ignores_term_does_not_outlive_its_deadline`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::a_payload_that_does_not_parse_follows_the_groups_effect`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::a_package_root_that_is_gone_never_runs_the_checkouts_own_script`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::a_transform_group_fails_closed_like_a_deny`
-> `crates/uze-integrations/src/hooks.rs::wrapper_tests::the_reason_a_harness_is_handed_is_bounded`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::the_wrapper_answers_every_fixture_as_recorded`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_handler_that_cannot_run_follows_the_groups_effect`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_missing_wrapper_dependency_follows_the_groups_effect`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_denial_is_relayed_in_each_harnesss_own_dialect`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_handler_is_stopped_at_the_deadline_its_author_declared`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_handler_that_ignores_term_does_not_outlive_its_deadline`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_payload_that_does_not_parse_follows_the_groups_effect`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_package_root_that_is_gone_never_runs_the_checkouts_own_script`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_transform_group_fails_closed_like_a_deny`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::the_reason_a_harness_is_handed_is_bounded`
 
 ### The harness's own hook timeout is a backstop, never the first bound
 
@@ -1027,7 +1027,7 @@ the harness kills is read as non-blocking, so a clamped backstop would turn
 a `deny` group into an allowance.
 
 > `crates/uze-core/src/capability/hook.rs::rejects_a_group_whose_handlers_can_outlast_the_harnesss_own_backstop`
-> `crates/uze-integrations/src/hooks.rs::the_native_timeout_outlasts_everything_the_wrapper_can_spend`
+> `crates/uze-integrations/src/hooks/tests.rs::the_native_timeout_outlasts_everything_the_wrapper_can_spend`
 
 ### A hook UZE cannot deliver is never half-delivered
 
@@ -1037,8 +1037,8 @@ entry at all and is reported Unsupported with that reason — never an entry
 pointing at a second implementation, and never a Native verdict for a
 delivery that did not happen.
 
-> `crates/uze-integrations/src/hooks.rs::a_platform_without_a_wrapper_template_delivers_no_hook`
-> `crates/uze-integrations/src/hooks.rs::a_hook_that_cannot_be_delivered_is_reported_unsupported`
+> `crates/uze-integrations/src/hooks/tests.rs::a_platform_without_a_wrapper_template_delivers_no_hook`
+> `crates/uze-integrations/src/hooks/tests.rs::a_hook_that_cannot_be_delivered_is_reported_unsupported`
 
 ## Concurrent work isolation (`add-portable-worktree-policy`)
 
@@ -1095,9 +1095,9 @@ A new agent takes a free slot before a directory is created: the tree is put
 at the base with none of the previous task's tracked or untracked files, and
 ignored artifacts survive. A slot holding work is never reused.
 
-> `crates/uze-workspace/src/checkout.rs::a_free_slot_is_reused_and_ignored_artifacts_survive`
-> `crates/uze-workspace/src/checkout.rs::a_previous_tasks_edits_never_reach_the_next`
-> `crates/uze-workspace/src/checkout.rs::a_new_directory_appears_only_when_none_is_free_and_the_cap_holds`
+> `crates/uze-workspace/src/checkout/tests.rs::a_free_slot_is_reused_and_ignored_artifacts_survive`
+> `crates/uze-workspace/src/checkout/tests.rs::a_previous_tasks_edits_never_reach_the_next`
+> `crates/uze-workspace/src/checkout/tests.rs::a_new_directory_appears_only_when_none_is_free_and_the_cap_holds`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_delivered_tasks_slot_is_reused_by_the_next_agent`
 
 ### Work in the target is recognized by its patch, not by its commits
@@ -1110,8 +1110,8 @@ frees a slot, prunes a branch and keeps a delivered task delivered. Read by
 reachability alone, one squash merge parked a slot for the life of the
 repository and every new agent paid for a checkout of its own.
 
-> `crates/uze-workspace/src/checkout.rs::a_squash_merged_branch_frees_its_slot_and_is_pruned`
-> `crates/uze-workspace/src/checkout.rs::a_rebase_merged_branch_frees_its_slot`
+> `crates/uze-workspace/src/checkout/tests.rs::a_squash_merged_branch_frees_its_slot_and_is_pruned`
+> `crates/uze-workspace/src/checkout/tests.rs::a_rebase_merged_branch_frees_its_slot`
 
 ### An agent is placed on the target as the remote has it
 
@@ -1120,8 +1120,8 @@ branch is cut from it, and by nothing but a fast-forward: a target carrying
 commits the remote lacks is left where it stands and the placement reports
 how far behind the agent starts.
 
-> `crates/uze-workspace/src/landing.rs::the_local_target_is_fast_forwarded_onto_the_remotes`
-> `crates/uze-workspace/src/landing.rs::a_target_carrying_its_own_commits_is_left_alone_and_reported`
+> `crates/uze-workspace/src/landing/tests.rs::the_local_target_is_fast_forwarded_onto_the_remotes`
+> `crates/uze-workspace/src/landing/tests.rs::a_target_carrying_its_own_commits_is_left_alone_and_reported`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_new_agent_starts_from_the_target_as_the_remote_has_it`
 
 ### Publication is read from the remote, never from UZE's own records
@@ -1138,9 +1138,9 @@ as a non-fast-forward. The one network question — is a request open — is
 asked only where the completion publishes, only for a branch that is on the
 remote, at most once a minute, and never again once answered.
 
-> `crates/uze-workspace/src/landing.rs::a_branch_its_own_agent_pushed_is_published_and_in_sync`
-> `crates/uze-workspace/src/landing.rs::a_request_the_agent_opened_is_discovered_on_the_evaluation_pass`
-> `crates/uze-workspace/src/landing.rs::the_remote_is_asked_about_a_missing_request_at_most_once_a_minute`
+> `crates/uze-workspace/src/landing/tests.rs::a_branch_its_own_agent_pushed_is_published_and_in_sync`
+> `crates/uze-workspace/src/landing/tests.rs::a_request_the_agent_opened_is_discovered_on_the_evaluation_pass`
+> `crates/uze-workspace/src/landing/tests.rs::the_remote_is_asked_about_a_missing_request_at_most_once_a_minute`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_agents_own_push_and_request_are_what_the_delivery_view_reports`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_merge_project_never_measures_its_work_against_the_remote`
 
@@ -1176,7 +1176,7 @@ This is what the 2026-09-26 incident broke: a subagent's checkout, seconds
 old and so clean and level with the target, was adopted, read as free,
 and reset under the subagent still writing in it.
 
-> `crates/uze-workspace/src/checkout.rs::a_checkout_added_by_hand_beside_the_slots_is_never_taken_as_one`
+> `crates/uze-workspace/src/checkout/tests.rs::a_checkout_added_by_hand_beside_the_slots_is_never_taken_as_one`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::an_earlier_builds_inference_is_not_inherited`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_launched_agents_slot_is_recorded_on_sight`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::the_record_outlives_lost_state`
@@ -1215,7 +1215,7 @@ in `/`, so the checkout it was first started from is not held for its life.
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_process_inside_a_free_looking_slot_keeps_it`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_process_table_nobody_could_read_holds_every_slot`
 > `crates/uze-application/src/application/services/checkouts/tests.rs::a_checkout_somebody_is_working_in_is_not_removed`
-> `crates/uze-terminal/src/runtime.rs::the_server_works_in_no_checkout`
+> `crates/uze-terminal/src/runtime/tests.rs::the_server_works_in_no_checkout`
 
 ### Content UZE derives never parks a checkout
 
@@ -1279,11 +1279,11 @@ does not have — is answered "not integrated", never "nothing ahead". Read
 the other way, a declared target the repository lacks made every branch in
 it collectable.
 
-> `crates/uze-workspace/src/checkout.rs::a_checkout_holding_work_is_parked_with_every_file_preserved`
-> `crates/uze-workspace/src/checkout.rs::an_unintegrated_branch_outlives_its_directory`
-> `crates/uze-workspace/src/checkout.rs::a_parked_slot_is_never_removed_for_being_idle`
-> `crates/uze-workspace/src/checkout.rs::an_integrated_branch_is_pruned_and_an_unintegrated_one_is_not`
-> `crates/uze-workspace/src/checkout.rs::a_target_this_clone_does_not_have_collects_nothing_and_frees_no_slot`
+> `crates/uze-workspace/src/checkout/tests.rs::a_checkout_holding_work_is_parked_with_every_file_preserved`
+> `crates/uze-workspace/src/checkout/tests.rs::an_unintegrated_branch_outlives_its_directory`
+> `crates/uze-workspace/src/checkout/tests.rs::a_parked_slot_is_never_removed_for_being_idle`
+> `crates/uze-workspace/src/checkout/tests.rs::an_integrated_branch_is_pruned_and_an_unintegrated_one_is_not`
+> `crates/uze-workspace/src/checkout/tests.rs::a_target_this_clone_does_not_have_collects_nothing_and_frees_no_slot`
 
 ### Reconciliation adopts before it prunes
 
@@ -1292,8 +1292,8 @@ legacy checkout keeps its branch name, since it may have been pushed. Git's
 worktree registry is pruned only after every directory has been looked at, so
 a stale entry can never be dropped before its work is.
 
-> `crates/uze-workspace/src/checkout.rs::prune_runs_after_adoption_and_an_orphaned_task_keeps_its_branch`
-> `crates/uze-workspace/src/checkout.rs::a_legacy_checkout_is_adopted_under_its_branch_name`
+> `crates/uze-workspace/src/checkout/tests.rs::prune_runs_after_adoption_and_an_orphaned_task_keeps_its_branch`
+> `crates/uze-workspace/src/checkout/tests.rs::a_legacy_checkout_is_adopted_under_its_branch_name`
 
 ### A slot is invisible to the primary's own commits
 
@@ -1302,7 +1302,7 @@ The isolation directory is excluded through the repository's own
 status stays what the operator left and `git add -A` there never stages a
 slot as an embedded repository.
 
-> `crates/uze-workspace/src/checkout.rs::the_isolation_directory_is_excluded_without_touching_the_primary_tree`
+> `crates/uze-workspace/src/checkout/tests.rs::the_isolation_directory_is_excluded_without_touching_the_primary_tree`
 
 ### Task identity is immutable; the label is derived
 
@@ -1334,8 +1334,8 @@ tree. That is read from the checkout when the pane goes quiet or on demand,
 and never from anything the agent says; a paused rebase reads as exactly
 that.
 
-> `crates/uze-workspace/src/landing.rs::readiness_is_read_from_the_checkout`
-> `crates/uze-workspace/src/landing.rs::a_task_without_commits_is_not_delivered`
+> `crates/uze-workspace/src/landing/tests.rs::readiness_is_read_from_the_checkout`
+> `crates/uze-workspace/src/landing/tests.rs::a_task_without_commits_is_not_delivered`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::evaluation_reads_the_checkout_and_merge_delivers`
 
 ### The target is written only in deliver, and only by UZE
@@ -1352,14 +1352,14 @@ checked out: `git merge` advances `HEAD`, so the branch is asked for first
 and the ref moved directly when the operator is standing elsewhere, and the
 target's new tip is read back before the task is recorded `Integrated`.
 
-> `crates/uze-workspace/src/landing.rs::handoff_never_touches_the_target`
-> `crates/uze-workspace/src/landing.rs::merge_advances_the_target_linearly_after_the_gate`
-> `crates/uze-workspace/src/landing.rs::merge_moves_the_target_while_the_primary_stands_on_a_detached_head`
-> `crates/uze-workspace/src/landing.rs::merge_never_moves_the_branch_the_primary_happens_to_be_on`
-> `crates/uze-workspace/src/landing.rs::the_gate_runs_after_the_rebase_not_before`
-> `crates/uze-workspace/src/landing.rs::a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner`
-> `crates/uze-workspace/src/landing.rs::a_conflict_leaves_the_rebase_paused_and_the_target_untouched`
-> `crates/uze-workspace/src/landing.rs::pr_publishes_and_leaves_the_request_to_the_agent`
+> `crates/uze-workspace/src/landing/tests.rs::handoff_never_touches_the_target`
+> `crates/uze-workspace/src/landing/tests.rs::merge_advances_the_target_linearly_after_the_gate`
+> `crates/uze-workspace/src/landing/tests.rs::merge_moves_the_target_while_the_primary_stands_on_a_detached_head`
+> `crates/uze-workspace/src/landing/tests.rs::merge_never_moves_the_branch_the_primary_happens_to_be_on`
+> `crates/uze-workspace/src/landing/tests.rs::the_gate_runs_after_the_rebase_not_before`
+> `crates/uze-workspace/src/landing/tests.rs::a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner`
+> `crates/uze-workspace/src/landing/tests.rs::a_conflict_leaves_the_rebase_paused_and_the_target_untouched`
+> `crates/uze-workspace/src/landing/tests.rs::pr_publishes_and_leaves_the_request_to_the_agent`
 
 ### A delivery never collides with the operator's own edits
 
@@ -1367,7 +1367,7 @@ A fast-forward into the checked-out target updates the operator's working
 tree, so a task touching a file the operator has uncommitted changes to is
 refused before anything is written.
 
-> `crates/uze-workspace/src/landing.rs::overlap_with_the_operators_uncommitted_work_refuses_and_writes_nothing`
+> `crates/uze-workspace/src/landing/tests.rs::overlap_with_the_operators_uncommitted_work_refuses_and_writes_nothing`
 
 ### Sibling tasks share work only through the target
 
@@ -1376,8 +1376,8 @@ first; a live, clean task follows a moved target on its own, and one mid-edit
 is never rebased under its agent. No task's branch ever carries another
 task's commits directly.
 
-> `crates/uze-workspace/src/landing.rs::the_second_task_sees_the_first`
-> `crates/uze-workspace/src/landing.rs::a_live_task_follows_the_target_when_clean_and_is_left_alone_when_dirty`
+> `crates/uze-workspace/src/landing/tests.rs::the_second_task_sees_the_first`
+> `crates/uze-workspace/src/landing/tests.rs::a_live_task_follows_the_target_when_clean_and_is_left_alone_when_dirty`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::evaluation_lets_a_clean_task_follow_the_target`
 
 ### A linked file is ignored by the repository
@@ -1389,7 +1389,7 @@ launch.
 
 > `crates/uze-workspace/src/declaration.rs::a_link_escaping_the_repository_is_rejected`
 > `crates/uze-workspace/src/declaration.rs::a_link_to_a_tracked_file_is_rejected_and_an_ignored_one_loads`
-> `crates/uze-workspace/src/checkout.rs::a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent`
+> `crates/uze-workspace/src/checkout/tests.rs::a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent`
 
 ### The projection never triggers a harness's own isolation
 
@@ -1448,7 +1448,7 @@ workspace root, opening one when no space has that root. Behaviour derives
 from the root; there is no global space.
 
 > `tests/acceptance/engine.rs::two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space`
-> `crates/uze-terminal/src/runtime.rs::a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands`
+> `crates/uze-terminal/src/runtime/tests.rs::a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands`
 
 ### One pane that stops reading never holds up the others
 
@@ -1458,7 +1458,7 @@ released before any PTY is written: a paste into a stopped program costs
 that pane alone. Each pane's diff and send are one step under its own
 baseline, so two threads never store an older picture over a newer one.
 
-> `crates/uze-terminal/src/runtime.rs::a_pane_that_stops_reading_does_not_hold_up_the_others`
+> `crates/uze-terminal/src/runtime/tests.rs::a_pane_that_stops_reading_does_not_hold_up_the_others`
 
 ### Where a client lands and what that may create are two questions
 
@@ -1475,7 +1475,7 @@ starting `uze` there lands on the home space when one is open and adds
 nothing when none is. A home space someone creates deliberately is still
 theirs, and still what the next launch from home lands on.
 
-> `crates/uze-terminal/src/runtime.rs::only_asking_to_open_a_space_may_create_one`
+> `crates/uze-terminal/src/runtime/tests.rs::only_asking_to_open_a_space_may_create_one`
 > `src/ui/orchestrator/tests.rs::starting_at_home_lands_in_the_workspace_rather_than_adding_to_it`
 
 ### Focus is per client
@@ -1484,7 +1484,7 @@ Which space and tab a client looks at is the client's own; the session it
 receives carries its selection overlaid on the shared structure, and another
 client's selection never moves it.
 
-> `crates/uze-terminal/src/runtime.rs::a_clients_view_overlays_its_own_selection_and_heals_a_stale_one`
+> `crates/uze-terminal/src/runtime/tests.rs::a_clients_view_overlays_its_own_selection_and_heals_a_stale_one`
 > `tests/acceptance/engine.rs::two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space`
 
 ### A launch inside a pane opens a space, never a client
@@ -1514,7 +1514,7 @@ a call site.
 
 > `crates/uze-terminal/src/process_probe.rs::tests::the_platform_answers_about_this_process`
 > `crates/uze-terminal/src/process_probe.rs::tests::a_key_matches_only_itself`
-> `crates/uze-terminal/src/runtime.rs::foreground_status_prefers_the_shim_identity_over_a_version_named_comm`
+> `crates/uze-terminal/src/runtime/tests.rs::foreground_status_prefers_the_shim_identity_over_a_version_named_comm`
 
 ### Nothing a peer sends is acted on before it is bounded
 
@@ -1531,13 +1531,13 @@ vouched for is held to a smaller bound still — what a handshake actually
 says — and to one deadline over the whole handshake rather than one per
 read, which `SO_RCVTIMEO` alone cannot express.
 
-> `crates/uze-terminal/src/runtime.rs::a_length_prefix_past_the_frame_limit_is_refused_before_it_is_allocated`
-> `crates/uze-terminal/src/runtime.rs::a_frame_past_the_limit_is_never_written_either`
-> `crates/uze-terminal/src/runtime.rs::a_full_repaint_of_the_largest_pane_fits_in_one_frame`
-> `crates/uze-terminal/src/runtime.rs::every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all`
-> `crates/uze-terminal/src/runtime.rs::a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint`
-> `crates/uze-terminal/src/runtime.rs::a_dribbling_peer_runs_out_of_handshake_rather_than_restarting_it`
-> `crates/uze-terminal/src/runtime.rs::a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering`
+> `crates/uze-terminal/src/runtime/tests.rs::a_length_prefix_past_the_frame_limit_is_refused_before_it_is_allocated`
+> `crates/uze-terminal/src/runtime/tests.rs::a_frame_past_the_limit_is_never_written_either`
+> `crates/uze-terminal/src/runtime/tests.rs::a_full_repaint_of_the_largest_pane_fits_in_one_frame`
+> `crates/uze-terminal/src/runtime/tests.rs::every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all`
+> `crates/uze-terminal/src/runtime/tests.rs::a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint`
+> `crates/uze-terminal/src/runtime/tests.rs::a_dribbling_peer_runs_out_of_handshake_rather_than_restarting_it`
+> `crates/uze-terminal/src/runtime/tests.rs::a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering`
 
 ### A client is told the runtime went away, never left looking at it
 
@@ -1549,8 +1549,8 @@ first frame, by a server no client has ever attached to: since the
 workspace claim makes a survivor refuse every replacement, that request is
 the only way back in short of a manual `kill`.
 
-> `crates/uze-terminal/src/runtime.rs::a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen`
-> `crates/uze-terminal/src/runtime.rs::stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to`
+> `crates/uze-terminal/src/runtime/tests.rs::a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen`
+> `crates/uze-terminal/src/runtime/tests.rs::stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to`
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_terminal_runtime_that_went_away_is_said_rather_than_waited_on`
 
 ### Liveness is the workspace claim; the kernel names the peer
@@ -1581,19 +1581,19 @@ process the user owns. The directory the endpoint lives in is proved to be
 this user's own, unreachable by anyone else, and not a symlink, before a
 socket carrying every pane's contents is put in it.
 
-> `crates/uze-terminal/src/runtime.rs::an_attach_replaces_only_a_server_it_can_name`
-> `crates/uze-terminal/src/runtime.rs::an_asker_is_never_mistaken_for_a_server`
-> `crates/uze-terminal/src/runtime.rs::a_second_client_attaches_to_a_live_server_of_another_build`
-> `crates/uze-terminal/src/runtime.rs::a_server_that_answers_this_builds_handshake_serves_it`
-> `crates/uze-terminal/src/runtime.rs::a_server_that_cannot_answer_is_never_taken_for_one_that_can`
-> `crates/uze-terminal/src/runtime.rs::a_crashed_server_nobody_reaped_holds_no_claim`
-> `crates/uze-terminal/src/runtime.rs::a_server_answering_at_no_endpoint_this_build_names_is_still_stopped`
-> `crates/uze-terminal/src/runtime.rs::a_claim_this_build_cannot_name_is_reported_rather_than_called_stopped`
-> `crates/uze-terminal/src/runtime.rs::a_stale_socket_is_reclaimed_by_the_server_that_binds`
-> `crates/uze-terminal/src/runtime.rs::a_server_of_another_build_is_retired_and_lets_go_of_the_workspace`
-> `crates/uze-terminal/src/runtime.rs::a_process_that_is_not_uze_is_never_signalled`
-> `crates/uze-terminal/src/runtime.rs::a_pid_that_does_not_name_one_process_is_never_signalled`
-> `crates/uze-terminal/src/runtime.rs::a_runtime_directory_that_is_not_ours_to_own_is_stepped_over`
+> `crates/uze-terminal/src/runtime/tests.rs::an_attach_replaces_only_a_server_it_can_name`
+> `crates/uze-terminal/src/runtime/tests.rs::an_asker_is_never_mistaken_for_a_server`
+> `crates/uze-terminal/src/runtime/tests.rs::a_second_client_attaches_to_a_live_server_of_another_build`
+> `crates/uze-terminal/src/runtime/tests.rs::a_server_that_answers_this_builds_handshake_serves_it`
+> `crates/uze-terminal/src/runtime/tests.rs::a_server_that_cannot_answer_is_never_taken_for_one_that_can`
+> `crates/uze-terminal/src/runtime/tests.rs::a_crashed_server_nobody_reaped_holds_no_claim`
+> `crates/uze-terminal/src/runtime/tests.rs::a_server_answering_at_no_endpoint_this_build_names_is_still_stopped`
+> `crates/uze-terminal/src/runtime/tests.rs::a_claim_this_build_cannot_name_is_reported_rather_than_called_stopped`
+> `crates/uze-terminal/src/runtime/tests.rs::a_stale_socket_is_reclaimed_by_the_server_that_binds`
+> `crates/uze-terminal/src/runtime/tests.rs::a_server_of_another_build_is_retired_and_lets_go_of_the_workspace`
+> `crates/uze-terminal/src/runtime/tests.rs::a_process_that_is_not_uze_is_never_signalled`
+> `crates/uze-terminal/src/runtime/tests.rs::a_pid_that_does_not_name_one_process_is_never_signalled`
+> `crates/uze-terminal/src/runtime/tests.rs::a_runtime_directory_that_is_not_ours_to_own_is_stepped_over`
 
 ### A live server is ended only when it cannot serve the client that found it
 
@@ -1609,10 +1609,10 @@ build cannot read — what a server built to another framing answers — costs
 it the workspace, and the panes it held are restored from the persisted
 workspace by the server that replaces it.
 
-> `crates/uze-terminal/src/runtime.rs::a_second_client_attaches_to_a_live_server_of_another_build`
-> `crates/uze-terminal/src/runtime.rs::a_server_that_answers_this_builds_handshake_serves_it`
-> `crates/uze-terminal/src/runtime.rs::a_server_that_cannot_answer_is_never_taken_for_one_that_can`
-> `crates/uze-terminal/src/runtime.rs::an_attach_replaces_only_a_server_it_can_name`
+> `crates/uze-terminal/src/runtime/tests.rs::a_second_client_attaches_to_a_live_server_of_another_build`
+> `crates/uze-terminal/src/runtime/tests.rs::a_server_that_answers_this_builds_handshake_serves_it`
+> `crates/uze-terminal/src/runtime/tests.rs::a_server_that_cannot_answer_is_never_taken_for_one_that_can`
+> `crates/uze-terminal/src/runtime/tests.rs::an_attach_replaces_only_a_server_it_can_name`
 
 ### One workspace, one server
 
@@ -1627,9 +1627,9 @@ are. Only a lock another process actually holds reads as contention: a
 filesystem that cannot lock at all surfaces as the I/O failure it is,
 rather than as a server to go and stop that does not exist.
 
-> `crates/uze-terminal/src/runtime.rs::a_second_server_refuses_to_restore_a_workspace_another_one_holds`
-> `crates/uze-terminal/src/runtime.rs::a_workspace_claim_is_exclusive_and_released_with_its_holder`
-> `crates/uze-terminal/src/runtime.rs::only_a_held_lock_reads_as_another_server`
+> `crates/uze-terminal/src/runtime/tests.rs::a_second_server_refuses_to_restore_a_workspace_another_one_holds`
+> `crates/uze-terminal/src/runtime/tests.rs::a_workspace_claim_is_exclusive_and_released_with_its_holder`
+> `crates/uze-terminal/src/runtime/tests.rs::only_a_held_lock_reads_as_another_server`
 
 ### A pane's identity is its own
 
@@ -1638,8 +1638,8 @@ shim identity stamp is read only from the process it was stamped for.
 Without both, every plain shell under a `uze` started inside a shimmed agent
 reported as that agent, persisted as one, and was relaunched as one.
 
-> `crates/uze-terminal/src/runtime.rs::a_pane_does_not_inherit_the_servers_shim_identity`
-> `crates/uze-terminal/src/runtime.rs::foreground_status_ignores_a_shim_identity_stamped_for_another_process`
+> `crates/uze-terminal/src/runtime/tests.rs::a_pane_does_not_inherit_the_servers_shim_identity`
+> `crates/uze-terminal/src/runtime/tests.rs::foreground_status_ignores_a_shim_identity_stamped_for_another_process`
 
 ---
 
@@ -1667,10 +1667,10 @@ is no identity at all; two records over one directory are told apart by
 the identifier alone. The name of the variable has one owner, the terminal
 runtime's launch vocabulary, and core never spells it.
 
-> `crates/uze-terminal/src/runtime.rs::a_launch_environment_reaches_the_first_process`
-> `crates/uze-terminal/src/runtime.rs::a_launch_environment_survives_a_restart`
-> `crates/uze-terminal/src/runtime.rs::a_shell_respawn_carries_no_launch_environment`
-> `crates/uze-terminal/src/runtime.rs::a_pane_does_not_inherit_the_servers_agent_identity`
+> `crates/uze-terminal/src/runtime/tests.rs::a_launch_environment_reaches_the_first_process`
+> `crates/uze-terminal/src/runtime/tests.rs::a_launch_environment_survives_a_restart`
+> `crates/uze-terminal/src/runtime/tests.rs::a_shell_respawn_carries_no_launch_environment`
+> `crates/uze-terminal/src/runtime/tests.rs::a_pane_does_not_inherit_the_servers_agent_identity`
 > `crates/uze-workspace/src/conversation.rs::a_claim_no_record_backs_has_no_owner`
 > `crates/uze-workspace/src/continuity.rs::two_agents_in_one_directory_keep_their_own_conversations`
 > `tests/acceptance/session_continuity.rs::an_identity_claimed_from_the_wrong_directory_is_launched_untouched`
@@ -1754,7 +1754,7 @@ difference meant.
 
 > `crates/uze-document/src/lib.rs::tests::an_older_shape_climbs_every_rung_in_order`
 > `crates/uze-document/src/lib.rs::tests::a_record_with_no_version_at_all_is_the_first_shape`
-> `crates/uze-terminal/src/runtime.rs::tests::a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside`
+> `crates/uze-terminal/src/runtime/tests.rs::a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside`
 
 ### A record from a newer build is never taken
 
@@ -1764,7 +1764,7 @@ each saying it had recovered — so a shape ahead of this build is left
 exactly as it is, and the operation that needed it is refused.
 
 > `crates/uze-document/src/lib.rs::tests::two_builds_run_alternately_never_destroy_each_others_records`
-> `crates/uze-terminal/src/runtime.rs::tests::a_workspace_from_a_newer_build_is_left_exactly_as_it_is`
+> `crates/uze-terminal/src/runtime/tests.rs::a_workspace_from_a_newer_build_is_left_exactly_as_it_is`
 
 ### What could not be carried is kept, and reaches the operator
 
@@ -1775,7 +1775,7 @@ it could not carry until a client is there to be told; a log that is off
 unless `UZE_LOG` is set is not somewhere an operator looks.
 
 > `crates/uze-document/src/lib.rs::tests::bytes_that_are_not_a_record_may_be_set_aside_and_are_kept`
-> `crates/uze-terminal/src/runtime.rs::tests::a_client_is_told_what_the_runtime_could_not_carry`
+> `crates/uze-terminal/src/runtime/tests.rs::a_client_is_told_what_the_runtime_could_not_carry`
 > `crates/uze-core/src/delivery/leftovers.rs::tests::every_set_aside_record_is_found_wherever_it_was_kept`
 
 ### The tier a thing sits in is what deleting it costs
@@ -1930,7 +1930,7 @@ terminal server puts the shims first on every pane's `PATH`, and no command
 walks the operator's `PATH` to ask about a shim.
 
 > `crates/uze-application/src/application/tests.rs::runtime_shim_writes_no_shell_file`
-> `crates/uze-terminal/src/runtime.rs::tests::the_named_directory_leads_the_pane_path_once`
+> `crates/uze-terminal/src/runtime/tests.rs::the_named_directory_leads_the_pane_path_once`
 
 ---
 
@@ -1998,7 +1998,7 @@ because index 2 is *green* to whatever emitted it.
 > `src/ui/tests.rs::each_glyph_set_is_previewed_in_its_own_glyphs`
 > `src/progress.rs::the_cli_and_the_tui_resolve_a_shared_token_to_the_same_colour`
 > `src/ui/orchestrator/tests.rs::the_palette_a_pane_is_told_about_is_the_one_being_drawn`
-> `crates/uze-terminal/src/runtime.rs::osc_background_and_foreground_queries_get_answered_instead_of_hanging`
+> `crates/uze-terminal/src/runtime/tests.rs::osc_background_and_foreground_queries_get_answered_instead_of_hanging`
 
 ### An extension describes; the host draws
 
@@ -2010,8 +2010,8 @@ sides computing the same geometry. Syntax highlighting is the one thing
 that travels as colour, because it comes from a theme the extension ships
 rather than from the host's design system.
 
-> `src/ui/extension_view.rs::a_click_target_comes_from_what_the_host_drew`
-> `src/ui/extension_view.rs::chrome_uses_the_hosts_palette_and_content_keeps_its_own`
+> `src/ui/extension_view/tests.rs::a_click_target_comes_from_what_the_host_drew`
+> `src/ui/extension_view/tests.rs::chrome_uses_the_hosts_palette_and_content_keeps_its_own`
 > `crates/uze-extensions/src/code/tests.rs::the_view_names_meaning_rather_than_colour`
 
 ### An extension reaches nothing it was not handed

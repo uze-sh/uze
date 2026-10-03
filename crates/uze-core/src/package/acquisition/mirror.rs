@@ -127,17 +127,11 @@ pub fn ensure(fetch: &str, identity: &str, directory: &Path) -> Result<()> {
                 }
             };
         }
-        std::fs::remove_dir_all(directory).map_err(|source| UzeError::Write {
-            path: directory.to_path_buf(),
-            source,
-        })?;
+        std::fs::remove_dir_all(directory).map_err(UzeError::write(directory))?;
     }
 
     if let Some(parent) = directory.parent() {
-        std::fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-            path: parent.to_path_buf(),
-            source,
-        })?;
+        std::fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
     }
     // Bare: nothing here is ever edited, and a working tree would be the
     // second materialized copy this exists to remove.
@@ -189,10 +183,8 @@ fn remember(directory: &Path, identity: &str, transport: Transport) -> Result<()
     if let Ok(mut reaches) = REACHES.lock() {
         reaches.retain(|(known, _)| known != directory);
     }
-    std::fs::write(directory.join(TRANSPORT_FILE), payload).map_err(|source| UzeError::Write {
-        path: directory.join(TRANSPORT_FILE),
-        source,
-    })
+    std::fs::write(directory.join(TRANSPORT_FILE), payload)
+        .map_err(UzeError::write(directory.join(TRANSPORT_FILE)))
 }
 
 /// How a mirror is reached again for what it does not hold yet — a blob a
@@ -411,10 +403,7 @@ pub fn materialize_subdirectory(
     let _checking_out = mirror
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::fs::create_dir_all(destination).map_err(|source| UzeError::Write {
-        path: destination.to_path_buf(),
-        source,
-    })?;
+    std::fs::create_dir_all(destination).map_err(UzeError::write(destination))?;
     prefetch(directory, commit, subdirectory);
     let spec = subdirectory.unwrap_or(".");
     // `--work-tree` writes the tree out without the mirror ever gaining one
@@ -849,10 +838,7 @@ pub fn materialize_linked(
         // a caller resolves the plugin's root the same way either way.
         let target = destination.join(&relative);
         if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-                path: parent.to_path_buf(),
-                source,
-            })?;
+            std::fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
         }
         // A path Git lists but that is no longer there — deleted between
         // the listing and the copy — is not an error: it is content the

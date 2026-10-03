@@ -236,23 +236,23 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     ),
     (
         "config theme",
-        "uze_application::application::theme::tests::theme_selection_meets_the_performance_budget",
+        "crates/uze-application/tests/performance.rs::theme_selection_meets_the_budget",
     ),
     (
         "config theme list",
-        "uze_application::application::theme::tests::theme_selection_meets_the_performance_budget",
+        "crates/uze-application/tests/performance.rs::theme_selection_meets_the_budget",
     ),
     (
         "config theme set",
-        "uze_application::application::theme::tests::theme_selection_meets_the_performance_budget",
+        "crates/uze-application/tests/performance.rs::theme_selection_meets_the_budget",
     ),
     (
         "config theme show",
-        "uze_application::application::theme::tests::theme_selection_meets_the_performance_budget",
+        "crates/uze-application/tests/performance.rs::theme_selection_meets_the_budget",
     ),
     (
         "config icons",
-        "uze_application::application::theme::tests::theme_selection_meets_the_performance_budget",
+        "crates/uze-application/tests/performance.rs::theme_selection_meets_the_budget",
     ),
     (
         "config notification",
@@ -264,7 +264,7 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     ),
     (
         "agent plugin create",
-        "crates/uze-core/src/package/authoring/tests.rs::authoring_scaffold_meets_the_budget",
+        "crates/uze-core/tests/performance.rs::authoring_scaffold_meets_the_budget",
     ),
     (
         "market list",
