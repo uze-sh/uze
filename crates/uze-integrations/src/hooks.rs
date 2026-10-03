@@ -3131,31 +3131,25 @@ mod wrapper_tests {
         } = execution;
         let wrapper = wrapper_root.join("hooks").join("exec");
         materialize_wrapper(&wrapper, &wrapper_source(target).unwrap()).unwrap();
-        let mut command = Command::new(&wrapper);
-        command.args(wrapper_arguments(hook, package_root, &hook.handlers));
+        // Through its interpreter, as its shebang names it, rather than by
+        // `execve` of a file this process just wrote: a sibling test forking
+        // while the write descriptor was open made the kernel answer ETXTBSY.
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg(&wrapper)
+            .args(wrapper_arguments(hook, package_root, &hook.handlers));
         if let Some(cwd) = cwd {
             command.current_dir(cwd);
         }
         if let Some(jq) = jq {
             command.env("HOOK_JQ", jq);
         }
-        // A sibling test forking while this file's write descriptor is
-        // still open leaves the kernel reporting ETXTBSY for a moment; the
-        // wrapper is on disk and complete, so the answer is to look again.
-        let mut child = loop {
-            match command
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-            {
-                Ok(child) => break child,
-                Err(error) if error.raw_os_error() == Some(26) => {
-                    std::thread::sleep(std::time::Duration::from_millis(20));
-                }
-                Err(error) => panic!("cannot start the generated wrapper: {error}"),
-            }
-        };
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|error| panic!("cannot start the generated wrapper: {error}"));
         use std::io::Write;
         // A wrapper that denies before reading stdin (a missing dependency)
         // closes the pipe first; that is an answer, not a test failure.
@@ -3239,29 +3233,29 @@ mod wrapper_tests {
     #[test]
     fn a_terminated_wrapper_runs_no_further_handler() {
         let root = package("wrapper-terminated");
+        // The handler says it started before it stalls, so the signal lands
+        // inside it — with the wrapper's trap already set — rather than
+        // whenever a fixed wait happened to end.
+        write_script(
+            &root.join("scripts").join("announce-and-stall"),
+            "touch \"$PLUGIN_ROOT/started\"\nsh -c 'sleep 30'\nexit 0",
+        );
         let hook = group_at(
             HookEvent::PreToolUse,
             HookEffect::Observe,
-            &["stall", "audit"],
+            &["announce-and-stall", "audit"],
             2,
         );
         let wrapper = root.join("hooks").join("exec");
         materialize_wrapper(&wrapper, &wrapper_source(HookTarget::Claude).unwrap()).unwrap();
-        let mut child = loop {
-            match Command::new(&wrapper)
-                .args(wrapper_arguments(&hook, &root, &hook.handlers))
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-            {
-                Ok(child) => break child,
-                Err(error) if error.raw_os_error() == Some(26) => {
-                    std::thread::sleep(std::time::Duration::from_millis(20));
-                }
-                Err(error) => panic!("cannot start the generated wrapper: {error}"),
-            }
-        };
+        let mut child = Command::new("/bin/sh")
+            .arg(&wrapper)
+            .args(wrapper_arguments(&hook, &root, &hook.handlers))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap_or_else(|error| panic!("cannot start the generated wrapper: {error}"));
         {
             use std::io::Write;
             let mut stdin = child.stdin.take().unwrap();
@@ -3269,7 +3263,14 @@ mod wrapper_tests {
                 .write_all(payload(HookTarget::Claude, "ls").as_bytes())
                 .unwrap();
         }
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !root.join("started").exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the first handler never started"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         let signalled = Command::new("kill")
             .args(["-TERM", &child.id().to_string()])
             .status()
@@ -3620,13 +3621,21 @@ mod wrapper_tests {
         let answer = run_wrapper(target, &root, &hook, &payload(target, "ls"), None);
         assert_eq!(answer.exit, block_exit(target), "the deadline blocks");
         let grandchild = fs::read_to_string(root.join("grandchild.pid")).unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        let alive = Command::new("ps")
-            .args(["-p", grandchild.trim(), "-o", "pid="])
-            .output()
-            .expect("ps reports whether the grandchild is still running");
+        // The KILL pass runs on the deadline's own clock and the orphan is
+        // reaped by init after it, so the answer is awaited, not assumed.
+        let running = || {
+            let alive = Command::new("ps")
+                .args(["-p", grandchild.trim(), "-o", "pid="])
+                .output()
+                .expect("ps reports whether the grandchild is still running");
+            !String::from_utf8_lossy(&alive.stdout).trim().is_empty()
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while running() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
         assert!(
-            String::from_utf8_lossy(&alive.stdout).trim().is_empty(),
+            !running(),
             "a grandchild that ignored TERM is killed, not left behind: pid {grandchild}"
         );
         let _ = fs::remove_dir_all(root);

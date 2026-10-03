@@ -1104,12 +1104,17 @@ mod tests {
         })
         .unwrap();
 
+        // Both start contending together, and each holds its pass open long
+        // enough that, were the lock missing, the other would have read the
+        // document before it is written back. The outcome does not depend
+        // on the timing; only how surely a missing lock is caught does.
+        let together = std::sync::Arc::new(std::sync::Barrier::new(2));
         let deliverer = {
             let (home, root, id) = (home.clone(), root.clone(), first.id.clone());
+            let together = together.clone();
             std::thread::spawn(move || {
+                together.wait();
                 locked(&home, &root, |store| {
-                    // Long enough that an unlocked pass would certainly
-                    // have read this document before it is written back.
                     std::thread::sleep(Duration::from_millis(80));
                     store.get_mut(&id).unwrap().state = WorkState::Integrated;
                     Ok(())
@@ -1120,6 +1125,7 @@ mod tests {
         let evaluator = {
             let (home, root, id) = (home.clone(), root.clone(), second.id.clone());
             std::thread::spawn(move || {
+                together.wait();
                 locked(&home, &root, |store| {
                     std::thread::sleep(Duration::from_millis(80));
                     store.get_mut(&id).unwrap().state = WorkState::Ready;

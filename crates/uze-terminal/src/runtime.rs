@@ -3746,6 +3746,10 @@ mod tests {
         // is what makes the fallback the thing actually under test.
         let mut env = uze_testkit::env::scope();
         env.remove("UZE_SHIM_NAME");
+        // The shell a pane launches is the operator's `$SHELL`, which on a
+        // runner is whatever it happens to report; pinned, the name this
+        // waits for is the same on every machine.
+        env.set("SHELL", "/bin/sh");
         let (damage, _damage_events) = std::sync::mpsc::channel();
         // Canonicalized, because the assertion below compares this against
         // what the kernel reports, and the kernel answers with the real
@@ -3764,12 +3768,7 @@ mod tests {
             Arc::new(Mutex::new(Palette::default())),
         )
         .unwrap();
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        let expected_name = Path::new(&shell)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("sh")
-            .to_owned();
+        let expected_name = "sh".to_owned();
 
         // Poll until the *spawned shell* owns the PTY's foreground group,
         // identified by its cwd. Before it does, `process_group_leader`
@@ -3780,13 +3779,11 @@ mod tests {
         // and is unaffected by a later `unsetenv`. Accepting the first
         // `Some` therefore made this assert against the developer's own
         // session at random.
-        // Five seconds, not five hundred milliseconds: what is being waited
-        // on is another process being scheduled and reaching `exec`, and the
+        // A deadline far past any scheduler: what is being waited on is
+        // another process being scheduled and reaching `exec`, and the
         // assertion below is about *what* it reports, never about how fast.
-        // Under the full workspace suite on a small machine the old budget
-        // ran out before the shell was up, turning a loaded runner into a
-        // red build — which is why `make coverage` already skips this test
-        // by name instead of trusting it.
+        // Five seconds ran out under instrumented coverage on a small
+        // machine, which is why coverage used to skip this test by name.
         //
         // Waited on by *identity*, not by directory. The pane's child already
         // stands in `pane_cwd` between `fork` and `exec` — that is when the
@@ -3798,7 +3795,8 @@ mod tests {
         // an assertion, which is what it should have been.
         let mut status = None;
         let mut last_seen = None;
-        for _ in 0..500 {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while std::time::Instant::now() < deadline {
             let reading = pane.foreground_status();
             if let Some((_, process)) = &reading
                 && *process == expected_name
@@ -4425,7 +4423,22 @@ mod tests {
 
         let writing = Arc::clone(&server);
         thread::spawn(move || writing.write_input(pane, &vec![b'x'; 1 << 20]));
-        thread::sleep(Duration::from_millis(500));
+        // Inside the write, with the pane's writer held, before the map is
+        // asked about — otherwise this passes without testing anything.
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !server
+            .panes
+            .lock()
+            .expect("panes poisoned")
+            .get(&pane)
+            .is_some_and(|runtime| runtime.writer.try_lock().is_err())
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the write never blocked"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
 
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         let free = loop {

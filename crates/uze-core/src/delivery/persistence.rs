@@ -779,6 +779,18 @@ mod tests {
                 }
             }
         }
+        // Killed and reaped however this test ends: a failed assertion
+        // below would otherwise leave the child holding the lock forever.
+        struct Holder(libc::pid_t);
+        impl Drop for Holder {
+            fn drop(&mut self) {
+                unsafe {
+                    libc::kill(self.0, libc::SIGKILL);
+                    libc::waitpid(self.0, std::ptr::null_mut(), 0);
+                }
+            }
+        }
+        let holder = Holder(child);
         unsafe { libc::close(took[1]) };
         let mut answer = [0u8; 1];
         assert_eq!(
@@ -796,10 +808,7 @@ mod tests {
             Err(UzeError::MutationInProgress { .. })
         ));
 
-        unsafe {
-            libc::kill(child, libc::SIGKILL);
-            libc::waitpid(child, std::ptr::null_mut(), 0);
-        }
+        drop(holder);
         MutationLock::acquire(&home).expect("a killed holder's lock is free");
         let _ = fs::remove_dir_all(root);
     }

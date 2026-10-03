@@ -487,7 +487,8 @@ mod tests {
         );
         // Set by the harness that runs this test, in this process, before
         // the probe reads it back out of the kernel's own copy.
-        unsafe { std::env::set_var("UZE_PROBE_SELF", "probed") };
+        let mut environment = uze_testkit::env::scope();
+        environment.set("UZE_PROBE_SELF", "probed");
         let read_back = environment_value_of(me, "UZE_PROBE_SELF");
         // `exec`-time, deliberately: the kernel's copy is the one taken when
         // the process started, so a variable set afterwards is *expected* to
