@@ -27,7 +27,7 @@ use uze_application::application::{
     DoctorReport, FreshnessState, MarketplacePluginSummary, PluginCapability, Revision,
 };
 
-use super::{DrawerStatus, render_drawer_footer};
+use super::{DrawerStatus, plural, render_drawer_footer};
 use crate::ui::agent_support::{capability_label, resource_groups};
 use crate::ui::hit::Hit;
 use crate::ui::model::{PluginPane, ResizablePanel, Route, TuiModel};
@@ -155,10 +155,6 @@ pub(crate) fn render_plugins(
         }
         _ => render_market_drawer(frame, outer, model, &marketplace_rows, market, hits),
     }
-}
-
-fn plural(count: usize) -> &'static str {
-    if count == 1 { "" } else { "s" }
 }
 
 /// The group name as rendered: "uze-official" reads oddly right above a
