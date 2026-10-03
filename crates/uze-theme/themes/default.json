@@ -91,7 +91,7 @@
 
     "task.ready": "⇧",
 
-    "status.working": ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+    "status.working": ["◎", "◎", "◉", "◉"],
     "status.completed": "✓",
     "status.selected": "●",
     "status.idle": "○",
