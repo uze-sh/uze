@@ -1,6 +1,7 @@
 {
   "title": "Package manager",
   "icon": "Puzzle",
+  "defaultOpen": true,
   "pages": [
     "index",
     "marketplaces",

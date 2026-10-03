@@ -4,10 +4,13 @@
 #   tui-record seed   .demo/install
 #   tui-record run    .demo/install
 #
-# Unlike the other demos this one records a *shell*, and what it installs is
-# the published release, not this checkout's build: the video is of what a
-# reader will get by running the same line. Its sandbox is its own, so a take
-# never touches the uze the other specs record.
+# Unlike the other demos this one records a *shell*. The line typed is the
+# one a reader runs, but what it fetches is this checkout: the sandbox's own
+# `curl` answers https://uze.sh/i with the repository's install.sh and the
+# release download with a tarball of target/release/uze, so the video shows
+# the CLI as it is now rather than as the last release left it. Every other
+# URL (Claude Code's installer) goes to the real curl. Its sandbox is its
+# own, so a take never touches the uze the other specs record.
 #
 # The installer prints the directory it installed into, so the sandbox home
 # is on screen here: it lives under /tmp, where a path carries no username.
@@ -39,7 +42,7 @@ video:
   # Two downloads happen on camera — uze's release and Claude Code's — and
   # both are waits, squeezed to this.
   wait_collapse: 1.2
-  poster_when: 'Setup completed'
+  poster_when: 'agents? ready'
   sidebar: 31
 sandbox:
   root: /tmp/uzeinstall
@@ -52,6 +55,7 @@ sandbox:
   # shims first: the same order a real shell rc ends up with.
   path:
     - '{home}/.uze/shims'
+    - '{home}/bin'
     - '{home}/.local/bin'
     - /usr/local/bin
     - /usr/bin
@@ -66,6 +70,16 @@ sandbox:
   # By pid, verified through /proc — never a pattern kill, which would
   # match the shell running it.
   reset:
+    # The release the installer downloads, rebuilt from this checkout's
+    # binary every take, in the layout and checksum format release.yml
+    # publishes.
+    - |
+      mirror={root}/mirror/latest/download
+      rm -rf {root}/mirror && mkdir -p "$mirror" {root}/stage
+      cp {project}/target/release/uze {root}/stage/uze
+      tar -C {root}/stage -czf "$mirror/uze-x86_64-linux-gnu.tar.gz" uze
+      (cd "$mirror" && sha256sum uze-x86_64-linux-gnu.tar.gz > SHASUMS256.txt)
+      cp {project}/install.sh {root}/mirror/install.sh
     - |
       for pid in $(pgrep -x uze 2>/dev/null); do
         cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
@@ -82,6 +96,21 @@ sandbox:
     - '{home}/.uze'
     - '{runtime}/uze-runtime'
   write:
+    - path: '{home}/bin/curl'
+      executable: true
+      text: |
+        #!/bin/sh
+        mirror={root}/mirror
+        for arg do
+          shift
+          case "$arg" in
+            https://uze.sh/i) arg="file://$mirror/install.sh" ;;
+            https://github.com/uze-sh/uze/releases/latest/download/*)
+              arg="file://$mirror/latest/download/${arg##*/}" ;;
+          esac
+          set -- "$@" "$arg"
+        done
+        exec /usr/bin/curl "$@"
     - path: '{home}/demoshell'
       executable: true
       text: |
@@ -120,11 +149,11 @@ beats:
     type: uze setup claude
     pause: 0.4
   - wait: screen
-    until: 'ready|Setup completed'
+    until: 'agents? ready'
     timeout: 300
     pause: 2.6
   - say: and open the workspace
-    type: uze
+    type: uze workspace
     expect: first steps
     expect_timeout: 20
     pause: 2.0

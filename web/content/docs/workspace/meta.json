@@ -1,6 +1,7 @@
 {
   "title": "Workspace",
   "icon": "SquareTerminal",
+  "defaultOpen": true,
   "pages": [
     "index",
     "agents",
