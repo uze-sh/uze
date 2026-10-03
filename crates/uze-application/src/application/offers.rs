@@ -208,6 +208,7 @@ mod tests {
             name: "uze".to_owned(),
             description: None,
             keywords: Vec::new(),
+            category: None,
             installed,
             freshness: match update {
                 Some(true) => Freshness {

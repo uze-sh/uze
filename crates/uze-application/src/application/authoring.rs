@@ -126,10 +126,11 @@ impl Project<'_> {
         market: &str,
         name: &str,
         description: Option<&str>,
+        category: Option<&str>,
         caps: ScaffoldCapabilities,
     ) -> Result<PluginCreated> {
         let checkout = self.marketplace_checkout(market)?;
-        let root = authoring::scaffold_plugin(&checkout, name, description, &caps)?;
+        let root = authoring::scaffold_plugin(&checkout, name, description, category, &caps)?;
         Ok(PluginCreated {
             name: name.to_owned(),
             market: market.to_owned(),

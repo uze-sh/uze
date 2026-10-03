@@ -8,6 +8,7 @@
     {
       "name": "uze",
       "source": "./plugins/uze",
+      "category": "development",
       "description": "UZE's own agentic Skills: making a project's instructions context (AGENTS.md and its harness bridges) portable, working in the checkout UZE placed you in, and writing the diagrams it keeps under `artifacts:`.",
       "keywords": [
         "context",

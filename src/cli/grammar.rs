@@ -281,6 +281,10 @@ pub(crate) enum AgentPluginAction {
         market: String,
         #[arg(long)]
         description: Option<String>,
+        /// What kind of work the plugin is for (productivity, development,
+        /// security, ...), written to its marketplace entry
+        #[arg(long)]
+        category: Option<String>,
         /// Also scaffold a portable hooks.json and its handler stub
         #[arg(long)]
         hook: bool,

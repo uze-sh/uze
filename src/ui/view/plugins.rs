@@ -43,9 +43,10 @@ const NARROW: u16 = 88;
 /// screen's content keeps.
 const PAD: u16 = crate::ui::CONTENT_INSET_LEFT;
 
-/// The tree's fixed columns, right of the name: what a row holds, when its
-/// source last moved, and where it stands, right-aligned against the edge.
-const CONTENTS_WIDTH: usize = 20;
+/// The tree's fixed columns, right of the name: what kind of work it is
+/// for, when its source last moved, and where it stands, right-aligned
+/// against the edge.
+const CATEGORY_WIDTH: usize = 20;
 const UPDATED_WIDTH: usize = 14;
 const STATUS_WIDTH: usize = 18;
 /// The narrowest a name is squeezed to before a column gives way to it.
@@ -207,31 +208,31 @@ fn counted(count: usize, noun: &str) -> String {
 /// The columns a row is laid out in, shared by the heading and every row
 /// so they line up table-style whatever each row's own name is. A column
 /// that does not fit gives way rather than squeezing the name to nothing:
-/// the update date first, then the contents.
+/// the update date first, then the category.
 struct Columns {
-    contents: bool,
+    category: bool,
     updated: bool,
 }
 
 impl Columns {
     fn fitted(width: usize) -> Self {
-        let full = NAME_MIN + CONTENTS_WIDTH + UPDATED_WIDTH + STATUS_WIDTH;
+        let full = NAME_MIN + CATEGORY_WIDTH + UPDATED_WIDTH + STATUS_WIDTH;
         Self {
             updated: width >= full,
-            contents: width >= full - UPDATED_WIDTH,
+            category: width >= full - UPDATED_WIDTH,
         }
     }
 
     /// The cells right of the name, each padded to its column.
     fn cells(
         &self,
-        contents: Span<'static>,
+        category: Span<'static>,
         updated: Span<'static>,
         status: Span<'static>,
     ) -> Vec<Span<'static>> {
         let mut cells = Vec::with_capacity(3);
-        if self.contents {
-            cells.push(padded(contents, CONTENTS_WIDTH));
+        if self.category {
+            cells.push(padded(category, CATEGORY_WIDTH));
         }
         if self.updated {
             cells.push(padded(updated, UPDATED_WIDTH));
@@ -388,7 +389,7 @@ fn render_tree(
             MARKET_INDENT,
             vec![Span::styled("name", theme::fg(Token::TextDim))],
             columns.cells(
-                Span::styled("contents", theme::fg(Token::TextDim)),
+                Span::styled("category", theme::fg(Token::TextDim)),
                 Span::styled("updated", theme::fg(Token::TextDim)),
                 Span::styled("status", theme::fg(Token::TextDim)),
             ),
@@ -647,12 +648,8 @@ fn plugin_line(
     width: u16,
 ) -> TreeLine {
     let model = screen.model;
-    let id = model.marketplace_plugin_id(plugin);
     let selected = screen.cursor == PluginTreeRow::Plugin(position);
-    let contents = model
-        .plugin_resources_of(&id)
-        .map(|resources| counted_capabilities(resources.len()))
-        .unwrap_or_default();
+    let category = plugin.category.clone().unwrap_or_default();
     let (status, status_style) = plugin_status(model, plugin);
     // When it was installed or last updated here, read from the listing
     // itself, so it does not change as the selection passes over it. A
@@ -675,7 +672,7 @@ fn plugin_line(
                 ),
             ],
             columns.cells(
-                Span::styled(contents, theme::fg(Token::TextMuted)),
+                Span::styled(category, theme::fg(Token::TextMuted)),
                 Span::styled(updated, theme::fg(Token::TextMuted)),
                 Span::styled(status, status_style),
             ),
@@ -690,13 +687,6 @@ fn plugin_line(
         ],
         selected,
     )
-}
-
-fn counted_capabilities(count: usize) -> String {
-    match count {
-        1 => "1 capability".to_owned(),
-        count => format!("{count} capabilities"),
-    }
 }
 
 /// An unfolded plugin's resources: a heading per kind and a leaf per
@@ -1205,6 +1195,14 @@ fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
 fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail {
     let id = model.marketplace_plugin_id(plugin);
     let mut fields = Vec::new();
+    if let Some(category) = &plugin.category {
+        fields.push((
+            "category",
+            category.clone(),
+            theme::fg(Token::TextSecondary),
+            None,
+        ));
+    }
     if let Some(revision) = plugin_revision(model, plugin) {
         let value = match revision {
             Revision::Commit { short, age, .. } => format!("{short} · {age}"),

@@ -66,8 +66,13 @@ plugin to it directly.
 
 ```bash
 uze agent plugin create <name> --market <market> [--description "…"] \
-    [--hook] [--mcp] [--agent] [--instructions]
+    [--category <word>] [--hook] [--mcp] [--agent] [--instructions]
 ```
+
+`--category` is the one word a catalogue is browsed by (`productivity`,
+`development`, `security`, ...). It goes on the plugin's `marketplace.json`
+entry, never in `plugin.json`; reuse a category the marketplace already
+has before inventing one.
 
 Every name here (the marketplace's, the plugin's, each skill's) is
 lowercase kebab-case: `a-z`, `0-9` and single `-` between them, at most

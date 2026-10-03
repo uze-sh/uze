@@ -92,6 +92,7 @@ fn model_with_data() -> TuiModel {
         name: "flow".to_owned(),
         description: Some("A flow plugin".to_owned()),
         keywords: vec!["flow".to_owned()],
+        category: None,
         installed: true,
         freshness: up_to_date(),
         installed_at_unix: None,
@@ -944,6 +945,7 @@ fn read_only_navigation_never_produces_a_mutating_intent() {
         name: "uze".to_owned(),
         description: None,
         keywords: Vec::new(),
+        category: None,
         installed: true,
         freshness: up_to_date(),
         installed_at_unix: None,
@@ -1746,6 +1748,7 @@ fn marketplace_plugin(marketplace: &str, name: &str, installed: bool) -> Marketp
         name: name.to_owned(),
         description: None,
         keywords: Vec::new(),
+        category: None,
         installed,
         freshness: uze_application::application::Freshness::not_checked(),
         installed_at_unix: None,
@@ -2042,6 +2045,7 @@ fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
         name: "flow".to_owned(),
         description: Some("A flow plugin".to_owned()),
         keywords: Vec::new(),
+        category: None,
         installed: true,
         freshness: up_to_date(),
         installed_at_unix: None,
@@ -2101,6 +2105,7 @@ fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
                 .to_owned(),
         ),
         keywords: vec!["context".to_owned(), "portability".to_owned()],
+        category: None,
         installed: true,
         freshness: up_to_date(),
         installed_at_unix: None,
@@ -2151,6 +2156,7 @@ fn the_source_link_lights_up_only_under_the_pointer() {
         name: "flow".to_owned(),
         description: Some("A flow plugin".to_owned()),
         keywords: Vec::new(),
+        category: None,
         installed: true,
         freshness: up_to_date(),
         installed_at_unix: None,
@@ -3446,6 +3452,7 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
         name: "kit".to_owned(),
         description: None,
         keywords: Vec::new(),
+        category: None,
         installed: true,
         freshness: behind(),
         installed_at_unix: None,
@@ -3547,7 +3554,10 @@ fn an_unfolded_plugin_groups_its_resources_by_kind() {
         route: Route::Plugins,
         focus: Focus::Content,
         remembered: Remembered {
-            marketplace_plugins: vec![marketplace_plugin("team", "kit", false)],
+            marketplace_plugins: vec![MarketplacePluginSummary {
+                category: Some("productivity".to_owned()),
+                ..marketplace_plugin("team", "kit", false)
+            }],
             ..TuiModel::default().remembered
         },
         ..TuiModel::default()
@@ -3577,8 +3587,8 @@ fn an_unfolded_plugin_groups_its_resources_by_kind() {
     );
     assert!(
         rows.iter()
-            .any(|row| tree(row).contains("kit") && tree(row).contains("3 capabilities")),
-        "the plugin's row counts what it holds: {rows:#?}"
+            .any(|row| tree(row).contains("kit") && tree(row).contains("productivity")),
+        "the plugin's row says what kind of work it is for: {rows:#?}"
     );
 }
 
@@ -4793,6 +4803,7 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
                 .to_owned(),
         ),
         keywords: vec!["git".to_owned(), "conventional-commits".to_owned()],
+        category: None,
         installed: false,
         freshness: uze_application::application::Freshness::not_checked(),
         installed_at_unix: None,
@@ -4855,6 +4866,49 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
         widest > 0 && widest < 120,
         "no row runs to the terminal's edge: {widest}"
     );
+}
+
+/// The category is what a catalogue is browsed by: the drawer says it,
+/// and the filter finds a plugin by it as it does by a keyword.
+#[test]
+fn a_plugin_reads_and_filters_by_its_category() {
+    use uze_application::application::MarketplacePluginDetail;
+
+    let summary = MarketplacePluginSummary {
+        category: Some("productivity".to_owned()),
+        ..marketplace_plugin("ai", "notes", false)
+    };
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        plugin_pane: PluginPane::Plugins,
+        marketplace_detail: Some(MarketplacePluginDetail {
+            revision: None,
+            summary: summary.clone(),
+            capabilities: Vec::new(),
+        }),
+        remembered: Remembered {
+            plugin_screen: ListScreen::default(),
+            marketplace_plugins: vec![summary, marketplace_plugin("ai", "other", false)],
+            ..TuiModel::default().remembered
+        },
+        ..TuiModel::default()
+    };
+    let (terminal, _hits) = drawn_at(&model, 120, 40);
+    let rows = buffer_rows(&terminal);
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("category") && row.contains("productivity")),
+        "the drawer names the category: {rows:#?}"
+    );
+
+    model.remembered.plugin_screen.filter = "product".to_owned();
+    let names: Vec<String> = model
+        .marketplace_visible_indices()
+        .into_iter()
+        .map(|index| model.marketplace_rows()[index].name.clone())
+        .collect();
+    assert_eq!(names, ["notes"]);
 }
 
 /// A dialog asking for text is answered like every other: its own buttons
@@ -5133,7 +5187,7 @@ fn a_marketplace_heads_its_group_with_what_needs_saying() {
             .position(|row| row.contains(needle))
             .unwrap_or_else(|| panic!("{needle} not drawn:\n{text}"))
     };
-    let heading = row_of("contents");
+    let heading = row_of("category");
     assert!(
         rows[heading].contains("name") && rows[heading].contains("status"),
         "{text}"
