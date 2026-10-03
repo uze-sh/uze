@@ -565,12 +565,6 @@ impl TuiModel {
                 Some(action) => self.act(action),
                 None => self.marketplace_inspect_intent(),
             },
-            Route::Extensions => match self.selected_extension() {
-                Some(extension) => {
-                    self.switch_selected_extension(!self.extension_enabled(extension.id))
-                }
-                None => Intent::None,
-            },
             // List: jump straight into editing, the same way Enter opens a
             // drawer elsewhere. Editor: change the highlighted value.
             // Harnesses: no-op — toggling is the toggle action's job,
@@ -681,18 +675,10 @@ impl TuiModel {
                 self.source_link_hovered = matches!(hovered, Some(Hit::OpenLink(_)));
                 self.version_hovered = matches!(hovered, Some(Hit::RunningReleaseNotes));
                 self.health_hovered = matches!(hovered, Some(Hit::HealthStatus));
-                self.release_notes_close_hovered = false;
                 self.hovered_offer = match hovered {
                     Some(Hit::OfferedAction(action)) => Some(action),
                     _ => None,
                 };
-                Intent::None
-            }
-            MouseEventKind::Moved if matches!(self.overlay, Overlay::ReleaseNotes(_)) => {
-                self.release_notes_close_hovered = matches!(
-                    self.hit_at(event.column, event.row),
-                    Some(Hit::ReleaseNotesClose)
-                );
                 Intent::None
             }
             _ => Intent::None,

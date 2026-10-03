@@ -23,8 +23,8 @@ use uze_keys::{Action, Scope};
 use crate::self_update::ReleaseNotes;
 use crate::ui::{
     extension_view,
-    theme::{self, Symbol, Token},
-    widget::{POPUP_H_PAD, Scrollbar, Surface, hint},
+    theme::{self, Token},
+    widget::{Scrollbar, Surface, dialog, hint},
 };
 
 /// The notes, as far as they have arrived.
@@ -172,18 +172,18 @@ fn layout(area: Rect, modal: &ReleaseNotesModal) -> Layout {
     }
 }
 
-/// No hint row: closing is the mark in the corner, and the release page is
-/// only worth offering when the notes could not be read — where the body
-/// says so itself.
-///
-/// Prose is indented one column past a floating surface's own inset, so
-/// the notes read at the column the code surface's Markdown preview puts
-/// its text: the same document shape, at the same distance from its frame.
+/// The same frame every dialog is drawn in: a plain border, a row of air,
+/// the heading inside, the text three columns in from the sides, and the
+/// keys that answer it in the bottom border. The release page is only
+/// worth offering when the notes could not be read — where the body says
+/// so itself.
 fn surface() -> Surface {
-    Surface::floating()
-        .title(" what's new ")
-        .padding(Padding::new(POPUP_H_PAD + 1, POPUP_H_PAD + 1, 1, 1))
+    Surface::floating().padding(Padding::new(DIALOG_PAD, DIALOG_PAD, 1, 1))
 }
+
+/// The columns between the border and the text, on each side — the
+/// inset every dialog keeps.
+const DIALOG_PAD: u16 = 3;
 
 fn body_lines(modal: &ReleaseNotesModal) -> Vec<Line<'static>> {
     let muted = |text: &str| {
@@ -230,19 +230,20 @@ fn rendered_notes(body: &str) -> Vec<Line<'static>> {
     })
 }
 
-/// The release's version and, once the notes say it, its date.
+/// The heading: what the dialog is, then the release's version and, once
+/// the notes say it, its date beside it.
 fn header_line(modal: &ReleaseNotesModal) -> Line<'static> {
-    let mut spans = vec![Span::styled(
-        format!("v{}", modal.version),
-        theme::fg_bold(Token::TextPrimary),
-    )];
+    let mut spans = vec![
+        Span::styled("What's new", theme::fg_bold(Token::TextBright)),
+        Span::styled(format!("  v{}", modal.version), theme::fg(Token::TextMuted)),
+    ];
     if let Notes::Ready(ReleaseNotes {
         date: Some(date), ..
     }) = &modal.notes
     {
         spans.push(Span::styled(
-            format!("  {date}"),
-            theme::fg(Token::TextFaint),
+            format!(" · {date}"),
+            theme::fg(Token::TextMuted),
         ));
     }
     Line::from(spans)
@@ -252,29 +253,18 @@ fn header_line(modal: &ReleaseNotesModal) -> Line<'static> {
 pub(crate) struct Targets {
     /// The whole modal: a click inside it is reading, one outside closes it.
     pub(crate) popup: Rect,
-    /// The mark in its top-right corner, which closes it.
-    pub(crate) close: Rect,
 }
 
 /// Draws the modal centred in `area`.
-pub(crate) fn render(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    modal: &ReleaseNotesModal,
-    close_hovered: bool,
-) -> Targets {
+pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, modal: &ReleaseNotesModal) -> Targets {
     let layout = layout(area, modal);
     frame.render_widget(Clear, layout.popup);
-    surface().render(frame, layout.popup);
-    // On the top border, inset the way the title is from the other corner.
-    let mark = theme::width(Symbol::MarkClose);
-    let close = Rect::new(
-        layout.popup.right().saturating_sub(mark + 3),
-        layout.popup.y,
-        mark + 2,
-        1,
-    );
-    crate::ui::widget::modal::close_mark(frame, close, close_hovered);
+    surface()
+        .hint(dialog::border_hint(
+            &[Scope::ReleaseNotes],
+            &[(Action::SelectNext, "scroll"), (Action::Dismiss, "close")],
+        ))
+        .render(frame, layout.popup);
     frame.render_widget(Paragraph::new(header_line(modal)), layout.header);
     let scroll = modal.scroll.min(layout.scroll_limit());
     modal.drawn.set(Drawn {
@@ -304,7 +294,6 @@ pub(crate) fn render(
     }
     Targets {
         popup: layout.popup,
-        close,
     }
 }
 
@@ -325,7 +314,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal
             .draw(|frame| {
-                render(frame, frame.area(), modal, false);
+                render(frame, frame.area(), modal);
             })
             .unwrap();
         let buffer = terminal.backend().buffer();
@@ -355,8 +344,8 @@ mod tests {
         );
         assert!(screen.contains("the fix"), "rendered, not raw: {screen}");
         assert!(
-            screen.contains(&theme::glyph(Symbol::MarkClose)) && !screen.contains("esc"),
-            "a mark to close it, and no row of keys: {screen}"
+            screen.contains("What's new") && screen.contains("esc close"),
+            "headed like every dialog, its way out in the border: {screen}"
         );
         assert!(!screen.contains("**terminal:**"), "{screen}");
 

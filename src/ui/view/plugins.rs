@@ -184,21 +184,15 @@ fn market_source(summary: Option<&MarketplaceSummary>) -> Span<'static> {
         .to_owned())
 }
 
-/// When a marketplace's offer last moved, as far as this machine knows:
-/// the release for the built-in one, otherwise the oldest check among its
-/// plugins — "2m ago" over a list whose other half was last looked at a
-/// week ago would be a promise the list does not keep.
-fn market_updated(
-    summary: Option<&MarketplaceSummary>,
-    offered: &[&MarketplacePluginSummary],
-) -> String {
-    if summary.is_some_and(|summary| summary.source.starts_with("embedded:")) {
-        return "this release".to_owned();
-    }
+/// When anything from a marketplace was last installed or updated on this
+/// machine: the most recent of its plugins'. Blank when none of them is
+/// installed — when uze last checked for updates is a fact about uze, not
+/// about the plugins.
+fn market_updated(offered: &[&MarketplacePluginSummary]) -> String {
     offered
         .iter()
-        .filter_map(|plugin| plugin.freshness.established_at_unix)
-        .min()
+        .filter_map(|plugin| plugin.installed_at_unix)
+        .max()
         .map(ago)
         .unwrap_or_default()
 }
@@ -630,10 +624,7 @@ fn market_line(
                     counted(offered.len(), "plugin"),
                     theme::fg(Token::TextMuted),
                 ),
-                Span::styled(
-                    market_updated(summary, &offered),
-                    theme::fg(Token::TextMuted),
-                ),
+                Span::styled(market_updated(&offered), theme::fg(Token::TextMuted)),
                 status,
             ),
         ),
@@ -659,14 +650,10 @@ fn plugin_line(
         .map(|resources| counted_capabilities(resources.len()))
         .unwrap_or_default();
     let (status, status_style) = plugin_status(model, plugin);
-    // The marketplace's own answer on every row of it: a plugin's exact
-    // revision is known only once it has been inspected, and a column that
-    // changed meaning as the selection passed over it read as a clock
-    // jumping. The panel says the revision.
-    let updated = market_updated(
-        screen.summary(&plugin.marketplace),
-        &screen.offered_by(&plugin.marketplace),
-    );
+    // When it was installed or last updated here, read from the listing
+    // itself, so it does not change as the selection passes over it. A
+    // plugin that is not installed has no such date.
+    let updated = plugin.installed_at_unix.map(ago).unwrap_or_default();
     TreeLine::new(
         tree_row(
             width,
@@ -1061,7 +1048,8 @@ fn panel_footer_height(detail: &Detail) -> u16 {
 }
 
 /// The panel's foot, anchored to its bottom: a newer revision and the
-/// button that takes it, then the action, with the key that reaches it.
+/// button that takes it, then the action. The key that reaches it is the
+/// footer's to say.
 fn render_panel_footer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -1069,7 +1057,6 @@ fn render_panel_footer(
     detail: &Detail,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let scopes = model.scopes();
     let mut y = area.y;
     if let Some(note) = &detail.update {
         if update_offered(&detail.offers) {
@@ -1118,18 +1105,6 @@ fn render_panel_footer(
     let rect = Rect::new(area.x, y, button.width().min(area.width), 1);
     button.render(frame, rect);
     hits.push((rect, Hit::OfferedAction(action)));
-    let key = hint::named_within(
-        u16::MAX,
-        &scopes,
-        &[(uze_keys::Action::Activate, action.label())],
-    );
-    let key_x = rect.right() + 2;
-    if key_x < area.right() {
-        frame.render_widget(
-            Paragraph::new(key),
-            Rect::new(key_x, y, area.right() - key_x, 1),
-        );
-    }
 }
 
 fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {

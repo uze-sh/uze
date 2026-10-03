@@ -183,10 +183,76 @@ fn hint_line(dialog: &Dialog<'_>, keys: &Keys<'_>) -> Line<'static> {
         Some(confirm) => vec![(keys.yes, confirm.as_str()), (keys.no, "cancel")],
         None => vec![(keys.no, "close")],
     };
+    border_hint(keys.scopes, &answers)
+}
+
+/// The keys a dialog answers to, as its bottom border carries them.
+pub(crate) fn border_hint(
+    scopes: &[uze_keys::Scope],
+    answers: &[(uze_keys::Action, &str)],
+) -> Line<'static> {
     let mut spans = vec![Span::raw(" ")];
-    spans.extend(answer_spans(keys.scopes, &answers));
+    spans.extend(answer_spans(scopes, answers));
     spans.push(Span::raw(" "));
     Line::from(spans)
+}
+
+/// Where a dialog drawn by [`shell`] puts its content: the rows under its
+/// title.
+pub(crate) struct Shell {
+    pub(crate) body: Rect,
+}
+
+/// Rows a [`shell`] spends around its body: the two borders, the air
+/// above the title, the title, and the air on either side of the body.
+pub(crate) const SHELL_ROWS: u16 = 6;
+
+/// The frame every dialog that is not a question is drawn in — a list to
+/// pick from, a glossary, a report — so it reads as the same object a
+/// question does: a plain border, a row of air, the title in bold inside
+/// rather than on the border, the content `PAD_X` in from the sides, and
+/// the keys that answer it in the bottom border.
+///
+/// `width` is the dialog's own measure, bounded by `area`; `body_rows` is
+/// how many rows its content wants, bounded the same way.
+pub(crate) fn shell(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    width: u16,
+    body_rows: u16,
+    title: &str,
+    hint: Line<'static>,
+) -> Shell {
+    let width = width.min(area.width.saturating_sub(4));
+    let height = (body_rows + SHELL_ROWS).min(area.height.saturating_sub(2));
+    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
+    frame.render_widget(Clear, popup);
+    let inner = Surface::floating()
+        .hint(hint)
+        .padding(Padding::horizontal(PAD_X))
+        .render(frame, popup);
+    if inner.height > 1 {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                title.to_owned(),
+                theme::fg_bold(Token::TextBright),
+            )),
+            Rect::new(inner.x, inner.y + 1, inner.width, 1),
+        );
+    }
+    let body = Rect::new(
+        inner.x,
+        inner.y + 3,
+        inner.width,
+        inner.height.saturating_sub(4),
+    );
+    Shell { body }
+}
+
+/// The columns a [`shell`] keeps between its border and its content, on
+/// each side — what a caller sizing its rows to the body measures with.
+pub(crate) const fn shell_chrome_width() -> u16 {
+    2 + PAD_X * 2
 }
 
 /// A dialog's answers in its own words, each after the key that reaches it

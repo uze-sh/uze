@@ -49,9 +49,6 @@ pub(crate) enum Hit {
     /// An overlay's own area — the release notes, a dialog: a click on it
     /// is reading or typing, and only one outside it closes the overlay.
     OverlayBody,
-    /// The mark in the release notes modal's corner. Ahead of the body it
-    /// sits on, and like every click that is not on the body, it closes.
-    ReleaseNotesClose,
     /// The footer's version: the notes of the release this binary is.
     RunningReleaseNotes,
     /// The footer's notice of a newer release: that release's notes.
@@ -248,7 +245,7 @@ impl TuiModel {
             }
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
-            Hit::ActionIndexEntry(_) | Hit::OverlayBody | Hit::ReleaseNotesClose => Intent::None,
+            Hit::ActionIndexEntry(_) | Hit::OverlayBody => Intent::None,
             Hit::OfferedAction(action) => self.act(action),
             Hit::KeysTrack(track) => {
                 self.dragging_keys_track = Some(track);

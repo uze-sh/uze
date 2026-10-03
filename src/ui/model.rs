@@ -710,8 +710,6 @@ pub(crate) struct TuiModel {
     pub(crate) version_hovered: bool,
     /// Whether the pointer is on the footer's health status.
     pub(crate) health_hovered: bool,
-    /// Whether the pointer is on the release notes' close mark.
-    pub(crate) release_notes_close_hovered: bool,
     /// The detail drawer's button under the pointer, if any.
     pub(crate) hovered_offer: Option<uze_keys::Action>,
 
@@ -862,7 +860,6 @@ impl TuiModel {
             source_link_hovered: false,
             version_hovered: false,
             health_hovered: false,
-            release_notes_close_hovered: false,
             hovered_offer: None,
             tick: 0,
             hits: Vec::new(),
@@ -991,6 +988,7 @@ impl TuiModel {
                 keywords: Vec::new(),
                 installed: true,
                 freshness: plugin.freshness.clone(),
+                installed_at_unix: plugin.installed_at_unix,
                 is_default: false,
             })
             .collect()

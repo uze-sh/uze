@@ -1,10 +1,9 @@
 //! TUI — overlay state transitions and their rendering.
 
 use ratatui::{
-    layout::{Constraint, Rect},
-    style::{Color, Modifier, Style},
+    layout::Rect,
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::Paragraph,
 };
 
 use uze_keys::Action;
@@ -14,7 +13,7 @@ use super::model::{Confirmation, Focus, Overlay, TrustedRetry, TuiModel};
 use super::worker::{Intent, TrustGrant};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::dialog::{self, CANCEL, Dialog, Tone};
-use crate::ui::widget::{Field, Surface, action_index, hint};
+use crate::ui::widget::{Field, action_index, text};
 
 impl TuiModel {
     /// One action, answered by whichever overlay is open.
@@ -203,6 +202,12 @@ pub(crate) fn render_action_index(
 ) {
     let rows = model.action_index_rows(scopes, filter);
     let reachable = model.action_index_rows(scopes, "").len();
+    let mut answering = scopes.to_vec();
+    answering.push(uze_keys::Scope::ActionIndex);
+    let hint = dialog::border_hint(
+        &answering,
+        &[(Action::Activate, "run"), (Action::Dismiss, "close")],
+    );
     let entries = action_index::render(
         frame,
         area,
@@ -210,6 +215,7 @@ pub(crate) fn render_action_index(
         reachable,
         filter,
         selected,
+        hint,
         Hit::ActionIndexEntry,
     );
     // Prepended, so the list underneath cannot answer a click meant here.
@@ -256,116 +262,105 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
             reconcile_keys.join(", ")
         )
     };
-    let entry = |symbol: Symbol, label: &str, color: Color, detail: &str| {
-        Line::from(vec![
-            Span::styled(
-                format!("{} {label:<18}", theme::glyph(symbol)),
-                Style::default().fg(color).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(detail.to_owned(), theme::fg(Token::TextMuted)),
-        ])
+    const WIDTH: u16 = 84;
+    const LABEL: usize = 20;
+    let measure = usize::from(WIDTH.saturating_sub(dialog::shell_chrome_width()));
+    // A label, then its meaning hung beside it: folded under itself rather
+    // than back under the label, so the column of labels stays a column.
+    let entry = |label: Span<'static>, detail: &str| -> Vec<Line<'static>> {
+        text::fold(detail, measure.saturating_sub(LABEL).max(1))
+            .into_iter()
+            .enumerate()
+            .map(|(index, row)| {
+                let lead = if index == 0 {
+                    Span::styled(format!("{:<LABEL$}", label.content), label.style)
+                } else {
+                    Span::raw(" ".repeat(LABEL))
+                };
+                Line::from(vec![lead, Span::styled(row, theme::fg(Token::TextMuted))])
+            })
+            .collect()
     };
-    let heading = |text: &str| {
-        Line::from(Span::styled(
-            text.to_owned(),
-            Style::default()
-                .fg(theme::color(Token::TextBright))
-                .add_modifier(Modifier::BOLD),
-        ))
+    let mark = |symbol: Symbol, label: &str, hue: Token| {
+        Span::styled(
+            format!("{} {label}", theme::glyph(symbol)),
+            theme::fg_bold(hue),
+        )
     };
-    let lines = vec![
-        heading("STATUS"),
-        // Words rather than marks: a card says its state at its foot,
-        // beside the id, and the legend names the words found there.
-        // Which of its two shapes a harness not configured is in —
-        // missing, or here and not set up — is in its own drawer.
-        Line::from(vec![
-            Span::styled(
-                format!("{:<20}", "Enabled"),
-                Style::default()
-                    .fg(theme::color(Token::StateSuccess))
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "UZE has set it up — ready to receive plugins.",
-                theme::fg(Token::TextMuted),
-            ),
-        ]),
-        Line::from(Span::styled(
-            format!("{:<20}{}", "Not configured", setup_note),
-            theme::fg(Token::TextMuted),
-        )),
-        Line::from(""),
-        heading("COMPATIBILITY (per capability, in the detail panel)"),
-        entry(
+    let mut sections = vec![crate::ui::view::section_label("status")];
+    sections.extend(entry(
+        Span::styled("Enabled", theme::fg_bold(Token::StateSuccess)),
+        "UZE has set it up — ready to receive plugins.",
+    ));
+    sections.extend(entry(
+        Span::styled("Not configured", theme::fg_bold(Token::TextSecondary)),
+        &setup_note,
+    ));
+    sections.push(Line::from(""));
+    sections.push(crate::ui::view::section_label(
+        "compatibility, per capability, in the detail panel",
+    ));
+    for (symbol, label, hue, detail) in [
+        (
             Symbol::MarkNative,
             "Native",
-            theme::color(Token::Accent),
+            Token::Accent,
             "Works directly, no adaptation needed.",
         ),
-        entry(
+        (
             Symbol::MarkNative,
             "Bridged",
-            theme::color(Token::Accent),
+            Token::Accent,
             "Routed through UZE's managed AGENTS.md bridge file.",
         ),
-        entry(
+        (
             Symbol::MarkAttention,
             "Missing/Drifted",
-            theme::color(Token::StateWarning),
-            &reconcile_note,
+            Token::StateWarning,
+            reconcile_note.as_str(),
         ),
-        entry(
+        (
             Symbol::MarkClose,
             "Conflict/Blocked",
-            theme::color(Token::StateDanger),
+            Token::StateDanger,
             "AGENTS.md bridge has unresolved content UZE won't overwrite.",
         ),
-        entry(
+        (
             Symbol::MarkAdapted,
             "Adapted",
-            theme::color(Token::StateWarning),
+            Token::StateWarning,
             "Works, converted from a different format.",
         ),
-        entry(
+        (
             Symbol::MarkAdapted,
             "Degraded",
-            theme::color(Token::StateWarning),
+            Token::StateWarning,
             "Works, but with reduced fidelity.",
         ),
-        entry(
+        (
             Symbol::MarkUnsupported,
             "Not supported",
-            theme::color(Token::StateDanger),
+            Token::StateDanger,
             "This harness has no route for it.",
         ),
-        entry(
+        (
             Symbol::MarkUnsupported,
             "Not implemented",
-            theme::color(Token::TextMuted),
+            Token::TextMuted,
             "UZE doesn't route this capability anywhere yet.",
         ),
-        Line::from(""),
-        Line::from(Span::styled(
-            "any key to close",
-            theme::fg(Token::TextMuted),
-        )),
-    ];
-    // `render_modal`'s fixed 76-column cap was built for the short one-line
-    // confirmations every other overlay uses — this glossary's longest
-    // lines need more room than that to avoid wrapping and losing the
-    // label/detail alignment, so size the popup off its own content instead
-    // (still bounded by the real terminal width on anything narrower).
-    let width = (lines.iter().map(Line::width).max().unwrap_or(0) as u16 + 4).min(area.width);
-    let height = (lines.len() as u16 + 4).min(area.height.saturating_sub(2));
-    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
-    frame.render_widget(Clear, popup);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(modal(" Harness status ").into_block())
-            .wrap(ratatui::widgets::Wrap { trim: true }),
-        popup,
+    ] {
+        sections.extend(entry(mark(symbol, label, hue), detail));
+    }
+    let shell = dialog::shell(
+        frame,
+        area,
+        WIDTH,
+        sections.len() as u16,
+        "Harness status",
+        dialog::border_hint(&scopes, &[(Action::Dismiss, "close")]),
     );
+    frame.render_widget(Paragraph::new(sections), shell.body);
 }
 
 /// What the footer's health status stands for: every problem an operator
@@ -376,47 +371,50 @@ pub(crate) fn render_health(
     alerts: &[crate::ui::view::health::Alert],
 ) {
     use crate::ui::view::health::Severity;
+    const WIDTH: u16 = 72;
+    let measure = usize::from(WIDTH.saturating_sub(dialog::shell_chrome_width()));
     let mut sorted: Vec<_> = alerts.iter().collect();
     sorted.sort_by_key(|alert| alert.severity);
-    let mut lines: Vec<Line<'static>> = if sorted.is_empty() {
-        vec![Line::from(Span::styled(
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if sorted.is_empty() {
+        lines.push(Line::from(Span::styled(
             "Nothing needs attention.",
             theme::fg(Token::TextMuted),
-        ))]
-    } else {
-        sorted
-            .into_iter()
-            .map(|alert| {
-                let (symbol, hue) = match alert.severity {
-                    Severity::High => (Symbol::MarkClose, Token::StateDanger),
-                    Severity::Medium => (Symbol::MarkAttention, Token::StateWarning),
-                    Severity::Low => (Symbol::MarkDot, Token::Accent),
-                };
-                Line::from(vec![
-                    Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(hue)),
-                    Span::styled(alert.label.clone(), theme::fg(Token::TextBright)),
-                    Span::styled(format!(" — {}", alert.detail), theme::fg(Token::TextMuted)),
-                ])
-            })
-            .collect()
-    };
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "any key to close",
-        theme::fg(Token::TextMuted),
-    )));
-    let width = (lines.iter().map(Line::width).max().unwrap_or(0) as u16 + 4)
-        .max(40)
-        .min(area.width);
-    let height = (lines.len() as u16 + 4).min(area.height.saturating_sub(2));
-    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
-    frame.render_widget(Clear, popup);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(modal(" Health ").into_block())
-            .wrap(ratatui::widgets::Wrap { trim: true }),
-        popup,
+        )));
+    }
+    for alert in sorted {
+        let (symbol, hue) = match alert.severity {
+            Severity::High => (Symbol::MarkClose, Token::StateDanger),
+            Severity::Medium => (Symbol::MarkAttention, Token::StateWarning),
+            Severity::Low => (Symbol::MarkDot, Token::Accent),
+        };
+        let lead = format!("{} ", theme::glyph(symbol));
+        let indent = text::columns(&lead);
+        // What it is about on the first row, what to do folded under it,
+        // past the mark, so every alert starts at the same column.
+        lines.push(Line::from(vec![
+            Span::styled(lead, theme::fg(hue)),
+            Span::styled(alert.label.clone(), theme::fg(Token::TextBright)),
+        ]));
+        for row in text::fold(&alert.detail, measure.saturating_sub(indent).max(1)) {
+            lines.push(Line::from(vec![
+                Span::raw(" ".repeat(indent)),
+                Span::styled(row, theme::fg(Token::TextMuted)),
+            ]));
+        }
+    }
+    let shell = dialog::shell(
+        frame,
+        area,
+        WIDTH,
+        lines.len() as u16,
+        "Health",
+        dialog::border_hint(
+            &[uze_keys::Scope::Global, uze_keys::Scope::Management],
+            &[(Action::Dismiss, "close")],
+        ),
     );
+    frame.render_widget(Paragraph::new(lines), shell.body);
 }
 
 /// What a dialog asking for one line of text says: its heading, what
@@ -505,23 +503,17 @@ pub(crate) fn render_theme_picker(
     themes: &[(String, bool)],
     selected: usize,
 ) {
-    let width = 46.min(area.width.saturating_sub(4));
-    let height = (themes.len() as u16 + 4).min(area.height.saturating_sub(2));
-    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
-    frame.render_widget(Clear, popup);
-    let inner = modal(" Theme ").render(frame, popup);
-
-    let mut lines: Vec<Line<'static>> = themes
+    let lines: Vec<Line<'static>> = themes
         .iter()
         .enumerate()
         .map(|(index, (id, in_force))| {
             let cursor = if index == selected {
-                theme::glyph(Symbol::ChevronCollapsed)
+                theme::glyph(Symbol::Prompt)
             } else {
-                " ".to_owned()
+                " ".repeat(usize::from(theme::width(Symbol::Prompt)))
             };
             Line::from(vec![
-                Span::styled(format!("{cursor} "), theme::fg(Token::Accent)),
+                Span::styled(format!("{cursor} "), theme::fg_bold(Token::Accent)),
                 Span::styled(
                     id.clone(),
                     if index == selected {
@@ -541,16 +533,18 @@ pub(crate) fn render_theme_picker(
             ])
         })
         .collect();
-    lines.push(Line::from(""));
-    lines.push(hint::line(
-        &[uze_keys::Scope::Global, uze_keys::Scope::ThemePicker],
-        &[
-            uze_keys::Action::SelectNext,
-            uze_keys::Action::Activate,
-            uze_keys::Action::Dismiss,
-        ],
-    ));
-    frame.render_widget(Paragraph::new(lines), inner);
+    let shell = dialog::shell(
+        frame,
+        area,
+        48,
+        lines.len() as u16,
+        "Theme",
+        dialog::border_hint(
+            &[uze_keys::Scope::Global, uze_keys::Scope::ThemePicker],
+            &[(Action::Activate, "apply"), (Action::Dismiss, "close")],
+        ),
+    );
+    frame.render_widget(Paragraph::new(lines), shell.body);
 }
 
 impl Confirmation {
@@ -693,15 +687,4 @@ pub(crate) fn render_confirmation(
     // Prepended, because the dialog is drawn over whatever was behind it
     // and that is still in the hit list underneath.
     hits.splice(0..0, targets.buttons);
-}
-
-/// The titled modal surface. Callers must render `Clear` over the rect
-/// first so leftover content underneath cannot bleed through.
-///
-/// It carried its own `Padding::new(1, 1, 1, 0)` and took the title's
-/// colour as an argument. Every caller passed the accent, and the inset
-/// was the one in the UI that did not reach for [`POPUP_H_PAD`] — both are
-/// [`Surface`]'s now.
-fn modal(title: impl Into<Line<'static>>) -> Surface {
-    Surface::floating().title(title)
 }

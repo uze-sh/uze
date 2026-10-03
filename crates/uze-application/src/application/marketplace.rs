@@ -728,6 +728,7 @@ impl Marketplace<'_> {
                 keywords: entry.keywords,
                 installed: installed_package.is_some(),
                 freshness,
+                installed_at_unix: installed_package.and_then(|package| package.written_at_unix()),
                 is_default: bootstrap::DEFAULT_PLUGIN_IDS.contains(&entry.name.as_str()),
             }
         }));
@@ -753,6 +754,8 @@ impl Marketplace<'_> {
                     freshness: installed_package
                         .map(|package| self.0.freshness_of(package))
                         .unwrap_or_else(Freshness::not_checked),
+                    installed_at_unix: installed_package
+                        .and_then(|package| package.written_at_unix()),
                     is_default: false,
                 }
             }));

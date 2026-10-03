@@ -29,6 +29,7 @@ fn plugin(id: &str) -> PluginSummary {
         commit: None,
         capability_count: 2,
         freshness: uze_application::application::Freshness::not_checked(),
+        installed_at_unix: None,
         undelivered: Vec::new(),
     }
 }
@@ -90,6 +91,7 @@ fn model_with_data() -> TuiModel {
         keywords: vec!["flow".to_owned()],
         installed: true,
         freshness: up_to_date(),
+        installed_at_unix: None,
         is_default: true,
     }];
     // Renders the "Updated" badge branch on every route that shows plugin
@@ -914,6 +916,7 @@ fn read_only_navigation_never_produces_a_mutating_intent() {
         keywords: Vec::new(),
         installed: true,
         freshness: up_to_date(),
+        installed_at_unix: None,
         is_default: true,
     }];
     for key in [
@@ -1715,6 +1718,7 @@ fn marketplace_plugin(marketplace: &str, name: &str, installed: bool) -> Marketp
         keywords: Vec::new(),
         installed,
         freshness: uze_application::application::Freshness::not_checked(),
+        installed_at_unix: None,
         is_default: false,
     }
 }
@@ -1788,10 +1792,11 @@ fn extension_filter_narrows_visible_selection() {
 }
 
 /// The screen offers what can still be done to the selection: switching
-/// off one that is on, switching on one that is off, and Enter doing
-/// whichever of the two applies.
+/// off one that is on and switching on one that is off, each by its own
+/// key. Enter switches nothing: a toggle that destroys nothing is still
+/// not what "open" promises.
 #[test]
-fn an_extension_is_switched_by_its_key_and_by_enter() {
+fn an_extension_is_switched_by_its_key_and_not_by_enter() {
     use crate::ui::worker::Intent;
 
     let mut model = TuiModel {
@@ -1820,7 +1825,7 @@ fn an_extension_is_switched_by_its_key_and_by_enter() {
     );
     assert_eq!(
         model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-        switched(false)
+        Intent::None
     );
 
     model.disabled_extensions.insert(selected.id.to_owned());
@@ -2035,6 +2040,7 @@ fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
         keywords: Vec::new(),
         installed: true,
         freshness: up_to_date(),
+        installed_at_unix: None,
         is_default: true,
     }];
 
@@ -2093,6 +2099,7 @@ fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
         keywords: vec!["context".to_owned(), "portability".to_owned()],
         installed: true,
         freshness: up_to_date(),
+        installed_at_unix: None,
         is_default: true,
     }];
 
@@ -2142,6 +2149,7 @@ fn the_source_link_lights_up_only_under_the_pointer() {
         keywords: Vec::new(),
         installed: true,
         freshness: up_to_date(),
+        installed_at_unix: None,
         is_default: true,
     }];
 
@@ -3392,41 +3400,35 @@ fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
     }
 }
 
-/// The nav badge counts an inventory, and Keys is not one.
-///
-/// Its list holds a row per surface an action can be reached from, so the
-/// same Enter, Esc and arrows are written out once per dialog and the
-/// total says something about the shape of the table rather than about
-/// uze. Beside the word "Keys" that number reads as how many shortcuts
-/// there are to learn, which is both wrong and the impression the screen
-/// exists to remove.
+/// A tab is the screen's number and name, and a badge only where the
+/// screen is not settled: no count beside any of them. The count said how
+/// big an inventory was in the one place a reader is choosing where to go,
+/// and the screen's own header says it once they are there.
 #[test]
-fn the_keys_route_carries_no_count() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+fn no_tab_carries_a_count() {
     let model = TuiModel {
         route: Route::Keys,
         focus: Focus::Content,
         ..model_with_data()
     };
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| {
-            render(frame, frame.area(), &model, false, &mut hits);
-        })
-        .unwrap();
-    let nav = buffer_rows(&terminal)
+    let (terminal, hits) = drawn_at(&model, 190, 40);
+    let header = buffer_rows(&terminal)
         .into_iter()
-        .find(|row| row.contains(Route::Keys.label()))
-        .expect("the sidebar drew the route");
-    assert!(
-        !nav.chars().any(|glyph| "₀₁₂₃₄₅₆₇₈₉".contains(glyph)),
-        "no count beside it: {nav:?}"
-    );
-    assert!(
-        !model.key_rows().is_empty(),
-        "and the screen it opens is not empty — the badge is absent by \
-         choice, not for want of anything to count"
-    );
+        .next()
+        .unwrap_or_default();
+    for (rect, hit) in &hits {
+        let Hit::Route(route) = hit else { continue };
+        let tab: String = header
+            .chars()
+            .skip(rect.x as usize)
+            .take(rect.width as usize)
+            .collect();
+        let after_label = tab.split(route.label()).nth(1).unwrap_or_default();
+        assert!(
+            !after_label.chars().any(|glyph| glyph.is_ascii_digit()),
+            "no count beside {route:?}: {tab:?}"
+        );
+    }
 }
 
 // --- Actions where the thing they act on is -----------------------------
@@ -3442,6 +3444,7 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
         keywords: Vec::new(),
         installed: true,
         freshness: behind(),
+        installed_at_unix: None,
         is_default: false,
     };
     let mut model = TuiModel {
@@ -4793,6 +4796,7 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
         keywords: vec!["git".to_owned(), "conventional-commits".to_owned()],
         installed: false,
         freshness: uze_application::application::Freshness::not_checked(),
+        installed_at_unix: None,
         is_default: false,
     };
     let mut model = TuiModel {
@@ -5307,4 +5311,43 @@ fn every_row_of_a_marketplace_card_answers_a_click() {
     model.click(column, heading.y + 1);
     assert_eq!(model.plugin_pane, PluginPane::Markets);
     assert_eq!(model.plugin_market.as_deref(), Some("local"));
+}
+
+/// The updated column says when each plugin was installed or last updated
+/// here — not when uze last checked for updates — and nothing for one that
+/// is not installed; its marketplace says its most recent.
+#[test]
+fn the_updated_column_is_when_a_plugin_was_installed() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let mut installed = marketplace_plugin("team", "kit", true);
+    installed.installed_at_unix = Some(now - 3 * 86_400);
+    installed.freshness.established_at_unix = Some(now - 600);
+    let mut newer = marketplace_plugin("team", "lint", true);
+    newer.installed_at_unix = Some(now - 2 * 3_600);
+    let available = marketplace_plugin("team", "draft", false);
+    let model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        remembered: Remembered {
+            marketplace_plugins: vec![installed, newer, available],
+            ..TuiModel::default().remembered
+        },
+        ..TuiModel::default()
+    };
+    let (terminal, _hits) = drawn_at(&model, 150, 30);
+    let rows = buffer_rows(&terminal);
+    let tree = |needle: &str| {
+        rows.iter()
+            .map(|row| row.split('│').next().unwrap_or_default().to_owned())
+            .find(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} not drawn: {rows:#?}"))
+    };
+    assert!(tree("▸ kit").contains("3d ago"), "{}", tree("▸ kit"));
+    assert!(!tree("▸ kit").contains("10m ago"), "not the update check");
+    assert!(tree("▸ lint").contains("2h ago"));
+    assert!(!tree("▸ draft").contains("ago"), "{}", tree("▸ draft"));
+    assert!(tree("team  ").contains("2h ago"), "its most recent");
 }

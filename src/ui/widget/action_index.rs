@@ -2,7 +2,7 @@
 //! reader is, with the key that runs it.
 //!
 //! A composite rather than a primitive — it is assembled from
-//! [`Surface`](super::Surface), [`mark`](super::mark) and a row per action
+//! the [`dialog`](super::dialog) shell, the search row and a row per action
 //! — and it is here for the same reason a primitive is: both clients draw
 //! it, and until now both *built* it.
 //!
@@ -19,14 +19,14 @@
 //! is the bug a shared filter prevents.
 
 use ratatui::{
-    layout::{Constraint, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::Paragraph,
 };
 use uze_theme::Token;
 
-use super::{Field, Scrollbar, Surface};
+use super::{Field, Scrollbar};
 use crate::ui::theme::{self, Symbol};
 
 /// One line of the index: an action, and the chord that runs it where one
@@ -66,9 +66,9 @@ const MAX_WIDTH: u16 = 72;
 /// it scrolls, which is what a list does.
 const MAX_ROWS: usize = 12;
 
-/// Rows the surface spends on something other than actions: its two
-/// borders, the field and its rule, and the row of air under them.
-const CHROME_ROWS: u16 = 6;
+/// Rows the body spends on something other than actions: the search row
+/// and the row of air under it.
+const FIELD_ROWS: u16 = 2;
 
 /// Draws the index over `area`, answering with the rect each row took.
 ///
@@ -77,6 +77,10 @@ const CHROME_ROWS: u16 = 6;
 /// business — the same arrangement [`button_row`](super::button_row) uses.
 /// The caller registers the rects: they belong on *top* of whatever is
 /// underneath, which is the caller's list to splice into.
+///
+/// `hint` is the keys that answer it, which the caller's keymap scopes
+/// decide, for the bottom border.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render<H>(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -84,6 +88,7 @@ pub(crate) fn render<H>(
     reachable: usize,
     filter: &str,
     selected: usize,
+    hint: Line<'static>,
     entry: impl Fn(usize) -> H,
 ) -> Vec<(Rect, H)> {
     let key_width = rows
@@ -98,28 +103,18 @@ pub(crate) fn render<H>(
     // the reader is aiming at, and the first keystroke is when they are
     // least able to follow.
     let shown = reachable.min(MAX_ROWS) as u16;
-    let height = (shown + CHROME_ROWS).min(area.height.saturating_sub(2));
-    let rect = area.centered(Constraint::Length(width), Constraint::Length(height));
-    frame.render_widget(Clear, rect);
-    let inner = Surface::floating().title(" Help ").render(frame, rect);
-    // On the border row, where a modal's own controls live. Clicking
-    // anywhere but a row already closes the index in both clients — this
-    // is the mark that says so, rather than a target that does something
-    // the rest of the surface does not.
-    close_mark(frame, rect);
+    let shell = super::dialog::shell(frame, area, width, shown + FIELD_ROWS, "Help", hint);
+    let inner = shell.body;
 
     // Always focused: the index is open, so every key reaches this field.
-    // Under the same rule every other input in the product wears — it is
-    // what says "field" before anything has been typed into it.
-    Field::new(filter, "type to narrow").render(frame, Rect::new(inner.x, inner.y, inner.width, 2));
+    // The same search row every list in the product heads itself with.
+    Field::new(filter, "type to narrow").render_search(frame, Rect { height: 1, ..inner });
 
-    // Two rows for the field and its rule, then a row of air before the
-    // first action: the rule separates the query from what it narrowed.
     let mut list = Rect::new(
         inner.x,
-        inner.y + 3,
+        inner.y + FIELD_ROWS,
         inner.width,
-        inner.height.saturating_sub(3),
+        inner.height.saturating_sub(FIELD_ROWS),
     );
     let visible = usize::from(list.height);
     // The window is derived from the selection rather than kept as an
@@ -169,6 +164,15 @@ pub(crate) fn render<H>(
         }
         frame.render_widget(
             Paragraph::new(Line::from(vec![
+                // The cursor every list in the product points with.
+                Span::styled(
+                    if chosen {
+                        format!("{} ", theme::glyph(Symbol::Prompt))
+                    } else {
+                        " ".repeat(usize::from(theme::width(Symbol::Prompt)) + 1)
+                    },
+                    theme::fg_bold(Token::Accent),
+                ),
                 Span::styled(
                     format!("{key:<key_width$}  "),
                     theme::fg(if chord.is_some() {
@@ -195,28 +199,4 @@ pub(crate) fn render<H>(
         bar.render(frame, first);
     }
     entries
-}
-
-/// The mark that closes the index, drawn on its top border.
-///
-/// The glyph alone: a modal titled `Help` with a word on the other corner
-/// reads as two labels rather than as a title and a control, and closing
-/// is the one thing every modal does — nobody needs it spelled.
-fn close_mark(frame: &mut ratatui::Frame<'_>, surface: Rect) {
-    let width = theme::width(Symbol::MarkClose) + 2;
-    if surface.width <= width + 2 {
-        return;
-    }
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            format!(" {} ", theme::glyph(Symbol::MarkClose)),
-            theme::fg(Token::StateDanger),
-        )),
-        Rect::new(
-            surface.right().saturating_sub(width + 1),
-            surface.y,
-            width,
-            1,
-        ),
-    );
 }

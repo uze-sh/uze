@@ -847,9 +847,6 @@ pub(super) enum WorkspaceHit {
     /// The release notes modal's own area: a click on it is reading, and
     /// only one outside it closes the modal.
     ReleaseNotesBody,
-    /// The mark in the release notes modal's corner. Ahead of the body it
-    /// sits on, and like every click that is not on the body, it closes.
-    ReleaseNotesClose,
     ResizeSidebar,
 }
 

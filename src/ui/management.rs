@@ -364,15 +364,8 @@ pub(crate) fn render(
         Overlay::HarnessHelp => overlay::render_harness_help(frame, area),
         Overlay::Health => overlay::render_health(frame, area, &model.alerts()),
         Overlay::ReleaseNotes(modal) => {
-            let targets =
-                super::release_notes::render(frame, area, modal, model.release_notes_close_hovered);
-            hits.splice(
-                0..0,
-                [
-                    (targets.close, Hit::ReleaseNotesClose),
-                    (targets.popup, Hit::OverlayBody),
-                ],
-            );
+            let targets = super::release_notes::render(frame, area, modal);
+            hits.insert(0, (targets.popup, Hit::OverlayBody));
         }
         Overlay::Confirm { kind, focus } => {
             overlay::render_confirmation(frame, area, kind, *focus, hits)
@@ -419,34 +412,6 @@ pub(crate) const FIRST_STEPS: [uze_keys::Action; 4] = [
     uze_keys::Action::OpenActionIndex,
 ];
 
-/// The badge beside a tab: how many of the things that screen is about
-/// there are, for the screens that are an inventory of something.
-///
-/// Two are not, and carry none. Overview is a report rather than a list.
-/// Keys is a reference — one row per surface an action can be reached
-/// from, so most of them are the same Enter, Esc and arrow keys written
-/// out once per dialog, and their total is a fact about the shape of the
-/// table rather than about uze. Printed beside "Shortcuts" it reads as how
-/// much there is to learn, which is both untrue and the exact impression
-/// this screen exists to remove.
-fn route_count(route: Route, model: &TuiModel) -> Option<usize> {
-    match route {
-        Route::Overview => None,
-        Route::Plugins => Some(model.remembered.marketplaces.len()),
-        Route::Extensions => Some(model.extensions.len()),
-        Route::Harnesses => Some(
-            model
-                .remembered
-                .doctor
-                .as_ref()
-                .map_or(0, |d| d.harnesses.len()),
-        ),
-        Route::Profiles => Some(model.remembered.profiles.len()),
-        Route::Keys => None,
-        Route::Settings => None,
-    }
-}
-
 /// The columns the modal's name takes at the head of the tab strip, so
 /// the first tab starts at the same column whatever the name.
 const NAME_WIDTH: usize = 12;
@@ -455,14 +420,13 @@ const NAME_WIDTH: usize = 12;
 const TAB_GAP: u16 = 2;
 
 /// How much of itself a tab says, from all of it down to its number
-/// alone: a strip that does not fit gives up the counts first, then the
-/// badges, then the names of the screens that are not open.
+/// alone: a strip that does not fit gives up the badges first, then the
+/// names of the screens that are not open.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum TabDetail {
     NumberOnly,
     Name,
     Badge,
-    Full,
 }
 
 /// One tab: its number, which is the key that reaches it, its name, and
@@ -502,10 +466,6 @@ fn tab_line(position: usize, route: Route, model: &TuiModel, detail: TabDetail) 
         ));
     }
     let badge = match detail {
-        TabDetail::Full => route
-            .badge()
-            .map(text::small_caps)
-            .or_else(|| route_count(route, model).map(|count| count.to_string())),
         TabDetail::Badge => route.badge().map(text::small_caps),
         TabDetail::Name | TabDetail::NumberOnly => None,
     };
@@ -534,7 +494,7 @@ fn fitted_tabs(model: &TuiModel, room: u16) -> Vec<(Route, Line<'static>)> {
             .sum::<u16>()
             .saturating_sub(TAB_GAP)
     };
-    [TabDetail::Full, TabDetail::Badge, TabDetail::Name]
+    [TabDetail::Badge, TabDetail::Name]
         .into_iter()
         .map(tabs)
         .find(|candidate| width(candidate) <= room)
@@ -690,7 +650,9 @@ fn hint_line(model: &TuiModel) -> Line<'static> {
             "expand".to_owned(),
         ));
     }
-    entries.push(Entry::Key(Action::Activate, activate_label(model)));
+    if let Some(label) = activate_label(model) {
+        entries.push(Entry::Key(Action::Activate, label));
+    }
     if model.has_filter() {
         entries.push(Entry::Key(Action::StartFilter, "filter".to_owned()));
     }
@@ -706,15 +668,38 @@ fn hint_line(model: &TuiModel) -> Line<'static> {
     hint::entries_within(u16::MAX, &model.scopes(), &entries)
 }
 
-/// What Enter does here, in the word the footer gives it.
-fn activate_label(model: &TuiModel) -> String {
-    let primary = match (model.route, model.plugin_pane) {
-        (Route::Plugins, model::PluginPane::Plugins) => model
+/// What Enter does here, in the word the footer gives it, or `None` where
+/// it does nothing — a hint for a key that answers nothing is a hint that
+/// lies. Mirrors the `Activate` arm of `perform` screen by screen; a screen
+/// that changes what Enter does changes this with it.
+fn activate_label(model: &TuiModel) -> Option<String> {
+    use model::{PluginPane, ProfilePanel, SettingsRow};
+    if model.focus == Focus::Sidebar {
+        return Some("open".to_owned());
+    }
+    match model.route {
+        Route::Keys => Some("change key".to_owned()),
+        Route::Settings => match model.selected_settings_row() {
+            Some(
+                SettingsRow::Theme { .. }
+                | SettingsRow::GlyphSet { .. }
+                | SettingsRow::Chime { .. },
+            ) => Some("choose".to_owned()),
+            _ => None,
+        },
+        Route::Plugins if model.plugin_pane == PluginPane::Markets => Some("open".to_owned()),
+        Route::Plugins => model
             .selected_marketplace_plugin()
-            .and_then(|plugin| view::plugins::primary_offer(&plugin.offers())),
-        _ => None,
-    };
-    primary.map_or_else(|| "open".to_owned(), |action| action.label())
+            .and_then(|plugin| view::plugins::primary_offer(&plugin.offers()))
+            .map(|action| action.label()),
+        Route::Profiles if model.profile_preview_open => Some("toggle".to_owned()),
+        Route::Profiles => match model.profile_panel {
+            ProfilePanel::List => Some("edit".to_owned()),
+            ProfilePanel::Editor => Some("change".to_owned()),
+            ProfilePanel::Harnesses => None,
+        },
+        Route::Overview | Route::Harnesses | Route::Extensions => None,
+    }
 }
 
 /// What the footer says: how the last thing went while there is anything
@@ -770,5 +755,28 @@ mod tests {
             .send(WorkerResult::ReleaseNotesRead("1.0.0".to_owned(), None))
             .unwrap();
         assert!(memory.tick(&mut model, &home), "an answer arriving redraws");
+    }
+
+    /// The footer names what Enter does on the screen in front of the
+    /// reader, and says nothing where it does nothing.
+    #[test]
+    fn the_footer_names_what_enter_does_on_each_screen() {
+        let mut model = TuiModel {
+            focus: Focus::Content,
+            ..TuiModel::default()
+        };
+        model.route = Route::Harnesses;
+        assert_eq!(activate_label(&model), None, "Enter does nothing here");
+        model.route = Route::Keys;
+        assert_eq!(activate_label(&model).as_deref(), Some("change key"));
+        model.route = Route::Plugins;
+        model.select_plugin_market(Some("uze-official".to_owned()));
+        assert_eq!(
+            activate_label(&model).as_deref(),
+            Some("open"),
+            "on a marketplace, Enter steps into it"
+        );
+        model.focus = Focus::Sidebar;
+        assert_eq!(activate_label(&model).as_deref(), Some("open"));
     }
 }

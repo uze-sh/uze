@@ -1603,6 +1603,7 @@ mod tests {
                 commit: None,
                 capability_count: 1,
                 freshness: uze_application::application::Freshness::not_checked(),
+                installed_at_unix: None,
                 undelivered: Vec::new(),
             })
             .collect();
