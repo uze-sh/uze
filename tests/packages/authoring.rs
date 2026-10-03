@@ -683,3 +683,26 @@ fn check_names_what_keeps_a_plugin_from_agent_plugins_and_still_passes() {
     assert!(text.contains("server `s` has no `type`"), "{text}");
     let _ = fs::remove_dir_all(root);
 }
+
+/// A session start has nothing to deny: a group declaring `deny` on it
+/// fails the check, which names the group and the one effect it may take.
+#[test]
+fn a_deny_on_session_start_fails_the_check() {
+    let root = uze_testkit::temp::scratch("check-session-start-deny");
+    let plugin = root.join("kit");
+    fs::create_dir_all(&plugin).unwrap();
+    fs::write(plugin.join("plugin.json"), r#"{"name":"kit"}"#).unwrap();
+    fs::write(
+        plugin.join("hooks.json"),
+        r#"{"hooks":{"SessionStart":[{"id":"gate","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/gate"}]}]}}"#,
+    )
+    .unwrap();
+    let (clean, text) = check(&root, &plugin);
+    assert!(!clean, "{text}");
+    assert!(
+        text.contains("hook `gate` declares effect `deny` on SessionStart")
+            && text.contains("use effect `observe`"),
+        "{text}"
+    );
+    let _ = fs::remove_dir_all(root);
+}

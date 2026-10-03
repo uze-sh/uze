@@ -374,11 +374,10 @@ fn render_tree(
         hits.push((rect, Hit::FocusFilter));
     }
     rows.gap();
-    let group_area = Rect {
-        x: area.x + 1,
-        width: area.width.saturating_sub(2),
-        ..area
-    };
+    // A selected group's ground spans the screen's text column and no
+    // further, so its edges fall under the title like every other screen's
+    // selected band; the rows indent inside it.
+    let group_area = text_area;
     let columns =
         Columns::fitted(usize::from(group_area.width).saturating_sub(PLUGIN_INDENT + TRAILING + 4));
     if let Some(rect) = rows.next(1) {

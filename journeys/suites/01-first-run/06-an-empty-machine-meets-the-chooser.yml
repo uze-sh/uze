@@ -1,0 +1,76 @@
+journey: an empty machine is asked which harnesses to install before the workspace opens
+tags: [gate, tui, first-run]
+proves: web/content/docs/installation.mdx
+about: |
+  Somebody who installs uze on a machine with no coding agent at all, and
+  runs the workspace straight away, is asked which harnesses to install:
+  the workspace would otherwise open with nothing to launch an agent with.
+  Nothing is set up before the answer, and what is set up after it is
+  exactly what was picked, through that vendor's official installer.
+
+  The world has no harness on it. The vendors' installers are reached
+  through the stand-in `curl`, which answers offline, so the choice is
+  proven by what was fetched and what was recorded, never by downloading
+  anything. The stand-in installer installs nothing, so the harness picked
+  ends up recorded as an attempted install that did not verify, which is
+  the honest record of a route that ran and left no executable.
+
+world:
+  project: demo-app
+  first_run: true
+
+scenes:
+  - scene: a machine with no harness is asked, and nothing is set up before the answer
+    when:
+      - shell: rm -f {world}/bin/claude {world}/bin/codex {world}/bin/opencode {world}/bin/agy
+        say: take every harness off the machine, keeping only the installer fetcher
+      - open: ["{uze}", "workspace"]
+        say: run the workspace on a machine that has no agent
+        expect: Harnesses to provision
+        expect_timeout: 60
+        pause: 0.5
+    then:
+      - file: "{uze_home}/state/provisioning.json"
+        exists: false
+        about: no harness is recorded as provisioned while the question is open
+      - link: "{uze_home}/shims/*"
+        exists: false
+        about: and no launcher is placed for one
+      - file: "{world}/bin/.invocations/curl.log"
+        exists: false
+        about: and no vendor installer has been fetched
+
+  - scene: what is picked goes through its vendor's official installer, and nothing else does
+    when:
+      - key: ["Space", "Enter"]
+        say: pick the first harness offered and confirm
+        expect: Press enter to open uze
+        expect_timeout: 90
+      - key: "Enter"
+        say: read the report and open the workspace
+        expect: demo-app
+        expect_timeout: 60
+        pause: 1.0
+    then:
+      - file: "{world}/bin/.invocations/curl.log"
+        contains: https://claude.ai/install.sh
+        about: the harness picked went through its vendor's own installer
+      - file: "{world}/bin/.invocations/curl.log"
+        excludes: chatgpt.com/codex
+        about: no Codex installer was fetched
+      - file: "{world}/bin/.invocations/curl.log"
+        excludes: opencode.ai
+        about: no OpenCode installer was fetched
+      - file: "{world}/bin/.invocations/curl.log"
+        excludes: antigravity.google
+        about: and no Antigravity installer either, since nobody picked them
+      - json: "{uze_home}/state/provisioning.json"
+        at: harnesses.*
+        count: 1
+        about: only the harness picked has a provisioning record
+      - json: "{uze_home}/state/provisioning.json"
+        at: harnesses.claude-code.action
+        equals: INSTALL
+        about: and it records an install, not the verification of something already there
+      - process: { matching: bash, cwd: "{project}", alive: true }
+        about: the workspace opened on the project after the answer

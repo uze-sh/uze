@@ -47,13 +47,23 @@ decision does not deprecate it. Which of the two becomes the default (or
 whether both stay) for Claude specifically is explicitly **not** decided
 here — see Known Limitations.
 
+The shim is reached only where the workspace puts it: `uze workspace`
+places `$UZE_HOME/shims` first on `PATH` in the panes it opens, and UZE
+never edits a shell's startup files. An earlier build added a `PATH` block
+to the detected shell rc; that route was withdrawn on 2026-09-30
+(`separate-package-manager-and-workspace`, its D6: the shim belongs to
+the workspace, not to every shell), and #174 removed the code that took
+the block back. Held by
+`tests/acceptance/package_only.rs`, which fails if setup changes a shell
+startup file.
+
 ## Architecture
 
 ```
 uze setup claude
   └─ UzeApplication::ensure_runtime_shim   (crates/uze-application/src/application.rs)
        ├─ creates/refreshes ~/.uze/shims/claude -> uze     (refresh_shim_symlink)
-       └─ adds shims_dir to PATH in the detected shell rc  (shell_path::ensure_path_line)
+       (no shell startup file is edited: the workspace puts shims_dir first on PATH in its own panes)
 
 $ claude ...
   └─ src/main.rs::main() — argv[0] checked before clap parsing

@@ -32,6 +32,19 @@ installation or overwrite a divergent artifact without an explicit operation.
   the UZE store
 - **THEN** UZE removes the managed reference for every harness that had it
 - **AND THEN** no dangling reference is left in any harness's discovery
+
+#### Scenario: A loose skill keeps its supporting files visible
+- **WHEN** a skill with `references/` and `scripts/` is delivered to OpenCode
+  through its own global root, `~/.config/opencode/skills`
+- **THEN** `~/.config/opencode/skills/<label>` is a regular directory holding the
+  rendered `SKILL.md` and copies of those files
+- **AND THEN** OpenCode lists them in the skill's `<skill_files>`
+
+#### Scenario: An edited delivered skill is drift, not a silent source
+- **WHEN** the operator edits a file inside a delivered skill directory
+- **THEN** `uze doctor` reports the attachment Drifted
+- **AND THEN** UZE does not remove or overwrite it without the operator's
+  action
 *** Add File: /home/hiukky/uze/openspec/changes/add-environment-maintenance-engine/design.md
 ## Context
 

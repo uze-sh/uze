@@ -23,8 +23,8 @@ The plugin format (skills, agents, MCP servers, hooks, and the
 at [uze.sh/docs/reference/plugin-format](https://uze.sh/docs/reference/plugin-format)
 and [uze.sh/docs/reference/harnesses](https://uze.sh/docs/reference/harnesses).
 
-See [`docs/capabilities/context-manager.md`](../../docs/capabilities/context-manager.md)
+See [`docs/capabilities/context-manager.md`](https://github.com/uze-sh/uze/blob/main/docs/capabilities/context-manager.md)
 for the architecture these sit on top of, and
-[`docs/capabilities/uze-skill.md`](../../docs/capabilities/uze-skill.md) for how
+[`docs/capabilities/uze-skill.md`](https://github.com/uze-sh/uze/blob/main/docs/capabilities/uze-skill.md) for how
 they are invoked per harness, the no-special-treatment proof, and what is not
 tested.

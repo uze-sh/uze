@@ -351,6 +351,57 @@ fn two_packages_with_the_same_skill_name_coexist_deterministically() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// A package declaring one agent, `agents/<agent_name>.md`.
+fn agent_fixture(root: &Path, package_id: &str, agent_name: &str) -> PathBuf {
+    let dir = root.join(package_id);
+    fs::create_dir_all(dir.join("agents")).unwrap();
+    fs::write(
+        dir.join("plugin.json"),
+        format!(r#"{{"name":"{package_id}"}}"#),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("agents").join(format!("{agent_name}.md")),
+        format!("---\nname: {agent_name}\ndescription: test fixture.\n---\nBody.\n"),
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn two_packages_with_the_same_agent_name_are_both_delivered_under_their_own_labels() {
+    let root = temp("managed-agent-collision");
+    let (application, skills_dir) = app_with_opencode(&root);
+    let agents_dir = skills_dir.parent().unwrap().join("agents");
+    let fixture_root = root.join("fixtures");
+
+    for package in ["flow", "forge"] {
+        let report = application
+            .plugins()
+            .add(
+                PackageSource::local(agent_fixture(&fixture_root, package, "architect")),
+                &uze_core::trust::AlwaysTrust,
+            )
+            .unwrap();
+        assert!(report.blocked.is_empty(), "{:?}", report.blocked);
+    }
+
+    let mut names: Vec<String> = fs::read_dir(&agents_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_owned())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            "flow:architect.md".to_owned(),
+            "forge:architect.md".to_owned()
+        ],
+        "neither agent is refused or renamed for the other's name"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 // --- Foreign collision: never overwritten, explicit conflict ---------------
 
 #[test]

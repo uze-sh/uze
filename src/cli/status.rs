@@ -228,7 +228,16 @@ pub(crate) fn render_doctor(report: &DoctorReport) -> String {
             )
         }
     };
-    progress::change_report("doctor", &text, &outcome)
+    // The docs close the report, as they close `uze --help`: a finding is
+    // where a person goes looking for what it means.
+    format!(
+        "{}\n{}\n",
+        progress::change_report("doctor", &text, &outcome),
+        progress::aligned_rows(vec![vec![
+            progress::label("docs"),
+            DOCUMENTATION_URL.to_owned()
+        ]])
+    )
 }
 
 /// The label `DoctorReport.harnesses` carries for a hook row's stable

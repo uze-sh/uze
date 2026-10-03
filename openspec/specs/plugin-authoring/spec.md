@@ -4,7 +4,7 @@
 The deterministic authoring surface UZE exposes to an agent: scaffolding a marketplace as a registered, linked Git repository, scaffolding a plugin and its capabilities inside a chosen marketplace, and validating authored plugins and marketplaces offline — each a single-purpose verb under `uze agent …`, hidden from the person-facing `--help` and documented in the projected `AGENTS.md` region.
 ## Requirements
 ### Requirement: Authoring verbs are deterministic, agent-facing, and unaliased for people
-The system SHALL expose plugin authoring only as deterministic verbs under `uze agent …`: each verb takes its full input on the command line (or its defaults), performs exactly one artifact-producing step, prints a machine-readable answer, and never prompts interactively. The authoring verbs SHALL be hidden from `uze --help` like the rest of the `agent` grammar, documented in the region UZE projects into `AGENTS.md`, and SHALL NOT gain person-facing aliases: the person's CLI surface carries only what a person performs by hand, and browsing marketplaces and their plugins remains the `uze market` surface's answer.
+The system SHALL expose plugin authoring only as deterministic verbs under `uze agent …`: each verb takes its full input on the command line (or its defaults), performs exactly one artifact-producing step, prints a machine-readable answer, and never prompts interactively. The authoring verbs SHALL be hidden from `uze --help` like the rest of the `agent` grammar, documented in a region the package manager projects into the `AGENTS.md` of every project UZE manages, whether or not the project declares a workspace policy, and SHALL NOT gain person-facing aliases: the person's CLI surface carries only what a person performs by hand, and browsing marketplaces and their plugins remains the `uze market` surface's answer. None of the authoring verbs SHALL require an agent the workspace launched.
 
 #### Scenario: An agent drives the full authoring loop without a person's input
 - **WHEN** an agent runs `uze agent market create`, then `uze agent plugin create`, then `uze agent plugin check`, providing all arguments up front
@@ -13,6 +13,14 @@ The system SHALL expose plugin authoring only as deterministic verbs under `uze 
 #### Scenario: Authoring verbs stay off the person's help surface
 - **WHEN** a person runs `uze --help` or `uze agent --help`
 - **THEN** the authoring verbs are not listed; they are reachable only by following the `AGENTS.md` region, and no person-facing alias of them exists — browsing what a marketplace offers is `uze market`'s answer, not a second authoring spelling
+
+#### Scenario: A project without a workspace policy documents authoring
+- **WHEN** a project that declares no workspace policy reconciles its context
+- **THEN** its `AGENTS.md` carries the package manager's region documenting the authoring verbs
+
+#### Scenario: An agent started by hand authors a plugin
+- **WHEN** an agent a person started by hand follows that region
+- **THEN** every verb it names runs without asking for a launched agent
 
 ### Requirement: Marketplace scaffold creates a Git repository and registers it linked
 The system SHALL, for `uze agent market create <name> [--at <dir>] [--description <text>]`, create a new marketplace at the named directory: a `marketplace.json` with the given name, description and owner, an empty `plugins/` tree, a Git repository initialized with an initial commit (through the `uze-git` transport), and the marketplace registered in the machine registry with its source pointing at that directory **and linked to it**, so installs read the author's working tree — including not-yet-committed files — from the first moment.
@@ -64,7 +72,7 @@ The system SHALL, for `uze agent plugin create <name> --market <name> [--descrip
 - **THEN** the command fails naming the existing plugin and writes nothing into it
 
 ### Requirement: Check validates authored plugins and marketplaces offline
-The system SHALL, for `uze agent plugin check <path>` and `uze agent market check <path>`, validate the authored artifact without touching the Store, any harness or the network, and report every finding: manifest parse errors, a package name outside the valid charset, absolute or `..`-shaped path references, `SKILL.md` files missing required frontmatter or a malformed invocation policy, a `hooks.json` violating the handler contract (timeout bounds, deny exit code semantics), a malformed `mcp.json`, and — for marketplace checks — `plugins[]` entries whose `source` does not resolve inside the marketplace or whose plugin fails its own check. A clean artifact SHALL exit zero; any finding SHALL exit non-zero with the reasons on the answer.
+The system SHALL, for `uze agent plugin check <path>` and `uze agent market check <path>`, validate the authored artifact without touching the Store, any harness or the network, and report every finding: manifest parse errors, a plugin or marketplace name outside the name rule (with the corrected name), absolute or `..`-shaped path references, `SKILL.md` files missing required frontmatter, carrying a `name` that is missing, outside the name rule or different from the skill's directory, or carrying a malformed invocation policy, a `hooks.json` violating the handler contract (timeout bounds, deny exit code semantics), a malformed `mcp.json`, and — for marketplace checks — `plugins[]` entries whose `name` is outside the name rule, whose `source` does not resolve inside the marketplace or whose plugin fails its own check. A clean artifact SHALL exit zero; any finding SHALL exit non-zero with the reasons on the answer.
 
 #### Scenario: A plugin that would fail at install fails check first
 - **WHEN** an authored plugin's `plugin.json` names it `-starts-with-dash` and the agent runs `uze agent plugin check` on its directory
@@ -77,6 +85,10 @@ The system SHALL, for `uze agent plugin check <path>` and `uze agent market chec
 #### Scenario: A marketplace check covers its plugins
 - **WHEN** the agent runs `uze agent market check` on a scaffolded marketplace whose one plugin has an invalid `hooks.json`
 - **THEN** the command exits non-zero and the answer locates the finding in that plugin
+
+#### Scenario: A skill a harness would refuse by name
+- **WHEN** a plugin's `skills/greet/SKILL.md` carries `name: hello`, `name: Greet_Skill`, or no `name`
+- **THEN** `uze agent plugin check` exits non-zero and the finding says which, with the corrected name or the directory the name must equal
 
 ### Requirement: The authoring loop ships as a Skill
 The system SHALL ship the guided authoring script as a Skill in the official plugin (`plugins/uze/skills/author/SKILL.md`), whose frontmatter carries the canonical invocation policy permitting both model and user invocation, and whose body teaches the loop: marketplace create or select, plugin scaffold, capability flags, `check` before `install`, installing from the linked marketplace, iterating, and publishing by pushing the marketplace repository. The Skill SHALL be delivered by the official plugin's normal Skill delivery — no integration change.
@@ -95,4 +107,15 @@ The system SHALL classify every new authoring leaf command in `command_performan
 #### Scenario: An unclassified authoring command fails the suite
 - **WHEN** an authoring leaf command is added without a performance classification
 - **THEN** `cargo test` fails naming the command, as with every other leaf
+
+### Requirement: Scaffolds refuse a name outside the rule
+The system SHALL refuse `uze agent market create <name>` and
+`uze agent plugin create <name>` when the name is not lowercase kebab-case
+of at most 64 characters (see the `plugin` capability), before writing
+anything, and the refusal SHALL name the corrected name when one can be
+derived.
+
+#### Scenario: A plugin named in another style
+- **WHEN** the agent runs `uze agent plugin create My_Plugin --market tools`
+- **THEN** the command fails, says `try \`my-plugin\``, and writes no file
 

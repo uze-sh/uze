@@ -91,4 +91,4 @@ documented schema and real-harness behavior.
       `cargo clippy --all-targets -- -D warnings`, and strict OpenSpec
       validation pass.
 
-Source change: openspec/changes/add-portable-agent-capability/
+Source change: openspec/changes/archive/2026-10-03-add-portable-agent-capability/

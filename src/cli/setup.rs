@@ -185,7 +185,7 @@ pub(crate) fn harness_hint(harness: &HarnessHealth) -> String {
 ///
 /// Progress contract: `setup` runs harnesses **sequentially
 /// in registration order**, one opaque container per harness. The vendor
-/// installer's output is buffered to `$UZE_HOME/state/logs/setup-<harness>.log`
+/// installer's output is buffered to `$UZE_HOME/cache/logs/setup-<harness>.log`
 /// instead of interleaving on the terminal, so the terminal shows only
 /// ordered step headers and the per-harness final status.
 /// How a setup that did not fail ended: with nothing to say beyond its

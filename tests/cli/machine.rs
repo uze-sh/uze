@@ -417,6 +417,27 @@ fn doctor_reports_not_configured_before_any_setup() {
     let _ = std::fs::remove_dir_all(home);
 }
 
+/// The report closes on where its findings are explained, as `--help` does.
+#[test]
+fn doctor_ends_with_the_documentation_url() {
+    let home = temporary_home("cli-doctor-docs-url");
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &home)
+        .isolated_home(&home)
+        .env("PATH", "")
+        .arg("doctor")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim_end().lines().last().unwrap_or_default();
+    assert!(
+        last.contains("docs") && last.contains("https://uze.sh/docs"),
+        "{stdout}"
+    );
+    let _ = std::fs::remove_dir_all(home);
+}
+
 /// L2 setup conformance: this list is intentionally compared to the product
 /// registry below. Registering another harness therefore requires an explicit
 /// setup scenario here rather than silently inheriting partial coverage.
@@ -522,6 +543,41 @@ fn setup_opencode_legacy_binary_uses_installer_not_stable_upgrade() {
         !commands.contains("opencode2|upgrade"),
         "legacy OpenCode must not receive stable-only `upgrade`: {commands}"
     );
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(uze_home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// `uze setup codex` with Codex present takes its update route and records
+/// the version it verified afterwards, as the provisioning history.
+#[test]
+#[cfg(unix)]
+fn setup_codex_records_the_version_it_verified_after_the_update() {
+    use uze_core::provisioning::{ProvisionAction, ProvisionStatus};
+
+    let home = temporary_home("cli-setup-codex-version-home");
+    let uze_home = temporary_home("cli-setup-codex-version-uze-home");
+    let fake_bin = fake_harness_bin_dir("cli-setup-codex-version-bin");
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &uze_home)
+        .isolated_home(&home)
+        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .args(["setup", "codex"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let record = uze_core::state::provisioning(&uze_core::UzeHome::at(&uze_home), "codex")
+        .unwrap()
+        .expect("the setup is recorded");
+    assert_eq!(record.action, ProvisionAction::Update);
+    assert_eq!(record.status, ProvisionStatus::Verified);
+    assert_eq!(record.version.as_deref(), Some("9.9.9"));
 
     let _ = std::fs::remove_dir_all(home);
     let _ = std::fs::remove_dir_all(uze_home);
@@ -1696,6 +1752,19 @@ fn an_install_one_harness_refuses_is_listed_as_partially_delivered() {
         "{text}"
     );
 
+    let doctor = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", &home)
+        .isolated_home(&home)
+        .env("PATH", &path)
+        .args(["doctor"])
+        .output()
+        .unwrap();
+    let doctor = String::from_utf8_lossy(&doctor.stdout);
+    assert!(
+        doctor.contains("not delivered") && doctor.contains("read-only"),
+        "doctor names what the package did not reach: {doctor}"
+    );
+
     let _ = std::fs::remove_dir_all(home);
     let _ = std::fs::remove_dir_all(fake_bin);
 }
@@ -2015,6 +2084,53 @@ fn inspect_and_install_report_agree_on_every_harness() {
     let _ = std::fs::remove_dir_all(fake_bin);
 }
 
+/// A path Claude Code would load as a component no canonical capability
+/// defines is left out of its delivery, and `inspect` says so for exactly
+/// the paths the package holds, on that harness alone.
+#[cfg(unix)]
+#[test]
+fn inspect_names_the_paths_a_harness_does_not_receive() {
+    let home = temporary_home("cli-inspect-withheld");
+    let fake_bin = fake_harness_bin_dir("cli-inspect-withheld-bin");
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let package = composed_package(&home);
+    std::fs::create_dir_all(package.join("commands")).unwrap();
+    std::fs::write(package.join("commands/hello.md"), "Say hello.\n").unwrap();
+    std::fs::create_dir_all(package.join("bin")).unwrap();
+    std::fs::write(package.join("bin/tool"), "#!/bin/sh\n").unwrap();
+
+    let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+
+    let inspected = uze_json_at(&home, &path, &["inspect", "crew"]);
+    for view in inspected["deliveries"].as_array().unwrap() {
+        let expected = if view["integration"] == "claude-code" {
+            serde_json::json!(["commands", "bin"])
+        } else {
+            serde_json::Value::Null
+        };
+        assert_eq!(view["withheld"], expected, "{view}");
+    }
+    let text = uze_at(
+        &home,
+        &path,
+        &["inspect", "crew", "--harness", "claude-code"],
+    );
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        text.contains("commands not delivered") && text.contains("bin not delivered"),
+        "{text}"
+    );
+    assert!(!text.contains("monitors"), "{text}");
+
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
 /// Receipts that match are not a delivery a harness reads: Claude Code's
 /// cached copy of the plugin can be empty, and an agent file an earlier
 /// build wrote can carry fields OpenCode drops the agent over. Doctor
@@ -2163,4 +2279,364 @@ fn doctor_reports_an_empty_plugin_cache_and_an_unreadable_agent() {
 
     let _ = fs::remove_dir_all(home);
     let _ = fs::remove_dir_all(fake_bin);
+}
+
+/// A PATH whose only harness is a stand-in OpenCode, written under `home`.
+#[cfg(unix)]
+fn opencode_only_path(home: &std::path::Path) -> String {
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let bin = home.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let opencode = bin.join("opencode");
+    fs::write(&opencode, "#!/bin/sh\necho 'opencode v9.9.9'\n").unwrap();
+    fs::set_permissions(&opencode, fs::Permissions::from_mode(0o755)).unwrap();
+    format!("{}:/usr/bin:/bin", bin.display())
+}
+
+/// `crew`, carrying one agent, `reviewer`.
+#[cfg(unix)]
+fn crew_with_an_agent(home: &std::path::Path) -> PathBuf {
+    let package = home.join("crew");
+    std::fs::create_dir_all(package.join("agents")).unwrap();
+    std::fs::write(package.join("plugin.json"), r#"{"name": "crew"}"#).unwrap();
+    std::fs::write(
+        package.join("agents/reviewer.md"),
+        "---\nname: reviewer\ndescription: Reviews a change.\n---\nReview.\n",
+    )
+    .unwrap();
+    package
+}
+
+/// The one receipt recording a generated file: the agent's.
+#[cfg(unix)]
+fn agent_receipt(uze: &uze_core::UzeHome) -> uze_core::integration::AttachmentReceipt {
+    uze_core::state::receipts(uze, None)
+        .unwrap()
+        .into_iter()
+        .find(|receipt| {
+            matches!(
+                receipt.artifact,
+                uze_core::exposure::ManagedArtifact::GeneratedFile { .. }
+            )
+        })
+        .expect("the agent's receipt")
+}
+
+/// An agent file an earlier build wrote under the bare name, which the
+/// operator edited since, is theirs: the next install leaves the edit where
+/// it is and holds the agent back, rather than offering it a second time
+/// under its label beside the edit.
+#[cfg(unix)]
+#[test]
+fn an_earlier_agent_file_the_operator_edited_is_held_back_not_replaced() {
+    use std::fs;
+    use uze_core::{UzeHome, exposure::ManagedArtifact, state};
+
+    let home = temporary_home("cli-agent-edited-earlier-shape");
+    let package = crew_with_an_agent(&home);
+    let path = opencode_only_path(&home);
+    let uze_home = home.join(".uze");
+    let first = install_via_marketplace_json(&home, &uze_home, &package, &path);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let agents = home.join(".config/opencode/agents");
+    let labelled = agents.join("crew:reviewer.md");
+    assert!(labelled.is_file());
+
+    // What an earlier build wrote, under the name it gave the agent.
+    let uze = UzeHome::at(&uze_home);
+    let receipt = agent_receipt(&uze);
+    state::forget_receipt(&uze, &receipt).unwrap();
+    fs::remove_file(&labelled).unwrap();
+    let bare = agents.join("reviewer.md");
+    let written = "---\ndescription: Reviews a change.\nmode: subagent\n---\nReview.\n";
+    fs::write(&bare, written).unwrap();
+    let mut earlier = receipt.clone();
+    earlier.artifact = ManagedArtifact::GeneratedFile {
+        path: bare.clone(),
+        content: written.to_owned(),
+    };
+    state::record_receipt(&uze, earlier).unwrap();
+    // And the operator's edit since.
+    fs::write(&bare, "edited by hand\n").unwrap();
+
+    let second = install_via_marketplace_json(&home, &uze_home, &package, &path);
+    let report: serde_json::Value = serde_json::from_slice(&second.stdout).unwrap_or_else(|_| {
+        panic!(
+            "the install answers in JSON: {}{}",
+            String::from_utf8_lossy(&second.stdout),
+            String::from_utf8_lossy(&second.stderr)
+        )
+    });
+
+    assert_eq!(fs::read_to_string(&bare).unwrap(), "edited by hand\n");
+    assert!(
+        !labelled.exists(),
+        "the agent is not offered a second time beside the edit"
+    );
+    assert!(
+        report["blocked"].as_array().unwrap().iter().any(|held| {
+            held["integration"] == "opencode"
+                && held["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("changed since it was made")
+        }),
+        "the agent is reported held, with why: {report}"
+    );
+    let _ = fs::remove_dir_all(home);
+}
+
+/// What doctor finds of `crew` on `integration`. Doctor repairs what it
+/// can before it reports, so the delivery is read while another mutation
+/// holds the lock, which is when what doctor finds is what is on disk.
+#[cfg(unix)]
+fn crew_findings(home: &std::path::Path, path: &str, integration: &str) -> Vec<serde_json::Value> {
+    let _held =
+        uze_core::persistence::MutationLock::acquire(&uze_core::UzeHome::at(home.join(".uze")))
+            .unwrap();
+    let doctor = uze_json_at(home, path, &["doctor"]);
+    doctor["deliveries"]
+        .as_array()
+        .expect("deliveries")
+        .iter()
+        .find(|package| package["plugin"].as_str().unwrap().starts_with("crew@"))
+        .and_then(|package| {
+            package["harnesses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|harness| harness["integration"] == integration)
+                .cloned()
+        })
+        .unwrap_or_else(|| panic!("doctor checks crew on {integration}: {doctor}"))["findings"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+/// An agent whose file is gone is reported missing, by the name a session
+/// would have called it.
+#[cfg(unix)]
+#[test]
+fn doctor_reports_an_agent_whose_file_is_gone_as_missing() {
+    let home = temporary_home("cli-doctor-missing");
+    let path = opencode_only_path(&home);
+    let add =
+        install_via_marketplace_json(&home, &home.join(".uze"), &crew_with_an_agent(&home), &path);
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    std::fs::remove_file(home.join(".config/opencode/agents/crew:reviewer.md")).unwrap();
+
+    let findings = crew_findings(&home, &path, "opencode");
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding["kind"] == "missing" && finding["capability"] == "crew:reviewer"),
+        "{findings:?}"
+    );
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// A hook entry delivered intact but under another name than its plan
+/// gives it is reported renamed, saying the name it answers to instead.
+#[cfg(unix)]
+#[test]
+fn doctor_reports_a_hook_delivered_under_another_name_as_renamed() {
+    use uze_core::{UzeHome, exposure::ManagedArtifact, state};
+
+    let home = temporary_home("cli-doctor-renamed");
+    let fake_bin = fake_harness_bin_dir("cli-doctor-renamed-bin");
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let add = install_via_marketplace_json(
+        &home,
+        &home.join(".uze"),
+        &crew_with_a_server_and_hooks(&home),
+        &path,
+    );
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let uze = UzeHome::at(home.join(".uze"));
+    let receipt = state::receipts(&uze, None)
+        .unwrap()
+        .into_iter()
+        .find(|receipt| {
+            receipt.integration == "antigravity"
+                && matches!(receipt.artifact, ManagedArtifact::HookConfigEntry { .. })
+        })
+        .expect("Antigravity CLI holds the hook as a named entry");
+    let ManagedArtifact::HookConfigEntry {
+        config_file,
+        entry_name,
+        ..
+    } = &receipt.artifact
+    else {
+        unreachable!();
+    };
+    let mut config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(config_file).unwrap()).unwrap();
+    let entry = config
+        .as_object_mut()
+        .unwrap()
+        .remove(entry_name)
+        .expect("the entry is in the config");
+    config["watch"] = entry;
+    std::fs::write(config_file, config.to_string()).unwrap();
+    state::forget_receipt(&uze, &receipt).unwrap();
+    let mut moved = receipt.clone();
+    if let ManagedArtifact::HookConfigEntry { entry_name, .. } = &mut moved.artifact {
+        *entry_name = "watch".to_owned();
+    }
+    state::record_receipt(&uze, moved).unwrap();
+
+    let findings = crew_findings(&home, &path, "antigravity");
+    assert!(
+        findings.iter().any(|finding| finding["kind"] == "renamed"
+            && finding["capability"] == entry_name.as_str()
+            && finding["detail"] == "delivered as `watch`"),
+        "{findings:?}"
+    );
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// `crew`, carrying an MCP server and hooks for two events: `ensure-ui`
+/// on session start and `watch` before a shell command.
+#[cfg(unix)]
+fn crew_with_a_server_and_hooks(home: &std::path::Path) -> PathBuf {
+    let package = home.join("crew");
+    std::fs::create_dir_all(&package).unwrap();
+    std::fs::write(package.join("plugin.json"), r#"{"name": "crew"}"#).unwrap();
+    std::fs::write(
+        package.join("mcp.json"),
+        r#"{"mcpServers":{"docs":{"type":"stdio","command":"/bin/true","args":[]}}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        package.join("hooks.json"),
+        r#"{"hooks":{"SessionStart":[{"id":"ensure-ui","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/ensure-ui"}]}],"PreToolUse":[{"id":"watch","matcher":"shell","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/watch"}]}]}}"#,
+    )
+    .unwrap();
+    package
+}
+
+/// The effective view of a package with a server and hooks names both for
+/// the harness asked about.
+#[cfg(unix)]
+#[test]
+fn inspect_names_the_servers_and_hooks_a_harness_receives() {
+    let home = temporary_home("cli-inspect-mcp-hooks");
+    let fake_bin = fake_harness_bin_dir("cli-inspect-mcp-hooks-bin");
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let add = install_via_marketplace_json(
+        &home,
+        &home.join(".uze"),
+        &crew_with_a_server_and_hooks(&home),
+        &path,
+    );
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let inspected = uze_json_at(
+        &home,
+        &path,
+        &["inspect", "crew", "--harness", "claude-code"],
+    );
+
+    let [claude] = inspected["deliveries"].as_array().unwrap().as_slice() else {
+        panic!("narrowed to Claude Code: {inspected}");
+    };
+    let kinds: Vec<&str> = claude["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|capability| capability["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds.iter().filter(|kind| **kind == "mcp").count(),
+        1,
+        "{claude}"
+    );
+    assert_eq!(
+        kinds.iter().filter(|kind| **kind == "hook").count(),
+        2,
+        "{claude}"
+    );
+    assert!(
+        claude["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|capability| capability["exposed_name"].is_string()
+                && capability["route"].is_string()),
+        "each is named with its route: {claude}"
+    );
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
+}
+
+/// Antigravity CLI fires no session start: the install reports that
+/// group Unsupported there, with why, and still delivers the package's
+/// other hook to it.
+#[cfg(unix)]
+#[test]
+fn antigravity_reports_a_session_start_hook_unsupported_and_takes_the_rest() {
+    let home = temporary_home("cli-antigravity-session-start");
+    let fake_bin = fake_harness_bin_dir("cli-antigravity-session-start-bin");
+    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let add = install_via_marketplace_json(
+        &home,
+        &home.join(".uze"),
+        &crew_with_a_server_and_hooks(&home),
+        &path,
+    );
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&add.stdout).unwrap();
+    let antigravity = report["deliveries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|delivery| delivery["integration"] == "antigravity")
+        .unwrap_or_else(|| panic!("Antigravity CLI is delivered to: {report}"));
+
+    assert!(
+        antigravity["shortfalls"].as_array().unwrap().iter().any(
+            |shortfall| shortfall["capability"]
+                .as_str()
+                .unwrap()
+                .contains("ensure-ui")
+                && shortfall["route"] == "UNSUPPORTED"
+                && shortfall["evidence"]
+                    .as_str()
+                    .unwrap()
+                    .contains("session_start")
+        ),
+        "{antigravity}"
+    );
+    assert!(
+        antigravity["attachments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|location| location.as_str().unwrap().ends_with(":watch")),
+        "the other hook reaches Antigravity CLI: {antigravity}"
+    );
+    let _ = std::fs::remove_dir_all(home);
+    let _ = std::fs::remove_dir_all(fake_bin);
 }

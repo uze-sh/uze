@@ -228,3 +228,115 @@ fn each_harness_receives_its_own_block_and_never_the_block_itself() {
     }
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// `flow` installed into a Store of its own, carrying one agent at
+/// `relative` with `definition`, and that agent as the Engine finds it.
+fn stored_agent(
+    root: &std::path::Path,
+    relative: &str,
+    definition: &str,
+) -> (uze_core::store::StoredPackage, Resource) {
+    let package_root = root.join("flow");
+    let agent = package_root.join(relative);
+    std::fs::create_dir_all(agent.parent().unwrap()).unwrap();
+    std::fs::write(package_root.join("plugin.json"), r#"{"name":"flow"}"#).unwrap();
+    std::fs::write(&agent, definition).unwrap();
+    let store = uze_core::UzeStore::new(UzeHome::at(root.join("uze")));
+    let package = store
+        .ingest(
+            &uze_core::acquisition::acquire(&uze_core::PackageSource::local(&package_root))
+                .unwrap(),
+            "local",
+            None,
+        )
+        .unwrap();
+    let resource = uze_core::engine::package_resources(&package)
+        .unwrap()
+        .into_iter()
+        .find(|resource| resource.capability.kind == CapabilityKind::Agent)
+        .expect("the Engine finds the agent");
+    (package, resource)
+}
+
+/// Inside the plugin Claude namespaces the agent itself, and outside it
+/// the file carries the label: either way a session dispatches it as
+/// `flow:<agent>`, never by the bare name the author wrote.
+#[test]
+fn claude_exposes_an_agent_only_under_its_plugin_qualified_label() {
+    for (relative, label, bare) in [
+        ("agents/reviewer.md", "flow:reviewer", "reviewer"),
+        (
+            "agents/review/security.md",
+            "flow:review:security",
+            "security",
+        ),
+    ] {
+        let root = uze_testkit::temp::scratch("claude-agent-label");
+        let (package, resource) = stored_agent(
+            &root,
+            relative,
+            &format!("---\nname: {bare}\ndescription: Reviews\n---\nReview.\n"),
+        );
+        let claude = ClaudeIntegration::new(root.join("claude"), UzeHome::at(root.join("uze")));
+
+        assert_eq!(
+            claude
+                .packaged_exposure_name(&package, &resource)
+                .as_deref(),
+            Some(label)
+        );
+        assert_eq!(claude.exposure_name_candidates(&resource), vec![label]);
+        let plan = claude.exposure_plan(&resource);
+        let uze_core::exposure::ExposureMechanism::Managed(
+            uze_core::integration::ManagedArtifact::GeneratedFile { path, content },
+        ) = &plan.mechanism
+        else {
+            panic!("a loose Claude agent is a generated file: {plan:?}");
+        };
+        assert_eq!(path.file_stem().unwrap(), label);
+        assert!(
+            content.starts_with(&format!("---\nname: {label}\n")),
+            "{content}"
+        );
+        assert!(!content.contains(&format!("name: {bare}\n")), "{content}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+/// Claude loads a plugin's agents without four fields a user agent
+/// honours; an agent declaring any of them is delivered Degraded, with
+/// the ones it loses named, and one declaring none is delivered whole.
+#[test]
+fn claude_names_the_fields_an_agent_loses_inside_the_plugin() {
+    let root = uze_testkit::temp::scratch("claude-packaged-shortfall");
+    let (package, resource) = stored_agent(
+        &root,
+        "agents/reviewer.md",
+        "---\nname: reviewer\ndescription: Reviews\nmodel: haiku\ninitialPrompt: Begin\npermissionMode: plan\nmcpServers: [docs]\n---\nReview.\n",
+    );
+    let claude = ClaudeIntegration::new(root.join("claude"), UzeHome::at(root.join("uze")));
+
+    assert_eq!(
+        claude.packaged_shortfall(&package, &resource),
+        Some((
+            CompatibilityRoute::Degraded,
+            "Claude Code ignores these fields on an agent a plugin delivers: permissionMode, \
+             mcpServers, initialPrompt."
+                .to_owned()
+        ))
+    );
+
+    let mut whole = resource.clone();
+    whole.capability.payload =
+        b"---\nname: reviewer\ndescription: Reviews\nmodel: haiku\n---\nReview.\n".to_vec();
+    assert_eq!(claude.packaged_shortfall(&package, &whole), None);
+
+    let mut skill = resource;
+    skill.capability.kind = CapabilityKind::AgentSkill;
+    assert_eq!(
+        claude.packaged_shortfall(&package, &skill),
+        None,
+        "only an agent loses fields inside the plugin"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
