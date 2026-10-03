@@ -982,9 +982,12 @@ impl Server {
 }
 
 /// Coalesces damage notifications from every pane's PTY reader thread and
-/// broadcasts one snapshot per dirty pane at most every 8ms — bounded,
+/// broadcasts one diff per dirty pane: whatever arrived while the previous
+/// batch was being sent goes out together, so a continuously noisy pane is
+/// bounded by how fast a batch is sent rather than by its output —
 /// output-driven redraws instead of a fixed-rate client poll (the source of
-/// the workspace client's earlier busy-refresh/CPU-starvation bug).
+/// the workspace client's earlier busy-refresh/CPU-starvation bug). The
+/// 8ms tick only runs while a client is stale, to resynchronize it.
 pub(super) fn spawn_damage_broadcaster(server: Arc<Server>, damage: mpsc::Receiver<PaneId>) {
     thread::spawn(move || {
         let mut dirty = std::collections::BTreeSet::new();
@@ -1030,8 +1033,17 @@ pub(super) fn spawn_status_ticker(server: Arc<Server>) {
     thread::spawn(move || {
         loop {
             server.refresh_pane_status();
-            thread::sleep(STATUS_PROBE_INTERVAL);
-            if *server.stopped.lock().expect("stop state poisoned") {
+            // Woken by the stop itself, so a stopping server does not probe
+            // its panes once more after taking them down.
+            let (stopped, _) = server
+                .stop_requested
+                .wait_timeout_while(
+                    server.stopped.lock().expect("stop state poisoned"),
+                    STATUS_PROBE_INTERVAL,
+                    |stopped| !*stopped,
+                )
+                .expect("stop state poisoned");
+            if *stopped {
                 break;
             }
         }

@@ -361,10 +361,28 @@ impl PaneRuntime {
     /// diffing the same pane at once would otherwise store the older
     /// snapshot as the baseline, or deliver their events out of order, and
     /// either leaves stale cells on screen until the pane next changes.
+    ///
+    /// Damage that changes nothing a client draws — no cell, and the
+    /// cursor, the modes and the shape all as last sent — is not sent: a
+    /// program repainting what is already there still woke the PTY reader,
+    /// and every client then drew a frame for nothing.
     pub(super) fn offer_damage(&self, send: impl FnOnce(&PaneDamage)) {
         let mut last_sent = self.last_sent.lock().expect("last_sent poisoned");
+        let before = last_sent.as_ref().map(drawn_state);
         let damage = self.diff_against(&mut last_sent);
-        send(&damage);
+        let unchanged = damage.changed.is_empty()
+            && before
+                == Some((
+                    damage.columns,
+                    damage.rows,
+                    damage.cursor,
+                    damage.alternate_screen,
+                    damage.mouse,
+                    damage.bracketed_paste,
+                ));
+        if !unchanged {
+            send(&damage);
+        }
     }
 
     #[cfg(test)]
@@ -594,4 +612,16 @@ pub(super) fn view_for(session: &Session, selection: &Selection) -> Session {
         }
     }
     view
+}
+
+/// Everything about a pane a client draws besides its cells.
+fn drawn_state(snapshot: &PaneSnapshot) -> (u16, u16, Cursor, bool, MouseMode, bool) {
+    (
+        snapshot.columns,
+        snapshot.rows,
+        snapshot.cursor,
+        snapshot.alternate_screen,
+        snapshot.mouse,
+        snapshot.bracketed_paste,
+    )
 }

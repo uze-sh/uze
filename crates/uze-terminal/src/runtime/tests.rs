@@ -534,6 +534,33 @@ fn snapshot_renders_the_scrollback_viewport() {
     assert!(!rendered.contains("third"));
 }
 
+/// A pane whose screen did not move offers nothing the second time: the
+/// baseline goes out, and an identical one after it does not.
+#[test]
+fn damage_that_changes_nothing_drawn_is_not_offered() {
+    let (damage, _damage_events) = std::sync::mpsc::channel();
+    let pane = PaneRuntime::spawn(
+        PaneId(12),
+        PathBuf::from("/tmp"),
+        80,
+        24,
+        damage,
+        Launch::Program {
+            argv: vec!["/bin/sh".into(), "-c".into(), "sleep 30".into()],
+            env: Vec::new(),
+        },
+        Arc::new(Mutex::new(Palette::default())),
+    )
+    .unwrap();
+
+    let mut offered = 0;
+    pane.offer_damage(|_| offered += 1);
+    pane.offer_damage(|_| offered += 1);
+    pane.stop();
+
+    assert_eq!(offered, 1, "an unchanged screen was offered again");
+}
+
 #[test]
 fn damage_since_last_is_sparse_after_a_small_change() {
     let (damage, damage_events) = std::sync::mpsc::channel();
@@ -1098,17 +1125,11 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
         .any(|event| matches!(event, crate::ClientEvent::Snapshot { .. }));
     assert!(attached, "the client never attached");
 
-    // Far more than its queue and its socket's buffer can hold. Damage,
-    // not session updates: those persist the workspace on every call.
-    let pane = server
-        .session
-        .lock()
-        .expect("session poisoned")
-        .selected_tab()
-        .pane
-        .id;
+    // Far more than its queue and its socket's buffer can hold. Session
+    // updates rather than damage: damage that changes nothing is not sent,
+    // and a session broadcast persists nothing it already wrote.
     for _ in 0..super::OUTBOX_CAPACITY * 64 {
-        server.broadcast_pane_damage(pane);
+        server.broadcast_session();
     }
     let waiting = outbox()
         .backlog
