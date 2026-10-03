@@ -75,7 +75,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
     View {
         title,
         caption,
-        navigator: Some(match code.navigator() {
+        navigator: listing(code).then(|| match code.navigator() {
             NavigatorMode::Changes => changes_navigator(code),
             NavigatorMode::Files => files_navigator(code),
         }),
@@ -296,6 +296,9 @@ fn footer(code: &CodeView) -> Vec<Command> {
             Command::Close,
         ];
     }
+    if !listing(code) {
+        return vec![Command::ToggleMap, Command::Close];
+    }
     let mut commands = vec![Command::SelectNext];
     // The changes are one flat list: nothing in it opens or closes.
     if code.navigator() == NavigatorMode::Files {
@@ -319,6 +322,14 @@ fn footer(code: &CodeView) -> Vec<Command> {
     commands.push(Command::FocusNext);
     commands.push(Command::Close);
     commands
+}
+
+/// Whether there is a list beside the content. No changes, or no way to
+/// read them, is a message and nothing else: an empty column with a zero
+/// over it pushes the message aside to say what the message already says.
+fn listing(code: &CodeView) -> bool {
+    code.navigator() == NavigatorMode::Files
+        || (code.changes.error.is_none() && !code.changes.files.is_empty())
 }
 
 /// The changes as one flat list, each file named first and its directory
