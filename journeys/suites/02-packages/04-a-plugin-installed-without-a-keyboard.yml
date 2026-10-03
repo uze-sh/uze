@@ -5,7 +5,7 @@ about: |
   uze's thesis is that the keyboard is an accelerator, never the way in.
   That is a claim about a whole flow rather than about any one control, so
   it is performed as one: find the plugin by typing into a field that was
-  clicked, ask the row what can be done to it, take one of those, and
+  clicked, select its row and read what its panel offers, take one of those, and
   answer the question that follows — every step with the mouse.
 
   It is also the regression this tier exists for. The search field was
@@ -67,12 +67,10 @@ scenes:
         expect_timeout: 20
         pause: 1.0
       - click: "Marketplace"
-        say: open the Marketplace screen from the sidebar
-        in: sidebar
-        expect: "skills"
-      - click: "Filter plugins"
+        say: open the Marketplace screen from its tab, the first match from the top
+        expect: "filter plugins"
+      - click: "filter plugins"
         say: click the search field, which nothing could click before
-        in: pane
         expect: "flow"
       - type: "flo"
         submit: false
@@ -83,21 +81,19 @@ scenes:
         exists: false
         about: finding a plugin installs nothing
 
-  - scene: the row says what can be done to it, and installing is one of them
+  - scene: the plugin's panel says what can be done to it, and installing is one of them
     when:
-      - rclick: "flow"
-        say: ask the row for its actions
-        in: pane
+      - click: "flow"
+        say: select the plugin's row, and its panel offers what can be done to it
         expect: "Install"
       - click: "Install"
         say: take the install offer
-        in: pane
         occurrence: last
         expect: "Install plugin"
       - click: "  Install  "
         say: answer the question with its own button
         in: pane
-        expect: "Installed"
+        expect: "flow .* installed "
         expect_timeout: 45
         pause: 1.5
     then:

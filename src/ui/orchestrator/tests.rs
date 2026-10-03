@@ -5341,11 +5341,8 @@ mod workspace_tests {
         full_frame(&mut model);
         assert!(
             matches!(
-                model.hits.get(..2),
-                Some([
-                    (_, WorkspaceHit::ReleaseNotesClose),
-                    (_, WorkspaceHit::ReleaseNotesBody)
-                ])
+                model.hits.first(),
+                Some((_, WorkspaceHit::ReleaseNotesBody))
             ),
             "its area answers before anything underneath"
         );
@@ -5413,21 +5410,10 @@ mod workspace_tests {
         );
 
         driven.frame();
-        let (close, _) = *driven
-            .attach
-            .model
-            .hits
-            .iter()
-            .find(|(_, hit)| matches!(hit, WorkspaceHit::ReleaseNotesClose))
-            .expect("the corner mark answers a click");
-        assert!(
-            close.y == body.y && close.right() > body.x + body.width / 2,
-            "on the top border, at the right: {close:?} of {body:?}"
-        );
-        driven.press(close.x + close.width / 2, close.y);
+        driven.press(body.x.saturating_sub(2), body.y);
         assert!(
             driven.attach.model.release_notes.is_none(),
-            "the mark closes it"
+            "a click outside it closes it, as it closes every dialog"
         );
     }
 

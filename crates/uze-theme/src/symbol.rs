@@ -247,6 +247,8 @@ vocabulary! {
         // ── direction and affordance ───────────────────────────────────
         ArrowUp = "arrow.up",
         ArrowDown = "arrow.down",
+        ArrowLeft = "arrow.left",
+        ArrowRight = "arrow.right",
         /// Leads somewhere outside UZE.
         ArrowExternal = "arrow.external",
         /// Points from a thing to where it is going — a delivery's target,

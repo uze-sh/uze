@@ -315,6 +315,7 @@ pub(super) fn render_work(
     footer::render(
         frame,
         foot,
+        1,
         hint::named_within(
             foot.width.saturating_sub(2),
             &[uze_keys::Scope::Global, uze_keys::Scope::Work],

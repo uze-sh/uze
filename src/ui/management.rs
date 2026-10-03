@@ -11,23 +11,23 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::Padding,
+    widgets::{Clear, Paragraph},
 };
 
 use uze_application::{FirstStepsLayout, ManagementLayout, UzeHome};
 
 use super::hit::Hit;
 use super::keys::KeyboardSupport;
-use super::model::{self, Overlay, Remembered, Route, Status, TuiModel};
+use super::model::{self, Focus, Overlay, Remembered, Route, Status, TuiModel};
 use super::worker::{
     Intent, WorkerResult, dispatch, drain_worker_results, spawn_refresh, spawn_startup,
 };
 use super::{overlay, view};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{self, Edge, Rule, hint, modal, text};
+use crate::ui::widget::{self, Edge, Rule, Surface, hint, modal, text};
 
 /// How long a resolution of the machine stands for before opening the
 /// modal re-resolves it. The window exists for one case: the session's
@@ -58,10 +58,6 @@ pub(crate) struct ManagementMemory {
     /// openings because the channel is: a refresh the operator closed the
     /// modal on still lands, and reopening must not ask a second time.
     in_flight: bool,
-    /// Where the modal's own menu column was last dragged to. The modal
-    /// has a width of its own, so this is not the workspace sidebar's
-    /// value and is not written to the layout file with it.
-    menu_width: Option<u16>,
     /// The project the last resolution was about. A remembered answer is
     /// only an answer about the project it was asked for, so opening the
     /// modal over a different one asks again however recent it was.
@@ -102,7 +98,6 @@ impl ManagementMemory {
             receiver,
             remembered: None,
             in_flight: false,
-            menu_width: None,
             resolved_for: None,
         }
     }
@@ -126,7 +121,6 @@ impl ManagementMemory {
     ) -> TuiModel {
         let mut model = TuiModel {
             context_root: root.to_path_buf(),
-            sidebar_width: self.menu_width,
             first_steps_collapsed: first_steps.collapsed,
             first_steps_closed: first_steps.closed,
             steps_taken: first_steps.taken.clone(),
@@ -172,7 +166,6 @@ impl ManagementMemory {
     /// hands back what the workspace owns of it: the shape the layout
     /// file keeps, and the first-steps list the two surfaces share.
     pub(crate) fn close(&mut self, model: TuiModel) -> (ManagementLayout, FirstStepsLayout) {
-        self.menu_width = model.sidebar_width;
         self.in_flight = model.maintenance_in_flight;
         let layout = model.management_layout();
         let first_steps = FirstStepsLayout {
@@ -246,7 +239,7 @@ fn context_root() -> PathBuf {
 // --- Geometry -----------------------------------------------------------
 
 /// The modal, over a frame the scrim has already pushed back: its border,
-/// its title row, and the management surface inside.
+/// and the management surface inside it.
 pub(crate) fn render_modal(
     frame: &mut ratatui::Frame<'_>,
     frame_area: Rect,
@@ -254,81 +247,88 @@ pub(crate) fn render_modal(
     close_hovered: bool,
     hits: &mut Vec<(Rect, Hit)>,
 ) -> modal::Chrome {
-    let chrome = modal::render(frame, modal::area(frame_area), "manage", close_hovered);
-    // A dialog open inside recedes the modal's own chrome too — its title
-    // row and the row under it sit outside the surface `render` dims.
-    // `render` paints its whole area afresh, so what it draws is dimmed
-    // once, by itself.
+    let area = modal::area(frame_area);
+    frame.render_widget(Clear, area);
+    Surface::card().render(frame, area);
+    // A dialog open inside recedes the modal's own border too, which sits
+    // outside the surface `render` dims. `render` paints its whole area
+    // afresh, so what it draws is dimmed once, by itself.
     if !matches!(model.overlay, Overlay::None) {
-        widget::scrim::render(frame, chrome.area);
+        widget::scrim::render(frame, area);
     }
-    render(frame, modal::inside(chrome.area), model, hits);
-    chrome
+    let close = render(frame, inside_border(area), model, close_hovered, hits);
+    modal::Chrome { area, close }
 }
 
-// --- Layout ------------------------------------------------------------
+fn inside_border(area: Rect) -> Rect {
+    Rect::new(
+        area.x + 1,
+        area.y + 1,
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(2),
+    )
+}
 
+/// How far the header's and the footer's text sit inside the border: the
+/// hairlines under and over them reach one column further out, so the
+/// words read as hung inside the rules rather than ending with them.
+const CHROME_INSET: u16 = 3;
+const RULE_INSET: u16 = 1;
+
+/// The surface's rows, top to bottom: the header with the screen tabs,
+/// its hairline, a row of air, the screen, a row of air, the footer's
+/// hairline and the footer.
 struct Geometry {
-    sidebar: Rect,
+    header: Rect,
+    header_rule: Rect,
     content: Rect,
     footer: Rect,
 }
 
-/// The one source of truth for management geometry, mirroring
-/// `orchestrator::compute_layout`'s shape and reusing its exact
-/// `clamp_sidebar_width`/`sidebar_width_for` (see `super`) — the sidebar
-/// drag-resize behaves identically in the modal and the workspace because
-/// both call the literal same width math, not just similarly-shaped code.
-fn compute_layout(frame_area: Rect, sidebar_width_override: Option<u16>) -> Geometry {
-    let (sidebar, column) = super::sidebar_and_column(frame_area, sidebar_width_override);
-    let content_rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(2)])
-        .split(column);
+fn compute_layout(area: Rect) -> Geometry {
+    let row = |y: u16| Rect::new(area.x, y, area.width, 1.min(area.height));
+    let inset = |rect: Rect, by: u16| Rect {
+        x: rect.x + by.min(rect.width),
+        width: rect.width.saturating_sub(2 * by),
+        ..rect
+    };
+    let footer_y = area.bottom().saturating_sub(2).max(area.y);
     Geometry {
-        sidebar,
-        content: content_rows[0],
-        footer: content_rows[1],
+        header: inset(row(area.y), CHROME_INSET),
+        header_rule: inset(row(area.y + 1), RULE_INSET),
+        content: Rect::new(
+            area.x,
+            area.y + 3,
+            area.width,
+            area.height.saturating_sub(6),
+        ),
+        footer: Rect {
+            height: 2.min(area.height),
+            ..inset(row(footer_y), RULE_INSET)
+        },
     }
 }
 
 // --- Rendering ----------------------------------------------------------
 
-/// The management surface, filling `area` — the inside of the modal, or a
-/// whole test frame.
+/// The management surface, filling `area` — the inside of the modal's
+/// border, or a whole test frame — and the rect of the mark that closes
+/// it.
 ///
-/// Edge to edge within it (no left/right inset — matches the design's
-/// `width:100%`) and flush against its top row; one blank row is still
-/// kept at the bottom (see `compute_layout`), so the last row doesn't read
-/// as clipped the way a top-row title would if it sat with nothing above
-/// it. One flat backdrop for the entire area — no panel ever paints its
-/// own background; every division is a hairline border or padding, never
-/// a filled slab.
+/// One flat backdrop for the entire area — no panel ever paints its own
+/// background; every division is a hairline or padding, never a filled
+/// slab.
 pub(crate) fn render(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     model: &TuiModel,
+    close_hovered: bool,
     hits: &mut Vec<(Rect, Hit)>,
-) {
+) -> Rect {
     widget::fill(frame, area, Token::SurfaceBackground);
-    // Only two columns span the full height — menu (sidebar) and main
-    // container — there is no separate global header/footer row. The help
-    // toolbar stays, scoped to the container column.
-    let narrow = area.width < 90;
-    let layout = compute_layout(area, model.sidebar_width);
-    render_sidebar(frame, layout.sidebar, model, narrow, hits);
-    // The sidebar's own hairline right border doubles as a drag handle —
-    // same shape as `orchestrator::render`'s equivalent push, so both
-    // sidebars are grabbable in the same place with the same width bounds.
-    hits.push((
-        Rect::new(
-            layout.sidebar.right().saturating_sub(1),
-            layout.sidebar.y,
-            1,
-            layout.sidebar.height,
-        ),
-        Hit::ResizeSidebar,
-    ));
+    let layout = compute_layout(area);
+    let close = render_header(frame, layout.header, model, close_hovered, hits);
+    Rule::new(Edge::Top).render(frame, layout.header_rule);
 
     match model.route {
         Route::Overview => view::overview::render_overview(frame, layout.content, model, hits),
@@ -364,15 +364,8 @@ pub(crate) fn render(
         Overlay::HarnessHelp => overlay::render_harness_help(frame, area),
         Overlay::Health => overlay::render_health(frame, area, &model.alerts()),
         Overlay::ReleaseNotes(modal) => {
-            let targets =
-                super::release_notes::render(frame, area, modal, model.release_notes_close_hovered);
-            hits.splice(
-                0..0,
-                [
-                    (targets.close, Hit::ReleaseNotesClose),
-                    (targets.popup, Hit::OverlayBody),
-                ],
-            );
+            let targets = super::release_notes::render(frame, area, modal);
+            hits.insert(0, (targets.popup, Hit::OverlayBody));
         }
         Overlay::Confirm { kind, focus } => {
             overlay::render_confirmation(frame, area, kind, *focus, hits)
@@ -406,17 +399,12 @@ pub(crate) fn render(
             hits,
         ),
     }
+    close
 }
 
-/// What is worth trying once on this side of the product.
-///
-/// Every one of them works on every screen. That is the rule, not a
-/// coincidence: this list is drawn in the same place whatever screen is
-/// open, so a step that needs a particular one is a step most readers meet
-/// as a row that does nothing when they click it. Asking a row what can be
-/// done to it and searching a list were here for exactly that reason and
-/// are not any more — both are offered where they apply, by the drawer's
-/// buttons and by the search field.
+/// What is worth trying once on this side of the product, noted as taken
+/// in the first-steps list the two surfaces share — the workspace's own
+/// list names some of the same gestures, and one taken here is taken.
 pub(crate) const FIRST_STEPS: [uze_keys::Action; 4] = [
     uze_keys::Action::NextScreen,
     uze_keys::Action::OpenThemePicker,
@@ -424,179 +412,142 @@ pub(crate) const FIRST_STEPS: [uze_keys::Action; 4] = [
     uze_keys::Action::OpenActionIndex,
 ];
 
-/// Named from the mode rather than from what is open: the key beside a
-/// step must not change because a dialog is up.
-pub(crate) const FIRST_STEP_SCOPES: &[uze_keys::Scope] =
-    &[uze_keys::Scope::Global, uze_keys::Scope::Management];
+/// The columns the modal's name takes at the head of the tab strip, so
+/// the first tab starts at the same column whatever the name.
+const NAME_WIDTH: usize = 12;
 
-/// The badge beside a nav row: how many of the things that screen is
-/// about there are, for the screens that are an inventory of something.
-///
-/// Two are not, and carry none. Overview is a report rather than a list.
-/// Keys is a reference — one row per surface an action can be reached
-/// from, so most of them are the same Enter, Esc and arrow keys written
-/// out once per dialog, and their total is a fact about the shape of the
-/// table rather than about uze. Printed beside "Keys" it reads as how much
-/// there is to learn, which is both untrue and the exact impression this
-/// screen exists to remove.
-fn route_count(route: Route, model: &TuiModel) -> Option<usize> {
-    match route {
-        Route::Overview => None,
-        Route::Plugins => Some(model.remembered.marketplaces.len()),
-        Route::Extensions => Some(model.extensions.len()),
-        Route::Harnesses => Some(
-            model
-                .remembered
-                .doctor
-                .as_ref()
-                .map_or(0, |d| d.harnesses.len()),
-        ),
-        Route::Profiles => Some(model.remembered.profiles.len()),
-        Route::Keys => None,
-        Route::Settings => None,
-    }
+/// Between one tab and the next.
+const TAB_GAP: u16 = 2;
+
+/// How much of itself a tab says, from all of it down to its number
+/// alone: a strip that does not fit gives up the badges first, then the
+/// names of the screens that are not open.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum TabDetail {
+    NumberOnly,
+    Name,
+    Badge,
 }
 
-/// A nav row's label, plus the badge for a route that carries one. The
-/// badge takes the row's own style and overrides only the hue, so it
-/// inherits the selected row's background instead of punching a hole in
-/// it. Small capitals let a mark sit beside a name without shouting over
-/// it; the amber says the screen is not settled without claiming anything
-/// is broken.
-fn route_label_line(route: Route, style: Style) -> Line<'static> {
-    let mut spans = vec![Span::styled(route.label(), style)];
-    if let Some(badge) = route.badge() {
-        spans.push(Span::styled("  ", style));
+/// One tab: its number, which is the key that reaches it, its name, and
+/// the count or the badge the screen carries. The open screen stands on
+/// a raised ground, or on the selection's while the keyboard is on the
+/// strip itself.
+fn tab_line(position: usize, route: Route, model: &TuiModel, detail: TabDetail) -> Line<'static> {
+    let open = route == model.route;
+    let ground = match (open, model.focus == Focus::Sidebar) {
+        (true, true) => Some(Token::SurfaceSelected),
+        (true, false) => Some(Token::SurfaceRaised),
+        (false, _) => None,
+    };
+    let with_ground = |style: Style| match ground {
+        Some(token) => style.bg(theme::color(token)),
+        None => style,
+    };
+    let (number, label) = if open {
+        (
+            theme::fg_bold(Token::Accent),
+            theme::fg_bold(Token::TextBright),
+        )
+    } else {
+        (
+            theme::fg_bold(Token::TextDim),
+            theme::fg(Token::TextSecondary),
+        )
+    };
+    let mut spans = vec![
+        Span::styled(" ", with_ground(Style::default())),
+        Span::styled(position.to_string(), with_ground(number)),
+    ];
+    if open || detail >= TabDetail::Name {
         spans.push(Span::styled(
-            text::small_caps(badge),
-            style.fg(theme::color(Token::StateWarning)),
+            format!(" {}", route.label()),
+            with_ground(label),
         ));
     }
+    let badge = match detail {
+        TabDetail::Badge => route.badge().map(text::small_caps),
+        TabDetail::Name | TabDetail::NumberOnly => None,
+    };
+    if let Some(badge) = badge {
+        spans.push(Span::styled(
+            format!(" {badge}"),
+            with_ground(theme::fg(Token::StateWarning)),
+        ));
+    }
+    spans.push(Span::styled(" ", with_ground(Style::default())));
     Line::from(spans)
 }
 
-fn render_sidebar(
+/// The tabs at the most detail that fits in `room` columns.
+fn fitted_tabs(model: &TuiModel, room: u16) -> Vec<(Route, Line<'static>)> {
+    let tabs = |detail| -> Vec<(Route, Line<'static>)> {
+        model::routes()
+            .into_iter()
+            .enumerate()
+            .map(|(index, route)| (route, tab_line(index + 1, route, model, detail)))
+            .collect()
+    };
+    let width = |tabs: &[(Route, Line<'static>)]| -> u16 {
+        tabs.iter()
+            .map(|(_, line)| line.width() as u16 + TAB_GAP)
+            .sum::<u16>()
+            .saturating_sub(TAB_GAP)
+    };
+    [TabDetail::Badge, TabDetail::Name]
+        .into_iter()
+        .map(tabs)
+        .find(|candidate| width(candidate) <= room)
+        .unwrap_or_else(|| tabs(TabDetail::NumberOnly))
+}
+
+/// The header: the modal's name, a tab per screen, and the key that
+/// closes it at the other end — which is also the close target, so it
+/// answers the pointer the way the close mark it replaced did. Answers
+/// with that target's rect.
+fn render_header(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     model: &TuiModel,
-    narrow: bool,
+    close_hovered: bool,
     hits: &mut Vec<(Rect, Hit)>,
-) {
-    // No fill, just a hairline right border — the sidebar sits on the same
-    // backdrop as everything else; only a thin divider marks the edge. No
-    // top padding either: the first route must land on the exact row the
-    // content column's own header does. No right padding either — mirrors
-    // the workspace sidebar's own `Padding::new(1, 0, 0, 0)`, content
-    // flush against the divider rather than floating a column away from
-    // it. The border itself is the drag handle (see the `Hit::ResizeSidebar`
-    // push in `render`), so it picks up the same accent-while-dragging
-    // feedback the workspace sidebar uses.
-    let inner = Rule::draggable(Edge::Right, model.dragging_sidebar)
-        .padding(Padding::new(1, 0, 0, 0))
-        .render(frame, area);
-
-    // The quick strip takes its rows out of the column before anything
-    // else is laid out — pinned to the foot means the routes above cannot
-    // grow over it.
-    let steps = model.first_steps();
-    let strip = steps.rect(inner);
-    if let Some(rect) = strip {
-        let mut section_hits = Vec::new();
-        super::extension_view::render_section(
-            frame,
-            &steps.section(),
-            &mut super::Rows::over(rect),
-            false,
-            &mut section_hits,
-        );
-        // The closing mark rides on the header, and this client answers a
-        // click with the *first* rect that contains it — so the mark goes
-        // in ahead of the header it sits on.
-        if let Some(rect) = section_hits.iter().find_map(|(rect, hit)| {
-            matches!(hit, uze_extensions::view::ViewHit::ToggleSection)
-                .then(|| steps.close_rect(*rect))
-                .flatten()
-        }) {
-            hits.push((rect, Hit::CloseFirstSteps));
-        }
-        for (rect, hit) in section_hits {
-            match hit {
-                uze_extensions::view::ViewHit::ToggleSection => {
-                    hits.push((rect, Hit::ToggleFirstSteps))
-                }
-                uze_extensions::view::ViewHit::SelectItem(index) => {
-                    if let Some(action) = FIRST_STEPS.get(index) {
-                        hits.push((rect, Hit::OfferedAction(*action)));
-                    }
-                }
-                _ => {}
-            }
+) -> Rect {
+    let mut close_line = hint::line(&model.scopes(), &[uze_keys::Action::Dismiss]);
+    if close_hovered {
+        for span in &mut close_line.spans {
+            span.style = span.style.fg(theme::color(Token::StateDanger));
         }
     }
-
-    let mut bottom = strip.map_or(inner.bottom(), |rect| rect.y);
-    // The release notice sits on the steps rather than under them — the
-    // workspace's sidebar says why.
-    if let Some(notice) = model.release.as_ref().map(super::ReleaseNotice)
-        && let Some(rect) = notice.rect(Rect {
-            height: bottom - inner.y,
-            ..inner
-        })
-    {
-        let targets = notice.render(frame, rect);
-        hits.push((targets.dismiss, Hit::DismissRelease));
-        hits.extend(
-            targets
-                .notes
-                .into_iter()
-                .map(|rect| (rect, Hit::OpenReleaseNotes)),
-        );
-        bottom = rect.y;
-    }
-    let mut rows = super::Rows::over(Rect {
-        height: bottom - inner.y,
-        ..inner
-    });
-    for route in model::routes() {
-        let rect = if narrow {
-            let Some(rect) = rows.next(1) else { break };
-            rect
-        } else {
-            let Some(label) = rows.next(1) else { break };
-            let has_subtitle = rows.next(1).is_some();
-            rows.gap();
-            Rect {
-                height: if has_subtitle { 2 } else { 1 },
-                ..label
-            }
-        };
-        route_row(
-            frame,
-            rect,
-            route,
-            route == model.route,
-            route_count(route, model),
-        );
-        hits.push((rect, Hit::Route(route)));
-    }
-}
-
-/// One route in the sidebar, drawn as the modal's navigation entry.
-fn route_row(
-    frame: &mut ratatui::Frame<'_>,
-    rect: Rect,
-    route: Route,
-    selected: bool,
-    count: Option<usize>,
-) {
-    widget::nav::entry(
-        frame,
-        rect,
-        route_label_line(route, widget::nav::label_style(selected)),
-        route.subtitle(),
-        selected,
-        count,
+    let close_width = (close_line.width() as u16).min(area.width);
+    let close = Rect::new(
+        area.right().saturating_sub(close_width),
+        area.y,
+        close_width,
+        area.height,
     );
+    frame.render_widget(Paragraph::new(close_line), close);
+
+    let name = format!("{:<NAME_WIDTH$}", "manage");
+    frame.render_widget(
+        Paragraph::new(Span::styled(name, theme::fg_bold(Token::TextBright))),
+        Rect {
+            width: (NAME_WIDTH as u16).min(area.width),
+            ..area
+        },
+    );
+    let mut x = area.x + NAME_WIDTH as u16;
+    let room_end = close.x.saturating_sub(TAB_GAP);
+    for (route, line) in fitted_tabs(model, room_end.saturating_sub(x)) {
+        let width = line.width() as u16;
+        if x + width > room_end {
+            break;
+        }
+        let rect = Rect::new(x, area.y, width, area.height);
+        frame.render_widget(Paragraph::new(line), rect);
+        hits.push((rect, Hit::Route(route)));
+        x += width + TAB_GAP;
+    }
+    close
 }
 
 fn render_footer(
@@ -605,43 +556,49 @@ fn render_footer(
     model: &TuiModel,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    // The way into the index is at the foot of the sidebar now, with the
-    // other chrome that belongs to uze rather than to a screen — one place
-    // in both surfaces, rather than a button here and a chip on the tab
-    // strip over there. This row is the hint line and the version.
-    //
     // Brighter than the hints beside it because it answers a click: it
     // opens this release's notes. Brighter still under the pointer.
     let tone = if model.version_hovered {
-        Token::TextBright
-    } else {
         Token::TextSecondary
+    } else {
+        Token::TextDim
     };
-    let version = Span::styled(
+    let version = Line::from(Span::styled(
         format!("v{}", crate::self_update::running()),
         theme::fg(tone),
-    );
-    let health = health_status(model);
+    ));
+    let mut trailers = vec![(version, Hit::RunningReleaseNotes)];
+    trailers.extend(health_status(model).map(|line| (line, Hit::HealthStatus)));
+    trailers.extend(release_notice(model).map(|line| (line, Hit::OpenReleaseNotes)));
+    let (lines, targets): (Vec<_>, Vec<_>) = trailers.into_iter().unzip();
     let rects = widget::footer::render(
         frame,
         area,
+        CHROME_INSET - RULE_INSET,
         footer_line(model),
-        std::iter::once(version).chain(health.clone()).collect(),
+        lines,
     );
-    if let Some(rect) = rects.first() {
-        hits.push((*rect, Hit::RunningReleaseNotes));
-    }
-    if health.is_some()
-        && let Some(rect) = rects.get(1)
-    {
-        hits.push((*rect, Hit::HealthStatus));
-    }
+    hits.extend(rects.into_iter().zip(targets));
+}
+
+/// A newer release than this one, said where the footer says what just
+/// happened: the news is the version, and a click reads its notes.
+fn release_notice(model: &TuiModel) -> Option<Line<'static>> {
+    let notice = model.release.as_ref()?;
+    Some(Line::from(Span::styled(
+        format!(
+            "{} v{} available",
+            theme::glyph(Symbol::ArrowUp),
+            notice.version()
+        ),
+        theme::fg(Token::Accent),
+    )))
 }
 
 /// The machine's health in a few words, beside the version: the one place
 /// it is said, on every screen of the modal. `None` until the first health
 /// read lands, rather than a "healthy" nobody checked.
-fn health_status(model: &TuiModel) -> Option<Span<'static>> {
+fn health_status(model: &TuiModel) -> Option<Line<'static>> {
     model.remembered.doctor.as_ref()?;
     let alerts = model.alerts();
     let (symbol, hue, words) = match alerts.iter().map(|alert| alert.severity).min() {
@@ -660,42 +617,90 @@ fn health_status(model: &TuiModel) -> Option<Span<'static>> {
             format!("{} need attention", alerts.len()),
         ),
     };
-    let style = if model.health_hovered {
+    let words_style = if model.health_hovered {
         theme::fg_bold(hue)
+    } else if alerts.is_empty() {
+        theme::fg(Token::TextSecondary)
     } else {
         theme::fg(hue)
     };
-    Some(Span::styled(
-        format!("{} {words}", theme::glyph(symbol)),
-        style,
-    ))
+    Some(Line::from(vec![
+        Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(hue)),
+        Span::styled(words, words_style),
+    ]))
 }
 
 /// The hint line: what can be done here, with the keys that do it.
 ///
-/// Every word of it comes from the keymap — the action's own label, and
-/// `chord_for` for the key. The five hand-written strings this replaced
-/// were the other half of the drift the help overlay had: nothing made
-/// them agree with the dispatcher, and nothing could.
+/// Every key in it comes from the keymap — `chord_for`, through the hint
+/// widget — so a rebound key says its new chord here without anyone
+/// remembering to.
 fn hint_line(model: &TuiModel) -> Line<'static> {
-    let scopes = model.scopes();
-    let actions: Vec<uze_keys::Action> = model
-        .action_index_rows(&scopes, "")
-        .into_iter()
-        .filter(|(action, chord)| chord.is_some() && *action != uze_keys::Action::OpenActionIndex)
-        .map(|(action, _)| action)
-        .take(FOOTER_HINTS)
-        .collect();
-    // The index is not among them: it has a button of its own at the other
-    // end of this row, and the button is the mark that opens it. Naming it
-    // twice on one line spends the width of a hint on a repetition.
-    hint::line(&scopes, &actions)
+    use hint::Entry;
+    use uze_keys::Action;
+    let mut entries = vec![Entry::Run(
+        Action::SelectPrevious,
+        Action::SelectNext,
+        "move".to_owned(),
+    )];
+    if model.route == Route::Plugins {
+        entries.push(Entry::Run(
+            Action::FocusContent,
+            Action::FocusSidebar,
+            "expand".to_owned(),
+        ));
+    }
+    if let Some(label) = activate_label(model) {
+        entries.push(Entry::Key(Action::Activate, label));
+    }
+    if model.has_filter() {
+        entries.push(Entry::Key(Action::StartFilter, "filter".to_owned()));
+    }
+    if model.route == Route::Plugins {
+        entries.push(Entry::Key(Action::AddMarketplace, "add".to_owned()));
+    }
+    let screens = model::routes().len().min(9) as u8;
+    entries.push(Entry::Run(
+        Action::SelectTab(1),
+        Action::SelectTab(screens),
+        "section".to_owned(),
+    ));
+    hint::entries_within(u16::MAX, &model.scopes(), &entries)
 }
 
-/// How many of a screen's own actions the footer names before deferring to
-/// the index. Enough to be useful on one row, few enough that the row is
-/// still read rather than scanned past.
-const FOOTER_HINTS: usize = 4;
+/// What Enter does here, in the word the footer gives it, or `None` where
+/// it does nothing — a hint for a key that answers nothing is a hint that
+/// lies. Mirrors the `Activate` arm of `perform` screen by screen; a screen
+/// that changes what Enter does changes this with it.
+fn activate_label(model: &TuiModel) -> Option<String> {
+    use model::{PluginPane, ProfilePanel, SettingsRow};
+    if model.focus == Focus::Sidebar {
+        return Some("open".to_owned());
+    }
+    match model.route {
+        Route::Keys => Some("change key".to_owned()),
+        Route::Settings => match model.selected_settings_row() {
+            Some(
+                SettingsRow::Theme { .. }
+                | SettingsRow::GlyphSet { .. }
+                | SettingsRow::Chime { .. },
+            ) => Some("choose".to_owned()),
+            _ => None,
+        },
+        Route::Plugins if model.plugin_pane == PluginPane::Markets => Some("open".to_owned()),
+        Route::Plugins => model
+            .selected_marketplace_plugin()
+            .and_then(|plugin| view::plugins::primary_offer(&plugin.offers()))
+            .map(|action| action.label()),
+        Route::Profiles if model.profile_preview_open => Some("toggle".to_owned()),
+        Route::Profiles => match model.profile_panel {
+            ProfilePanel::List => Some("edit".to_owned()),
+            ProfilePanel::Editor => Some("change".to_owned()),
+            ProfilePanel::Harnesses => None,
+        },
+        Route::Overview | Route::Harnesses | Route::Extensions => None,
+    }
+}
 
 /// What the footer says: how the last thing went while there is anything
 /// to say about it, and otherwise what can be done here.
@@ -750,5 +755,28 @@ mod tests {
             .send(WorkerResult::ReleaseNotesRead("1.0.0".to_owned(), None))
             .unwrap();
         assert!(memory.tick(&mut model, &home), "an answer arriving redraws");
+    }
+
+    /// The footer names what Enter does on the screen in front of the
+    /// reader, and says nothing where it does nothing.
+    #[test]
+    fn the_footer_names_what_enter_does_on_each_screen() {
+        let mut model = TuiModel {
+            focus: Focus::Content,
+            ..TuiModel::default()
+        };
+        model.route = Route::Harnesses;
+        assert_eq!(activate_label(&model), None, "Enter does nothing here");
+        model.route = Route::Keys;
+        assert_eq!(activate_label(&model).as_deref(), Some("change key"));
+        model.route = Route::Plugins;
+        model.select_plugin_market(Some("uze-official".to_owned()));
+        assert_eq!(
+            activate_label(&model).as_deref(),
+            Some("open"),
+            "on a marketplace, Enter steps into it"
+        );
+        model.focus = Focus::Sidebar;
+        assert_eq!(activate_label(&model).as_deref(), Some("open"));
     }
 }

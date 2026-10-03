@@ -108,6 +108,9 @@ pub struct PluginSummary {
     /// Whether the one installed is the one that exists, and when that was
     /// last established.
     pub freshness: Freshness,
+    /// When it was last installed or updated on this machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_at_unix: Option<u64>,
     /// Every harness the package is installed for and could not be
     /// delivered to. Empty for a package every harness received.
     pub undelivered: Vec<UndeliveredHarness>,
@@ -304,6 +307,10 @@ pub struct MarketplacePluginSummary {
     /// The installed package's freshness. `NotChecked` when the plugin is
     /// not installed at all: there is nothing of it here to be current.
     pub freshness: Freshness,
+    /// When the installed package was last installed or updated on this
+    /// machine; `None` when it is not installed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_at_unix: Option<u64>,
     /// Whether `bootstrap::DEFAULT_PLUGIN_IDS` installs this plugin on a
     /// fresh `UZE_HOME` — product policy, not a marketplace fact.
     pub is_default: bool,

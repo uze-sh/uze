@@ -390,11 +390,22 @@ fn an_action_with_no_key_dims_the_column_it_would_have_filled() {
     let key_cell = |rows: &[action_index::Row]| {
         let mut at = None;
         let buffer = drawn(80, 24, |frame| {
-            at = action_index::render(frame, area, rows, rows.len(), "", 0, |_| ())
-                .first()
-                .map(|(rect, ())| (rect.x, rect.y));
+            at = action_index::render(
+                frame,
+                area,
+                rows,
+                rows.len(),
+                "",
+                0,
+                ratatui::text::Line::default(),
+                |_| (),
+            )
+            .first()
+            .map(|(rect, ())| (rect.x, rect.y));
         });
-        at.map(|(x, y)| buffer[(x, y)].fg)
+        // Past the cursor column every row keeps, selected or not.
+        let cursor = theme::width(theme::Symbol::Prompt) + 1;
+        at.map(|(x, y)| buffer[(x + cursor, y)].fg)
     };
 
     assert_eq!(
@@ -465,7 +476,16 @@ fn the_caret_is_the_carets_own_symbol() {
 fn the_open_index_says_it_can_be_typed_into_before_anything_is() {
     let area = Rect::new(0, 0, 80, 24);
     let buffer = drawn(80, 24, |frame| {
-        action_index::render(frame, area, &[], 0, "", 0, |_| ());
+        action_index::render(
+            frame,
+            area,
+            &[],
+            0,
+            "",
+            0,
+            ratatui::text::Line::default(),
+            |_| (),
+        );
     });
 
     let text: String = (0..24)
@@ -518,7 +538,16 @@ fn narrowing_the_index_does_not_resize_it() {
     // the row it lands on rather than trusting the arithmetic above it.
     let bottom_border = |rows: &[action_index::Row]| {
         let buffer = drawn(80, 24, |frame| {
-            action_index::render(frame, area, rows, all.len(), "x", 0, |_| ());
+            action_index::render(
+                frame,
+                area,
+                rows,
+                all.len(),
+                "x",
+                0,
+                ratatui::text::Line::default(),
+                |_| (),
+            );
         });
         (0..24)
             .rev()
@@ -533,12 +562,25 @@ fn narrowing_the_index_does_not_resize_it() {
     );
 }
 
-/// The title names the surface, and the mark that closes it sits on its
-/// border where a modal's own controls do.
+/// The title names the surface, and the keys that close it sit in its
+/// bottom border, where every dialog carries its answers.
 #[test]
 fn the_index_is_titled_help_and_says_how_to_close() {
+    let hint = super::dialog::border_hint(
+        &[uze_keys::Scope::Global, uze_keys::Scope::ActionIndex],
+        &[(uze_keys::Action::Dismiss, "close")],
+    );
     let buffer = drawn(80, 24, |frame| {
-        action_index::render(frame, Rect::new(0, 0, 80, 24), &[], 4, "", 0, |_| ());
+        action_index::render(
+            frame,
+            Rect::new(0, 0, 80, 24),
+            &[],
+            4,
+            "",
+            0,
+            hint.clone(),
+            |_| (),
+        );
     });
     let text: String = (0..24)
         .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
@@ -546,13 +588,10 @@ fn the_index_is_titled_help_and_says_how_to_close() {
 
     assert!(text.contains("Help"), "titled for what it is");
     assert!(!text.contains("Everything you can do"));
+    assert!(text.contains("esc close"), "the way out is in its border");
     assert!(
-        text.contains(&theme::glyph(theme::Symbol::MarkClose)),
-        "the mark that closes it is drawn"
-    );
-    assert!(
-        !text.contains("close"),
-        "the glyph alone, not a second label"
+        !text.contains(&theme::glyph(theme::Symbol::MarkClose)),
+        "and no second control for it on the top border"
     );
 }
 
@@ -572,7 +611,16 @@ fn the_index_is_capped_and_scrolls_rather_than_growing_with_the_product() {
     }
 
     let buffer = drawn(80, 40, |frame| {
-        action_index::render(frame, area, &many, many.len(), "", 0, |_| ());
+        action_index::render(
+            frame,
+            area,
+            &many,
+            many.len(),
+            "",
+            0,
+            ratatui::text::Line::default(),
+            |_| (),
+        );
     });
     let bottom = (0..40)
         .rev()
@@ -583,7 +631,7 @@ fn the_index_is_capped_and_scrolls_rather_than_growing_with_the_product() {
         .expect("the surface was drawn");
 
     assert!(
-        bottom - top < 19,
+        bottom - top < 20,
         "twelve rows plus chrome, not forty: got {}",
         bottom - top + 1
     );
@@ -608,7 +656,16 @@ fn the_window_follows_the_selection_past_the_cap() {
     let rows_for = |selected: usize| {
         let mut placed = Vec::new();
         drawn(80, 40, |frame| {
-            placed = action_index::render(frame, area, &many, many.len(), "", selected, |p| p);
+            placed = action_index::render(
+                frame,
+                area,
+                &many,
+                many.len(),
+                "",
+                selected,
+                ratatui::text::Line::default(),
+                |p| p,
+            );
         });
         placed
     };

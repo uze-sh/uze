@@ -46,30 +46,88 @@ pub(crate) fn named_within(
     scopes: &[uze_keys::Scope],
     actions: &[(uze_keys::Action, String)],
 ) -> Line<'static> {
+    let entries: Vec<Entry> = actions
+        .iter()
+        .map(|(action, name)| Entry::Key(*action, name.clone()))
+        .collect();
+    entries_within(width, scopes, &entries)
+}
+
+/// One hint: a key and what it does, or a run of keys that do the same
+/// thing to different ends — up and down move, the digits pick a tab —
+/// written once as the two ends of the run.
+#[derive(Clone, Debug)]
+pub(crate) enum Entry {
+    Key(uze_keys::Action, String),
+    Run(uze_keys::Action, uze_keys::Action, String),
+}
+
+/// The line for `entries`, holding only what fits in `width`.
+pub(crate) fn entries_within(
+    width: u16,
+    scopes: &[uze_keys::Scope],
+    entries: &[Entry],
+) -> Line<'static> {
     let keymap = uze_keys::active();
     let separator = theme::glyph(Symbol::HintSeparator);
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut used = 0usize;
-    for (action, name) in actions {
-        let Some(chord) = keymap.chord_for(*action, scopes) else {
-            continue;
+    for entry in entries {
+        let (keys, name) = match entry {
+            Entry::Key(action, name) => match keymap.chord_for(*action, scopes) {
+                Some(chord) => (key_text(chord), name),
+                None => continue,
+            },
+            Entry::Run(first, last, name) => {
+                match (
+                    keymap.chord_for(*first, scopes),
+                    keymap.chord_for(*last, scopes),
+                ) {
+                    (Some(first), Some(last)) => (run_text(first, last), name),
+                    _ => continue,
+                }
+            }
         };
         let lead = match spans.is_empty() {
             true => String::new(),
             false => format!(" {separator} "),
         };
-        let chord = chord.to_string();
         let label = format!(" {}", name.to_lowercase());
-        let cost = lead.chars().count() + chord.chars().count() + label.chars().count();
+        let cost = lead.chars().count() + keys.chars().count() + label.chars().count();
         if used + cost > width as usize {
             break;
         }
         used += cost;
         if !lead.is_empty() {
-            spans.push(Span::styled(lead, theme::fg(Token::TextDim)));
+            spans.push(Span::styled(lead, theme::fg(Token::TextFaint)));
         }
-        spans.push(Span::styled(chord, theme::fg_bold(Token::Accent)));
+        spans.push(Span::styled(keys, theme::fg_bold(Token::Accent)));
         spans.push(Span::styled(label, theme::fg(Token::TextMuted)));
     }
     Line::from(spans)
+}
+
+/// A key as a hint spells it: an arrow key as the arrow the theme draws,
+/// which is what a run of them reads as; anything else as its chord.
+fn key_text(chord: uze_keys::Chord) -> String {
+    let arrow = match chord.to_string().as_str() {
+        "up" => Some(Symbol::ArrowUp),
+        "down" => Some(Symbol::ArrowDown),
+        "left" => Some(Symbol::ArrowLeft),
+        "right" => Some(Symbol::ArrowRight),
+        _ => None,
+    };
+    arrow.map_or_else(|| chord.to_string(), theme::glyph)
+}
+
+/// A run's two ends: arrows side by side, which is how a pair of them is
+/// read, and anything else as a range.
+fn run_text(first: uze_keys::Chord, last: uze_keys::Chord) -> String {
+    let (first_text, last_text) = (key_text(first), key_text(last));
+    let arrows = first_text != first.to_string() && last_text != last.to_string();
+    if arrows {
+        format!("{first_text}{last_text}")
+    } else {
+        format!("{first_text}–{last_text}")
+    }
 }

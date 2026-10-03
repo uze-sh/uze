@@ -1212,9 +1212,7 @@ impl Attach<'_> {
             }
             // Only reachable while the index is open, which the guarded
             // arm in `press` answers first.
-            WorkspaceHit::ActionIndexEntry(_)
-            | WorkspaceHit::ReleaseNotesBody
-            | WorkspaceHit::ReleaseNotesClose => {}
+            WorkspaceHit::ActionIndexEntry(_) | WorkspaceHit::ReleaseNotesBody => {}
             WorkspaceHit::SelectTab(tab) => {
                 // Choosing a tab is choosing to see it, the one already in
                 // front included: that is how the pane is had back from a

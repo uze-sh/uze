@@ -236,6 +236,7 @@ impl UzeApplication {
             },
             capability_count: resources.len(),
             freshness: self.freshness_of(package),
+            installed_at_unix: package.written_at_unix(),
             undelivered: state::undelivered(&self.home, package.id.as_str())?
                 .into_iter()
                 .map(|(integration, error)| UndeliveredHarness {

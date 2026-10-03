@@ -76,6 +76,14 @@
       "glyph": "󰁅",
       "width": 1
     },
+    "arrow.left": {
+      "glyph": "󰁍",
+      "width": 1
+    },
+    "arrow.right": {
+      "glyph": "󰁔",
+      "width": 1
+    },
     "arrow.external": {
       "glyph": "",
       "width": 1

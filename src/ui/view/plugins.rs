@@ -1,60 +1,66 @@
 //! TUI view — the Marketplace route (`Route::Plugins`).
 //!
 //! The agentic side of the product: skills, agents, MCP — everything
-//! installable from a marketplace. Three columns: the marketplaces down the
-//! left (an "all" first, then every registered one, the embedded
-//! `uze-official` snapshot badged as official, and a "local" group for
-//! ad-hoc installs no catalogue knows about, so a direct install never
-//! disappears from the TUI); the plugins of the one selected beside them,
-//! each able to unfold into the resources it offers; and a detail column
-//! describing whichever of the two the keyboard is in. A live filter
-//! narrows the plugins by name, marketplace or keyword.
+//! installable from a marketplace. One tree on the left: every
+//! marketplace is a group (the embedded `uze-official` snapshot as `uze`,
+//! and a `local` group for ad-hoc installs no catalogue knows about, so a
+//! direct install never disappears from the TUI), its plugins under it,
+//! and under an unfolded plugin its resources by kind. A fixed set of
+//! columns runs down the right of every row, and the group the keyboard is
+//! in stands on a recessed ground. A detail panel on the right describes
+//! the row the keyboard is on and ends in what can be done about it. A
+//! live filter narrows the plugins by name, marketplace or keyword.
 //!
-//! Selection indexes the *visible* sequence
-//! (`TuiModel::marketplace_visible_indices`); the unfolded resource rows
-//! are drawn under their plugin and are never selectable, so a position in
-//! the list is always a plugin.
+//! The keyboard walks [`TuiModel::plugin_tree_rows`]; a kind's heading is
+//! drawn but never stood on.
 
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
+    widgets::Paragraph,
 };
 
 use uze_application::CapabilityKind;
+use uze_application::application::offers::ActionOffer;
 use uze_application::application::{
-    DoctorReport, FreshnessState, MarketplacePluginSummary, PluginCapability, Revision,
+    DoctorReport, FreshnessState, MarketplacePluginSummary, MarketplaceSummary, PluginCapability,
+    Revision,
 };
 
-use super::{DrawerStatus, plural, render_drawer_footer};
+use super::plural;
 use crate::ui::agent_support::{capability_label, resource_groups};
+use crate::ui::content_area;
 use crate::ui::hit::Hit;
-use crate::ui::model::{PluginPane, ResizablePanel, Route, TuiModel};
+use crate::ui::model::{Focus, PluginTreeRow, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Button, Edge, RowState, Rule, mark, row, text};
-use crate::ui::{content_area, render_screen_header};
+use crate::ui::widget::{Button, hint, mark, screen_header, text};
 
-/// Both status labels are 9 characters (`Installed`/`Available`), but that's
-/// incidental — pad explicitly so alignment holds even if a future status
-/// label changes length.
-const STATUS_WIDTH: usize = 9;
+/// Below this many columns the panel goes and the tree takes the width.
+const NARROW: u16 = 88;
 
-/// Widest text the freshness column ever holds, so a row without that
-/// badge still reserves its column and nothing after it drifts.
-const UPDATE_WIDTH: usize = "Update available".len();
+/// How far the tree's text sits inside its column — the inset every
+/// screen's content keeps.
+const PAD: u16 = crate::ui::CONTENT_INSET_LEFT;
 
-/// The rail's share of the list side, and the bounds it keeps whatever
-/// the terminal's width: narrower and a marketplace's name is all "…",
-/// wider and it takes room the plugins' own names need more.
-const RAIL_SHARE: u16 = 30;
-const RAIL_MIN: u16 = 16;
-const RAIL_MAX: u16 = 26;
+/// The tree's fixed columns, right of the name: what a row holds, when its
+/// source last moved, and where it stands, right-aligned against the edge.
+const CONTENTS_WIDTH: usize = 20;
+const UPDATED_WIDTH: usize = 14;
+const STATUS_WIDTH: usize = 18;
+/// The narrowest a name is squeezed to before a column gives way to it.
+const NAME_MIN: usize = 12;
 
-/// What the rail hangs into the content inset: the column of its own
-/// padding, so every name inside it lines up with the title above it and a
-/// column of the inset still stands between it and the modal's navigation.
-const RAIL_GUTTER: u16 = 1;
+/// Where each kind of row starts its text inside its group, past the
+/// cursor that points at it: a marketplace, a plugin's chevron, a kind's heading, a
+/// resource's branch.
+const MARKET_INDENT: usize = 2;
+const PLUGIN_INDENT: usize = 4;
+const KIND_INDENT: usize = 6;
+const RESOURCE_INDENT: usize = 8;
+
+/// The key/value grid's key column in the panel.
+const FIELD_KEY_WIDTH: usize = 12;
 
 pub(crate) fn render_plugins(
     frame: &mut ratatui::Frame<'_>,
@@ -62,106 +68,89 @@ pub(crate) fn render_plugins(
     model: &TuiModel,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let outer = content_area(area);
     // Composed once for the frame: every question below is about the same
     // rows, and composing them compares every install to the catalogue.
-    let marketplace_rows = model.marketplace_rows();
-    let visible = model.visible_indices_in(&marketplace_rows);
-    let markets = model.plugin_markets(&marketplace_rows);
-    let market = model.market_in_rail(&marketplace_rows);
-    let selected = visible
-        .get(model.remembered.plugin_screen.selected)
-        .map(|&raw| &marketplace_rows[raw]);
+    let rows = model.marketplace_rows();
+    let visible = model.visible_indices_in(&rows);
+    let markets = model.plugin_markets(&rows);
 
-    // Always there: it describes the plugin the keyboard is on, and the
-    // marketplace when the keyboard is on the rail or there is no plugin.
-    let drawer_width = super::drawer_width(ResizablePanel::MarketplaceDrawer, model, outer);
-    let side = Rect::new(
-        outer.x,
-        outer.y,
-        outer.width.saturating_sub(drawer_width + 1),
-        outer.height,
-    );
-    let trailer = Span::styled(
-        format!(
-            "{} marketplace{} · {} plugin{}",
-            markets.len(),
-            plural(markets.len()),
-            marketplace_rows.len(),
-            plural(marketplace_rows.len()),
-        ),
-        theme::fg(Token::TextMuted),
-    );
-    let content = render_screen_header(frame, side, Route::Plugins, None);
-    render_header_trailer(frame, side, trailer, model, hits);
-    let filter_area = Rect::new(content.x, content.y, content.width, 2);
-    super::filter_box(
-        frame,
-        filter_area,
-        &model.remembered.plugin_screen.filter,
-        "Filter plugins…",
-        model.filtering,
-    );
-    hits.push((filter_area, Hit::FocusFilter));
-    let body = Rect::new(
-        content.x,
-        content.y + 3,
-        content.width,
-        content.height.saturating_sub(3),
-    );
-
-    let rail_width = (body.width * RAIL_SHARE / 100).clamp(RAIL_MIN, RAIL_MAX);
-    let gutter = body.x.min(RAIL_GUTTER);
-    let rail = Rect::new(
-        body.x - gutter,
-        body.y,
-        (rail_width + gutter).min(body.width + gutter),
-        body.height,
-    );
-    render_rail(
-        frame,
-        rail,
+    let content = content_area(area);
+    let panel_width = if area.width < NARROW {
+        0
+    } else {
+        super::drawer_width(ResizablePanel::MarketplaceDrawer, model, content)
+    };
+    let tree = Rect {
+        width: if panel_width > 0 {
+            content.right().saturating_sub(panel_width + area.x)
+        } else {
+            area.width
+        },
+        ..area
+    };
+    let screen = Screen {
         model,
-        &marketplace_rows,
-        &markets,
-        market,
-        hits,
-    );
-    let list_x = rail.right() + 2;
-    let list = Rect::new(
-        list_x,
-        body.y,
-        body.right().saturating_sub(list_x),
-        body.height,
-    );
-    render_list(
-        frame,
-        list,
-        model,
-        &marketplace_rows,
-        &visible,
-        market.is_none(),
-        hits,
-    );
+        rows: &rows,
+        visible: &visible,
+        cursor: model.plugin_tree_cursor(),
+        focused: model.focus == Focus::Content,
+    };
+    render_tree(frame, tree, &screen, &markets, hits);
+    if panel_width > 0 {
+        let panel = super::drawer(
+            frame,
+            content,
+            ResizablePanel::MarketplaceDrawer,
+            model,
+            hits,
+        );
+        render_panel(frame, panel, &screen, hits);
+    }
+}
 
-    match selected {
-        Some(plugin) if model.plugin_pane == PluginPane::Plugins => {
-            match model.selected_resource() {
-                Some(resource) => {
-                    render_resource_drawer(frame, outer, model, plugin, &resource, hits)
-                }
-                None => render_plugin_drawer(frame, outer, model, plugin, hits),
-            }
+/// What every part of the screen reads, composed once per frame.
+struct Screen<'a> {
+    model: &'a TuiModel,
+    rows: &'a [MarketplacePluginSummary],
+    visible: &'a [usize],
+    cursor: PluginTreeRow,
+    focused: bool,
+}
+
+impl Screen<'_> {
+    fn plugin(&self, position: usize) -> Option<&MarketplacePluginSummary> {
+        self.visible.get(position).map(|&raw| &self.rows[raw])
+    }
+
+    fn summary(&self, market: &str) -> Option<&MarketplaceSummary> {
+        self.model
+            .remembered
+            .marketplaces
+            .iter()
+            .find(|summary| summary.name == market)
+    }
+
+    fn offered_by(&self, market: &str) -> Vec<&MarketplacePluginSummary> {
+        self.rows
+            .iter()
+            .filter(|plugin| plugin.marketplace == market)
+            .collect()
+    }
+
+    /// The market whose group the keyboard is in.
+    fn active_market(&self) -> Option<&str> {
+        match &self.cursor {
+            PluginTreeRow::Market(market) => Some(market.as_str()),
+            PluginTreeRow::Plugin(position) | PluginTreeRow::Resource(position, _) => self
+                .plugin(*position)
+                .map(|plugin| plugin.marketplace.as_str()),
         }
-        _ => render_market_drawer(frame, outer, model, &marketplace_rows, market, hits),
     }
 }
 
 /// The group name as rendered: "uze-official" reads oddly right above a
-/// child plugin that's *also* named "uze" — the official mark already says
-/// what the suffix did. Every other name is drawn as it is spelled, in the
-/// lowercase the rail's own entries are: the local group and "all" beside
-/// them are names in the same list, not headings over it.
+/// child plugin that's *also* named "uze" — the source beside it already
+/// says what the suffix did.
 fn group_display_name(marketplace: &str) -> &str {
     match marketplace {
         "uze-official" => "uze",
@@ -169,322 +158,287 @@ fn group_display_name(marketplace: &str) -> &str {
     }
 }
 
-/// The rail's first entry, which narrows to no marketplace.
-const EVERY_MARKET: &str = "all";
-
-/// The ground and the edge mark of a selected row. The keyboard's own
-/// row wears the accent bar; a selection the keyboard has left keeps a
-/// quieter ground, so the reader still sees what the other column is
-/// describing.
-fn selection(selected: bool, focused: bool) -> (RowState, String) {
-    match (selected, focused) {
-        (true, true) => (RowState::Selected, theme::glyph(Symbol::TreeColumnDivider)),
-        (true, false) => (RowState::Hovered, " ".to_owned()),
-        (false, _) => (RowState::Resting, " ".to_owned()),
+/// Where a marketplace comes from, in the few words beside its name. The
+/// one that ships with uze wears the official mark the extensions wear,
+/// since it is official in the same sense.
+fn market_source(summary: Option<&MarketplaceSummary>) -> Span<'static> {
+    let dim = |words: String| Span::styled(words, theme::fg(Token::TextDim));
+    let Some(summary) = summary else {
+        return dim("installed directly".to_owned());
+    };
+    if summary.source.starts_with("embedded:") {
+        return Span::styled(
+            format!("{} Official", theme::glyph(Symbol::MarkOfficial)),
+            theme::fg(Token::StateInfo),
+        );
     }
+    if summary.linked_to.is_some() {
+        return dim("linked".to_owned());
+    }
+    let address = summary.homepage.as_deref().unwrap_or(&summary.source);
+    dim(address
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_end_matches(".git")
+        .trim_end_matches('/')
+        .to_owned())
 }
 
-fn render_rail(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    model: &TuiModel,
-    rows: &[MarketplacePluginSummary],
-    markets: &[String],
-    market: Option<&str>,
-    hits: &mut Vec<(Rect, Hit)>,
-) {
-    let inner = Rule::new(Edge::Right).render(frame, area);
-    let width = inner.width.saturating_sub(1);
-    // On the row the plugin table heads its columns on, so the two lists
-    // start on one line.
-    // A row of air under it, as under the plugin table's column heading.
-    let mut lines = vec![
-        Line::from(Span::styled(" MARKETPLACES", theme::fg(Token::TextMuted))),
-        Line::from(""),
-    ];
-    let mut targets = Vec::new();
+/// When anything from a marketplace was last installed or updated on this
+/// machine: the most recent of its plugins'. Blank when none of them is
+/// installed — when uze last checked for updates is a fact about uze, not
+/// about the plugins.
+fn market_updated(offered: &[&MarketplacePluginSummary]) -> String {
+    offered
+        .iter()
+        .filter_map(|plugin| plugin.installed_at_unix)
+        .max()
+        .map(ago)
+        .unwrap_or_default()
+}
 
-    let entries = std::iter::once(None).chain(markets.iter().map(|name| Some(name.as_str())));
-    for entry in entries {
-        let offered: Vec<&MarketplacePluginSummary> = rows
-            .iter()
-            .filter(|plugin| entry.is_none_or(|name| plugin.marketplace == name))
-            .collect();
-        let installed = offered.iter().filter(|plugin| plugin.installed).count();
-        let selected = entry == market;
-        // The ground alone says which one is selected, across the whole
-        // container: a bar beside a row that already fills its box said it
-        // twice. The selection tint, whether the keyboard is here or down
-        // among its plugins: it is the marketplace being looked into either
-        // way, and a fainter ground read as having let go of it.
-        let state = if selected {
-            RowState::Selected
-        } else {
-            RowState::Resting
-        };
-        let name = entry.map_or(EVERY_MARKET, group_display_name);
-        let name_style = if selected {
-            theme::fg_bold(Token::TextBright)
-        } else {
-            theme::fg(Token::TextPrimary)
-        };
-        let room = (width as usize).saturating_sub(usize::from(RAIL_GUTTER));
-        let count = format!("{installed}/{}", offered.len());
-        let name_room = room.saturating_sub(count.len() + 1);
-        let name = text::elide(name, name_room);
-        let gap = room.saturating_sub(text::columns(&name) + count.len());
-        let head = vec![
-            Span::styled(name, name_style),
-            Span::raw(" ".repeat(gap)),
-            Span::styled(count, theme::fg(Token::TextMuted)),
-        ];
-        let (note, note_style) = market_status(model, entry, &offered);
-        let caption = vec![Span::styled(note, note_style)];
-        // Cut at the rail's edge rather than wrapped: a marketplace is two
-        // rows, whatever it has to say.
-        let mut caption = Line::from(caption);
-        text::clip(&mut caption, room);
-        let hang = |spans: Vec<Span<'static>>| {
-            let mut line = vec![Span::raw(" ".repeat(usize::from(RAIL_GUTTER)))];
-            line.extend(spans);
-            row::fill(&mut line, inner.width, state);
-            Line::from(line)
-        };
-        targets.push((lines.len(), Hit::PluginMarket(entry.map(str::to_owned))));
-        lines.push(hang(head));
-        lines.push(hang(caption.spans));
-    }
-    // A marketplace is two rows, its name and what is worth knowing about
-    // it; either one picks it.
-    for (offset, hit) in targets {
-        let y = inner.y + offset as u16;
-        if y < inner.bottom() {
-            let height = 2.min(inner.bottom() - y);
-            hits.push((Rect::new(inner.x, y, inner.width, height), hit));
+/// A count and its noun, in the plural the count takes.
+fn counted(count: usize, noun: &str) -> String {
+    format!("{count} {noun}{}", plural(count))
+}
+
+// --- The tree -----------------------------------------------------------
+
+/// The columns a row is laid out in, shared by the heading and every row
+/// so they line up table-style whatever each row's own name is. A column
+/// that does not fit gives way rather than squeezing the name to nothing:
+/// the update date first, then the contents.
+struct Columns {
+    contents: bool,
+    updated: bool,
+}
+
+impl Columns {
+    fn fitted(width: usize) -> Self {
+        let full = NAME_MIN + CONTENTS_WIDTH + UPDATED_WIDTH + STATUS_WIDTH;
+        Self {
+            updated: width >= full,
+            contents: width >= full - UPDATED_WIDTH,
         }
     }
-    frame.render_widget(Paragraph::new(lines), inner);
-}
 
-/// The header's right end: the count of what is registered, a divider,
-/// and the button that registers another — pinned to the edge, like every
-/// other offer in the modal, in the accent and filled under the pointer.
-/// It used to be a dim `+ add` at the foot of the list, which read as one
-/// more entry in it. Where the title leaves no room, the button goes
-/// before the count does.
-fn render_header_trailer(
-    frame: &mut ratatui::Frame<'_>,
-    header: Rect,
-    count: Span<'static>,
-    model: &TuiModel,
-    hits: &mut Vec<(Rect, Hit)>,
-) {
-    const GAP: u16 = 2;
-    let action = uze_keys::Action::AddMarketplace;
-    // "Add" alone: the title, the rail and the count beside it already say
-    // marketplace three times over.
-    let button = Button::new("Add", Token::Accent).strong(model.hovered_offer == Some(action));
-    let divider = theme::glyph(Symbol::TreeColumnDivider);
-    let divider_width = theme::width(Symbol::TreeColumnDivider);
-    // The title row ends a column short of the header, as every screen's
-    // trailer does.
-    let right = header.right().saturating_sub(1);
-    let title_end = header.x + Route::Plugins.label().len() as u16 + GAP;
-    let count_width = count.width() as u16;
-    let with_button = button.width() + GAP + divider_width + GAP + count_width;
-    let mut x = right.saturating_sub(count_width);
-    if right.saturating_sub(with_button) >= title_end {
-        let rect = Rect::new(right - button.width(), header.y, button.width(), 1);
-        button.render(frame, rect);
-        hits.push((rect, Hit::OfferedAction(action)));
-        let divider_x = rect.x - GAP - divider_width;
-        frame.render_widget(
-            Paragraph::new(Span::styled(divider, theme::fg(Token::SurfaceHover))),
-            Rect::new(divider_x, header.y, divider_width, 1),
-        );
-        x = divider_x - GAP - count_width;
-    }
-    if x >= title_end {
-        frame.render_widget(
-            Paragraph::new(count),
-            Rect::new(x, header.y, count_width, 1),
-        );
+    /// The cells right of the name, each padded to its column.
+    fn cells(
+        &self,
+        contents: Span<'static>,
+        updated: Span<'static>,
+        status: Span<'static>,
+    ) -> Vec<Span<'static>> {
+        let mut cells = Vec::with_capacity(3);
+        if self.contents {
+            cells.push(padded(contents, CONTENTS_WIDTH));
+        }
+        if self.updated {
+            cells.push(padded(updated, UPDATED_WIDTH));
+        }
+        let content = text::elide(&status.content, STATUS_WIDTH);
+        cells.push(Span::styled(
+            format!("{content:>STATUS_WIDTH$}"),
+            status.style,
+        ));
+        cells
     }
 }
 
-/// What a marketplace's second row says: the one thing about it that asks
-/// something of the reader, or else how fresh the rest of the screen is.
-/// In that order — updates it delivered that are now behind, that it
-/// follows a checkout rather than a pinned commit, that it ships with uze —
-/// and when none applies, how long ago its mirror was last brought up to
-/// date, which is what says whether "nothing to update" is still true.
-fn market_status(
-    model: &TuiModel,
-    market: Option<&str>,
-    offered: &[&MarketplacePluginSummary],
-) -> (String, Style) {
-    let behind = offered
-        .iter()
-        .filter(|plugin| plugin.freshness.behind())
-        .count();
-    if behind > 0 {
-        return (
-            format!(
-                "{} {behind} update{}",
-                theme::glyph(Symbol::ArrowUp),
-                plural(behind)
-            ),
-            theme::fg(Token::StateWarning),
-        );
-    }
-    let summary = market.and_then(|name| {
-        model
-            .remembered
-            .marketplaces
-            .iter()
-            .find(|summary| summary.name == name)
-    });
-    if summary.is_some_and(|summary| summary.linked_to.is_some()) {
-        return ("linked".to_owned(), theme::fg(Token::TextDim));
-    }
-    if summary.is_some_and(|summary| summary.source.starts_with("embedded:")) {
-        return ("built in".to_owned(), theme::fg(Token::TextDim));
-    }
-    // The oldest check among them: "2m ago" over a list whose
-    // other half was last looked at a week ago would be a promise the
-    // list does not keep.
-    let checked = offered
-        .iter()
-        .filter_map(|plugin| plugin.freshness.established_at_unix)
-        .min();
-    match checked {
-        Some(at) => (ago(at), theme::fg(Token::TextDim)),
-        None => (String::new(), Style::default()),
-    }
+fn padded(span: Span<'static>, width: usize) -> Span<'static> {
+    let content = text::elide(&span.content, width.saturating_sub(1));
+    Span::styled(format!("{content:<width$}"), span.style)
 }
 
-/// How long ago `at_unix` was, in the largest whole unit: `just now`,
-/// `5m ago`, `3h ago`, `2d ago`.
-fn ago(at_unix: u64) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(at_unix, |elapsed| elapsed.as_secs());
-    match now.saturating_sub(at_unix) {
-        seconds if seconds < 60 => "just now".to_owned(),
-        seconds if seconds < 3_600 => format!("{}m ago", seconds / 60),
-        seconds if seconds < 86_400 => format!("{}h ago", seconds / 3_600),
-        seconds => format!("{}d ago", seconds / 86_400),
-    }
-}
-
-/// One line of the plugin list, and what a click on it means.
-struct ListLine {
+/// One line of the tree, what a click on it means, and whether the
+/// keyboard is on it.
+struct TreeLine {
     line: Line<'static>,
-    /// Row targets, first match wins: a chevron ahead of its row.
+    /// Row targets from the line's left edge, first match wins: a chevron
+    /// ahead of its row.
     hits: Vec<(u16, u16, Hit)>,
+    selected: bool,
+    /// A row of air, which a following one never doubles.
+    gap: bool,
 }
 
-fn render_list(
+impl TreeLine {
+    fn new(line: Line<'static>, hits: Vec<(u16, u16, Hit)>, selected: bool) -> Self {
+        Self {
+            line,
+            hits,
+            selected,
+            gap: false,
+        }
+    }
+
+    fn blank(width: u16, ground: Option<Token>) -> Self {
+        Self {
+            line: grounded(vec![Span::raw(" ".repeat(width.into()))], ground),
+            hits: Vec::new(),
+            selected: false,
+            gap: true,
+        }
+    }
+
+    /// A row of air inside `market`'s group: part of its card, so a click
+    /// on it picks the marketplace the way its heading does — the whole
+    /// card answers, not only the rows with words on them.
+    fn in_group(width: u16, ground: Option<Token>, market: &str) -> Self {
+        Self {
+            hits: vec![(0, width, Hit::PluginMarket(Some(market.to_owned())))],
+            ..Self::blank(width, ground)
+        }
+    }
+}
+
+fn grounded(mut spans: Vec<Span<'static>>, ground: Option<Token>) -> Line<'static> {
+    if let Some(ground) = ground {
+        for span in &mut spans {
+            span.style = span.style.bg(theme::color(ground));
+        }
+    }
+    Line::from(spans)
+}
+
+/// A row of a group: the cursor when the keyboard is on it, `lead` from
+/// `indent`, elided to the
+/// room the name has, then the cells, then the group's trailing pad —
+/// all on `ground`.
+fn tree_row(
+    width: u16,
+    ground: Option<Token>,
+    marker: bool,
+    indent: usize,
+    lead: Vec<Span<'static>>,
+    cells: Vec<Span<'static>>,
+) -> Line<'static> {
+    let width = usize::from(width);
+    let trailing: usize = cells.iter().map(Span::width).sum::<usize>() + TRAILING;
+    let name_room = width.saturating_sub(indent + trailing + 1);
+    let mut lead = Line::from(lead);
+    text::clip(&mut lead, name_room);
+    let lead_width = lead.width();
+    // The cursor stands just ahead of the row's own text, the way the
+    // Shortcuts list points at its key, so it moves in with the tree's
+    // indent instead of sitting at the group's edge.
+    let marker_width = usize::from(theme::width(Symbol::Prompt)) + 1;
+    let gap = indent.saturating_sub(marker_width);
+    let mut spans = vec![Span::raw(" ".repeat(gap))];
+    if marker {
+        spans.push(Span::styled(
+            format!("{} ", theme::glyph(Symbol::Prompt)),
+            theme::fg_bold(Token::Accent),
+        ));
+    } else {
+        spans.push(Span::raw(" ".repeat(indent - gap)));
+    }
+    spans.extend(lead.spans);
+    spans.push(Span::raw(
+        " ".repeat(width.saturating_sub(indent + lead_width + trailing)),
+    ));
+    spans.extend(cells);
+    spans.push(Span::raw(" ".repeat(TRAILING)));
+    grounded(spans, ground)
+}
+
+/// The columns a group keeps clear inside its right edge.
+const TRAILING: usize = 2;
+
+fn render_tree(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
-    model: &TuiModel,
-    rows: &[MarketplacePluginSummary],
-    visible: &[usize],
-    every_market: bool,
+    screen: &Screen<'_>,
+    markets: &[String],
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    if rows.is_empty() || visible.is_empty() {
+    let model = screen.model;
+    let text_area = Rect {
+        x: area.x + PAD,
+        width: area.width.saturating_sub(2 * PAD),
+        ..area
+    };
+    let mut rows = crate::ui::Rows::over(text_area);
+    if let Some(rect) = rows.next(1) {
+        render_tree_header(frame, rect, screen, markets.len(), hits);
+    }
+    rows.gap();
+    if let Some(rect) = rows.next(1) {
+        super::filter_box(
+            frame,
+            rect,
+            &model.remembered.plugin_screen.filter,
+            "filter plugins and capabilities…",
+            model.filtering,
+        );
+        hits.push((rect, Hit::FocusFilter));
+    }
+    rows.gap();
+    let group_area = Rect {
+        x: area.x + 1,
+        width: area.width.saturating_sub(2),
+        ..area
+    };
+    let columns =
+        Columns::fitted(usize::from(group_area.width).saturating_sub(PLUGIN_INDENT + TRAILING + 4));
+    if let Some(rect) = rows.next(1) {
+        let heading = tree_row(
+            group_area.width,
+            None,
+            false,
+            MARKET_INDENT,
+            vec![Span::styled("name", theme::fg(Token::TextDim))],
+            columns.cells(
+                Span::styled("contents", theme::fg(Token::TextDim)),
+                Span::styled("updated", theme::fg(Token::TextDim)),
+                Span::styled("status", theme::fg(Token::TextDim)),
+            ),
+        );
+        frame.render_widget(
+            Paragraph::new(heading),
+            Rect {
+                x: group_area.x,
+                width: group_area.width,
+                ..rect
+            },
+        );
+    }
+    rows.gap();
+    let Some(list_top) = rows.next(1).map(|rect| rect.y) else {
+        return;
+    };
+    let list = Rect::new(
+        group_area.x,
+        list_top,
+        group_area.width,
+        area.bottom().saturating_sub(list_top),
+    );
+
+    if screen.visible.is_empty() {
         let filter = model.remembered.plugin_screen.filter.trim();
-        let message = if rows.is_empty() {
-            "No plugins available.".to_owned()
-        } else if !filter.is_empty() {
-            format!("No plugins match \"{filter}\".")
+        let message = if !filter.is_empty() {
+            format!("nothing matches “{filter}”")
         } else {
-            "No plugins in this marketplace.".to_owned()
+            "No plugins available.".to_owned()
         };
         frame.render_widget(
-            Paragraph::new(Span::styled(message, theme::fg(Token::TextMuted))),
+            Paragraph::new(Span::styled(message, theme::fg(Token::TextDim))),
             Rect {
-                y: area.y + 1,
-                ..area
+                x: text_area.x,
+                width: text_area.width,
+                height: 1.min(list.height),
+                ..list
             },
         );
         return;
     }
 
-    let name_width = visible
-        .iter()
-        .map(|&raw| text::columns(&rows[raw].name))
-        .max()
-        .unwrap_or(0)
-        .clamp(6, 28);
-    let market_width = every_market.then(|| {
-        visible
-            .iter()
-            .map(|&raw| text::columns(group_display_name(&rows[raw].marketplace)))
-            .max()
-            .unwrap_or(0)
-            .clamp(6, 18)
-    });
-    let columns = Columns::fitted(name_width, market_width, area.width.into());
-
-    let focused =
-        model.plugin_pane == PluginPane::Plugins && model.focus == crate::ui::model::Focus::Content;
-    let selected_resource = model.selected_resource().map(|resource| resource.identity);
-    let mut lines: Vec<ListLine> = Vec::new();
-    let mut selected_line = 0;
-    for (position, &raw) in visible.iter().enumerate() {
-        let plugin = &rows[raw];
-        let id = model.marketplace_plugin_id(plugin);
-        let expanded = model.expanded_plugins.contains(&id);
-        let is_selected = position == model.remembered.plugin_screen.selected;
-        // The plugin's own row wears the selection only while the keyboard
-        // is not on one of its resources below it.
-        let on_resource = is_selected
-            .then_some(selected_resource.as_deref())
-            .flatten();
-        if is_selected {
-            selected_line = lines.len();
-        }
-        lines.push(ListLine {
-            line: plugin_line(
-                plugin,
-                &columns,
-                expanded,
-                selection(is_selected && on_resource.is_none(), focused),
-                model.was_just_updated(&id),
-                area.width,
-            ),
-            hits: vec![
-                (0, 3, Hit::TogglePluginResources(position)),
-                (0, area.width, Hit::MarketplaceRow(position)),
-            ],
-        });
-        if expanded {
-            let tree = resource_tree(
-                model.plugin_resources_of(&id),
-                position,
-                on_resource,
-                focused,
-                area.width,
-            );
-            if let Some(offset) = tree.iter().position(|entry| entry.selected) {
-                selected_line = lines.len() + offset;
-            }
-            lines.extend(tree.into_iter().map(|entry| entry.line));
-        }
-    }
-
-    frame.render_widget(Paragraph::new(columns.heading()), area);
-    // A row of air between the column heading and the first plugin.
-    let list = Rect {
-        y: area.y + 2,
-        height: area.height.saturating_sub(2),
-        ..area
-    };
-    // Scrolled only as far as keeps the keyboard's row in view: nothing
-    // else here moves the list, so there is no offset to remember.
-    let offset = (selected_line + 1).saturating_sub(list.height as usize);
+    let lines = tree_lines(screen, markets, &columns, list.width);
+    let selected_line = lines.iter().position(|line| line.selected).unwrap_or(0);
+    // Scrolled only as far as keeps the keyboard's row in view, with the
+    // row after it when there is one: nothing else here moves the list, so
+    // there is no offset to remember.
+    let offset = (selected_line + 2).saturating_sub(list.height as usize);
     for (index, entry) in lines.into_iter().skip(offset).enumerate() {
         let y = list.y + index as u16;
         if y >= list.bottom() {
@@ -500,260 +454,872 @@ fn render_list(
     }
 }
 
-/// Between two columns of the plugin list: wide enough that a short value
-/// does not read as running into the next one.
-const GAP: &str = "    ";
-
-/// The chevron and the space after it, ahead of a plugin's name.
-const CHEVRON_WIDTH: usize = 2;
-
-/// "Marketplace" in full would take more than most names in it do.
-const MARKET_HEADING: &str = "FROM";
-
-/// The list's column widths, shared by its heading and every row so the
-/// columns line up table-style whatever each row's own name is.
-struct Columns {
-    name: usize,
-    /// Present only on "All", where a plugin's marketplace is not already
-    /// said by the rail.
-    market: Option<usize>,
-    status: usize,
+/// The tree's own header: the screen's name and what it holds, and the
+/// key that registers another marketplace pinned to the right — the one
+/// offer here that is about no row.
+fn render_tree_header(
+    frame: &mut ratatui::Frame<'_>,
+    rect: Rect,
+    screen: &Screen<'_>,
+    markets: usize,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    let model = screen.model;
+    let action = uze_keys::Action::AddMarketplace;
+    let mut offer = hint::line(&model.scopes(), &[action]);
+    if model.hovered_offer == Some(action) {
+        for span in &mut offer.spans {
+            span.style = span.style.fg(theme::color(Token::Accent));
+        }
+    }
+    let offer_width = (offer.width() as u16).min(rect.width);
+    hits.push((
+        Rect::new(
+            rect.right().saturating_sub(offer_width),
+            rect.y,
+            offer_width,
+            1,
+        ),
+        Hit::OfferedAction(action),
+    ));
+    let note = Span::styled(
+        format!(
+            "{} · {}",
+            counted(markets, "marketplace"),
+            counted(screen.rows.len(), "plugin")
+        ),
+        theme::fg(Token::TextMuted),
+    );
+    screen_header::inline(frame, rect, Route::Plugins.label(), note, Some(offer));
 }
 
-/// The most a column grows past what its widest value needs. The room a
-/// wide terminal leaves is shared between the columns, so the table spans
-/// the list rather than huddling at its left with everything empty after
-/// UPDATES — up to the point where a value and its heading are so far from
-/// the next that the eye loses the row between them.
-const COLUMN_GROWTH: usize = 12;
-
-impl Columns {
-    /// The widths the values need, each grown by an even share of what
-    /// the list has beyond them.
-    fn fitted(name: usize, market: Option<usize>, width: usize) -> Self {
-        let gap = GAP.len();
-        let needed = 1
-            + CHEVRON_WIDTH
-            + name
-            + gap
-            + market.map_or(0, |market| market + gap)
-            + STATUS_WIDTH
-            + gap
-            + UPDATE_WIDTH;
-        let growing = if market.is_some() { 3 } else { 2 };
-        let share = (width.saturating_sub(needed) / growing).min(COLUMN_GROWTH);
-        Self {
-            name: name + share,
-            market: market.map(|market| market + share),
-            status: STATUS_WIDTH + share,
+/// Every line the tree draws, top to bottom: each group's heading, a row
+/// of air, its plugins — an unfolded one followed by its resources by
+/// kind and a row of air — and a row of air closing the group, with
+/// another between groups.
+fn tree_lines(
+    screen: &Screen<'_>,
+    markets: &[String],
+    columns: &Columns,
+    width: u16,
+) -> Vec<TreeLine> {
+    let model = screen.model;
+    let filtering = !model.remembered.plugin_screen.filter.trim().is_empty();
+    let active = screen.active_market();
+    let mut lines = Vec::new();
+    for market in markets {
+        let members: Vec<usize> = screen
+            .visible
+            .iter()
+            .enumerate()
+            .filter(|(_, raw)| screen.rows[**raw].marketplace == *market)
+            .map(|(position, _)| position)
+            .collect();
+        if members.is_empty() && filtering {
+            continue;
         }
-    }
-
-    fn heading(&self) -> Line<'static> {
-        // Over the chevron rather than the name: the chevron is where the
-        // first column starts, and a heading indented past it reads as
-        // belonging to something else.
-        let mut heading = format!(
-            " {:<width$}{GAP}",
-            "PLUGIN",
-            width = CHEVRON_WIDTH + self.name
-        );
-        if let Some(width) = self.market {
-            heading.push_str(&format!("{MARKET_HEADING:<width$}{GAP}"));
+        // The container the keyboard is in stands out from the rest: the
+        // whole group on the selection's ground while its heading is the
+        // selected row, on the recessed one while a plugin inside it is.
+        let ground = if screen.cursor == PluginTreeRow::Market(market.clone()) {
+            Some(Token::SurfaceSelected)
+        } else {
+            (active == Some(market.as_str())).then_some(Token::SurfaceRecessed)
+        };
+        if !lines.is_empty() {
+            lines.push(TreeLine::blank(width, None));
         }
-        heading.push_str(&format!(
-            "{:<width$}{GAP}UPDATES",
-            "STATUS",
-            width = self.status
-        ));
-        Line::from(Span::styled(heading, theme::fg(Token::TextDim)))
+        lines.push(market_line(screen, market, ground, columns, width));
+        lines.push(TreeLine::in_group(width, ground, market));
+        let last = members.len().saturating_sub(1);
+        for (index, position) in members.into_iter().enumerate() {
+            let Some(plugin) = screen.plugin(position) else {
+                continue;
+            };
+            let id = model.marketplace_plugin_id(plugin);
+            let expanded = model.expanded_plugins.contains(&id);
+            if expanded && index > 0 && !lines.last().is_some_and(|line| line.gap) {
+                lines.push(TreeLine::in_group(width, ground, market));
+            }
+            // A selected plugin is a container of its own: its row and every
+            // resource under it share the selection's ground, and the cursor
+            // alone says which of them the keyboard is on.
+            let block = match &screen.cursor {
+                PluginTreeRow::Plugin(at) | PluginTreeRow::Resource(at, _) if *at == position => {
+                    Some(Token::SurfaceSelected)
+                }
+                _ => ground,
+            };
+            lines.push(plugin_line(
+                screen, position, plugin, expanded, block, columns, width,
+            ));
+            if expanded {
+                lines.extend(resource_lines(
+                    screen, position, plugin, block, columns, width,
+                ));
+                if index < last {
+                    lines.push(TreeLine::in_group(width, ground, market));
+                }
+            }
+        }
+        lines.push(TreeLine::in_group(width, ground, market));
     }
+    lines
+}
+
+fn name_style(selected: bool, resting: Token) -> Style {
+    if selected {
+        theme::fg_bold(Token::TextBright)
+    } else {
+        theme::fg(resting)
+    }
+}
+
+fn market_line(
+    screen: &Screen<'_>,
+    market: &str,
+    group: Option<Token>,
+    columns: &Columns,
+    width: u16,
+) -> TreeLine {
+    let summary = screen.summary(market);
+    let offered = screen.offered_by(market);
+    let installed = offered.iter().filter(|plugin| plugin.installed).count();
+    let behind = offered
+        .iter()
+        .filter(|plugin| plugin.freshness.behind())
+        .count();
+    let selected = screen.cursor == PluginTreeRow::Market(market.to_owned());
+    let resting = if group.is_some() {
+        Token::TextPrimary
+    } else {
+        Token::TextSecondary
+    };
+    let status = if behind > 0 {
+        Span::styled(
+            format!(
+                "{} {}",
+                theme::glyph(Symbol::ArrowUp),
+                counted(behind, "update")
+            ),
+            theme::fg(Token::StateWarning),
+        )
+    } else {
+        Span::styled(
+            format!("{installed}/{} installed", offered.len()),
+            theme::fg(Token::TextMuted),
+        )
+    };
+    TreeLine::new(
+        tree_row(
+            width,
+            group,
+            selected && screen.focused,
+            MARKET_INDENT,
+            vec![
+                Span::styled(
+                    group_display_name(market).to_owned(),
+                    name_style(selected, resting).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  "),
+                market_source(summary),
+            ],
+            columns.cells(
+                Span::styled(
+                    counted(offered.len(), "plugin"),
+                    theme::fg(Token::TextMuted),
+                ),
+                Span::styled(market_updated(&offered), theme::fg(Token::TextMuted)),
+                status,
+            ),
+        ),
+        vec![(0, width, Hit::PluginMarket(Some(market.to_owned())))],
+        selected,
+    )
 }
 
 fn plugin_line(
-    plugin: &MarketplacePluginSummary,
-    columns: &Columns,
-    expanded: bool,
-    (state, bar): (RowState, String),
-    just_updated: bool,
-    row_width: u16,
-) -> Line<'static> {
-    let name_style = if expanded || state == RowState::Selected {
-        theme::fg_bold(Token::TextBright)
-    } else {
-        theme::fg(Token::TextSecondary)
-    };
-    let status_style = if plugin.installed {
-        theme::fg(Token::Accent)
-    } else {
-        theme::fg(Token::TextDim)
-    };
-    let status = if plugin.installed {
-        "Installed"
-    } else {
-        "Available"
-    };
-    let (update, update_style) = freshness_label(plugin, just_updated);
-    let mut spans = vec![
-        Span::styled(bar, theme::fg(Token::Accent)),
-        Span::styled(
-            format!("{} ", mark::disclosure(expanded)),
-            theme::fg(Token::TextDim),
-        ),
-        Span::styled(
-            format!(
-                "{:<width$}{GAP}",
-                text::elide(&plugin.name, columns.name),
-                width = columns.name
-            ),
-            name_style,
-        ),
-    ];
-    if let Some(width) = columns.market {
-        spans.push(Span::styled(
-            format!(
-                "{:<width$}{GAP}",
-                text::elide(group_display_name(&plugin.marketplace), width)
-            ),
-            theme::fg(Token::TextMuted),
-        ));
-    }
-    spans.push(Span::styled(
-        format!("{status:<width$}{GAP}", width = columns.status),
-        status_style,
-    ));
-    spans.push(Span::styled(
-        format!("{update:<UPDATE_WIDTH$}"),
-        update_style,
-    ));
-    row::fill(&mut spans, row_width, state);
-    Line::from(spans)
-}
-
-/// One slot, and "Updated" wins it: the badge is only ever raised by an
-/// update that just landed, which is exactly what makes the row current.
-///
-/// Every other word here is a different fact, and none of them may read
-/// like another. "Not checked" in particular must not look like being
-/// current — that collapse is what made "Installed" mean both "this is
-/// the one that exists" and "nobody has looked".
-fn freshness_label(plugin: &MarketplacePluginSummary, just_updated: bool) -> (String, Style) {
-    if just_updated {
-        return ("Updated".to_owned(), theme::fg(Token::Accent));
-    }
-    match &plugin.freshness.state {
-        FreshnessState::Behind { commits: None } => (
-            "Update available".to_owned(),
-            theme::fg(Token::StateWarning),
-        ),
-        FreshnessState::Behind {
-            commits: Some(commits),
-        } => (format!("{commits} behind"), theme::fg(Token::StateWarning)),
-        FreshnessState::Linked { .. } => ("Linked".to_owned(), theme::fg(Token::Accent)),
-        FreshnessState::NotChecked if plugin.installed => {
-            ("Not checked".to_owned(), theme::fg(Token::TextDim))
-        }
-        FreshnessState::UpToDate | FreshnessState::Unpinned | FreshnessState::NotChecked => {
-            (String::new(), Style::default())
-        }
-    }
-}
-
-/// One row of an unfolded plugin's tree, and whether the keyboard is on it.
-struct TreeLine {
-    line: ListLine,
-    selected: bool,
-}
-
-/// An unfolded plugin's resources, one branch per kind and a leaf per
-/// resource, hung under the plugin's chevron. A leaf is a row the keyboard
-/// and the pointer stand on; a kind's heading is not. `None` is a plugin
-/// whose resources have not arrived yet: it was unfolded, which asked for
-/// them.
-fn resource_tree(
-    capabilities: Option<&[PluginCapability]>,
+    screen: &Screen<'_>,
     position: usize,
-    selected: Option<&str>,
-    focused: bool,
+    plugin: &MarketplacePluginSummary,
+    expanded: bool,
+    group: Option<Token>,
+    columns: &Columns,
+    width: u16,
+) -> TreeLine {
+    let model = screen.model;
+    let id = model.marketplace_plugin_id(plugin);
+    let selected = screen.cursor == PluginTreeRow::Plugin(position);
+    let contents = model
+        .plugin_resources_of(&id)
+        .map(|resources| counted_capabilities(resources.len()))
+        .unwrap_or_default();
+    let (status, status_style) = plugin_status(model, plugin);
+    // When it was installed or last updated here, read from the listing
+    // itself, so it does not change as the selection passes over it. A
+    // plugin that is not installed has no such date.
+    let updated = plugin.installed_at_unix.map(ago).unwrap_or_default();
+    TreeLine::new(
+        tree_row(
+            width,
+            group,
+            selected && screen.focused,
+            PLUGIN_INDENT,
+            vec![
+                Span::styled(
+                    format!("{} ", mark::disclosure(expanded)),
+                    theme::fg(Token::TextDim),
+                ),
+                Span::styled(
+                    plugin.name.clone(),
+                    name_style(selected, Token::TextPrimary),
+                ),
+            ],
+            columns.cells(
+                Span::styled(contents, theme::fg(Token::TextMuted)),
+                Span::styled(updated, theme::fg(Token::TextMuted)),
+                Span::styled(status, status_style),
+            ),
+        ),
+        vec![
+            (
+                PLUGIN_INDENT as u16 - 1,
+                3,
+                Hit::TogglePluginResources(position),
+            ),
+            (0, width, Hit::MarketplaceRow(position)),
+        ],
+        selected,
+    )
+}
+
+fn counted_capabilities(count: usize) -> String {
+    match count {
+        1 => "1 capability".to_owned(),
+        count => format!("{count} capabilities"),
+    }
+}
+
+/// An unfolded plugin's resources: a heading per kind and a leaf per
+/// resource, hung under the plugin's chevron. A leaf is a row the keyboard
+/// and the pointer stand on; a kind's heading is not. A plugin whose
+/// resources have not arrived yet says so: it was unfolded, which asked
+/// for them.
+fn resource_lines(
+    screen: &Screen<'_>,
+    position: usize,
+    plugin: &MarketplacePluginSummary,
+    group: Option<Token>,
+    columns: &Columns,
     width: u16,
 ) -> Vec<TreeLine> {
-    let faint = theme::fg(Token::TextFaint);
-    let heading = |spans: Vec<Span<'static>>| TreeLine {
-        line: ListLine {
-            line: Line::from(spans),
-            hits: vec![(0, width, Hit::MarketplaceRow(position))],
-        },
-        selected: false,
+    let model = screen.model;
+    let id = model.marketplace_plugin_id(plugin);
+    let note = |words: String| {
+        TreeLine::new(
+            tree_row(
+                width,
+                group,
+                false,
+                KIND_INDENT,
+                vec![Span::styled(words, theme::fg(Token::TextDim))],
+                Vec::new(),
+            ),
+            vec![(0, width, Hit::MarketplaceRow(position))],
+            false,
+        )
     };
-    let note = |words: String, style: Style| {
-        heading(vec![
-            Span::styled(format!("  {} ", theme::glyph(Symbol::TreeLast)), faint),
-            Span::styled(words, style),
-        ])
-    };
-    let Some(capabilities) = capabilities else {
-        return vec![note("loading…".to_owned(), theme::fg(Token::TextMuted))];
+    let Some(capabilities) = model.plugin_resources_of(&id) else {
+        return vec![note("loading…".to_owned())];
     };
     let groups = resource_groups(capabilities);
     if groups.is_empty() {
-        return vec![note(
-            theme::glyph(Symbol::MarkUnsupported),
-            theme::fg(Token::TextDim),
-        )];
+        return vec![note(theme::glyph(Symbol::MarkUnsupported))];
     }
+    let blank = || Span::raw("");
     let mut lines = Vec::new();
-    let last_group = groups.len() - 1;
-    for (group_index, (kind, resources)) in groups.into_iter().enumerate() {
-        let (branch, stem) = if group_index == last_group {
-            (Symbol::TreeLast, "  ".to_owned())
-        } else {
-            (
-                Symbol::TreeBranch,
-                format!("{} ", theme::glyph(Symbol::TreeVertical)),
-            )
-        };
-        lines.push(heading(vec![
-            Span::styled(format!("  {} ", theme::glyph(branch)), faint),
-            Span::styled(capability_label(kind), theme::fg(Token::TextMuted)),
-            Span::styled(format!("  {}", resources.len()), theme::fg(Token::TextDim)),
-        ]));
-        let last_resource = resources.len() - 1;
+    for (kind, resources) in groups {
+        lines.push(TreeLine::new(
+            tree_row(
+                width,
+                group,
+                false,
+                KIND_INDENT,
+                vec![Span::styled(
+                    capability_label(kind).to_lowercase(),
+                    theme::fg(Token::TextDim),
+                )],
+                columns.cells(
+                    Span::styled(resources.len().to_string(), theme::fg(Token::TextDim)),
+                    blank(),
+                    blank(),
+                ),
+            ),
+            vec![(0, width, Hit::MarketplaceRow(position))],
+            false,
+        ));
+        let last = resources.len() - 1;
         for (index, resource) in resources.into_iter().enumerate() {
-            let twig = if index == last_resource {
+            let selected =
+                screen.cursor == PluginTreeRow::Resource(position, resource.identity.clone());
+            let branch = if index == last {
                 Symbol::TreeLast
             } else {
                 Symbol::TreeBranch
             };
-            let is_selected = selected == Some(resource.identity.as_str());
-            let (state, bar) = selection(is_selected, focused);
-            let lead = format!("{stem} {} ", theme::glyph(twig));
-            let mut spans = vec![
-                Span::styled(bar, theme::fg(Token::Accent)),
-                Span::styled(format!(" {lead}"), faint),
-                Span::styled(
-                    resource.name.clone(),
-                    if is_selected {
-                        theme::fg_bold(Token::TextBright)
-                    } else {
-                        theme::fg(Token::TextPrimary)
-                    },
+            let resting = if plugin.installed {
+                Token::TextSecondary
+            } else {
+                Token::TextMuted
+            };
+            let status = if plugin.installed {
+                Span::styled("active", theme::fg(Token::AccentMuted))
+            } else {
+                blank()
+            };
+            lines.push(TreeLine::new(
+                tree_row(
+                    width,
+                    group,
+                    selected && screen.focused,
+                    RESOURCE_INDENT,
+                    vec![
+                        Span::styled(
+                            format!("{} ", theme::glyph(branch)),
+                            theme::fg(Token::TextFaint),
+                        ),
+                        Span::styled(resource.name.clone(), name_style(selected, resting)),
+                    ],
+                    columns.cells(blank(), blank(), status),
                 ),
-            ];
-            row::fill(&mut spans, width, state);
-            lines.push(TreeLine {
-                line: ListLine {
-                    line: Line::from(spans),
-                    hits: vec![(
-                        0,
-                        width,
-                        Hit::PluginResource(position, resource.identity.clone()),
-                    )],
-                },
-                selected: is_selected,
-            });
+                vec![(
+                    0,
+                    width,
+                    Hit::PluginResource(position, resource.identity.clone()),
+                )],
+                selected,
+            ));
         }
     }
     lines
+}
+
+/// Where a plugin stands, in the word its row and its panel say it.
+///
+/// One slot, and "updated" wins it: the badge is only ever raised by an
+/// update that just landed, which is exactly what makes the row current.
+/// Every other word here is a different fact, and none of them may read
+/// like another.
+fn plugin_status(model: &TuiModel, plugin: &MarketplacePluginSummary) -> (String, Style) {
+    if !plugin.installed {
+        return ("available".to_owned(), theme::fg(Token::TextMuted));
+    }
+    if model.was_just_updated(&model.marketplace_plugin_id(plugin)) {
+        return ("updated".to_owned(), theme::fg(Token::Accent));
+    }
+    match &plugin.freshness.state {
+        FreshnessState::Behind {
+            commits: Some(commits),
+        } => (
+            format!("{} {commits} behind", theme::glyph(Symbol::ArrowUp)),
+            theme::fg(Token::StateWarning),
+        ),
+        FreshnessState::Behind { commits: None } => (
+            format!("{} update available", theme::glyph(Symbol::ArrowUp)),
+            theme::fg(Token::StateWarning),
+        ),
+        FreshnessState::Linked { .. } => ("linked".to_owned(), theme::fg(Token::Accent)),
+        _ => ("installed".to_owned(), theme::fg(Token::Accent)),
+    }
+}
+
+/// The revision whichever detail matches this plugin carries: what you
+/// have when it is installed, what you would be getting when it is not.
+fn plugin_revision<'a>(
+    model: &'a TuiModel,
+    plugin: &MarketplacePluginSummary,
+) -> Option<&'a Revision> {
+    if plugin.installed {
+        let id = model.marketplace_plugin_id(plugin);
+        model
+            .plugin_detail
+            .as_ref()
+            .filter(|detail| detail.plugin.id == id)
+            .and_then(|detail| detail.revision.as_ref())
+    } else {
+        model
+            .marketplace_detail
+            .as_ref()
+            .filter(|detail| {
+                detail.summary.name == plugin.name
+                    && detail.summary.marketplace == plugin.marketplace
+            })
+            .and_then(|detail| detail.revision.as_ref())
+    }
+}
+
+// --- The panel ----------------------------------------------------------
+
+/// What the panel says about the row the keyboard is on.
+struct Detail {
+    kind: String,
+    status: (String, Style),
+    title: String,
+    /// The path a resource sits at in its package, under its name.
+    subtitle: Option<String>,
+    description: Option<String>,
+    tags: Option<String>,
+    fields: Vec<(&'static str, String, Style, Option<Hit>)>,
+    /// A newer revision to take, said above the action.
+    update: Option<String>,
+    offers: Vec<ActionOffer>,
+    /// The plugin a resource's action is about, named on its button.
+    acting_on: Option<String>,
+}
+
+fn render_panel(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    screen: &Screen<'_>,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    let model = screen.model;
+    let inner = area;
+    let (detail, resource) = match screen.cursor.clone() {
+        PluginTreeRow::Market(market) => (market_detail(screen, &market), None),
+        PluginTreeRow::Plugin(position) => match screen.plugin(position) {
+            Some(plugin) => (plugin_detail(model, plugin), None),
+            None => return,
+        },
+        PluginTreeRow::Resource(position, _) => {
+            match (screen.plugin(position), model.selected_resource()) {
+                (Some(plugin), Some(resource)) => {
+                    (resource_detail(plugin, &resource), Some(resource))
+                }
+                (Some(plugin), None) => (plugin_detail(model, plugin), None),
+                _ => return,
+            }
+        }
+    };
+    let room = usize::from(inner.width);
+    let footer_height = panel_footer_height(&detail);
+    let body = Rect {
+        height: inner.height.saturating_sub(footer_height),
+        ..inner
+    };
+
+    let mut heading = vec![Span::styled(
+        text::elide(
+            &detail.kind,
+            room.saturating_sub(detail.status.0.chars().count() + 2),
+        ),
+        theme::fg(Token::TextDim),
+    )];
+    crate::ui::widget::row::push_trailing(
+        &mut heading,
+        inner.width + crate::ui::widget::TRAILING_PAD,
+        detail.status.0.clone(),
+        detail
+            .status
+            .1
+            .fg
+            .unwrap_or_else(|| theme::color(Token::TextMuted)),
+    );
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(heading),
+        Line::from(Span::styled(
+            text::elide(&detail.title, room),
+            theme::fg_bold(Token::TextBright),
+        )),
+    ];
+    if let Some(subtitle) = &detail.subtitle {
+        lines.push(Line::from(Span::styled(
+            text::elide_head(subtitle, room),
+            theme::fg(Token::TextMuted),
+        )));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
+
+    if let Some(resource) = &resource {
+        let header_rows = lines.len() as u16;
+        frame.render_widget(Paragraph::new(lines), body);
+        let preview = Rect {
+            y: body.y + header_rows,
+            height: body.height.saturating_sub(header_rows),
+            ..body
+        };
+        frame.render_widget(
+            Paragraph::new(preview_rows(
+                resource,
+                preview.width,
+                preview.height,
+                model.resource_scroll,
+            )),
+            preview,
+        );
+        hits.push((preview, Hit::ResourcePreview));
+    } else {
+        if let Some(description) = &detail.description {
+            lines.extend(
+                text::fold(description, room)
+                    .into_iter()
+                    .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextTertiary)))),
+            );
+        }
+        if let Some(tags) = &detail.tags {
+            lines.push(Line::from(""));
+            lines.extend(
+                text::fold(tags, room)
+                    .into_iter()
+                    .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextMuted)))),
+            );
+        }
+        if detail.description.is_some() || detail.tags.is_some() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(""));
+        }
+        // Folded rather than cut: an address is read in full before it is
+        // trusted, and a list of names cut at the edge hides which ones
+        // are missing.
+        let value_room = room.saturating_sub(FIELD_KEY_WIDTH).max(1);
+        for (key, value, style, hit) in &detail.fields {
+            let y = body.y + lines.len() as u16;
+            let rows = text::fold(value, value_room);
+            if let Some(hit) = hit
+                && y < body.bottom()
+            {
+                let height = (rows.len() as u16).min(body.bottom() - y);
+                hits.push((Rect::new(body.x, y, body.width, height), hit.clone()));
+            }
+            for (index, row) in rows.into_iter().enumerate() {
+                let key = if index == 0 { *key } else { "" };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{key:<FIELD_KEY_WIDTH$}"),
+                        theme::fg(Token::TextDim),
+                    ),
+                    Span::styled(row, *style),
+                ]));
+            }
+        }
+        frame.render_widget(Paragraph::new(lines), body);
+    }
+
+    render_panel_footer(
+        frame,
+        Rect::new(inner.x, body.bottom(), inner.width, footer_height),
+        model,
+        &detail,
+        hits,
+    );
+}
+
+/// The action the panel's foot offers first, and the one Enter performs:
+/// what builds before what destroys, the update aside — it has a row of
+/// its own above.
+pub(crate) fn primary_offer(offers: &[ActionOffer]) -> Option<uze_keys::Action> {
+    let mut available: Vec<uze_keys::Action> = offers
+        .iter()
+        .filter(|offer| {
+            offer.is_available()
+                && !matches!(
+                    offer.action,
+                    uze_keys::Action::Activate | uze_keys::Action::UpdatePlugin
+                )
+        })
+        .map(|offer| offer.action)
+        .collect();
+    available.sort_by_key(|action| action.destructive());
+    available.first().copied()
+}
+
+fn update_offered(offers: &[ActionOffer]) -> bool {
+    offers
+        .iter()
+        .any(|offer| offer.action == uze_keys::Action::UpdatePlugin && offer.is_available())
+}
+
+/// Rows the panel's foot takes: a row of air, the update and a row of air
+/// when there is one to take, the action, and a row of air under it.
+fn panel_footer_height(detail: &Detail) -> u16 {
+    let update = if detail.update.is_some() { 2 } else { 0 };
+    let action = if primary_offer(&detail.offers).is_some() {
+        2
+    } else {
+        0
+    };
+    let rows = update + action;
+    // A row of air above the foot, so what scrolls in the body never runs
+    // into the buttons.
+    if rows > 0 { rows + 1 } else { 0 }
+}
+
+/// The panel's foot, anchored to its bottom: a newer revision and the
+/// button that takes it, then the action. The key that reaches it is the
+/// footer's to say.
+fn render_panel_footer(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &TuiModel,
+    detail: &Detail,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    let mut y = area.y + 1;
+    if let Some(note) = &detail.update {
+        if update_offered(&detail.offers) {
+            let action = uze_keys::Action::UpdatePlugin;
+            let button = Button::new(action.label(), Token::StateWarning)
+                .strong(model.hovered_offer == Some(action));
+            let rect = Rect::new(
+                area.right().saturating_sub(button.width()),
+                y,
+                button.width().min(area.width),
+                1,
+            );
+            button.render(frame, rect);
+            hits.push((rect, Hit::OfferedAction(action)));
+        }
+        let room = area
+            .width
+            .saturating_sub(Button::new("Update", Token::StateWarning).width() + 2);
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                text::elide(note, room.into()),
+                theme::fg(Token::StateWarning),
+            )),
+            Rect::new(area.x, y, room, 1),
+        );
+        y += 2;
+    }
+    let Some(action) = primary_offer(&detail.offers) else {
+        return;
+    };
+    if y >= area.bottom() {
+        return;
+    }
+    let hue = if action.destructive() {
+        Token::StateDanger
+    } else if action == uze_keys::Action::InstallPlugin {
+        Token::Accent
+    } else {
+        Token::TextSecondary
+    };
+    let label = match &detail.acting_on {
+        Some(plugin) => format!("{} {plugin}", action.label()),
+        None => action.label(),
+    };
+    let button = Button::new(label, hue).strong(model.hovered_offer == Some(action));
+    let rect = Rect::new(area.x, y, button.width().min(area.width), 1);
+    button.render(frame, rect);
+    hits.push((rect, Hit::OfferedAction(action)));
+}
+
+fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
+    let model = screen.model;
+    let summary = screen.summary(market);
+    let offered = screen.offered_by(market);
+    let installed = offered.iter().filter(|plugin| plugin.installed).count();
+    let behind = offered
+        .iter()
+        .filter(|plugin| plugin.freshness.behind())
+        .count();
+    let kind = match summary {
+        None => "installed directly",
+        Some(summary) if summary.source.starts_with("embedded:") => "marketplace · official",
+        Some(_) => "marketplace",
+    };
+    let status = if behind > 0 {
+        (
+            format!("{} update available", theme::glyph(Symbol::ArrowUp)),
+            theme::fg(Token::StateWarning),
+        )
+    } else {
+        ("up to date".to_owned(), theme::fg(Token::Accent))
+    };
+    let mut fields = Vec::new();
+    match summary {
+        Some(summary) => {
+            match summary.homepage.as_deref() {
+                Some(url) => fields.push((
+                    "source",
+                    format!("{url} {}", theme::glyph(Symbol::ArrowExternal)),
+                    link_style(model),
+                    Some(Hit::OpenLink(summary.name.clone())),
+                )),
+                None => fields.push((
+                    "source",
+                    summary.source.clone(),
+                    theme::fg(Token::TextTertiary),
+                    None,
+                )),
+            }
+            if let Some(checkout) = &summary.linked_to {
+                fields.push((
+                    "linked to",
+                    checkout.display().to_string(),
+                    theme::fg(Token::TextTertiary),
+                    None,
+                ));
+            }
+        }
+        None => fields.push((
+            "source",
+            "a path or a Git URL no marketplace offers".to_owned(),
+            theme::fg(Token::TextTertiary),
+            None,
+        )),
+    }
+    let names = offered
+        .iter()
+        .map(|plugin| plugin.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    fields.push((
+        "plugins",
+        if names.is_empty() {
+            "—".to_owned()
+        } else {
+            names
+        },
+        theme::fg(Token::TextSecondary),
+        None,
+    ));
+    Detail {
+        kind: kind.to_owned(),
+        status,
+        title: group_display_name(market).to_owned(),
+        subtitle: None,
+        description: Some(format!(
+            "{} · {installed}/{} installed",
+            counted(offered.len(), "plugin"),
+            offered.len()
+        )),
+        tags: None,
+        fields,
+        update: (behind > 0).then(|| format!("{} with a new revision", counted(behind, "plugin"))),
+        offers: summary.map(MarketplaceSummary::offers).unwrap_or_default(),
+        acting_on: None,
+    }
+}
+
+fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail {
+    let id = model.marketplace_plugin_id(plugin);
+    let mut fields = Vec::new();
+    if let Some(revision) = plugin_revision(model, plugin) {
+        let value = match revision {
+            Revision::Commit { short, age, .. } => format!("{short} · {age}"),
+            Revision::Bundled { version } => format!("ships with uze {version}"),
+            Revision::Checkout { path } => format!("follows {}", path.display()),
+        };
+        fields.push(("revision", value, theme::fg(Token::TextTertiary), None));
+    }
+    for (kind, resources) in model
+        .plugin_resources_of(&id)
+        .map(resource_groups)
+        .unwrap_or_default()
+    {
+        let names = resources
+            .iter()
+            .map(|resource| resource.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        fields.push((kind_key(kind), names, theme::fg(Token::TextSecondary), None));
+    }
+    // Whether the plugin actually reaches the harnesses: the one thing
+    // about an installed plugin its status word cannot say.
+    if plugin.installed {
+        let health = plugin_health(model.remembered.doctor.as_ref(), &id);
+        let tone = if health == "ready" {
+            Token::TextSecondary
+        } else {
+            Token::StateWarning
+        };
+        if health != "unknown" {
+            fields.push(("health", health.to_owned(), theme::fg(tone), None));
+        }
+    }
+    Detail {
+        kind: format!("plugin · {}", group_display_name(&plugin.marketplace)),
+        status: plugin_status(model, plugin),
+        title: plugin.name.clone(),
+        subtitle: None,
+        description: plugin.description.clone(),
+        tags: (!plugin.keywords.is_empty()).then(|| plugin.keywords.join(", ")),
+        fields,
+        update: (plugin.installed && plugin.freshness.behind()).then(|| {
+            format!(
+                "new revision from {}",
+                group_display_name(&plugin.marketplace)
+            )
+        }),
+        offers: plugin.offers(),
+        acting_on: None,
+    }
+}
+
+fn resource_detail(plugin: &MarketplacePluginSummary, resource: &PluginCapability) -> Detail {
+    let status = if plugin.installed {
+        ("active".to_owned(), theme::fg(Token::Accent))
+    } else {
+        (
+            format!("install {} to use", plugin.name),
+            theme::fg(Token::TextDim),
+        )
+    };
+    Detail {
+        kind: format!("{} · {}", resource_kind_label(resource.kind), plugin.name),
+        status,
+        title: resource.name.clone(),
+        subtitle: (!resource.preview.path.is_empty()).then(|| resource.preview.path.clone()),
+        description: None,
+        tags: None,
+        fields: Vec::new(),
+        update: (plugin.installed && plugin.freshness.behind()).then(|| {
+            format!(
+                "new revision from {}",
+                group_display_name(&plugin.marketplace)
+            )
+        }),
+        offers: plugin.offers(),
+        acting_on: Some(plugin.name.clone()),
+    }
+}
+
+/// A resource kind as the panel's grid names it.
+fn kind_key(kind: CapabilityKind) -> &'static str {
+    match kind {
+        CapabilityKind::AgentSkill => "skills",
+        CapabilityKind::Agent => "agents",
+        CapabilityKind::Hook => "hooks",
+        CapabilityKind::Mcp => "mcp",
+        CapabilityKind::Instruction => "instructions",
+    }
+}
+
+/// What a resource is, as the panel heads it.
+fn resource_kind_label(kind: CapabilityKind) -> &'static str {
+    match kind {
+        CapabilityKind::AgentSkill => "skill",
+        CapabilityKind::Agent => "agent",
+        CapabilityKind::Hook => "hook",
+        CapabilityKind::Mcp => "mcp server",
+        CapabilityKind::Instruction => "instructions",
+    }
+}
+
+/// How long ago `at_unix` was, in the largest whole unit: `just now`,
+/// `5m ago`, `3h ago`, `2d ago`.
+fn ago(at_unix: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(at_unix, |elapsed| elapsed.as_secs());
+    match now.saturating_sub(at_unix) {
+        seconds if seconds < 60 => "just now".to_owned(),
+        seconds if seconds < 3_600 => format!("{}m ago", seconds / 60),
+        seconds if seconds < 86_400 => format!("{}h ago", seconds / 3_600),
+        seconds => format!("{}d ago", seconds / 86_400),
+    }
 }
 
 /// A Markdown file's leading `---` frontmatter and the body after it.
@@ -865,534 +1431,16 @@ pub(crate) fn preview_scroll_limit() -> u16 {
     })
 }
 
-/// What a resource is, as the drawer heads it.
-fn resource_kind_label(kind: CapabilityKind) -> &'static str {
-    match kind {
-        CapabilityKind::AgentSkill => "SKILL",
-        CapabilityKind::Agent => "AGENT",
-        CapabilityKind::Hook => "HOOK",
-        CapabilityKind::Mcp => "MCP SERVER",
-        CapabilityKind::Instruction => "INSTRUCTIONS",
-    }
-}
-
-/// The drawer for a resource the keyboard is on: what it is and where it
-/// sits in its plugin, then its text, rendered — a quick read before
-/// installing, or of what an installed plugin actually does. The footer
-/// still speaks for the plugin, which is what installs and removes.
-fn render_resource_drawer(
-    frame: &mut ratatui::Frame<'_>,
-    content: Rect,
-    model: &TuiModel,
-    plugin: &MarketplacePluginSummary,
-    resource: &PluginCapability,
-    hits: &mut Vec<(Rect, Hit)>,
-) {
-    let inner = super::drawer(
-        frame,
-        content,
-        ResizablePanel::MarketplaceDrawer,
-        model,
-        hits,
-    );
-    let offers = plugin.offers();
-    let (body, status_area) = super::drawer_body_and_footer(inner, &offers);
-    let room = body.width.saturating_sub(crate::ui::widget::TRAILING_PAD) as usize;
-
-    let mut heading = vec![Span::styled(
-        resource_kind_label(resource.kind),
-        theme::fg(Token::TextMuted),
-    )];
-    row::push_trailing(
-        &mut heading,
-        body.width,
-        plugin.name.clone(),
-        theme::color(Token::TextDim),
-    );
-    let mut lines: Vec<Line<'static>> = vec![
-        Line::from(heading),
-        Line::from(Span::styled(
-            text::elide(&resource.name, room),
-            theme::fg_bold(Token::TextBright),
-        )),
-    ];
-    if !resource.preview.path.is_empty() {
-        lines.push(Line::from(Span::styled(
-            text::elide_head(&resource.preview.path, room),
-            theme::fg(Token::TextMuted),
-        )));
-    }
-    lines.push(Line::from(""));
-    let header_rows = lines.len() as u16;
-    frame.render_widget(Paragraph::new(lines), body);
-
-    let preview = Rect {
-        y: body.y + header_rows,
-        height: body.height.saturating_sub(header_rows),
-        ..body
-    };
-    frame.render_widget(
-        Paragraph::new(preview_rows(
-            resource,
-            // One cell short of the edge, like every other row in the drawer.
-            preview
-                .width
-                .saturating_sub(crate::ui::widget::TRAILING_PAD),
-            preview.height,
-            model.resource_scroll,
-        )),
-        preview,
-    );
-    hits.push((preview, Hit::ResourcePreview));
-
-    render_drawer_footer(
-        frame,
-        status_area,
-        plugin_status(model, plugin),
-        &offers,
-        model.hovered_offer,
-        None,
-        hits,
-    );
-}
-
-fn render_market_drawer(
-    frame: &mut ratatui::Frame<'_>,
-    content: Rect,
-    model: &TuiModel,
-    rows: &[MarketplacePluginSummary],
-    market: Option<&str>,
-    hits: &mut Vec<(Rect, Hit)>,
-) {
-    let inner = super::drawer(
-        frame,
-        content,
-        ResizablePanel::MarketplaceDrawer,
-        model,
-        hits,
-    );
-    let offers = model.selected_offers();
-    let (body, status_area) = super::drawer_body_and_footer(inner, &offers);
-    let room = body.width.saturating_sub(crate::ui::widget::TRAILING_PAD) as usize;
-    let summary = market.and_then(|name| {
-        model
-            .remembered
-            .marketplaces
-            .iter()
-            .find(|summary| summary.name == name)
-    });
-    let offered: Vec<&MarketplacePluginSummary> = rows
-        .iter()
-        .filter(|plugin| market.is_none_or(|name| plugin.marketplace == name))
-        .collect();
-    let installed = offered.iter().filter(|plugin| plugin.installed).count();
-    let behind = offered
-        .iter()
-        .filter(|plugin| plugin.freshness.behind())
-        .count();
-
-    let kind = match market {
-        None => "MARKETPLACES",
-        Some(_) if summary.is_none() => "INSTALLED DIRECTLY",
-        Some(_) => "MARKETPLACE",
-    };
-    let mut heading = vec![Span::styled(kind, theme::fg(Token::TextMuted))];
-    // Said once, where the marketplace is described, rather than on every
-    // row of the rail, where it made one entry louder than the rest.
-    if market == Some("uze-official") {
-        row::push_trailing(
-            &mut heading,
-            body.width,
-            format!("{} Official", theme::glyph(Symbol::MarkOfficial)),
-            theme::color(Token::StateInfo),
-        );
-    }
-    let mut lines: Vec<Line<'static>> = vec![
-        Line::from(heading),
-        Line::from(Span::styled(
-            text::elide(market.map_or(EVERY_MARKET, group_display_name), room),
-            theme::fg_bold(Token::TextBright),
-        )),
-        Line::from(""),
-    ];
-    let field = |lines: &mut Vec<Line<'static>>, label: &'static str, value: &str| {
-        lines.push(Line::from(Span::styled(
-            label,
-            theme::fg_bold(Token::TextMuted),
-        )));
-        lines.extend(
-            text::fold(value, room)
-                .into_iter()
-                .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextSecondary)))),
-        );
-        lines.push(Line::from(""));
-    };
-
-    match (market, summary) {
-        (None, _) => {
-            let names = model
-                .remembered
-                .marketplaces
-                .iter()
-                .map(|summary| group_display_name(&summary.name))
-                .collect::<Vec<_>>()
-                .join(", ");
-            field(&mut lines, "REGISTERED", &names);
-        }
-        (Some(_), Some(summary)) => {
-            lines.push(Line::from(Span::styled(
-                "ORIGIN",
-                theme::fg_bold(Token::TextMuted),
-            )));
-            match summary.homepage.as_deref() {
-                Some(url) => {
-                    let y = body.y + lines.len() as u16;
-                    lines.push(link_line(model, url, body.width));
-                    if y < body.bottom() {
-                        hits.push((
-                            Rect::new(body.x, y, body.width, 1),
-                            Hit::OpenLink(summary.name.clone()),
-                        ));
-                    }
-                }
-                None => lines.extend(
-                    text::fold(&summary.source, room)
-                        .into_iter()
-                        .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextSecondary)))),
-                ),
-            }
-            lines.push(Line::from(""));
-            if let Some(checkout) = &summary.linked_to {
-                field(&mut lines, "LINKED TO", &checkout.display().to_string());
-            }
-        }
-        (Some(_), None) => field(
-            &mut lines,
-            "SOURCE",
-            "Installed from a path or a Git URL that no registered marketplace offers.",
-        ),
-    }
-    let names = offered
-        .iter()
-        .map(|plugin| plugin.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    field(
-        &mut lines,
-        "PLUGINS",
-        if names.is_empty() { "—" } else { &names },
-    );
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
-
-    let tally = format!("{installed} of {} plugins installed", offered.len());
-    let (color, headline, subtitle) = if behind > 0 {
-        (
-            Token::StateWarning,
-            format!("{behind} update{} available", plural(behind)),
-            tally,
-        )
+/// A marketplace's address as a link: the accent, which is what the
+/// design gives an address, underlined under the pointer, and written out
+/// in full so it can be checked before it is trusted — and copied, when
+/// the terminal has no browser to hand it to.
+fn link_style(model: &TuiModel) -> Style {
+    let style = theme::fg(Token::Accent);
+    if model.source_link_hovered {
+        style.add_modifier(Modifier::UNDERLINED)
     } else {
-        (
-            Token::Accent,
-            if market.is_none() {
-                "Up to date"
-            } else {
-                "Configured"
-            }
-            .to_owned(),
-            match market {
-                Some("uze-official") => format!("Ships with uze · {tally}"),
-                Some(_) => tally,
-                None => format!("{tally} across every marketplace"),
-            },
-        )
-    };
-    render_drawer_footer(
-        frame,
-        status_area,
-        DrawerStatus {
-            color: theme::color(color),
-            headline: &headline,
-            subtitle: &subtitle,
-        },
-        &offers,
-        model.hovered_offer,
-        None,
-        hits,
-    );
-}
-
-/// A marketplace's address as a link: underlined, which is what a link
-/// looks like everywhere else a person reads one, muted until the pointer
-/// is on it so it does not compete with the row the reader selected, and
-/// written out in full so it can be checked before it is trusted — and
-/// copied, when the terminal has no browser to hand it to.
-fn link_line(model: &TuiModel, url: &str, width: u16) -> Line<'static> {
-    let tone = if model.source_link_hovered {
-        Token::Accent
-    } else {
-        Token::TextMuted
-    };
-    let link = Style::default()
-        .fg(theme::color(tone))
-        .add_modifier(Modifier::UNDERLINED);
-    Line::from(vec![
-        Span::styled(text::elide(url, width.saturating_sub(2) as usize), link),
-        Span::raw(" "),
-        Span::styled(theme::glyph(Symbol::ArrowExternal), link),
-    ])
-}
-
-fn render_plugin_drawer(
-    frame: &mut ratatui::Frame<'_>,
-    content: Rect,
-    model: &TuiModel,
-    plugin: &MarketplacePluginSummary,
-    hits: &mut Vec<(Rect, Hit)>,
-) {
-    let inner = super::drawer(
-        frame,
-        content,
-        ResizablePanel::MarketplaceDrawer,
-        model,
-        hits,
-    );
-    let offers = plugin.offers();
-    let (body, status_area) = super::drawer_body_and_footer(inner, &offers);
-
-    // One cell short of the edge. Folding at the full width put every row
-    // flush against the border, which is what made a drawer with rows to
-    // spare read as crowded.
-    let room = body.width.saturating_sub(crate::ui::widget::TRAILING_PAD) as usize;
-    // No `PLUGIN` label: this drawer is about a plugin, so the name is the
-    // heading rather than a value under one. Every other label here says
-    // something its value would be ambiguous without.
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    lines.extend(text::fold(&plugin.name, room).into_iter().map(|row| {
-        Line::from(Span::styled(
-            row,
-            Style::default()
-                .fg(theme::color(Token::TextBright))
-                .add_modifier(Modifier::BOLD),
-        ))
-    }));
-    lines.push(Line::from(""));
-    lines.extend(
-        text::fold(plugin.description.as_deref().unwrap_or_default(), room)
-            .into_iter()
-            .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextSecondary)))),
-    );
-    if !plugin.keywords.is_empty() {
-        if plugin.description.is_some() {
-            lines.push(Line::from(""));
-        }
-        lines.extend(
-            text::fold(&plugin.keywords.join(", "), room)
-                .into_iter()
-                .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextDim)))),
-        );
-    }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "SOURCE",
-        theme::fg_bold(Token::TextMuted),
-    )));
-    let source_row_y = body.y + lines.len() as u16;
-    let name = group_display_name(&plugin.marketplace);
-    let homepage = model
-        .remembered
-        .marketplaces
-        .iter()
-        .find(|entry| entry.name == plugin.marketplace)
-        .and_then(|entry| entry.homepage.clone());
-    // Just the name: one glyph on the card, and it belongs to the address
-    // below, which is the row that leaves the application. Marking this
-    // row too made the pair read as two links to the same place.
-    lines.push(Line::from(Span::styled(
-        name.to_owned(),
-        theme::fg(Token::TextPrimary),
-    )));
-    if source_row_y < body.y + body.height {
-        hits.push((
-            Rect::new(body.x, source_row_y, body.width, 1),
-            Hit::JumpToMarketplace(plugin.marketplace.clone()),
-        ));
-    }
-    // The address itself, on a row of its own and clickable along its
-    // whole length. It was a one-column "↗" beside the name to begin
-    // with, which is a target you miss by moving the mouse one cell —
-    // and missing it landed on the jump underneath, which re-selects the
-    // group already selected and so reads as nothing happening at all.
-    // Writing the address out also gives the reader something to check
-    // before trusting it, and something to copy when the terminal this
-    // drawer draws into has no browser to hand it to.
-    if let Some(url) = homepage.as_deref() {
-        let url_row_y = body.y + lines.len() as u16;
-        lines.push(link_line(model, url, body.width));
-        if url_row_y < body.y + body.height {
-            hits.push((
-                Rect::new(body.x, url_row_y, body.width, 1),
-                Hit::OpenLink(plugin.marketplace.clone()),
-            ));
-        }
-    }
-    lines.push(Line::from(""));
-
-    // Installed rows read their resources/deliveries from the installed
-    // package inspection (`InspectPlugin`), available rows from the
-    // catalog detail (`InspectMarketplacePlugin`) — each fetch lands in a
-    // different cache, so the drawer consults whichever matches this row.
-    let installed_inspection = plugin.installed.then(|| {
-        let id = model.marketplace_plugin_id(plugin);
-        model
-            .plugin_detail
-            .as_ref()
-            .filter(|detail| detail.plugin.id == id)
-    });
-    let catalog_detail = (!plugin.installed).then(|| {
-        model.marketplace_detail.as_ref().filter(|detail| {
-            detail.summary.name == plugin.name && detail.summary.marketplace == plugin.marketplace
-        })
-    });
-
-    // What you actually have, before what it offers. The row's status
-    // column says whether something newer exists; this says how old the
-    // thing in front of you is, which is the question the state alone
-    // cannot answer.
-    // Asked of whichever detail matches this row: what you have when it is
-    // installed, what you would be getting when it is not. "Is this
-    // abandoned" is the same question one step earlier.
-    let revision = installed_inspection
-        .flatten()
-        .and_then(|detail| detail.revision.as_ref())
-        .or_else(|| {
-            catalog_detail
-                .flatten()
-                .and_then(|detail| detail.revision.as_ref())
-        });
-    if let Some(revision) = revision {
-        lines.push(Line::from(Span::styled(
-            "REVISION",
-            theme::fg_bold(Token::TextMuted),
-        )));
-        match revision {
-            Revision::Commit {
-                short,
-                age,
-                subject,
-            } => {
-                lines.push(Line::from(vec![
-                    Span::styled(short.clone(), theme::fg(Token::TextSecondary)),
-                    Span::raw("  "),
-                    Span::styled(age.clone(), theme::fg(Token::TextMuted)),
-                ]));
-                // Folded, not elided: a commit subject is a sentence, and
-                // a truncated one loses the half that says what the
-                // change was. The drawer has rows to spare and the
-                // resource list below already folds the same way.
-                lines.extend(
-                    text::fold(subject, room)
-                        .into_iter()
-                        .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextDim)))),
-                );
-            }
-            // Shipped inside the binary: there is no repository to ask,
-            // and the release it came with is the only date that is true.
-            Revision::Bundled { version } => {
-                lines.push(Line::from(Span::styled(
-                    format!("ships with uze {version}"),
-                    theme::fg(Token::TextSecondary),
-                )));
-            }
-            // No revision to name: what is installed is whatever its
-            // author last saved, so the checkout is the only honest
-            // answer.
-            Revision::Checkout { path } => {
-                lines.push(Line::from(Span::styled(
-                    "follows your working tree",
-                    theme::fg(Token::TextSecondary),
-                )));
-                lines.extend(
-                    text::fold(&path.display().to_string(), room)
-                        .into_iter()
-                        .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextMuted)))),
-                );
-            }
-        }
-        lines.push(Line::from(""));
-    }
-
-    // What it offers is the unfolded row's tree in the list beside this,
-    // which shows it against its siblings; saying it here as well only
-    // restated it.
-    // Where the plugin reaches and how its receipts stand are left to the
-    // status line below: a uze plugin is meant for every harness, so a
-    // per-harness list restated the product's premise, and the receipt
-    // counts are what that line's one-word health is derived from.
-    // Untrimmed: every line is folded already.
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
-
-    render_drawer_footer(
-        frame,
-        status_area,
-        plugin_status(model, plugin),
-        &offers,
-        model.hovered_offer,
-        None,
-        hits,
-    );
-}
-
-/// Where a plugin stands, as its drawer's footer says it — the plugin's
-/// own drawer and the drawer of any resource under it alike, since what
-/// installs and removes is the plugin.
-///
-/// The buttons beside it say what can be done, so the note does not name
-/// the key that does it.
-fn plugin_status(model: &TuiModel, plugin: &MarketplacePluginSummary) -> DrawerStatus<'static> {
-    if plugin.installed {
-        let qualified_id = model.marketplace_plugin_id(plugin);
-        if model.was_just_updated(&qualified_id) {
-            DrawerStatus {
-                color: theme::color(Token::Accent),
-                headline: "Updated",
-                subtitle: "Brought up to date automatically when uze started",
-            }
-        // Only an actionable freshness state takes this slot. It carries
-        // attachment health — whether the plugin is actually delivered —
-        // and "nobody has compared this against its marketplace" says
-        // nothing about that. The row's own status column is where every
-        // freshness state is reported.
-        } else if plugin.freshness.behind() {
-            DrawerStatus {
-                color: theme::color(Token::StateWarning),
-                headline: "Update available",
-                subtitle: "Needs your confirmation to apply",
-            }
-        } else if matches!(plugin.freshness.state, FreshnessState::Linked { .. }) {
-            DrawerStatus {
-                color: theme::color(Token::Accent),
-                headline: "Linked",
-                subtitle: "Follows a checkout on this machine",
-            }
-        } else {
-            DrawerStatus {
-                color: theme::color(Token::Accent),
-                headline: "Installed",
-                subtitle: match plugin_health(model.remembered.doctor.as_ref(), &qualified_id) {
-                    "ready" => "Ready to use in your projects",
-                    "missing" => "Installation is missing artifacts",
-                    "needs attention" => "Managed state needs attention",
-                    _ => "Health unknown",
-                },
-            }
-        }
-    } else {
-        DrawerStatus {
-            color: theme::color(Token::TextMuted),
-            headline: "Not installed",
-            subtitle: "Available from this marketplace",
-        }
+        style
     }
 }
 

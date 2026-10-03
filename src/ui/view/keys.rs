@@ -34,13 +34,13 @@ pub(crate) fn render_keys(
     let area = content_area(area);
     let content = render_screen_header(frame, area, Route::Keys, None);
 
-    let filter_area = Rect::new(content.x, content.y, content.width, 2);
+    let filter_area = Rect::new(content.x, content.y, content.width, 1);
     hits.push((filter_area, Hit::FocusFilter));
     super::filter_box(
         frame,
         filter_area,
         &model.key_screen.filter,
-        "Filter keys and actions…",
+        "filter keys and actions…",
         model.filtering,
     );
 
@@ -48,9 +48,9 @@ pub(crate) fn render_keys(
     let list_width = content.width.saturating_sub(drawer_width);
     let list_area = Rect::new(
         content.x,
-        content.y + 3,
+        content.y + super::FILTER_ROWS,
         list_width,
-        content.height.saturating_sub(3),
+        content.height.saturating_sub(super::FILTER_ROWS),
     );
 
     let rows = model.key_rows();
@@ -145,10 +145,7 @@ pub(crate) fn render_keys(
             match entry {
                 Entry::Gap => {}
                 Entry::Heading(scope) => frame.render_widget(
-                    Paragraph::new(Span::styled(
-                        scope.heading().to_uppercase(),
-                        theme::fg_bold(Token::TextMuted),
-                    )),
+                    Paragraph::new(super::section_label(scope.heading())),
                     Rect::new(list_area.x, y, list_area.width, 1),
                 ),
                 Entry::Row(index, row) => {
@@ -370,8 +367,7 @@ fn render_drawer(
         hits,
     );
 
-    let heading =
-        |text: &'static str| Line::from(Span::styled(text, theme::fg_bold(Token::TextMuted)));
+    let heading = super::section_label;
     let mut lines = vec![
         heading("ACTION"),
         Line::from(Span::styled(

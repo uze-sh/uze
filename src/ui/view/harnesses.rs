@@ -154,16 +154,16 @@ pub(crate) fn render_harnesses(
     let bottom = content.y + content.height;
 
     if y + 2 <= bottom {
-        let filter_area = Rect::new(content.x, y, content.width, 2);
+        let filter_area = Rect::new(content.x, y, content.width, 1);
         hits.push((filter_area, Hit::FocusFilter));
         super::filter_box(
             frame,
             filter_area,
             &model.remembered.harness_screen.filter,
-            "Filter integrations…",
+            "filter integrations…",
             model.filtering,
         );
-        y += 3;
+        y += super::FILTER_ROWS;
     }
 
     match &model.remembered.doctor {
@@ -284,7 +284,7 @@ fn render_harness_drawer(
     );
 
     let mut lines = vec![
-        Line::from(Span::styled("HARNESS", theme::fg_bold(Token::TextMuted))),
+        super::section_label("harness"),
         Line::from(Span::styled(
             harness.display_name.clone(),
             Style::default()
@@ -314,10 +314,7 @@ fn render_harness_drawer(
         ]));
     }
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "COMPATIBILITY",
-        theme::fg_bold(Token::TextMuted),
-    )));
+    lines.push(super::section_label("compatibility"));
     for (label, status, style) in compatibility_rows(harness) {
         lines.push(Line::from(vec![
             label_span(label, theme::fg(Token::TextSecondary)),

@@ -39,8 +39,7 @@ scenes:
         expect_timeout: 20
         pause: 1.0
       - click: "Profiles"
-        say: open the Profiles screen
-        in: sidebar
+        say: open the Profiles screen from its tab, the first match from the top
         expect: "Harnesses"
         expect_timeout: 20
         pause: 1.0

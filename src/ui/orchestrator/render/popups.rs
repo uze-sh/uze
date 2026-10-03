@@ -751,6 +751,15 @@ pub(in crate::ui::orchestrator) fn render_action_index(
 ) {
     let rows = action_index_rows(&index.scopes, &index.filter, disabled);
     let reachable = action_index_rows(&index.scopes, "", disabled).len();
+    let mut answering = index.scopes.clone();
+    answering.push(uze_keys::Scope::ActionIndex);
+    let hint = crate::ui::widget::dialog::border_hint(
+        &answering,
+        &[
+            (uze_keys::Action::Activate, "run"),
+            (uze_keys::Action::Dismiss, "close"),
+        ],
+    );
     let entries = action_index::render(
         frame,
         area,
@@ -758,6 +767,7 @@ pub(in crate::ui::orchestrator) fn render_action_index(
         reachable,
         &index.filter,
         index.selected,
+        hint,
         WorkspaceHit::ActionIndexEntry,
     );
     // Prepended: what is underneath must not answer a click meant here.

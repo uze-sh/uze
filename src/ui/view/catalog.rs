@@ -9,11 +9,11 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
+    widgets::Paragraph,
 };
 
 use crate::ui::theme::{self, Token};
-use crate::ui::widget::RowState;
+use crate::ui::widget::{RowState, text};
 
 const GAP: u16 = 1;
 const CARD_HEIGHT: u16 = 7;
@@ -98,14 +98,37 @@ pub(crate) fn render_card(
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
     frame.render_widget(
-        Paragraph::new(Span::styled(card.description, theme::fg(Token::TextDim)))
-            .wrap(Wrap { trim: true }),
-        Rect::new(inner.x, inner.y + 1, inner.width, 2),
+        Paragraph::new(
+            description_rows(card.description, inner.width)
+                .into_iter()
+                .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextDim))))
+                .collect::<Vec<_>>(),
+        ),
+        Rect::new(inner.x, inner.y + 1, inner.width, DESCRIPTION_ROWS),
     );
     frame.render_widget(
         Paragraph::new(foot(card.caption, card.state, inner.width)),
         Rect::new(inner.x, inner.y + 4, inner.width, 1),
     );
+}
+
+/// Rows a card gives its description.
+const DESCRIPTION_ROWS: u16 = 2;
+
+/// The description folded to the card's width, and ended with an ellipsis
+/// where it runs past the rows a card has — cut mid-sentence with nothing
+/// to say so, it read as the whole of what the thing does. The drawer
+/// beside the catalog carries all of it.
+fn description_rows(description: &str, width: u16) -> Vec<String> {
+    let width = usize::from(width.max(1));
+    let mut rows = text::fold(description, width);
+    let rows_shown = usize::from(DESCRIPTION_ROWS);
+    if rows.len() > rows_shown {
+        let rest = rows[rows_shown - 1..].join(" ");
+        rows.truncate(rows_shown - 1);
+        rows.push(text::elide(&rest, width));
+    }
+    rows
 }
 
 /// The caption on the left and the state pinned to the right edge, or the
@@ -148,4 +171,24 @@ fn title<'a>(name: Span<'a>, badge: Option<Badge>, width: u16) -> Line<'a> {
     let worn = Span::styled(worn, Style::default().fg(badge.color));
     let gap = usize::from(width).saturating_sub(name.width() + worn.width());
     Line::from(vec![name, Span::raw(" ".repeat(gap)), worn])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A description that fits is drawn whole; one that does not ends in an
+    /// ellipsis on its last row instead of stopping mid-word.
+    #[test]
+    fn a_long_description_ends_in_an_ellipsis() {
+        assert_eq!(description_rows("Short.", 30), vec!["Short."]);
+        let rows = description_rows(
+            "What a checkout intends: the proposals, designs, tasks and specs a change carries",
+            40,
+        );
+        assert_eq!(rows.len(), usize::from(DESCRIPTION_ROWS));
+        let ellipsis = crate::ui::theme::glyph(crate::ui::theme::Symbol::Ellipsis);
+        assert!(rows[1].ends_with(&ellipsis), "{rows:?}");
+        assert!(rows.iter().all(|row| text::columns(row) <= 40), "{rows:?}");
+    }
 }

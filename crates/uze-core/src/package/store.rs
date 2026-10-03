@@ -332,6 +332,24 @@ pub struct StoredPackage {
     pub active_name: String,
 }
 
+impl StoredPackage {
+    /// When these bytes were put in the Store, as seconds since the epoch:
+    /// the package's directory is cleared and written afresh by every
+    /// install and every update, so its modification time is the last of
+    /// either. `None` where the filesystem cannot say.
+    pub fn written_at_unix(&self) -> Option<u64> {
+        modified_unix(&self.root)
+    }
+}
+
+fn modified_unix(path: &Path) -> Option<u64> {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_secs())
+}
+
 #[derive(Clone, Debug)]
 pub struct UzeStore {
     home: UzeHome,
@@ -1304,5 +1322,19 @@ mod tests {
             quarantined[0].reason
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_package_is_dated_by_when_its_bytes_were_written() {
+        let root = uze_testkit::temp::scratch("store-written-at");
+        fs::create_dir_all(&root).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let written = modified_unix(&root).expect("a directory has a time");
+        assert!(now.abs_diff(written) < 60, "{written} against {now}");
+        fs::remove_dir_all(&root).unwrap();
+        assert_eq!(modified_unix(&root), None, "nothing there, no date");
     }
 }

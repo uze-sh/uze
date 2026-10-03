@@ -125,4 +125,21 @@ impl<'a> Field<'a> {
         frame.render_widget(Paragraph::new(self.line()), inner);
         inner
     }
+
+    /// Draws the field as a list's search row: a `/` lead in the column
+    /// the rows below it start their text in, then the field, on one row.
+    ///
+    /// The lead is the key that focuses it, so the row says how to reach
+    /// it without a hint beside it; the caret alone says it has focus.
+    pub(crate) fn render_search(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
+        let mut spans = vec![Span::styled(
+            format!("{:<SEARCH_LEAD$}", "/"),
+            theme::fg(Token::TextDim),
+        )];
+        spans.extend(self.spans());
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    }
 }
+
+/// The columns a search row's `/` lead takes before the field.
+const SEARCH_LEAD: usize = 2;

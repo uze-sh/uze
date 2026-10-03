@@ -193,20 +193,9 @@ pub(super) fn render(
         );
     }
     if let Some(modal) = &model.release_notes {
-        let targets = crate::ui::release_notes::render(
-            frame,
-            frame.area(),
-            modal,
-            model.hovered == Some(WorkspaceHit::ReleaseNotesClose),
-        );
+        let targets = crate::ui::release_notes::render(frame, frame.area(), modal);
         // Prepended: what is underneath must not answer a click meant here.
-        hits.splice(
-            0..0,
-            [
-                (targets.close, WorkspaceHit::ReleaseNotesClose),
-                (targets.popup, WorkspaceHit::ReleaseNotesBody),
-            ],
-        );
+        hits.insert(0, (targets.popup, WorkspaceHit::ReleaseNotesBody));
     }
     if let Some(overlay) = &model.work {
         render_work(frame, frame.area(), model, overlay, hits);

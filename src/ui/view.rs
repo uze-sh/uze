@@ -24,13 +24,23 @@ pub mod plugins;
 pub mod profiles;
 pub mod settings;
 
+/// A drawer's width at rest, and on a terminal wide enough that the list
+/// beside it has columns to spare and a paragraph reads in fewer rows.
 pub(crate) const DRAWER_DEFAULT_WIDTH: u16 = 44;
+const DRAWER_WIDE_WIDTH: u16 = 56;
+const DRAWER_WIDE_FROM: u16 = 150;
 /// The narrowest a drawer, or the list beside it, is ever drawn.
 const DRAWER_MIN_WIDTH: u16 = 24;
 
+/// How far a drawer's text sits inside it: past its rule and three columns
+/// of air on the left, three on the right — the inset every screen's own
+/// content keeps from the modal's border.
+const DRAWER_PAD_LEFT: u16 = 4;
+const DRAWER_PAD_RIGHT: u16 = 3;
+
 /// How wide `panel`'s drawer is drawn over `content`: where it was dragged
-/// to, or the default, never squeezing itself or the list beside it past
-/// the minimum, and never taking more than half of what there is.
+/// to, or its width at rest, never squeezing itself or the list beside it
+/// past the minimum, and never taking more than half of what there is.
 ///
 /// The half is the part the minimum alone could not do. Leaving the list
 /// its 24 columns is a floor, not a share: on a narrow screen a drawer at
@@ -42,15 +52,21 @@ pub(crate) fn drawer_width(panel: ResizablePanel, model: &TuiModel, content: Rec
     let ceiling = (content.width / 2)
         .min(content.width.saturating_sub(DRAWER_MIN_WIDTH))
         .max(DRAWER_MIN_WIDTH);
+    let rest = if content.width >= DRAWER_WIDE_FROM {
+        DRAWER_WIDE_WIDTH
+    } else {
+        DRAWER_DEFAULT_WIDTH
+    };
     panel
         .width(model)
-        .unwrap_or(DRAWER_DEFAULT_WIDTH)
+        .unwrap_or(rest)
         .clamp(DRAWER_MIN_WIDTH, ceiling)
 }
 
-/// A detail drawer's shell off the right of `content`: a recessed slab
-/// behind a left rule that is its drag handle, lit while it is dragged.
-/// Returns the padded rectangle its content goes in.
+/// A detail drawer's shell off the right of `content`: a hairline rule on
+/// its left that is its drag handle, lit while it is dragged, on the same
+/// ground as the screen — a drawer is a column of the screen, not a slab
+/// laid over it. Returns the padded rectangle its content goes in.
 pub(crate) fn drawer(
     frame: &mut ratatui::Frame<'_>,
     content: Rect,
@@ -60,15 +76,8 @@ pub(crate) fn drawer(
 ) -> Rect {
     let area = side_panel_area(content, drawer_width(panel, model, content));
     frame.render_widget(Clear, area);
-    let rule = if model.dragging_panel == Some(panel) {
-        Token::Accent
-    } else {
-        Token::SurfaceRecessed
-    };
-    Rule::new(Edge::Left)
-        .tone(rule)
-        .ground(Token::SurfaceRecessed)
-        .render(frame, area);
+    crate::ui::widget::fill(frame, area, Token::SurfaceBackground);
+    Rule::draggable(Edge::Left, model.dragging_panel == Some(panel)).render(frame, area);
     // First, so the rule answers the pointer before the rows behind it do.
     hits.insert(
         0,
@@ -78,10 +87,11 @@ pub(crate) fn drawer(
         ),
     );
     Rect::new(
-        area.x + 2,
-        area.y + 1,
-        area.width.saturating_sub(3),
-        area.height.saturating_sub(2),
+        area.x + DRAWER_PAD_LEFT,
+        area.y,
+        area.width
+            .saturating_sub(DRAWER_PAD_LEFT + DRAWER_PAD_RIGHT),
+        area.height,
     )
 }
 
@@ -99,8 +109,9 @@ pub(crate) fn drawer_body_and_footer(inner: Rect, offers: &[ActionOffer]) -> (Re
     )
 }
 
-/// A list's search field: what has been typed, or `placeholder` when
-/// nothing has, over a rule that takes the accent while it is `active`.
+/// A list's search row: what has been typed, or `placeholder` when
+/// nothing has, with the caret while it is `active`. One row; the screens
+/// leave one blank row under it.
 pub(crate) fn filter_box(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -108,10 +119,24 @@ pub(crate) fn filter_box(
     placeholder: &str,
     active: bool,
 ) {
-    Field::new(text, placeholder)
-        .focused(active)
-        .render(frame, area);
+    Field::new(text, placeholder).focused(active).render_search(
+        frame,
+        Rect {
+            height: 1.min(area.height),
+            ..area
+        },
+    );
 }
+
+/// A label over a block — a drawer's or a list's section — in the
+/// lowercase the Marketplace tree heads its own with, so every screen
+/// reads alike.
+pub(crate) fn section_label(text: &str) -> Line<'static> {
+    Line::from(Span::styled(text.to_lowercase(), theme::fg(Token::TextDim)))
+}
+
+/// Rows a screen gives its search row: the row and the blank one under it.
+pub(crate) const FILTER_ROWS: u16 = 2;
 
 /// Where a detail drawer's selected thing stands, in the words its footer
 /// prints: a coloured headline and a muted note beneath it.
@@ -189,9 +214,13 @@ pub(crate) fn render_drawer_footer(
     engaged: Option<uze_keys::Action>,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let inner = Rule::new(Edge::Top)
-        .tone(Token::BorderDefault)
-        .render(frame, area);
+    // A row of air where a rule used to stand: the drawer's foot is set
+    // apart by space, the way the Marketplace panel's action is.
+    let inner = Rect {
+        y: area.y + 1.min(area.height),
+        height: area.height.saturating_sub(1),
+        ..area
+    };
     let lines = vec![
         Line::from(vec![
             Span::styled(
@@ -240,7 +269,7 @@ pub(crate) fn render_drawer_footer(
             (
                 Button::new(action.label(), hue)
                     .strong(hovered == Some(action) || engaged == Some(action))
-                    .ground(Token::SurfaceRecessed),
+                    .ground(Token::SurfaceBackground),
                 Hit::OfferedAction(action),
             )
         })
@@ -281,11 +310,15 @@ mod drawer_tests {
                 "and the list keeps its own minimum at {width}: {drawn}"
             );
         }
-        // Wide enough for both, it is the default and not a share of the
-        // screen: a detail panel does not get better by getting wider.
+        // Wide enough for both, it is a width at rest and not a share of
+        // the screen: a detail panel does not get better by getting wider.
+        assert_eq!(
+            drawer_width(panel, &model, Rect::new(0, 0, 120, 40)),
+            DRAWER_DEFAULT_WIDTH
+        );
         assert_eq!(
             drawer_width(panel, &model, Rect::new(0, 0, 200, 40)),
-            DRAWER_DEFAULT_WIDTH
+            DRAWER_WIDE_WIDTH
         );
     }
 }
