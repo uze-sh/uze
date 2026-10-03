@@ -4,6 +4,29 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.10](https://github.com/uze-sh/uze/compare/v1.0.0-beta.9...v1.0.0-beta.10) - 2026-10-03
+
+### Features
+
+- **ui:** Replace the manage modal sidebar with tabs and a marketplace tree ([#181](https://github.com/uze-sh/uze/pull/181)) ([5e28bb6](https://github.com/uze-sh/uze/commit/5e28bb67b53c40ae33f7d2c689d8a04d11b70d6d))
+- **marketplace:** Read plugin description and keywords from plugin.json ([#186](https://github.com/uze-sh/uze/pull/186)) [**breaking**] ([22b5555](https://github.com/uze-sh/uze/commit/22b5555a4cb837e5446ae33019df2cad66645329))
+- **theme:** Replace the status.working braille spinner with a · ∙ + ∗ twinkle ([#187](https://github.com/uze-sh/uze/pull/187)) ([1143832](https://github.com/uze-sh/uze/commit/114383254c68f72fd68692da51758fcbf84840ee))
+
+### Fixes
+
+- **update:** Record the mirror head in catalogue.json on every fetch ([#188](https://github.com/uze-sh/uze/pull/188)) ([353719f](https://github.com/uze-sh/uze/commit/353719f78ae82198f26cc5d4e6981963112fc1b1))
+
+### Refactor
+
+- Split main.rs, the orchestrator and runtime.rs by concern ([#180](https://github.com/uze-sh/uze/pull/180)) ([3b9462c](https://github.com/uze-sh/uze/commit/3b9462c4f67d4252eaf98513ecebc8fc0f7de73b))
+- **integrations:** Declare each harness's HookTarget in its own vertical ([#183](https://github.com/uze-sh/uze/pull/183)) ([be5acbd](https://github.com/uze-sh/uze/commit/be5acbdb538a947c7e2f70920d70f8120cb44448))
+- **keys:** Reduce the default keymap to one chord per action ([#184](https://github.com/uze-sh/uze/pull/184)) ([081204d](https://github.com/uze-sh/uze/commit/081204d72c5b4c9ec2a0d093cb5656e5b2072b19))
+
+### Documentation
+
+- Mark macOS as stable and archive support-macos ([#182](https://github.com/uze-sh/uze/pull/182)) ([64f28ba](https://github.com/uze-sh/uze/commit/64f28bad6ed31050ce4070f7074867ecf99f0a5c))
+- **openspec:** Archive eleven delivered changes, aligned with the code ([#185](https://github.com/uze-sh/uze/pull/185)) ([a2037c9](https://github.com/uze-sh/uze/commit/a2037c9a1476dfd0e7c0498d41ab5ce8bcd42f6b))
+
 ## [1.0.0-beta.9](https://github.com/uze-sh/uze/compare/v1.0.0-beta.8...v1.0.0-beta.9) - 2026-10-03
 
 ### Features
