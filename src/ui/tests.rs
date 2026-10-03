@@ -3496,6 +3496,17 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
         ],
         "what builds first, what destroys last, and nothing that cannot run"
     );
+    assert!(
+        buttons[0].0.y == buttons[1].0.y && buttons[0].0.x < buttons[1].0.x,
+        "the update stands in the row of actions, not beside its note: {buttons:?}"
+    );
+    assert_eq!(
+        model
+            .selected_marketplace_plugin()
+            .and_then(|plugin| crate::ui::view::plugins::primary_offer(&plugin.offers())),
+        Some(uze_keys::Action::UpdatePlugin),
+        "and Enter takes the update rather than the removal"
+    );
 
     // Soft at rest, the full hue under the pointer.
     let (remove, _) = buttons[1];
@@ -3589,6 +3600,50 @@ fn an_unfolded_plugin_groups_its_resources_by_kind() {
         rows.iter()
             .any(|row| tree(row).contains("kit") && tree(row).contains("productivity")),
         "the plugin's row says what kind of work it is for: {rows:#?}"
+    );
+}
+
+/// Inspecting a resource keeps its plugin's actions, labelled the way the
+/// plugin's own row labels them rather than repeating the plugin's name.
+#[test]
+fn a_selected_resource_offers_its_plugins_action_by_its_plain_label() {
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        remembered: Remembered {
+            marketplace_plugins: vec![marketplace_plugin("team", "kit", false)],
+            ..TuiModel::default().remembered
+        },
+        ..TuiModel::default()
+    };
+    model.expanded_plugins.insert("kit@team".to_owned());
+    model.plugin_resources.insert(
+        "kit@team".to_owned(),
+        vec![uze_application::application::PluginCapability {
+            identity: "review".to_owned(),
+            name: "review".to_owned(),
+            kind: uze_application::CapabilityKind::AgentSkill,
+            preview: Default::default(),
+        }],
+    );
+    model.select_plugin_row(0, Some("review".to_owned()));
+    assert!(model.selected_resource().is_some());
+
+    let (terminal, hits) = drawn_at(&model, 140, 40);
+    let (rect, _) = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::InstallPlugin))
+        .unwrap_or_else(|| panic!("the install button: {hits:?}"));
+    let row = &buffer_rows(&terminal)[rect.y as usize];
+    let label: String = row
+        .chars()
+        .skip(rect.x as usize)
+        .take(rect.width as usize)
+        .collect();
+    assert_eq!(
+        label.trim(),
+        uze_keys::Action::InstallPlugin.label(),
+        "{row}"
     );
 }
 

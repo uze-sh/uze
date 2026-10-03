@@ -870,6 +870,17 @@ A marketplace this machine cannot reach by declaration is skipped and named
 rather than failing the command, so a contributor gets the half that is
 reachable.
 
+The lock is a floor, never a ceiling, because a machine holds one revision
+of each plugin for every project. A machine behind the lock is raised to
+it; one past it is left there and never downgraded; one whose history the
+mirror cannot place against the lock's is skipped and named. The machine's
+own update follows each marketplace's registered ref, never the locked
+commit a reproduction left as the package's request, and a project
+registering a marketplace registers its repository, not its `ref:`.
+
+> `tests/project/consumer.rs::install_raises_the_machine_to_a_lock_that_moved_past_it`
+> `tests/project/consumer.rs::install_leaves_a_machine_that_moved_past_the_lock_where_it_is`
+> `tests/project/consumer.rs::a_machine_update_moves_a_plugin_that_was_reproduced_from_a_lock`
 > `tests/lifecycle/manifest_and_lock.rs::install_reproduces_a_pin_the_ref_has_moved_past_and_update_moves_it`
 > `tests/lifecycle/manifest_and_lock.rs::an_unreachable_marketplace_is_skipped_and_named_and_the_rest_installs`
 > `tests/lifecycle/manifest_and_lock.rs::updating_a_plugin_this_project_does_not_declare_writes_nothing`

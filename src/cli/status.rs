@@ -700,7 +700,16 @@ pub(crate) fn render_project_lock_status(
             let rows = plugins
                 .iter()
                 .map(|plugin| {
-                    let state = if plugin.installed {
+                    // Quiet on purpose: past the lock is where the machine
+                    // stands after every update, and `uze update` is how a
+                    // project records it.
+                    let state = if plugin.installed && plugin.differs_from_lock {
+                        format!(
+                            "{} {}",
+                            progress::success_icon(),
+                            progress::label("installed · not the lock's revision")
+                        )
+                    } else if plugin.installed {
                         format!(
                             "{} {}",
                             progress::success_icon(),

@@ -176,6 +176,25 @@ impl Project<'_> {
         marketplace: &str,
         plugin: &str,
     ) -> Result<uze_core::MaterializedPackage> {
+        self.locked_request(locked, marketplace)?
+            .materialize_plugin(
+                plugin,
+                super::marketplace::MirrorAt {
+                    home: &self.0.home,
+                    marketplace,
+                    recent: Some(super::marketplace::RECENT),
+                    fetched: &self.0.mirrors_fetched,
+                    catalogues: &self.0.marketplace_catalogues,
+                },
+            )
+    }
+
+    /// The request that reaches `locked`'s recorded commit.
+    fn locked_request(
+        &self,
+        locked: &LockedMarketplace,
+        marketplace: &str,
+    ) -> Result<MarketplaceRequest> {
         let mut repository = uze_core::acquisition::marketplace::MarketplaceRepository {
             fetch: locked.git.clone(),
             identity: locked.git.clone(),
@@ -189,19 +208,74 @@ impl Project<'_> {
         {
             repository.fetch = local.fetch;
         }
-        MarketplaceRequest {
+        Ok(MarketplaceRequest {
             repository,
             reference: Some(locked.revision.clone()),
+        })
+    }
+
+    /// Where the machine's revision of each locked plugin stands against
+    /// the lock's, for the plugins whose bytes differ from what the lock
+    /// records.
+    ///
+    /// Asked of the mirror's history, which is one process per plugin that
+    /// differs and none for one that agrees: the bytes are compared first,
+    /// because a marketplace moving does not move every plugin in it. The
+    /// locked commit is fetched when the mirror lacks it — the collaborator
+    /// who wrote the lock pushed it, or nobody can reproduce it. `None` for
+    /// a plugin the mirror cannot place.
+    fn lineage_against_lock(
+        &self,
+        lock: &ProjectLock,
+    ) -> Vec<(
+        String,
+        LockedPlugin,
+        Option<uze_core::acquisition::mirror::Lineage>,
+    )> {
+        let mut placed = Vec::new();
+        for (name, locked) in &lock.plugins {
+            let Ok(stored) = self
+                .0
+                .package_by_name(&format!("{name}@{}", locked.marketplace))
+            else {
+                continue;
+            };
+            // A linked checkout pins nothing, so there is nothing to place.
+            let uze_core::acquisition::ResolvedSource::Git { commit, .. } =
+                &stored.provenance.resolved
+            else {
+                continue;
+            };
+            let Some(recorded) = lock.marketplaces.get(&locked.marketplace) else {
+                continue;
+            };
+            if *commit == recorded.revision {
+                continue;
+            }
+            if let Some(expected) = &locked.integrity
+                && uze_core::digest::tree_sha256(&stored.root).ok().as_ref() == Some(expected)
+            {
+                continue;
+            }
+            let mirror =
+                super::marketplace_catalogue::mirror_dir(&self.0.home, &locked.marketplace);
+            let reached = self
+                .locked_request(recorded, &locked.marketplace)
+                .and_then(|request| {
+                    uze_core::acquisition::mirror::ensure_for(
+                        &request.repository.fetch,
+                        &request.repository.identity,
+                        &mirror,
+                        request.reference.as_deref(),
+                        Some(super::marketplace::RECENT),
+                    )
+                });
+            let lineage = reached.ok().and_then(|()| {
+                uze_core::acquisition::mirror::lineage(&mirror, commit, &recorded.revision)
+            });
+            placed.push((name.clone(), locked.clone(), lineage));
         }
-        .materialize_plugin(
-            plugin,
-            super::marketplace::MirrorAt {
-                home: &self.0.home,
-                marketplace,
-                recent: Some(super::marketplace::RECENT),
-                fetched: &self.0.mirrors_fetched,
-            },
-        )
+        placed
     }
 
     /// Whether `dir` is a project's own root — the directory a path names
@@ -441,7 +515,13 @@ impl Project<'_> {
                 Some((marketplace.clone(), MarketplaceRequest::of(&source).ok()?))
             })
             .collect();
-        super::marketplace::prefetch_mirrors(&self.0.home, &self.0.mirrors_fetched, &wanted, None);
+        super::marketplace::prefetch_mirrors(
+            &self.0.home,
+            &self.0.mirrors_fetched,
+            &self.0.marketplace_catalogues,
+            &wanted,
+            None,
+        );
 
         // No mutation lock here: `Plugins::update` takes one per plugin and
         // it is not reentrant. The lock file this writes is a project file,
@@ -497,6 +577,7 @@ impl Project<'_> {
                         marketplace: &marketplace,
                         recent: None,
                         fetched: &self.0.mirrors_fetched,
+                        catalogues: &self.0.marketplace_catalogues,
                     },
                 )?;
                 match self
@@ -752,7 +833,7 @@ impl Project<'_> {
         let manifest = manifest::load(&canonical)?.unwrap_or_default();
         let mut lock = project_lock::load_lock(&canonical)?.unwrap_or_default();
 
-        let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
+        let mut mutation = Some(uze_core::persistence::MutationLock::acquire(&self.0.home)?);
         let mut installed_plugins = Vec::new();
         let mut skipped: Vec<SkippedPlugin> = Vec::new();
         let mut undelivered: Vec<(String, HarnessDeliveryReport)> = Vec::new();
@@ -777,6 +858,7 @@ impl Project<'_> {
         super::marketplace::prefetch_mirrors(
             &self.0.home,
             &self.0.mirrors_fetched,
+            &self.0.marketplace_catalogues,
             &declared,
             Some(super::marketplace::RECENT),
         );
@@ -805,6 +887,7 @@ impl Project<'_> {
         super::marketplace::prefetch_mirrors(
             &self.0.home,
             &self.0.mirrors_fetched,
+            &self.0.marketplace_catalogues,
             &locked,
             Some(super::marketplace::RECENT),
         );
@@ -924,7 +1007,82 @@ impl Project<'_> {
             installed_plugins.push(name);
         }
 
-        // Convergence, third: what the manifest no longer declares.
+        // Upward, third: a plugin the machine holds at a revision older than
+        // the lock's — a collaborator moved the pin and this is the pull.
+        // The lock is a floor, so the machine rises to it; it is never a
+        // ceiling, so one already past it stays where it is, and `status`
+        // says so. One the mirror cannot place is left alone and named:
+        // which of two histories is wanted is not this command's to guess.
+        let placed = self.lineage_against_lock(&lock);
+        let behind: Vec<(String, LockedPlugin)> = placed
+            .iter()
+            .filter(|(_, _, lineage)| {
+                *lineage == Some(uze_core::acquisition::mirror::Lineage::Older)
+            })
+            .map(|(name, locked, _)| (name.clone(), locked.clone()))
+            .collect();
+        for (name, locked, lineage) in &placed {
+            if matches!(
+                lineage,
+                None | Some(uze_core::acquisition::mirror::Lineage::Diverged)
+            ) {
+                skipped.push(SkippedPlugin {
+                    plugin: name.clone(),
+                    marketplace: locked.marketplace.clone(),
+                    reason: "this machine holds a revision that is neither older nor newer than \
+                             the lock's; `uze update` records the machine's"
+                        .to_owned(),
+                });
+            }
+        }
+        if !behind.is_empty() {
+            // `replace_with` takes the mutation lock itself, per plugin.
+            drop(mutation.take());
+        }
+        for (name, locked) in behind {
+            let qualified = format!("{name}@{}", locked.marketplace);
+            let recorded = lock.marketplaces.get(&locked.marketplace).ok_or_else(|| {
+                UzeError::MarketplaceMismatch {
+                    plugin: name.clone(),
+                    expected: locked.marketplace.clone(),
+                    found: "not declared in lock".to_owned(),
+                }
+            })?;
+            let materialized =
+                self.reproduce_locked_plugin(recorded, &locked.marketplace, &name)?;
+            Self::verify_integrity_of(&name, &locked, materialized.root())?;
+            match self
+                .0
+                .plugins()
+                .replace_with(&qualified, materialized, authority)
+            {
+                Ok(UpdatePluginReport::Updated { deliveries, .. }) => {
+                    undelivered.extend(
+                        deliveries
+                            .into_iter()
+                            .filter(|delivery| delivery.error().is_some())
+                            .map(|delivery| (name.clone(), delivery)),
+                    );
+                    installed_plugins.push(name);
+                }
+                Ok(UpdatePluginReport::Blocked { .. }) => skipped.push(SkippedPlugin {
+                    plugin: name,
+                    marketplace: locked.marketplace.clone(),
+                    reason: "managed state has drifted; nothing was changed".to_owned(),
+                }),
+                Err(UzeError::TrustRequired { detail, .. }) => skipped.push(SkippedPlugin {
+                    plugin: name,
+                    marketplace: locked.marketplace.clone(),
+                    reason: format!(
+                        "the lock's revision asks to execute something new ({detail}); \
+                         confirm it explicitly"
+                    ),
+                }),
+                Err(error) => return Err(error),
+            }
+        }
+
+        // Convergence, fourth: what the manifest no longer declares.
         //
         // Nothing is asked and nothing on this machine is touched. The lock
         // is derived — regenerable from the manifest, and losing an entry
@@ -938,7 +1096,7 @@ impl Project<'_> {
         let mut removed_plugins = Vec::new();
         let surplus = project_lock::surplus_against(&manifest, &lock);
         if !surplus.is_empty() {
-            drop(_mutation);
+            drop(mutation.take());
             for plugin in &surplus {
                 self.remove(plugin, &canonical)?;
                 removed_plugins.push(plugin.clone());
@@ -1005,6 +1163,22 @@ impl Project<'_> {
                 requested: identity.to_owned(),
             });
         }
+        // The repository, never the project's `ref:`. The machine follows
+        // its marketplaces to their newest and a declared ref is this
+        // project's pin, which the lock records: registered here, a tag the
+        // first project to arrive declared became the ref every update on
+        // the machine resolved, for every project after it. A ref of the
+        // machine's own is `market add`'s to give.
+        let source = match source {
+            PackageSource::Git {
+                url, subdirectory, ..
+            } => PackageSource::Git {
+                url,
+                reference: None,
+                subdirectory,
+            },
+            other => other,
+        };
         uze_core::state::marketplace_add(&self.0.home, marketplace, source)?;
         Ok(())
     }
@@ -1060,6 +1234,7 @@ impl Project<'_> {
                 marketplace,
                 recent: Some(super::marketplace::RECENT),
                 fetched: &self.0.mirrors_fetched,
+                catalogues: &self.0.marketplace_catalogues,
             },
         )?;
         self.0.plugins().install_materialized(
@@ -1173,13 +1348,47 @@ impl Project<'_> {
             .collect();
         let plugins = lock
             .plugins
-            .keys()
-            .map(|name| ProjectPluginHealth {
+            .iter()
+            .map(|(name, locked)| ProjectPluginHealth {
                 plugin: name.clone(),
                 installed: !missing.contains(name.as_str()),
+                differs_from_lock: self.differs_from_lock(&lock, name, locked),
             })
             .collect();
         ProjectLockStatus::Present { plugins }
+    }
+}
+
+impl Project<'_> {
+    /// Whether the machine's bytes for `name` are not the ones `locked`
+    /// records.
+    ///
+    /// No direction, deliberately: which is newer is a question for the
+    /// mirror's history, a process per plugin this read cannot afford. The
+    /// commit answers first, from the Store's own record; only a commit
+    /// that differs reads the bytes, since a marketplace moving does not
+    /// move every plugin in it.
+    fn differs_from_lock(&self, lock: &ProjectLock, name: &str, locked: &LockedPlugin) -> bool {
+        let Ok(stored) = self
+            .0
+            .package_by_name(&format!("{name}@{}", locked.marketplace))
+        else {
+            return false;
+        };
+        let uze_core::acquisition::ResolvedSource::Git { commit, .. } = &stored.provenance.resolved
+        else {
+            return false;
+        };
+        if lock
+            .marketplaces
+            .get(&locked.marketplace)
+            .is_none_or(|recorded| recorded.revision == *commit)
+        {
+            return false;
+        }
+        locked.integrity.as_ref().is_some_and(|expected| {
+            uze_core::digest::tree_sha256(&stored.root).ok().as_ref() != Some(expected)
+        })
     }
 }
 
@@ -1199,6 +1408,10 @@ pub enum ProjectLockStatus {
 pub struct ProjectPluginHealth {
     pub plugin: String,
     pub installed: bool,
+    /// Installed, at a revision other than the lock's. The ordinary state
+    /// once the machine has updated past a project: the lock is a floor for
+    /// a machine that has less, not a record of what runs here.
+    pub differs_from_lock: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

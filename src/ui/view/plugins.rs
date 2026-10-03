@@ -34,7 +34,7 @@ use crate::ui::content_area;
 use crate::ui::hit::Hit;
 use crate::ui::model::{Focus, PluginTreeRow, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Button, hint, mark, screen_header, text};
+use crate::ui::widget::{Align, Button, button_row, hint, mark, screen_header, text};
 
 /// Below this many columns the panel goes and the tree takes the width.
 const NARROW: u16 = 88;
@@ -862,8 +862,6 @@ struct Detail {
     /// A newer revision to take, said above the action.
     update: Option<String>,
     offers: Vec<ActionOffer>,
-    /// The plugin a resource's action is about, named on its button.
-    acting_on: Option<String>,
 }
 
 fn render_panel(
@@ -1004,48 +1002,43 @@ fn render_panel(
     );
 }
 
-/// The action the panel's foot offers first, and the one Enter performs:
-/// what builds before what destroys, the update aside — it has a row of
-/// its own above.
-pub(crate) fn primary_offer(offers: &[ActionOffer]) -> Option<uze_keys::Action> {
+/// The actions the panel's foot offers, in the order it draws them: what
+/// builds or moves forward before what destroys.
+fn foot_offers(offers: &[ActionOffer]) -> Vec<uze_keys::Action> {
     let mut available: Vec<uze_keys::Action> = offers
         .iter()
-        .filter(|offer| {
-            offer.is_available()
-                && !matches!(
-                    offer.action,
-                    uze_keys::Action::Activate | uze_keys::Action::UpdatePlugin
-                )
-        })
+        .filter(|offer| offer.is_available() && offer.action != uze_keys::Action::Activate)
         .map(|offer| offer.action)
         .collect();
     available.sort_by_key(|action| action.destructive());
-    available.first().copied()
+    available
 }
 
-fn update_offered(offers: &[ActionOffer]) -> bool {
-    offers
-        .iter()
-        .any(|offer| offer.action == uze_keys::Action::UpdatePlugin && offer.is_available())
+/// The action the panel's foot offers first, and the one Enter performs:
+/// an update before a removal, since a newer revision is the thing the
+/// panel is pointing at.
+pub(crate) fn primary_offer(offers: &[ActionOffer]) -> Option<uze_keys::Action> {
+    foot_offers(offers).first().copied()
 }
 
-/// Rows the panel's foot takes: a row of air, the update and a row of air
-/// when there is one to take, the action, and a row of air under it.
+/// Rows the panel's foot takes: a row of air, the newer revision's note
+/// and a row of air when there is one, the actions, and a row of air under
+/// them.
 fn panel_footer_height(detail: &Detail) -> u16 {
     let update = if detail.update.is_some() { 2 } else { 0 };
-    let action = if primary_offer(&detail.offers).is_some() {
+    let actions = if primary_offer(&detail.offers).is_some() {
         2
     } else {
         0
     };
-    let rows = update + action;
+    let rows = update + actions;
     // A row of air above the foot, so what scrolls in the body never runs
     // into the buttons.
     if rows > 0 { rows + 1 } else { 0 }
 }
 
-/// The panel's foot, anchored to its bottom: a newer revision and the
-/// button that takes it, then the action. The key that reaches it is the
+/// The panel's foot, anchored to its bottom: a newer revision's note, then
+/// one row of every action on offer. The key that reaches the first is the
 /// footer's to say.
 fn render_panel_footer(
     frame: &mut ratatui::Frame<'_>,
@@ -1056,52 +1049,41 @@ fn render_panel_footer(
 ) {
     let mut y = area.y + 1;
     if let Some(note) = &detail.update {
-        if update_offered(&detail.offers) {
-            let action = uze_keys::Action::UpdatePlugin;
-            let button = Button::new(action.label(), Token::StateWarning)
-                .strong(model.hovered_offer == Some(action));
-            let rect = Rect::new(
-                area.right().saturating_sub(button.width()),
-                y,
-                button.width().min(area.width),
-                1,
-            );
-            button.render(frame, rect);
-            hits.push((rect, Hit::OfferedAction(action)));
-        }
-        let room = area
-            .width
-            .saturating_sub(Button::new("Update", Token::StateWarning).width() + 2);
         frame.render_widget(
             Paragraph::new(Span::styled(
-                text::elide(note, room.into()),
+                text::elide(note, area.width.into()),
                 theme::fg(Token::StateWarning),
             )),
-            Rect::new(area.x, y, room, 1),
+            Rect::new(area.x, y, area.width, 1),
         );
         y += 2;
     }
-    let Some(action) = primary_offer(&detail.offers) else {
-        return;
-    };
     if y >= area.bottom() {
         return;
     }
-    let hue = if action.destructive() {
-        Token::StateDanger
-    } else if action == uze_keys::Action::InstallPlugin {
-        Token::Accent
-    } else {
-        Token::TextSecondary
-    };
-    let label = match &detail.acting_on {
-        Some(plugin) => format!("{} {plugin}", action.label()),
-        None => action.label(),
-    };
-    let button = Button::new(label, hue).strong(model.hovered_offer == Some(action));
-    let rect = Rect::new(area.x, y, button.width().min(area.width), 1);
-    button.render(frame, rect);
-    hits.push((rect, Hit::OfferedAction(action)));
+    let buttons: Vec<(Button, Hit)> = foot_offers(&detail.offers)
+        .into_iter()
+        .map(|action| {
+            let hue = if action.destructive() {
+                Token::StateDanger
+            } else if action == uze_keys::Action::InstallPlugin {
+                Token::Accent
+            } else if action == uze_keys::Action::UpdatePlugin {
+                Token::StateWarning
+            } else {
+                Token::TextSecondary
+            };
+            let button =
+                Button::new(action.label(), hue).strong(model.hovered_offer == Some(action));
+            (button, Hit::OfferedAction(action))
+        })
+        .collect();
+    hits.extend(button_row(
+        frame,
+        Rect::new(area.x, y, area.width, 1),
+        &buttons,
+        Align::Left,
+    ));
 }
 
 fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
@@ -1188,7 +1170,6 @@ fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
         fields,
         update: (behind > 0).then(|| format!("{} with a new revision", counted(behind, "plugin"))),
         offers: summary.map(MarketplaceSummary::offers).unwrap_or_default(),
-        acting_on: None,
     }
 }
 
@@ -1251,7 +1232,6 @@ fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail 
             )
         }),
         offers: plugin.offers(),
-        acting_on: None,
     }
 }
 
@@ -1278,8 +1258,9 @@ fn resource_detail(plugin: &MarketplacePluginSummary, resource: &PluginCapabilit
                 group_display_name(&plugin.marketplace)
             )
         }),
+        // Its plugin's actions, labelled as the plugin's row labels them:
+        // the panel above already names which plugin they are about.
         offers: plugin.offers(),
-        acting_on: Some(plugin.name.clone()),
     }
 }
 
