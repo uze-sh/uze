@@ -9,10 +9,11 @@
 //! [`Role`]s, and a tool is a [`dialect::Dialect`] — a table, detected by
 //! the marker the tool itself defines rather than declared in
 //! `agents.yaml`, because where the tool keeps its files is the tool's
-//! decision and not the project's. OpenSpec and Spec Kit are the ones
-//! shipped, and they differ on screen only where their tables do: which
-//! subjects exist, what counts as one unit of each, what the files are
-//! called, and whether a finished change is put away.
+//! decision and not the project's. OpenSpec, Spec Kit, Superpowers and
+//! GSD are the ones shipped, and they differ on screen only where their
+//! tables do: which subjects exist, what counts as one unit of each, what
+//! the files are called, how finished steps are counted, and whether a
+//! finished change is put away.
 //!
 //! # Read from the checkout
 //!
@@ -297,6 +298,14 @@ impl SpecView {
     pub fn resuming(mut self, place: SpecPlace) -> Self {
         self.resuming = Some(place);
         self
+    }
+
+    /// The change in flight the viewer is on, by name — what the sidebar's
+    /// tasks keep lit while the surface is open on it.
+    pub fn change_on_show(&self) -> Option<String> {
+        self.place()
+            .filter(|place| place.subject == Subject::Changes)
+            .map(|place| place.unit)
     }
 
     /// Where the viewer is, for the host to hand back next time.

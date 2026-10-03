@@ -100,7 +100,10 @@ pub fn summary_section(summary: &Summary, collapsed: bool, scroll: usize) -> Sec
                     } else {
                         Role::Accent
                     },
-                    name: Span::new(change.name.clone(), Role::Default),
+                    // The ink the timeline beneath writes its commits in,
+                    // so lifting a row to bright is the one thing that
+                    // stands out in the column.
+                    name: Span::new(change.name.clone(), Role::Inactive),
                     trailing: Span::new(
                         change.progress.map_or_else(String::new, |progress| {
                             format!("{}/{}", progress.done, progress.total)
@@ -143,6 +146,71 @@ mod tests {
             .collect();
         assert_eq!(rows, [("drafting", "1/1"), ("mine", "1/3")]);
         assert_eq!(section.rows[0].mark, RowMark::Step { done: true });
+        assert_eq!(
+            section.rows[0].name.role,
+            Role::Inactive,
+            "the timeline's ink"
+        );
+    }
+
+    fn summarised(summary: &Summary) -> (String, Vec<(String, String)>) {
+        let section = summary_section(summary, false, 0);
+        (
+            section.caption.text,
+            section
+                .rows
+                .into_iter()
+                .map(|row| (row.name.text, row.trailing.text))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn a_superpowers_plan_this_checkout_touched_is_summarised_by_its_steps() {
+        let repository = uze_testkit::git::Repository::new("spec-summary-superpowers");
+        let root = repository.root().to_path_buf();
+        let target = repository.branch();
+        repository.commit_file("docs/superpowers/plans/2026-09-01-theirs.md", "- [ ] a\n");
+        repository.git(&["checkout", "--quiet", "-b", "work"]);
+        repository.commit_file(
+            "docs/superpowers/plans/2026-09-29-mine.md",
+            "- [x] **Step 1: a**\n- [ ] **Step 2: b**\n",
+        );
+
+        let summary = summary(&DiskHost, &root, Some(&target)).expect("a plan in flight here");
+        assert_eq!(
+            summarised(&summary),
+            (
+                "1/2".to_owned(),
+                vec![("2026-09-29-mine".to_owned(), "1/2".to_owned())]
+            )
+        );
+    }
+
+    #[test]
+    fn a_gsd_phase_this_checkout_touched_is_summarised_by_its_executed_plans() {
+        let repository = uze_testkit::git::Repository::new("spec-summary-gsd");
+        let root = repository.root().to_path_buf();
+        let target = repository.branch();
+        repository.commit_file(".planning/ROADMAP.md", "# Roadmap\n");
+        repository.commit_file(".planning/phases/02-import/02-01-PLAN.md", "<tasks/>\n");
+        repository.git(&["checkout", "--quiet", "-b", "work"]);
+        repository.commit_file(".planning/phases/03-sync/03-01-PLAN.md", "<tasks/>\n");
+        repository.commit_file(".planning/phases/03-sync/03-01-SUMMARY.md", "# Summary\n");
+        std::fs::write(
+            root.join(".planning/phases/03-sync/03-02-PLAN.md"),
+            "<tasks/>\n",
+        )
+        .unwrap();
+
+        let summary = summary(&DiskHost, &root, Some(&target)).expect("a phase in flight here");
+        assert_eq!(
+            summarised(&summary),
+            (
+                "1/2".to_owned(),
+                vec![("03-sync".to_owned(), "1/2".to_owned())]
+            )
+        );
     }
 
     #[test]

@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    dialect::{Collection, Dialect, Order, Role, Shape, Subject, classify},
+    dialect::{Collection, Dialect, Order, Role, Shape, Subject, Tally, classify},
     progress::{self, Progress},
 };
 use crate::Host;
@@ -102,14 +102,16 @@ pub fn read_subjects(
             }
             units.extend(found.into_iter().map(|place| {
                 let artifacts = match collection.shape {
-                    Shape::File => vec![artifact(host, dialect, root, &place.relative)],
+                    Shape::File | Shape::Files => {
+                        vec![artifact(host, dialect, root, &place.relative)]
+                    }
                     Shape::Holding(_) => artifacts(host, dialect, &root.join(&place.relative), 1),
                     Shape::Directories => {
                         artifacts(host, dialect, &root.join(&place.relative), DEPTH)
                     }
                 };
                 let progress = (collection.subject == Subject::Changes)
-                    .then(|| steps_progress(&artifacts))
+                    .then(|| steps_progress(dialect.tally, &artifacts))
                     .flatten();
                 Unit {
                     subject: collection.subject,
@@ -130,12 +132,21 @@ pub fn read_subjects(
     }
 }
 
-fn steps_progress(artifacts: &[Artifact]) -> Option<Progress> {
-    artifacts
-        .iter()
-        .find(|artifact| artifact.role == Role::Steps)
-        .and_then(|artifact| artifact.text.as_deref().ok())
-        .and_then(progress::count)
+fn steps_progress(tally: Tally, artifacts: &[Artifact]) -> Option<Progress> {
+    match tally {
+        Tally::Checkboxes => artifacts
+            .iter()
+            .find(|artifact| artifact.role == Role::Steps)
+            .and_then(|artifact| artifact.text.as_deref().ok())
+            .and_then(progress::count),
+        Tally::Receipts { step, receipt } => {
+            let relatives: Vec<&str> = artifacts
+                .iter()
+                .map(|artifact| artifact.relative.as_str())
+                .collect();
+            progress::receipts(&relatives, step, receipt)
+        }
+    }
 }
 
 /// A unit before it is opened: what to call it, and where it is.
@@ -155,6 +166,19 @@ fn unit_places(host: &dyn Host, root: &Path, collection: &Collection) -> Vec<Pla
                 relative: collection.path.to_owned(),
             })
             .into_iter()
+            .collect(),
+        Shape::Files => host
+            .list_dir(&root.join(collection.path))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|entry| {
+                !entry.directory && !entry.name.starts_with('.') && is_document(&entry.name)
+            })
+            .filter(|entry| !collection.skip.contains(&entry.name.as_str()))
+            .map(|entry| Place {
+                name: stem(&entry.name),
+                relative: format!("{}/{}", collection.path, entry.name),
+            })
             .collect(),
         Shape::Directories => subdirectories(host, root, collection, collection.path)
             .into_iter()

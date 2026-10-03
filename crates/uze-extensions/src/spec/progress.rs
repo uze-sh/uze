@@ -47,6 +47,22 @@ pub fn count(text: &str) -> Option<Progress> {
     (progress.total > 0).then_some(progress)
 }
 
+/// The files among `relatives` ending in `step`, each done once a file
+/// with the same prefix ending in `receipt` is beside it; `None` when
+/// there is no step, as for a list with no checkbox.
+pub fn receipts(relatives: &[&str], step: &str, receipt: &str) -> Option<Progress> {
+    let mut progress = Progress::default();
+    for prefix in relatives
+        .iter()
+        .filter_map(|relative| relative.strip_suffix(step))
+    {
+        progress.total += 1;
+        let written = format!("{prefix}{receipt}");
+        progress.done += usize::from(relatives.contains(&written.as_str()));
+    }
+    (progress.total > 0).then_some(progress)
+}
+
 /// Whether `line` is a list item opening with a checkbox, and if so
 /// whether it is checked.
 fn checkbox(line: &str) -> Option<bool> {
@@ -97,6 +113,29 @@ mod tests {
         assert_eq!(
             count("- [x](url) a link\n- [ ]\n"),
             Some(Progress { done: 0, total: 1 })
+        );
+    }
+
+    #[test]
+    fn a_step_is_done_once_its_receipt_is_beside_it() {
+        let files = [
+            "01-CONTEXT.md",
+            "01-01-PLAN.md",
+            "01-01-SUMMARY.md",
+            "01-02-PLAN.md",
+            "01-VERIFICATION.md",
+        ];
+        assert_eq!(
+            receipts(&files, "PLAN.md", "SUMMARY.md"),
+            Some(Progress { done: 1, total: 2 })
+        );
+    }
+
+    #[test]
+    fn a_receipt_with_no_step_counts_for_nothing() {
+        assert_eq!(
+            receipts(&["01-01-SUMMARY.md"], "PLAN.md", "SUMMARY.md"),
+            None
         );
     }
 

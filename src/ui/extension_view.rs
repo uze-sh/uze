@@ -2471,7 +2471,7 @@ pub(crate) fn render_section(
     dragging: bool,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> bool {
-    render_section_with(frame, section, rows, dragging, None, None, hits)
+    render_section_with(frame, section, rows, dragging, None, &[], hits)
 }
 
 /// The same, with `marquee` the clock a caption too long for its room
@@ -2479,17 +2479,18 @@ pub(crate) fn render_section(
 /// otherwise. Answers whether a caption actually slid, which is what
 /// tells the host's own clock it has a reason to keep turning.
 ///
-/// `hovered_row` is the row under the pointer, its name lifted to the
-/// bright text the row receiving keystrokes wears: a row that opens
-/// something on a click says so before it is clicked. The text alone, not
-/// a ground — a band under a row in this column reads as the selection.
+/// `lit_rows` are the rows lifted to the bright text the row
+/// receiving keystrokes wears: the one under the pointer, since a row that
+/// opens something on a click says so before it is clicked, and the one
+/// whatever it opened is showing right now. The text alone, not a ground —
+/// a band under a row in this column reads as the selection.
 pub(crate) fn render_section_with(
     frame: &mut ratatui::Frame<'_>,
     section: &Section,
     rows: &mut crate::ui::Rows,
     dragging: bool,
     marquee: Option<usize>,
-    hovered_row: Option<usize>,
+    lit_rows: &[usize],
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> bool {
     let Some(header_rect) = rows.next(1) else {
@@ -2591,20 +2592,18 @@ pub(crate) fn render_section_with(
         let name_width = rect
             .width
             .saturating_sub(TRAILING_PAD + marker_width + 1 + trailing_width + TRAILING_PAD);
+        let name_style = if lit_rows.contains(&index) {
+            theme::fg(Token::TextBright)
+        } else {
+            Style::default().fg(color(row.name.role))
+        };
         let mut spans = vec![
             TextSpan::raw(lead.clone()),
             TextSpan::styled(
                 format!("{mark} "),
                 Style::default().fg(color(row.mark_role)),
             ),
-            TextSpan::styled(
-                text::elide(&row.name.text, name_width as usize),
-                Style::default().fg(if hovered_row == Some(index) {
-                    theme::color(Token::TextBright)
-                } else {
-                    color(row.name.role)
-                }),
-            ),
+            TextSpan::styled(text::elide(&row.name.text, name_width as usize), name_style),
         ];
         row::push_trailing(
             &mut spans,
@@ -2741,7 +2740,13 @@ mod tests {
                 .draw(|frame| {
                     let mut rows = crate::ui::Rows::over(frame.area());
                     slid = render_section_with(
-                        frame, &section, &mut rows, false, tick, None, &mut hits,
+                        frame,
+                        &section,
+                        &mut rows,
+                        false,
+                        tick,
+                        &[],
+                        &mut hits,
                     );
                 })
                 .unwrap();
@@ -2805,7 +2810,7 @@ mod tests {
                     &mut rows,
                     false,
                     None,
-                    Some(1),
+                    &[1],
                     &mut Vec::new(),
                 );
             })

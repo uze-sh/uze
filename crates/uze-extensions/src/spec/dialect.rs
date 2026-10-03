@@ -72,6 +72,24 @@ pub enum Shape {
     /// The path is a file, and that file is the whole unit: a document a
     /// tool keeps one of, such as a project's constitution.
     File,
+    /// Every document directly inside the path is a unit of its own, named
+    /// by its stem: a tool that writes one file per plan rather than a
+    /// directory per change.
+    Files,
+}
+
+/// How far a change's steps got, by the tool's own account of it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Tally {
+    /// The checkboxes of its first [`Role::Steps`] file.
+    Checkboxes,
+    /// Every file named `<prefix><step>` is a step, done once a file named
+    /// `<prefix><receipt>` sits beside it: a tool that records finishing a
+    /// plan by writing what it did, rather than by ticking the plan.
+    Receipts {
+        step: &'static str,
+        receipt: &'static str,
+    },
 }
 
 /// Where a dialect keeps one subject's units, and how they are found.
@@ -89,15 +107,20 @@ pub struct Collection {
 #[derive(Clone, Copy, Debug)]
 pub struct Dialect {
     pub name: &'static str,
-    /// A directory at the checkout root that only this tool makes. Its
-    /// presence is the whole of detection: the tool decides where its
-    /// files live, so nothing about it is declared a second time.
+    /// A directory, relative to the checkout root, that only this tool
+    /// makes. Its presence is the whole of detection: the tool decides
+    /// where its files live, so nothing about it is declared a second time.
     pub marker: &'static str,
     pub collections: &'static [Collection],
+    pub tally: Tally,
     /// Paths relative to a unit, first match wins; a file matching none is
     /// [`Role::Other`]. `*` stands for one path segment and `**` for one or
     /// more, and what they stood for names the file — `specs/**/spec.md`
-    /// names `specs/agent/isolation/spec.md` as `agent/isolation`. Files
+    /// names `specs/agent/isolation/spec.md` as `agent/isolation`. A `*`
+    /// inside a segment stands for any run of characters in it, and only
+    /// matches: a file whose own name is a wildcard is named by its path,
+    /// because what the wildcard stood for is the part that tells files
+    /// apart (`*PLAN.md` names `01-02-PLAN.md` as `01-02-PLAN`). Files
     /// sharing a role list in the order their patterns are written, so the
     /// file a reader opens first for a role is written first.
     pub roles: &'static [(&'static str, Role)],
@@ -147,6 +170,7 @@ pub const OPENSPEC: Dialect = Dialect {
         ("spec.md", Role::Contract),
         ("**/spec.md", Role::Contract),
     ],
+    tally: Tally::Checkboxes,
 };
 
 /// GitHub's Spec Kit: one directory per feature under `specs/`, numbered
@@ -185,11 +209,138 @@ pub const SPEC_KIT: Dialect = Dialect {
         // outlives it, and `checklists/` are not its steps: both stay
         // `Other`, named by their path.
     ],
+    tally: Tally::Checkboxes,
+};
+
+/// Superpowers: no directory per change, but a file per document, dated,
+/// so descending is newest first. `brainstorming` writes the design and
+/// `writing-plans` the plan as checkbox steps, under separate directories
+/// and with no link between them a table could follow, so each is a unit:
+/// the plans are what is in flight, the designs what they were built from.
+pub const SUPERPOWERS: Dialect = Dialect {
+    name: "Superpowers",
+    marker: "docs/superpowers",
+    collections: &[
+        Collection {
+            subject: Subject::Changes,
+            path: "docs/superpowers/plans",
+            shape: Shape::Files,
+            skip: &[],
+            order: Order::Descending,
+        },
+        Collection {
+            subject: Subject::Specs,
+            path: "docs/superpowers/specs",
+            shape: Shape::Files,
+            skip: &[],
+            order: Order::Descending,
+        },
+    ],
+    roles: &[("*-design.md", Role::How), ("*.md", Role::Steps)],
+    tally: Tally::Checkboxes,
+};
+
+/// Get Shit Done: phases of the current milestone under `phases/`, ad-hoc
+/// work under `quick/`, and the project-wide documents every phase is
+/// planned against at the root of `.planning/`. Every file in a phase is
+/// prefixed with its number, and a plan is finished when the executor
+/// writes the summary beside it: GSD plans are task blocks, not
+/// checkboxes. A completed milestone moves its phases to
+/// `milestones/v<X.Y>-phases/` and keeps a copy of the roadmap and the
+/// requirements beside them.
+pub const GSD: Dialect = Dialect {
+    name: "GSD",
+    marker: ".planning",
+    collections: &[
+        Collection {
+            subject: Subject::Changes,
+            path: ".planning/phases",
+            shape: Shape::Directories,
+            skip: &[],
+            order: Order::Ascending,
+        },
+        Collection {
+            subject: Subject::Changes,
+            path: ".planning/quick",
+            shape: Shape::Directories,
+            skip: &[],
+            order: Order::Ascending,
+        },
+        Collection {
+            subject: Subject::Specs,
+            path: ".planning/PROJECT.md",
+            shape: Shape::File,
+            skip: &[],
+            order: Order::Ascending,
+        },
+        Collection {
+            subject: Subject::Specs,
+            path: ".planning/REQUIREMENTS.md",
+            shape: Shape::File,
+            skip: &[],
+            order: Order::Ascending,
+        },
+        Collection {
+            subject: Subject::Specs,
+            path: ".planning/ROADMAP.md",
+            shape: Shape::File,
+            skip: &[],
+            order: Order::Ascending,
+        },
+        Collection {
+            subject: Subject::Specs,
+            path: ".planning/STATE.md",
+            shape: Shape::File,
+            skip: &[],
+            order: Order::Ascending,
+        },
+        Collection {
+            subject: Subject::Archive,
+            path: ".planning/milestones",
+            shape: Shape::Directories,
+            skip: &[],
+            order: Order::Descending,
+        },
+        Collection {
+            subject: Subject::Archive,
+            path: ".planning/milestones",
+            shape: Shape::Files,
+            skip: &[],
+            order: Order::Descending,
+        },
+    ],
+    roles: &[
+        // The UI and AI design contracts end in `SPEC.md` too, and are a
+        // how rather than the phase's locked requirements.
+        ("*UI-SPEC.md", Role::How),
+        ("*AI-SPEC.md", Role::How),
+        ("*SPEC.md", Role::Why),
+        ("*CONTEXT.md", Role::Why),
+        ("PROJECT.md", Role::Why),
+        ("*RESEARCH.md", Role::How),
+        ("DISCOVERY.md", Role::How),
+        ("*PLAN.md", Role::Steps),
+        ("*ROADMAP.md", Role::Steps),
+        ("*REQUIREMENTS.md", Role::Contract),
+        // An archived milestone's phases sit one directory deeper.
+        ("*/*UI-SPEC.md", Role::How),
+        ("*/*AI-SPEC.md", Role::How),
+        ("*/*SPEC.md", Role::Why),
+        ("*/*CONTEXT.md", Role::Why),
+        ("*/*RESEARCH.md", Role::How),
+        ("*/*PLAN.md", Role::Steps),
+        // Summaries, verification, UAT, validation and the discussion log
+        // are what happened, not what was intended: `Other`, by path.
+    ],
+    tally: Tally::Receipts {
+        step: "PLAN.md",
+        receipt: "SUMMARY.md",
+    },
 };
 
 /// Every dialect this build reads, in the order a checkout holding more
 /// than one lists them.
-pub const SHIPPED: &[Dialect] = &[OPENSPEC, SPEC_KIT];
+pub const SHIPPED: &[Dialect] = &[OPENSPEC, SPEC_KIT, SUPERPOWERS, GSD];
 
 /// What a file is for, what to call it, and where it lists among the
 /// files sharing its role.
@@ -209,7 +360,12 @@ pub fn classify(dialect: &Dialect, relative: &str) -> Classified {
         let pattern: Vec<&str> = pattern.split('/').collect();
         let mut captured = Vec::new();
         if matches(&pattern, &segments, &mut captured) {
-            let name = if captured.is_empty() {
+            let named_by_wildcard = pattern
+                .last()
+                .is_some_and(|last| last.len() > 1 && last.contains('*'));
+            let name = if named_by_wildcard {
+                without_markdown(relative)
+            } else if captured.is_empty() {
                 stem(relative)
             } else {
                 captured.join("/")
@@ -223,9 +379,13 @@ pub fn classify(dialect: &Dialect, relative: &str) -> Classified {
     }
     Classified {
         role: Role::Other,
-        name: relative.strip_suffix(".md").unwrap_or(relative).to_owned(),
+        name: without_markdown(relative),
         rank: dialect.roles.len(),
     }
+}
+
+fn without_markdown(relative: &str) -> String {
+    relative.strip_suffix(".md").unwrap_or(relative).to_owned()
 }
 
 fn stem(relative: &str) -> String {
@@ -258,9 +418,25 @@ fn matches<'a>(pattern: &[&str], path: &[&'a str], captured: &mut Vec<&'a str>) 
             }
         }
         (Some((literal, rest)), Some((segment, path_rest))) => {
-            literal == segment && matches(rest, path_rest, captured)
+            within_segment(literal, segment) && matches(rest, path_rest, captured)
         }
         _ => false,
+    }
+}
+
+/// Whether `segment` matches `pattern`, where a `*` inside it stands for
+/// any run of characters, the empty one included.
+fn within_segment(pattern: &str, segment: &str) -> bool {
+    match pattern.split_once('*') {
+        None => pattern == segment,
+        Some((head, tail)) => {
+            let Some(rest) = segment.strip_prefix(head) else {
+                return false;
+            };
+            (0..=rest.len())
+                .filter(|start| rest.is_char_boundary(*start))
+                .any(|start| within_segment(tail, &rest[start..]))
+        }
     }
 }
 
@@ -316,6 +492,21 @@ mod tests {
             &["a", "b", "spec.md"],
             &mut Vec::new()
         ));
+    }
+
+    #[test]
+    fn a_wildcard_inside_a_segment_matches_any_run_and_names_the_file_by_its_path() {
+        assert_eq!(
+            named(&GSD, "03-01-PLAN.md"),
+            (Role::Steps, "03-01-PLAN".to_owned())
+        );
+        assert_eq!(
+            named(&GSD, "01-foundation/01-02-PLAN.md"),
+            (Role::Steps, "01-foundation/01-02-PLAN".to_owned())
+        );
+        assert!(within_segment("*PLAN.md", "PLAN.md"), "the empty run too");
+        assert!(!within_segment("*PLAN.md", "ROADMAP.md"));
+        assert!(!within_segment("*-design.md", "2026-09-14-design-notes.md"));
     }
 
     #[test]
