@@ -29,7 +29,7 @@
 //! was the last time the remote answered.
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs,
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -41,7 +41,7 @@ use uze_core::{
     PackageSource, Result, UzeError, UzeHome,
     acquisition::{
         self,
-        marketplace::{MarketplaceManifest, MarketplaceSubpath},
+        marketplace::{MarketplaceManifest, MarketplaceSubpath, PluginListing},
     },
     anchor::MARKETPLACE_MANIFEST_NAME,
 };
@@ -52,6 +52,8 @@ use uze_core::{
 pub(crate) const MAX_AGE: Duration = Duration::from_secs(60 * 60);
 
 const META_FILE: &str = "catalogue.json";
+/// The plugin's own manifest, where its listing is read from.
+const PLUGIN_MANIFEST: &str = "plugin.json";
 /// The mirror itself: a bare, blobless clone.
 const REPOSITORY_DIR: &str = "repo";
 /// Where a plugin's bytes are written when something asks about one.
@@ -68,6 +70,10 @@ const MATERIALIZED_DIR: &str = "plugins";
 pub struct Catalogue {
     pub manifest: MarketplaceManifest,
     pub reach: Reach,
+    /// What each plugin's own `plugin.json` says about it, by plugin name,
+    /// at the revision the manifest was read at. A plugin missing here is
+    /// listed without a description.
+    pub listings: BTreeMap<String, PluginListing>,
 }
 
 /// Where a catalogue's plugins are read from.
@@ -157,6 +163,11 @@ struct Meta {
     /// to say which revision an answer is about.
     #[serde(default)]
     commit: Option<String>,
+    /// The listings read at `commit`, so a listing served from this entry
+    /// runs no process for them. Absent from an entry an older build wrote;
+    /// read and written back on the next read, since this is cache.
+    #[serde(default)]
+    listings: Option<BTreeMap<String, PluginListing>>,
 }
 
 pub struct MarketplaceCatalogues {
@@ -283,11 +294,13 @@ impl MarketplaceCatalogues {
         let commit = acquisition::mirror::resolve(&repository, reference.as_deref())?;
         let subpath = subpath_of(source)?;
         let manifest = self.manifest_at(&repository, &commit, &subpath)?;
+        let listings = mirrored_listings(&repository, &commit, &subpath, &manifest);
 
         let meta = Meta {
             source: source.clone(),
             cached_at_unix_nanos: now_unix_nanos(),
             commit: Some(commit.clone()),
+            listings: Some(listings.clone()),
         };
         let payload = serde_json::to_vec_pretty(&meta).expect("catalogue meta is serializable");
         fs::create_dir_all(&entry).map_err(UzeError::write(&entry))?;
@@ -304,6 +317,7 @@ impl MarketplaceCatalogues {
                 subpath,
                 materialized: entry.join(MATERIALIZED_DIR),
             },
+            listings,
         })
     }
 
@@ -338,9 +352,10 @@ impl MarketplaceCatalogues {
             acquisition::mirror::ensure(url, &acquisition::forge::canonical(url), &staging)?;
             let commit = acquisition::mirror::resolve(&staging, reference.as_deref())?;
             let manifest = self.manifest_at(&staging, &commit, &subpath)?;
-            Ok((manifest.name.clone(), manifest, commit))
+            let listings = mirrored_listings(&staging, &commit, &subpath, &manifest);
+            Ok((manifest.name.clone(), manifest, commit, listings))
         })();
-        let (name, manifest, commit) = match adopted {
+        let (name, manifest, commit, listings) = match adopted {
             Ok(answer) => answer,
             Err(error) => {
                 let _ = fs::remove_dir_all(&staging);
@@ -360,6 +375,7 @@ impl MarketplaceCatalogues {
                 source: source.clone(),
                 cached_at_unix_nanos: now_unix_nanos(),
                 commit: Some(commit.clone()),
+                listings: Some(listings.clone()),
             };
             let payload = serde_json::to_vec_pretty(&meta).expect("catalogue meta is serializable");
             fs::write(entry.join(META_FILE), payload)
@@ -378,6 +394,7 @@ impl MarketplaceCatalogues {
                 subpath,
                 materialized: entry.join(MATERIALIZED_DIR),
             },
+            listings,
         };
         self.memo
             .lock()
@@ -395,7 +412,7 @@ impl MarketplaceCatalogues {
         accept_expired: bool,
     ) -> Option<Catalogue> {
         let entry = self.entry_dir(name);
-        let meta: Meta = serde_json::from_slice(&fs::read(entry.join(META_FILE)).ok()?).ok()?;
+        let mut meta: Meta = serde_json::from_slice(&fs::read(entry.join(META_FILE)).ok()?).ok()?;
         if !meta.source.same_source(source) {
             return None;
         }
@@ -406,10 +423,21 @@ impl MarketplaceCatalogues {
         // An entry written by a build that kept a copied tree has no
         // commit; there is nothing to carry across in the cache tier, so it
         // is a miss and the mirror is made.
-        let commit = meta.commit?;
+        let commit = meta.commit.clone()?;
         let repository = entry.join(REPOSITORY_DIR);
         let subpath = subpath_of(source).ok()?;
         let manifest = self.manifest_at(&repository, &commit, &subpath).ok()?;
+        let listings = match meta.listings.clone() {
+            Some(listings) => listings,
+            None => {
+                let listings = mirrored_listings(&repository, &commit, &subpath, &manifest);
+                meta.listings = Some(listings.clone());
+                if let Ok(payload) = serde_json::to_vec_pretty(&meta) {
+                    let _ = fs::write(entry.join(META_FILE), payload);
+                }
+                listings
+            }
+        };
         Some(Catalogue {
             manifest,
             reach: Reach::Mirrored {
@@ -418,6 +446,7 @@ impl MarketplaceCatalogues {
                 subpath,
                 materialized: entry.join(MATERIALIZED_DIR),
             },
+            listings,
         })
     }
 
@@ -436,12 +465,54 @@ fn subpath_of(source: &PackageSource) -> Result<MarketplaceSubpath> {
 pub(crate) fn read_in_place(root: &Path) -> Result<Catalogue> {
     let path = root.join(MARKETPLACE_MANIFEST_NAME);
     let bytes = fs::read(&path).map_err(UzeError::read(&path))?;
+    let manifest = acquisition::marketplace::parse_manifest(&bytes)?;
+    let listings = listings_by(&manifest, |plugin| {
+        let directory =
+            acquisition::marketplace::resolve_plugin_source(&manifest, plugin, root).ok()?;
+        fs::read(directory.join(PLUGIN_MANIFEST)).ok()
+    });
     Ok(Catalogue {
-        manifest: acquisition::marketplace::parse_manifest(&bytes)?,
+        manifest,
         reach: Reach::InPlace {
             root: root.to_path_buf(),
         },
+        listings,
     })
+}
+
+/// Each plugin's listing, from its `plugin.json` at `commit` — one read per
+/// plugin against blobs the fetch already brought.
+fn mirrored_listings(
+    repository: &Path,
+    commit: &str,
+    subpath: &MarketplaceSubpath,
+    manifest: &MarketplaceManifest,
+) -> BTreeMap<String, PluginListing> {
+    listings_by(manifest, |plugin| {
+        let directory = subpath.plugin_path(manifest, plugin).ok()?;
+        let path = if directory == "." {
+            PLUGIN_MANIFEST.to_owned()
+        } else {
+            format!("{directory}/{PLUGIN_MANIFEST}")
+        };
+        acquisition::mirror::read_file(repository, commit, &path).ok()
+    })
+}
+
+/// [`PluginListing`]s for every plugin `manifest` names, from the bytes
+/// `read` finds for each — none, for one it cannot read.
+fn listings_by(
+    manifest: &MarketplaceManifest,
+    read: impl Fn(&str) -> Option<Vec<u8>>,
+) -> BTreeMap<String, PluginListing> {
+    manifest
+        .plugins
+        .iter()
+        .map(|entry| {
+            let bytes = read(&entry.name);
+            (entry.name.clone(), PluginListing::read(bytes.as_deref()))
+        })
+        .collect()
 }
 
 /// Where `name`'s mirror lives under `home`.
@@ -514,7 +585,7 @@ mod tests {
                 fs::create_dir_all(root.join("plugins").join(plugin)).unwrap();
                 fs::write(
                     root.join("plugins").join(plugin).join("plugin.json"),
-                    format!(r#"{{"name":"{plugin}"}}"#),
+                    format!(r#"{{"name":"{plugin}","description":"{plugin} itself"}}"#),
                 )
                 .unwrap();
                 serde_json::json!({ "name": plugin, "source": format!("./plugins/{plugin}") })
@@ -572,6 +643,88 @@ mod tests {
             matches!(catalogue.reach, Reach::Mirrored { .. }),
             "the entry is answered from its mirror, at a recorded commit"
         );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The listing is the plugins' own manifests at the catalogue's
+    /// revision, recorded with it: answered with the repository gone.
+    #[test]
+    fn a_mirrored_catalogue_lists_from_each_plugin_manifest() {
+        let root = uze_testkit::temp::scratch("catalogue-listings");
+        let (repository, source) =
+            marketplace_repository("cat-listings", "remote", &["flow", "review"]);
+        let home = UzeHome::at(root.join("uze"));
+
+        MarketplaceCatalogues::new(&home).adopt(&source).unwrap();
+        fs::remove_dir_all(repository.root()).unwrap();
+
+        let catalogue = MarketplaceCatalogues::new(&home)
+            .read("remote", &source)
+            .unwrap();
+        assert_eq!(
+            catalogue.listings["flow"].description.as_deref(),
+            Some("flow itself")
+        );
+        assert_eq!(
+            catalogue.listings["review"].description.as_deref(),
+            Some("review itself")
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// An entry an older build wrote has no listings; they are read on the
+    /// next read and written back, since this is cache.
+    #[test]
+    fn an_entry_without_listings_is_filled_on_its_next_read() {
+        let root = uze_testkit::temp::scratch("catalogue-fill");
+        let (_repository, source) = marketplace_repository("cat-fill", "remote", &["flow"]);
+        let home = UzeHome::at(root.join("uze"));
+        MarketplaceCatalogues::new(&home).adopt(&source).unwrap();
+
+        let entry = home.marketplace_cache_dir().join("remote");
+        let mut meta: Meta =
+            serde_json::from_slice(&fs::read(entry.join(META_FILE)).unwrap()).unwrap();
+        meta.listings = None;
+        fs::write(entry.join(META_FILE), serde_json::to_vec(&meta).unwrap()).unwrap();
+
+        let catalogue = MarketplaceCatalogues::new(&home)
+            .read("remote", &source)
+            .unwrap();
+        assert_eq!(
+            catalogue.listings["flow"].description.as_deref(),
+            Some("flow itself")
+        );
+        let written: Meta =
+            serde_json::from_slice(&fs::read(entry.join(META_FILE)).unwrap()).unwrap();
+        assert!(written.listings.is_some(), "and recorded for the next read");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A linked or local marketplace is read where it is, so editing a
+    /// plugin's manifest is what the next listing shows.
+    #[test]
+    fn editing_a_local_plugin_manifest_changes_its_listing() {
+        let root = uze_testkit::temp::scratch("catalogue-local-listing");
+        marketplace_at(&root, "local", &["flow", "broken"]);
+        fs::write(
+            root.join("plugins/flow/plugin.json"),
+            r#"{"name":"flow","description":"Rewritten","keywords":["a"]}"#,
+        )
+        .unwrap();
+        fs::write(root.join("plugins/broken/plugin.json"), "not json").unwrap();
+
+        let catalogue = read_in_place(&root).unwrap();
+        assert_eq!(
+            catalogue.listings["flow"].description.as_deref(),
+            Some("Rewritten")
+        );
+        assert_eq!(catalogue.listings["flow"].keywords, ["a"]);
+        assert_eq!(
+            catalogue.listings["broken"],
+            PluginListing::default(),
+            "a broken manifest lists its plugin without a description"
+        );
+        assert_eq!(catalogue.manifest.plugins.len(), 2, "and drops no plugin");
         fs::remove_dir_all(&root).unwrap();
     }
 

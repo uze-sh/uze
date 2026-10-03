@@ -146,14 +146,36 @@ pub struct OfficialCatalog {
     /// embedded snapshot has no source URL of its own to fall back on.
     pub homepage: Option<String>,
     pub plugins: Vec<marketplace::MarketplacePluginEntry>,
+    /// What each plugin's own `plugin.json` in the snapshot says about it,
+    /// by plugin name.
+    pub listings: BTreeMap<String, marketplace::PluginListing>,
 }
 
 pub fn entries() -> Result<OfficialCatalog> {
     let manifest = embedded_manifest()?;
+    let listings = manifest
+        .plugins
+        .iter()
+        .map(|entry| {
+            let bytes = contained_relative_path(&entry.source)
+                .ok()
+                .and_then(|directory| embedded_file(&directory.join("plugin.json")));
+            (entry.name.clone(), marketplace::PluginListing::read(bytes))
+        })
+        .collect();
     Ok(OfficialCatalog {
         homepage: manifest.owner.and_then(|owner| owner.url),
         plugins: manifest.plugins,
+        listings,
     })
+}
+
+/// One file of the snapshot, by its path relative to the marketplace root.
+fn embedded_file(relative: &Path) -> Option<&'static [u8]> {
+    EMBEDDED_MARKETPLACE_FILES
+        .iter()
+        .find(|(path, _)| Path::new(path) == relative)
+        .map(|(_, bytes)| *bytes)
 }
 
 fn extract_embedded_snapshot() -> Result<PathBuf> {
@@ -207,6 +229,42 @@ fn collect_files_into(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The official marketplace is the reference every author is pointed
+    /// at, so it is held to its own check with nothing left to say: no
+    /// finding, no warning — a describing field drifting back onto its
+    /// entry fails here — and a valid Agent Plugins 1.0 plugin.
+    #[test]
+    fn the_official_marketplace_checks_clean_with_nothing_to_warn() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let report = uze_core::authoring::check_marketplace(&root).unwrap();
+
+        assert!(report.findings.is_empty(), "{:?}", report.findings);
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert!(
+            report
+                .agent_plugins
+                .as_ref()
+                .is_some_and(|standard| standard.conformant),
+            "{:?}",
+            report.agent_plugins
+        );
+    }
+
+    /// What the official listing shows is the plugin's own `plugin.json`,
+    /// read from the snapshot the binary carries.
+    #[test]
+    fn the_official_listing_is_read_from_the_embedded_plugin_manifest() {
+        let manifest: serde_json::Value =
+            serde_json::from_str(include_str!("../../../plugins/uze/plugin.json")).unwrap();
+        let listing = &entries().unwrap().listings["uze"];
+
+        assert_eq!(
+            listing.description.as_deref(),
+            manifest["description"].as_str()
+        );
+        assert!(!listing.keywords.is_empty());
+    }
 
     #[test]
     fn the_official_uze_plugin_resolves_from_the_embedded_snapshot() {

@@ -4,8 +4,7 @@
   "plugins": [
     {
       "name": "flow",
-      "source": "./plugins/flow",
-      "description": "Canonical skill plugin (commit review flow)."
+      "source": "./plugins/flow"
     }
   ]
 }

@@ -118,30 +118,84 @@ fn the_skill_description_survives_yaml_verbatim() -> Result<()> {
     Ok(())
 }
 
-/// The category is the catalogue's, so it lands on the marketplace entry
-/// and stays out of `plugin.json`, whose fields are the standard's.
+/// Each field has one home: the description is the plugin's, so it lands
+/// in `plugin.json`; the category is the catalogue's, so it lands on the
+/// marketplace entry. Neither is written to the other file.
 #[test]
-fn a_category_is_written_to_the_marketplace_entry_only() -> Result<()> {
+fn each_field_is_written_to_the_one_file_that_owns_it() -> Result<()> {
     let _git_identity = git_identity();
     let root = scratch("authoring-category");
     let market = scaffold_marketplace("tools", None, &root.join("market"))?;
     let plugin = scaffold_plugin(
         &market,
         "greet",
-        None,
+        Some("Says hello"),
         Some("productivity"),
         &ScaffoldCapabilities::default(),
     )?;
 
-    let manifest =
-        marketplace::parse_manifest(&fs::read(market.join("marketplace.json")).unwrap())?;
-    assert_eq!(
-        manifest.plugins[0].category.as_deref(),
-        Some("productivity")
-    );
+    let raw = read_json(&market.join("marketplace.json"))?;
+    let entry = &raw["plugins"][0];
+    assert_eq!(entry["category"], "productivity");
+    assert!(entry.get("description").is_none(), "{entry}");
     let plugin_json = read_json(&plugin.join("plugin.json"))?;
+    assert_eq!(plugin_json["description"], "Says hello");
     assert!(plugin_json.get("category").is_none(), "{plugin_json}");
+    assert!(check_marketplace(&market)?.warnings.is_empty());
     assert!(check_plugin(&plugin)?.is_clean());
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+/// A describing field left on an entry is a warning, never a finding, and
+/// it says the one thing to do: move, delete or reconcile.
+#[test]
+fn market_check_says_what_to_do_with_a_describing_field_on_an_entry() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-describing-fields");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    for name in ["moved", "same", "differs"] {
+        scaffold_plugin(
+            &market,
+            name,
+            Some("Owned"),
+            None,
+            &ScaffoldCapabilities::default(),
+        )?;
+    }
+    let mut plugin_json = read_json(&market.join("plugins/differs/plugin.json"))?;
+    plugin_json["keywords"] = serde_json::json!(["owned"]);
+    write_json(&market.join("plugins/differs/plugin.json"), &plugin_json)?;
+    let mut manifest = read_json(&market.join("marketplace.json"))?;
+    let entries = manifest["plugins"].as_array_mut().unwrap();
+    entries[0]["keywords"] = serde_json::json!(["left"]);
+    entries[1]["description"] = serde_json::json!("Owned");
+    entries[2]["keywords"] = serde_json::json!(["left"]);
+    write_json(&market.join("marketplace.json"), &manifest)?;
+
+    let report = check_marketplace(&market)?;
+    assert!(
+        report.is_clean(),
+        "a warning, never a finding: {:?}",
+        report.findings
+    );
+    let warning = |prefix: &str| {
+        report
+            .warnings
+            .iter()
+            .find(|warning| warning.starts_with(prefix))
+            .unwrap_or_else(|| panic!("{prefix}: {:?}", report.warnings))
+            .clone()
+    };
+    assert!(warning("moved: `keywords`").contains("move it to"));
+    assert!(warning("same: `description`").contains("delete it from the entry"));
+    let differs = warning("differs: `keywords`");
+    assert!(
+        differs.contains(r#"["left"]"#) && differs.contains(r#"["owned"]"#),
+        "both values are named: {differs}"
+    );
+    assert!(differs.contains("keep one of the two"), "{differs}");
+    assert_eq!(report.warnings.len(), 3, "{:?}", report.warnings);
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }

@@ -704,12 +704,14 @@ impl Marketplace<'_> {
 
         let mut out = Vec::new();
 
-        let official = if asked(BUILT_IN_MARKETPLACE) {
-            bootstrap::entries()?.plugins
+        let (official, mut official_listings) = if asked(BUILT_IN_MARKETPLACE) {
+            let catalog = bootstrap::entries()?;
+            (catalog.plugins, catalog.listings)
         } else {
-            Vec::new()
+            Default::default()
         };
         out.extend(official.into_iter().map(|entry| {
+            let listing = official_listings.remove(&entry.name).unwrap_or_default();
             // `installed` is keyed by the full `plugin@marketplace` identity
             // (ADR-036); a catalog entry's own `name` is bare, scoped to
             // *this* marketplace listing, so the lookup must reconstruct the
@@ -724,8 +726,8 @@ impl Marketplace<'_> {
             MarketplacePluginSummary {
                 marketplace: BUILT_IN_MARKETPLACE.to_owned(),
                 name: entry.name.clone(),
-                description: entry.description,
-                keywords: entry.keywords,
+                description: listing.description,
+                keywords: listing.keywords,
                 category: entry.category,
                 installed: installed_package.is_some(),
                 freshness,
@@ -744,13 +746,15 @@ impl Marketplace<'_> {
             let Ok(catalogue) = self.0.catalogue_as_it_stands(&name, &record.source) else {
                 continue;
             };
+            let mut listings = catalogue.listings;
             out.extend(catalogue.manifest.plugins.into_iter().map(|entry| {
+                let listing = listings.remove(&entry.name).unwrap_or_default();
                 let installed_package = installed.get(format!("{}@{name}", entry.name).as_str());
                 MarketplacePluginSummary {
                     marketplace: name.clone(),
                     name: entry.name.clone(),
-                    description: entry.description,
-                    keywords: entry.keywords,
+                    description: listing.description,
+                    keywords: listing.keywords,
                     category: entry.category,
                     installed: installed_package.is_some(),
                     freshness: installed_package
