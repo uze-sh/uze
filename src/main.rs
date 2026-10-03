@@ -14,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum, error::ErrorKind};
 use cli::*;
 use progress::count;
 use uze_application::{Chime, HostEntry, PlannedAction, Result, UzeHome, WorkspaceEntry};
@@ -95,8 +95,15 @@ fn main() {
         return;
     }
 
-    let cli = Cli::try_parse().unwrap_or_else(|error| usage_error(error));
-    if let Err(error) = run(cli) {
+    // Parsed once: the matches name the command's span and become the
+    // `Cli` it runs.
+    let mut matches = Cli::command()
+        .try_get_matches()
+        .unwrap_or_else(|error| usage_error(error));
+    let leaf = leaf_command_of(&matches, args.get(1..).unwrap_or_default());
+    let cli = Cli::from_arg_matches_mut(&mut matches)
+        .unwrap_or_else(|error| usage_error(error.format(&mut Cli::command())));
+    if let Err(error) = run(cli, &leaf) {
         progress::error(&error.to_string(), hint_for(&error).as_deref());
         std::process::exit(1);
     }
@@ -243,7 +250,7 @@ fn removed_spelling(argv: &[String]) -> Option<String> {
         })
 }
 
-fn run(cli: Cli) -> Result<()> {
+fn run(cli: Cli, leaf: &str) -> Result<()> {
     progress::configure(cli.color, cli.quiet);
     if cli.quiet {
         silence_stdout();
@@ -277,7 +284,7 @@ fn run(cli: Cli) -> Result<()> {
     if !opens_the_tui {
         progress::follow_steps(cli.verbose);
     }
-    let span = uze::telemetry::command_span(&leaf_command_of(&argv), &argv);
+    let span = uze::telemetry::command_span(leaf, &argv);
     // A `uze` started by a harness the shim launched — an agent running
     // `uze` inside it — continues the launch's trace.
     uze::telemetry::adopt_parent_from_env(&span);
@@ -322,14 +329,11 @@ fn silence_stdout() {
 /// The leaf command path `argv` names, spelled the way a person types it
 /// (`agent context inspect`); the first argument when it names no subcommand
 /// (a `plugin@marketplace` shorthand), and `help` when there is none.
-/// Parsed again from the grammar rather than derived from `Cli`'s
+/// Read from the grammar's matches rather than derived from `Cli`'s
 /// variants, so a renamed subcommand renames its span with it.
-fn leaf_command_of(argv: &[String]) -> String {
-    let parsed = Cli::command()
-        .try_get_matches_from(std::iter::once("uze".to_owned()).chain(argv.iter().cloned()))
-        .ok();
+fn leaf_command_of(matches: &clap::ArgMatches, argv: &[String]) -> String {
     let mut path = Vec::new();
-    let mut current = parsed.as_ref();
+    let mut current = Some(matches);
     while let Some((name, matches)) = current.and_then(clap::ArgMatches::subcommand) {
         path.push(name.to_owned());
         current = Some(matches);
