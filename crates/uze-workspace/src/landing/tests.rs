@@ -587,6 +587,7 @@ fn a_repository_with_no_remote_has_nothing_to_sync_against() {
 #[test]
 fn a_named_task_publishes_under_its_own_name() {
     let repository = repository("landing-named-publish");
+    repository.with_origin(TARGET);
     let primary = repository.root();
     let mut store = AgentStore::default();
     let mut isolation = launch(&repository, &mut store, "anything");
@@ -598,26 +599,27 @@ fn a_named_task_publishes_under_its_own_name() {
     );
     let slot = slot_path(primary, work(&isolation)).unwrap();
     repository.git_in(&slot, &["branch", "--move", "fix/chosen-by-the-agent"]);
-    store
-        .agents
-        .iter_mut()
-        .find(|agent| {
-            agent
-                .isolation()
-                .is_some_and(|it| it.branch == work(&isolation).branch)
-        })
-        .unwrap()
-        .take_name("fix/chosen-by-the-agent".to_owned());
-    isolation.isolation.as_mut().unwrap().branch = "fix/chosen-by-the-agent".to_owned();
-
+    isolation.take_name("fix/chosen-by-the-agent".to_owned());
     assert_eq!(
         readable_branch_name(primary, work(&isolation)),
         "fix/stop-the-redirect-loop",
         "the derivation still has an answer of its own"
     );
-    assert!(
-        !work(&isolation).branch.starts_with("agent/"),
-        "but the isolation carries a name, so publish never asks for it"
+
+    let policy = Policy {
+        completion: CompletionBehavior::Pr,
+        gate: &steps(&[]),
+    };
+    let Delivered::AwaitingRequest { branch, .. } =
+        deliver(primary, &mut isolation, &policy).unwrap()
+    else {
+        panic!("no request exists yet, so opening one is the agent's");
+    };
+    assert_eq!(branch, "fix/chosen-by-the-agent");
+    assert_eq!(
+        publication(primary, work(&isolation)).map(|published| published.branch),
+        Some("fix/chosen-by-the-agent".to_owned()),
+        "the remote holds the chosen name, not the derived one"
     );
 }
 

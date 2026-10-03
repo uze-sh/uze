@@ -20,7 +20,15 @@ pub(super) fn publish(
         .as_ref()
         .map(|published| published.branch.clone())
         .or_else(|| isolation.published_as.clone())
-        .unwrap_or_else(|| readable_branch_name(primary, isolation));
+        .unwrap_or_else(|| {
+            // A branch outside UZE's namespace was named by somebody, and
+            // a chosen name is never replaced by a derived one.
+            if isolation.branch.starts_with(crate::worktree::BRANCH_PREFIX) {
+                readable_branch_name(primary, isolation)
+            } else {
+                isolation.branch.clone()
+            }
+        });
     let refspec = format!("{}:refs/heads/{name}", isolation.branch);
     // A branch already on the remote is one a delivery has since rebased,
     // so its history no longer descends from what the remote holds and a
