@@ -1,43 +1,45 @@
-## Purpose
+# agent-work-naming Specification
 
+## Purpose
 How the work an agent does acquires the two names people read — the branch
 a reviewer meets on a pull request, and the label an operator reads beside
 its siblings — so that neither is a generated identifier, and neither
 overwrites a name a person chose.
-
-## ADDED Requirements
-
+## Requirements
 ### Requirement: The work is named through a surface any harness can reach
-The system SHALL provide a command an agent runs to name the work it is
-doing, resolved from the identity the agent's launch carried (see the
-`agent-identity` capability) and verified against the directory the
-command runs in. It SHALL NOT depend on a harness event, a launch prompt,
-or a vendor-specific capability, because a name every harness can supply
-is the only name always available.
+The system SHALL provide a command, `uze agent work name <type>/<subject>`,
+that an agent runs to name the work it is doing. It SHALL take no
+identifier argument and SHALL name only the work of the agent running it,
+inside the directory that agent's record gives it. It SHALL NOT depend on
+a harness event, a launch prompt, or a vendor-specific capability, because
+a name every harness can supply is the only name always available. An
+agent working in the operator's checkout SHALL take the name as its label
+alone, and its branch, which is the operator's, SHALL be left as it is.
 
-#### Scenario: The task is resolved from the agent's identity
+#### Scenario: The task is found from inside its checkout
 - **WHEN** an agent runs the naming command from anywhere inside its
   isolated checkout, including a nested directory
-- **THEN** the task its launch carried is the one named
+- **THEN** that agent's task is the one named
 
 #### Scenario: A slot reused by successive tasks names its current owner
 - **WHEN** the naming command runs in a checkout that earlier tasks also
   used
-- **THEN** the task named is the one whose identity the running agent
-  carries, never a task that used to own the slot
+- **THEN** the task named is the running agent's, never a task that used
+  to own the slot
 
 #### Scenario: There is no task to name
-- **WHEN** the command runs in a process that carries no agent identity,
-  or whose identity the project's records do not name, or whose record
-  gives it no directory of its own
+- **WHEN** the command runs in a process that is not an agent UZE launched,
+  or outside the directory the agent's record gives it
 - **THEN** it fails saying so, and names nothing
 
 #### Scenario: A task cannot be named from outside itself
-- **WHEN** the command is invoked with the intent of naming a task other
-  than the one whose identity the process carries, including by altering
-  the identity in the process's own environment
-- **THEN** the task named is still only the one whose record the process's
-  directory agrees with: one agent can never rename another's branch
+- **WHEN** the command is run with the intent of naming a task other than
+  the running agent's
+- **THEN** nothing is named: one agent can never rename another's branch
+
+#### Scenario: An agent in the operator's checkout
+- **WHEN** an agent working in the operator's checkout names its work
+- **THEN** its label takes the name and no branch is renamed
 
 ### Requirement: The name is asked for as the agent's first action
 The projected instruction SHALL ask an agent to name its work as its first
@@ -97,7 +99,7 @@ informed rather than guessed.
 
 #### Scenario: A malformed subject is refused
 - **WHEN** a proposed subject is empty, carries a path separator, or is
-  longer than the declared limit
+  longer than the subject limit
 - **THEN** the name is refused with that reason
 
 #### Scenario: A name already taken is refused
@@ -106,22 +108,34 @@ informed rather than guessed.
 
 #### Scenario: An undeclared vocabulary keeps today's behavior
 - **WHEN** a project declares no branch vocabulary
-- **THEN** branches are named from the identifier exactly as before
+- **THEN** branches keep the generated identifier exactly as before, and
+  a naming call is refused saying the project must declare
+  `worktrees.branch`
 
-### Requirement: A name nobody generated is never overwritten
-A task's branch and label SHALL be replaced automatically only while they
-are still the generated defaults. Once any name has been written — by the
-agent, by the operator, or by an earlier automatic step — it SHALL be
-final until a person changes it again.
+### Requirement: An automatic name never overwrites a chosen one
+A task's branch and label SHALL be replaced automatically only while the
+branch is still in UZE's own `agent/` namespace. Once a name outside it
+has been written, by the agent, by the operator, or by an earlier
+automatic step, no automatic step SHALL replace it. The agent's own
+naming command SHALL rename whenever it is asked, and the last name given
+SHALL be the one that stands: work turns out to be something else often
+enough that naming it once is not the realistic case.
 
-#### Scenario: The generated name is replaced once
+#### Scenario: The generated name is replaced
 - **WHEN** a task whose branch is still the generated one is named
 - **THEN** the branch and label take the new name
 
-#### Scenario: A chosen name survives every later mechanism
-- **WHEN** a task that already carries a chosen name reaches any later
-  naming step — a second naming call from the agent, the publish-time
-  fallback
+#### Scenario: Asking again renames
+- **WHEN** an agent that already named its work names it again
+- **THEN** the branch and label take the second name
+
+#### Scenario: Naming to the name already carried
+- **WHEN** an agent names its work with the name its branch already has
+- **THEN** the name is confirmed, nothing is refused and Git is left alone
+
+#### Scenario: A chosen name survives the derivation
+- **WHEN** a task that already carries a chosen name reaches the
+  first-commit derivation
 - **THEN** the existing name stands and nothing is renamed
 
 #### Scenario: Renaming does not disturb identity
@@ -185,17 +199,18 @@ is in progress.
 ### Requirement: A published branch never carries a generated identifier
 When a task's branch is published and it was never named, the system SHALL
 derive a readable name from the first commit on that branch rather than
-publishing the generated identifier.
+publishing the generated identifier. A task that was named SHALL be
+published under its own name.
+
+#### Scenario: A named task is published under its own name
+- **WHEN** a task named `fix/chosen-by-the-agent` whose first commit would
+  derive another name is delivered by publishing its branch
+- **THEN** the remote holds `fix/chosen-by-the-agent`
 
 #### Scenario: An unnamed task is published readably
 - **WHEN** a task that was never named is delivered by publishing its
   branch
 - **THEN** the published branch is named from its first commit's subject
-
-#### Scenario: A named task is published under its own name
-- **WHEN** a named task is published
-- **THEN** the published branch carries the name it already had, and no
-  second name is invented
 
 #### Scenario: A published name is frozen
 - **WHEN** a task's branch has already been published
@@ -217,3 +232,4 @@ an agent reads is the one its project will accept.
 - **WHEN** a project declares its branch vocabulary
 - **THEN** the projected instruction names that vocabulary and the naming
   command, and it changes when the declaration changes
+

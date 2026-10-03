@@ -89,8 +89,8 @@ state `name_task` is cheapest in: nothing to rename around, no readiness to
 disturb, no published branch to freeze.
 
 What it gives up is a name chosen with full knowledge of the change. That
-is the trade first-writer-wins already priced: the operator renames, and
-nothing overwrites the correction — while the automatic half (§6) stays as
+is a trade already priced: the agent or the operator renames, and nothing
+automatic overwrites the correction — while the automatic half (§6) stays as
 the answer for work that reaches a commit having ignored all of this.
 
 ### 3. `uze agent` is an audience, not a category
@@ -112,19 +112,27 @@ leaves the agent's commands in the person's list) and putting the verb at
 the root (the most-typed command in the flow becomes indistinguishable from
 the person's commands).
 
-### 4. First-writer-wins, which removes a rule rather than adding one
+### 4. An automatic name never overwrites a chosen one
 
-A name that exists is never a candidate for renaming. The predicate is one
-comparison for the branch (`task.branch == task.id.branch()`) and the
-existing `is_generated_label` for the label — the rule `adopt_agent_labels`
-already applies to tab labels, generalized rather than invented.
+A name outside UZE's own namespace is never a candidate for an automatic
+rename. The predicate is one question, `Agent::is_named`: is the branch
+outside `agent/`? Putting a name outside the namespace is exactly what
+naming does, so "outside the prefix" and "somebody chose this" are the
+same fact.
 
-Three consequences, all simplifications: the precedence ladder collapses
-(only one automatic rename ever happens, so there is no "when does renaming
-stop" question); the `!pushed` guard becomes unnecessary; and adopting a
-manual rename automatically protects it, because the adopted branch is no
-longer the generated one. Reflecting a rename and refusing to overwrite it
-stop being two mechanisms.
+The agent's own command is not an automatic step, and it renames whenever
+it is asked: the work it holds turns out to be something else often
+enough that naming it once was never the realistic case. It was first
+built to refuse a second name, and what that refusal stranded in practice
+was a branch UZE had derived from a commit, which nothing downstream could
+tell from one an agent had chosen.
+
+Two consequences, both simplifications: there is no precedence ladder
+(the derivation asks the predicate and stops), and adopting a manual
+rename automatically protects it, because the adopted branch is no longer
+in the namespace. Reflecting a rename and refusing to overwrite it stop
+being two mechanisms. A published branch keeps its remote name through
+`published_as`, whatever happens to the local one.
 
 ### 5. The vocabulary is closed, and the project closes it
 
@@ -170,7 +178,7 @@ wrote the commit message.
 
 What it gives up is deliberateness — `feat/answer-ping-with-pong` instead
 of the two words an agent would have chosen — which is exactly why the
-projected clause says so, and why `uze agent task name` arriving first
+projected clause says so, and why `uze agent work name` arriving first
 wins.
 
 ### 7. The publish-time fallback stays, demoted
@@ -191,17 +199,12 @@ and worth stating: no pull request ever carries a generated identifier.
 ## Risks / Trade-offs
 
 - **[A model proposes a bad name that passes validation]** → Mitigation: the
-  operator renames, and first-writer-wins guarantees nothing overwrites the
+  agent or the operator renames, and no automatic step overwrites the
   correction. Validation constrains the shape, not the judgment.
 - **[Renaming a branch under a running agent]** → Mitigation: the rename
   happens on the agent's own explicit call, from its own checkout; Git
   renames the branch HEAD follows, so its next `git` command is unaffected.
   The projected text tells it to ask Git rather than remember the name.
-- **[A hook that denies commits is a hook that can block work]** →
-  Mitigation: it denies exactly one condition, and the reason carries the
-  one command that clears it. The group is `deny`, so a handler that cannot
-  run is fail-closed by contract — which is why the handler does nothing
-  but read the task's own recorded state.
 - **[The projected instruction is stale, so the agent reads the wrong
   vocabulary]** → Mitigation: this is `project-agent-environment` §12, and
   the dependency is why that change lands first.

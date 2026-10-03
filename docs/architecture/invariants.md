@@ -2232,7 +2232,7 @@ There is no mechanism behind this, which is exactly why the wording and the
 position are pinned by a test rather than left to whoever edits the string
 next.
 
-> `uze-core::project::worktree::naming_tests::naming_is_the_first_thing_the_projected_text_asks_for`
+> `crates/uze-workspace/src/worktree.rs::naming_is_the_first_thing_the_projected_text_asks_for`
 
 ### Work that reaches a commit unnamed is named from that commit
 
@@ -2243,20 +2243,22 @@ behaviour rather than only the one that publishes. It applies at `Ready`
 and nowhere else, and a derived name the project's vocabulary would refuse
 from an agent is never written on its behalf.
 
-> `uze-application::…::derived_naming_tests::the_first_commit_names_work_nobody_named`
-> `uze-application::…::derived_naming_tests::a_commit_outside_the_vocabulary_leaves_the_generated_name`
+> `crates/uze-application/src/application/services/tasks/tests.rs::the_first_commit_names_work_nobody_named`
+> `crates/uze-application/src/application/services/tasks/tests.rs::a_commit_outside_the_vocabulary_leaves_the_generated_name`
 
-### A name nobody generated is never overwritten
+### An automatic name never overwrites a chosen one
 
 `agent/` is UZE's own branch namespace: a branch inside it is still UZE's to
 name, and putting a name outside it is what naming does. So "outside the
-prefix" and "somebody chose this" are the same fact, and every mechanism that
-could rename — the agent's own command, the publish-time fallback — asks that
-one predicate rather than inventing a second notion of "unnamed". Only one
-automatic rename can ever happen to a task.
+prefix" and "somebody chose this" are the same fact, and every automatic
+mechanism that could rename (the first-commit derivation, the publish-time
+fallback) asks that one predicate rather than inventing a second notion of
+"unnamed". Only one automatic rename can ever happen to a task. Asking by
+name is not automatic: the agent's own command renames however often it is
+asked, and the last name given is the one that stands.
 
-> `uze-core::project::task::naming_tests::only_a_branch_outside_uzes_namespace_reads_as_named`
-> `uze-application::…::naming_tests::a_second_name_is_refused_and_the_first_one_stands`
+> `crates/uze-workspace/src/task.rs::only_a_branch_outside_uzes_namespace_reads_as_named`
+> `crates/uze-application/src/application/services/tasks/tests.rs::naming_again_renames_and_the_last_name_stands`
 
 ### The checkout's HEAD is the truth about a task's branch
 
@@ -2265,7 +2267,7 @@ renamed outside UZE reaches the sidebar, delivery and sync — and, more
 importantly, never leaves UZE asking Git about a ref that no longer exists,
 where `commits_ahead` answers `0` and a task with work reads as having none.
 
-> `uze-application::…::naming_tests::a_branch_renamed_by_hand_is_adopted_and_still_reaches_ready`
+> `crates/uze-application/src/application/services/tasks/tests.rs::a_branch_renamed_by_hand_is_adopted_and_still_reaches_ready`
 
 ### Drift along the environment chain is reported, never applied on its own
 

@@ -25,15 +25,16 @@ See proposal.md, Why. The constraints the approach is shaped by:
 **Goals:**
 
 - A spec surface for OpenSpec that is useful on this repository on day one.
-- A catalog shape that a second tool fits as data, proven by a test and
-  not only by a table in this document.
+- A catalog shape that a second tool fits as data, proven by shipping one
+  and not only by a table in this document.
 - The link between lenses: whoever opens the spec surface in an agent's
   checkout lands on the change that agent is working on.
 
 **Non-Goals:**
 
-- Shipping Spec Kit, Kiro or Superpowers. They are shaped for (see
-  *Decisions*) and not shipped.
+- Shipping a second tool in the first cut. Spec Kit, Superpowers and GSD
+  were shaped for (see *Decisions*) and shipped afterwards, in #142 and
+  #175, as catalog entries; Kiro is not shipped.
 - Writing. No checkbox is ticked from this surface, no change is created
   or archived. Editing goes through the code surface, which already has
   the write grant and ADR-048's rule for it.
@@ -65,12 +66,14 @@ struct Dialect {
     name: &'static str,                  // "OpenSpec"
     marker: &'static str,                // "openspec", a directory at the checkout root
     collections: &'static [Collection],
-    roles: &'static [(Pattern, Role)],   // first match wins, else Role::Other
+    tally: Tally,                        // Checkboxes | Receipts { step, receipt }
+    roles: &'static [(&'static str, Role)], // first match wins, else Role::Other
 }
 
 struct Collection {
     subject: Subject,                    // Changes | Specs | Archive
     path: &'static str,                  // "openspec/changes"
+    shape: Shape,                        // Directories | Holding(file) | File | Files
     skip: &'static [&'static str],       // &["archive"]
     order: Order,                        // Ascending | Descending (dated names)
 }
@@ -78,11 +81,14 @@ struct Collection {
 enum Role { Why, How, Steps, Contract, Other }
 ```
 
-Every directory directly inside a collection's path is one unit. A role
-pattern is a path relative to the unit where `*` stands for one segment and
-`**` for one or more (`specs/**/spec.md`), and what the wildcards stood for
-names the file: a contract is called by its capability path. That is all
-globbing the current and planned entries need, so there is no glob crate.
+A collection's `shape` says what a unit is: every directory directly
+inside its path, every directory beneath it holding a named file, the one
+file at the path, or every document directly inside it. A role pattern is
+a path relative to the unit where `*` stands for one segment (or, inside a
+segment, any run of characters) and `**` for one or more
+(`specs/**/spec.md`), and what the wildcards stood for names the file: a
+contract is called by its capability path. That is all globbing the
+entries need, so there is no glob crate.
 
 *Alternative considered:* one extension per tool. Rejected for the reason
 above, and because the code extension already set the precedent: when
@@ -93,7 +99,7 @@ extension.
 arbitrary code, which is what makes the next one expensive to review.
 Data keeps a new tool to a table entry and a fixture.
 
-### The catalog shape, checked against the tools not shipped
+### The catalog shape, checked against the other tools
 
 | | marker | changes | specs | archive | roles |
 |---|---|---|---|---|---|
@@ -102,21 +108,21 @@ Data keeps a new tool to a table entry and a fixture.
 | Kiro | `.kiro/specs/` | `.kiro/specs/*/` | none | none | requirements=why, design=how, tasks=steps |
 | Superpowers | its docs directory | file units, one per design and one per plan | none | none | by collection: designs=how, plans=steps |
 
-Three of the four fit the shape as written. Superpowers does not quite:
-its design and its plan for one piece of work are two files in two
-directories, joined only by a shared date-and-topic stem. The shape
-would need units that are files, joined by stem. That is the one stretch known
-today. It is recorded here and not built, and Superpowers' current paths
-are confirmed against the release in use when its entry is written, since
-they have moved between versions.
+Three of the four fit the shape as first written. Superpowers did not
+quite: its design and its plan for one piece of work are two files in two
+directories, joined only by a shared date-and-topic stem. It shipped with
+`Shape::Files`, units that are files, and each of the two is a unit of
+its own: plans are what is in flight, designs what they were built from.
+GSD shipped beside it, which is what added `Tally::Receipts`: a plan is
+done once its summary is written, not once it is ticked.
 
-The proof that the shape is not OpenSpec-shaped is a **test-only Kiro
-entry** with a fixture tree, read through the same code path as the
-shipped one. Kiro was picked because it is the one farthest from OpenSpec
-that still fits: no specs subject, no archive, different file names.
+The proof that the shape is not OpenSpec-shaped turned out to be shipping
+Spec Kit rather than a test-only Kiro entry: a real second tool, read
+through the same code path, with fixture trees in `spec/tests.rs`. Kiro
+has no entry.
 
-A subject none of the detected dialects fill is not offered: Kiro would
-show changes alone.
+A subject none of the detected dialects declares is not offered: Spec Kit
+and Superpowers show no archive.
 
 ### Detected at the checkout root, never declared
 
@@ -138,19 +144,24 @@ which the caption shows only when there is more than one.
 
 A unit is this checkout's when a path under it appears in either of:
 
-1. `git status --porcelain` (the working tree against `HEAD`), which is
-   the same read the code surface's changes make;
-2. `git diff --name-only <merge-base>..HEAD`, where the merge base is
-   taken between `HEAD` and the target the host reports.
+1. `git status --porcelain=v1 -z` (the working tree against `HEAD`),
+   which is the same read the code surface's changes make;
+2. `git log --name-only HEAD --not <target> <target>@{upstream}`: the
+   commits only this branch has. The target's upstream is excluded too,
+   because a local target lagging its remote is the ordinary state of an
+   operator's checkout, and a branch rebased onto the remote carries
+   commits that are the project's, not this checkout's.
 
 The host reports the target it already reads for the work badge
 (`delivery_policy(..).target`), as a field of the read request. In the
 operator's checkout there is none, and only the first read is made:
 work on the target branch has no base to be ahead of.
 
-Mapping a path to a unit is prefix matching on the collection paths the
-dialect already declares, so the catalog is the only place that says
-where units are.
+Mapping a path to a unit is prefix matching on the unit's own path
+(`ownership::lies_in`), which the catalog read already produced, so the
+catalog is the only place that says where units are. The sidebar's
+`tasks` section asks the same question first and opens only the changes
+it names, since it is read every few seconds.
 
 *Alternative considered:* matching the branch name to the change name
 (`feat/spec-lens` ↔ `add-the-spec-surface`). Names are chosen by
@@ -163,8 +174,7 @@ touched is a fact.
 the code surface except the syntax-highlighting module it colours fences
 with. It moves to `shared/markdown.rs` with `highlight` alongside it, per
 the crate's rule that a module moves to `shared/` the day a second
-extension reaches for it. The two modes are *Rendered* and *Source*, as
-in the architect surface.
+extension reaches for it. The two modes are *Preview* and *Source*.
 
 ### Opening an artifact means opening it in the code surface
 
@@ -189,9 +199,9 @@ The button leads the tab strip's extension group, in the order a change is
 read: spec, arch, code (what it intends, how it was described, what it
 is). The architect button's label shortens to `arch` to pay for the third
 button's room: at 80 columns the strip gives the tabs' room up first.
-`toggle-spec` is bound to `alt+x` in the workspace, code, architect and
-spec scopes: a door is reached with the thumb already on Alt, so it sits
-in the row beside it. A new `spec` scope seals the keyboard the way
+`toggle-spec` is bound to `alt+x`, once, in the surfaces scope that every
+door shares (#184 reduced each action to one chord): a door is reached
+with the thumb already on Alt, so it sits in the row beside it. A new `spec` scope seals the keyboard the way
 `architect` does and borrows the code surface's keys for the moves the two
 share. `alt+c`, `alt+d`, `alt+f` and `alt+b` were passed over on purpose:
 a shell in the pane capitalises, deletes and moves by word on them, and
@@ -218,7 +228,7 @@ since is simply not restored.
 - [A tool changes its layout between releases] → a layout that no
   longer matches reads as "no spec layout found" with the list of known
   layouts, which is a visible and cheap failure; the entry is one table.
-- [The merge base read costs a Git call per opening] → it runs on the
+- [The branch-only commit read costs Git calls per opening] → it runs on the
   read thread with the rest, and only when the host reports a target.
 - [A large archive makes the read slow] → everything is read once per
   opening on the read thread, which this repository (333 documents, about

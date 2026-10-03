@@ -1,19 +1,22 @@
-## Purpose
+# spec-surface Specification
 
+## Purpose
 Lists and renders the spec-driven-development artifacts a checkout carries
 (proposals, designs, tasks and specs), by unit of intent and whichever
 tool wrote them, so the intent behind a checkout's changes can be read
 beside the changes themselves without leaving the terminal.
-
-## ADDED Requirements
-
+## Requirements
 ### Requirement: A dialect is detected by the marker its own tool defines
 The surface SHALL find a checkout's spec-driven-development layout by
 looking, at the checkout root, for the marker each known dialect's tool
 defines, and SHALL NOT require anything to be declared in `agents.yaml`.
-The only dialect this change ships SHALL be OpenSpec, detected by an
-`openspec/` directory. A checkout where no marker is found SHALL be told
-which layouts the surface reads, and SHALL NOT be shown an error.
+The dialects read SHALL be OpenSpec (an `openspec/` directory), Spec Kit
+(`.specify/`), Superpowers (`docs/superpowers/`) and GSD (`.planning/`),
+each a catalog entry of data read through the same code. A checkout
+holding more than one marker SHALL be read for every one of them, and a
+unit SHALL name its tool beside it only while more than one tool shares
+the list. A checkout where no marker is found SHALL be told which layouts
+the surface reads, and SHALL NOT be shown an error.
 
 #### Scenario: An OpenSpec checkout
 - **WHEN** the surface is opened on a checkout whose root holds `openspec/`
@@ -24,6 +27,10 @@ which layouts the surface reads, and SHALL NOT be shown an error.
 - **THEN** the surface SHALL say no spec layout was found
 - **AND THEN** it SHALL name the layouts it reads, and SHALL NOT present
   this as an error
+
+#### Scenario: A checkout carrying two tools
+- **WHEN** the checkout root holds both `openspec/` and `.specify/`
+- **THEN** the units of both SHALL be listed, each naming its tool
 
 #### Scenario: The checkout is an agent's worktree
 - **WHEN** the surface is opened from a tab whose checkout is an agent's
@@ -59,11 +66,13 @@ contract, named by its capability path.
   the change SHALL NOT be dropped
 
 ### Requirement: Units are offered as three subjects
-The surface SHALL offer three subjects: the **changes** in flight, the
-**specs** that outlive them, and the **archive**. Changes SHALL be listed
-one group per unit, holding its artifacts. Specs SHALL be listed by
-capability path. The archive SHALL be listed newest first. Changes SHALL be
-the subject the surface opens on.
+The surface SHALL offer up to three subjects: the **changes** in flight,
+the **specs** that outlive them, and the **archive**. A subject none of
+the detected tools keeps SHALL NOT be offered; one a tool keeps but that
+holds nothing yet SHALL be offered and say so. Changes SHALL be listed one
+group per unit, holding its artifacts. Specs SHALL be listed by capability
+path. The archive SHALL be listed newest first. Changes SHALL be the
+subject the surface opens on.
 
 #### Scenario: Opening the surface
 - **WHEN** the surface opens on an OpenSpec checkout
@@ -83,9 +92,12 @@ the subject the surface opens on.
 ### Requirement: A unit's steps carry their progress
 For every change in flight with a steps artifact, the surface SHALL count
 its Markdown checkboxes, checked and unchecked, and show `checked/total` beside the
-unit. A unit whose every checkbox is checked SHALL be marked complete. A
-steps artifact with no checkbox SHALL show no count rather than `0/0`.
-Archived units SHALL show no count: their steps are read only when opened.
+unit. For a tool that records a finished plan by writing a summary beside
+it rather than by ticking it (GSD), each plan SHALL count as one step,
+done once its summary exists. A unit whose every step is done SHALL be
+marked complete. A steps artifact with no checkbox SHALL show no count
+rather than `0/0`. Archived units SHALL show no count: their steps are
+read only when opened.
 
 #### Scenario: A change part-way through
 - **WHEN** a change's `tasks.md` holds seven `- [x]` and five `- [ ]`
@@ -95,13 +107,20 @@ Archived units SHALL show no count: their steps are read only when opened.
 - **WHEN** every checkbox in a change's `tasks.md` is checked
 - **THEN** the change SHALL be marked complete
 
+#### Scenario: A plan finished by its summary
+- **WHEN** a GSD phase holds two plans and a summary beside one of them
+- **THEN** the phase SHALL show `1/2`
+
 ### Requirement: Changes are ordered by where they stand
-Changes in flight SHALL be listed in three bands, in this order: the
-changes this checkout is working on, then the changes still in progress,
-then the changes that are complete and not yet archived. Within a band,
-changes SHALL be ordered by name. The last band SHALL be headed as ready
-to archive, so a finished change that was never archived is told apart
-from one still being worked on. A band's heading SHALL be set apart from
+Changes in flight SHALL be listed in bands, in this order: the changes
+this checkout is working on, then the changes still in progress, then the
+complete changes of a tool that archives them, headed as ready to archive,
+then the complete changes of a tool that leaves them where they were
+written, headed as done. A finished change that was never archived is so
+told apart from one still being worked on. The done band SHALL open
+folded unless the viewer lands in it. Within a band, changes SHALL keep
+the order their tool lists them in, which for OpenSpec is by name. A
+band with no change SHALL NOT be drawn. A band's heading SHALL be set apart from
 the units under it by form, not only by indentation, SHALL say how many
 units it holds, and SHALL be separated from the band above it by a blank
 row.
@@ -111,6 +130,10 @@ row.
   `8/8`
 - **THEN** they SHALL be listed `b`, `a`, `c`, with `c` under the ready to
   archive heading
+
+#### Scenario: A finished feature where nothing is archived
+- **WHEN** every checkbox of a Spec Kit feature's `tasks.md` is checked
+- **THEN** it SHALL be listed under the done heading, folded
 
 #### Scenario: A change with no steps
 - **WHEN** a change has no steps artifact, or one with no checkbox
@@ -122,13 +145,14 @@ from `HEAD` in the working tree, or was changed by a commit that this
 checkout's branch has and neither the target the host reports nor that
 target's upstream has. Units marked
 this way SHALL be listed before the rest, and the first of them SHALL be
-selected when the surface opens with no place to return to. When the host
-reports no base, only the working tree SHALL be considered.
+selected, opened on its first document, when the surface opens with no
+place to return to. When the host reports no target, only the working
+tree SHALL be considered.
 
 #### Scenario: An agent drafting a proposal
 - **WHEN** the checkout holds an uncommitted `openspec/changes/x/proposal.md`
 - **THEN** change `x` SHALL be marked as this checkout's, listed first and
-  selected
+  selected on its first document
 
 #### Scenario: Committed work on an agent's branch
 - **WHEN** the checkout's branch committed changes to
@@ -143,7 +167,7 @@ reports no base, only the working tree SHALL be considered.
 - **THEN** change `y` SHALL NOT be marked as this checkout's
 
 #### Scenario: The operator's checkout on the target branch
-- **WHEN** the host reports no base and the working tree touches no
+- **WHEN** the host reports no target and the working tree touches no
   change
 - **THEN** no change SHALL be marked, and the first change SHALL be
   selected
@@ -164,10 +188,10 @@ delete any file.
 - **THEN** the code surface SHALL open with that file selected
 
 ### Requirement: The surface is reachable the way the other lenses are
-The surface SHALL open by a `toggle-spec` action bound in the workspace,
-the code surface and the architect surface, and by a button in the tab
-strip's group beside `architect` and `code`; the same action SHALL close
-it. It SHALL stand where the pane is, as the architect and code surfaces
+The surface SHALL open by a `toggle-spec` action, bound once in the scope
+that opens surfaces so it answers from the workspace and from every
+surface, and by a button leading the tab strip's extension group, before
+the architect and code buttons; the same action SHALL close it. It SHALL stand where the pane is, as the architect and code surfaces
 do, and SHALL NOT be drawn as a dialog over it; opening it SHALL close
 whichever of the other two was standing there. While it is open its scope SHALL seal the keyboard from the pane
 underneath. Every key it answers to SHALL be a named, rebindable action
@@ -195,11 +219,11 @@ When the checkout in front is working on one or more changes, by the rule
 that marks a change as this checkout's, the workspace sidebar SHALL show a
 `tasks` section about those changes alone, as the timeline beside it is
 about that checkout alone. Its header SHALL say how many of their
-checkboxes are checked out of all of them, folded or open. Open, it SHALL
+steps are done out of all of them, folded or open. Open, it SHALL
 list one row per such change with its own `checked/total`. Activating a
 row SHALL open the spec surface on that change. The section SHALL be
-folded until opened, and opening it SHALL fold the sidebar's other
-sections. A checkout working on no change, or with no spec layout, SHALL
+folded until opened, and opening or folding it SHALL leave the sidebar's
+other sections as they were. A checkout working on no change, or with no spec layout, SHALL
 show no section. Reading it SHALL happen off the thread that draws, SHALL
 open only the changes the checkout touched, and SHALL be repeated while
 the tab stays in front.
@@ -218,6 +242,10 @@ the tab stays in front.
 - **WHEN** the tab in front is in a checkout that touched no change
 - **THEN** no `tasks` section SHALL be drawn
 
+#### Scenario: Opening the section beside an open timeline
+- **WHEN** the `tasks` section is opened while the timeline is open
+- **THEN** the timeline SHALL stay open
+
 ### Requirement: Reading the artifacts never blocks the workspace
 Detecting the dialect, walking its directories, reading its files and
 asking Git which of them the checkout touched SHALL happen off the thread
@@ -234,3 +262,4 @@ checkout SHALL be dropped.
 #### Scenario: The surface was closed before the answer
 - **WHEN** the surface is closed while the read is outstanding
 - **THEN** the late answer SHALL be dropped and nothing SHALL reopen
+

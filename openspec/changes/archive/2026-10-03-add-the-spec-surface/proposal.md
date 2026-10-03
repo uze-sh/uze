@@ -28,10 +28,13 @@ proven against its own history.
 - **A dialect catalog.** What a tool's layout means is data: where its
   root is, what a unit is, and which role each file plays (why, how,
   steps, contract, other). The surface knows roles, never tools. OpenSpec
-  is the one entry shipped; the shape is checked against Spec Kit, Kiro
-  and Superpowers so that adding one is a catalog entry, not a new surface.
+  shipped first; Spec Kit (#142), Superpowers and GSD (#175) followed as
+  catalog entries on the same surface, which is the proof that adding a
+  tool is a catalog entry and not a new surface. This change's spec
+  describes the catalog as it now stands.
 - **Detected, not declared.** A dialect is found by the marker its own
-  tool defines (`openspec/` at the checkout root). Nothing is added to
+  tool defines (`openspec/`, `.specify/`, `docs/superpowers/` or
+  `.planning/` at the checkout root). Nothing is added to
   `agents.yaml`: the tool already decides where its files live, and a
   second declaration would be a second place to disagree (the argument of
   ADR-050, applied the other way round, because here the location is the
@@ -44,11 +47,15 @@ proven against its own history.
   base, is marked and opened first. This is the link between the lenses:
   intent (spec), what it did (code), where it lands (architect).
 - **Steps carry progress.** A unit's checkbox tasks are counted and shown
-  beside it (`7/12`), complete or not.
+  beside it (`7/12`), complete or not; for GSD a plan counts as done once
+  its summary is written.
 - **Three subjects**: in-flight changes, the living specs, and the
   archive. Artifacts render as Markdown by default, with the source one
   mode away. Activating an artifact opens it in the code surface, where it
   can be edited: the spec surface itself writes nothing.
+- **A `tasks` section in the workspace sidebar** totals the steps of the
+  changes the checkout in front is working on, and opens the surface on
+  one of them.
 - **Markdown rendering moves to `shared/`**, because a second extension now
   reaches for it.
 - **`Symbol::Spec`**, a `spec` key scope and a `toggle-spec` action with
@@ -77,18 +84,26 @@ entry points without changing that requirement.
 ## Impact
 
 - `crates/uze-extensions`: `spec.rs` and `spec/` (`dialect`, `catalog`,
-  `progress`, `ownership`); `code/markdown.rs` and `code/highlight.rs` move
-  to `shared/`;
+  `progress`, `ownership`, `summary`); `code/markdown.rs` and
+  `code/highlight.rs` move to `shared/`;
   `ExtensionHit::Spec`; one `ExtensionRegistry::builtin` entry.
-- `crates/uze-keys`: `Scope::Spec`, `toggle-spec` and its bindings in the
-  workspace, code and architect scopes.
+- `crates/uze-keys`: `Scope::Spec`, and `toggle-spec` bound to `alt+x` in
+  the surfaces scope.
 - `crates/uze-theme`: `Symbol::Spec` in the three shipped glyph sets,
   regenerated schema.
-- `src/ui`: the orchestrator gains a `spawn_spec_read` / `absorb_spec`
-  pair, the button in the tab strip's group, and a remembered place per
-  checkout; `extension_view.rs` needs nothing new.
+- `src/ui`: the orchestrator gains `spawn_spec_read` / `absorb_spec` and
+  `spawn_spec_summary` / `absorb_spec_summary` (`orchestrator/reads.rs`,
+  `orchestrator/answers.rs`), the button in the tab strip's group, the
+  sidebar section, and a remembered place per checkout;
+  `extension_view.rs` needs nothing new.
 - `tests/architecture`: affordances for the new action.
 - `docs/architecture/containers.mmd`: the TUI container's description names
   the three lenses. No diagram changes structure: none draws extensions
   one by one.
 - No change to `uze-core`, `uze-application` or `agents.yaml`.
+
+## Not in this change
+
+- A Kiro catalog entry, test-only or shipped: the second-dialect proof the
+  design planned with it was made by shipping Spec Kit instead. A follow-up
+  if Kiro is wanted.

@@ -20,11 +20,6 @@ launches it, the system SHALL report that, never leave it silently missing.
 - **WHEN** `uze setup` completes for any harness
 - **THEN** no shell startup file under the user's home has changed
 
-#### Scenario: A block an earlier build wrote is taken back
-- **WHEN** `uze setup` runs on a machine whose shell startup file carries
-  the block an earlier UZE wrote to put its shims on PATH
-- **THEN** that block is removed and every other byte of the file is kept
-
 #### Scenario: A capability only the workspace can deliver
 - **WHEN** a project authors skills under `.agents/skills` and a harness
   reads them only through the workspace's launch

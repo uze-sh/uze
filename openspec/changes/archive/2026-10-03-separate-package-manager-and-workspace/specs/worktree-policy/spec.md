@@ -51,27 +51,6 @@ create a top-level worktree.
 - **WHEN** a project declares a policy with a work-naming vocabulary
 - **THEN** the projected region carries no instruction about creating, checking or installing plugins or marketplaces
 
-### Requirement: Changing the policy from the popup is an explicit, versioned edit
-The popup SHALL let the completion behavior be changed directly, and that
-change SHALL write the project's manifest. Because the manifest is a
-tracked file whose policy is projected into `AGENTS.md`, the popup SHALL
-say so before writing — naming the two files the change will write — rather
-than editing tracked files silently. The workspace SHALL then bring
-`AGENTS.md` in step itself.
-
-#### Scenario: Changing the behavior writes the manifest
-- **WHEN** a completion behavior is chosen in the popup
-- **THEN** `agents.yaml` records it, created first if the project had none
-
-#### Scenario: The consequence is stated before the write
-- **WHEN** a completion behavior is chosen
-- **THEN** the popup names `agents.yaml` and `AGENTS.md` as the files that will change
-
-#### Scenario: The projected text is not silently left stale
-- **WHEN** the policy has changed from the popup
-- **THEN** `AGENTS.md` carries the new region without a further command
-- **AND** a region that could not be written (edited by hand) is reported by the workspace client
-
 ### Requirement: A declaration stays editable
 The system SHALL key the projected region's identity on the rendered
 content, so changing the declaration supersedes one region and creates
@@ -94,8 +73,8 @@ placed, and told how its work is delivered, under that policy.
 
 #### Scenario: A running agent keeps its launch policy
 - **WHEN** the completion behavior changes while a task is live
-- **THEN** that task is delivered the way it was launched, and the popup
-  shows the running task's behavior alongside the new project default
+- **THEN** that task is delivered the way it was launched, and the
+  workspace shows the running task's own behavior
 
 #### Scenario: The next task takes the new policy
 - **WHEN** a task is created after the change
@@ -107,8 +86,8 @@ placed, and told how its work is delivered, under that policy.
 While the workspace is running on a project, the system SHALL keep the
 shared instruction file in the project's primary checkout carrying the
 region its current declaration renders, without the operator asking: when
-a space opens on the project, when the declaration changes (from the popup
-or by an edit to `agents.yaml`), and before an agent starts in the primary
+a space opens on the project, when the declaration changes (by an edit to
+`agents.yaml`, by hand or through the workspace), and before an agent starts in the primary
 checkout. The system SHALL NOT write the region into an isolated checkout:
 there the file is part of the agent's branch, and what the agent reads is
 the region its branch was cut with, which the operator brings forward by
@@ -119,7 +98,7 @@ instructions yet, and `uze install` is what creates it. When an
 agent is isolated with a copy of the primary checkout's changes, a change to
 `AGENTS.md` that lies only inside UZE's managed regions SHALL NOT be copied.
 A region edited by hand SHALL be reported once per client session and
-region, left untouched, and never removed. The synchronization SHALL never
+file, left untouched, and never removed. The synchronization SHALL never
 hold up what the workspace client draws.
 
 #### Scenario: An edit to agents.yaml reaches the file

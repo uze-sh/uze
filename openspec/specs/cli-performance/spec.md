@@ -171,12 +171,13 @@ view, or write any other file only when the content would differ.
 
 ### Requirement: A harness executable is looked for on this machine's own filesystems
 When resolving a harness executable — for detection, for its cached
-fingerprint, for the runtime shim's own resolution and for the check that
-the shim is what `PATH` resolves to — UZE SHALL skip `PATH` entries that
-live on a filesystem reached over a network protocol (`9p`, the mount a
-Windows drive appears as inside WSL). A harness UZE integrates keeps its
-state under `$HOME` on this machine; an executable on such a mount is not
-it.
+fingerprint, and for the runtime shim's own resolution — UZE SHALL skip
+`PATH` entries that live on a filesystem reached over a network protocol
+(`9p`, the mount a Windows drive appears as inside WSL). A harness UZE
+integrates keeps its state under `$HOME` on this machine; an executable on
+such a mount is not it. Whether a harness started through the workspace's
+shim is decided from the process that runs, never by walking the operator's
+`PATH`.
 
 #### Scenario: A Windows drive on PATH costs nothing
 - **WHEN** `PATH` carries entries under a `9p` mount and a harness is not
@@ -185,9 +186,9 @@ it.
   under those entries
 
 #### Scenario: The shim check stops at the shims directory
-- **WHEN** the shims directory is on `PATH`
-- **THEN** whether a harness's shim is active is decided from the entries
-  up to and including the shims directory, and no entry after it is probed
+- **WHEN** the shims directory is on `PATH`, or is not, and `uze status` or
+  `uze doctor` reports how project context reaches a harness
+- **THEN** no `PATH` entry is probed to decide whether a shim is active
 
 ### Requirement: The management screens' data is one read model within the budget
 The data every management screen of the TUI shows SHALL be composed by
@@ -205,3 +206,4 @@ the budget by a test that times that one call on a fresh application.
 - **WHEN** the read model is produced again with nothing changed
 - **THEN** no harness is probed, no marketplace is cloned, and the call
   completes within the budget
+

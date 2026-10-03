@@ -50,12 +50,18 @@ that answer takes the vendor's official route.
 
 #### Scenario: A machine with no harness
 - **WHEN** the workspace opens and no harness is installed on the machine
-- **THEN** the person is asked which harnesses to provision
+- **THEN** the person is asked which harnesses to provision, before
+  anything is recorded or a shim placed
+- **AND** each harness picked goes through its vendor's official installer,
+  and no other installer runs
+- **AND** declining the question sets up nothing, and the workspace opens
 
 #### Scenario: The terminal runtime ran first
 - **WHEN** the terminal runtime already laid out its own directory under
-  UZE's state, and no harness is set up
-- **THEN** the workspace still sets up the installed harnesses
+  UZE's state (for instance `uze workspace stop` ran before the first
+  open), and no harness is set up
+- **THEN** the workspace still sets up the installed harnesses, and still
+  asks a machine with none
 
 #### Scenario: A harness installed later, or a shim removed
 - **WHEN** the workspace opens and a harness installed since the last setup,

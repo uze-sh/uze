@@ -1,11 +1,10 @@
-## Purpose
+# module-boundary Specification
 
+## Purpose
 Keeps uze's two modules, the package manager and the workspace, usable on
 their own: the workspace may build on the package manager, and nothing the
 package manager does depends on, turns on, or is failed by the workspace.
-
-## ADDED Requirements
-
+## Requirements
 ### Requirement: A project declares a workspace policy only by choosing one
 The `agents.yaml` the system creates on a project's behalf SHALL declare
 nothing about the workspace. Every workspace key SHALL be present only as a
@@ -24,8 +23,8 @@ after somebody chooses one, through the workspace or by editing the file.
   naming or delivery of finished work
 
 #### Scenario: Choosing a policy declares it
-- **WHEN** a completion behavior is chosen in the workspace for a project
-  whose `agents.yaml` only carries the commented keys
+- **WHEN** the workspace sets a completion behavior for a project whose
+  `agents.yaml` only carries the commented keys
 - **THEN** `agents.yaml` records that choice as a live `worktrees:` value
 
 ### Requirement: A workspace setting never fails a package-manager command
@@ -62,13 +61,22 @@ workspace.
 - **AND** the workspace brings the region in step the next time it runs on the project
 
 ### Requirement: Package-manager code never names a workspace concept
-The build SHALL fail when code that belongs to the package manager names a
-workspace concept: tasks, checkouts, work naming, landing finished work,
-recorded conversations, or the workspace's policy. Code shared by both
-modules SHALL be named as shared, and the exceptions SHALL be listed with
-the reason for each.
+The build SHALL fail when code that belongs to the package manager names
+the workspace's domain (tasks, checkouts, work naming, landing finished
+work, recorded conversations, or the workspace's policy), which lives in
+the `uze-workspace` crate. In `uze-core` the crate graph holds the rule,
+since `uze-core` does not depend on `uze-workspace`. In `uze-application`,
+which orchestrates both, an architecture test holds it over a listed set of
+package-manager and shared files, and the workspace's half is everything
+the list leaves out.
 
 #### Scenario: A package-manager path reaches for a task
-- **WHEN** a change makes package-manager code refer to a workspace task or
-  checkout
-- **THEN** the architecture suite fails and names the file and the concept
+- **WHEN** a change makes a listed package-manager file of
+  `uze-application` name the workspace crate
+- **THEN** the architecture suite fails and names the file
+
+#### Scenario: The package manager's domain reaches for the workspace
+- **WHEN** a change makes `uze-core` refer to a workspace task or checkout
+- **THEN** the build fails, because `uze-core` does not depend on
+  `uze-workspace`
+

@@ -74,8 +74,10 @@ Do it now rather than later: the request you were given is where the
 intention comes from, so nothing you read afterwards makes the name easier
 to choose, and work that reaches a commit unnamed is named by UZE from that
 commit's subject instead. Naming renames your branch, so ask Git for its
-name rather than remembering it. A name you or the operator already chose
-is never replaced — including by a second call of your own.
+name rather than remembering it. Name it again with the same command
+whenever the work turns out to be something else: the last name given is
+the one that stands, and the name UZE derives from a commit never replaces
+one that was chosen.
 
 ## Commit on your branch, and stop there
 

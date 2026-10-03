@@ -1,10 +1,11 @@
 ## 1. The name and what validates it
 
-- [x] 1.1 `worktree::BranchVocabulary` — a preset (`conventional`,
-  `gitflow`, `flat`, `agent`) or a project's own list, deserialized from
-  one `worktrees.branch` key that accepts either form. A preset is a named
+- [x] 1.1 `worktree::BranchVocabulary` (now in `crates/uze-workspace`) —
+  a preset (`conventional`, `gitflow`, `flat`, `agent`), a project's own
+  list, or `Unset`, deserialized from one `worktrees.branch` key that
+  accepts either form. A preset is a named
   list; validation does not know which spelling it came from.
-- [x] 1.2 `worktree::validate_name` — the type is in the vocabulary, the
+- [x] 1.2 `BranchVocabulary::accept`, refusing with a `NameRefusal` — the type is in the vocabulary, the
   subject is one well-formed segment (lowercase, `[a-z0-9-]`, no separator,
   bounded length, no double hyphen). It returns *which half* failed: a
   refusal an agent cannot act on is a refusal it will retry wrong.
@@ -12,24 +13,24 @@
   in Core, so the sidebar and the branch cannot disagree about what a name
   means.
 - [x] 1.4 `WorktreePolicy` carries the vocabulary and `deny_unknown_fields`
-  still holds; an undeclared `branch:` resolves to `agent`, which is
-  today's behavior exactly.
+  still holds; an undeclared `branch:` resolves to `Unset`, which names no
+  work, like `agent`: today's behavior exactly.
 
 ## 2. Naming a task
 
 - [x] 2.1 `Task` gains no field: `branch` and `label` already exist and
-  become writable. The generated-name predicate is
-  `task.branch == task.id.branch()` for the branch and the existing
-  `is_generated_label` shape for the label — no third notion of "unnamed".
-- [x] 2.2 `Workspace::name_task(cwd, name)` — resolve the task from the
-  checkout (`isolated_checkout` → `CheckoutId` → the slot's current owner,
-  by `max_by_key(created_at_unix)` as `reconcile` already does), validate,
-  `git branch -m` under the repository write lock, persist. Refuses when
-  the task already carries a chosen name, when the branch exists, and when
-  the checkout is mid-rebase.
-- [x] 2.3 First-writer-wins is one guard in one place, not a check repeated
-  at each call site. Every later mechanism asks the same predicate.
-- [ ] 2.4 `name_task` resolves the task from the identity the agent's launch carried, verified against the checkout, instead of from the directory alone. *Carried out by `identify-agents-at-launch` (task 4.1); check when it lands.*
+  become writable. The one predicate is `Agent::is_named`: the branch sits
+  outside UZE's `agent/` namespace.
+- [x] 2.2 `Workspace::name_task` (`uze-application`,
+  `services/tasks/naming.rs`) — find the running agent's record for the
+  directory it runs in, validate, rename with `checkout::rename_branch`
+  under the task store's lock, persist, and retarget its subagents. Refuses
+  when the branch exists and when the checkout is not on the task's branch
+  (mid-rebase). Asking again renames; naming to the current name is
+  confirmed. An agent in the operator's checkout takes the name as its
+  label alone (`label_in_place`).
+- [x] 2.3 "Unnamed" is one predicate in one place, `Agent::is_named`, which
+  the automatic derivation asks rather than inventing its own.
 
 ## 3. The checkout's HEAD is the truth
 
@@ -38,7 +39,7 @@
   fix for the real defect: a hand-renamed branch makes
   `commits_ahead` answer `0` through its `unwrap_or`, so the task never
   reaches `Ready` and delivery is never offered.
-- [x] 3.2 `checkout::prune_integrated_branches` stops assuming the `agent/`
+- [x] 3.2 `checkout::prune_integrated_branches` (`checkout/lifecycle.rs`) stops assuming the `agent/`
   prefix: it scans the prefix *and* the branches the task store names, or a
   renamed branch is never collected.
 - [x] 3.3 `reconcile`'s adoption of an unrecorded checkout takes the branch
@@ -50,8 +51,8 @@
 
 ## 4. The agent surface
 
-- [x] 4.1 `uze agent task name <type>/<subject>` — `Command::Agent` with a
-  `task` noun, `hide = true`, project-scoped. No identifier argument: one
+- [x] 4.1 `uze agent work name <type>/<subject>` — `Command::Agent` with a
+  `work` noun (`AgentWorkAction::Name`), `hide = true`, project-scoped. No identifier argument: one
   agent must not be able to rename another's branch.
 - [x] 4.2 Classify it in `command_performance.rs`. It is `Budgeted` (a task
   store read, a validation, one Git rename) — and check
@@ -86,10 +87,11 @@ rather than in a commit nobody reads:
   project's vocabulary**. A derived name the project would refuse from an
   agent is not one UZE may write behind its back.
 - [x] 5.2 `evaluate_tasks` applies it at `Ready` and nowhere else: commits
-  ahead, a clean tree, no rebase in progress. Naming a branch under an
-  agent mid-edit is what that gate exists to avoid.
-- [x] 5.3 The agent's own name arrives earlier and therefore wins. There is
-  no ladder and nothing overwrites: `is_named` is asked once, in one place.
+  ahead, a clean tree, no rebase in progress
+  (`EvaluationPass::name_from_the_work`). Naming a branch under an agent
+  mid-edit is what that gate exists to avoid.
+- [x] 5.3 The agent's own name arrives earlier and therefore wins: the
+  derivation asks `is_named` and leaves a chosen name alone.
 - [x] 5.4 A derived name that collides with an existing branch leaves the
   branch as it was, silently — nobody asked for this rename, so it cannot
   be worth an error.
@@ -103,8 +105,9 @@ rather than in a commit nobody reads:
   commit's subject on the task's branch, not from the label. Conventional
   type becomes the segment where the subject carries one; otherwise the
   project's vocabulary decides.
-- [x] 6.2 It applies only to a task nobody named, and never to a branch
-  already published.
+- [x] 6.2 It never renames a branch already published: `published_as`
+  freezes the remote name. (Applying it only to a task nobody named is not
+  done; see proposal, Not in this change.)
 
 ## 7. Projection
 
@@ -126,9 +129,7 @@ rather than in a commit nobody reads:
   and the `worktrees.branch` comment in this repository's own
   `agents.yaml`. One rule stated three times is three chances to state it
   differently, so they are worded from the same sentence.
-- [x] 7.6 An empty vocabulary still projects byte-identical text: the
-  clause is placed before the first bullet, so a project that names nothing
-  renders exactly what it rendered before.
+- [x] 7.6 A project that names nothing projects no naming clause at all.
 
 ## 8. Tests
 
@@ -136,42 +137,42 @@ The same invariant at more than one level is deliberate here (`tests/README.md`)
 the naming rule is a pure function at L0, a lifecycle at L1, and a user's
 flow at L3.5 — and each catches a different way of being wrong.
 
-- [x] 8.0 **L0 — the moment** (`uze-core`, `#[cfg(test)]`): the first bullet
+- [x] 8.0 **L0 — the moment** (`uze-workspace` `worktree.rs`, `#[cfg(test)]`): the first bullet
   of the projected region is the naming clause and it states the first
   action; the old moment's wording appears nowhere in the region. A rule
   whose whole weight is *when* it is read is one a test has to read
   positionally.
-- [x] 8.1 **L0 — validation and derivation** (`uze-core`, `#[cfg(test)]`):
+- [x] 8.1 **L0 — validation and derivation** (`uze-workspace` `worktree.rs`, `#[cfg(test)]`):
   every preset accepts its own types and refuses the others; a project list
   behaves identically to a preset of the same members; a malformed subject
   is refused per half (empty, separator, over-length, double hyphen, upper
   case); the label derivation is the inverse of the subject spelling.
-- [x] 8.2 **L0 — first-writer-wins**: the generated-name predicate is true
-  exactly for `agent/<id>` and the generated label shapes, and false for
-  everything else, including a name that merely *looks* generated
-  (`agent/fix-thing`).
-- [x] 8.3 **L1 — naming a task** (`tests/workspace/`): naming from a nested
-  directory inside the checkout names the right task; naming from the
-  primary fails and renames nothing; a slot that served an earlier task
-  names its current owner; a second naming call is refused and the first
-  name stands; a name colliding with an existing branch is refused and the
-  branch is untouched.
-- [x] 8.4 **L1 — the HEAD is the truth** (`tests/workspace/`): a branch
-  renamed with Git outside UZE is adopted by the next evaluation; a task
-  whose branch was renamed by hand still reaches `Ready` and is delivered
-  (the regression test for the `unwrap_or(0)` defect); a checkout mid-rebase
-  leaves the recorded branch alone.
-- [x] 8.5 **L1 — delivery and collection** (`tests/lifecycle/`): a named
-  task publishes under its own name; an unnamed one publishes under the name
-  derived from its first commit; a published branch is never renamed again;
-  `prune_integrated_branches` collects a renamed, integrated branch that no
-  longer carries the `agent/` prefix.
+- [x] 8.2 **L0 — the predicate**
+  (`task.rs::only_a_branch_outside_uzes_namespace_reads_as_named`): a
+  branch inside `agent/` reads as unnamed, one outside it as named.
+- [x] 8.3 **L1 — naming a task** (`uze-application`,
+  `services/tasks/tests.rs`): naming from a nested directory names the
+  checkout's own task; a process that is not the agent has nothing to
+  name; an agent in the root takes the name as its label alone; naming
+  again renames and the last name stands; the current name is confirmed;
+  a name colliding with an existing branch, or outside the vocabulary, is
+  refused and the branch is untouched.
+- [x] 8.4 **L1 — the HEAD is the truth** (`uze-application`,
+  `services/tasks/tests.rs`): a branch renamed with Git outside UZE is
+  adopted by the next evaluation and still reaches `Ready` (the regression
+  test for the `unwrap_or(0)` defect).
+- [x] 8.5 **L1 — delivery and collection** (`uze-workspace`
+  `landing/tests.rs`, `checkout/naming_collection_tests.rs`): an unnamed
+  task publishes under the name derived from its first commit; a published
+  branch is re-delivered under the same name; `prune_integrated_branches`
+  collects a renamed, integrated branch that no longer carries the
+  `agent/` prefix and leaves a live one alone.
 - [x] 8.6 **L1 — the automatic half** (`uze-application`): a first commit
   names unnamed work; a name the agent chose is never replaced; a commit
   outside the vocabulary names nothing; a project declaring no vocabulary is
   left alone; a dirty checkout is not named; a colliding name leaves the
   branch as it was.
-- [~] 8.7 **L0 — projection** (`uze-core`, not `tests/projection/`): the
+- [x] 8.7 **L0 — projection** (`uze-workspace` `worktree.rs`, not `tests/projection/`): the
   projected region carries the declared vocabulary, and changing the
   vocabulary changes the region's identity — both written. The third claim,
   that two machines with the same declaration project the same bytes, is
@@ -181,22 +182,22 @@ flow at L3.5 — and each catches a different way of being wrong.
   and the adopted branch, and a long name is elided rather than cut. This is
   where a claim about what the screen *says* belongs — a journey may only
   gate on screen text, never assert it.
-- [x] 8.9 **L3 — acceptance** (`tests/acceptance/`): through the real
-  binary, `uze agent task name` in a placed agent's checkout renames the
+- [x] 8.9 **L3 — acceptance** (`tests/acceptance/agent_surface.rs`): through the real
+  binary, `uze agent work name` in a placed agent's checkout renames the
   branch and the recorded label, and the command is absent from `uze --help`
   while still working — the pair that proves "hidden" means hidden from the
   person, not disabled.
-- [x] 8.10 **L3.5 — journey**, `journeys/suites/04-workspace/`, a new file
+- [x] 8.10 **L3.5 — journey**, `journeys/suites/04-workspace/03-naming-the-work.yml`, a new file
   rather than a scene on `01-agents-and-slots`: it needs a world of its own
   (a manifest declaring a vocabulary), and its claim does not depend on that
   story. Scenes: an agent is placed and its branch is the generated one;
   the agent names its work and `git` in the checkout reports the new branch
   while the task store records the same name and the slot directory is
-  unchanged; the operator renames the branch by hand and the next evaluation
+  unchanged; naming it again renames it; the operator renames the branch by hand and the next evaluation
   records *that* name, unchanged by anything automatic. Every `then` reads
   Git, the filesystem or the task store — never UZE's own report; screen
   text appears only as `expect`. Tagged `gate`.
-- [x] 8.11 **L3.5 — journey**, `journeys/suites/05-delivery/`: a task
+- [x] 8.11 **L3.5 — journey**, `journeys/suites/05-delivery/03-a-branch-nobody-named.yml`: a task
   nobody named is delivered, and the branch the remote receives carries a
   readable name rather than the identifier — read from the bare remote with
   Git, not from UZE's delivery report. A separate file from 8.10: different
@@ -206,19 +207,18 @@ flow at L3.5 — and each catches a different way of being wrong.
 
 ## 9. Documentation
 
-- [x] 9.1 `docs/architecture/invariants.md`: first-writer-wins, and the
+- [x] 9.1 `docs/architecture/invariants.md`: an automatic name never overwriting a chosen one, and the
   checkout's HEAD as the truth about a task's branch, each tied to the test
   that proves it.
 - [x] 9.2 The `worktrees.branch` vocabulary in the manifest scaffold
   `manifest::ensure_exists` writes, spelled out and commented like
   `completion` already is — the knobs are discoverable by opening the file.
-- [x] 9.3 The page the journeys name in `proves:` describes naming, or
-  `journey validate` fails on a `proves:` that does not resolve. It
-  resolved and said nothing about naming: `web/content/docs/workspace.mdx`
-  now carries the command, the moment, the two automatic halves and the
-  vocabulary, and `project-files.mdx` carries the `branch` key it never
-  documented. `journey validate` proves the link, never the prose — the
-  gap it cannot see is the one that was there.
+- [x] 9.3 The page the journeys name in `proves:`,
+  `web/content/docs/workspace/agents.mdx`, says how the work gets a name
+  (the agent names its branch as its first action, and that name is what
+  the sidebar and the reviewer read), and `reference/project-files.mdx`
+  carries the `branch` key it never documented. `journey validate` proves
+  the link, never the prose.
 - [x] 9.4 `docs/architecture/invariants.md` carries the moment as its own
   property, tied to the test that reads the region positionally. A rule
   with no mechanism behind it is one only a test and a line here keep.

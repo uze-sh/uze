@@ -20,7 +20,7 @@ See proposal.md for why. The facts that shape the approach:
   all of them. The plugin-authoring text lives inside the policy region's
   naming clause.
 - `uze setup` creates `~/.uze/shims/<harness>` and writes a marked block
-  into the shell rc (`machine/shell_path.rs`,
+  into the shell rc (`machine/shell_path.rs`, since deleted, and
   `application/runtime_shim.rs`). The shim adds the integration's
   `runtime_contribution` on every launch and session continuity when the
   launch carries an agent identity. Menu launches already call the shim by
@@ -35,6 +35,9 @@ See proposal.md for why. The facts that shape the approach:
   harness partly by walking the operator's `PATH` for the shims directory
   (`doctor.rs` `runtime_shim_is_active`, `read_models.rs`
   `RuntimeProjection::of` giving `ShimShadowed`, `agent_context.rs`).
+- The workspace decided whether to ask about harnesses with
+  `Health::first_run`, a check that UZE's `state/` directory exists, which
+  the terminal runtime creates on its own (`uze workspace stop` is enough).
 - Isolated checkouts already treat a region UZE re-projected into their
   `AGENTS.md` as derived, not as work (`checkout` accounting,
   `a_reprojected_region_leaves_the_slot_free`).
@@ -116,14 +119,15 @@ layer keeps the file, the scaffold and the list of known top-level keys, so
 a misspelled key is still refused. Each section is parsed by its owner:
 the package manager reads `marketplaces`, the workspace reads `worktrees`
 and `artifacts`. `load` no longer validates `worktrees.link`; the
-workspace's policy read (`services/tasks.rs` `policy()`) does, and reports
-through the workspace. Alternative: two files. Rejected: the file is
+workspace's policy read (`uze-workspace`'s `declaration::policy`, called by
+the tasks service) does, and reports through the workspace. Alternative: two files. Rejected: the file is
 authored by a person and one file is what they know.
 
 **D4. The scaffold declares only what the package manager needs.** The
 `worktrees:` block is written fully commented, with its defaults. The
-workspace's policy popup already writes a live value
-(`set_completion`), which is the only way a policy appears besides an edit.
+workspace's `set_completion` writes a live value, which is the only way a
+policy appears besides an edit; no client surface calls it today (see the
+proposal's "Not in this change").
 Projects that already carry the live `completion: handoff` keep it: the file
 is theirs now, and no migration rewrites an authored file.
 
@@ -133,15 +137,15 @@ reconcile`, `status` drift) handles the bridge, package instruction
 contributions, and a new `project:plugin-authoring` region carrying the
 authoring verbs, written for every project with an `agents.yaml`; it never
 writes, removes or counts the policy region. The policy region's converge,
-supersede and stale logic, and `WorktreePolicyStatus`, move to the
+supersede and stale logic, and `WorktreePolicyStatus` (now `PolicyRegionView`), move to the
 workspace half of `uze-application`, and `ContextReport` loses its
 `worktrees` field.
 
 While it runs, the workspace keeps the region in step itself, through a
 `spawn_*`/`absorb_*` pair like every other repository touch in the client:
 when a space opens on a project (the point where the client first learns a
-root, `unread_named_directories`); when the declaration changes, from the
-popup or from an edit to `agents.yaml` that the client notices by the
+root, `unread_named_directories`); when the declaration changes, from an
+edit to `agents.yaml` (or `set_completion`) that the client notices by the
 file's digest on the existing 20-second `TASK_REFRESH` clock, inside the
 spawned thread (no file-watching dependency); and before an agent starts
 in the primary checkout, inside the existing `spawn_agent_placement`
@@ -181,8 +185,8 @@ benign: identical bytes, atomic writes. Removing the region when the
 declaration is gone is `converge` with an empty desired set, which today is
 skipped when there is no policy. When the
 workspace is not running nothing syncs, and the region catches up the next
-time it opens. The popup names both files it changes and no longer asks for
-a reconciliation.
+time it opens. A popup that changes the policy should name both files it
+changes and ask for no reconciliation; none exists yet.
 
 The policy region's text opens by saying it applies to agents the
 workspace launched. Alternative for authoring: drop the region and rely on
@@ -192,11 +196,14 @@ guaranteed to be read.
 
 **D6. The shim belongs to the workspace.** Setup still creates the
 shims under `~/.uze/shims` (generated tier), and is their one writer, but
-never writes a shell file. The workspace runs setup itself before it opens
+never reads or writes a shell file. The workspace runs setup itself before it opens
 for every harness installed and not set up (a verified provisioning record
 and the shim in place), from the executable already on the machine and
-without the vendor's update route; it asks which to provision only when
-the machine has no harness. The predicate is readiness, not "UZE never ran
+without the vendor's update route (`ProvisionRoute::Existing`); it asks
+which to provision only when the machine has no harness, and what is picked
+takes the vendor's official route (`ProvisionRoute::Official`). The answer
+is `Workspace::entry` (`Ready`, `SetUp`, `Choose`), read by
+`src/cli/setup.rs` before the client opens. The predicate is readiness, not "UZE never ran
 here": the terminal runtime lays out `state/terminal` on its own, and the
 package manager prepares every detected harness on every command, so
 neither says a harness can be launched.
@@ -204,17 +211,16 @@ The client composes every pane's `Launch` env with the shims directory
 prepended to `PATH`, which is what keeps a harness typed into a pane, or
 started by the agent itself, going through the shim; menu launches already
 use the shim's absolute path. The shim itself does not change: outside the
-workspace nothing calls it. `uze setup` removes the marked block an earlier
-build wrote, through the same whole-line marker check `shell_path` already
-uses, and leaves any file whose markers do not verify untouched and
-reported. That removal exists only to take back what UZE wrote. Its exit is
-a test that fails once the workspace version reaches 1.0.0, when the
-removal is deleted with it.
+workspace nothing calls it. This change first had `uze setup` take back the
+marked block an earlier build wrote; #174 removed that take-back, since no
+build after this change writes the block, so `uze setup` touches no shell
+file at all (`runtime_shim_writes_no_shell_file`).
 
 **D7. What only the workspace delivers is reported as such, without
-looking at `PATH`.** The `PATH` walk (`runtime_shim_is_active`) and the
-`ShimShadowed` state it produces are removed: after D6 they would read as
-shadowed on every machine. A project resource that reaches a harness only
+looking at `PATH`.** The `PATH` walk and the `ShimShadowed` state it
+produces are removed: after D6 they would read as shadowed on every
+machine. `runtime_shim_is_active` remains, and only asks whether the shim
+file exists. A project resource that reaches a harness only
 through its `runtime_contribution` is reported by `inspect`, `status`,
 `doctor` and the client's agent support with the existing adapted route and
 the detail "inside the workspace", derived from the integration alone.
@@ -280,12 +286,10 @@ the word keeps one meaning in the suite too.
   (D8).
 - [The workspace writes a tracked file in the operator's checkout] → only
   when the rendered region differs, which is only after the declaration
-  changed; the popup says so before the first write.
+  changed, and never creates the file.
 - [Existing projects keep a live `completion: handoff` and keep getting the
   workspace region] → the region now says it only applies to launched
   agents; commenting the key opts out, stated in the docs.
-- [Removing the rc block edits a person's file] → only a block whose markers
-  verify, byte-for-byte outside it, the same guarantee used to write it.
 - [The crate extraction ripples through `uze-application`, `src/` and the
   tests] → the moves land as their own commits with no behavior change,
   before the behavior changes that depend on them; `uze-core` keeps no
@@ -304,6 +308,8 @@ the word keeps one meaning in the suite too.
 4. Surfaces and docs (D9, the Skills page, shim docs, `uze agent` and
    `uze config` help).
 5. The `uze-application` rule last, when the code already satisfies it.
+6. The workspace sets up the machine's harnesses before it opens (D6),
+   replacing `Health::first_run`.
 
 Rollback is per step; step 3 is the one that changes what a person's shell
 does, and reverting it restores the rc block on the next `uze setup`.

@@ -62,7 +62,8 @@ installed is updated through its own update command instead.
 `uze setup` never edits your shell's startup file. The shims it creates are for
 the workspace, which puts them first on `PATH` in its own panes. If an earlier
 uze added a `# >>> uze shims path >>>` block to your `.bashrc`, `.zshrc` or
-`config.fish`, `uze setup` takes it back and leaves every other line as it was.
+`config.fish`, uze no longer manages it: delete it by hand if you want your
+own shells to stop putting the shims first.
 
 ```bash
 uze setup list    # what is installed and ready
