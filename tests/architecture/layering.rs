@@ -286,10 +286,15 @@ const RULES: &[Rule] = &[
                  the layout and sizes the PTY on a resize",
             ),
             (
-                "src/ui/orchestrator/session.rs",
+                "src/ui/orchestrator/session/agents.rs",
                 "one use, and it is a pane's: the size a newly placed agent's \
                  PTY opens at. Nothing here may hand it to an extension — that \
                  is what this rule is about.",
+            ),
+            (
+                "src/ui/orchestrator/tabs.rs",
+                "a pane's too: the size a tab opened from the context menu, or the \
+                 shell that replaces a closed one, opens its PTY at.",
             ),
         ],
         budget: &[],
@@ -309,7 +314,12 @@ const RULES: &[Rule] = &[
                  renderer the resolved data. If a view needs something a host \
                  resolves, resolve it where the read happens and store it — \
                  `GitView::display_root` is the worked example.",
-        sanctioned: &[],
+        sanctioned: &[(
+            "src/ui/orchestrator/reads.rs",
+            "the reads the workspace client makes, each on a thread of its own \
+                 — not presentation. `the_workspace_client_reaches_for_git_only_from_a_thread` \
+                 holds every mention here inside a `thread::spawn`.",
+        )],
         budget: &[],
     },
     Rule {
@@ -329,7 +339,12 @@ const RULES: &[Rule] = &[
                  answer releases. The file the reads are *driven* from \
                  (`orchestrator.rs`) is where an application is legitimately \
                  built, inside a `thread::spawn`.",
-        sanctioned: &[],
+        sanctioned: &[(
+            "src/ui/orchestrator/reads.rs",
+            "the reads the workspace client makes, each on a thread of its own \
+                 — not presentation. `the_workspace_client_reaches_for_git_only_from_a_thread` \
+                 holds every mention here inside a `thread::spawn`.",
+        )],
         budget: &[],
     },
     Rule {
@@ -395,10 +410,25 @@ const RULES: &[Rule] = &[
 /// reviewer would look for.
 #[test]
 fn the_workspace_client_reaches_for_git_only_from_a_thread() {
-    let path = repository_root().join("src/ui/orchestrator.rs");
+    let mut escaped = Vec::new();
+    for file in ["src/ui/orchestrator.rs", "src/ui/orchestrator/reads.rs"] {
+        escaped.extend(mentions_outside_a_thread(file));
+    }
+    assert!(
+        escaped.is_empty(),
+        "\n\nthe extension host is reached outside a background thread:\n\n{}\n\n\
+         Every Git read this client makes belongs on a thread of its own, answered \
+         through a channel — see `spawn_git_read` and `WorkspaceModel::absorb_git_read`. \
+         Reading inline is what made a keystroke wait on `git status`.\n",
+        escaped.join("\n")
+    );
+}
+
+/// Every line of `file` naming the host that no `thread::spawn` encloses.
+fn mentions_outside_a_thread(file: &str) -> Vec<String> {
+    let path = repository_root().join(file);
     let source = fs::read_to_string(&path).expect("the workspace client");
     let source = strip_test_modules(&source);
-
     let mut depth: i32 = 0;
     let mut spawn_depth: Option<i32> = None;
     let mut escaped = Vec::new();
@@ -413,7 +443,7 @@ fn the_workspace_client_reaches_for_git_only_from_a_thread() {
             && !line.contains("use crate::ui::extension_host")
             && spawn_depth.is_none()
         {
-            escaped.push(format!("  src/ui/orchestrator.rs:{}: {}", number + 1, code));
+            escaped.push(format!("  {file}:{}: {}", number + 1, code));
         }
         depth += (line.matches('{').count() as i32) - (line.matches('}').count() as i32);
         if let Some(opened) = spawn_depth
@@ -422,15 +452,7 @@ fn the_workspace_client_reaches_for_git_only_from_a_thread() {
             spawn_depth = None;
         }
     }
-
-    assert!(
-        escaped.is_empty(),
-        "\n\nthe extension host is reached outside a background thread:\n\n{}\n\n\
-         Every Git read this client makes belongs on a thread of its own, answered \
-         through a channel — see `spawn_git_read` and `WorkspaceModel::absorb_git_read`. \
-         Reading inline is what made a keystroke wait on `git status`.\n",
-        escaped.join("\n")
-    );
+    escaped
 }
 
 /// No chrome glyph is written where it is drawn.
