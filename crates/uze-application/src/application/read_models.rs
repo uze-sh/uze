@@ -304,6 +304,9 @@ pub struct MarketplacePluginSummary {
     pub name: String,
     pub description: Option<String>,
     pub keywords: Vec<String>,
+    /// The marketplace entry's `category`, as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
     pub installed: bool,
     /// The installed package's freshness. `NotChecked` when the plugin is
     /// not installed at all: there is nothing of it here to be current.

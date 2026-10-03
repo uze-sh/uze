@@ -726,6 +726,7 @@ impl Marketplace<'_> {
                 name: entry.name.clone(),
                 description: entry.description,
                 keywords: entry.keywords,
+                category: entry.category,
                 installed: installed_package.is_some(),
                 freshness,
                 installed_at_unix: installed_package.and_then(|package| package.written_at_unix()),
@@ -750,6 +751,7 @@ impl Marketplace<'_> {
                     name: entry.name.clone(),
                     description: entry.description,
                     keywords: entry.keywords,
+                    category: entry.category,
                     installed: installed_package.is_some(),
                     freshness: installed_package
                         .map(|package| self.0.freshness_of(package))

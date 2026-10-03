@@ -42,7 +42,7 @@ fn every_scaffold_passes_its_own_check() -> Result<()> {
         };
         let root = scratch(&format!("authoring-scaffold-{flags}"));
         let market = scaffold_marketplace("tools", Some("Test tools"), &root.join("market"))?;
-        let plugin = scaffold_plugin(&market, "greet", Some(description), &caps)?;
+        let plugin = scaffold_plugin(&market, "greet", Some(description), None, &caps)?;
 
         let plugin_report = check_plugin(&plugin)?;
         assert!(
@@ -98,6 +98,7 @@ fn the_skill_description_survives_yaml_verbatim() -> Result<()> {
         &market,
         "greet",
         Some(description),
+        None,
         &ScaffoldCapabilities::default(),
     )?;
     let skill = fs::read_to_string(plugin.join("skills/greet/SKILL.md")).unwrap();
@@ -113,6 +114,34 @@ fn the_skill_description_survives_yaml_verbatim() -> Result<()> {
             .and_then(serde_yaml::Value::as_str),
         Some(description)
     );
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+/// The category is the catalogue's, so it lands on the marketplace entry
+/// and stays out of `plugin.json`, whose fields are the standard's.
+#[test]
+fn a_category_is_written_to_the_marketplace_entry_only() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-category");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        Some("productivity"),
+        &ScaffoldCapabilities::default(),
+    )?;
+
+    let manifest =
+        marketplace::parse_manifest(&fs::read(market.join("marketplace.json")).unwrap())?;
+    assert_eq!(
+        manifest.plugins[0].category.as_deref(),
+        Some("productivity")
+    );
+    let plugin_json = read_json(&plugin.join("plugin.json"))?;
+    assert!(plugin_json.get("category").is_none(), "{plugin_json}");
+    assert!(check_plugin(&plugin)?.is_clean());
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }
@@ -179,14 +208,44 @@ fn create_refuses_to_collide() -> Result<()> {
     );
 
     // An existing plugin is refused, never overwritten.
-    scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
-    assert!(scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default()).is_err());
+    scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
+    assert!(
+        scaffold_plugin(
+            &market,
+            "greet",
+            None,
+            None,
+            &ScaffoldCapabilities::default()
+        )
+        .is_err()
+    );
     // A name outside the rule is refused by the same rule an id is held to,
     // and told the name it meant.
-    assert!(scaffold_plugin(&market, "-flag", None, &ScaffoldCapabilities::default()).is_err());
-    let refused = scaffold_plugin(&market, "My_Plugin", None, &ScaffoldCapabilities::default())
-        .unwrap_err()
-        .to_string();
+    assert!(
+        scaffold_plugin(
+            &market,
+            "-flag",
+            None,
+            None,
+            &ScaffoldCapabilities::default()
+        )
+        .is_err()
+    );
+    let refused = scaffold_plugin(
+        &market,
+        "My_Plugin",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )
+    .unwrap_err()
+    .to_string();
     assert!(refused.contains("try `my-plugin`"), "{refused}");
     assert!(!market.join("plugins/My_Plugin").exists());
     let refused = scaffold_marketplace("My Market", None, &root.join("named"))
@@ -203,7 +262,13 @@ fn check_reports_what_install_would_refuse() -> Result<()> {
     let _git_identity = git_identity();
     let root = scratch("authoring-check-fail");
     let market = scaffold_marketplace("tools", None, &root.join("market"))?;
-    let plugin = scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
 
     // A name the PackageId rule refuses is named before any install ran.
     fs::write(
@@ -289,6 +354,7 @@ fn the_marketplace_check_covers_its_plugins() -> Result<()> {
         &market,
         "greet",
         None,
+        None,
         &ScaffoldCapabilities {
             hook: true,
             ..ScaffoldCapabilities::default()
@@ -354,7 +420,13 @@ fn a_name_the_manifest_already_carries_is_refused_before_any_write() -> Result<(
     )
     .unwrap();
 
-    let refused = scaffold_plugin(&market, "ghost", None, &ScaffoldCapabilities::default());
+    let refused = scaffold_plugin(
+        &market,
+        "ghost",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    );
 
     assert!(refused.is_err());
     assert!(
@@ -374,7 +446,13 @@ fn a_plugin_goes_where_the_marketplace_keeps_its_plugins() -> Result<()> {
     fs::create_dir_all(&project).unwrap();
     scaffold_local_marketplace("tools", None, &project, "tools-plugins")?;
 
-    let first = scaffold_plugin(&project, "greet", None, &ScaffoldCapabilities::default())?;
+    let first = scaffold_plugin(
+        &project,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
     assert_eq!(first, project.join("tools-plugins/greet"));
 
     // With an entry to read, the recorded key is no longer the only answer.
@@ -384,7 +462,13 @@ fn a_plugin_goes_where_the_marketplace_keeps_its_plugins() -> Result<()> {
         .unwrap()
         .remove(PLUGINS_DIRECTORY_KEY);
     write_json(&project.join("marketplace.json"), &manifest)?;
-    let second = scaffold_plugin(&project, "wave", None, &ScaffoldCapabilities::default())?;
+    let second = scaffold_plugin(
+        &project,
+        "wave",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
     assert_eq!(second, project.join("tools-plugins/wave"));
 
     let report = check_marketplace(&project)?;
@@ -399,7 +483,13 @@ fn check_reports_a_skill_a_harness_could_not_read() -> Result<()> {
     let _git_identity = git_identity();
     let root = scratch("authoring-check-skill");
     let market = scaffold_marketplace("tools", None, &root.join("market"))?;
-    let plugin = scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
     let skill = plugin.join("skills/greet/SKILL.md");
 
     for (body, fault) in [
@@ -442,6 +532,7 @@ fn check_reports_a_reference_outside_the_plugin() -> Result<()> {
     let plugin = scaffold_plugin(
         &market,
         "greet",
+        None,
         None,
         &ScaffoldCapabilities {
             hook: true,
@@ -490,7 +581,13 @@ fn check_reports_a_link_install_would_refuse() -> Result<()> {
     let _git_identity = git_identity();
     let root = scratch("authoring-check-link");
     let market = scaffold_marketplace("tools", None, &root.join("market"))?;
-    let plugin = scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
     std::os::unix::fs::symlink("/etc", plugin.join("escape")).unwrap();
 
     let report = check_plugin(&plugin)?;
@@ -515,7 +612,13 @@ fn a_manifest_of_the_wrong_shape_is_refused_before_any_write() -> Result<()> {
     for manifest in ["[]", r#"{ "name": "tools", "plugins": {} }"#] {
         fs::write(market.join("marketplace.json"), manifest).unwrap();
 
-        let refused = scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default());
+        let refused = scaffold_plugin(
+            &market,
+            "greet",
+            None,
+            None,
+            &ScaffoldCapabilities::default(),
+        );
 
         assert!(
             matches!(refused, Err(UzeError::MarketplaceScaffold(_))),
@@ -535,7 +638,13 @@ fn check_names_an_agent_a_harness_would_drop_or_rename() -> Result<()> {
     let _git_identity = git_identity();
     let root = scratch("authoring-agent-faults");
     let market = scaffold_marketplace("tools", None, &root.join("market"))?;
-    let plugin = scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default())?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
     fs::create_dir_all(plugin.join("agents/Review")).unwrap();
     fs::write(plugin.join("agents/bare.md"), "No frontmatter at all.\n").unwrap();
     fs::write(

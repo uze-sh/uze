@@ -36,7 +36,14 @@ fn authoring_scaffold_meets_the_budget() {
             let root = uze_testkit::temp::scratch(&format!("authoring-scaffold-budget-{attempt}"));
             let market = scaffold_marketplace("tools", None, &root.join("market")).unwrap();
             let started = Instant::now();
-            scaffold_plugin(&market, "greet", None, &ScaffoldCapabilities::default()).unwrap();
+            scaffold_plugin(
+                &market,
+                "greet",
+                None,
+                None,
+                &ScaffoldCapabilities::default(),
+            )
+            .unwrap();
             let elapsed = started.elapsed();
             fs::remove_dir_all(&root).expect("teardown");
             elapsed

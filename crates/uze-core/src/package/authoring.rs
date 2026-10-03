@@ -236,10 +236,14 @@ fn missing_git_identity(at: &Path) -> Option<&'static str> {
 /// skill carrying the canonical `invoke:` policy block, the optional
 /// capability files for each flag — and adds the `plugins[]` entry that
 /// makes it installable. Refuses to overwrite an existing plugin.
+///
+/// `category` lands on the marketplace entry only: the plugin manifest is
+/// the Agent Plugins standard's, which has no such field.
 pub fn scaffold_plugin(
     market_root: &Path,
     name: &str,
     description: Option<&str>,
+    category: Option<&str>,
     caps: &ScaffoldCapabilities,
 ) -> Result<PathBuf> {
     if !store::is_valid_package_name(name) {
@@ -283,6 +287,14 @@ pub fn scaffold_plugin(
 
     write_plugin_files(&plugin_root, name, description, caps)?;
 
+    let mut entry = serde_json::json!({
+        "name": name,
+        "source": format!("./{plugins_directory}/{name}"),
+        "description": description.unwrap_or("What this plugin offers."),
+    });
+    if let Some(category) = category {
+        entry["category"] = serde_json::json!(category);
+    }
     manifest
         .as_object_mut()
         .expect("a marketplace manifest is an object")
@@ -290,11 +302,7 @@ pub fn scaffold_plugin(
         .or_insert_with(|| serde_json::json!([]))
         .as_array_mut()
         .expect("`plugins` is a list")
-        .push(serde_json::json!({
-            "name": name,
-            "source": format!("./{plugins_directory}/{name}"),
-            "description": description.unwrap_or("What this plugin offers."),
-        }));
+        .push(entry);
     write_json(&manifest_path, &manifest)?;
     Ok(plugin_root)
 }

@@ -18,6 +18,16 @@
 //! because emphasis has two weights and a role cannot carry the
 //! difference, and nothing else.
 //!
+//! # Frontmatter is a table
+//!
+//! A `SKILL.md`, an agent definition or a docs page opens with a block of
+//! YAML (or TOML) that is data about the document rather than part of it.
+//! Shown as prose it is a horizontal rule followed by one long run of
+//! `key: value` pairs; it is drawn instead as the key/value table it is.
+//! It is read structurally and forgivingly, never parsed: a preview has
+//! no business refusing a document, and the keys stay in the order the
+//! author wrote them.
+//!
 //! # Why `pulldown-cmark`
 //!
 //! It is what rustdoc parses with, it is a pull parser (so a document is
@@ -27,9 +37,14 @@
 //! reach and the wrong one: both *draw*, which is the one thing an
 //! extension may not do.
 
+mod frontmatter;
+
 use std::path::Path;
 
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    Alignment, CodeBlockKind, Event, HeadingLevel, MetadataBlockKind, Options, Parser, Tag, TagEnd,
+};
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     shared::highlight,
@@ -50,15 +65,21 @@ pub(crate) fn is_markdown(path: &Path) -> bool {
 /// `theme_name` is the host's syntax theme, used for fenced code blocks —
 /// a block of Rust inside a README is highlighted as Rust, which is most
 /// of what a preview is for in a repository.
-pub fn render(text: &str, theme_name: &str) -> Vec<ContentLine> {
+///
+/// `width` is the columns the host lays the document out in: a table is
+/// the one block that cannot be wrapped after the fact, so it is fitted
+/// here.
+pub fn render(text: &str, theme_name: &str, width: usize) -> Vec<ContentLine> {
     let mut options = Options::empty();
     // The three GitHub extensions a README actually uses. They are
     // parser options rather than cargo features, so they cost nothing.
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
+    options.insert(Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS);
 
-    let mut document = Document::new(theme_name);
+    let mut document = Document::new(theme_name, width);
     for event in Parser::new_ext(text, options) {
         document.absorb(event);
     }
@@ -76,6 +97,7 @@ struct Emphasis {
 /// The document being built, one event at a time.
 struct Document {
     theme: String,
+    width: usize,
     lines: Vec<ContentLine>,
     /// The line being assembled. Flushed at every block boundary.
     pending: Vec<Span>,
@@ -92,19 +114,29 @@ struct Document {
     /// Set between a heading's start and end, so its text is styled as
     /// one rather than span by span.
     heading: Option<HeadingLevel>,
+    /// The frontmatter being collected, and the syntax it is written in.
+    metadata: Option<(MetadataBlockKind, String)>,
+    /// Whether an HTML comment opened on an earlier line is still open.
+    in_comment: bool,
 }
+
+/// A cell keeps its spans, so inline code or emphasis inside a table is
+/// drawn inside the table rather than after it.
+type Cell = Vec<Span>;
 
 #[derive(Default)]
 struct Table {
-    rows: Vec<Vec<String>>,
-    row: Vec<String>,
-    cell: String,
+    alignments: Vec<Alignment>,
+    rows: Vec<Vec<Cell>>,
+    row: Vec<Cell>,
+    cell: Cell,
 }
 
 impl Document {
-    fn new(theme: &str) -> Self {
+    fn new(theme: &str, width: usize) -> Self {
         Self {
             theme: theme.to_owned(),
+            width,
             lines: Vec::new(),
             pending: Vec::new(),
             emphasis: Emphasis::default(),
@@ -113,6 +145,8 @@ impl Document {
             fence: None,
             table: None,
             heading: None,
+            metadata: None,
+            in_comment: false,
         }
     }
 
@@ -157,8 +191,11 @@ impl Document {
             // says them rather than dropped: a preview that silently
             // loses part of a document is worse than one that shows it
             // plainly.
-            Event::Html(raw) | Event::InlineHtml(raw) => {
-                self.push(Span::new(raw.to_string(), Role::Faint));
+            Event::Html(raw) => self.html_block(&raw),
+            Event::InlineHtml(raw) => {
+                let comment = raw.starts_with("<!--");
+                let span = Span::new(raw.to_string(), Role::Faint);
+                self.push(if comment { span.italic() } else { span });
             }
             _ => {}
         }
@@ -205,9 +242,16 @@ impl Document {
                     CodeBlockKind::Indented => String::new(),
                 });
             }
-            Tag::Table(_) => {
+            Tag::Table(alignments) => {
                 self.flush();
-                self.table = Some(Table::default());
+                self.table = Some(Table {
+                    alignments,
+                    ..Table::default()
+                });
+            }
+            Tag::MetadataBlock(kind) => {
+                self.flush();
+                self.metadata = Some((kind, String::new()));
             }
             _ => {}
         }
@@ -244,6 +288,11 @@ impl Document {
                 self.lines.push(blank());
             }
             TagEnd::Table => self.finish_table(),
+            TagEnd::MetadataBlock(_) => self.finish_metadata(),
+            TagEnd::HtmlBlock => {
+                self.flush();
+                self.lines.push(blank());
+            }
             TagEnd::TableCell => {
                 if let Some(table) = self.table.as_mut() {
                     let cell = std::mem::take(&mut table.cell);
@@ -261,8 +310,8 @@ impl Document {
     }
 
     fn text(&mut self, text: &str) {
-        if let Some(table) = self.table.as_mut() {
-            table.cell.push_str(text);
+        if let Some((_, source)) = self.metadata.as_mut() {
+            source.push_str(text);
             return;
         }
         if let Some(language) = self.fence.clone() {
@@ -314,6 +363,10 @@ impl Document {
                 span.role = Role::Faint;
             }
         }
+        if let Some(table) = self.table.as_mut() {
+            table.cell.push(span);
+            return;
+        }
         if self.pending.is_empty() && self.quotes > 0 {
             self.pending
                 .push(Span::new("│ ".repeat(self.quotes), Role::Dim));
@@ -334,49 +387,271 @@ impl Document {
         });
     }
 
+    /// A block of raw HTML, a line at a time: its source arrives with
+    /// its newlines, and a span carrying one draws as a broken row. A
+    /// comment is set apart from markup by slant, the way a highlighter
+    /// sets a code comment apart.
+    fn html_block(&mut self, raw: &str) {
+        for line in raw.lines() {
+            let opens = line.trim_start().starts_with("<!--");
+            let comment = self.in_comment || opens;
+            if opens || self.in_comment {
+                self.in_comment = !line.contains("-->");
+            }
+            let span = Span::new(line.to_owned(), Role::Faint);
+            self.push(if comment { span.italic() } else { span });
+            self.flush();
+        }
+    }
+
     /// A table, once every cell is in: columns as wide as their widest
     /// cell, so a table reads as one.
     fn finish_table(&mut self) {
-        let Some(table) = self.table.take() else {
+        let Some(mut table) = self.table.take() else {
             return;
         };
-        let columns = table.rows.iter().map(Vec::len).max().unwrap_or(0);
-        let widths: Vec<usize> = (0..columns)
+        // The head is the row that names the columns, so it is the one
+        // that is emphasised — the separator markdown writes under it is
+        // layout the parser already consumed.
+        if let Some(head) = table.rows.first_mut() {
+            for span in head.iter_mut().flatten() {
+                span.bold = true;
+                if span.role == Role::Default {
+                    span.role = Role::Secondary;
+                }
+            }
+        }
+        // Every row is a group of its own: a folded cell makes a row more
+        // than one line tall, and only the rule says where it ends.
+        self.grid(&table.rows, |_| true, &table.alignments);
+        self.lines.push(blank());
+    }
+
+    /// The frontmatter, as the key/value table it is.
+    fn finish_metadata(&mut self) {
+        let Some((kind, source)) = self.metadata.take() else {
+            return;
+        };
+        let entries = match kind {
+            MetadataBlockKind::YamlStyle => frontmatter::yaml(&source),
+            MetadataBlockKind::PlusesStyle => frontmatter::toml(&source),
+        };
+        if entries.is_empty() {
+            return;
+        }
+        // A top-level key and the keys nested under it are one group.
+        let groups: Vec<bool> = entries.iter().map(|entry| entry.depth == 0).collect();
+        let rows: Vec<Vec<Cell>> = entries
+            .into_iter()
+            .map(|entry| {
+                let key = format!("{}{}", "  ".repeat(entry.depth), entry.key);
+                let role = frontmatter::value_role(&entry.value);
+                vec![
+                    vec![Span::new(key, Role::Secondary)],
+                    vec![Span::new(entry.value, role)],
+                ]
+            })
+            .collect();
+        self.grid(&rows, |index| groups[index], &[]);
+        self.lines.push(blank());
+    }
+
+    /// `rows` in a box, a rule above each row `starts_group` names (the
+    /// first excepted), fitted to the width the document is laid out in: a
+    /// column that does not fit folds its cells onto more rows, because a
+    /// row the host has to wrap is a row that breaks the box.
+    fn grid(
+        &mut self,
+        rows: &[Vec<Cell>],
+        starts_group: impl Fn(usize) -> bool,
+        alignments: &[Alignment],
+    ) {
+        let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+        if columns == 0 {
+            return;
+        }
+        let natural: Vec<usize> = (0..columns)
             .map(|column| {
-                table
-                    .rows
-                    .iter()
+                rows.iter()
                     .filter_map(|row| row.get(column))
-                    .map(|cell| cell.chars().count())
+                    .map(|cell| cell_width(cell))
                     .max()
                     .unwrap_or(0)
             })
             .collect();
-        for (index, row) in table.rows.iter().enumerate() {
-            let text = widths
+        // `│ ` before each cell, ` │` after the last, ` ` between.
+        let chrome = 3 * columns + 1;
+        let widths = fit_columns(&natural, self.width.saturating_sub(chrome));
+        let edge = |left: &str, middle: &str, right: &str| {
+            let inner = widths
+                .iter()
+                .map(|width| "─".repeat(width + 2))
+                .collect::<Vec<_>>()
+                .join(middle);
+            border(format!("{left}{inner}{right}"))
+        };
+        self.lines.push(edge("╭", "┬", "╮"));
+        for (index, row) in rows.iter().enumerate() {
+            if index > 0 && starts_group(index) {
+                self.lines.push(edge("├", "┼", "┤"));
+            }
+            let folded: Vec<Vec<Cell>> = widths
                 .iter()
                 .enumerate()
-                .map(|(column, width)| {
-                    let cell = row.get(column).map(String::as_str).unwrap_or("");
-                    format!("{cell:<width$}", width = *width)
+                .map(|(column, &width)| {
+                    let cell = row.get(column).map(Vec::as_slice).unwrap_or_default();
+                    fold(cell, width)
                 })
-                .collect::<Vec<_>>()
-                .join("  ");
-            // The head is the row that names the columns, so it is the
-            // one that is emphasised — the separator markdown writes
-            // under it is layout the parser already consumed.
-            let span = match index {
-                0 => Span::new(text, Role::Secondary).bold(),
-                _ => Span::new(text, Role::Default),
-            };
-            self.lines.push(ContentLine {
-                gutter: " ".to_owned(),
-                number: String::new(),
-                tone: LineTone::Neutral,
-                spans: vec![span],
-            });
+                .collect();
+            let height = folded.iter().map(Vec::len).max().unwrap_or(1);
+            for line in 0..height {
+                let mut spans = Vec::new();
+                for (column, &width) in widths.iter().enumerate() {
+                    spans.push(Span::new(
+                        if column == 0 { "│ " } else { " │ " },
+                        Role::Faint,
+                    ));
+                    let piece = folded[column]
+                        .get(line)
+                        .map(Vec::as_slice)
+                        .unwrap_or_default();
+                    let slack = width.saturating_sub(cell_width(piece));
+                    let (before, after) = match alignments.get(column) {
+                        Some(Alignment::Right) => (slack, 0),
+                        Some(Alignment::Center) => (slack / 2, slack - slack / 2),
+                        _ => (0, slack),
+                    };
+                    if before > 0 {
+                        spans.push(Span::new(" ".repeat(before), Role::Default));
+                    }
+                    spans.extend(piece.iter().cloned());
+                    if after > 0 {
+                        spans.push(Span::new(" ".repeat(after), Role::Default));
+                    }
+                }
+                spans.push(Span::new(" │", Role::Faint));
+                self.lines.push(ContentLine {
+                    gutter: " ".to_owned(),
+                    number: String::new(),
+                    tone: LineTone::Neutral,
+                    spans,
+                });
+            }
         }
-        self.lines.push(blank());
+        self.lines.push(edge("╰", "┴", "╯"));
+    }
+}
+
+/// The narrowest a column is squeezed to before the table stops fitting
+/// and is drawn at its natural width for the host to wrap.
+const MIN_COLUMN_WIDTH: usize = 6;
+
+/// Column widths that sum to no more than `room`. Narrow columns keep
+/// their natural width and the wide ones share what is left equally — so
+/// a frontmatter's keys stay on one line and its values fold.
+fn fit_columns(natural: &[usize], room: usize) -> Vec<usize> {
+    if natural.iter().sum::<usize>() <= room || room < MIN_COLUMN_WIDTH * natural.len() {
+        return natural.to_vec();
+    }
+    let mut order: Vec<usize> = (0..natural.len()).collect();
+    order.sort_by_key(|&column| natural[column]);
+    let mut widths = vec![0; natural.len()];
+    let mut left = room;
+    for (taken, &column) in order.iter().enumerate() {
+        let share = left / (natural.len() - taken);
+        widths[column] = natural[column].min(share).max(MIN_COLUMN_WIDTH);
+        left = left.saturating_sub(widths[column]);
+    }
+    widths
+}
+
+fn cell_width(cell: &[Span]) -> usize {
+    cell.iter().map(|span| span.text.width()).sum()
+}
+
+/// `cell` folded at word boundaries into lines no wider than `width`,
+/// each word keeping the look of the span it came from. A word wider than
+/// a whole line is cut, since the box cannot grow to hold it.
+fn fold(cell: &[Span], width: usize) -> Vec<Cell> {
+    let width = width.max(1);
+    let mut lines: Vec<Cell> = Vec::new();
+    let mut line: Cell = Vec::new();
+    let mut used = 0;
+    // A cell's leading indentation is meaning — a frontmatter key nested
+    // under another — so it is kept, once, ahead of the first line.
+    if let Some(first) = cell.first() {
+        let indent = first.text.len() - first.text.trim_start_matches(' ').len();
+        if indent > 0 && indent < width {
+            line.push(Span {
+                text: " ".repeat(indent),
+                ..first.clone()
+            });
+            used = indent;
+        }
+    }
+    let indented = used > 0;
+    // Whether the source had a space before the next word: two spans that
+    // meet without one (`**a**b`) are one word and must not be parted.
+    let mut spaced = false;
+    for (position, span) in cell.iter().enumerate() {
+        spaced |= span.text.starts_with(char::is_whitespace) && !(indented && position == 0);
+        for (index, word) in span.text.split_whitespace().enumerate() {
+            let mut word = word.to_owned();
+            let spaced_here = spaced || index > 0;
+            loop {
+                let gap = usize::from(used > 0 && spaced_here);
+                if used + gap + word.width() <= width {
+                    if gap == 1 {
+                        line.push(Span::new(" ", Role::Default));
+                    }
+                    used += gap + word.width();
+                    line.push(Span {
+                        text: word,
+                        ..span.clone()
+                    });
+                    break;
+                }
+                if used > 0 {
+                    lines.push(std::mem::take(&mut line));
+                    used = 0;
+                    continue;
+                }
+                let cut = cut_at(&word, width);
+                let rest = word.split_off(cut);
+                lines.push(vec![Span {
+                    text: word,
+                    ..span.clone()
+                }]);
+                word = rest;
+            }
+        }
+        spaced = span.text.ends_with(char::is_whitespace);
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// The byte index where `word`'s first `width` columns end.
+fn cut_at(word: &str, width: usize) -> usize {
+    let mut used = 0;
+    for (index, character) in word.char_indices() {
+        let columns = unicode_width::UnicodeWidthChar::width(character).unwrap_or(0);
+        if used + columns > width && index > 0 {
+            return index;
+        }
+        used += columns;
+    }
+    word.len()
+}
+
+fn border(text: String) -> ContentLine {
+    ContentLine {
+        gutter: " ".to_owned(),
+        number: String::new(),
+        tone: LineTone::Neutral,
+        spans: vec![Span::new(text, Role::Faint)],
     }
 }
 
@@ -395,7 +670,7 @@ mod tests {
     use crate::shared::highlight::FALLBACK_SYNTAX_THEME;
 
     fn rendered(source: &str) -> Vec<ContentLine> {
-        render(source, FALLBACK_SYNTAX_THEME)
+        render(source, FALLBACK_SYNTAX_THEME, 100)
     }
 
     fn text_of(line: &ContentLine) -> String {
@@ -492,8 +767,7 @@ mod tests {
             .expect("the head is drawn");
         let body = lines
             .iter()
-            .find(|line| line.trim_end() == "x  y")
-            .or_else(|| lines.iter().find(|line| line.starts_with('x')))
+            .find(|line| line.starts_with("│ x"))
             .expect("the body is drawn");
 
         assert_eq!(
@@ -501,6 +775,210 @@ mod tests {
             body.chars().count(),
             "columns as wide as their widest cell, so the rows line up"
         );
+    }
+
+    /// Inline code and emphasis are part of the cell they are written in,
+    /// not text that happens to follow the table.
+    #[test]
+    fn a_cell_keeps_its_inline_markup_inside_the_table() {
+        let lines = rendered("| a | b |\n|---|---|\n| `code` | **bold** |\n");
+        let row = lines
+            .iter()
+            .find(|line| text_of(line).contains("code"))
+            .expect("the row is drawn");
+
+        assert!(text_of(row).contains("bold"), "both cells on one row");
+        assert!(
+            row.spans
+                .iter()
+                .any(|span| span.text == "code" && span.role == Role::Accent),
+            "inline code is still quoted"
+        );
+        assert!(
+            row.spans
+                .iter()
+                .any(|span| span.text == "bold" && span.bold),
+            "and emphasis still has its weight"
+        );
+    }
+
+    #[test]
+    fn a_column_is_aligned_the_way_its_separator_says() {
+        let lines = lines_of("| n |\n|--:|\n| 1 |\n| 100 |\n");
+        assert!(lines.iter().any(|line| line == "│   1 │"), "{lines:?}");
+    }
+
+    /// Frontmatter is data about the document, so it is drawn as the
+    /// table it is rather than as a rule and a run-on line of prose.
+    #[test]
+    fn frontmatter_is_drawn_as_a_key_value_table() {
+        let lines = lines_of("---\nname: greet\ninvoke:\n  model: true\n---\n\n# Greet\n");
+
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("│ name ") && line.contains("greet")),
+            "{lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("│   model ") && line.contains("true")),
+            "a nested key is indented under its parent: {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.starts_with('─')),
+            "no stray rule where the fences were: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|line| line == "Greet"),
+            "the body follows: {lines:?}"
+        );
+    }
+
+    /// A rule ends each group, so a folded value reads as one entry: a
+    /// top-level key starts a group, and the keys nested under it stay in
+    /// it.
+    #[test]
+    fn a_rule_parts_frontmatter_groups_and_not_nested_keys() {
+        let lines = lines_of("---\nname: greet\ninvoke:\n  model: true\nslash: true\n---\n");
+        let row = |key: &str| {
+            lines
+                .iter()
+                .position(|line| line.starts_with(&format!("│ {key} ")))
+                .unwrap_or_else(|| panic!("{key}: {lines:?}"))
+        };
+
+        assert!(lines[row("name") + 1].starts_with('├'), "{lines:?}");
+        assert_eq!(row("invoke") + 1, row("  model"), "{lines:?}");
+        assert!(lines[row("  model") + 1].starts_with('├'), "{lines:?}");
+    }
+
+    /// The box only survives if no row of it is wider than the pane, so a
+    /// long value folds inside its own cell.
+    #[test]
+    fn a_long_frontmatter_value_folds_inside_its_cell() {
+        let description = "word ".repeat(40);
+        let lines = lines_of(&format!("---\ndescription: {description}\n---\n"));
+        let rows: Vec<&String> = lines.iter().filter(|line| line.starts_with('│')).collect();
+
+        assert!(rows.len() > 1, "{lines:?}");
+        let width = rows[0].chars().count();
+        assert!(
+            rows.iter().all(|row| row.chars().count() == width),
+            "{lines:?}"
+        );
+    }
+
+    /// The table follows the room it is drawn in: no row wider than the
+    /// width it was given, and more of it used when there is more.
+    #[test]
+    fn a_table_is_fitted_to_the_width_it_is_given() {
+        let source = format!(
+            "---\nname: architect\ndescription: {}\n---\n\n| a | b |\n|---|---|\n| {} | {} |\n",
+            "word ".repeat(60),
+            "left ".repeat(20),
+            "right ".repeat(20),
+        );
+        let widest = |width: usize| {
+            let lines: Vec<String> = render(&source, FALLBACK_SYNTAX_THEME, width)
+                .iter()
+                .map(text_of)
+                .collect();
+            for line in lines
+                .iter()
+                .filter(|line| line.starts_with(['│', '╭', '├', '╰']))
+            {
+                assert!(line.chars().count() <= width, "{width}: {line:?}");
+            }
+            lines
+                .iter()
+                .filter(|line| line.starts_with('╭'))
+                .map(|line| line.chars().count())
+                .max()
+                .unwrap_or_default()
+        };
+
+        let narrow = widest(48);
+        let wide = widest(140);
+        assert!(
+            wide > narrow,
+            "a wider pane gets a wider table: {narrow} vs {wide}"
+        );
+        assert_eq!(wide, 140, "a long value fills the room there is");
+    }
+
+    #[test]
+    fn folding_a_cell_keeps_words_the_markup_glued_together() {
+        let cell = rendered(&format!("| h |\n|---|\n| **a**b {} |\n", "x".repeat(10)));
+        let row = cell
+            .iter()
+            .map(text_of)
+            .find(|line| line.contains("ab"))
+            .unwrap_or_default();
+        assert!(row.contains("ab "), "{row:?}");
+    }
+
+    #[test]
+    fn toml_frontmatter_is_a_table_too() {
+        let lines = lines_of("+++\ntitle = \"Hi\"\n+++\n");
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("│ title ") && line.contains("Hi")),
+            "{lines:?}"
+        );
+    }
+
+    /// An HTML comment spanning lines arrives as one event with its
+    /// newlines in it; each line is a row, set apart by slant.
+    #[test]
+    fn an_html_comment_is_a_row_per_line_and_reads_as_a_comment() {
+        let lines = rendered("<!-- one\ntwo -->\n\ntext\n");
+        let comment: Vec<&ContentLine> = lines
+            .iter()
+            .filter(|line| line.spans.iter().any(|span| span.italic))
+            .collect();
+
+        assert_eq!(
+            comment.len(),
+            2,
+            "{:?}",
+            lines.iter().map(text_of).collect::<Vec<_>>()
+        );
+        assert!(
+            lines
+                .iter()
+                .flat_map(|line| &line.spans)
+                .all(|span| !span.text.contains('\n')),
+            "no span carries a newline"
+        );
+    }
+
+    /// A comment inside a fenced block is coloured as one, including when
+    /// the info string says more than the language.
+    #[test]
+    fn a_comment_in_a_fenced_block_is_highlighted() {
+        for source in [
+            "```rust\n// note\nfn main() {}\n```\n",
+            "```rust,ignore\n// note\nfn main() {}\n```\n",
+            "```shell\n# note\necho hi\n```\n",
+        ] {
+            let lines = rendered(source);
+            let comment = lines
+                .iter()
+                .flat_map(|line| &line.spans)
+                .find(|span| span.text.contains("note"))
+                .and_then(|span| span.color);
+            let code = lines
+                .iter()
+                .flat_map(|line| &line.spans)
+                .find(|span| span.text.contains("fn") || span.text.contains("echo"))
+                .and_then(|span| span.color);
+
+            assert!(comment.is_some(), "{source}");
+            assert_ne!(comment, code, "the comment is coloured apart in {source}");
+        }
     }
 
     /// A preview that silently drops part of a document is worse than one

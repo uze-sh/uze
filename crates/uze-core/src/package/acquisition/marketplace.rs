@@ -310,6 +310,12 @@ pub struct MarketplacePluginEntry {
     pub description: Option<String>,
     #[serde(default)]
     pub keywords: Vec<String>,
+    /// What kind of work the plugin is for — `productivity`,
+    /// `development`, `security` — the one word a catalogue is browsed
+    /// by, where `keywords` are what it is searched by. Free text, the
+    /// way the marketplaces this format came from write it.
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 /// Parses and validates a `marketplace.json` payload. Validation is limited
@@ -554,6 +560,19 @@ mod tests {
         .unwrap();
         assert_eq!(manifest.name, "uze");
         assert_eq!(manifest.plugins.len(), 1);
+        assert_eq!(manifest.plugins[0].category, None, "a category is optional");
+    }
+
+    #[test]
+    fn an_entry_carries_its_category() {
+        let manifest = parse_manifest(
+            br#"{"name":"uze","plugins":[{"name":"uze","source":"./plugins/uze","category":"productivity"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            manifest.plugins[0].category.as_deref(),
+            Some("productivity")
+        );
     }
 
     #[test]

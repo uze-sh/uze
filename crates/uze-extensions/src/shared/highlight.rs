@@ -170,10 +170,29 @@ pub(crate) fn highlighter_for_language(
     theme_name: &str,
 ) -> HighlightLines<'static> {
     let syntax_set = syntax_set();
+    // A fence's info string carries more than the language: rustdoc's
+    // `rust,ignore`, a title after a space, Pandoc's `{.python}`.
+    let token = language
+        .trim()
+        .trim_start_matches(['{', '.'])
+        .split([',', ' ', '{', '}'])
+        .next()
+        .unwrap_or_default();
+    let token = fence_alias(token).unwrap_or(token);
     let syntax = syntax_set
-        .find_syntax_by_token(language.trim())
+        .find_syntax_by_token(token)
+        .or_else(|| syntax_set.find_syntax_by_extension(same_language_as(token)?))
         .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
     HighlightLines::new(syntax, theme(theme_name))
+}
+
+/// The names fences use for a language no grammar is listed under:
+/// a terminal session is shell, whatever the prompt.
+fn fence_alias(token: &str) -> Option<&'static str> {
+    match token.to_ascii_lowercase().as_str() {
+        "shell" | "console" | "shellsession" | "terminal" => Some("sh"),
+        _ => None,
+    }
 }
 
 /// One line, highlighted in `highlighter`'s ongoing state — or, where

@@ -56,9 +56,15 @@ pub(crate) fn prose_rows(line: &ContentLine, width: usize) -> Vec<Line<'static>>
 
     let mut rows: Vec<Vec<TextSpan<'static>>> = vec![Vec::new()];
     let mut used = 0usize;
-    for (word, style) in words(line) {
-        let taken = word.chars().map(cell_width).sum::<usize>();
-        let is_space = word.starts_with(' ');
+    for word in glued(words(line)) {
+        let taken = word
+            .iter()
+            .flat_map(|(piece, _)| piece.chars())
+            .map(cell_width)
+            .sum::<usize>();
+        let is_space = word
+            .first()
+            .is_some_and(|(piece, _)| piece.starts_with(' '));
         let fits = used + taken <= width;
         if !fits && used > hang_width && !(rows.len() == 1 && used == 0) {
             if is_space {
@@ -72,31 +78,53 @@ pub(crate) fn prose_rows(line: &ContentLine, width: usize) -> Vec<Line<'static>>
         if is_space && used == hang_width && rows.len() > 1 {
             continue;
         }
-        // A word longer than a whole row — a URL, a path — is broken at the
-        // cell, since no row would ever hold it.
-        let mut piece = String::new();
-        for character in word.chars() {
-            let cells = cell_width(character);
-            if used + cells > width && used > hang_width {
+        for (text, style) in word {
+            // A word longer than a whole row — a URL, a path — is broken at
+            // the cell, since no row would ever hold it.
+            let mut piece = String::new();
+            for character in text.chars() {
+                let cells = cell_width(character);
+                if used + cells > width && used > hang_width {
+                    rows.last_mut()
+                        .expect("a row was pushed above")
+                        .push(TextSpan::styled(std::mem::take(&mut piece), style));
+                    break_row(&mut rows, &hang);
+                    used = hang_width;
+                }
+                match character {
+                    '\t' => piece.push_str(&" ".repeat(TAB_WIDTH)),
+                    _ => piece.push(character),
+                }
+                used += cells;
+            }
+            if !piece.is_empty() {
                 rows.last_mut()
                     .expect("a row was pushed above")
-                    .push(TextSpan::styled(std::mem::take(&mut piece), style));
-                break_row(&mut rows, &hang);
-                used = hang_width;
+                    .push(TextSpan::styled(piece, style));
             }
-            match character {
-                '\t' => piece.push_str(&" ".repeat(TAB_WIDTH)),
-                _ => piece.push(character),
-            }
-            used += cells;
-        }
-        if !piece.is_empty() {
-            rows.last_mut()
-                .expect("a row was pushed above")
-                .push(TextSpan::styled(piece, style));
         }
     }
     rows.into_iter().map(Line::from).collect()
+}
+
+/// [`words`] with the runs no space parts joined into one word: a span
+/// boundary is a change of style, not a place to break, so `**word**.`
+/// keeps its full stop on the word's row.
+fn glued(runs: Vec<(String, Style)>) -> Vec<Vec<(String, Style)>> {
+    let mut words: Vec<Vec<(String, Style)>> = Vec::new();
+    for (text, style) in runs {
+        let space = text.starts_with(' ');
+        let joins = !space
+            && words
+                .last()
+                .and_then(|word| word.last())
+                .is_some_and(|(previous, _)| !previous.starts_with(' '));
+        match words.last_mut() {
+            Some(word) if joins => word.push((text, style)),
+            _ => words.push(vec![(text, style)]),
+        }
+    }
+    words
 }
 
 /// Ends the row being filled and starts the next with `hang`. The spaces

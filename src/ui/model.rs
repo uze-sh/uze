@@ -984,6 +984,7 @@ impl TuiModel {
                 name: plugin.active_name.clone(),
                 description: None,
                 keywords: Vec::new(),
+                category: None,
                 installed: true,
                 freshness: plugin.freshness.clone(),
                 installed_at_unix: plugin.installed_at_unix,
@@ -1020,8 +1021,8 @@ impl TuiModel {
     }
 
     /// Every `marketplace_rows` index that passes the live filter
-    /// (case-insensitive substring of the plugin's name, its marketplace or
-    /// a keyword), grouped by marketplace in the order the tree draws the
+    /// (case-insensitive substring of the plugin's name, its marketplace, its
+    /// category or a keyword), grouped by marketplace in the order the tree draws the
     /// groups — the single source of truth both the tree renderer and
     /// selection/navigation resolve through, so a hidden row is never
     /// selectable and vice versa.
@@ -1042,6 +1043,10 @@ impl TuiModel {
                 needle.is_empty()
                     || plugin.name.to_lowercase().contains(&needle)
                     || plugin.marketplace.to_lowercase().contains(&needle)
+                    || plugin
+                        .category
+                        .as_deref()
+                        .is_some_and(|category| category.to_lowercase().contains(&needle))
                     || plugin
                         .keywords
                         .iter()

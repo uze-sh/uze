@@ -260,7 +260,20 @@ A marketplace is a Git repository with a `marketplace.json` at its root:
   "name": "my-marketplace",
   "owner": { "name": "you" },
   "plugins": [
-    { "name": "my-plugin", "source": "./plugins/my-plugin", "description": "One sentence." }
+    {
+      "name": "my-plugin",
+      "source": "./plugins/my-plugin",
+      "description": "One sentence.",
+      "category": "productivity",
+      "keywords": ["notes", "planning"]
+    }
   ]
 }
 ```
+
+Each entry needs `name` and `source`, a path inside the repository. The rest is
+optional and describes the plugin in the catalogue: `description`, `keywords`
+(what a search matches) and `category`, one word for the kind of work it is
+for, such as `productivity`, `development` or `security`. The category lives
+on the marketplace entry, not in `plugin.json`, whose fields are the
+standard's.

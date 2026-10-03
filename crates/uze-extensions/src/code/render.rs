@@ -507,6 +507,7 @@ fn preview_content(code: &CodeView, space: Size) -> Content {
     let (total, lines) = open.preview(
         code.scroll as usize,
         usize::from(space.height).saturating_mul(2),
+        Some(crate::view::prose_width(space)),
     );
     Content::Lines {
         caret: None,

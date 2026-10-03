@@ -38,6 +38,7 @@ mod summary;
 mod tests;
 
 use std::{
+    cell::{Ref, RefCell},
     collections::BTreeSet,
     path::{Path, PathBuf},
 };
@@ -268,9 +269,18 @@ pub struct SpecView {
     showing: Showing,
     scroll: usize,
     /// The artifact on show, as lines, for the way it is being shown —
-    /// made when the selection or the showing changes, never per frame.
-    lines: Vec<ContentLine>,
+    /// made when the selection, the showing or the width changes, never
+    /// per frame. Behind a cell because the width is only known when the
+    /// view is drawn, and drawing is through a shared reference.
+    lines: RefCell<Shown>,
     resuming: Option<SpecPlace>,
+}
+
+/// Lines, and the width a rendered document was laid out at.
+#[derive(Default)]
+struct Shown {
+    width: Option<usize>,
+    lines: Vec<ContentLine>,
 }
 
 impl SpecView {
@@ -289,7 +299,7 @@ impl SpecView {
             folded: BTreeSet::new(),
             showing: Showing::Preview,
             scroll: 0,
-            lines: Vec::new(),
+            lines: RefCell::default(),
             resuming: None,
         }
     }
@@ -563,11 +573,32 @@ impl SpecView {
     }
 
     fn redraw(&mut self) {
-        self.lines = match self.on_show() {
+        let width = self.lines.get_mut().width;
+        self.lay_out(width);
+    }
+
+    /// The lines on show, laid out for `width` when one is given and a
+    /// rendered document was laid out for another.
+    fn shown(&self, width: Option<usize>) -> Ref<'_, Vec<ContentLine>> {
+        if width.is_some() && self.lines.borrow().width != width && self.renders_markdown() {
+            self.lay_out(width);
+        }
+        Ref::map(self.lines.borrow(), |shown| &shown.lines)
+    }
+
+    fn renders_markdown(&self) -> bool {
+        self.showing == Showing::Preview
+            && self
+                .on_show()
+                .is_some_and(|(_, artifact)| catalog::is_markdown(&artifact.path))
+    }
+
+    fn lay_out(&self, width: Option<usize>) {
+        let lines = match self.on_show() {
             Some((_, artifact)) => match &artifact.text {
                 Ok(text) => match self.showing {
                     Showing::Preview if catalog::is_markdown(&artifact.path) => {
-                        markdown::render(text, &self.theme)
+                        markdown::render(text, &self.theme, width.unwrap_or(usize::MAX))
                     }
                     _ => source_lines(text, &artifact.path, &self.theme),
                 },
@@ -575,6 +606,7 @@ impl SpecView {
             },
             None => Vec::new(),
         };
+        *self.lines.borrow_mut() = Shown { width, lines };
     }
 
     fn expand(&mut self) {
@@ -628,7 +660,7 @@ impl SpecView {
     }
 
     fn scroll_by(&mut self, rows: isize) {
-        let last = self.lines.len().saturating_sub(1);
+        let last = self.shown(None).len().saturating_sub(1);
         self.scroll = self.scroll.saturating_add_signed(rows).min(last);
     }
 }
@@ -892,7 +924,8 @@ fn content(state: &SpecView, space: Size) -> Content {
         };
     }
     let window = usize::from(space.height).saturating_mul(2);
-    let first = state.scroll.min(state.lines.len().saturating_sub(1));
+    let shown = state.shown(Some(crate::view::prose_width(space)));
+    let first = state.scroll.min(shown.len().saturating_sub(1));
     // A unit that is one file is named by where it lives; its name alone
     // repeats the file's.
     let heading = if state.root.join(&unit.relative) == artifact.path {
@@ -904,14 +937,8 @@ fn content(state: &SpecView, space: Size) -> Content {
         heading,
         scroll: u16::try_from(first).unwrap_or(u16::MAX),
         first,
-        lines: state
-            .lines
-            .iter()
-            .skip(first)
-            .take(window)
-            .cloned()
-            .collect(),
-        total: state.lines.len(),
+        lines: shown.iter().skip(first).take(window).cloned().collect(),
+        total: shown.len(),
         caret: None,
         medium: Medium::Text,
     }
@@ -985,7 +1012,8 @@ pub fn handle_scroll(state: &mut SpecView, direction: ScrollDirection) {
 
 /// Shows the content from line `first`, as a point on its scrollbar asks.
 pub fn scroll_to(state: &mut SpecView, first: usize) {
-    state.scroll = first.min(state.lines.len().saturating_sub(1));
+    let last = state.shown(None).len().saturating_sub(1);
+    state.scroll = first.min(last);
 }
 
 /// The text of `lines` of the document on show, as it reads rendered —
@@ -994,7 +1022,7 @@ pub fn scroll_to(state: &mut SpecView, first: usize) {
 pub fn text(state: &SpecView, lines: std::ops::Range<usize>) -> Vec<String> {
     let count = lines.len();
     state
-        .lines
+        .shown(None)
         .iter()
         .skip(lines.start)
         .take(count)
