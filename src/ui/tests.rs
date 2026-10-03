@@ -3496,6 +3496,17 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
         ],
         "what builds first, what destroys last, and nothing that cannot run"
     );
+    assert!(
+        buttons[0].0.y == buttons[1].0.y && buttons[0].0.x < buttons[1].0.x,
+        "the update stands in the row of actions, not beside its note: {buttons:?}"
+    );
+    assert_eq!(
+        model
+            .selected_marketplace_plugin()
+            .and_then(|plugin| crate::ui::view::plugins::primary_offer(&plugin.offers())),
+        Some(uze_keys::Action::UpdatePlugin),
+        "and Enter takes the update rather than the removal"
+    );
 
     // Soft at rest, the full hue under the pointer.
     let (remove, _) = buttons[1];
