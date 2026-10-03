@@ -475,8 +475,8 @@ fn a_checkout_that_is_no_repository_still_has_a_tree() {
 
     let rendered = super::view(&view, space());
     assert!(
-        rendered.navigator.is_some(),
-        "the file tree is unaffected by git being absent"
+        rendered.navigator.is_none(),
+        "no changes to list is the message alone"
     );
     assert!(matches!(
         rendered.content,
@@ -485,6 +485,29 @@ fn a_checkout_that_is_no_repository_still_has_a_tree() {
             ..
         }
     ));
+
+    view.content = ContentMode::Contents;
+    assert!(
+        super::view(&view, space()).navigator.is_some(),
+        "the file tree is unaffected by git being absent"
+    );
+}
+
+/// A checkout with nothing changed is a message across the whole frame,
+/// asking nothing of a list that is not there.
+#[test]
+fn nothing_changed_is_a_message_without_a_list() {
+    let mut view = CodeView::opening(PathBuf::from("/w"), "/w".to_owned(), ContentMode::Diff);
+    view.changes.diff_pending = false;
+
+    let rendered = super::view(&view, space());
+    assert!(rendered.navigator.is_none());
+    assert!(!rendered.footer.contains(&Command::SelectNext));
+    assert!(!rendered.footer.contains(&Command::FocusNext));
+    assert!(
+        !rendered.subjects.is_empty(),
+        "the other halves stay a key away"
+    );
 }
 
 /// Moving the selection reads nothing — the property that keeps an arrow

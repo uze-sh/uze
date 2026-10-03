@@ -429,7 +429,8 @@ pub enum Content {
         text: String,
         /// What to do next, drawn quieter beneath. `None` when there is
         /// nothing to do — a read still in flight, an error the viewer
-        /// cannot act on.
+        /// cannot act on. What it quotes in backticks is something to
+        /// type, and the host draws it apart without the backticks.
         hint: Option<String>,
         role: Role,
     },

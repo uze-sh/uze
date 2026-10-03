@@ -1895,13 +1895,38 @@ fn message_lines(text: &str, hint: Option<&str>, width: u16, colour: Color) -> V
         .collect();
     if let Some(hint) = hint {
         lines.push(Line::from(""));
+        let mut quoted = false;
         lines.extend(
             hint_rows(hint, measure)
-                .into_iter()
-                .map(|line| Line::from(TextSpan::styled(line, theme::fg(Token::TextMuted)))),
+                .iter()
+                .map(|row| hint_line(row, &mut quoted)),
         );
     }
     lines
+}
+
+/// One row of a hint, with what it quotes in backticks a step brighter and
+/// the backticks themselves dropped: a quoted span is something to type,
+/// and it is the one part of a hint a reader looks for. A step, not a hue:
+/// the hint is still the quiet half of the message. `quoted` carries an
+/// open quote across a fold, so a span split over two rows stays lit.
+fn hint_line(row: &str, quoted: &mut bool) -> Line<'static> {
+    let mut spans = Vec::new();
+    for (index, piece) in row.split('`').enumerate() {
+        if index > 0 {
+            *quoted = !*quoted;
+        }
+        if piece.is_empty() {
+            continue;
+        }
+        let style = if *quoted {
+            theme::fg(Token::TextPrimary)
+        } else {
+            theme::fg(Token::TextMuted)
+        };
+        spans.push(TextSpan::styled(piece.to_owned(), style));
+    }
+    Line::from(spans)
 }
 
 /// A hint's rows: each of its lines on a row of its own, kept as written
@@ -3026,6 +3051,27 @@ mod tests {
                 .any(|(_, hit)| matches!(hit, ViewHit::GrabNavigatorEdge)),
             "no column, no edge"
         );
+    }
+
+    /// What a hint quotes is drawn apart, without its backticks — and stays
+    /// apart on the next row when a fold split the quote.
+    #[test]
+    fn a_hint_draws_what_it_quotes_apart() {
+        let mut quoted = false;
+        let first = hint_line("Run `uze agent", &mut quoted);
+        let second = hint_line("artifacts check` now", &mut quoted);
+        let text = |line: &Line<'_>| {
+            line.spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        assert_eq!(text(&first), "Run uze agent");
+        assert_eq!(text(&second), "artifacts check now");
+        assert_eq!(first.spans[1].style, theme::fg(Token::TextPrimary));
+        assert_eq!(second.spans[0].style, theme::fg(Token::TextPrimary));
+        assert_eq!(second.spans[1].style, theme::fg(Token::TextMuted));
+        assert!(!quoted, "a closed quote leaves nothing open");
     }
 
     /// A hint's own lines are kept, and kept as written where they fit:

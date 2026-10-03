@@ -665,7 +665,9 @@ pub fn view(state: &SpecView, space: Size) -> View {
             hint: None,
             role: Tone::Muted,
         },
-        footer: vec![Command::Close],
+        // A message has nothing to ask, the way the other surfaces' own
+        // messages stand alone; what there is to ask arrives with the specs.
+        footer: Vec::new(),
         notice: None,
         confirm: None,
         modes: Vec::new(),
@@ -679,10 +681,7 @@ pub fn view(state: &SpecView, space: Size) -> View {
             ..base
         },
         State::NoLayout => View {
-            content: message(
-                "No spec layout found in this checkout",
-                Some(supported_tools(dialect::SHIPPED)),
-            ),
+            content: message("No specs found", Some(supported_tools(dialect::SHIPPED))),
             ..base
         },
         State::Found { .. } => View {
@@ -748,7 +747,7 @@ fn supported_tools(dialects: &[dialect::Dialect]) -> String {
         })
         .collect();
     format!(
-        "A project using one of these shows up here:\n\n{}",
+        "Shows any project laid out by one of these:\n\n{}",
         tools.join("\n")
     )
 }

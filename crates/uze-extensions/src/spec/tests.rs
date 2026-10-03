@@ -660,7 +660,7 @@ fn no_layout_lists_every_tool_it_reads_in_columns() {
     let Content::Message { text, hint, .. } = shown.content else {
         panic!("expected a message");
     };
-    assert_eq!(text, "No spec layout found in this checkout");
+    assert_eq!(text, "No specs found");
     let hint = hint.unwrap();
     let tools: Vec<&str> = hint.lines().skip(2).collect();
     assert_eq!(
