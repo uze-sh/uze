@@ -1321,28 +1321,14 @@ fn ago(at_unix: u64) -> String {
     }
 }
 
-/// A Markdown file's leading `---` frontmatter and the body after it.
-fn split_frontmatter(text: &str) -> Option<(&str, &str)> {
-    let rest = text
-        .strip_prefix("---\n")
-        .or_else(|| text.strip_prefix("---\r\n"))?;
-    let end = rest.find("\n---")?;
-    let body = rest[end + 4..].trim_start_matches(['\r', '\n']);
-    Some((&rest[..end], body))
-}
-
-/// A resource's text as the drawer renders it: Markdown as Markdown, with
-/// its frontmatter shown as the YAML it is rather than read as a rule and
-/// a heading; a JSON definition as highlighted JSON.
+/// A resource's text as the drawer renders it: Markdown as Markdown,
+/// frontmatter included, and a JSON definition as highlighted JSON.
 fn preview_markdown(resource: &PluginCapability) -> String {
     let text = &resource.preview.text;
     match resource.kind {
         CapabilityKind::Mcp | CapabilityKind::Hook => format!("```json\n{text}\n```\n"),
         CapabilityKind::AgentSkill | CapabilityKind::Agent | CapabilityKind::Instruction => {
-            match split_frontmatter(text) {
-                Some((frontmatter, body)) => format!("```yaml\n{frontmatter}\n```\n\n{body}"),
-                None => text.clone(),
-            }
+            text.clone()
         }
     }
 }
@@ -1390,10 +1376,11 @@ fn preview_rows(
                 && cached.text == resource.preview.text
         });
         if !current {
-            let rows = uze_extensions::code::markdown(&preview_markdown(resource), &theme)
-                .iter()
-                .flat_map(|line| crate::ui::extension_view::prose_rows(line, width.into()))
-                .collect();
+            let rows =
+                uze_extensions::code::markdown(&preview_markdown(resource), &theme, width.into())
+                    .iter()
+                    .flat_map(|line| crate::ui::extension_view::prose_rows(line, width.into()))
+                    .collect();
             *cached = Some(RenderedPreview {
                 identity: resource.identity.clone(),
                 theme,

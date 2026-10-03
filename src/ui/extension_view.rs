@@ -20,8 +20,8 @@ use ratatui::{
 };
 use uze_extensions::view::{
     Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
-    Medium, Mode, Navigator, NavigatorRow, PanDirection, Role, RowIcon, RowMark, ScrollTarget,
-    Section, Size, Span, TAB_WIDTH, TrailStep, View, ViewHit,
+    Medium, Mode, Navigator, NavigatorRow, PROSE_INSET, PanDirection, Role, RowIcon, RowMark,
+    ScrollTarget, Section, Size, Span, TAB_WIDTH, TrailStep, View, ViewHit,
 };
 
 use crate::ui::selection::{Glyph, TextRow, TextSelection};
@@ -52,17 +52,6 @@ const MAX_NAVIGATOR_WIDTH: u16 = 50;
 const MIN_EXTENSION_CONTENT_WIDTH: u16 = 40;
 
 const GUTTER_WIDTH: u16 = 7;
-
-/// Margin on each side of unnumbered content.
-///
-/// A numbered line already starts a gutter's width in, and ends well
-/// short of the edge because code is short; that is where every other
-/// mode's breathing room comes from. A rendered document has neither — it
-/// has no gutter, and its paragraphs wrap to the full width — so without
-/// this it runs into both borders. Two columns, the same as the
-/// management screens' own content inset, so the two surfaces indent
-/// their text by the same amount.
-const PROSE_INSET: u16 = 2;
 
 /// Columns of padding on each side of a mode segment's label. The padding
 /// is part of the button — it is filled, and clicked, like the label is.

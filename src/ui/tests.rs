@@ -4975,22 +4975,30 @@ fn the_arrows_walk_an_unfolded_plugins_resources_in_drawn_order() {
 }
 
 /// A resource the keyboard is on is previewed in the drawer: what it is,
-/// where it sits, and its text rendered — the frontmatter as YAML rather
-/// than read as a rule, the body as Markdown.
+/// where it sits, and its text rendered — the frontmatter as a key/value
+/// table rather than read as a rule, the body as Markdown.
 #[test]
 fn a_selected_resource_is_previewed_in_the_drawer() {
     let mut model = unfolded_git();
     model.select_plugin_row(1, Some("commit".to_owned()));
     let (terminal, hits) = drawn_at(&model, 150, 30);
-    let drawer: Vec<String> = buffer_rows(&terminal)
+    let rows = buffer_rows(&terminal);
+    // The drawer is right of the list's rule; the frontmatter's own table
+    // draws rules inside it, so the cut is at the first one past the list.
+    let drawer: Vec<String> = rows
         .iter()
-        .map(|row| row.rsplit('│').next().unwrap_or_default().to_owned())
+        .map(|row| row.split_once('│').map_or("", |(_, rest)| rest).to_owned())
         .collect();
 
+    assert!(
+        drawer
+            .iter()
+            .any(|row| row.contains("│ description ") && row.contains("Conventional commit")),
+        "the frontmatter is a table: {drawer:#?}"
+    );
     for expected in [
         "SKILL",
         "skills/commit/SKILL.md",
-        "description: Conventional commit",
         "Write one from the staged diff.",
     ] {
         assert!(

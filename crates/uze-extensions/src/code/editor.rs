@@ -134,8 +134,16 @@ pub(super) struct OpenFile {
     /// not when the screen does. Behind a cell because a view is drawn
     /// through a shared reference: the host asks what to draw, and
     /// producing that answer is not a change to anything the viewer can
-    /// see.
-    preview: RefCell<Option<(u64, String, Vec<ContentLine>)>>,
+    /// see. Keyed by the width too, since a table is fitted to it.
+    preview: RefCell<Option<Rendered>>,
+}
+
+/// A preview, and what it was rendered from and for.
+struct Rendered {
+    revision: u64,
+    theme: String,
+    width: usize,
+    lines: Vec<ContentLine>,
 }
 
 impl OpenFile {
@@ -226,19 +234,33 @@ impl OpenFile {
     /// Rendered once per change to the buffer rather than once per frame,
     /// and copied out a window at a time, because the two together are
     /// what keep a long document's preview off the frame's budget.
-    pub(super) fn preview(&self, first: usize, count: usize) -> (usize, Vec<ContentLine>) {
+    ///
+    /// `width` is the columns it is laid out in; `None` keeps the width it
+    /// was last drawn at, for a question about what is already on screen.
+    pub(super) fn preview(
+        &self,
+        first: usize,
+        count: usize,
+        width: Option<usize>,
+    ) -> (usize, Vec<ContentLine>) {
         let mut cached = self.preview.borrow_mut();
-        let fresh = cached
-            .as_ref()
-            .is_some_and(|(revision, theme, _)| *revision == self.revision && theme == &self.theme);
+        let width = width
+            .or_else(|| cached.as_ref().map(|rendered| rendered.width))
+            .unwrap_or(usize::MAX);
+        let fresh = cached.as_ref().is_some_and(|rendered| {
+            rendered.revision == self.revision
+                && rendered.theme == self.theme
+                && rendered.width == width
+        });
         if !fresh {
-            *cached = Some((
-                self.revision,
-                self.theme.clone(),
-                crate::shared::markdown::render(&self.contents(), &self.theme),
-            ));
+            *cached = Some(Rendered {
+                revision: self.revision,
+                theme: self.theme.clone(),
+                width,
+                lines: crate::shared::markdown::render(&self.contents(), &self.theme, width),
+            });
         }
-        let (_, _, lines) = cached.as_ref().expect("rendered just above");
+        let lines = &cached.as_ref().expect("rendered just above").lines;
         (
             lines.len(),
             lines.iter().skip(first).take(count).cloned().collect(),
