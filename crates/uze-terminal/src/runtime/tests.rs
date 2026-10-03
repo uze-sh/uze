@@ -642,9 +642,14 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
     let mut env = uze_testkit::env::scope();
     env.remove("UZE_SHIM_NAME");
     // The shell a pane launches is the operator's `$SHELL`, which on a
-    // runner is whatever it happens to report; pinned, the name this
-    // waits for is the same on every machine.
-    env.set("SHELL", "/bin/sh");
+    // runner is whatever it happens to report. Pinned to a shell whose
+    // process takes the name of its own file: macOS's `/bin/sh` is a
+    // shim that runs as `bash`.
+    let shell = ["/bin/bash", "/bin/sh"]
+        .into_iter()
+        .find(|candidate| Path::new(candidate).exists())
+        .expect("a POSIX shell");
+    env.set("SHELL", shell);
     let (damage, _damage_events) = std::sync::mpsc::channel();
     // Canonicalized, because the assertion below compares this against
     // what the kernel reports, and the kernel answers with the real
@@ -663,7 +668,11 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
         Arc::new(Mutex::new(Palette::default())),
     )
     .unwrap();
-    let expected_name = "sh".to_owned();
+    let expected_name = Path::new(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("a shell path names a file")
+        .to_owned();
 
     // Poll until the *spawned shell* owns the PTY's foreground group,
     // identified by its cwd. Before it does, `process_group_leader`
