@@ -18,16 +18,6 @@ use crate::ui::theme::{self, Symbol};
 /// Which of a focus-carrying dialog's two answers is the way out.
 pub(crate) const CANCEL: usize = 0;
 
-/// The keys that answer a dialog where it is open: the affirmative, the
-/// way out, and the scopes both are looked up in — which is the asker's
-/// to say, since the same answer is a different chord on a different
-/// screen.
-pub(crate) struct Keys<'a> {
-    pub(crate) scopes: &'a [uze_keys::Scope],
-    pub(crate) yes: uze_keys::Action,
-    pub(crate) no: uze_keys::Action,
-}
-
 /// How much is at stake in a dialog's answer. It colours the thing being
 /// acted on and the button that acts — the only two places the answer
 /// lands — and nothing else, so the dialog reads calm until the eye
@@ -91,14 +81,16 @@ const PAD_X: u16 = 3;
 /// explanation wrapped to the dialog's measure, and the answers on the
 /// right, the affirmative last — where the eye ends up after reading. How
 /// to answer from the keyboard sits in the bottom border, out of the way
-/// of the reading. The height follows the wrapped text, so nothing is cut.
+/// of the reading, looked up in `scopes` — the asker's to say, since the
+/// same answer is a different chord on a different screen. The height
+/// follows the wrapped text, so nothing is cut.
 ///
 /// The caller registers the buttons ahead of whatever the dialog covers.
 pub(crate) fn render<T: Clone>(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     dialog: &Dialog<'_>,
-    keys: &Keys<'_>,
+    scopes: &[uze_keys::Scope],
     cancel: T,
     confirm: T,
 ) -> Answers<T> {
@@ -152,7 +144,7 @@ pub(crate) fn render<T: Clone>(
     // Wider than a popup's own inset and with no row above: a dialog's
     // first line is a question, and it is read across rather than down.
     let inner = Surface::floating()
-        .hint(hint_line(dialog, keys))
+        .hint(hint_line(dialog, scopes))
         .padding(Padding::horizontal(PAD_X))
         .render(frame, popup);
     frame.render_widget(Paragraph::new(lines), inner);
@@ -175,15 +167,26 @@ pub(crate) fn render<T: Clone>(
     Answers { popup, buttons }
 }
 
-/// `y delete · esc cancel` — the dialog's own words for its answers, with
-/// whichever keys reach them now.
-fn hint_line(dialog: &Dialog<'_>, keys: &Keys<'_>) -> Line<'static> {
-    let confirm = dialog.confirm.map(str::to_lowercase);
-    let answers = match &confirm {
-        Some(confirm) => vec![(keys.yes, confirm.as_str()), (keys.no, "cancel")],
-        None => vec![(keys.no, "close")],
+/// `enter delete · esc cancel` — the dialog's own words for what each key
+/// does now. Enter takes the answer the keyboard is on, so while that is
+/// the way out the hint says so, and names the key that reaches the other.
+fn hint_line(dialog: &Dialog<'_>, scopes: &[uze_keys::Scope]) -> Line<'static> {
+    use uze_keys::Action;
+    let Some(confirm) = dialog.confirm.map(str::to_lowercase) else {
+        return border_hint(scopes, &[(Action::Dismiss, "close")]);
     };
-    border_hint(keys.scopes, &answers)
+    let answers = if dialog.focus == Some(CANCEL) {
+        [
+            (Action::Activate, "cancel"),
+            (Action::FocusNext, confirm.as_str()),
+        ]
+    } else {
+        [
+            (Action::Activate, confirm.as_str()),
+            (Action::Dismiss, "cancel"),
+        ]
+    };
+    border_hint(scopes, &answers)
 }
 
 /// The keys a dialog answers to, as its bottom border carries them.

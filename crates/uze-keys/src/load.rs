@@ -198,12 +198,12 @@ fn bind(scope: Scope, chord: &str, action: Action) -> Binding {
 
 /// The keymap uze ships with.
 ///
-/// Three rules shape it, and every entry is an instance of one of them:
+/// Four rules shape it, and every entry is an instance of one of them:
 ///
 /// 1. **In management, uze owns the keyboard**, so an action may hold a
-///    bare letter — and a letter names one action, everywhere. `r` removes
-///    and nothing else; a bare letter always acts on the row you are on,
-///    which is why refreshing carries a modifier instead.
+///    bare letter — and a letter names one action, everywhere. A bare
+///    letter always acts on the row you are on, which is why refreshing
+///    carries a function key instead.
 /// 2. **In the workspace, uze is a guest.** Every bare key belongs to the
 ///    program in the pane, and every chord uze takes is one an agent's
 ///    input loses. Function keys and modified navigation keys are the
@@ -213,6 +213,11 @@ fn bind(scope: Scope, chord: &str, action: Action) -> Binding {
 ///    context, adding a space, installing what a project declares: all are
 ///    offered by a button, a row's actions and the index, and none needs a
 ///    key invented for it.
+/// 4. **One key per meaning.** An action holds one chord on a surface, not
+///    a second spelling of it (no `j` beside `down`, no `tab` beside
+///    `right`); what Enter already does to a row is not repeated on a
+///    letter; and no letter answers a question — the arrows choose between
+///    its answers, enter takes one, esc leaves.
 fn default_bindings() -> Vec<Binding> {
     let mut bindings = vec![
         // --- Everywhere -------------------------------------------------
@@ -228,49 +233,26 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Global, "ctrl+q", Action::Quit),
         // --- Management, screen-wide ------------------------------------
         bind(Scope::Management, "down", Action::SelectNext),
-        bind(Scope::Management, "j", Action::SelectNext),
         bind(Scope::Management, "up", Action::SelectPrevious),
-        bind(Scope::Management, "k", Action::SelectPrevious),
         bind(Scope::Management, "tab", Action::FocusNext),
         bind(Scope::Management, "shift+tab", Action::FocusPrevious),
         bind(Scope::Management, "enter", Action::Activate),
         bind(Scope::Management, "esc", Action::Dismiss),
-        // The sidebar is vertical and holds the screens, exactly as the
-        // workspace's sidebar is vertical and holds the spaces — so the
-        // same chord walks both, from anywhere, without first having to
-        // put the focus back on the list.
-        bind(Scope::Management, "ctrl+down", Action::NextScreen),
-        bind(Scope::Management, "ctrl+up", Action::PreviousScreen),
         bind(Scope::Management, "left", Action::FocusSidebar),
-        bind(Scope::Management, "h", Action::FocusSidebar),
         bind(Scope::Management, "right", Action::FocusContent),
-        bind(Scope::Management, "l", Action::FocusContent),
-        // A modifier rather than a letter: refreshing is not a thing you
-        // do to the row you are on, and a bare `g` beside a screen full of
-        // bare letters that all act on a selection read as one of them.
-        bind(Scope::Management, "ctrl+r", Action::Refresh),
+        // Not a letter: refreshing is not a thing you do to the row you
+        // are on, and every bare letter here acts on a selection.
         bind(Scope::Management, "f5", Action::Refresh),
         bind(Scope::Management, "/", Action::StartFilter),
-        bind(Scope::Management, "t", Action::OpenThemePicker),
-        bind(Scope::Management, "m", Action::AddMarketplace),
-        // Management is a modal over the workspace, so the letter that
-        // leaves it leaves *it* — the theme picker's `q` means the same
-        // thing one surface further in. Quitting uze from here is
-        // `ctrl+q`, which is global and says so; a bare letter that ended
-        // the session from inside a modal was the one key in the product
-        // that could not be pressed by mistake twice.
-        bind(Scope::Management, "q", Action::Dismiss),
         // --- Management, per screen -------------------------------------
-        bind(Scope::Plugins, "i", Action::InstallPlugin),
+        // Enter performs a plugin's first offer — installing what is not
+        // there, removing what is — so only the offer it never makes
+        // holds a letter of its own.
         bind(Scope::Plugins, "u", Action::UpdatePlugin),
-        bind(Scope::Plugins, "r", Action::RemovePlugin),
+        bind(Scope::Plugins, "m", Action::AddMarketplace),
         bind(Scope::Plugins, "pagedown", Action::ScrollPageDown),
         bind(Scope::Plugins, "pageup", Action::ScrollPageUp),
-        bind(Scope::Extensions, "e", Action::EnableExtension),
-        bind(Scope::Extensions, "o", Action::DisableExtension),
         bind(Scope::Harnesses, "s", Action::SetupHarness),
-        bind(Scope::Harnesses, "a", Action::AnalyzeContext),
-        bind(Scope::Harnesses, "p", Action::ApplyContextPlan),
         bind(Scope::Profiles, "n", Action::NewProfile),
         bind(Scope::Profiles, "d", Action::DeleteProfile),
         bind(Scope::Profiles, "space", Action::ToggleProfileHarness),
@@ -284,21 +266,14 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::TextPrompt, "enter", Action::Activate),
         bind(Scope::TextPrompt, "esc", Action::Dismiss),
         bind(Scope::TextPrompt, "backspace", Action::EraseBack),
+        // A question is answered the way a row of buttons is: the arrows
+        // move between the answers, enter takes the one the keyboard is
+        // on, and esc is always the way out. No letter answers one, so
+        // there is no second, invisible way to say yes.
         bind(Scope::Confirm, "enter", Action::Activate),
         bind(Scope::Confirm, "esc", Action::Dismiss),
-        bind(Scope::Confirm, "tab", Action::FocusNext),
-        bind(Scope::Confirm, "shift+tab", Action::FocusPrevious),
         bind(Scope::Confirm, "left", Action::FocusPrevious),
         bind(Scope::Confirm, "right", Action::FocusNext),
-        bind(Scope::Confirm, "y", Action::ConfirmYes),
-        bind(Scope::Confirm, "n", Action::ConfirmNo),
-        bind(Scope::ThemePicker, "down", Action::SelectNext),
-        bind(Scope::ThemePicker, "j", Action::SelectNext),
-        bind(Scope::ThemePicker, "up", Action::SelectPrevious),
-        bind(Scope::ThemePicker, "k", Action::SelectPrevious),
-        bind(Scope::ThemePicker, "enter", Action::Activate),
-        bind(Scope::ThemePicker, "esc", Action::Dismiss),
-        bind(Scope::ThemePicker, "q", Action::Dismiss),
         bind(Scope::KeyCapture, "esc", Action::Dismiss),
         // --- The index, in either mode ----------------------------------
         bind(Scope::ActionIndex, "down", Action::SelectNext),
@@ -317,16 +292,19 @@ fn default_bindings() -> Vec<Binding> {
         // --- Workspace, the container -----------------------------------
         bind(Scope::Workspace, "ctrl+t", Action::NewShellTab),
         bind(Scope::Workspace, "ctrl+w", Action::CloseTab),
-        bind(Scope::Workspace, "alt+g", Action::ToggleChanges),
-        bind(Scope::Workspace, "alt+e", Action::ToggleFiles),
-        bind(Scope::Workspace, "alt+a", Action::ToggleArchitect),
+        // The doors stay doors: the one already showing closes, another
+        // switches — so a surface is left for another by its own chord,
+        // never by closing it first.
+        bind(Scope::Surfaces, "alt+g", Action::ToggleChanges),
+        bind(Scope::Surfaces, "alt+e", Action::ToggleFiles),
+        bind(Scope::Surfaces, "alt+a", Action::ToggleArchitect),
         // Under the thumb that is already on Alt, beside the other doors.
         // Not `z`: GPU overlays claim it system-wide (NVIDIA's; AMD's takes
         // `r`, the first choice here), so the terminal never receives it.
         // Not `c`, `d`, `f` or `b`: a shell in the pane capitalises, deletes
         // and moves by word on those, and the workspace scope takes a chord
         // before the pane ever sees it.
-        bind(Scope::Workspace, "alt+x", Action::ToggleSpec),
+        bind(Scope::Surfaces, "alt+x", Action::ToggleSpec),
         bind(Scope::Workspace, "alt+n", Action::NewAgent),
         // The container of agents, beside the agent's own chord: `s` for
         // space, on the same modifier.
@@ -341,14 +319,9 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Workspace, "alt+down", Action::NextAgent),
         // --- Workspace, the work ----------------------------------------
         bind(Scope::Workspace, "alt+i", Action::DeliverTask),
-        bind(Scope::Workspace, "alt+shift+i", Action::DeliverAllTasks),
         bind(Scope::Workspace, "alt+p", Action::ToggleWork),
         // --- Workspace, the surfaces that seal --------------------------
         bind(Scope::Code, "esc", Action::Dismiss),
-        // The doors stay doors: the one already showing closes, the other
-        // switches — so a surface is left for another by its own chord,
-        // never by closing it first.
-        bind(Scope::Code, "alt+g", Action::ToggleChanges),
         bind(Scope::Code, "tab", Action::FocusNext),
         bind(Scope::Code, "down", Action::SelectNext),
         bind(Scope::Code, "up", Action::SelectPrevious),
@@ -357,14 +330,7 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Code, "enter", Action::Activate),
         bind(Scope::Code, "pagedown", Action::ScrollPageDown),
         bind(Scope::Code, "pageup", Action::ScrollPageUp),
-        bind(Scope::Code, "alt+e", Action::ToggleFiles),
-        bind(Scope::Code, "alt+a", Action::ToggleArchitect),
-        bind(Scope::Code, "alt+x", Action::ToggleSpec),
         bind(Scope::Architect, "esc", Action::Dismiss),
-        bind(Scope::Architect, "alt+a", Action::ToggleArchitect),
-        bind(Scope::Architect, "alt+g", Action::ToggleChanges),
-        bind(Scope::Architect, "alt+e", Action::ToggleFiles),
-        bind(Scope::Architect, "alt+x", Action::ToggleSpec),
         // The arrows move the board, all four ways: on a surface whose
         // whole point is a drawing larger than the screen, that is what
         // an arrow means, and the list of diagrams is a row of tabs.
@@ -392,15 +358,9 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Architect, "shift+right", Action::SelectBoxRight),
         bind(Scope::Architect, "shift+up", Action::SelectBoxUp),
         bind(Scope::Architect, "shift+down", Action::SelectBoxDown),
-        bind(Scope::Architect, "pagedown", Action::ScrollPageDown),
-        bind(Scope::Architect, "pageup", Action::ScrollPageUp),
         // A list with a document beside it: the code surface's keys, for
         // the moves the two share, so a hand that knows one knows the other.
         bind(Scope::Spec, "esc", Action::Dismiss),
-        bind(Scope::Spec, "alt+x", Action::ToggleSpec),
-        bind(Scope::Spec, "alt+g", Action::ToggleChanges),
-        bind(Scope::Spec, "alt+e", Action::ToggleFiles),
-        bind(Scope::Spec, "alt+a", Action::ToggleArchitect),
         bind(Scope::Spec, "tab", Action::FocusNext),
         bind(Scope::Spec, "down", Action::SelectNext),
         bind(Scope::Spec, "up", Action::SelectPrevious),
@@ -417,7 +377,6 @@ fn default_bindings() -> Vec<Binding> {
         // Not a letter: it opens a list of actions rather than naming one,
         // and a letter names one action everywhere.
         bind(Scope::Code, ".", Action::OpenMenu),
-        bind(Scope::Code, "y", Action::ConfirmDelete),
         // Typing has a scope of its own so nothing behind it answers a
         // letter — the same reason the action index has one.
         bind(Scope::CodeEditing, "esc", Action::Dismiss),
@@ -439,21 +398,17 @@ fn default_bindings() -> Vec<Binding> {
         // not apply to says why.
         bind(Scope::Work, "esc", Action::Dismiss),
         bind(Scope::Work, "alt+p", Action::ToggleWork),
-        bind(Scope::Work, "tab", Action::NextProject),
         bind(Scope::Work, "right", Action::NextProject),
-        bind(Scope::Work, "shift+tab", Action::PreviousProject),
         bind(Scope::Work, "left", Action::PreviousProject),
         bind(Scope::Work, "down", Action::SelectNext),
         bind(Scope::Work, "up", Action::SelectPrevious),
         bind(Scope::Work, "enter", Action::Activate),
+        // The row's everyday moves hold a letter; the rarer ones —
+        // marking done, joining, adopting, cleaning up — are its buttons
+        // and rows of the index, which is where a keyboard reaches them.
         bind(Scope::Work, "r", Action::ResumeTask),
         bind(Scope::Work, "i", Action::DeliverTask),
-        bind(Scope::Work, "f", Action::FinishTask),
-        bind(Scope::Work, "j", Action::JoinCheckout),
-        bind(Scope::Work, "a", Action::AdoptCheckout),
         bind(Scope::Work, "d", Action::DiscardTask),
-        bind(Scope::Work, "c", Action::CleanUpCheckouts),
-        bind(Scope::Work, "y", Action::ConfirmDiscard),
         bind(Scope::AgentPicker, "down", Action::SelectNext),
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
@@ -464,9 +419,7 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::AgentDrawer, "esc", Action::Dismiss),
         // Whose prompts: this agent's or the whole space's. Two choices
         // side by side, walked the way the root picker's chips are.
-        bind(Scope::AgentDrawer, "tab", Action::FocusNext),
         bind(Scope::AgentDrawer, "right", Action::FocusNext),
-        bind(Scope::AgentDrawer, "shift+tab", Action::FocusPrevious),
         bind(Scope::AgentDrawer, "left", Action::FocusPrevious),
         bind(Scope::AgentDrawer, "x", Action::ClearPromptHistory),
         bind(Scope::ContextMenu, "down", Action::SelectNext),
@@ -572,11 +525,21 @@ mod tests {
                 // reset is rare enough to live on its button and menu.
                 "change-key",
                 "reset-key",
-                // On the Marketplace rail the removal key already reaches it:
-                // `r` removes the thing you are on, and there that is a
-                // marketplace.
+                // Enter performs a plugin's first offer, which is one of
+                // these two; the other is its button and its index row.
+                "install-plugin",
+                "remove-plugin",
+                // Removing a whole marketplace is rare and asked about:
+                // its heading's button and the index carry it.
                 "remove-marketplace",
+                // Enter switches an extension whichever way it is not.
+                "enable-extension",
+                "disable-extension",
                 "install-project-environment",
+                // Rare, and project-wide rather than about the harness the
+                // keyboard is on: the index lists both on that screen.
+                "analyze-context",
+                "apply-context-plan",
                 "open-glossary",
                 "apply-profile",
                 // Isolating an agent is a decision taken once, on one
@@ -590,9 +553,18 @@ mod tests {
                 // letter of its own would be one of the four nobody could
                 // guess.
                 "choose-area",
+                // Delivering every task at once is rare and wide: the
+                // index offers it wherever there is a space to deliver.
+                "deliver-all-tasks",
+                // The work modal's rarer moves: each is a button on the
+                // row it applies to, and a row of the index while it is.
+                "finish-task",
                 // The work modal's own key opens it; this is the space
                 // menu's way straight to that space's project.
                 "show-space-work",
+                "adopt-checkout",
+                "join-checkout",
+                "clean-up-checkouts",
             ],
             "an action gained or lost a chord; say so here on purpose"
         );
@@ -606,11 +578,11 @@ mod tests {
         // than in a comment so that adding another fails the build and
         // makes someone say why.
         //
-        // The code surface's `d`/`y` are the newest pair, and they are the
-        // same shape as preserved work's: `d` only raises the question,
-        // and `y` is the answer to a question the footer is asking at that
-        // moment. Neither is live outside that surface — the scope is
-        // sealed while it is open — and neither can reach a directory.
+        // The code surface's `d` is the same shape as preserved work's: it
+        // only raises the question, which is answered with the arrows and
+        // enter, never with another letter. Neither is live outside its
+        // surface — the scope is sealed while it is open — and the code
+        // surface's cannot reach a directory.
         //
         // The agent drawer's `x` asks first too, and the second `x` is the
         // answer: its footer says so while the question stands.
@@ -632,13 +604,9 @@ mod tests {
         assert_eq!(
             bare,
             vec![
-                "plugins.remove-plugin=r",
                 "profiles.delete-profile=d",
                 "code.delete-file=d",
-                "code.confirm-delete=y",
                 "preserved-work.discard-task=d",
-                "preserved-work.clean-up-checkouts=c",
-                "preserved-work.confirm-discard=y",
                 "agent-drawer.clear-prompt-history=x",
             ]
         );
@@ -785,9 +753,9 @@ mod tests {
         assert_eq!(problems[0].severity, Severity::Error);
 
         let mut conflicting = KeymapFile::default();
-        conflicting.set("plugins", "install-plugin", vec!["r".to_owned()]);
-        let problems = resolve(&conflicting).expect_err("`r` already removes");
-        assert!(problems[0].message.contains("`r`"), "{problems:?}");
+        conflicting.set("plugins", "install-plugin", vec!["u".to_owned()]);
+        let problems = resolve(&conflicting).expect_err("`u` already updates");
+        assert!(problems[0].message.contains("`u`"), "{problems:?}");
     }
 
     /// The screen that rebinds writes only what someone changed, so a

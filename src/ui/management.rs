@@ -383,9 +383,6 @@ pub(crate) fn render(
             input,
             hits,
         ),
-        Overlay::ThemePicker { themes, selected } => {
-            overlay::render_theme_picker(frame, area, themes, *selected)
-        }
         Overlay::NewProfile(input) => overlay::render_text_prompt(
             frame,
             area,
@@ -405,12 +402,8 @@ pub(crate) fn render(
 /// What is worth trying once on this side of the product, noted as taken
 /// in the first-steps list the two surfaces share — the workspace's own
 /// list names some of the same gestures, and one taken here is taken.
-pub(crate) const FIRST_STEPS: [uze_keys::Action; 4] = [
-    uze_keys::Action::NextScreen,
-    uze_keys::Action::OpenThemePicker,
-    uze_keys::Action::Refresh,
-    uze_keys::Action::OpenActionIndex,
-];
+pub(crate) const FIRST_STEPS: [uze_keys::Action; 2] =
+    [uze_keys::Action::Refresh, uze_keys::Action::OpenActionIndex];
 
 /// The columns the modal's name takes at the head of the tab strip, so
 /// the first tab starts at the same column whatever the name.
@@ -698,7 +691,15 @@ fn activate_label(model: &TuiModel) -> Option<String> {
             ProfilePanel::Editor => Some("change".to_owned()),
             ProfilePanel::Harnesses => None,
         },
-        Route::Overview | Route::Harnesses | Route::Extensions => None,
+        Route::Extensions => model.selected_extension().map(|extension| {
+            if model.extension_enabled(extension.id) {
+                "disable"
+            } else {
+                "enable"
+            }
+            .to_owned()
+        }),
+        Route::Overview | Route::Harnesses => None,
     }
 }
 

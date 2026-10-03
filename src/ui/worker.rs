@@ -43,8 +43,6 @@ pub(crate) enum Intent {
     /// which is what lets a rebinding be felt immediately. This is only
     /// the part that has to survive the process.
     PersistKeymap,
-    /// Show what UZE can be drawn in.
-    OpenThemePicker,
     /// Draw in this theme from now on, here and in the CLI.
     SelectTheme(String),
     /// Draw every mark from this glyph set from now on. Independent of the
@@ -124,7 +122,6 @@ impl Intent {
             Self::Quit => "quit",
             Self::CloseModal => "close_modal",
             Self::PersistKeymap => "persist_keymap",
-            Self::OpenThemePicker => "open_theme_picker",
             Self::SelectGlyphSet(_) => "select_glyph_set",
             Self::SelectChime(_) => "select_chime",
             Self::SwitchExtension { .. } => "switch_extension",
@@ -214,7 +211,6 @@ pub(crate) fn dispatch(
     let _span = tracing::info_span!("tui.intent", intent = intent.name()).entered();
     match intent {
         Intent::None | Intent::Quit | Intent::CloseModal => {}
-        Intent::OpenThemePicker => open_theme_picker(home, model),
         Intent::SelectTheme(id) => match select_theme(home, &id) {
             Ok(()) => {
                 model.status = Status::Success(format!("Drawing in {id}"));
@@ -348,28 +344,6 @@ pub(crate) fn dispatch(
             harness_ids,
         } => apply_profile(id, preferences, harness_ids, home, sender, model),
     }
-}
-
-fn open_theme_picker(home: &UzeHome, model: &mut TuiModel) {
-    // Cheap enough to read here rather than on a thread: a JSON
-    // read and a directory listing, the same work `uze config theme list`
-    // is budgeted for.
-    let themes: Vec<(String, bool)> = tui_application(home.clone())
-        .and_then(|app| app.themes().list(uze_theme::builtin_names()))
-        .map(|themes| {
-            themes
-                .into_iter()
-                .map(|theme| (theme.id, theme.active))
-                .collect()
-        })
-        .unwrap_or_else(|_| {
-            uze_theme::builtin_names()
-                .iter()
-                .map(|id| ((*id).to_owned(), false))
-                .collect()
-        });
-    let selected = themes.iter().position(|(_, active)| *active).unwrap_or(0);
-    model.overlay = crate::ui::model::Overlay::ThemePicker { themes, selected };
 }
 
 fn persist_keymap(home: &UzeHome, model: &mut TuiModel) {

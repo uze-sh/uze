@@ -142,12 +142,15 @@ scopes! {
         seals: true, text: true;
     /// A modal asking a yes/no question.
     Confirm => "confirm", "While being asked", Management, seals: true, text: false;
-    /// The theme picker.
-    ThemePicker => "theme-picker", "The theme picker", Management,
-        seals: true, text: false;
 
     /// The workspace client, with nothing of uze's own open.
     Workspace => "workspace", "Workspace", Workspace, seals: false, text: false;
+    /// The chords that open the surfaces standing in the pane, live over
+    /// the pane and over each of those surfaces alike. Its own scope,
+    /// pushed innermost, because a surface seals: bound in the workspace
+    /// they would stop at the first surface opened, and bound in each
+    /// surface they were written once per surface.
+    Surfaces => "surfaces", "Opening a surface", Workspace, seals: false, text: false;
     /// The code surface: a checkout's changes, its files and a file's
     /// contents, read.
     Code => "code", "Code", Workspace, seals: true, text: false;

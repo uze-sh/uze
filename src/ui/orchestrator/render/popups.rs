@@ -749,8 +749,8 @@ pub(in crate::ui::orchestrator) fn render_action_index(
     disabled: &std::collections::BTreeSet<String>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let rows = action_index_rows(&index.scopes, &index.filter, disabled);
-    let reachable = action_index_rows(&index.scopes, "", disabled).len();
+    let rows = action_index_rows(&index.scopes, &index.offered, &index.filter, disabled);
+    let reachable = action_index_rows(&index.scopes, &index.offered, "", disabled).len();
     let mut answering = index.scopes.clone();
     answering.push(uze_keys::Scope::ActionIndex);
     let hint = crate::ui::widget::dialog::border_hint(

@@ -76,53 +76,24 @@ impl TuiModel {
                     _ => Intent::None,
                 }
             }
+            // The arrows move between the two answers — a question with no
+            // focus yet stands on its affirmative, which is how it is drawn
+            // — and enter takes the one the keyboard is on.
             Overlay::Confirm { kind, focus } => match action {
-                Action::FocusNext | Action::FocusPrevious if focus.is_some() => {
+                Action::FocusNext | Action::FocusPrevious if !kind.is_notice() => {
                     self.overlay = Overlay::Confirm {
                         kind,
-                        focus: focus.map(|focus| 1 - focus),
+                        focus: Some(1 - focus.unwrap_or(1)),
                     };
                     Intent::None
                 }
-                // A notice has no affirmative: `yes` is not an answer to it.
-                Action::ConfirmYes if kind.is_notice() => Intent::None,
                 Action::Activate if focus == Some(CANCEL) || kind.is_notice() => {
                     self.close_overlay();
                     Intent::None
                 }
-                Action::Activate | Action::ConfirmYes => {
+                Action::Activate => {
                     self.close_overlay();
                     kind.intent(self)
-                }
-                Action::ConfirmNo | Action::Dismiss => {
-                    self.close_overlay();
-                    Intent::None
-                }
-                _ => Intent::None,
-            },
-            Overlay::ThemePicker { themes, selected } => match action {
-                Action::SelectNext => {
-                    let last = themes.len().saturating_sub(1);
-                    self.overlay = Overlay::ThemePicker {
-                        themes,
-                        selected: (selected + 1).min(last),
-                    };
-                    Intent::None
-                }
-                Action::SelectPrevious => {
-                    self.overlay = Overlay::ThemePicker {
-                        themes,
-                        selected: selected.saturating_sub(1),
-                    };
-                    Intent::None
-                }
-                Action::Activate => {
-                    let chosen = themes.get(selected).cloned();
-                    self.close_overlay();
-                    match chosen {
-                        Some((id, _)) => Intent::SelectTheme(id),
-                        None => Intent::None,
-                    }
                 }
                 Action::Dismiss => {
                     self.close_overlay();
@@ -436,11 +407,6 @@ pub(crate) fn render_text_prompt(
     input: &str,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let keys = dialog::Keys {
-        scopes: &[uze_keys::Scope::Global, uze_keys::Scope::TextPrompt],
-        yes: Action::Activate,
-        no: Action::Dismiss,
-    };
     let answers = dialog::render(
         frame,
         area,
@@ -453,7 +419,7 @@ pub(crate) fn render_text_prompt(
             focus: None,
             field: Some(Field::new(input, prompt.placeholder)),
         },
-        &keys,
+        &[uze_keys::Scope::Global, uze_keys::Scope::TextPrompt],
         Hit::OfferedAction(Action::Dismiss),
         Hit::OfferedAction(Action::Activate),
     );
@@ -489,62 +455,6 @@ fn slugify(input: &str) -> String {
         }
     }
     slug
-}
-
-/// The theme picker: what UZE can be drawn in, and which it is drawn in now.
-///
-/// Deliberately a plain list with no preview. A preview would have to draw a
-/// second palette inside a frame already painted in the first one, which is
-/// the one thing a terminal cannot do convincingly — and the real preview is
-/// free: pressing enter repaints everything.
-pub(crate) fn render_theme_picker(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    themes: &[(String, bool)],
-    selected: usize,
-) {
-    let lines: Vec<Line<'static>> = themes
-        .iter()
-        .enumerate()
-        .map(|(index, (id, in_force))| {
-            let cursor = if index == selected {
-                theme::glyph(Symbol::Prompt)
-            } else {
-                " ".repeat(usize::from(theme::width(Symbol::Prompt)))
-            };
-            Line::from(vec![
-                Span::styled(format!("{cursor} "), theme::fg_bold(Token::Accent)),
-                Span::styled(
-                    id.clone(),
-                    if index == selected {
-                        theme::fg_bold(Token::TextBright)
-                    } else {
-                        theme::fg(Token::TextPrimary)
-                    },
-                ),
-                Span::styled(
-                    if *in_force {
-                        format!("  {} in use", theme::glyph(Symbol::StatusSelected))
-                    } else {
-                        String::new()
-                    },
-                    theme::fg(Token::TextDim),
-                ),
-            ])
-        })
-        .collect();
-    let shell = dialog::shell(
-        frame,
-        area,
-        48,
-        lines.len() as u16,
-        "Theme",
-        dialog::border_hint(
-            &[uze_keys::Scope::Global, uze_keys::Scope::ThemePicker],
-            &[(Action::Activate, "apply"), (Action::Dismiss, "close")],
-        ),
-    );
-    frame.render_widget(Paragraph::new(lines), shell.body);
 }
 
 impl Confirmation {
@@ -671,18 +581,13 @@ pub(crate) fn render_confirmation(
     focus: Option<usize>,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let keys = dialog::Keys {
-        scopes: &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
-        yes: Action::ConfirmYes,
-        no: Action::Dismiss,
-    };
     let targets = dialog::render(
         frame,
         area,
         &kind.dialog(focus),
-        &keys,
-        Hit::OfferedAction(Action::ConfirmNo),
-        Hit::OfferedAction(Action::ConfirmYes),
+        &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
+        Hit::Answer(false),
+        Hit::Answer(true),
     );
     // Prepended, because the dialog is drawn over whatever was behind it
     // and that is still in the hit list underneath.

@@ -407,7 +407,9 @@ fn discarding_a_rename_restores_both_of_its_paths() {
         0,
     );
     ask_to_discard(&mut view);
-    press(&mut view, Command::ConfirmDelete);
+    // The answer the keyboard starts on is the way out.
+    press(&mut view, Command::Expand);
+    press(&mut view, Command::Activate);
     settle(&mut view, &machine);
 
     assert_eq!(
@@ -1359,7 +1361,9 @@ fn deleting_asks_before_it_deletes() {
     );
 
     press(&mut view, Command::Delete);
-    press(&mut view, Command::ConfirmDelete);
+    // The answer the keyboard starts on is the way out.
+    press(&mut view, Command::Expand);
+    press(&mut view, Command::Activate);
     settle(&mut view, &machine);
     assert!(
         !machine

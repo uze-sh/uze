@@ -57,6 +57,11 @@ pub(crate) enum Hit {
     HealthStatus,
     /// A detail view's button for one of the selected row's offers.
     OfferedAction(uze_keys::Action),
+    /// One of an open question's two answers: `true` for the affirmative.
+    /// Its own target rather than an action, because the action that
+    /// takes an answer is enter, and enter takes whichever one the
+    /// keyboard is on.
+    Answer(bool),
     /// One line of the Keys screen.
     KeyRow(usize),
     /// One line of the Settings screen — a theme or a glyph set, by its
@@ -108,6 +113,17 @@ impl TuiModel {
             // area must never silently confirm.
             let answer = match self.hit_at(column, row) {
                 Some(Hit::OfferedAction(action)) => Some(*action),
+                Some(Hit::Answer(yes)) => {
+                    let yes = *yes;
+                    if let Overlay::Confirm { focus, .. } = &mut self.overlay {
+                        *focus = Some(if yes {
+                            1
+                        } else {
+                            super::widget::dialog::CANCEL
+                        });
+                    }
+                    Some(uze_keys::Action::Activate)
+                }
                 _ => None,
             };
             if matches!(self.hit_at(column, row), Some(Hit::OverlayBody)) {
@@ -245,7 +261,7 @@ impl TuiModel {
             }
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
-            Hit::ActionIndexEntry(_) | Hit::OverlayBody => Intent::None,
+            Hit::ActionIndexEntry(_) | Hit::OverlayBody | Hit::Answer(_) => Intent::None,
             Hit::OfferedAction(action) => self.act(action),
             Hit::KeysTrack(track) => {
                 self.dragging_keys_track = Some(track);

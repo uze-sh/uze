@@ -12,6 +12,7 @@ impl Attach<'_> {
             .map(|index| {
                 action_index_rows(
                     &index.scopes,
+                    &index.offered,
                     &index.filter,
                     &self.model.disabled_extensions,
                 )
