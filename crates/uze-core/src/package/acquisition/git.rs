@@ -819,16 +819,17 @@ fn read_operator_config(pattern: &str) -> Vec<(String, String)> {
         "GIT_CONFIG_GLOBAL",
         "GIT_CONFIG_SYSTEM",
     ];
-    // An empty directory as the repository, so no repository's own config
-    // can answer — whatever encloses the temporary directory.
-    let no_repository = std::env::temp_dir().join("uze-no-repository");
-    let _ = fs::create_dir_all(&no_repository);
+    // A device as the repository, so no repository's own config can answer.
+    // Not a directory: one at a fixed path under the shared temporary
+    // directory is one another local user can plant a `config` in first,
+    // and an explicit `GIT_DIR` is read without Git's ownership check.
+    let no_repository = Path::new("/dev/null");
     let mut command = Command::new("git");
     without_git_environment(&mut command, WHICH_FILES);
     let Ok(output) = command
         .args(["config", "--includes", "-z", "--get-regexp", pattern])
-        .env("GIT_DIR", &no_repository)
-        .current_dir(&no_repository)
+        .env("GIT_DIR", no_repository)
+        .current_dir("/")
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
@@ -1133,6 +1134,35 @@ pub fn resolve_subdirectory(root: &Path, subdirectory: &Path) -> Result<PathBuf>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shared temporary directory is writable by every local user, so a
+    /// repository planted where the old reader pointed `GIT_DIR` must not
+    /// be able to name a credential helper for the operator.
+    #[test]
+    fn a_repository_planted_in_the_shared_temporary_directory_is_never_read() {
+        let planted = std::env::temp_dir().join("uze-no-repository");
+        if fs::create_dir_all(planted.join("objects")).is_err()
+            || fs::create_dir_all(planted.join("refs")).is_err()
+            || fs::write(planted.join("HEAD"), "ref: refs/heads/main\n").is_err()
+            || fs::write(
+                planted.join("config"),
+                "[credential]\n\thelper = !planted-by-another-user\n",
+            )
+            .is_err()
+        {
+            return;
+        }
+
+        let credentials = read_operator_config(CREDENTIAL_KEYS);
+        let _ = fs::remove_dir_all(&planted);
+
+        assert!(
+            credentials
+                .iter()
+                .all(|(_, value)| !value.contains("planted-by-another-user")),
+            "{credentials:?}"
+        );
+    }
 
     /// A certificate authority the operator names under `~/` still reaches
     /// an attempt that has no `HOME`, and a credential helper keeps the URL
