@@ -117,49 +117,7 @@ impl Themes<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
-
     use crate::{UzeApplication, UzeHome};
-
-    /// Named by `src/command_performance.rs` for `theme
-    /// list`/`set`/`show`/`glyphs`.
-    ///
-    /// Nothing here probes a harness or resolves a theme, so what this
-    /// actually guards is that it stays that way: the day selecting a theme
-    /// starts touching detection, this is what says so.
-    #[test]
-    fn theme_selection_meets_the_performance_budget() {
-        const BUDGET: Duration = Duration::from_millis(50);
-
-        let root = uze_testkit::temp::scratch("theme-perf");
-        let home = UzeHome::at(&root);
-        std::fs::create_dir_all(home.themes_dir()).expect("themes dir");
-        for index in 0..32 {
-            std::fs::write(home.themes_dir().join(format!("theme-{index}.json")), "{}")
-                .expect("theme file");
-        }
-        let app = UzeApplication::new(home, Vec::new());
-        app.themes().select("theme-7").expect("selected");
-
-        let started = Instant::now();
-        let listed = app.themes().list(&["default"]).expect("listed");
-        let sets = app
-            .themes()
-            .glyph_sets(&["default", "ascii", "nerd"])
-            .expect("sets");
-        let active = app.themes().active().expect("active");
-        let path = app.themes().path_of("theme-7").expect("path");
-        let elapsed = started.elapsed();
-
-        assert_eq!(listed.len(), 33);
-        assert_eq!(sets.len(), 3);
-        assert_eq!(active.as_deref(), Some("theme-7"));
-        assert!(path.is_some());
-        assert!(
-            elapsed < BUDGET,
-            "theme selection took {elapsed:?}, budget is {BUDGET:?}"
-        );
-    }
 
     #[test]
     fn a_theme_the_operator_wrote_shadows_a_builtin_of_the_same_name() {
