@@ -51,10 +51,7 @@ pub(crate) fn find_upward<T>(
     } else {
         path.parent().unwrap_or(path)
     };
-    let start = directory.canonicalize().map_err(|source| UzeError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let start = directory.canonicalize().map_err(UzeError::read(path))?;
     let answer = start.ancestors().find_map(found);
     Ok((start, answer))
 }

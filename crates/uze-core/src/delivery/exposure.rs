@@ -175,10 +175,7 @@ impl ManagedArtifact {
                 if inspection.state != AttachmentState::Matched {
                     return Ok(inspection);
                 }
-                fs::remove_file(path).map_err(|source| UzeError::Write {
-                    path: path.clone(),
-                    source,
-                })?;
+                fs::remove_file(path).map_err(UzeError::write(&path))?;
                 Ok(AttachmentInspection {
                     state: AttachmentState::Missing,
                     reason: "managed artifact detached".to_owned(),
@@ -189,10 +186,7 @@ impl ManagedArtifact {
                 if inspection.state != AttachmentState::Matched {
                     return Ok(inspection);
                 }
-                fs::remove_file(path).map_err(|source| UzeError::Write {
-                    path: path.clone(),
-                    source,
-                })?;
+                fs::remove_file(path).map_err(UzeError::write(&path))?;
                 Ok(AttachmentInspection {
                     state: AttachmentState::Missing,
                     reason: "managed artifact detached".to_owned(),
@@ -203,10 +197,7 @@ impl ManagedArtifact {
                 if inspection.state != AttachmentState::Matched {
                     return Ok(inspection);
                 }
-                fs::remove_dir_all(path).map_err(|source| UzeError::Write {
-                    path: path.clone(),
-                    source,
-                })?;
+                fs::remove_dir_all(path).map_err(UzeError::write(&path))?;
                 Ok(AttachmentInspection {
                     state: AttachmentState::Missing,
                     reason: "managed artifact detached".to_owned(),
@@ -335,15 +326,9 @@ fn attach_generated_file(path: &Path, content: &str) -> Result<()> {
         Ok(_) => Err(UzeError::ManagedEntryConflict(path.to_path_buf())),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-                    path: parent.to_path_buf(),
-                    source,
-                })?;
+                fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
             }
-            fs::write(path, content).map_err(|source| UzeError::Write {
-                path: path.to_path_buf(),
-                source,
-            })
+            fs::write(path, content).map_err(UzeError::write(path))
         }
         Err(source) => Err(UzeError::Read {
             path: path.to_path_buf(),
@@ -387,10 +372,7 @@ pub fn attach_generated_tree(
         }
     }
     crate::persistence::replace_dir(path, build)?;
-    crate::digest::tree_sha256(path).map_err(|source| UzeError::Read {
-        path: path.to_path_buf(),
-        source,
-    })
+    crate::digest::tree_sha256(path).map_err(UzeError::read(path))
 }
 
 /// The digest of the directory at `path` when it holds exactly the tree
@@ -402,16 +384,9 @@ fn adopt_identical_tree(path: &Path, build: impl FnOnce(&Path) -> Result<()>) ->
         .unwrap_or("tree");
     let probe = path.with_file_name(format!(".{name}.uze-probe-{}", std::process::id()));
     let _ = fs::remove_dir_all(&probe);
-    fs::create_dir_all(&probe).map_err(|source| UzeError::Write {
-        path: probe.clone(),
-        source,
-    })?;
-    let rendered = build(&probe).and_then(|()| {
-        crate::digest::tree_sha256(&probe).map_err(|source| UzeError::Read {
-            path: probe.clone(),
-            source,
-        })
-    });
+    fs::create_dir_all(&probe).map_err(UzeError::write(&probe))?;
+    let rendered = build(&probe)
+        .and_then(|()| crate::digest::tree_sha256(&probe).map_err(UzeError::read(&probe)));
     let _ = fs::remove_dir_all(&probe);
     let rendered = rendered?;
     match crate::digest::tree_sha256(path) {
@@ -512,17 +487,11 @@ fn inspect_generated_file(path: &Path, content: &str) -> AttachmentInspection {
 
 fn attach_symlink(path: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-            path: parent.to_path_buf(),
-            source,
-        })?;
+        fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
     }
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
-            let current = fs::read_link(path).map_err(|source| UzeError::Read {
-                path: path.to_path_buf(),
-                source,
-            })?;
+            let current = fs::read_link(path).map_err(UzeError::read(path))?;
             if current == target {
                 return Ok(());
             }
@@ -544,10 +513,7 @@ fn attach_symlink(path: &Path, target: &Path) -> Result<()> {
             // it does not touch.
             match fs::metadata(path) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    fs::remove_file(path).map_err(|source| UzeError::Write {
-                        path: path.to_path_buf(),
-                        source,
-                    })?;
+                    fs::remove_file(path).map_err(UzeError::write(path))?;
                     crate::persistence::create_symlink(target, path)
                 }
                 // Resolves, or cannot be told apart from one that does: a

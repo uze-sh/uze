@@ -150,10 +150,7 @@ impl MarketplaceSubpath {
         let canonical = joined
             .canonicalize()
             .map_err(|_| UzeError::MissingPath(joined.clone()))?;
-        let top = checkout.canonicalize().map_err(|source| UzeError::Read {
-            path: checkout.to_path_buf(),
-            source,
-        })?;
+        let top = checkout.canonicalize().map_err(UzeError::read(checkout))?;
         if !canonical.starts_with(&top) {
             return Err(UzeError::MarketplaceSubpathEscapes {
                 subpath: subpath.clone(),
@@ -246,10 +243,7 @@ pub fn clone_checkout(source: &PackageSource, checkout: &Path) -> Result<()> {
     let parent = checkout
         .parent()
         .ok_or_else(|| UzeError::MissingPath(checkout.to_path_buf()))?;
-    std::fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-        path: parent.to_path_buf(),
-        source,
-    })?;
+    std::fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
     let mut urls: Vec<String> = Vec::new();
     for transport in super::forge::transports(&fetch)? {
         if !urls.contains(&transport.url) {
@@ -401,10 +395,7 @@ pub fn resolve_plugin_source(
         .ok_or_else(|| UzeError::UnknownPackage(plugin_name.to_owned()))?;
     let canonical_root = marketplace_root
         .canonicalize()
-        .map_err(|source| UzeError::Read {
-            path: marketplace_root.to_path_buf(),
-            source,
-        })?;
+        .map_err(UzeError::read(marketplace_root))?;
     let joined = canonical_root.join(&entry.source);
     let canonical_source = joined
         .canonicalize()

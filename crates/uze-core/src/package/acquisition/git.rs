@@ -190,10 +190,7 @@ pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Re
     // place would let a `.git` directory travel into the Store.
     let git_dir = destination.join(".git");
     if git_dir.exists() {
-        fs::remove_dir_all(&git_dir).map_err(|source| UzeError::Write {
-            path: git_dir,
-            source,
-        })?;
+        fs::remove_dir_all(&git_dir).map_err(UzeError::write(git_dir))?;
     }
     Ok(commit)
 }
@@ -348,18 +345,9 @@ fn record_size(record: &[u8]) -> u64 {
 
 pub(super) fn assert_within_size_budget(root: &Path) -> Result<()> {
     fn total(path: &Path, accumulated: &mut u64) -> Result<()> {
-        for entry in fs::read_dir(path).map_err(|source| UzeError::Read {
-            path: path.to_path_buf(),
-            source,
-        })? {
-            let entry = entry.map_err(|source| UzeError::Read {
-                path: path.to_path_buf(),
-                source,
-            })?;
-            let metadata = entry.metadata().map_err(|source| UzeError::Read {
-                path: entry.path(),
-                source,
-            })?;
+        for entry in fs::read_dir(path).map_err(UzeError::read(path))? {
+            let entry = entry.map_err(UzeError::read(path))?;
+            let metadata = entry.metadata().map_err(UzeError::read(entry.path()))?;
             if metadata.is_dir() {
                 total(&entry.path(), accumulated)?;
             } else {
@@ -1114,14 +1102,10 @@ pub fn resolve_subdirectory(root: &Path, subdirectory: &Path) -> Result<PathBuf>
     if !candidate.is_dir() {
         return Err(UzeError::MissingPath(candidate));
     }
-    let resolved = candidate.canonicalize().map_err(|source| UzeError::Read {
-        path: candidate.clone(),
-        source,
-    })?;
-    let root = root.canonicalize().map_err(|source| UzeError::Read {
-        path: root.to_path_buf(),
-        source,
-    })?;
+    let resolved = candidate
+        .canonicalize()
+        .map_err(UzeError::read(&candidate))?;
+    let root = root.canonicalize().map_err(UzeError::read(root))?;
     if !resolved.starts_with(&root) {
         return Err(UzeError::PackageEscapesRoot {
             link: candidate,

@@ -56,10 +56,7 @@ use crate::{Result, UzeError, home::UzeHome};
 /// no symbolic links for UZE to own.
 #[cfg(unix)]
 pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(target, link).map_err(|source| UzeError::Write {
-        path: link.to_path_buf(),
-        source,
-    })
+    std::os::unix::fs::symlink(target, link).map_err(UzeError::write(link))
 }
 
 #[cfg(not(unix))]
@@ -107,16 +104,10 @@ pub fn replace_dir(destination: &Path, build: impl FnOnce(&Path) -> Result<()>) 
         .file_name()
         .and_then(|name| name.to_str())
         .expect("a generated directory has a UTF-8 name");
-    fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-        path: parent.to_path_buf(),
-        source,
-    })?;
+    fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
     remove_abandoned_swaps(parent, name);
     let staging = swap_path(parent, name, "staging");
-    fs::create_dir(&staging).map_err(|source| UzeError::Write {
-        path: staging.clone(),
-        source,
-    })?;
+    fs::create_dir(&staging).map_err(UzeError::write(&staging))?;
     let result = build(&staging).and_then(|()| swap_in(&staging, destination, parent, name));
     if result.is_err() {
         let _ = fs::remove_dir_all(&staging);
@@ -245,10 +236,7 @@ fn resolve_symlinks(path: &Path) -> Result<PathBuf> {
     for _ in 0..MAX_HOPS {
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                let target = fs::read_link(&current).map_err(|source| UzeError::Write {
-                    path: current.clone(),
-                    source,
-                })?;
+                let target = fs::read_link(&current).map_err(UzeError::write(&current))?;
                 current = match current.parent() {
                     Some(parent) if target.is_relative() => parent.join(target),
                     _ => target,
@@ -272,10 +260,7 @@ fn replace_atomically(
         tracing::debug_span!("persistence.write", path = %path.display(), bytes = payload.len())
             .entered();
     let parent = path.parent().expect("UZE state paths have a parent");
-    fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-        path: parent.to_path_buf(),
-        source,
-    })?;
+    fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
     let temporary = temporary_path(path, parent);
     // Opened outside the fallible block on purpose: the cleanup below
     // removes `temporary`, and this call may only remove a file it created
@@ -284,30 +269,16 @@ fn replace_atomically(
         .create_new(true)
         .write(true)
         .open(&temporary)
-        .map_err(|source| UzeError::Write {
-            path: temporary.clone(),
-            source,
-        })?;
+        .map_err(UzeError::write(&temporary))?;
     let result = (|| {
         if let Some(permissions) = permissions {
             file.set_permissions(permissions)
-                .map_err(|source| UzeError::Write {
-                    path: temporary.clone(),
-                    source,
-                })?;
+                .map_err(UzeError::write(&temporary))?;
         }
-        file.write_all(payload).map_err(|source| UzeError::Write {
-            path: temporary.clone(),
-            source,
-        })?;
-        file.sync_all().map_err(|source| UzeError::Write {
-            path: temporary.clone(),
-            source,
-        })?;
-        fs::rename(&temporary, path).map_err(|source| UzeError::Write {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        file.write_all(payload)
+            .map_err(UzeError::write(&temporary))?;
+        file.sync_all().map_err(UzeError::write(&temporary))?;
+        fs::rename(&temporary, path).map_err(UzeError::write(path))?;
         sync_directory(parent);
         Ok(())
     })();
@@ -386,10 +357,7 @@ impl MutationLock {
             .truncate(false)
             .write(true)
             .open(&path)
-            .map_err(|source| UzeError::Write {
-                path: path.clone(),
-                source,
-            })?;
+            .map_err(UzeError::write(&path))?;
         match try_lock_exclusive_briefly(&file) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {

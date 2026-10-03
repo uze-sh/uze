@@ -1,6 +1,6 @@
 //! Shared product error model.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
@@ -379,6 +379,25 @@ impl std::fmt::Display for ProjectionConflictDetails {
 /// rather than there. Each variant has an exact counterpart already, which
 /// is why the durability rule could move out without the domain's error
 /// surface growing.
+impl UzeError {
+    /// What a failed read of `path` becomes: `.map_err(UzeError::read(&path))`.
+    /// The path is only copied when the read did fail.
+    pub fn read(path: impl AsRef<Path>) -> impl FnOnce(std::io::Error) -> Self {
+        move |source| Self::Read {
+            path: path.as_ref().to_path_buf(),
+            source,
+        }
+    }
+
+    /// What a failed write of `path` becomes: `.map_err(UzeError::write(&path))`.
+    pub fn write(path: impl AsRef<Path>) -> impl FnOnce(std::io::Error) -> Self {
+        move |source| Self::Write {
+            path: path.as_ref().to_path_buf(),
+            source,
+        }
+    }
+}
+
 impl From<uze_document::DocumentError> for UzeError {
     fn from(error: uze_document::DocumentError) -> Self {
         use uze_document::DocumentError;
