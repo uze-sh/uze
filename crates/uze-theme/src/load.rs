@@ -1020,9 +1020,9 @@ mod tests {
         assert_eq!(theme.glyph(Symbol::StatusIdle), "○");
         assert_eq!(theme.glyph(Symbol::TreeLast), "└─");
         assert_eq!(theme.glyph(Symbol::HintSeparator), " · ");
-        assert_eq!(theme.symbol(Symbol::StatusWorking).frames().len(), 4);
-        assert_eq!(theme.frame(Symbol::StatusWorking, 0), "◜");
-        assert_eq!(theme.frame(Symbol::StatusWorking, 4), "◜");
+        assert_eq!(theme.symbol(Symbol::StatusWorking).frames().len(), 6);
+        assert_eq!(theme.frame(Symbol::StatusWorking, 0), "·");
+        assert_eq!(theme.frame(Symbol::StatusWorking, 6), "·");
     }
 
     #[test]
