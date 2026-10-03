@@ -77,6 +77,7 @@ use uze_core::{
 };
 
 mod generate;
+mod hooks;
 mod mcp;
 mod plugin;
 mod preferences;
@@ -84,7 +85,9 @@ mod provision;
 mod session;
 mod skills;
 
-use crate::hooks::{HookEntry, HookTarget};
+pub(crate) use hooks::HOOKS;
+
+use crate::hooks::HookEntry;
 use crate::shared::agent::{
     MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried,
     markdown_agent, projection_route,
@@ -291,7 +294,7 @@ impl IntegrationPort for AntigravityIntegration {
     }
 
     fn hook_capabilities(&self) -> uze_core::hook::HookCapabilities {
-        HookTarget::Antigravity.capabilities()
+        HOOKS.capabilities()
     }
 
     fn session_continuity(&self) -> uze_core::integration::SessionContinuity {
@@ -518,23 +521,11 @@ impl IntegrationPort for AntigravityIntegration {
                 )?;
                 true
             }
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => {
-                HookTarget::Antigravity.attach_entry(
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                HOOKS.attach_entry(
                     &self.uze_home,
                     self.id(),
-                    &HookEntry {
-                        config_file,
-                        entry_name,
-                        event: *event,
-                        expected,
-                        wrapper,
-                    },
+                    &HookEntry::recorded(artifact).expect("a hook config entry"),
                 )?;
                 true
             }
@@ -572,19 +563,9 @@ impl IntegrationPort for AntigravityIntegration {
                 &self.mcp_config_path,
                 &McpEntry::recorded(artifact).expect("a vendor config entry"),
             ),
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => HookTarget::Antigravity.inspect_entry(&HookEntry {
-                config_file,
-                entry_name,
-                event: *event,
-                expected,
-                wrapper,
-            }),
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                HOOKS.inspect_entry(&HookEntry::recorded(artifact).expect("a hook config entry"))
+            }
             _ => receipt.artifact.inspect_standard(),
         }
     }
@@ -621,23 +602,11 @@ impl IntegrationPort for AntigravityIntegration {
                     "agy mcp remove",
                 )?;
             }
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => {
-                return HookTarget::Antigravity.detach_entry(
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                return HOOKS.detach_entry(
                     &self.uze_home,
                     self.id(),
-                    &HookEntry {
-                        config_file,
-                        entry_name,
-                        event: *event,
-                        expected,
-                        wrapper,
-                    },
+                    &HookEntry::recorded(artifact).expect("a hook config entry"),
                 );
             }
             _ => {
@@ -714,7 +683,7 @@ impl AntigravityIntegration {
     /// harness runs a hook with its cwd set to the directory holding
     /// `hooks.json`, so every path in the entry is absolute.
     fn hook_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
-        HookTarget::Antigravity.entry_plan(
+        HOOKS.entry_plan(
             &self.uze_home,
             resource,
             self.hooks_config_path(),

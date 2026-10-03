@@ -18,7 +18,11 @@ pub(crate) fn opencode_bridge_path(config_root: &Path, package_id: &str) -> Path
 /// The package's groups as data for the generated plugin: translated
 /// matchers (matched against the runtime native tool name), abi event name,
 /// effect, and the authored handlers with `${PLUGIN_ROOT}` resolved.
-pub(super) fn bridge_hooks(hooks: &[&PortableHook], package_root: &Path) -> serde_json::Value {
+pub(super) fn bridge_hooks(
+    target: HookTarget,
+    hooks: &[&PortableHook],
+    package_root: &Path,
+) -> serde_json::Value {
     let package_root = &crate::shared::package_root::delivered(package_root);
     serde_json::Value::Array(
         hooks
@@ -28,7 +32,7 @@ pub(super) fn bridge_hooks(hooks: &[&PortableHook], package_root: &Path) -> serd
                     "id": hook.id,
                     "event": hook.event.abi_name(),
                     "effect": hook.effect.abi_name(),
-                    "matchers": hook.matchers.iter().flat_map(|m| tool_names(HookTarget::OpenCode, m)).collect::<Vec<_>>(),
+                    "matchers": hook.matchers.iter().flat_map(|m| tool_names(target, m)).collect::<Vec<_>>(),
                     "handlers": hook.handlers.iter().map(|handler| serde_json::json!({
                         "command": handler.command.replace(
                             "${PLUGIN_ROOT}",
@@ -45,9 +49,9 @@ pub(super) fn bridge_hooks(hooks: &[&PortableHook], package_root: &Path) -> serd
 /// The alias table this harness's plugin reads, generated from the one
 /// vocabulary: native tool name → portable alias plus the portable field
 /// values, each read from that harness's own input field.
-pub(super) fn bridge_alias_table() -> String {
+pub(super) fn bridge_alias_table(target: HookTarget) -> String {
     let mut rows = Vec::new();
-    for (native, binding) in vocabulary(HookTarget::OpenCode).native_names() {
+    for (native, binding) in vocabulary(target).native_names() {
         let fields = binding
             .fields
             .iter()
@@ -77,6 +81,7 @@ pub(super) const BRIDGE_HEADER: &str =
 /// neither is a reason to block the removal that deletes it, and the next
 /// attach reproduces the current bytes.
 pub(crate) fn bridge_carries_groups(
+    target: HookTarget,
     text: &str,
     hooks: &[&PortableHook],
     plugin_root: &Path,
@@ -91,7 +96,7 @@ pub(crate) fn bridge_carries_groups(
     else {
         return false;
     };
-    let serde_json::Value::Array(mut expected) = bridge_hooks(hooks, plugin_root) else {
+    let serde_json::Value::Array(mut expected) = bridge_hooks(target, hooks, plugin_root) else {
         return false;
     };
     carried.sort_by_cached_key(serde_json::Value::to_string);
@@ -110,15 +115,16 @@ pub(crate) fn bridge_carries_groups(
 /// resources rather than the tool input; deny/ask are therefore diagnosed
 /// before attach and never fabricated here.
 pub(crate) fn opencode_bridge(
+    target: HookTarget,
     hooks: &[&PortableHook],
     plugin_root: &Path,
     package_id: &str,
 ) -> String {
     let root = serde_json::to_string(&plugin_root.display().to_string())
         .expect("a path serializes as a JSON string");
-    let groups = serde_json::to_string(&bridge_hooks(hooks, plugin_root))
+    let groups = serde_json::to_string(&bridge_hooks(target, hooks, plugin_root))
         .expect("generated groups serialize");
-    let aliases = bridge_alias_table();
+    let aliases = bridge_alias_table(target);
     let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
     let reason_limit = HANDLER_REASON_LIMIT;
     format!(

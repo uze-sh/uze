@@ -109,13 +109,14 @@ pub(super) const fn agy_event_is_grouped(event: HookEvent) -> bool {
 /// (1.1.24: `plugin validate` reports 1 hook processed instead of one per
 /// group, and the loader fires nothing).
 pub(crate) fn agy_named_entry(
+    target: HookTarget,
     hook: &PortableHook,
     wrapper: &Path,
     package_root: &Path,
 ) -> serde_json::Value {
     let invocation = HookInvocation::Line(wrapper_command_line(wrapper, hook, package_root));
     let entries = if agy_event_is_grouped(hook.event) {
-        vec![group_entry(HookTarget::Antigravity, hook, &invocation)]
+        vec![group_entry(target, hook, &invocation)]
     } else {
         vec![handler_entry(hook, &invocation)]
     };

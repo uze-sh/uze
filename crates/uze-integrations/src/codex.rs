@@ -35,6 +35,7 @@ use uze_core::{
 };
 
 mod generate;
+mod hooks;
 mod mcp;
 mod plugin;
 mod preferences;
@@ -42,9 +43,10 @@ mod runtime;
 mod session;
 mod skills;
 
+pub(crate) use hooks::HOOKS;
 pub use mcp::detach_mcp_entry;
 
-use crate::hooks::{HookEntry, HookTarget};
+use crate::hooks::HookEntry;
 use crate::shared::agent::{
     PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried, projection_route,
 };
@@ -221,7 +223,7 @@ impl IntegrationPort for CodexIntegration {
     }
 
     fn hook_capabilities(&self) -> uze_core::hook::HookCapabilities {
-        HookTarget::Codex.capabilities()
+        HOOKS.capabilities()
     }
 
     fn session_continuity(&self) -> uze_core::integration::SessionContinuity {
@@ -365,23 +367,11 @@ impl IntegrationPort for CodexIntegration {
                 )?;
                 true
             }
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => {
-                HookTarget::Codex.attach_entry(
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                HOOKS.attach_entry(
                     &self.uze_home,
                     self.id(),
-                    &HookEntry {
-                        config_file,
-                        entry_name,
-                        event: *event,
-                        expected,
-                        wrapper,
-                    },
+                    &HookEntry::recorded(artifact).expect("a hook config entry"),
                 )?;
                 true
             }
@@ -428,19 +418,9 @@ impl IntegrationPort for CodexIntegration {
                     &McpEntry::recorded(artifact).expect("a vendor config entry"),
                 )
             }
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => HookTarget::Codex.inspect_entry(&HookEntry {
-                config_file,
-                entry_name,
-                event: *event,
-                expected,
-                wrapper,
-            }),
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                HOOKS.inspect_entry(&HookEntry::recorded(artifact).expect("a hook config entry"))
+            }
             ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
@@ -468,23 +448,11 @@ impl IntegrationPort for CodexIntegration {
                 let executable = self.provisioning_executable();
                 mcp::detach_mcp_entry(Path::new(&executable), &self.command_home, entry_name)?;
             }
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => {
-                return HookTarget::Codex.detach_entry(
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                return HOOKS.detach_entry(
                     &self.uze_home,
                     self.id(),
-                    &HookEntry {
-                        config_file,
-                        entry_name,
-                        event: *event,
-                        expected,
-                        wrapper,
-                    },
+                    &HookEntry::recorded(artifact).expect("a hook config entry"),
                 );
             }
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
@@ -541,7 +509,7 @@ impl CodexIntegration {
     }
 
     fn hook_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
-        HookTarget::Codex.entry_plan(
+        HOOKS.entry_plan(
             &self.uze_home,
             resource,
             self.hooks_config_path(),

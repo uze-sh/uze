@@ -14,7 +14,7 @@ fn bun_available() -> bool {
 fn drive(root: &Path, hook: &PortableHook, calls: &str) -> Vec<String> {
     fs::write(
         root.join("hooks-demo.ts"),
-        opencode_bridge(&[hook], root, "demo"),
+        opencode_bridge(crate::opencode::HOOKS, &[hook], root, "demo"),
     )
     .unwrap();
     fs::write(

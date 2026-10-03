@@ -42,13 +42,16 @@ use uze_core::{
     store::PackageId,
 };
 
+mod hooks;
 mod mcp;
 mod preferences;
 mod provision;
 mod session;
 mod skills;
 
-use crate::hooks::{self as hook_projection, HookTarget};
+pub(crate) use hooks::HOOKS;
+
+use crate::hooks as hook_projection;
 use crate::shared::agent::{
     MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, delivered_agent,
     fields_not_carried, markdown_agent, projection_route,
@@ -201,7 +204,7 @@ impl IntegrationPort for OpenCodeIntegration {
     }
 
     fn hook_capabilities(&self) -> uze_core::hook::HookCapabilities {
-        HookTarget::OpenCode.capabilities()
+        HOOKS.capabilities()
     }
     fn session_continuity(&self) -> uze_core::integration::SessionContinuity {
         uze_core::integration::SessionContinuity::Observed
@@ -528,13 +531,9 @@ impl OpenCodeIntegration {
         let path =
             hook_projection::opencode_bridge_path(self.config_root(), resource.package_id.as_str());
         let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated plugin module (its default export is the plugin definition, with no import the harness would have to resolve) that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The V2 tool hooks carry the tool input but no block signal, and the only decision point (permission.evaluate) carries the action's resources rather than the input, so deny/ask are diagnosed Unsupported before attach — never fabricated. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice. SessionStart is not claimed: on OpenCode 2.0.18 a plugin's event stream carries no `session.created` for a new session, and nothing in it tells a new session from a continued one (Conformance Lab, experiment opencode/session-start).";
-        hook_projection::hook_plan(
-            resource,
-            &HookTarget::OpenCode.capabilities(),
-            true,
-            evidence,
-            |_| Some(ManagedArtifact::ManagedHookFile { path }),
-        )
+        hook_projection::hook_plan(resource, &HOOKS.capabilities(), true, evidence, |_| {
+            Some(ManagedArtifact::ManagedHookFile { path })
+        })
     }
 
     /// The config root is the parent of `opencode.json` — the physical
@@ -571,7 +570,8 @@ impl OpenCodeIntegration {
         let references: Vec<&PortableHook> = groups.iter().collect();
         uze_core::persistence::write_atomic(
             bridge_path,
-            hook_projection::opencode_bridge(&references, package_root, package_id).as_bytes(),
+            hook_projection::opencode_bridge(HOOKS, &references, package_root, package_id)
+                .as_bytes(),
         )
     }
 
@@ -636,8 +636,12 @@ impl OpenCodeIntegration {
             };
         };
         let references: Vec<&PortableHook> = groups.iter().collect();
-        let expected =
-            hook_projection::opencode_bridge(&references, &package_root, &receipt.package_id);
+        let expected = hook_projection::opencode_bridge(
+            HOOKS,
+            &references,
+            &package_root,
+            &receipt.package_id,
+        );
         match fs::read(bridge_path) {
             Ok(bytes) if String::from_utf8_lossy(&bytes) == expected => AttachmentInspection {
                 state: AttachmentState::Matched,
@@ -645,6 +649,8 @@ impl OpenCodeIntegration {
             },
             Ok(bytes)
                 if hook_projection::bridge_carries_groups(
+                    HOOKS,
+
                     &String::from_utf8_lossy(&bytes),
                     &references,
                     &package_root,
@@ -699,8 +705,13 @@ impl OpenCodeIntegration {
             let references: Vec<&PortableHook> = groups.iter().collect();
             uze_core::persistence::write_atomic(
                 bridge_path,
-                hook_projection::opencode_bridge(&references, &package_root, &receipt.package_id)
-                    .as_bytes(),
+                hook_projection::opencode_bridge(
+                    HOOKS,
+                    &references,
+                    &package_root,
+                    &receipt.package_id,
+                )
+                .as_bytes(),
             )?;
         }
         Ok(AttachmentInspection {
