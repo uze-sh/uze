@@ -19,12 +19,9 @@ pub(crate) enum Hit {
     /// The drawer's preview of the selected resource: the wheel scrolls it
     /// rather than the list, and a click on it does nothing.
     ResourcePreview,
-    /// An entry of the Plugins rail; `None` is "All".
+    /// A marketplace's heading in the Marketplace tree.
     PluginMarket(Option<String>),
-    /// A plugin detail's Source card — selects that marketplace on the
-    /// rail, which is where a marketplace is described.
-    JumpToMarketplace(String),
-    /// The external-link glyph on that same card, by marketplace name:
+    /// A marketplace's address in the detail panel, by marketplace name:
     /// opens where the marketplace actually lives, in the reader's own
     /// browser. Carries the name rather than the address so the two can
     /// never disagree — the URL is resolved from the same read model the
@@ -45,13 +42,6 @@ pub(crate) enum Hit {
     /// obvious intent — rather than only selecting it the way `HarnessRow`
     /// does.
     ProfileHarnessRow(usize),
-    /// The sidebar's right-border drag handle — mirrors the workspace TUI's
-    /// `WorkspaceHit::ResizeSidebar`. Mousedown here only arms dragging; the
-    /// actual width change happens in `apply_mouse` on the following `Drag`
-    /// events, purely from the mouse's own column (see that arm's comment
-    /// for why re-reading this hit's rect there was the wrong reference
-    /// point).
-    ResizeSidebar,
     /// A route-local divider between two content panels.
     ResizePanel(ResizablePanel),
     /// One row of the open index of everything, by position in it.
@@ -64,6 +54,8 @@ pub(crate) enum Hit {
     ReleaseNotesClose,
     /// The footer's version: the notes of the release this binary is.
     RunningReleaseNotes,
+    /// The footer's notice of a newer release: that release's notes.
+    OpenReleaseNotes,
     /// The footer's health status: what needs attention, if anything.
     HealthStatus,
     /// A detail view's button for one of the selected row's offers.
@@ -81,14 +73,6 @@ pub(crate) enum Hit {
     /// and re-deriving that geometry from the model is how a drag comes to
     /// fight the mouse instead of tracking it.
     KeysTrack(Rect),
-    /// The first-steps section's header, which folds it.
-    ToggleFirstSteps,
-    /// The mark on that header, which puts the section away for good.
-    CloseFirstSteps,
-    /// The release notice's row, which opens that release's notes.
-    OpenReleaseNotes,
-    /// The mark on the notice's header, which puts it away.
-    DismissRelease,
     /// A list's search field. It is drawn on three screens and, until
     /// this, clicking it did nothing at all.
     FocusFilter,
@@ -188,13 +172,6 @@ impl TuiModel {
                 self.focus = Focus::Content;
                 Intent::None
             }
-            Hit::JumpToMarketplace(marketplace) => {
-                let _ = self.set_route(Route::Plugins);
-                self.select_plugin_market(Some(marketplace));
-                self.plugin_pane = PluginPane::Markets;
-                self.focus = Focus::Content;
-                Intent::None
-            }
             Hit::OpenLink(marketplace) => self
                 .remembered
                 .marketplaces
@@ -244,17 +221,6 @@ impl TuiModel {
                 self.toggle_profile_harness_at(index);
                 Intent::None
             }
-            // Kept for the next run the way every other shape this
-            // client remembers is: written once when the modal closes
-            // (see `ManagementMemory::close`), never on the input path.
-            Hit::ToggleFirstSteps => {
-                self.first_steps_collapsed = !self.first_steps_collapsed;
-                Intent::None
-            }
-            Hit::CloseFirstSteps => {
-                self.first_steps_closed = true;
-                Intent::None
-            }
             Hit::HealthStatus => {
                 self.overlay = Overlay::Health;
                 Intent::None
@@ -276,13 +242,6 @@ impl TuiModel {
                 }
                 None => Intent::None,
             },
-            Hit::DismissRelease => self.release.take().map_or(Intent::None, |notice| {
-                Intent::AcknowledgeRelease(notice.version().to_owned())
-            }),
-            Hit::ResizeSidebar => {
-                self.dragging_sidebar = true;
-                Intent::None
-            }
             Hit::ResizePanel(panel) => {
                 self.dragging_panel = Some(panel);
                 Intent::None

@@ -115,6 +115,8 @@
 
     "arrow.up": "↑",
     "arrow.down": "↓",
+    "arrow.left": "←",
+    "arrow.right": "→",
     "arrow.external": "↗",
     "arrow.to": "→",
     "chevron.right": "›",

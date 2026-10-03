@@ -116,8 +116,8 @@ scopes! {
 
     /// Management, whatever route is open.
     Management => "management", "Management", Management, seals: false, text: false;
-    /// The route list, when it has focus.
-    ManagementSidebar => "management-sidebar", "The route list", Management,
+    /// The screen tabs, when they have focus.
+    ManagementSidebar => "management-sidebar", "The screen tabs", Management,
         seals: false, text: false;
     Overview => "overview", "Overview", Management, seals: false, text: false;
     Plugins => "plugins", "Marketplace", Management, seals: false, text: false;

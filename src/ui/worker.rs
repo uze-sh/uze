@@ -89,9 +89,6 @@ pub(crate) enum Intent {
     /// Read the notes of this release for the modal already open on it —
     /// off the render thread, since reading them may reach the network.
     ReadReleaseNotes(String),
-    /// Put the release notice about this version away, in both surfaces
-    /// and every run after — a write, so not on the render thread.
-    AcknowledgeRelease(String),
     ContextAnalyze(PathBuf),
     ContextApply(PathBuf),
     /// Reproduce the detected consumer workspace's `agents.lock` through
@@ -144,7 +141,6 @@ impl Intent {
             Self::RemoveMarketplace(_) => "remove_marketplace",
             Self::OpenLink(_) => "open_link",
             Self::ReadReleaseNotes(_) => "read_release_notes",
-            Self::AcknowledgeRelease(_) => "acknowledge_release",
             Self::ContextAnalyze(_) => "context_analyze",
             Self::ContextApply(_) => "context_apply",
             Self::InstallProjectEnvironment(_) => "install_project_environment",
@@ -264,7 +260,6 @@ pub(crate) fn dispatch(
         Intent::InspectMarketplacePlugin { name, marketplace } => {
             inspect_marketplace_plugin(name, marketplace, home, sender, model)
         }
-        Intent::AcknowledgeRelease(version) => crate::self_update::acknowledge(home, &version),
         Intent::ReadReleaseNotes(version) => read_release_notes(version, home, sender),
         Intent::OpenLink(url) => {
             let sender = sender.clone();

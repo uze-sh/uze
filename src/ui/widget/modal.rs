@@ -14,32 +14,32 @@ use uze_theme::Token;
 use super::Surface;
 use crate::ui::theme::{self, Symbol};
 
-/// The frame a modal is willing to spend a margin out of. Under either
-/// measure it fills the screen instead.
-///
-/// The width is what the management surface itself asks for: a menu, a
-/// list at its minimum and a drawer at its minimum come to the high
-/// seventies, and its own `narrow` fold sits at 90. Below that the
-/// screens are already giving things up, and a margin makes them give up
-/// more. The height is two rows of cards plus the chrome around them.
-pub(crate) const ROOMY_WIDTH: u16 = 100;
-pub(crate) const ROOMY_HEIGHT: u16 = 30;
+/// Below this width a modal keeps only a sliver of the frame behind it:
+/// the screens inside are already giving things up, and a wide margin
+/// makes them give up more.
+pub(crate) const NARROW_WIDTH: u16 = 90;
 
-/// Where a modal sits over `frame`.
-///
-/// Below [`ROOMY_WIDTH`]×[`ROOMY_HEIGHT`] it takes the whole frame. The
-/// scaling inset answered the wrong question there: it kept the margin
-/// proportional while the thing inside it was already short of room, so
-/// a small laptop paid a border, two rules and a backdrop out of the
-/// columns a menu, a list and a drawer were sharing. Showing the
-/// workspace behind is worth a margin only once the screens in front do
-/// not need it.
+/// From this width the margin widens: the screens have the columns they
+/// need, and more of the workspace behind says where the modal came from.
+pub(crate) const WIDE_WIDTH: u16 = 160;
+
+/// Below this many rows the modal takes the whole frame: its own chrome
+/// is a header, two rules and a footer, and a margin on top of that
+/// leaves the screen inside nothing to draw a list in.
+pub(crate) const ROOMY_HEIGHT: u16 = 24;
+
+/// Where a modal sits over `frame`: inset by eight columns and two rows
+/// on a wide terminal, four and two on an ordinary one, two and one on a
+/// narrow one, and not at all on one too short for a margin.
 pub(crate) fn area(frame: Rect) -> Rect {
-    if frame.width < ROOMY_WIDTH || frame.height < ROOMY_HEIGHT {
+    if frame.height < ROOMY_HEIGHT {
         return frame;
     }
-    let horizontal = (frame.width / 16).min(6);
-    let vertical = (frame.height / 12).min(2);
+    let (horizontal, vertical) = match frame.width {
+        width if width >= WIDE_WIDTH => (8, 2),
+        width if width >= NARROW_WIDTH => (4, 2),
+        _ => (2, 1),
+    };
     Rect::new(
         frame.x + horizontal,
         frame.y + vertical,
@@ -150,22 +150,16 @@ mod tests {
     }
 
     #[test]
-    fn the_modal_fills_a_small_frame_and_insets_a_roomy_one() {
-        let roomy = Rect::new(0, 0, ROOMY_WIDTH, ROOMY_HEIGHT);
-        let inset = area(roomy);
-        assert!(inset.x > roomy.x, "a margin beside it: {inset:?}");
-        assert!(inset.width < roomy.width, "and narrower for it: {inset:?}");
-
-        for cramped in [
-            Rect::new(0, 0, ROOMY_WIDTH - 1, ROOMY_HEIGHT),
-            Rect::new(0, 0, ROOMY_WIDTH, ROOMY_HEIGHT - 1),
-            Rect::new(0, 0, 80, 24),
-        ] {
-            assert_eq!(
-                area(cramped),
-                cramped,
-                "either measure short of roomy takes the frame: {cramped:?}"
-            );
-        }
+    fn the_margin_follows_the_width_and_a_short_frame_takes_it_all() {
+        let inset = |width, height| {
+            let frame = Rect::new(0, 0, width, height);
+            let modal = area(frame);
+            (modal.x, modal.y)
+        };
+        assert_eq!(inset(190, 44), (8, 2), "wide");
+        assert_eq!(inset(120, 36), (4, 2), "ordinary");
+        assert_eq!(inset(86, 30), (2, 1), "narrow");
+        let short = Rect::new(0, 0, 120, ROOMY_HEIGHT - 1);
+        assert_eq!(area(short), short, "too short for a margin");
     }
 }

@@ -500,6 +500,13 @@ fn default_bindings() -> Vec<Binding> {
             &format!("alt+{index}"),
             Action::SelectTab(index),
         ));
+        // Bare digits: management owns the keyboard, and the screens are
+        // numbered on the tab strip that heads the modal.
+        bindings.push(bind(
+            Scope::Management,
+            &index.to_string(),
+            Action::SelectTab(index),
+        ));
     }
     bindings
 }

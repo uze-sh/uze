@@ -16,7 +16,8 @@ use uze_keys::{Action, Resolution, Scope};
 use super::hit::Hit;
 use super::keys;
 use super::model::{
-    Confirmation, Focus, Overlay, PluginPane, ProfilePanel, ResizablePanel, Route, TuiModel,
+    self, Confirmation, Focus, Overlay, PluginPane, PluginTreeRow, ProfilePanel, ResizablePanel,
+    Route, TuiModel,
 };
 use super::worker::Intent;
 
@@ -156,12 +157,20 @@ impl TuiModel {
             Action::SelectPrevious => self.move_by(-1),
             Action::FocusNext => self.cycle_focus(true),
             Action::FocusPrevious => self.cycle_focus(false),
-            // Walking the sidebar without being in it — the same gesture
+            // Walking the tabs without being on them — the same gesture
             // the workspace uses for its own vertical list. It lands in
             // the screen rather than on its name, because choosing a
             // screen is wanting to be on it.
             Action::NextScreen => self.step_route(1),
             Action::PreviousScreen => self.step_route(-1),
+            Action::SelectTab(position) => match model::routes().get(usize::from(position) - 1) {
+                Some(&route) => {
+                    let entering = self.set_route(route);
+                    self.focus = Focus::Content;
+                    entering
+                }
+                None => Intent::None,
+            },
             Action::FocusSidebar if self.in_plugins_content() => {
                 self.step_plugins_back();
                 Intent::None
@@ -191,8 +200,7 @@ impl TuiModel {
                     return self.activate_settings();
                 }
                 if self.route == Route::Plugins && self.plugin_pane == PluginPane::Markets {
-                    self.plugin_pane = PluginPane::Plugins;
-                    return self.marketplace_inspect_intent();
+                    return self.step_plugins_in();
                 }
                 self.open_or_act()
             }
@@ -253,8 +261,8 @@ impl TuiModel {
                 }
                 Intent::None
             }
-            // One letter removes the thing you are on, and on the rail that
-            // is a marketplace.
+            // One letter removes the thing you are on, and on a group's
+            // heading that is a marketplace.
             Action::RemovePlugin
                 if self.route == Route::Plugins && self.plugin_pane == PluginPane::Markets =>
             {
@@ -353,7 +361,7 @@ impl TuiModel {
         }
     }
 
-    /// One screen along the sidebar, wrapping, wherever the focus was.
+    /// One screen along the tab strip, wrapping, wherever the focus was.
     ///
     /// Answers with whatever arriving asks for. A screen that reads its own
     /// data on arrival is empty if it is reached this way and the ask is
@@ -366,7 +374,7 @@ impl TuiModel {
     }
 
     /// Where the selection goes, which depends on what the screen is a
-    /// list *of* — routes in the sidebar, prompts on the Overview, a
+    /// list *of* — screens on the tab strip, prompts on the Overview, a
     /// profile's three panels, or the ordinary content rows.
     fn move_by(&mut self, delta: isize) -> Intent {
         if self.focus == Focus::Sidebar {
@@ -396,10 +404,6 @@ impl TuiModel {
                 self.move_settings_selection(delta);
                 Intent::None
             }
-            Route::Plugins if self.plugin_pane == PluginPane::Markets => {
-                self.move_plugin_market(delta);
-                Intent::None
-            }
             Route::Plugins => {
                 self.move_plugin_row(delta);
                 self.selection_moved_at = Some(std::time::Instant::now());
@@ -420,13 +424,6 @@ impl TuiModel {
     /// instead of the generic sidebar/content toggle — scoped to that
     /// route so every other screen's focus behaviour is unchanged.
     fn cycle_focus(&mut self, forward: bool) -> Intent {
-        if self.in_plugins_content() {
-            self.plugin_pane = match self.plugin_pane {
-                PluginPane::Markets => PluginPane::Plugins,
-                PluginPane::Plugins => PluginPane::Markets,
-            };
-            return Intent::None;
-        }
         if self.route == Route::Profiles && self.focus == Focus::Content {
             self.profile_panel = if forward {
                 self.profile_panel.next()
@@ -446,48 +443,47 @@ impl TuiModel {
         self.route == Route::Plugins && self.focus == Focus::Content
     }
 
-    /// Left on the Plugins screen walks back out one step at a time: an
-    /// unfolded plugin folds, the plugins hand over to the marketplaces,
-    /// and the marketplaces to the sidebar.
+    /// Left on the Marketplace tree walks back out one step at a time: a
+    /// resource hands over to its plugin, an unfolded plugin folds, a
+    /// plugin hands over to its marketplace's heading, and the heading to
+    /// the screen tabs.
     fn step_plugins_back(&mut self) {
-        if self.plugin_pane == PluginPane::Plugins && self.selected_resource().is_some() {
-            let position = self.remembered.plugin_screen.selected;
-            self.select_plugin_row(position, None);
-            return;
-        }
-        match self.plugin_pane {
-            PluginPane::Markets => self.focus = Focus::Sidebar,
-            PluginPane::Plugins => match self
+        match self.plugin_tree_cursor() {
+            PluginTreeRow::Resource(position, _) => self.select_plugin_row(position, None),
+            PluginTreeRow::Plugin(_) => match self
                 .selected_marketplace_plugin()
-                .map(|plugin| self.marketplace_plugin_id(&plugin))
-                .filter(|id| self.expanded_plugins.contains(id))
+                .map(|plugin| (self.marketplace_plugin_id(&plugin), plugin.marketplace))
             {
-                Some(id) => self.toggle_plugin_expanded(&id),
-                None => self.plugin_pane = PluginPane::Markets,
+                Some((id, _)) if self.expanded_plugins.contains(&id) => {
+                    self.toggle_plugin_expanded(&id)
+                }
+                Some((_, market)) => self.select_plugin_market(Some(market)),
+                None => self.focus = Focus::Sidebar,
             },
+            PluginTreeRow::Market(_) => self.focus = Focus::Sidebar,
         }
     }
 
-    /// Right walks in the same steps the other way, ending by unfolding
-    /// the selected plugin — asking for its resources, which is what an
-    /// unfolded row draws.
+    /// Right walks in the same steps the other way: a heading hands over
+    /// to its first plugin, and a plugin unfolds — asking for its
+    /// resources, which is what an unfolded row draws.
     fn step_plugins_in(&mut self) -> Intent {
-        match self.plugin_pane {
-            PluginPane::Markets => {
-                self.plugin_pane = PluginPane::Plugins;
+        match self.plugin_tree_cursor() {
+            PluginTreeRow::Market(market) => {
+                if let Some(position) = self.first_plugin_of(&market) {
+                    self.select_plugin_row(position, None);
+                }
                 self.marketplace_inspect_intent()
             }
-            PluginPane::Plugins => {
-                let Some(plugin) = self
-                    .selected_marketplace_plugin()
-                    .filter(|_| self.selected_resource().is_none())
-                else {
+            PluginTreeRow::Plugin(_) => {
+                let Some(plugin) = self.selected_marketplace_plugin() else {
                     return Intent::None;
                 };
                 let id = self.marketplace_plugin_id(&plugin);
                 self.expanded_plugins.insert(id);
                 self.marketplace_inspect_intent()
             }
+            PluginTreeRow::Resource(..) => Intent::None,
         }
     }
 
@@ -560,12 +556,15 @@ impl TuiModel {
     /// already-visible detail pane, since there is no deeper read model.
     pub(crate) fn open_or_act(&mut self) -> Intent {
         match self.route {
-            Route::Plugins => {
-                if self.selected_marketplace_plugin().is_none() {
-                    return Intent::None;
-                }
-                self.marketplace_inspect_intent()
-            }
+            // The panel's first action: installing what is not there,
+            // removing what is — each asked about before it happens.
+            Route::Plugins => match self
+                .selected_marketplace_plugin()
+                .and_then(|plugin| super::view::plugins::primary_offer(&plugin.offers()))
+            {
+                Some(action) => self.act(action),
+                None => self.marketplace_inspect_intent(),
+            },
             Route::Extensions => match self.selected_extension() {
                 Some(extension) => {
                     self.switch_selected_extension(!self.extension_enabled(extension.id))
@@ -604,20 +603,6 @@ impl TuiModel {
         let column = event.column.saturating_sub(surface.x);
         match event.kind {
             MouseEventKind::Down(MouseButton::Left) => self.click(event.column, event.row),
-            // The sidebar starts at the surface's own left edge. This used
-            // to read the *previous* frame's `ResizeSidebar` hit rect
-            // instead (its right edge, not its left) as that reference
-            // point: each drag step measured from a stale, moving
-            // position, so the edge fought the mouse instead of tracking
-            // it — hence no layout recomputation needed here, just the
-            // pointer's own column.
-            MouseEventKind::Drag(MouseButton::Left) if self.dragging_sidebar => {
-                let new_width = super::clamp_sidebar_width(column, total_width);
-                if self.sidebar_width != Some(new_width) {
-                    self.sidebar_width = Some(new_width);
-                }
-                Intent::None
-            }
             MouseEventKind::Drag(MouseButton::Left)
                 if let Some(track) = self.dragging_keys_track =>
             {
@@ -625,23 +610,18 @@ impl TuiModel {
                 Intent::None
             }
             MouseEventKind::Drag(MouseButton::Left) if let Some(panel) = self.dragging_panel => {
-                let sidebar_width = self
-                    .sidebar_width
-                    .unwrap_or_else(|| super::sidebar_width_for(total_width));
-                let content_width = total_width.saturating_sub(sidebar_width);
                 let min_panel_width = 24;
-                let max_panel_width = content_width.saturating_sub(min_panel_width);
+                let max_panel_width = total_width.saturating_sub(min_panel_width);
                 // A drawer grows leftwards from the right edge; the profile
                 // columns' divider is measured from the content's left.
                 let width = match panel {
-                    ResizablePanel::ProfileColumns => column.saturating_sub(sidebar_width),
+                    ResizablePanel::ProfileColumns => column,
                     _ => total_width.saturating_sub(column),
                 };
                 *panel.width_mut(self) = Some(width.min(max_panel_width).max(min_panel_width));
                 Intent::None
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                self.dragging_sidebar = false;
                 self.dragging_panel = None;
                 self.dragging_keys_track = None;
                 Intent::None

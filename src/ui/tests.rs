@@ -221,38 +221,6 @@ fn model_with_data() -> TuiModel {
     model
 }
 
-/// A subtitle is a few words under a route's name, and the sidebar can be
-/// dragged down to its narrowest: every one has to be read whole there,
-/// not cut at the column's edge.
-#[test]
-fn every_route_subtitle_fits_the_narrowest_sidebar() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let model = TuiModel {
-        sidebar_width: Some(super::MIN_SIDEBAR_WIDTH),
-        ..TuiModel::default()
-    };
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    let buffer = terminal.backend().buffer();
-    let rows: Vec<String> = (0..buffer.area.height)
-        .map(|y| {
-            (0..super::MIN_SIDEBAR_WIDTH)
-                .map(|x| buffer[(x, y)].symbol())
-                .collect()
-        })
-        .collect();
-    for route in ROUTES {
-        assert!(
-            rows.iter().any(|row| row.contains(route.subtitle())),
-            "`{}` is cut in a {}-column sidebar",
-            route.subtitle(),
-            super::MIN_SIDEBAR_WIDTH
-        );
-    }
-}
-
 #[test]
 fn every_route_renders_without_panicking() {
     let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
@@ -275,7 +243,9 @@ fn every_route_renders_without_panicking() {
         };
         let mut hits = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+            .draw(|frame| {
+                render(frame, frame.area(), &model, false, &mut hits);
+            })
             .unwrap();
     }
 }
@@ -374,7 +344,9 @@ fn every_overlay_renders_without_panicking() {
         };
         let mut hits = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+            .draw(|frame| {
+                render(frame, frame.area(), &model, false, &mut hits);
+            })
             .unwrap();
     }
 }
@@ -407,14 +379,25 @@ fn tab_toggles_focus_between_sidebar_and_content() {
     assert_eq!(model.focus, Focus::Sidebar);
 }
 
+/// Down walks the tree past the group's heading onto the next plugin, the
+/// panel asks for that plugin's detail, and Enter performs what the panel
+/// offers first — asked about before it happens.
 #[test]
 fn content_navigation_and_inspect_intent() {
     let mut model = model_with_plugins(&["one", "two"]);
     model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert_eq!(model.remembered.plugin_screen.selected, 1);
     assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        model.marketplace_inspect_intent(),
         Intent::InspectPlugin("two".to_owned())
+    );
+    assert_eq!(
+        model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        Intent::None
+    );
+    assert!(
+        matches!(model.overlay, Overlay::Confirm { .. }),
+        "an installed plugin's first offer is removing it, confirmed first"
     );
 }
 
@@ -1885,44 +1868,45 @@ fn two_market_model() -> TuiModel {
     }
 }
 
-/// The rail narrows the list to one marketplace, and walking it starts
-/// the list of what it now shows from the top.
+/// Up and down walk one tree across every marketplace: a group's heading,
+/// its plugins, the next group's heading — stopping at either end.
 #[test]
-fn the_market_rail_narrows_the_plugins_to_one_marketplace() {
+fn up_and_down_walk_every_group_in_one_tree() {
     let mut model = two_market_model();
-    assert_eq!(model.list_len(model.route), 3, "All shows every plugin");
-    model.remembered.plugin_screen.selected = 2;
-
-    model.plugin_pane = PluginPane::Markets;
-    model.act(uze_keys::Action::SelectNext);
-    assert_eq!(model.plugin_market.as_deref(), Some("uze-official"));
-    assert_eq!(model.list_len(model.route), 1);
-    assert_eq!(model.remembered.plugin_screen.selected, 0);
+    assert_eq!(model.list_len(model.route), 3, "every plugin is listed");
 
     model.act(uze_keys::Action::SelectNext);
+    assert_eq!(model.plugin_pane, PluginPane::Markets);
+    assert_eq!(model.plugin_market.as_deref(), Some("ai"));
+
     model.act(uze_keys::Action::SelectNext);
+    assert_eq!(model.plugin_pane, PluginPane::Plugins);
+    assert_eq!(
+        model
+            .selected_marketplace_plugin()
+            .map(|plugin| plugin.name),
+        Some("git".to_owned())
+    );
+    assert_eq!(model.plugin_market.as_deref(), Some("ai"));
+
+    for _ in 0..4 {
+        model.act(uze_keys::Action::SelectPrevious);
+    }
+    assert_eq!(model.plugin_pane, PluginPane::Markets);
     assert_eq!(
         model.plugin_market.as_deref(),
-        Some("ai"),
-        "the rail stops at its last marketplace"
-    );
-    assert_eq!(model.list_len(model.route), 2);
-
-    model.remembered.marketplaces.pop();
-    model.remembered.marketplace_plugins.truncate(1);
-    assert_eq!(
-        model.list_len(model.route),
-        1,
-        "a marketplace removed from under the rail reads as All"
+        Some("uze-official"),
+        "the first heading is as far up as it goes"
     );
 }
 
-/// Left and right walk the screen's columns in steps: into the plugins,
-/// unfolding the selected one, then back out the same way to the sidebar.
+/// Left and right walk the tree in steps: from a marketplace's heading
+/// onto its first plugin, unfolding it, then back out the same way — the
+/// fold, the heading, and the screen tabs.
 #[test]
-fn left_and_right_walk_the_rail_the_list_and_a_plugins_resources() {
+fn left_and_right_walk_the_tree_and_a_plugins_resources() {
     let mut model = two_market_model();
-    model.plugin_pane = PluginPane::Markets;
+    model.select_plugin_market(Some("uze-official".to_owned()));
 
     model.act(uze_keys::Action::FocusContent);
     assert_eq!(model.plugin_pane, PluginPane::Plugins);
@@ -1936,6 +1920,7 @@ fn left_and_right_walk_the_rail_the_list_and_a_plugins_resources() {
     );
     model.act(uze_keys::Action::FocusSidebar);
     assert_eq!(model.plugin_pane, PluginPane::Markets);
+    assert_eq!(model.plugin_market.as_deref(), Some("uze-official"));
     model.act(uze_keys::Action::FocusSidebar);
     assert_eq!(model.focus, Focus::Sidebar);
 }
@@ -2029,11 +2014,9 @@ fn a_letter_names_one_action_and_refreshing_has_its_own() {
     );
 }
 
-/// The Source card names where a plugin's marketplace actually lives, and
-/// the address itself is what opens it — a whole row of target, not a
-/// one-column glyph you miss by moving the mouse one cell. The card used
-/// to show no address at all, and its "↗" only ever jumped to a group
-/// header in the list below.
+/// A marketplace's panel names where it actually lives, and the address
+/// itself is what opens it — a whole row of target, not a one-column
+/// glyph you miss by moving the mouse one cell.
 #[test]
 fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
     let mut model = model_with_plugins(&["one"]);
@@ -2055,7 +2038,8 @@ fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
         is_default: true,
     }];
 
-    let (terminal, hits) = drawn_at(&model, 100, 40);
+    model.select_plugin_market(Some("uze-official".to_owned()));
+    let (terminal, hits) = drawn_at(&model, 160, 40);
     model.hits = hits;
     let rows = buffer_rows(&terminal);
     assert!(
@@ -2083,10 +2067,9 @@ fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
     }
 }
 
-/// A description long enough to fold used to push every drawn row of the
-/// drawer down while the hit rects stayed where the authored line count
-/// put them: the address read as a link and answered nothing, because the
-/// row the reader clicked was two rows below the target.
+/// Rows folded above the address push it down, and its target has to move
+/// with it: a link drawn one row from where it answers reads as a link
+/// that answers nothing.
 #[test]
 fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
     let mut model = model_with_plugins(&["one"]);
@@ -2113,7 +2096,8 @@ fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
         is_default: true,
     }];
 
-    let (terminal, hits) = drawn_at(&model, 100, 40);
+    model.select_plugin_market(Some("uze-official".to_owned()));
+    let (terminal, hits) = drawn_at(&model, 160, 40);
     model.hits = hits;
 
     let rows = buffer_rows(&terminal);
@@ -2137,9 +2121,9 @@ fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
     );
 }
 
-/// The address is chrome until the pointer is on it: muted at rest, accent
-/// under the pointer. Hover and click read the same hit list, so a row that
-/// lights up is a row that answers.
+/// The address answers the pointer: underlined while it is on it. Hover
+/// and click read the same hit list, so a row that lights up is a row
+/// that answers.
 #[test]
 fn the_source_link_lights_up_only_under_the_pointer() {
     let mut model = model_with_plugins(&["one"]);
@@ -2161,7 +2145,8 @@ fn the_source_link_lights_up_only_under_the_pointer() {
         is_default: true,
     }];
 
-    let (_terminal, hits) = drawn_at(&model, 100, 40);
+    model.select_plugin_market(Some("uze-official".to_owned()));
+    let (_terminal, hits) = drawn_at(&model, 160, 40);
     model.hits = hits;
     let rect = model
         .hits
@@ -2181,7 +2166,7 @@ fn the_source_link_lights_up_only_under_the_pointer() {
             row: rect.y,
             modifiers: KeyModifiers::NONE,
         },
-        Rect::new(0, 0, 100, 40),
+        Rect::new(0, 0, 160, 40),
     );
     assert!(
         model.source_link_hovered,
@@ -2194,7 +2179,7 @@ fn the_source_link_lights_up_only_under_the_pointer() {
             row: rect.y + 1,
             modifiers: KeyModifiers::NONE,
         },
-        Rect::new(0, 0, 100, 40),
+        Rect::new(0, 0, 160, 40),
     );
     assert!(!model.source_link_hovered, "muted again once it leaves");
 }
@@ -2239,87 +2224,6 @@ fn attachment_health_is_never_unknown_after_a_refresh() {
     assert!(
         !rows.iter().any(|row| row.contains("unknown")),
         "attachment health must never read 'unknown' after a refresh"
-    );
-}
-
-/// The foot of the sidebar carries a list of things worth trying once, in
-/// the same collapsible shape as the workspace's commit timeline: a header
-/// that folds it and says how far along you are, and a row per step with
-/// the key that reaches it and a mark once you have taken it.
-#[test]
-fn the_sidebar_announces_a_release_above_the_steps() {
-    let mut model = model_with_plugins(&["flow"]);
-    let (mut terminal, hits) = drawn_at(&model, 120, 40);
-    assert!(
-        !hits
-            .iter()
-            .any(|(_, hit)| matches!(hit, Hit::OpenReleaseNotes | Hit::DismissRelease)),
-        "no release, no notice"
-    );
-
-    // As long as the real versions are: the first cut put the version in a
-    // caption beside the heading, where the column elided it — and the
-    // closing mark at the caption's end went with it.
-    model.release = Some(crate::self_update::Notice("0.0.0-alpha.14".to_owned()));
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    let drawn = buffer_rows(&terminal);
-    let (mark, _) = hits
-        .iter()
-        .find(|(_, hit)| *hit == Hit::DismissRelease)
-        .expect("its mark puts it away");
-    let y = usize::from(mark.y);
-    let (version, action) = (&drawn[y], &drawn[y + 1]);
-    assert!(
-        version.contains("v0.0.0-alpha.14")
-            && version.contains(&theme::glyph(theme::Symbol::MarkClose)),
-        "the version, whole, with the mark on its row: {version:?}"
-    );
-    assert!(
-        action.contains("restart to use it"),
-        "what to do, on one row: {action:?}"
-    );
-    assert_eq!(
-        hits.iter()
-            .filter(|(_, hit)| *hit == Hit::OpenReleaseNotes)
-            .count(),
-        2,
-        "two rows, nothing more: {drawn:?}"
-    );
-    let steps = drawn
-        .iter()
-        .position(|line| line.contains("first steps"))
-        .expect("the steps are still there");
-    assert!(y < steps, "and the notice sits on them: {drawn:?}");
-
-    model.hits = hits.clone();
-    let (row, _) = hits
-        .iter()
-        .find(|(rect, hit)| *hit == Hit::OpenReleaseNotes && rect.y == mark.y + 1)
-        .expect("the action row opens the notes");
-    assert_eq!(
-        model.click(row.x, row.y),
-        Intent::ReadReleaseNotes("0.0.0-alpha.14".to_owned()),
-        "the notes are read for a modal, not handed to a browser"
-    );
-    assert!(
-        matches!(&model.overlay, Overlay::ReleaseNotes(modal) if modal.version == "0.0.0-alpha.14"),
-        "{:?}",
-        model.overlay
-    );
-    assert!(model.scopes().contains(&uze_keys::Scope::ReleaseNotes));
-    model.overlay_action(uze_keys::Action::Dismiss);
-    assert_eq!(model.overlay, Overlay::None, "esc closes it");
-    assert_eq!(
-        model.click(mark.x, mark.y),
-        Intent::AcknowledgeRelease("0.0.0-alpha.14".to_owned()),
-        "the mark wins over the row it sits on"
-    );
-    assert!(
-        model.release.is_none(),
-        "put away at once, not on the next check"
     );
 }
 
@@ -2395,102 +2299,6 @@ fn the_footers_version_opens_this_releases_notes() {
         matches!(&model.overlay, Overlay::ReleaseNotes(modal) if modal.version == crate::self_update::running()),
         "{:?}",
         model.overlay
-    );
-}
-
-#[test]
-fn the_sidebars_foot_lists_the_first_steps_and_ticks_the_taken_ones() {
-    let mut model = model_with_plugins(&["flow"]);
-    let taken = crate::ui::management::FIRST_STEPS[0];
-    model.steps_taken = [taken.name()].into_iter().collect();
-    let (mut terminal, hits) = drawn_at(&model, 120, 40);
-    let drawn = buffer_rows(&terminal);
-
-    let header = drawn
-        .iter()
-        .find(|row| row.contains("first steps"))
-        .expect("the section names itself");
-    assert!(
-        header.contains(&format!(
-            "1 of {}",
-            crate::ui::management::FIRST_STEPS.len()
-        )),
-        "and how far along: {header:?}"
-    );
-
-    let tick = theme::glyph(theme::Symbol::MarkDone);
-    for action in crate::ui::management::FIRST_STEPS {
-        let (rect, _) = hits
-            .iter()
-            .find(|(_, hit)| *hit == Hit::OfferedAction(action))
-            .unwrap_or_else(|| panic!("{action} is a step you can click"));
-        let row = &drawn[usize::from(rect.y)];
-        assert!(row.contains(&action.label()), "{row:?}");
-        assert_eq!(
-            row.contains(&tick),
-            action == taken,
-            "only what has been done is ticked: {row:?}"
-        );
-    }
-
-    // Folding it leaves the header, and the header alone.
-    let (header, _) = hits
-        .iter()
-        .find(|(_, hit)| *hit == Hit::ToggleFirstSteps)
-        .expect("the header folds it");
-    model.hits = hits.clone();
-    model.click(header.x, header.y);
-    assert!(model.first_steps_collapsed);
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    assert!(
-        hits.iter().any(|(_, hit)| *hit == Hit::ToggleFirstSteps),
-        "the header stays"
-    );
-    assert!(
-        !hits
-            .iter()
-            .any(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::OpenActionIndex)),
-        "and its steps are folded away"
-    );
-}
-
-/// The same in this mode: the mark appears only once the list is finished,
-/// and it puts the section away for good rather than folding it.
-#[test]
-fn a_finished_list_offers_to_leave() {
-    let mut model = model_with_plugins(&["flow"]);
-    let (mut terminal, hits) = drawn_at(&model, 120, 40);
-    assert!(
-        !hits.iter().any(|(_, hit)| *hit == Hit::CloseFirstSteps),
-        "unfinished, so nothing to close"
-    );
-
-    model.steps_taken = crate::ui::management::FIRST_STEPS
-        .iter()
-        .map(|action| action.name())
-        .collect();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    let (close, _) = hits
-        .iter()
-        .find(|(_, hit)| *hit == Hit::CloseFirstSteps)
-        .expect("finished, so the header offers the way out");
-    model.hits = hits.clone();
-    model.click(close.x, close.y);
-    assert!(model.first_steps_closed);
-
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    assert!(
-        !hits.iter().any(|(_, hit)| *hit == Hit::ToggleFirstSteps),
-        "closed for good, header and all"
     );
 }
 
@@ -2637,126 +2445,6 @@ fn a_hint_line_reads_its_keys_off_the_keymap() {
     // pointer can reach it.
     let unbound: Line<'static> = crate::ui::widget::hint::line(&scopes, &[Action::NewSpace]);
     assert!(unbound.spans.is_empty());
-}
-
-#[test]
-fn sidebar_resize_drag_updates_width() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut model = TuiModel::default();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    model.hits = hits;
-
-    // Mousedown on the sidebar's right-border drag handle (x=31 for a
-    // 100-wide terminal: the default 32-column sidebar's right edge) arms
-    // dragging, same as the workspace TUI's `WorkspaceHit::ResizeSidebar`.
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: 31,
-            row: 5,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-    assert!(model.dragging_sidebar);
-
-    // The sidebar always starts at column 0, so the width should track the
-    // mouse's own column directly.
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Drag(MouseButton::Left),
-            column: 32,
-            row: 5,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-    assert_eq!(
-        model.sidebar_width,
-        Some(32),
-        "dragging the handle to column 32 (the sidebar's x=0 origin) must set that width"
-    );
-
-    // A regression check for a real bug: width used to be computed as a
-    // delta from the *previous* frame's border position (this hit rect's
-    // stale x), not the mouse's absolute column — so once the border moved,
-    // every further drag step measured from the wrong reference and the
-    // sidebar edge fought the mouse instead of tracking it. Re-rendering at
-    // the new width (as the real run loop does every tick) before a second,
-    // independent drag catches that: the width must still land exactly on
-    // the column dragged to, not drift from where the border now sits.
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    model.hits = hits;
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Drag(MouseButton::Left),
-            column: 35,
-            row: 5,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-    assert_eq!(
-        model.sidebar_width,
-        Some(35),
-        "a second drag after a re-render must still track the mouse's absolute column, not drift"
-    );
-}
-
-#[test]
-fn sidebar_resize_drag_clamps_to_bounds() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let mut model = TuiModel::default();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-        .unwrap();
-    model.hits = hits;
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: 31,
-            row: 5,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Drag(MouseButton::Left),
-            column: 95,
-            row: 5,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-    assert_eq!(
-        model.sidebar_width,
-        Some(super::MAX_SIDEBAR_WIDTH),
-        "dragging far past the terminal's edge must clamp to the shared max, same as the workspace sidebar"
-    );
-
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Drag(MouseButton::Left),
-            column: 1,
-            row: 5,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-    assert_eq!(
-        model.sidebar_width,
-        Some(super::MIN_SIDEBAR_WIDTH),
-        "dragging past the left edge must clamp to the shared min"
-    );
 }
 
 /// A caption pinned to the right edge is elided to what is left of the
@@ -2986,7 +2674,9 @@ fn the_catalog_counts_the_harnesses_that_are_actually_installed() {
         let mut terminal = Terminal::new(TestBackend::new(150, 40)).unwrap();
         let mut hits = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .draw(|frame| {
+                render(frame, frame.area(), model, false, &mut hits);
+            })
             .unwrap();
         buffer_rows(&terminal)
             .into_iter()
@@ -3033,7 +2723,9 @@ fn every_harness_in_the_catalog_can_be_set_up() {
         let mut terminal = Terminal::new(TestBackend::new(150, 40)).unwrap();
         let mut hits = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .draw(|frame| {
+                render(frame, frame.area(), model, false, &mut hits);
+            })
             .unwrap();
         let offered = hits
             .iter()
@@ -3150,7 +2842,9 @@ fn drawn(model: &TuiModel) -> ratatui::buffer::Buffer {
     let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
     let mut hits = Vec::new();
     terminal
-        .draw(|frame| render(frame, frame.area(), model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), model, false, &mut hits);
+        })
         .unwrap();
     terminal.backend().buffer().clone()
 }
@@ -3232,7 +2926,9 @@ fn drawn_at(
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     let mut hits = Vec::new();
     terminal
-        .draw(|frame| render(frame, frame.area(), model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), model, false, &mut hits);
+        })
         .unwrap();
     (terminal, hits)
 }
@@ -3271,7 +2967,9 @@ fn overview_does_not_render_project_context() {
     };
     let mut hits = Vec::new();
     terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
         .unwrap();
     let rows = buffer_rows(&terminal);
     for forbidden in [
@@ -3647,12 +3345,9 @@ fn a_screen_behind_a_feature_is_absent_or_whole() {
     }
 }
 
-// The sidebar is where someone decides which screen to open, so a route
-// that is not settled has to say so there — selected or not, and in the
-// narrow layout too, which drops the subtitle and is exactly where a badge
-// is easiest to lose. The count has to survive beside it: the badge is
-// drawn into the label column, and pushing the count off its own would
-// trade one signal for another.
+// The tab strip is where someone decides which screen to open, so a route
+// that is not settled has to say so there — and keep saying it when the
+// strip runs short of room, which gives up the counts before the badges.
 #[test]
 fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
     let badge = crate::ui::widget::text::small_caps(
@@ -3664,42 +3359,33 @@ fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
         .into_iter()
         .filter(|route| route.feature().is_some())
         .collect();
-    for (width, height) in [(150u16, 26u16), (80, 20)] {
+    for width in [190u16, 150] {
         for route in [Route::Profiles, Route::Plugins] {
-            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             let model = TuiModel {
                 route,
                 focus: Focus::Content,
                 overlay: Overlay::None,
                 ..model_with_data()
             };
-            let mut hits = Vec::new();
-            terminal
-                .draw(|frame| render(frame, frame.area(), &model, &mut hits))
-                .unwrap();
-            let badged: Vec<_> = buffer_rows(&terminal)
-                .into_iter()
-                .filter(|row| row.contains(&badge))
-                .collect();
+            let (terminal, hits) = drawn_at(&model, width, 30);
+            let rows = buffer_rows(&terminal);
+            let header = &rows[0];
             assert_eq!(
-                badged.len(),
+                header.matches(badge.as_str()).count(),
                 unsettled.len(),
-                "at {width}x{height} on {route:?}, {} rows carry the badge: {badged:?}",
-                badged.len()
+                "at {width} on {route:?}: {header:?}"
             );
-            for row in &badged {
-                assert!(
-                    unsettled.iter().any(|route| row.contains(route.label())),
-                    "the badge landed on a settled row: {row:?}"
-                );
-            }
-            if let Some(profiles) = badged
-                .iter()
-                .find(|row| row.contains(Route::Profiles.label()))
-            {
-                assert!(
-                    profiles.contains(&crate::ui::widget::text::small_digits(2)),
-                    "the badge pushed the route count off its row: {profiles:?}"
+            for (rect, hit) in &hits {
+                let Hit::Route(tab) = hit else { continue };
+                let drawn: String = header
+                    .chars()
+                    .skip(rect.x as usize)
+                    .take(rect.width as usize)
+                    .collect();
+                assert_eq!(
+                    drawn.contains(badge.as_str()),
+                    unsettled.contains(tab),
+                    "the badge sits on exactly the unsettled tabs: {drawn:?}"
                 );
             }
         }
@@ -3724,7 +3410,9 @@ fn the_keys_route_carries_no_count() {
     };
     let mut hits = Vec::new();
     terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
         .unwrap();
     let nav = buffer_rows(&terminal)
         .into_iter()
@@ -3814,7 +3502,9 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
     assert_eq!(model.hovered_offer, Some(uze_keys::Action::RemovePlugin));
     let mut hits = Vec::new();
     terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
         .unwrap();
     assert_eq!(
         theme::token_of(terminal.backend().buffer()[(remove.x, remove.y)].bg),
@@ -3831,11 +3521,11 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
     );
 }
 
-/// An unfolded plugin's resources are grouped by kind, so a skill never
-/// reads as a hook because the two shared one line — and the drawer beside
-/// it does not say them a second time.
+/// An unfolded plugin's resources are grouped by kind, each kind headed
+/// with how many there are, so a skill never reads as a hook because the
+/// two shared one line.
 #[test]
-fn an_unfolded_plugin_groups_its_resources_by_kind_and_the_drawer_does_not_repeat_them() {
+fn an_unfolded_plugin_groups_its_resources_by_kind() {
     use uze_application::CapabilityKind;
     use uze_application::application::PluginCapability;
 
@@ -3863,25 +3553,24 @@ fn an_unfolded_plugin_groups_its_resources_by_kind_and_the_drawer_does_not_repea
             capability("plan", CapabilityKind::AgentSkill),
         ],
     );
-    model.remembered.plugin_screen.drawer_width = Some(52);
     let (terminal, _hits) = drawn_at(&model, 140, 40);
     let rows = buffer_rows(&terminal);
+    let tree = |row: &String| row.split('│').next().unwrap_or_default().to_owned();
 
     let skills = rows
         .iter()
-        .position(|row| row.contains("Skills  2"))
+        .position(|row| tree(row).contains("skills"))
         .unwrap_or_else(|| panic!("the skills branch: {rows:#?}"));
-    assert!(rows[skills + 1].contains("review") && rows[skills + 2].contains("plan"));
+    assert!(tree(&rows[skills]).contains(" 2 "), "{rows:#?}");
+    assert!(tree(&rows[skills + 1]).contains("review") && tree(&rows[skills + 2]).contains("plan"));
     assert!(
-        rows[skills + 3].contains("Hooks  1") && rows[skills + 4].contains("guard"),
-        "hooks on a branch of their own: {rows:#?}"
+        tree(&rows[skills + 3]).contains("hooks") && tree(&rows[skills + 4]).contains("guard"),
+        "hooks under a heading of their own: {rows:#?}"
     );
     assert!(
-        !rows.iter().any(|row| row
-            .rsplit('│')
-            .next()
-            .is_some_and(|drawer| drawer.contains("Skills"))),
-        "the drawer leaves the resources to the list: {rows:#?}"
+        rows.iter()
+            .any(|row| tree(row).contains("kit") && tree(row).contains("3 capabilities")),
+        "the plugin's row counts what it holds: {rows:#?}"
     );
 }
 
@@ -4189,7 +3878,9 @@ fn a_list_taller_than_the_screen_says_where_the_window_is() {
 
     model.key_screen.selected = model.key_rows().len() - 1;
     terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
         .unwrap();
     let bottom = column(&terminal);
     assert!(
@@ -4210,7 +3901,9 @@ fn a_list_taller_than_the_screen_says_where_the_window_is() {
     };
     let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
     terminal
-        .draw(|frame| render(frame, frame.area(), &short, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), &short, false, &mut hits);
+        })
         .unwrap();
     assert!(column(&terminal).is_empty());
 }
@@ -4353,10 +4046,12 @@ fn a_key_is_listed_with_the_sentence_that_explains_it() {
     assert!(row.contains("Open or close the"), "{row:?}");
 
     // Narrow enough and the sentence goes rather than being cut to a stub.
-    let mut narrow = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    let mut narrow = Terminal::new(TestBackend::new(92, 40)).unwrap();
     let mut hits = Vec::new();
     narrow
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
         .unwrap();
     let row = buffer_rows(&narrow)
         .into_iter()
@@ -4558,7 +4253,9 @@ fn the_settings_catalog_follows_its_selection_down_a_narrow_column() {
         let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
         let mut hits = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .draw(|frame| {
+                render(frame, frame.area(), model, false, &mut hits);
+            })
             .unwrap();
         let rows = buffer_rows(&terminal).join("\n");
         let cards: Vec<usize> = hits
@@ -4642,7 +4339,7 @@ fn a_question_is_answered_with_the_pointer_too() {
 /// whole change removes, since no terminal can be asked what font it has.
 #[test]
 fn each_glyph_set_is_previewed_in_its_own_glyphs() {
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(92, 40)).unwrap();
     let model = TuiModel {
         route: Route::Settings,
         focus: Focus::Content,
@@ -4657,7 +4354,9 @@ fn each_glyph_set_is_previewed_in_its_own_glyphs() {
     };
     let mut hits = Vec::new();
     terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
         .unwrap();
     let rows = buffer_rows(&terminal);
 
@@ -4920,7 +4619,7 @@ fn every_way_of_reaching_settings_carries_the_ask() {
     assert_eq!(
         asked,
         Some(crate::ui::worker::Intent::LoadSettings),
-        "walking the sidebar reached Settings without asking for its lists"
+        "walking the screens reached Settings without asking for its lists"
     );
 
     let mut clicked = TuiModel::default();
@@ -4930,7 +4629,7 @@ fn every_way_of_reaching_settings_carries_the_ask() {
         .hits
         .iter()
         .find(|(_, hit)| *hit == crate::ui::hit::Hit::Route(Route::Settings))
-        .expect("Settings is reachable from the sidebar")
+        .expect("Settings is reachable from its tab")
         .clone();
     assert_eq!(
         clicked.click(rect.x + 1, rect.y),
@@ -4953,7 +4652,9 @@ fn clicking_a_glyph_set_chooses_it() {
     };
     let mut hits = Vec::new();
     terminal
-        .draw(|frame| render(frame, frame.area(), &model, &mut hits))
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
         .unwrap();
     model.hits = hits;
 
@@ -5126,10 +4827,10 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
     );
     let revision = rows
         .iter()
-        .position(|row| row.contains("REVISION"))
-        .unwrap_or_else(|| panic!("the revision block is drawn: {rows:#?}"));
+        .position(|row| row.contains("revision"))
+        .unwrap_or_else(|| panic!("the revision field is drawn: {rows:#?}"));
     assert!(
-        rows[revision + 1].contains("f1f00f7") && rows[revision + 1].contains("79 minutes ago"),
+        rows[revision].contains("f1f00f7") && rows[revision].contains("79 minutes ago"),
         "the commit and its age share a row: {rows:#?}"
     );
 
@@ -5310,7 +5011,9 @@ fn a_resource_preview_scrolls_to_its_end_and_stops() {
     let mut draw = |model: &TuiModel| {
         let mut hits = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .draw(|frame| {
+                render(frame, frame.area(), model, false, &mut hits);
+            })
             .unwrap();
     };
     draw(&model);
@@ -5355,7 +5058,9 @@ fn the_footer_says_the_machines_health_and_opens_what_needs_attention() {
         let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
         let mut hits = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .draw(|frame| {
+                render(frame, frame.area(), model, false, &mut hits);
+            })
             .unwrap();
         (buffer_rows(&terminal), hits)
     };
@@ -5392,18 +5097,19 @@ fn the_footer_says_the_machines_health_and_opens_what_needs_attention() {
     assert!(!hits.iter().any(|(_, hit)| *hit == Hit::HealthStatus));
 }
 
-/// A marketplace in the rail is its name and how much of it is installed,
-/// over the one thing worth knowing about it: what asks for action, that
-/// it ships with uze, or how long ago it was last checked.
+/// A marketplace heads its group: its name and where it comes from, how
+/// many plugins it offers, and the one thing worth knowing about it —
+/// what asks for action, or how much of it is installed. Adding another
+/// is the key on the screen's own header, the last thing on its row.
 #[test]
-fn a_marketplace_in_the_rail_is_its_name_over_what_needs_saying() {
+fn a_marketplace_heads_its_group_with_what_needs_saying() {
     let model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Content,
         overlay: Overlay::None,
         ..model_with_data()
     };
-    let (terminal, hits) = drawn_at(&model, 150, 26);
+    let (terminal, hits) = drawn_at(&model, 150, 30);
     let rows = buffer_rows(&terminal);
     let text = rows.join("\n");
     let row_of = |needle: &str| {
@@ -5411,74 +5117,42 @@ fn a_marketplace_in_the_rail_is_its_name_over_what_needs_saying() {
             .position(|row| row.contains(needle))
             .unwrap_or_else(|| panic!("{needle} not drawn:\n{text}"))
     };
-    let heading = row_of("MARKETPLACES");
+    let heading = row_of("contents");
     assert!(
-        rows[heading].contains("PLUGIN"),
-        "the rail's heading shares the plugin table's heading row: {text}"
-    );
-    assert!(
-        rows[heading + 2].contains("all") && rows[heading + 2].contains("flow"),
-        "a row of air under both headings, then the first entry of each: {text}"
-    );
-    let uze = row_of("│  uze ");
-    assert!(
-        rows[uze].contains("1/1"),
-        "the count beside the name: {text}"
-    );
-    assert!(rows[uze + 1].contains("built in"), "{text}");
-    // A rule divides the rail from the plugin table, rather than a ground
-    // of its own.
-    let rail = hits
-        .iter()
-        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
-        .map(|(rect, _)| *rect)
-        .expect("the marketplace is a target");
-    let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(rail.right(), rail.y)].symbol(), "│", "{text}");
-    assert_ne!(
-        buffer[(rail.x, rail.bottom())].bg,
-        theme::color(Token::SurfaceRecessed),
+        rows[heading].contains("name") && rows[heading].contains("status"),
         "{text}"
     );
-    // Adding one is a button on the header's row, beside the count it
-    // would change, not an entry at the foot of the list.
-    assert!(!text.contains("+ add"), "{text}");
-    let button = hits
-        .iter()
-        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::AddMarketplace))
-        .map(|(rect, _)| *rect)
-        .expect("the button is a target");
-    let header = &rows[button.y as usize];
-    let divider = theme::glyph(theme::Symbol::TreeColumnDivider);
-    let at = |needle: &str| {
-        header
-            .find(needle)
-            .unwrap_or_else(|| panic!("{needle} not on the header row: {header}"))
-    };
-    let count = at("marketplaces ·");
-    let button_at = at("  Add  ");
-    assert!(
-        header[count..button_at].contains(&divider),
-        "the count, a divider, then the button: {header}"
-    );
-    let header_hits: Vec<_> = hits
-        .iter()
-        .filter(|(rect, _)| rect.y == button.y && rect.x > button.x)
-        .collect();
-    assert!(
-        header_hits.is_empty(),
-        "the button ends the header's row: {header_hits:?}"
-    );
-    assert!(
-        rows[row_of("│  local ") + 1].contains("1 update"),
-        "what asks for action under the name:\n{text}"
-    );
+    let uze = row_of("uze  built in");
+    assert!(rows[uze].contains("1 plugin"), "{text}");
+    assert!(rows[uze].contains("1/1 installed"), "{text}");
+    let local = row_of("local  installed directly");
+    assert!(rows[local].contains("1 update"), "{text}");
+
     let market = hits
         .iter()
         .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
         .map(|(rect, _)| *rect)
-        .expect("the marketplace is a target");
-    assert_eq!(market.height, 2, "either of its rows picks it");
+        .expect("the heading is a target");
+    assert_eq!(market.y as usize, local, "{text}");
+    assert_eq!(market.height, 1);
+
+    let offer = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::AddMarketplace))
+        .map(|(rect, _)| *rect)
+        .expect("adding a marketplace is a target");
+    assert!(
+        rows[offer.y as usize].contains("Marketplace")
+            && rows[offer.y as usize].contains("marketplaces ·"),
+        "on the screen's header row: {text}"
+    );
+    assert!(
+        !hits.iter().any(|(rect, hit)| rect.y == offer.y
+            && rect.x > offer.x
+            && !matches!(hit, Hit::ResizePanel(_))
+            && rect.x < offer.right() + 2),
+        "it ends the tree's header row"
+    );
 }
 
 /// The whole row answers, not the chevron alone: a click puts the keyboard
@@ -5496,7 +5170,9 @@ fn a_click_on_the_selected_plugin_row_opens_and_folds_it() {
         let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
         let mut hits = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), model, &mut hits))
+            .draw(|frame| {
+                render(frame, frame.area(), model, false, &mut hits);
+            })
             .unwrap();
         let rect = hits
             .iter()
@@ -5526,39 +5202,63 @@ fn a_click_on_the_selected_plugin_row_opens_and_folds_it() {
     assert!(!expanded(&model), "and another folds it");
 }
 
-/// The marketplace the plugins on the right belong to keeps its ground
-/// while the keyboard is down among them, so the reader does not lose which
-/// one they are looking into — and the ground, across the whole rail, is
-/// the only mark: no bar beside it.
+/// The group the keyboard is in stands on a recessed ground, heading and
+/// all, so the reader does not lose which marketplace they are looking
+/// into; the row the keyboard is on takes the selection's ground and the
+/// bar beside it.
 #[test]
-fn the_selected_marketplace_keeps_its_ground_while_a_plugin_is_selected() {
+fn the_active_group_keeps_its_ground_while_a_plugin_is_selected() {
     let mut model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Content,
         overlay: Overlay::None,
         ..model_with_data()
     };
-    model.select_plugin_market(Some("local".to_owned()));
-    model.plugin_pane = super::model::PluginPane::Plugins;
-    let (terminal, hits) = drawn_at(&model, 150, 26);
+    let rows = model.marketplace_rows();
+    let one = model
+        .visible_indices_in(&rows)
+        .iter()
+        .position(|&raw| rows[raw].name == "one")
+        .expect("the local plugin is listed");
+    model.select_plugin_row(one, None);
+    let (terminal, hits) = drawn_at(&model, 150, 30);
     let rows = buffer_rows(&terminal);
-    let rail = hits
+    let heading = hits
         .iter()
         .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
         .map(|(rect, _)| *rect)
-        .expect("the marketplace is a target");
+        .expect("the heading is a target");
     let buffer = terminal.backend().buffer();
-    for x in [rail.x, rail.right() - 1] {
+    for x in [heading.x, heading.right() - 1] {
         assert_eq!(
-            buffer[(x, rail.y)].bg,
-            theme::color(Token::SurfaceSelected),
-            "the selection tint spans the rail, edge to edge, at column {x}"
+            buffer[(x, heading.y)].bg,
+            theme::color(Token::SurfaceRecessed),
+            "the group's ground spans its heading at column {x}"
         );
     }
-    let bar = theme::glyph(theme::Symbol::TreeColumnDivider);
+    let other = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("uze-official".to_owned())))
+        .map(|(rect, _)| *rect)
+        .expect("the other heading is a target");
+    assert_ne!(
+        buffer[(other.x + 2, other.y)].bg,
+        theme::color(Token::SurfaceRecessed),
+        "a group the keyboard is not in keeps the surface's ground"
+    );
+    let selected = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::MarketplaceRow(one))
+        .map(|(rect, _)| *rect)
+        .expect("the plugin is a target");
+    assert_eq!(
+        buffer[(selected.x + 4, selected.y)].bg,
+        theme::color(Token::SurfaceSelected)
+    );
+    let bar = theme::glyph(theme::Symbol::BarThick);
     assert!(
-        !rows[rail.y as usize].contains(&format!("{bar} local")),
-        "no bar beside it: {:?}",
-        rows[rail.y as usize]
+        rows[selected.y as usize].contains(&bar),
+        "{:?}",
+        rows[selected.y as usize]
     );
 }

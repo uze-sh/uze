@@ -23,11 +23,12 @@ macro_rules! actions {
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub enum Action {
             $($variant,)*
-            /// Select the nth tab on the strip — the agent in front of
-            /// the person and the shells opened alongside it, which is
-            /// what the numbers on screen are counted along. One action
-            /// per position rather than one action carrying a number,
-            /// because the keymap binds positions, not a counter.
+            /// Select the nth tab on the strip in front of the person —
+            /// in the workspace the agent and the shells opened alongside
+            /// it, in management its screens — which is what the numbers
+            /// on screen are counted along. One action per position
+            /// rather than one action carrying a number, because the
+            /// keymap binds positions, not a counter.
             SelectTab(u8),
         }
 
@@ -89,8 +90,8 @@ macro_rules! actions {
                     $(Action::$variant => $description.to_owned(),)*
                     Action::SelectTab(index) => {
                         format!(
-                            "Select tab {index} on the strip: the agent in front of \
-                             you and the shells opened alongside it"
+                            "Select tab {index} on the strip in front of you: an agent \
+                             and its shells, or a management screen"
                         )
                     }
                 }
@@ -134,13 +135,13 @@ actions! {
 
     // --- Management, screen-wide ----------------------------------------
     NextScreen => "next-screen", false,
-        "Next screen", "Move to the next screen in the sidebar, from wherever you are";
+        "Next screen", "Move to the next screen on the tab strip, from wherever you are";
     PreviousScreen => "previous-screen", false,
-        "Previous screen", "Move to the previous screen in the sidebar, from wherever you are";
+        "Previous screen", "Move to the previous screen on the tab strip, from wherever you are";
     FocusSidebar => "focus-sidebar", false,
-        "Back to the sidebar", "Move focus from the content back to the route list";
+        "Back to the tabs", "Move focus from the content back to the screen tabs";
     FocusContent => "focus-content", false,
-        "Into the content", "Move focus from the route list into the screen";
+        "Into the content", "Move focus from the screen tabs into the screen";
     Refresh => "refresh", false,
         "Refresh", "Re-read the machine: harnesses, plugins, marketplaces";
     StartFilter => "start-filter", false,

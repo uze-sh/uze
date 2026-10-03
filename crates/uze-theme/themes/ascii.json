@@ -60,6 +60,8 @@
 
     "arrow.up": "^",
     "arrow.down": "v",
+    "arrow.left": "<",
+    "arrow.right": ">",
     "arrow.external": ">",
     "arrow.to": "->",
     "chevron.right": ">",

@@ -1,9 +1,9 @@
 //! A modal's footer: a hairline over one row, what can be done here on
-//! the left and a trailer of the caller's on the right.
+//! the left and the caller's trailers on the right.
 
 use ratatui::{
     layout::{Alignment, Rect},
-    text::{Line, Span},
+    text::Line,
     widgets::{Padding, Paragraph},
 };
 
@@ -12,16 +12,19 @@ use super::{Edge, Rule, text};
 /// Draws the footer into `area` and answers with the rect each trailer
 /// took, in the order given, for a caller whose trailers answer a click.
 /// Trailers are laid from the right edge inward, two columns apart, the
-/// first one rightmost.
+/// first one rightmost. `inset` is how far the row's text sits inside the
+/// hairline's ends, so it can line up with whatever the modal heads its
+/// content with.
 pub(crate) fn render(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
+    inset: u16,
     mut line: Line<'static>,
-    trailers: Vec<Span<'static>>,
+    trailers: Vec<Line<'static>>,
 ) -> Vec<Rect> {
     const GAP: u16 = 2;
     let inner = Rule::new(Edge::Top)
-        .padding(Padding::new(1, 1, 0, 0))
+        .padding(Padding::new(inset, inset, 0, 0))
         .render(frame, area);
     let mut right = inner.right();
     let mut rects = Vec::with_capacity(trailers.len());
