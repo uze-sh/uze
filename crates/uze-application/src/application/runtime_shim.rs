@@ -57,29 +57,7 @@ impl UzeApplication {
         let shim_path = shims_dir.join(shim_name);
         refresh_shim_symlink(&uze_binary, &shim_path)?;
 
-        // The shim is the workspace's: its panes put the shims first on
-        // `PATH`, and nothing outside the workspace should reach them. A
-        // build before that wrote a block into the operator's shell startup
-        // file; the block is UZE's, so it is taken back, and nothing else
-        // in the file is touched.
-        let mut took_back_from = None;
-        let mut left_alone = None;
-        if let Some(target) = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .and_then(|home_dir| uze_core::shell_path::detect_shell_rc(&home_dir))
-        {
-            match uze_core::shell_path::take_back_path_block(&target) {
-                Ok(true) => took_back_from = Some(target.rc_file),
-                Ok(false) => {}
-                Err(error) => left_alone = Some((target.rc_file, error.to_string())),
-            }
-        }
-
-        Ok(Some(RuntimeShimSetup {
-            shim_path,
-            took_back_from,
-            left_alone,
-        }))
+        Ok(Some(RuntimeShimSetup { shim_path }))
     }
 }
 

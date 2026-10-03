@@ -55,25 +55,6 @@ fn temp(label: &str) -> PathBuf {
     uze_testkit::temp::scratch(label)
 }
 
-/// `setup` probes `$SHELL` (`shell_path::detect_shell_rc`) to decide
-/// whether to append a PATH line to the *operator's real* shell rc file —
-/// by design, never mocked (see `shell_path`'s own module doc: "never
-/// invoked implicitly"). Calling `UzeApplication::setup` in-process, as
-/// this file's tests do, is exactly the invocation shape that check can't
-/// tell apart from a real `uze setup` run — it would otherwise edit the
-/// real `~/.zshrc`/`~/.bashrc` on whatever machine runs this test.
-/// Blanking `$SHELL` to an unrecognized value makes `detect_shell_rc`
-/// return `None`, so `setup` falls back to its manual-instruction path and
-/// never opens any file outside the test's own `root`.
-fn setup_without_touching_the_real_shell_rc(
-    application: &UzeApplication,
-    requested: Option<&str>,
-) -> uze_core::Result<Vec<uze_application::application::SetupResult>> {
-    uze_testkit::env::with_env_var("SHELL", "uze-test-no-recognized-shell", || {
-        application.setup(requested)
-    })
-}
-
 /// Never spawns a process. Provisioning only needs *a* verified outcome to
 /// unlock `setup`'s attach step — the real vendor installer/updater must
 /// never run against the developer's actual `claude` CLI just because a
@@ -428,7 +409,7 @@ fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() 
 
     // Re-add is idempotent: recreates exactly the same (existing-receipt)
     // artifact name.
-    setup_without_touching_the_real_shell_rc(&application, None).unwrap();
+    application.setup(None).unwrap();
     assert!(skills_dir.join("acme:review").is_dir());
     let inspection = application.plugins().inspect("acme").unwrap();
     assert_eq!(inspection.managed_state.matched, 1);
@@ -448,7 +429,7 @@ fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() 
 
     // Fix it back, then remove cleanly; remove twice is a safe no-op.
     fs::remove_dir_all(skills_dir.join("acme:review")).unwrap();
-    setup_without_touching_the_real_shell_rc(&application, None).unwrap();
+    application.setup(None).unwrap();
     assert!(matches!(
         application.plugins().remove("acme").unwrap(),
         uze_application::application::RemovePluginReport::Removed { .. }

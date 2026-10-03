@@ -26,26 +26,6 @@ use uze_core::{
     router::{CompatibilityRoute, HarnessCapabilities},
 };
 
-/// `setup` probes `$SHELL` (`shell_path::detect_shell_rc`) to decide
-/// whether to append a PATH line to the *operator's real* shell rc
-/// file — by design, never mocked, since it edits the interactive
-/// shell the developer actually uses (see `shell_path`'s own module
-/// doc: "never invoked implicitly"). Calling `UzeApplication::setup`
-/// in-process, as these tests do, is exactly the invocation shape
-/// that check can't tell apart from a real `uze setup` run — it would
-/// otherwise edit the real `~/.zshrc`/`~/.bashrc` on whatever machine
-/// runs this test. Blanking `$SHELL` to an unrecognized value makes
-/// `detect_shell_rc` return `None`, so `setup` falls back to its
-/// manual-instruction path and never opens any file outside `home`.
-fn setup_without_touching_the_real_shell_rc(
-    app: &UzeApplication,
-    requested: Option<&str>,
-) -> Result<Vec<SetupResult>> {
-    uze_testkit::env::with_env_var("SHELL", "uze-test-no-recognized-shell", || {
-        app.setup(requested)
-    })
-}
-
 struct SymlinkIntegration;
 impl IntegrationPort for SymlinkIntegration {
     fn id(&self) -> &'static str {
@@ -2128,7 +2108,7 @@ impl IntegrationPort for ShimConflictingIntegration {
 }
 
 #[test]
-fn runtime_shim_takes_back_the_block_an_earlier_build_wrote_and_writes_none() {
+fn runtime_shim_writes_no_shell_file() {
     let root = uze_testkit::temp::scratch("runtime-shim-shadowed");
     let home = UzeHome::at(root.join("uze-home"));
     let shims_dir = home.shims_dir();
@@ -2145,32 +2125,14 @@ fn runtime_shim_takes_back_the_block_an_earlier_build_wrote_and_writes_none() {
     }
 
     let rc_file = root.join(".zshrc");
-    fs::write(
-        &rc_file,
-        format!(
-            concat!(
-                "# >>> uze shims path >>>\n",
-                "export PATH=\"{}:$PATH\"\n",
-                "# <<< uze shims path <<<\n",
-                "export PATH=\"{}:$PATH\"\n",
-            ),
-            shims_dir.display(),
-            real_bin_dir.display(),
-        ),
-    )
-    .unwrap();
+    let rc_content = format!("export PATH=\"{}:$PATH\"\n", real_bin_dir.display());
+    fs::write(&rc_file, &rc_content).unwrap();
     let path = std::env::join_paths([real_bin_dir.as_path(), shims_dir.as_path()]).unwrap();
     let mut environment = uze_testkit::env::scope();
     environment
         .set("HOME", &root)
         .set("SHELL", "/bin/zsh")
         .set("PATH", path);
-    assert_eq!(
-        uze_core::shell_path::detect_shell_rc(&root)
-            .expect("zsh rc is detected")
-            .rc_file,
-        rc_file
-    );
 
     let app = UzeApplication::new(home, Vec::new());
     let setup = app
@@ -2181,18 +2143,11 @@ fn runtime_shim_takes_back_the_block_an_earlier_build_wrote_and_writes_none() {
         setup.shim_path.exists(),
         "the shim is created for the workspace"
     );
-    assert_eq!(setup.took_back_from, Some(rc_file.clone()));
     assert_eq!(
         fs::read_to_string(&rc_file).unwrap(),
-        format!("export PATH=\"{}:$PATH\"\n", real_bin_dir.display()),
-        "the block is gone and the operator's own line is exactly as it was"
+        rc_content,
+        "the operator's shell file is exactly as it was"
     );
-
-    let again = app
-        .ensure_runtime_shim(&ShimConflictingIntegration {}, None)
-        .unwrap()
-        .unwrap();
-    assert_eq!(again.took_back_from, None, "nothing left to take back");
 }
 
 #[test]
@@ -2227,7 +2182,7 @@ fn setup_continues_when_one_harness_has_foreign_state_and_other_succeeds() {
     let fake_bin = root.join("bin");
     fs::create_dir_all(&fake_bin).unwrap();
 
-    let results = setup_without_touching_the_real_shell_rc(&app, None).unwrap();
+    let results = app.setup(None).unwrap();
     assert_eq!(results.len(), 2, "both harnesses must be reported");
 
     let healthy = results
@@ -2324,7 +2279,7 @@ fn setup_is_idempotent_with_foreign_state_present() {
     );
     app.ensure_default_plugins().unwrap();
 
-    let first = setup_without_touching_the_real_shell_rc(&app, None).unwrap();
+    let first = app.setup(None).unwrap();
     let foreign_first = first
         .iter()
         .find(|r| r.integration == "antigravity")
@@ -2333,7 +2288,7 @@ fn setup_is_idempotent_with_foreign_state_present() {
         .clone();
     assert!(foreign_first.is_none());
 
-    let second = setup_without_touching_the_real_shell_rc(&app, None).unwrap();
+    let second = app.setup(None).unwrap();
     let foreign_second = second
         .iter()
         .find(|r| r.integration == "antigravity")
@@ -2386,10 +2341,6 @@ fn shim_failure_is_reported_but_does_not_abort_setup() {
                 .to_string_lossy()
         ),
     );
-    // `SHELL` is set on the SAME guard: the setup path must not edit any
-    // real rc file, and a second `env::scope()` here would deadlock on
-    // the process-env lock (Mutex is not reentrant).
-    env_scope.set("SHELL", "uze-test-no-recognized-shell");
 
     let app = UzeApplication::new(home, vec![Box::new(ShimConflictingIntegration {})]);
 

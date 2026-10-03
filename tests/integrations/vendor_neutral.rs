@@ -343,25 +343,18 @@ fn harness_selection_comes_from_the_registered_integrations() {
         vec![Box::new(PublishingIntegration::new(views))],
     );
 
-    // `setup` probes `$SHELL` to decide whether to edit the operator's
-    // real shell rc file (`shell_path::detect_shell_rc`) — blanking it to
-    // an unrecognized value keeps this in-process call from touching
-    // whatever `~/.zshrc`/`~/.bashrc` exists on the machine running this
-    // test.
-    uze_testkit::env::with_env_var("SHELL", "uze-test-no-recognized-shell", || {
-        // By id, and by an alias the integration itself declares.
-        for name in ["fake-native", "fake"] {
-            let results = application.setup(Some(name)).expect("registered harness");
-            assert_eq!(results.len(), 1);
-            assert_eq!(results[0].integration, "fake-native");
-        }
+    // By id, and by an alias the integration itself declares.
+    for name in ["fake-native", "fake"] {
+        let results = application.setup(Some(name)).expect("registered harness");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].integration, "fake-native");
+    }
 
-        // A harness the composition root does not register is unknown, and
-        // the error names what *is* registered rather than a hardcoded
-        // catalogue.
-        let error = application.setup(Some("codex")).unwrap_err().to_string();
-        assert!(error.contains("fake-native"), "error was: {error}");
-    });
+    // A harness the composition root does not register is unknown, and
+    // the error names what *is* registered rather than a hardcoded
+    // catalogue.
+    let error = application.setup(Some("codex")).unwrap_err().to_string();
+    assert!(error.contains("fake-native"), "error was: {error}");
 
     let _ = fs::remove_dir_all(home.root());
 }

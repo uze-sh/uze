@@ -71,6 +71,16 @@ pub fn quiet() -> bool {
     QUIET.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Leaves a blank line between the command a person typed and what it
+/// answers. Only on a terminal: a blank line in a pipe is a line a script
+/// has to skip. None closes the output: the prompt that follows brings its
+/// own.
+pub fn open_frame() {
+    if std::io::stdout().is_terminal() && std::io::stderr().is_terminal() {
+        println!();
+    }
+}
+
 // `--color` wins, then `NO_COLOR` and `CLICOLOR_FORCE` — the same order cargo
 // and gh read them in — and only then the terminal itself.
 fn color_enabled() -> bool {

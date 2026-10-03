@@ -3,7 +3,7 @@
 //! Infrastructure rather than domain: [`home`] owns UZE's paths,
 //! [`detection_cache`] remembers which harnesses are installed,
 //! [`provisioning`] and [`subprocess`] are the discipline for running
-//! something, [`process_cwd`] says where this user's processes are working, [`shell_path`] is the reversible `PATH` integration,
+//! something, [`process_cwd`] says where this user's processes are working,
 //! [`harness_runtime`] is the experimental PATH shim, and [`features`]
 //! says which unfinished surfaces this build offers.
 //!
@@ -16,5 +16,4 @@ pub mod harness_runtime;
 pub mod home;
 pub mod process_cwd;
 pub mod provisioning;
-pub mod shell_path;
 pub mod subprocess;

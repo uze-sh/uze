@@ -530,9 +530,7 @@ fn with_the_executable_on_path(world: &World) -> uze_testkit::env::ProcessEnvGua
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
     }
     let mut environment = uze_testkit::env::scope();
-    environment
-        .set("PATH", &bin)
-        .set("SHELL", "uze-test-no-recognized-shell");
+    environment.set("PATH", &bin);
     environment
 }
 

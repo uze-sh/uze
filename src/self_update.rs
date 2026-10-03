@@ -56,6 +56,10 @@ use uze_application::UzeHome;
 /// Where releases are published, and where a notice's link points.
 const RELEASES: &str = "https://github.com/uze-sh/uze/releases";
 
+/// Where a CLI command points the reader after an update: the site's
+/// changelog, which opens on the newest release.
+const CHANGELOG: &str = "https://uze.sh/docs/changelog";
+
 /// Where a release's own `CHANGELOG.md` is read from: the file at its tag.
 /// A constant for the same reason [`RELEASES`] is one, although what comes
 /// from here is only ever shown.
@@ -163,7 +167,8 @@ pub fn check_now(home: &UzeHome) {
     }
 }
 
-/// What a CLI command says on its way out, if anything.
+/// The release a CLI command says it was updated to on its way out, if
+/// any.
 ///
 /// Nothing here touches the network: a command is budgeted in
 /// milliseconds, and a download cannot outlive the process that started it
@@ -182,20 +187,23 @@ pub fn after_command(home: &UzeHome) -> Option<String> {
         amend_ledger(home, |stored| stored.checked_at = now);
         hand_off_check();
     }
-    updated_line(home, ledger)
+    updated_to(home, ledger)
+}
+
+/// The site's changelog, where a command points after an update.
+pub fn changelog() -> &'static str {
+    CHANGELOG
 }
 
 /// A command is a process of its own, so the one after an update is
 /// already the new release: what it says is that it was updated, once.
-fn updated_line(home: &UzeHome, ledger: Ledger) -> Option<String> {
+fn updated_to(home: &UzeHome, ledger: Ledger) -> Option<String> {
     let version = ledger.installed.filter(|installed| installed == RUNNING)?;
     if ledger.told.as_deref() == Some(version.as_str()) {
         return None;
     }
     amend_ledger(home, |stored| stored.told = Some(version.clone()));
-    Some(format!(
-        "uze was updated to {version} · what's new: {RELEASES}/tag/v{version}"
-    ))
+    Some(version)
 }
 
 /// Starts `uze upgrade --background` in a process group of its own, so the Ctrl+C
@@ -955,12 +963,12 @@ mod tests {
         let stored = || read_json::<Ledger>(&ledger_path(&home)).unwrap_or_default();
         write_json(&ledger_path(&home), &ledger(None, Some(RUNNING), None)).unwrap();
 
-        let line = updated_line(&home, stored()).expect("the first command after it says so");
-        assert!(
-            line.contains(&format!("uze was updated to {RUNNING}")),
-            "{line}"
+        assert_eq!(
+            updated_to(&home, stored()).as_deref(),
+            Some(RUNNING),
+            "the first command after it says so"
         );
-        assert_eq!(updated_line(&home, stored()), None, "and only the first");
+        assert_eq!(updated_to(&home, stored()), None, "and only the first");
     }
 
     struct Fake {

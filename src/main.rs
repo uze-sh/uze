@@ -617,6 +617,9 @@ fn main() {
     // argument that is not UTF-8: what to do about one is clap's answer to
     // give, and a replacement character matches none of the words below.
     let args: Vec<String> = argv_lossy();
+    if is_framed(args.get(1..).unwrap_or_default()) {
+        progress::open_frame();
+    }
     if args.iter().skip(1).any(|argument| argument == "-help") {
         usage_error(Cli::command().error(
             ErrorKind::UnknownArgument,
@@ -645,6 +648,21 @@ fn main() {
         std::process::exit(1);
     }
     std::process::exit(EXIT_CODE.load(std::sync::atomic::Ordering::Relaxed));
+}
+
+/// Whether this invocation is answered to a person at a prompt. An agent's
+/// commands are an ABI read by a program, and the TUI and the terminal
+/// server own the whole screen, so none of them is framed.
+fn is_framed(arguments: &[String]) -> bool {
+    let mut words = arguments.iter().filter(|word| !word.starts_with('-'));
+    let quiet = arguments
+        .iter()
+        .any(|word| word == "-q" || word == "--quiet");
+    !quiet
+        && !matches!(
+            (words.next().map(String::as_str), words.next()),
+            (Some("agent" | "terminal"), _) | (Some("workspace"), None)
+        )
 }
 
 /// The status a command that succeeded in running still ends with — a
@@ -1188,9 +1206,16 @@ fn run(cli: Cli) -> Result<()> {
     // a failure's last line is the failure.
     if tells
         && result.is_ok()
-        && let Some(line) = uze::self_update::after_command(&home)
+        && let Some(version) = uze::self_update::after_command(&home)
     {
-        eprintln!("{}", progress::label(line.as_str()));
+        let rows = progress::aligned_rows(vec![
+            vec![progress::label("updated to"), version],
+            vec![
+                progress::label("what's new"),
+                uze::self_update::changelog().to_owned(),
+            ],
+        ]);
+        eprintln!("\n{rows}");
     }
     result
 }
@@ -2454,28 +2479,11 @@ fn run_setup(
                         Some("this shell's PATH does not reach it yet; open a new shell"),
                     ));
                 }
-                if let Some(shim) = &result.runtime_shim {
-                    if verbose {
-                        lines.push_str(&format!(
-                            "  {}\n",
-                            progress::label(format!("shim {}", progress::path(&shim.shim_path)))
-                        ));
-                    }
-                    if let Some(rc) = &shim.took_back_from {
-                        lines.push_str(&format!(
-                            "  {}\n",
-                            progress::label(format!(
-                                "took back the PATH block an earlier uze wrote in {}",
-                                progress::path(rc)
-                            ))
-                        ));
-                    }
-                    if let Some((rc, why)) = &shim.left_alone {
-                        lines.push_str(&format!(
-                            "  {}\n",
-                            progress::label(format!("left {} as it is: {why}", progress::path(rc)))
-                        ));
-                    }
+                if verbose && let Some(shim) = &result.runtime_shim {
+                    lines.push_str(&format!(
+                        "  {}\n",
+                        progress::label(format!("shim {}", progress::path(&shim.shim_path)))
+                    ));
                 }
                 for (what, error) in [
                     ("", result.attach_error.as_ref()),
