@@ -237,10 +237,13 @@ impl Route {
 /// Which kind of row of the Marketplace tree the keyboard is on: a
 /// marketplace's own heading, or a plugin (and, under an unfolded one, its
 /// resources). The detail panel describes whichever it is.
+///
+/// A marketplace's heading by default: a first look at the screen is a
+/// look at what is on offer before it is a look at one plugin.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum PluginPane {
-    Markets,
     #[default]
+    Markets,
     Plugins,
 }
 
@@ -790,6 +793,9 @@ pub(crate) struct Remembered {
     /// group-expanded) sequence — see `marketplace_visible_indices` — not
     /// `marketplace_plugins`; resolve through `selected_marketplace_plugin`.
     pub(crate) plugin_screen: ListScreen,
+    /// Whether the keyboard was last on a marketplace's heading or among
+    /// its plugins, so a return visit lands where the last one left off.
+    pub(crate) plugin_pane: PluginPane,
     /// The Extensions catalog. Its selection is a position within
     /// `extension_visible_indices`, rather than a raw catalog index, so
     /// filtered cards and keyboard navigation always agree.
@@ -872,6 +878,7 @@ impl TuiModel {
             release: None,
             release_revision: 0,
         };
+        model.plugin_pane = model.remembered.plugin_pane;
         let remembered = &mut model.remembered;
         remembered
             .plugin_screen
@@ -901,7 +908,10 @@ impl TuiModel {
 
     /// What this visit leaves for the next one.
     pub(crate) fn remember(self) -> Remembered {
-        self.remembered
+        Remembered {
+            plugin_pane: self.plugin_pane,
+            ..self.remembered
+        }
     }
 
     /// Says something for a few seconds and then goes quiet. For the
@@ -1264,7 +1274,7 @@ impl TuiModel {
     pub(crate) fn plugin_tree_cursor(&self) -> PluginTreeRow {
         match (self.plugin_pane, self.selected_resource()) {
             (PluginPane::Markets, _) => {
-                PluginTreeRow::Market(self.plugin_market.clone().unwrap_or_default())
+                PluginTreeRow::Market(self.cursor_market().unwrap_or_default())
             }
             (PluginPane::Plugins, Some(resource)) => {
                 PluginTreeRow::Resource(self.remembered.plugin_screen.selected, resource.identity)
@@ -1334,11 +1344,27 @@ impl TuiModel {
     /// The registered marketplace whose group the keyboard is in; `None`
     /// on the local group, which no registration describes.
     pub(crate) fn selected_market_summary(&self) -> Option<&MarketplaceSummary> {
-        let market = self.plugin_market.as_deref()?;
+        let market = self.cursor_market()?;
         self.remembered
             .marketplaces
             .iter()
             .find(|summary| summary.name == market)
+    }
+
+    /// The marketplace whose heading the keyboard is on: the one chosen,
+    /// while it is still in the tree, and the first group otherwise — a
+    /// screen nobody has chosen anything on yet starts at its top.
+    fn cursor_market(&self) -> Option<String> {
+        let tree = self.plugin_tree_rows();
+        let heading = |row: &PluginTreeRow| match row {
+            PluginTreeRow::Market(market) => Some(market.clone()),
+            _ => None,
+        };
+        self.plugin_market
+            .as_ref()
+            .filter(|chosen| tree.contains(&PluginTreeRow::Market((*chosen).clone())))
+            .cloned()
+            .or_else(|| tree.iter().find_map(heading))
     }
 
     /// Unfolds or folds one plugin's resources. Folding takes the keyboard

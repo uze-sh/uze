@@ -54,6 +54,9 @@ fn model_with_plugins(ids: &[&str]) -> TuiModel {
     TuiModel {
         focus: Focus::Content,
         route: Route::Plugins,
+        // On a plugin rather than on its marketplace's heading: what these
+        // tests act on is the row of a plugin.
+        plugin_pane: PluginPane::Plugins,
         remembered: Remembered {
             plugins: ids.iter().map(|id| plugin(id)).collect(),
             ..TuiModel::default().remembered
@@ -1859,6 +1862,7 @@ fn registered(name: &str) -> MarketplaceSummary {
 fn two_market_model() -> TuiModel {
     TuiModel {
         route: Route::Plugins,
+        plugin_pane: PluginPane::Plugins,
         focus: Focus::Content,
         remembered: Remembered {
             marketplaces: vec![registered("uze-official"), registered("ai")],
@@ -3450,6 +3454,7 @@ fn the_drawer_offers_what_can_be_done_as_buttons() {
     let mut model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Content,
+        plugin_pane: PluginPane::Plugins,
         remembered: Remembered {
             plugin_screen: ListScreen::default(),
             marketplace_plugins: vec![summary],
@@ -4802,6 +4807,7 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
     let mut model = TuiModel {
         route: Route::Plugins,
         focus: Focus::Content,
+        plugin_pane: PluginPane::Plugins,
         marketplace_detail: Some(MarketplacePluginDetail {
             revision: Some(Revision::Commit {
                 short: "f1f00f7".to_owned(),
@@ -5422,5 +5428,75 @@ fn the_selection_lights_its_whole_container() {
         ground_of(&model, "env"),
         theme::color(Token::SurfaceRecessed),
         "a sibling keeps the group's ground"
+    );
+}
+
+/// A first look at the Marketplace starts on its first marketplace, not
+/// on a plugin inside it — and a return visit lands wherever the last one
+/// left the keyboard.
+#[test]
+fn the_marketplace_opens_on_its_first_marketplace_until_something_is_chosen() {
+    let mut first = TuiModel::recall(
+        Some(Remembered {
+            marketplaces: vec![registered("uze-official"), registered("ai")],
+            marketplace_plugins: vec![
+                marketplace_plugin("uze-official", "uze", true),
+                marketplace_plugin("ai", "git", true),
+            ],
+            ..TuiModel::default().remembered
+        }),
+        &uze_application::ManagementLayout::default(),
+    );
+    first.route = Route::Plugins;
+    first.focus = Focus::Content;
+    assert_eq!(
+        first.plugin_tree_cursor(),
+        super::model::PluginTreeRow::Market("uze-official".to_owned()),
+        "nothing chosen yet: the first marketplace"
+    );
+    assert!(first.selected_market_summary().is_some(), "and its panel");
+
+    first.act(uze_keys::Action::FocusContent);
+    assert_eq!(first.plugin_pane, PluginPane::Plugins);
+    let layout = first.management_layout();
+    let again = TuiModel::recall(Some(first.remember()), &layout);
+    assert_eq!(
+        again.plugin_pane,
+        PluginPane::Plugins,
+        "a plugin chosen last time is where the next visit opens"
+    );
+}
+
+/// The panel's action stands a row apart from what is above it, so a long
+/// preview scrolling in the body never runs into the button.
+#[test]
+fn the_panel_action_has_a_row_of_air_above_it() {
+    let model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        plugin_pane: PluginPane::Plugins,
+        remembered: Remembered {
+            marketplace_plugins: vec![MarketplacePluginSummary {
+                description: Some("word ".repeat(400)),
+                ..marketplace_plugin("team", "kit", false)
+            }],
+            ..TuiModel::default().remembered
+        },
+        ..TuiModel::default()
+    };
+    let (terminal, hits) = drawn_at(&model, 150, 30);
+    let button = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::InstallPlugin))
+        .map(|(rect, _)| *rect)
+        .expect("the panel offers to install");
+    let above: String = buffer_rows(&terminal)[button.y as usize - 1]
+        .chars()
+        .skip(button.x as usize)
+        .take(20)
+        .collect();
+    assert!(
+        above.trim().is_empty(),
+        "the row above the button: {above:?}"
     );
 }

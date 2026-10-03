@@ -1040,8 +1040,8 @@ fn update_offered(offers: &[ActionOffer]) -> bool {
         .any(|offer| offer.action == uze_keys::Action::UpdatePlugin && offer.is_available())
 }
 
-/// Rows the panel's foot takes: the update and a row of air when there is
-/// one to take, the action, and a row of air under it.
+/// Rows the panel's foot takes: a row of air, the update and a row of air
+/// when there is one to take, the action, and a row of air under it.
 fn panel_footer_height(detail: &Detail) -> u16 {
     let update = if detail.update.is_some() { 2 } else { 0 };
     let action = if primary_offer(&detail.offers).is_some() {
@@ -1049,7 +1049,10 @@ fn panel_footer_height(detail: &Detail) -> u16 {
     } else {
         0
     };
-    update + action
+    let rows = update + action;
+    // A row of air above the foot, so what scrolls in the body never runs
+    // into the buttons.
+    if rows > 0 { rows + 1 } else { 0 }
 }
 
 /// The panel's foot, anchored to its bottom: a newer revision and the
@@ -1062,7 +1065,7 @@ fn render_panel_footer(
     detail: &Detail,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let mut y = area.y;
+    let mut y = area.y + 1;
     if let Some(note) = &detail.update {
         if update_offered(&detail.offers) {
             let action = uze_keys::Action::UpdatePlugin;
