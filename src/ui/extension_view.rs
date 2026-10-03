@@ -1905,9 +1905,10 @@ fn message_lines(text: &str, hint: Option<&str>, width: u16, colour: Color) -> V
     lines
 }
 
-/// One row of a hint, with what it quotes in backticks drawn apart and the
-/// backticks themselves dropped: a quoted span is something to type, and
-/// it is the one part of a hint a reader looks for. `quoted` carries an
+/// One row of a hint, with what it quotes in backticks a step brighter and
+/// the backticks themselves dropped: a quoted span is something to type,
+/// and it is the one part of a hint a reader looks for. A step, not a hue:
+/// the hint is still the quiet half of the message. `quoted` carries an
 /// open quote across a fold, so a span split over two rows stays lit.
 fn hint_line(row: &str, quoted: &mut bool) -> Line<'static> {
     let mut spans = Vec::new();
@@ -1919,7 +1920,7 @@ fn hint_line(row: &str, quoted: &mut bool) -> Line<'static> {
             continue;
         }
         let style = if *quoted {
-            theme::fg(Token::Accent)
+            theme::fg(Token::TextPrimary)
         } else {
             theme::fg(Token::TextMuted)
         };
@@ -3067,8 +3068,8 @@ mod tests {
         };
         assert_eq!(text(&first), "Run uze agent");
         assert_eq!(text(&second), "artifacts check now");
-        assert_eq!(first.spans[1].style, theme::fg(Token::Accent));
-        assert_eq!(second.spans[0].style, theme::fg(Token::Accent));
+        assert_eq!(first.spans[1].style, theme::fg(Token::TextPrimary));
+        assert_eq!(second.spans[0].style, theme::fg(Token::TextPrimary));
         assert_eq!(second.spans[1].style, theme::fg(Token::TextMuted));
         assert!(!quoted, "a closed quote leaves nothing open");
     }

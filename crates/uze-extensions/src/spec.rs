@@ -746,7 +746,10 @@ fn supported_tools(dialects: &[dialect::Dialect]) -> String {
             format!("{:<name_width$}   {:<marker_width$}", dialect.name, marker)
         })
         .collect();
-    format!("Read from any of these layouts:\n\n{}", tools.join("\n"))
+    format!(
+        "Shows any project laid out by one of these:\n\n{}",
+        tools.join("\n")
+    )
 }
 
 fn message(text: &str, hint: Option<String>) -> Content {

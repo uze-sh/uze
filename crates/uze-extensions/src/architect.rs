@@ -239,8 +239,8 @@ const UNDECLARED: &str = "No artifacts declared";
 /// and the surface by a person, who asks an agent to.
 const DECLARE_ARTIFACTS: &str = "Point `artifacts.path` in agents.yaml\n\
                                  at a directory of Mermaid files (.mmd).";
-const ASK_FOR_ARTIFACTS: &str = "Ask an agent to draw them with `uze:architect`:\n\n\
-                                 `/uze:architect diagram this project`";
+const ASK_FOR_ARTIFACTS: &str = "Ask an agent to draw them:\n\n\
+                                 `/uze:architect` diagram this project";
 
 /// Why a declared directory gave nothing back. Same reason as above.
 fn unreadable(declared: &str, reason: &str) -> (String, String) {
