@@ -5,7 +5,7 @@ about: |
   uze's thesis is that the keyboard is an accelerator, never the way in.
   That is a claim about a whole flow rather than about any one control, so
   it is performed as one: find the plugin by typing into a field that was
-  clicked, ask the row what can be done to it, take one of those, and
+  clicked, select its row and read what its panel offers, take one of those, and
   answer the question that follows — every step with the mouse.
 
   It is also the regression this tier exists for. The search field was
@@ -81,10 +81,10 @@ scenes:
         exists: false
         about: finding a plugin installs nothing
 
-  - scene: the row says what can be done to it, and installing is one of them
+  - scene: the plugin's panel says what can be done to it, and installing is one of them
     when:
-      - rclick: "flow"
-        say: ask the row for its actions
+      - click: "flow"
+        say: select the plugin's row, and its panel offers what can be done to it
         expect: "Install"
       - click: "Install"
         say: take the install offer
