@@ -1262,8 +1262,10 @@ struct Server {
     _workspace: WorkspaceLock,
     /// Serializes [`Server::persist`], so two structural changes landing at
     /// once cannot rename an older picture of the workspace over a newer
-    /// one.
-    persisting: Mutex<()>,
+    /// one, and holds the bytes last written: selecting a tab broadcasts
+    /// the session without changing anything persisted, and an fsync of
+    /// the same bytes on every switch was latency a person felt.
+    persisting: Mutex<Option<Vec<u8>>>,
     /// Cloned into every [`PaneRuntime`] so its PTY reader thread can report
     /// new output; [`spawn_damage_broadcaster`] owns the matching receiver.
     damage: mpsc::Sender<PaneId>,
@@ -1314,7 +1316,7 @@ impl Server {
             stop_requested: Condvar::new(),
             socket,
             _workspace: workspace_lock,
-            persisting: Mutex::new(()),
+            persisting: Mutex::new(None),
             damage,
             palette: Arc::new(Mutex::new(Palette::default())),
             set_aside: Mutex::new(set_aside),
@@ -1344,7 +1346,7 @@ impl Server {
     /// moved to a new cwd), so whatever's on disk is never more than one
     /// change stale, however this process eventually stops.
     fn persist(&self) {
-        let _writing = self.persisting.lock().expect("persist state poisoned");
+        let mut written = self.persisting.lock().expect("persist state poisoned");
         let path = persisted_state_path();
         let panes = self.panes.lock().expect("panes poisoned");
         let session = self.session.lock().expect("session poisoned");
@@ -1397,13 +1399,17 @@ impl Server {
             };
         drop(session);
         drop(panes);
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
         match serde_json::to_vec(&workspace) {
+            Ok(json) if written.as_ref() == Some(&json) => {}
             Ok(json) => {
-                if let Err(error) = write_atomically(&path, &json) {
-                    tracing::warn!(path = %path.display(), %error, "could not persist the workspace");
+                if let Some(parent) = path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                match write_atomically(&path, &json) {
+                    Ok(()) => *written = Some(json),
+                    Err(error) => {
+                        tracing::warn!(path = %path.display(), %error, "could not persist the workspace")
+                    }
                 }
             }
             Err(error) => {
@@ -4841,6 +4847,53 @@ mod tests {
         assert_eq!(tabs.len(), 3, "the bootstrap shell, the agent, its shell");
         assert_eq!(tabs[2].agent, Some(1), "the shell belongs with the agent");
         assert_eq!(tabs[1].agent, None);
+
+        server.stop_panes();
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// Selecting a tab broadcasts the session and persists it, but nothing
+    /// selection-shaped is persisted: the same bytes are not written (and
+    /// fsynced) again, and a real change still is.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn persisting_an_unchanged_workspace_writes_nothing() {
+        let scratch = uze_testkit::temp::socket_scratch("persame");
+        let uze_home = scratch.join("home");
+        let project = scratch.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&uze_home).unwrap();
+        let mut env = uze_testkit::env::scope();
+        env.set("UZE_HOME", &uze_home);
+
+        let socket = socket_path().unwrap();
+        let (server, _damage) = Server::new(seat_at(&project), socket).expect("server");
+        server.persist();
+        let path = persisted_state_path();
+        assert!(path.exists());
+        std::fs::remove_file(&path).unwrap();
+
+        let first = server
+            .session
+            .lock()
+            .expect("session poisoned")
+            .selected_tab()
+            .id;
+        server
+            .session
+            .lock()
+            .expect("session poisoned")
+            .select_tab(first);
+        server.persist();
+        assert!(!path.exists(), "the same workspace was written again");
+
+        {
+            let mut session = server.session.lock().expect("session poisoned");
+            let space = session.workspace.selected_space;
+            session.add_tab(space, "agent".into(), None, 80, 24, project.clone());
+        }
+        server.persist();
+        assert!(path.exists(), "a changed workspace was not written");
 
         server.stop_panes();
         let _ = std::fs::remove_dir_all(&scratch);
