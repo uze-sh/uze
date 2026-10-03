@@ -44,7 +44,7 @@ yourself, the workspace to run them, or both.
 - [x] Harness management · Skills & MCP portability · Project context · Marketplace · TUI
 - [x] Agent & hook portability · Native package delivery
 - [x] Profiles · Environment maintenance · Terminal workspace with isolated agents
-- [x] Reproducible project environments · Theming · Linux releases · macOS releases (experimental)
+- [x] Reproducible project environments · Theming · Linux releases · macOS releases
 - [x] Spec, Architect & Code extensions · Plugin freshness · Records that survive an upgrade
 - [ ] Requirements & dependencies · Plugin versioning · Security & trust
 - [ ] Windows releases · Runtime context projection · Migration tooling · Ecosystem expansion

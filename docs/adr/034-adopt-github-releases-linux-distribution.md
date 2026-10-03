@@ -129,6 +129,21 @@ binary; changing its shape strands every install that relies on it.
 
 Source change: openspec/changes/archive/2026-09-27-keep-the-installed-binary-current/
 
+**2026-10-03 — macOS is a release target** (`support-macos`).
+The macOS-installer non-goal above is lifted. It was there to keep a second
+platform out of an unproven pipeline, not because macOS was out of reach.
+`release.yml` now packages `aarch64-macos` and `x86_64-macos` from one Apple
+Silicon runner, and `install.sh` picks one from `uname`. A platform counts as
+supported only once its own hardware builds it, tests it and runs the
+journeys; compiling for it is not enough. Facts only the kernel holds are
+read behind one per-platform boundary (`process_probe`), where `None` means
+*unknown*, never *no*. Notarization was rejected because it needs an Apple
+Developer account and signing secrets in CI, and `curl | sh` does not need
+it. A tarball downloaded in a browser is the one path that still hits
+Gatekeeper, and the release notes say so. Windows stays a non-goal.
+
+Source change: openspec/changes/archive/2026-10-03-support-macos/
+
 ## Implementation Plan
 
 - **Affected paths**: `install.sh` (repo root, canonical installer);
