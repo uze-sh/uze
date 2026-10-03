@@ -226,8 +226,10 @@ need to).
 - `crates/uze-application` — the product-facing facade
   (`UzeApplication`) that orchestrates Core + Integrations into
   install/remove/update/context lifecycle operations. `src/application.rs`
-  is the large orchestration surface; `src/application/lifecycle/` holds
-  the per-operation modules (add/install/remove/update/attach).
+  is the facade and its service accessors; `src/application/lifecycle/`
+  holds the per-operation modules (add/install/remove/update/attach), and
+  `src/application/services/` the workspace's services (tasks, checkouts,
+  work), each a directory once it outgrows one file.
 - `crates/uze-git` — the one transport for speaking to the Git binary:
   spawn convention, `read`/`write` entry points, and Git's exit code
   reported rather than classified (a non-zero exit is an answer for
