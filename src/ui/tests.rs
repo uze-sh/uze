@@ -1717,6 +1717,42 @@ fn overview_alerts_classify_conflicts_as_high_and_missing_as_low() {
     assert!(alerts.iter().any(|alert| alert.severity == Severity::Low));
 }
 
+/// A harness the operator never set up receives nothing, so nothing about
+/// it is theirs to act on: neither its absence nor what a plugin's hook
+/// would lose there.
+#[test]
+fn health_speaks_only_of_configured_harnesses() {
+    use uze_application::CompatibilityRoute;
+    use uze_application::application::HookHealth;
+    let model = model_with_data();
+    let mut doctor = model.remembered.doctor.clone().unwrap();
+    let approximated_on = |harness: &str| HookHealth {
+        hook: "one:guard".to_owned(),
+        event: "pre_tool_use".to_owned(),
+        harness: harness.to_owned(),
+        route: CompatibilityRoute::Degraded,
+        weakened: Some("cannot deny".to_owned()),
+        delivery: None,
+        artifact: None,
+        state: None,
+    };
+    doctor.attachments[0].hooks = vec![approximated_on("claude-code"), approximated_on("codex")];
+
+    let labels: Vec<_> = actionable_alerts(Some(&doctor))
+        .into_iter()
+        .map(|alert| alert.label)
+        .collect();
+
+    assert!(
+        labels.contains(&"one hook one:guard is approximated on Claude Code".to_owned()),
+        "{labels:?}"
+    );
+    assert!(
+        !labels.iter().any(|label| label.contains("Codex")),
+        "{labels:?}"
+    );
+}
+
 fn marketplace_plugin(marketplace: &str, name: &str, installed: bool) -> MarketplacePluginSummary {
     MarketplacePluginSummary {
         marketplace: marketplace.to_owned(),
