@@ -6,6 +6,7 @@
 //! methods, and never against the developer's real HOME/UZE_HOME/PATH.
 
 mod agent_surface;
+mod canonical_package;
 mod engine;
 mod fresh_project;
 mod lifecycle;
