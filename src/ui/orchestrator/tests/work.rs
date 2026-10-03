@@ -616,7 +616,8 @@ fn a_clean_up_asks_with_what_would_go_and_how_much() {
         lines.contains("clean up? removes 2 checkouts of yours that are clean, unused and in"),
         "{lines}"
     );
-    assert!(lines.contains("main, freeing 3.0 MB"), "{lines}");
+    let flowing = lines.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flowing.contains("main, freeing 3.0"), "{lines}");
 
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-work-nothing"));
     let model = showing(vec![checkout(".worktrees/slot", slot(None, false))]);

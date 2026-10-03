@@ -45,21 +45,11 @@ pub(crate) fn render_profiles(
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(left_width), Constraint::Min(1)])
         .split(content);
-    let left_area = Rect::new(
-        columns[0].x,
-        columns[0].y.saturating_sub(1),
-        columns[0].width,
-        columns[0].height.saturating_add(1),
-    );
+    let left_area = columns[0];
     let harnesses_area = side_panel_area(content, columns[1].width);
     render_profile_tree(frame, left_area, model, hits);
     render_harnesses(frame, harnesses_area, model, hits);
-    let divider = Rect::new(
-        left_area.right().saturating_sub(1),
-        left_area.y,
-        1,
-        left_area.height,
-    );
+    let divider = Rect::new(harnesses_area.x, harnesses_area.y, 1, harnesses_area.height);
     if model.dragging_panel == Some(ResizablePanel::ProfileColumns) {
         frame.render_widget(
             Paragraph::new(Span::styled(
@@ -141,15 +131,13 @@ fn render_profile_tree(
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     widget::fill(frame, area, Token::SurfaceBackground);
-    let panel_inner = area;
-    // The panel reaches one row above the content inset so its edge meets
-    // the frame; the text inside starts where every other screen's
-    // header does — the content inset itself, no padding of its own.
+    // The text starts where every other screen's header does — the
+    // content inset itself, no padding of its own.
     let inner = Rect::new(
-        panel_inner.x,
-        panel_inner.y.saturating_add(1),
-        panel_inner.width.saturating_sub(1),
-        panel_inner.height.saturating_sub(2),
+        area.x,
+        area.y,
+        area.width.saturating_sub(1),
+        area.height.saturating_sub(1),
     );
     let header = Layout::default()
         .direction(Direction::Horizontal)
@@ -173,15 +161,19 @@ fn render_profile_tree(
         ),
         _ => "Profiles".to_owned(),
     };
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            title,
-            Style::default()
-                .fg(theme::color(Token::TextBright))
-                .add_modifier(Modifier::BOLD),
-        )),
-        header[0],
-    );
+    let subtitle = match (model.profile_preview_open, model.selected_profile()) {
+        (true, Some(profile)) => preview_summary(model, &profile.id),
+        _ => "Configure preferences and apply them across harnesses".to_owned(),
+    };
+    // One row, the way every screen heads itself: the name, and what the
+    // screen holds beside it.
+    let mut heading = Line::from(vec![
+        Span::styled(title, theme::fg_bold(Token::TextBright)),
+        Span::raw("  "),
+        Span::styled(subtitle, theme::fg(Token::TextMuted)),
+    ]);
+    widget::text::clip(&mut heading, header[0].width.saturating_sub(2).into());
+    frame.render_widget(Paragraph::new(heading), header[0]);
     // Previewing is a way of looking at the screen rather than something
     // done to the profile, so it sits with the screen's own controls; it
     // is drawn as a button, engaged while the preview is open.
@@ -209,21 +201,13 @@ fn render_profile_tree(
         header[3],
     );
     hits.push((header[3], Hit::OfferedAction(uze_keys::Action::NewProfile)));
-    let subtitle = match (model.profile_preview_open, model.selected_profile()) {
-        (true, Some(profile)) => preview_summary(model, &profile.id),
-        _ => "Configure preferences and apply them across harnesses".to_owned(),
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(subtitle, theme::fg(Token::TextMuted))),
-        Rect::new(inner.x, inner.y.saturating_add(1), inner.width, 1),
-    );
 
     if model.profile_preview_open && !model.remembered.profiles.is_empty() {
         let body = Rect::new(
             inner.x,
-            inner.y.saturating_add(3),
+            inner.y.saturating_add(2),
             inner.width.saturating_sub(1),
-            inner.height.saturating_sub(3),
+            inner.height.saturating_sub(2),
         );
         let preview = preview_lines(model, body.width);
         // Scrolled only as far as keeping the cursor's harness, and a few
@@ -259,12 +243,12 @@ fn render_profile_tree(
                 "No profiles yet — press n",
                 theme::fg(Token::TextMuted),
             )),
-            Rect::new(inner.x, inner.y.saturating_add(4), inner.width, 1),
+            Rect::new(inner.x, inner.y.saturating_add(2), inner.width, 1),
         );
         return;
     }
 
-    let mut y = inner.y.saturating_add(4);
+    let mut y = inner.y.saturating_add(2);
     let bottom = inner.y + inner.height.saturating_sub(1);
     for (index, profile) in model.remembered.profiles.iter().enumerate() {
         if y >= bottom {
@@ -438,11 +422,12 @@ fn render_harnesses(
                 .collect()
         })
         .unwrap_or_default();
-    widget::fill(frame, area, Token::SurfaceRecessed);
+    // This panel is the screen's drawer: the same hairline on its left and
+    // the same ground as the screen, and the selected profile's actions
+    // end it the way they end every other drawer.
+    widget::fill(frame, area, Token::SurfaceBackground);
+    widget::Rule::new(widget::Edge::Left).render(frame, area);
     let panel_inner = area;
-    // This panel is the screen's drawer: it sits on the drawers' surface,
-    // so the selected profile's actions end it the way they end every
-    // other drawer.
     let offers = model
         .selected_profile()
         .map(|profile| profile.offers())
@@ -453,10 +438,10 @@ fn render_harnesses(
         0
     };
     let inner = Rect::new(
-        panel_inner.x.saturating_add(2),
-        panel_inner.y.saturating_add(1),
-        panel_inner.width.saturating_sub(3),
-        panel_inner.height.saturating_sub(2 + footer_height),
+        panel_inner.x.saturating_add(4),
+        panel_inner.y,
+        panel_inner.width.saturating_sub(7),
+        panel_inner.height.saturating_sub(1 + footer_height),
     );
     let checked: Vec<&str> = harnesses
         .iter()

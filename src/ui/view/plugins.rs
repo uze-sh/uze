@@ -30,24 +30,18 @@ use uze_application::application::{
 
 use super::plural;
 use crate::ui::agent_support::{capability_label, resource_groups};
+use crate::ui::content_area;
 use crate::ui::hit::Hit;
 use crate::ui::model::{Focus, PluginTreeRow, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Button, Edge, Field, Rule, hint, mark, text};
+use crate::ui::widget::{Button, hint, mark, screen_header, text};
 
 /// Below this many columns the panel goes and the tree takes the width.
 const NARROW: u16 = 88;
 
-/// The panel's width at rest: wider on a wide terminal, where the tree
-/// has columns to spare and a description reads in fewer rows.
-const PANEL_WIDTH: u16 = 44;
-const PANEL_WIDTH_WIDE: u16 = 56;
-const WIDE: u16 = 150;
-const PANEL_MIN: u16 = 24;
-
-/// How far text sits inside its column: the tree's headings and the
-/// panel's rows alike.
-const PAD: u16 = 3;
+/// How far the tree's text sits inside its column — the inset every
+/// screen's content keeps.
+const PAD: u16 = crate::ui::CONTENT_INSET_LEFT;
 
 /// The tree's fixed columns, right of the name: what a row holds, when its
 /// source last moved, and where it stands, right-aligned against the edge.
@@ -57,8 +51,8 @@ const STATUS_WIDTH: usize = 18;
 /// The narrowest a name is squeezed to before a column gives way to it.
 const NAME_MIN: usize = 12;
 
-/// Where each kind of row starts its text inside its group, past the bar
-/// column: a marketplace, a plugin's chevron, a kind's heading, a
+/// Where each kind of row starts its text inside its group, past the
+/// cursor that points at it: a marketplace, a plugin's chevron, a kind's heading, a
 /// resource's branch.
 const MARKET_INDENT: usize = 2;
 const PLUGIN_INDENT: usize = 4;
@@ -80,11 +74,18 @@ pub(crate) fn render_plugins(
     let visible = model.visible_indices_in(&rows);
     let markets = model.plugin_markets(&rows);
 
-    let panel_width = panel_width(model, area);
+    let content = content_area(area);
+    let panel_width = if area.width < NARROW {
+        0
+    } else {
+        super::drawer_width(ResizablePanel::MarketplaceDrawer, model, content)
+    };
     let tree = Rect {
-        width: area
-            .width
-            .saturating_sub(panel_width + u16::from(panel_width > 0)),
+        width: if panel_width > 0 {
+            content.right().saturating_sub(panel_width + area.x)
+        } else {
+            area.width
+        },
         ..area
     };
     let screen = Screen {
@@ -96,38 +97,15 @@ pub(crate) fn render_plugins(
     };
     render_tree(frame, tree, &screen, &markets, hits);
     if panel_width > 0 {
-        let divider = Rect::new(tree.right(), area.y, panel_width + 1, area.height);
-        let panel = Rule::draggable(
-            Edge::Left,
-            model.dragging_panel == Some(ResizablePanel::MarketplaceDrawer),
-        )
-        .render(frame, divider);
-        hits.insert(
-            0,
-            (
-                Rect::new(divider.x, divider.y, 1, divider.height),
-                Hit::ResizePanel(ResizablePanel::MarketplaceDrawer),
-            ),
+        let panel = super::drawer(
+            frame,
+            content,
+            ResizablePanel::MarketplaceDrawer,
+            model,
+            hits,
         );
         render_panel(frame, panel, &screen, hits);
     }
-}
-
-/// The panel's width over `area`, or zero where there is no room for it:
-/// where it was dragged to or its width at rest, never more than half.
-fn panel_width(model: &TuiModel, area: Rect) -> u16 {
-    if area.width < NARROW {
-        return 0;
-    }
-    let rest = if area.width >= WIDE {
-        PANEL_WIDTH_WIDE
-    } else {
-        PANEL_WIDTH
-    };
-    ResizablePanel::MarketplaceDrawer
-        .width(model)
-        .unwrap_or(rest)
-        .clamp(PANEL_MIN, (area.width / 2).max(PANEL_MIN))
 }
 
 /// What every part of the screen reads, composed once per frame.
@@ -180,24 +158,30 @@ fn group_display_name(marketplace: &str) -> &str {
     }
 }
 
-/// Where a marketplace comes from, in the few words beside its name.
-fn market_source(summary: Option<&MarketplaceSummary>) -> String {
+/// Where a marketplace comes from, in the few words beside its name. The
+/// one that ships with uze wears the official mark the extensions wear,
+/// since it is official in the same sense.
+fn market_source(summary: Option<&MarketplaceSummary>) -> Span<'static> {
+    let dim = |words: String| Span::styled(words, theme::fg(Token::TextDim));
     let Some(summary) = summary else {
-        return "installed directly".to_owned();
+        return dim("installed directly".to_owned());
     };
     if summary.source.starts_with("embedded:") {
-        return "built in".to_owned();
+        return Span::styled(
+            format!("{} Official", theme::glyph(Symbol::MarkOfficial)),
+            theme::fg(Token::StateInfo),
+        );
     }
     if summary.linked_to.is_some() {
-        return "linked".to_owned();
+        return dim("linked".to_owned());
     }
     let address = summary.homepage.as_deref().unwrap_or(&summary.source);
-    address
+    dim(address
         .trim_start_matches("https://")
         .trim_start_matches("http://")
         .trim_end_matches(".git")
         .trim_end_matches('/')
-        .to_owned()
+        .to_owned())
 }
 
 /// When a marketplace's offer last moved, as far as this machine knows:
@@ -302,6 +286,16 @@ impl TreeLine {
             gap: true,
         }
     }
+
+    /// A row of air inside `market`'s group: part of its card, so a click
+    /// on it picks the marketplace the way its heading does — the whole
+    /// card answers, not only the rows with words on them.
+    fn in_group(width: u16, ground: Option<Token>, market: &str) -> Self {
+        Self {
+            hits: vec![(0, width, Hit::PluginMarket(Some(market.to_owned())))],
+            ..Self::blank(width, ground)
+        }
+    }
 }
 
 fn grounded(mut spans: Vec<Span<'static>>, ground: Option<Token>) -> Line<'static> {
@@ -313,13 +307,14 @@ fn grounded(mut spans: Vec<Span<'static>>, ground: Option<Token>) -> Line<'stati
     Line::from(spans)
 }
 
-/// A row of a group: the bar column, `lead` from `indent`, elided to the
+/// A row of a group: the cursor when the keyboard is on it, `lead` from
+/// `indent`, elided to the
 /// room the name has, then the cells, then the group's trailing pad —
 /// all on `ground`.
 fn tree_row(
     width: u16,
     ground: Option<Token>,
-    bar: bool,
+    marker: bool,
     indent: usize,
     lead: Vec<Span<'static>>,
     cells: Vec<Span<'static>>,
@@ -330,12 +325,20 @@ fn tree_row(
     let mut lead = Line::from(lead);
     text::clip(&mut lead, name_room);
     let lead_width = lead.width();
-    let mut spans = vec![if bar {
-        Span::styled(theme::glyph(Symbol::BarThick), theme::fg(Token::Accent))
+    // The cursor stands just ahead of the row's own text, the way the
+    // Shortcuts list points at its key, so it moves in with the tree's
+    // indent instead of sitting at the group's edge.
+    let marker_width = usize::from(theme::width(Symbol::Prompt)) + 1;
+    let gap = indent.saturating_sub(marker_width);
+    let mut spans = vec![Span::raw(" ".repeat(gap))];
+    if marker {
+        spans.push(Span::styled(
+            format!("{} ", theme::glyph(Symbol::Prompt)),
+            theme::fg_bold(Token::Accent),
+        ));
     } else {
-        Span::raw(" ")
-    }];
-    spans.push(Span::raw(" ".repeat(indent.saturating_sub(1))));
+        spans.push(Span::raw(" ".repeat(indent - gap)));
+    }
     spans.extend(lead.spans);
     spans.push(Span::raw(
         " ".repeat(width.saturating_sub(indent + lead_width + trailing)),
@@ -367,17 +370,13 @@ fn render_tree(
     }
     rows.gap();
     if let Some(rect) = rows.next(1) {
-        let lead = Span::styled(format!("{:<2}", "/"), theme::fg(Token::TextDim));
-        let mut spans = vec![lead];
-        spans.extend(
-            Field::new(
-                &model.remembered.plugin_screen.filter,
-                "filter plugins and capabilities…",
-            )
-            .focused(model.filtering)
-            .spans(),
+        super::filter_box(
+            frame,
+            rect,
+            &model.remembered.plugin_screen.filter,
+            "filter plugins and capabilities…",
+            model.filtering,
         );
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
         hits.push((rect, Hit::FocusFilter));
     }
     rows.gap();
@@ -480,36 +479,24 @@ fn render_tree_header(
         }
     }
     let offer_width = (offer.width() as u16).min(rect.width);
-    let offer_rect = Rect::new(
-        rect.right().saturating_sub(offer_width),
-        rect.y,
-        offer_width,
-        1,
-    );
-    frame.render_widget(Paragraph::new(offer), offer_rect);
-    hits.push((offer_rect, Hit::OfferedAction(action)));
-
-    let mut title = Line::from(vec![
-        Span::styled(Route::Plugins.label(), theme::fg_bold(Token::TextBright)),
-        Span::raw("  "),
-        Span::styled(
-            format!(
-                "{} · {}",
-                counted(markets, "marketplace"),
-                counted(screen.rows.len(), "plugin")
-            ),
-            theme::fg(Token::TextMuted),
+    hits.push((
+        Rect::new(
+            rect.right().saturating_sub(offer_width),
+            rect.y,
+            offer_width,
+            1,
         ),
-    ]);
-    let room = offer_rect.x.saturating_sub(rect.x + 2);
-    text::clip(&mut title, room.into());
-    frame.render_widget(
-        Paragraph::new(title),
-        Rect {
-            width: room,
-            ..rect
-        },
+        Hit::OfferedAction(action),
+    ));
+    let note = Span::styled(
+        format!(
+            "{} · {}",
+            counted(markets, "marketplace"),
+            counted(screen.rows.len(), "plugin")
+        ),
+        theme::fg(Token::TextMuted),
     );
+    screen_header::inline(frame, rect, Route::Plugins.label(), note, Some(offer));
 }
 
 /// Every line the tree draws, top to bottom: each group's heading, a row
@@ -542,7 +529,7 @@ fn tree_lines(
             lines.push(TreeLine::blank(width, None));
         }
         lines.push(market_line(screen, market, ground, columns, width));
-        lines.push(TreeLine::blank(width, ground));
+        lines.push(TreeLine::in_group(width, ground, market));
         let last = members.len().saturating_sub(1);
         for (index, position) in members.into_iter().enumerate() {
             let Some(plugin) = screen.plugin(position) else {
@@ -551,7 +538,7 @@ fn tree_lines(
             let id = model.marketplace_plugin_id(plugin);
             let expanded = model.expanded_plugins.contains(&id);
             if expanded && index > 0 && !lines.last().is_some_and(|line| line.gap) {
-                lines.push(TreeLine::blank(width, ground));
+                lines.push(TreeLine::in_group(width, ground, market));
             }
             lines.push(plugin_line(
                 screen, position, plugin, expanded, ground, columns, width,
@@ -561,17 +548,17 @@ fn tree_lines(
                     screen, position, plugin, ground, columns, width,
                 ));
                 if index < last {
-                    lines.push(TreeLine::blank(width, ground));
+                    lines.push(TreeLine::in_group(width, ground, market));
                 }
             }
         }
-        lines.push(TreeLine::blank(width, ground));
+        lines.push(TreeLine::in_group(width, ground, market));
     }
     lines
 }
 
 /// The ground a row stands on: the selection's where the keyboard is on
-/// it, its group's otherwise. The bar beside it says the keyboard is
+/// it, its group's otherwise. The cursor ahead of it says the keyboard is
 /// actually here rather than on the screen tabs.
 fn row_ground(selected: bool, group: Option<Token>) -> Option<Token> {
     if selected {
@@ -635,10 +622,8 @@ fn market_line(
                     group_display_name(market).to_owned(),
                     name_style(selected, resting).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    format!("  {}", market_source(summary)),
-                    theme::fg(Token::TextDim),
-                ),
+                Span::raw("  "),
+                market_source(summary),
             ],
             columns.cells(
                 Span::styled(
@@ -915,11 +900,7 @@ fn render_panel(
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     let model = screen.model;
-    let inner = Rect {
-        x: area.x + PAD,
-        width: area.width.saturating_sub(2 * PAD),
-        ..area
-    };
+    let inner = area;
     let (detail, resource) = match screen.cursor.clone() {
         PluginTreeRow::Market(market) => (market_detail(screen, &market), None),
         PluginTreeRow::Plugin(position) => match screen.plugin(position) {
@@ -1170,7 +1151,7 @@ fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
         .count();
     let kind = match summary {
         None => "installed directly",
-        Some(summary) if summary.source.starts_with("embedded:") => "marketplace · built in",
+        Some(summary) if summary.source.starts_with("embedded:") => "marketplace · official",
         Some(_) => "marketplace",
     };
     let status = if behind > 0 {

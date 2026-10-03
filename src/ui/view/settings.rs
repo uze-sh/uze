@@ -146,10 +146,7 @@ fn render_catalog(
         match band {
             Band::Gap => {}
             Band::Heading(title) => frame.render_widget(
-                Paragraph::new(Span::styled(
-                    title.to_uppercase(),
-                    theme::fg(Token::TextDim).add_modifier(Modifier::BOLD),
-                )),
+                Paragraph::new(super::section_label(title)),
                 Rect::new(area.x, y, area.width, 1),
             ),
             Band::Cards(cards) => {
@@ -438,12 +435,7 @@ fn render_drawer(
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     let inner = super::drawer(frame, content, ResizablePanel::SettingsDrawer, model, hits);
-    let block = |label: &str| {
-        Line::from(Span::styled(
-            label.to_uppercase(),
-            theme::fg_bold(Token::TextMuted),
-        ))
-    };
+    let block = super::section_label;
     let title = |text: String| {
         Line::from(Span::styled(
             text,

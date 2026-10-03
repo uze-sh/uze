@@ -54,16 +54,16 @@ pub(crate) fn render_extensions(
     let mut y = content.y;
     let bottom = content.y + content.height;
     if y + 2 <= bottom {
-        let filter_area = Rect::new(content.x, y, content.width, 2);
+        let filter_area = Rect::new(content.x, y, content.width, 1);
         hits.push((filter_area, Hit::FocusFilter));
         super::filter_box(
             frame,
             filter_area,
             &model.remembered.extension_screen.filter,
-            "Filter extensions…",
+            "filter extensions…",
             model.filtering,
         );
-        y += 3;
+        y += super::FILTER_ROWS;
     }
     let catalog_area = Rect::new(content.x, y, content.width, bottom.saturating_sub(y));
 
@@ -159,7 +159,7 @@ fn render_extension_drawer(
     let (body, status) = super::drawer_body_and_footer(inner, &offers);
 
     let lines = vec![
-        Line::from(Span::styled("EXTENSION", theme::fg_bold(Token::TextMuted))),
+        super::section_label("extension"),
         Line::from(Span::styled(
             extension.name,
             Style::default()
@@ -172,16 +172,13 @@ fn render_extension_drawer(
             theme::fg(Token::TextSecondary),
         )),
         Line::from(""),
-        Line::from(Span::styled("SURFACE", theme::fg_bold(Token::TextMuted))),
+        super::section_label("surface"),
         Line::from(Span::styled(
             extension.surface,
             theme::fg(Token::TextPrimary),
         )),
         Line::from(""),
-        Line::from(Span::styled(
-            "HOW TO OPEN",
-            theme::fg_bold(Token::TextMuted),
-        )),
+        super::section_label("how to open"),
         Line::from(Span::styled(
             extension.usage,
             theme::fg(Token::TextSecondary),

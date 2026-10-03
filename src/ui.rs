@@ -381,25 +381,30 @@ fn sidebar_width_for(total_width: u16) -> u16 {
     }
 }
 
-/// The inset [`content_area`] keeps on each side of a screen's content.
-const CONTENT_INSET_LEFT: u16 = 2;
-const CONTENT_INSET_RIGHT: u16 = 2;
-const CONTENT_INSET_TOP: u16 = 1;
+/// The inset [`content_area`] keeps on each side of a screen's content:
+/// the column the modal's header and footer hang their words from, so
+/// every screen's text starts where the modal's own does.
+pub(crate) const CONTENT_INSET_LEFT: u16 = 3;
+pub(crate) const CONTENT_INSET_RIGHT: u16 = 3;
+const CONTENT_INSET_TOP: u16 = 0;
 
-/// [`screen_header`](widget::screen_header) for a management route, which
-/// is what every screen in this client has instead of two strings.
+/// [`screen_header`](widget::screen_header) for a management route: its
+/// name, and beside it what the screen holds — `summary` when the screen
+/// reports one, its subtitle otherwise.
 pub(crate) fn render_screen_header(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     route: model::Route,
-    trailer: Option<Span<'static>>,
+    summary: Option<Span<'static>>,
 ) -> Rect {
-    widget::screen_header::render(frame, area, route.label(), route.subtitle(), trailer)
+    let note = summary
+        .unwrap_or_else(|| Span::raw(route.subtitle()))
+        .style(theme::fg(theme::Token::TextMuted));
+    widget::screen_header::inline(frame, area, route.label(), note, None)
 }
 
-/// Every content screen's outer inset — the design's `padding: 36px 44px`
-/// on each route's root div, translated to terminal cells. No border, no
-/// background: content just sits indented on the shared backdrop.
+/// Every content screen's outer inset. No border, no background: content
+/// just sits indented on the shared backdrop.
 pub(crate) fn content_area(area: Rect) -> Rect {
     Rect::new(
         area.x + CONTENT_INSET_LEFT,

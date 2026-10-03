@@ -3691,7 +3691,7 @@ fn the_keys_list_follows_the_selection_past_the_fold() {
     assert!(
         drawn
             .iter()
-            .any(|row| row.contains(&rows[last].scope.heading().to_uppercase())),
+            .any(|row| row.contains(&rows[last].scope.heading().to_lowercase())),
         "{drawn:#?}"
     );
 }
@@ -3999,9 +3999,13 @@ fn a_group_of_keys_is_set_apart_from_the_one_above_it() {
     };
     let heading = drawn
         .iter()
-        .position(|row| row.contains("MANAGEMENT"))
+        .position(|row| {
+            row.split('│')
+                .next()
+                .is_some_and(|list| list.trim() == "management")
+        })
         .expect("the second group is on screen");
-    let name = column_of(&drawn[heading], "MANAGEMENT");
+    let name = column_of(&drawn[heading], "management");
     let above: String = drawn[heading - 1].chars().skip(name).take(20).collect();
     assert!(
         above.trim().is_empty(),
@@ -5122,7 +5126,10 @@ fn a_marketplace_heads_its_group_with_what_needs_saying() {
         rows[heading].contains("name") && rows[heading].contains("status"),
         "{text}"
     );
-    let uze = row_of("uze  built in");
+    let uze = row_of(&format!(
+        "uze  {} Official",
+        theme::glyph(theme::Symbol::MarkOfficial)
+    ));
     assert!(rows[uze].contains("1 plugin"), "{text}");
     assert!(rows[uze].contains("1/1 installed"), "{text}");
     let local = row_of("local  installed directly");
@@ -5205,7 +5212,7 @@ fn a_click_on_the_selected_plugin_row_opens_and_folds_it() {
 /// The group the keyboard is in stands on a recessed ground, heading and
 /// all, so the reader does not lose which marketplace they are looking
 /// into; the row the keyboard is on takes the selection's ground and the
-/// bar beside it.
+/// cursor ahead of it.
 #[test]
 fn the_active_group_keeps_its_ground_while_a_plugin_is_selected() {
     let mut model = TuiModel {
@@ -5255,10 +5262,49 @@ fn the_active_group_keeps_its_ground_while_a_plugin_is_selected() {
         buffer[(selected.x + 4, selected.y)].bg,
         theme::color(Token::SurfaceSelected)
     );
-    let bar = theme::glyph(theme::Symbol::BarThick);
+    let cursor = format!(
+        "{} {}",
+        theme::glyph(theme::Symbol::Prompt),
+        theme::glyph(theme::Symbol::ChevronCollapsed)
+    );
     assert!(
-        rows[selected.y as usize].contains(&bar),
-        "{:?}",
+        rows[selected.y as usize].contains(&cursor),
+        "the cursor stands just ahead of the plugin: {:?}",
         rows[selected.y as usize]
     );
+}
+
+/// A marketplace's card answers a click anywhere on it: its rows of air
+/// pick the marketplace the way its heading does, rather than leaving
+/// stripes of the card that do nothing.
+#[test]
+fn every_row_of_a_marketplace_card_answers_a_click() {
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    let (_terminal, hits) = drawn_at(&model, 150, 30);
+    let heading = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("local".to_owned())))
+        .map(|(rect, _)| *rect)
+        .expect("the heading is a target");
+    let column = heading.x + heading.width / 2;
+    // The heading, a row of air, its two plugins and the row closing it.
+    for row in heading.y..heading.y + 5 {
+        let answers = hits
+            .iter()
+            .find(|(rect, _)| rect.contains(ratatui::layout::Position::new(column, row)))
+            .map(|(_, hit)| hit.clone());
+        assert!(
+            matches!(answers, Some(Hit::PluginMarket(_) | Hit::MarketplaceRow(_))),
+            "row {row} of the card answers nothing: {answers:?}"
+        );
+    }
+    model.hits = hits;
+    model.click(column, heading.y + 1);
+    assert_eq!(model.plugin_pane, PluginPane::Markets);
+    assert_eq!(model.plugin_market.as_deref(), Some("local"));
 }
