@@ -58,6 +58,11 @@ pub(crate) fn actionable_alerts(doctor: Option<&DoctorReport>) -> Vec<Alert> {
             },
         });
     }
+    let configured: Vec<_> = doctor
+        .harnesses
+        .iter()
+        .filter(|harness| harness.configured())
+        .collect();
     for package in &doctor.attachments {
         let state = &package.state;
         if state.conflicts > 0 || state.blocked > 0 {
@@ -79,11 +84,21 @@ pub(crate) fn actionable_alerts(doctor: Option<&DoctorReport>) -> Vec<Alert> {
                 detail: format!("{} attachment(s) need reattaching", state.missing),
             });
         }
-        for hook in &package.hooks {
+        // A hook row exists for every harness UZE knows, configured or not;
+        // what one the operator never set up would lose is not their problem.
+        for (hook, harness) in package.hooks.iter().filter_map(|hook| {
+            configured
+                .iter()
+                .find(|harness| harness.integration == hook.harness)
+                .map(|harness| (hook, harness))
+        }) {
             if let Some(loss) = &hook.weakened {
                 alerts.push(Alert {
                     severity: Severity::Medium,
-                    label: format!("{} hook {} is approximated", package.plugin, hook.hook),
+                    label: format!(
+                        "{} hook {} is approximated on {}",
+                        package.plugin, hook.hook, harness.display_name
+                    ),
                     detail: loss.clone(),
                 });
             }
@@ -93,26 +108,23 @@ pub(crate) fn actionable_alerts(doctor: Option<&DoctorReport>) -> Vec<Alert> {
                 ) => {
                     alerts.push(Alert {
                         severity: Severity::High,
-                        label: format!("{} hook {} needs attention", package.plugin, hook.hook),
+                        label: format!(
+                            "{} hook {} needs attention on {}",
+                            package.plugin, hook.hook, harness.display_name
+                        ),
                         detail: hook.event.clone(),
                     });
                 }
                 Some(AttachmentState::Missing) => alerts.push(Alert {
                     severity: Severity::Low,
-                    label: format!("{} hook {} is missing", package.plugin, hook.hook),
+                    label: format!(
+                        "{} hook {} is missing on {}",
+                        package.plugin, hook.hook, harness.display_name
+                    ),
                     detail: hook.event.clone(),
                 }),
                 _ => {}
             }
-        }
-    }
-    for harness in &doctor.harnesses {
-        if harness.detection.present && harness.setup.contains("not configured") {
-            alerts.push(Alert {
-                severity: Severity::Medium,
-                label: format!("{} is not configured", harness.display_name),
-                detail: "Open Integrations and run setup".to_owned(),
-            });
         }
     }
     for plugin in &doctor.plugins {

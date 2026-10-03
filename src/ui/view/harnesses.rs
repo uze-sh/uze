@@ -49,7 +49,7 @@ enum HarnessStatus {
 
 impl HarnessStatus {
     fn from(harness: &HarnessHealth) -> Self {
-        if harness.detection.present && !harness.setup.contains("not configured") {
+        if harness.configured() {
             Self::Configured
         } else {
             Self::NotConfigured

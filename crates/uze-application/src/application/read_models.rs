@@ -653,6 +653,14 @@ pub struct HarnessHealth {
     pub context_support: HarnessContextSupport,
 }
 
+impl HarnessHealth {
+    /// On this machine and handed to UZE: the only harnesses a plugin is
+    /// delivered to, and so the only ones whose delivery is anyone's concern.
+    pub fn configured(&self) -> bool {
+        self.detection.present && !self.setup.contains("not configured")
+    }
+}
+
 /// The mechanism through which one portable project resource (`AGENTS.md`,
 /// `.agents/`) reaches a harness on this machine. A property of the harness
 /// and of whether its shim exists — never of any project, which is why there
