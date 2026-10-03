@@ -168,15 +168,9 @@ fn extract_embedded_snapshot() -> Result<PathBuf> {
     for (relative, bytes) in EMBEDDED_MARKETPLACE_FILES {
         let destination = scratch.join(relative);
         if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-                path: parent.to_path_buf(),
-                source,
-            })?;
+            fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
         }
-        fs::write(&destination, bytes).map_err(|source| UzeError::Write {
-            path: destination,
-            source,
-        })?;
+        fs::write(&destination, bytes).map_err(UzeError::write(destination))?;
     }
     Ok(scratch)
 }
@@ -192,15 +186,9 @@ fn collect_files_into(
     current: &Path,
     out: &mut BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<()> {
-    let entries = fs::read_dir(current).map_err(|source| UzeError::Read {
-        path: current.to_path_buf(),
-        source,
-    })?;
+    let entries = fs::read_dir(current).map_err(UzeError::read(current))?;
     for entry in entries {
-        let entry = entry.map_err(|source| UzeError::Read {
-            path: current.to_path_buf(),
-            source,
-        })?;
+        let entry = entry.map_err(UzeError::read(current))?;
         let path = entry.path();
         if path.is_dir() {
             collect_files_into(root, &path, out)?;
@@ -209,10 +197,7 @@ fn collect_files_into(
                 .strip_prefix(root)
                 .expect("walked path is under root")
                 .to_path_buf();
-            let bytes = fs::read(&path).map_err(|source| UzeError::Read {
-                path: path.clone(),
-                source,
-            })?;
+            let bytes = fs::read(&path).map_err(UzeError::read(&path))?;
             out.insert(relative, bytes);
         }
     }

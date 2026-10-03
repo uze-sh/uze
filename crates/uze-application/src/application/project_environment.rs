@@ -1133,10 +1133,7 @@ impl Project<'_> {
         let Some(expected) = &locked.integrity else {
             return Ok(());
         };
-        let found = uze_core::digest::tree_sha256(acquired).map_err(|source| UzeError::Read {
-            path: acquired.to_path_buf(),
-            source,
-        })?;
+        let found = uze_core::digest::tree_sha256(acquired).map_err(UzeError::read(acquired))?;
         if &found == expected {
             return Ok(());
         }

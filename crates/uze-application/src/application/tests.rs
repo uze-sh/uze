@@ -93,10 +93,7 @@ impl IntegrationPort for AllResourceSymlinkIntegration {
                 .unwrap_or(false);
             if !already_correct {
                 if path.symlink_metadata().is_ok() {
-                    fs::remove_file(&path).map_err(|source| UzeError::Write {
-                        path: path.clone(),
-                        source,
-                    })?;
+                    fs::remove_file(&path).map_err(UzeError::write(&path))?;
                 }
                 std::os::unix::fs::symlink(&resource.capability.path, &path).map_err(|source| {
                     UzeError::Write {
@@ -1984,10 +1981,7 @@ impl IntegrationPort for HealthySymlinkIntegration {
                 .unwrap_or(false);
             if !already_correct {
                 if path.symlink_metadata().is_ok() {
-                    fs::remove_file(&path).map_err(|source| UzeError::Write {
-                        path: path.clone(),
-                        source,
-                    })?;
+                    fs::remove_file(&path).map_err(UzeError::write(&path))?;
                 }
                 std::os::unix::fs::symlink(&resource.capability.path, &path).map_err(|source| {
                     UzeError::Write {
@@ -2047,10 +2041,7 @@ impl IntegrationPort for ForeignFailingIntegration {
         #[cfg(unix)]
         {
             if path.symlink_metadata().is_ok() {
-                fs::remove_file(&path).map_err(|source| UzeError::Write {
-                    path: path.clone(),
-                    source,
-                })?;
+                fs::remove_file(&path).map_err(UzeError::write(&path))?;
             }
             std::os::unix::fs::symlink(&resource.capability.path, &path).map_err(|source| {
                 UzeError::Write {

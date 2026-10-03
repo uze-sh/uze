@@ -46,10 +46,7 @@ impl UzeApplication {
                 ))
             })?;
 
-        fs::create_dir_all(&shims_dir).map_err(|source| UzeError::Write {
-            path: shims_dir.clone(),
-            source,
-        })?;
+        fs::create_dir_all(&shims_dir).map_err(UzeError::write(&shims_dir))?;
         let uze_binary = std::env::current_exe().map_err(|source| UzeError::Process {
             program: "uze".to_owned(),
             source,
@@ -67,17 +64,11 @@ impl UzeApplication {
 fn refresh_shim_symlink(target: &Path, link: &Path) -> Result<()> {
     match fs::symlink_metadata(link) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
-            let current = fs::read_link(link).map_err(|source| UzeError::Read {
-                path: link.to_path_buf(),
-                source,
-            })?;
+            let current = fs::read_link(link).map_err(UzeError::read(link))?;
             if current == target {
                 return Ok(());
             }
-            fs::remove_file(link).map_err(|source| UzeError::Write {
-                path: link.to_path_buf(),
-                source,
-            })?;
+            fs::remove_file(link).map_err(UzeError::write(link))?;
         }
         Ok(_) => return Err(UzeError::ManagedEntryConflict(link.to_path_buf())),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
