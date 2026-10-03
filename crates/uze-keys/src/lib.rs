@@ -37,6 +37,8 @@
 //! to — see [`chord`] for the reasoning and [`load`] for what the built-in
 //! keymap does with it.
 
+#![forbid(unsafe_code)]
+
 pub mod action;
 pub mod active;
 pub mod chord;

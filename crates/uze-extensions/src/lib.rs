@@ -45,6 +45,8 @@
 //! along with the two-sided "keep these in sync by eye" it required. See
 //! [`view`] for the rest of the reasoning.
 
+#![forbid(unsafe_code)]
+
 pub mod architect;
 pub mod code;
 pub mod registry;

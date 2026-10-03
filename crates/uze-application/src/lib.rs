@@ -1,5 +1,7 @@
 //! Package-centric product operations over UZE Core and peer integrations.
 
+#![forbid(unsafe_code)]
+
 pub mod application;
 pub mod bootstrap;
 

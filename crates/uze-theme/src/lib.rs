@@ -25,6 +25,8 @@
 //! assert_eq!((accent.0, accent.1, accent.2), (143, 209, 158));
 //! ```
 
+#![forbid(unsafe_code)]
+
 mod active;
 mod color;
 mod file;
