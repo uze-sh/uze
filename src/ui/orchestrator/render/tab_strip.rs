@@ -3,7 +3,7 @@
 use super::*;
 
 pub(in crate::ui::orchestrator) fn agent_activity_frame(tick: usize) -> String {
-    theme::frame(Symbol::StatusWorking, tick % AGENT_ACTIVITY_FRAMES)
+    theme::frame(Symbol::StatusWorking, tick)
 }
 
 /// The horizontal tab strip above the pane: the *selected space's* shell

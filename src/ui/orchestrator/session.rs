@@ -74,7 +74,7 @@ pub(super) struct Attach<'a> {
     pub(super) channels: &'a Channels,
     /// Drives the agent-activity animation. Ratatui owns the alternate
     /// screen, so this one is hidden and only its position is read — see
-    /// [`AGENT_ACTIVITY_FRAMES`].
+    /// [`AGENT_ACTIVITY_TICK`].
     pub(super) spinner: ProgressBar,
     pub(super) next_tick: Instant,
     /// Whether the action being performed right now asked the server to

@@ -108,13 +108,9 @@ fn paced(floor: Duration, took: Duration) -> Duration {
     floor.max(took * uze_extensions::code::PACE)
 }
 
-/// The same frames configure the hidden `indicatif` spinner that schedules
-/// this animation. Ratatui owns the alternate screen, so it paints the frame
-/// instead of letting indicatif write to stderr.
-/// How many of `status.working`'s frames the sidebar's own activity mark
-/// runs through. Kept shorter than the theme may declare so the mark reads
-/// as a faster, smaller motion than a full-width spinner.
-const AGENT_ACTIVITY_FRAMES: usize = 8;
+/// The theme's `status.working` frames configure the hidden `indicatif`
+/// spinner that schedules this animation. Ratatui owns the alternate screen,
+/// so it paints the frame instead of letting indicatif write to stderr.
 const AGENT_ACTIVITY_TICK: Duration = Duration::from_millis(120);
 
 /// How long a checkout's measurement is taken to still describe it.
