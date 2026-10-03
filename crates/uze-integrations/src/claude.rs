@@ -39,6 +39,7 @@ use uze_core::{
 };
 
 mod generate;
+mod hooks;
 mod mcp;
 mod plugin;
 mod preferences;
@@ -46,9 +47,10 @@ mod runtime;
 mod session;
 mod skills;
 
+pub(crate) use hooks::HOOKS;
 pub use mcp::detach_mcp_entry;
 
-use crate::hooks::{HookEntry, HookTarget};
+use crate::hooks::HookEntry;
 use crate::shared::agent::{
     MarkdownAgent, agent_file_plan, agent_label, delivered_agent, markdown_agent, projection_route,
 };
@@ -201,7 +203,7 @@ impl IntegrationPort for ClaudeIntegration {
     }
 
     fn hook_capabilities(&self) -> uze_core::hook::HookCapabilities {
-        HookTarget::Claude.capabilities()
+        HOOKS.capabilities()
     }
 
     fn detect(&self) -> HarnessDetection {
@@ -478,23 +480,11 @@ impl IntegrationPort for ClaudeIntegration {
                 )?;
                 true
             }
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => {
-                HookTarget::Claude.attach_entry(
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                HOOKS.attach_entry(
                     &self.uze_home,
                     self.id(),
-                    &HookEntry {
-                        config_file,
-                        entry_name,
-                        event: *event,
-                        expected,
-                        wrapper,
-                    },
+                    &HookEntry::recorded(artifact).expect("a hook config entry"),
                 )?;
                 true
             }
@@ -513,19 +503,9 @@ impl IntegrationPort for ClaudeIntegration {
                 &self.command_home.join(".claude.json"),
                 &McpEntry::recorded(artifact).expect("a vendor config entry"),
             ),
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => HookTarget::Claude.inspect_entry(&HookEntry {
-                config_file,
-                entry_name,
-                event: *event,
-                expected,
-                wrapper,
-            }),
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                HOOKS.inspect_entry(&HookEntry::recorded(artifact).expect("a hook config entry"))
+            }
             ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
@@ -557,22 +537,10 @@ impl IntegrationPort for ClaudeIntegration {
                     reason: "Claude managed MCP entry detached via CLI".to_owned(),
                 })
             }
-            ManagedArtifact::HookConfigEntry {
-                config_file,
-                entry_name,
-                event,
-                expected,
-                wrapper,
-            } => HookTarget::Claude.detach_entry(
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => HOOKS.detach_entry(
                 &self.uze_home,
                 self.id(),
-                &HookEntry {
-                    config_file,
-                    entry_name,
-                    event: *event,
-                    expected,
-                    wrapper,
-                },
+                &HookEntry::recorded(artifact).expect("a hook config entry"),
             ),
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
                 if let Some(origin) = marketplace::receipt_origin::<ClaudeMarketplace>(kind) =>
@@ -652,7 +620,7 @@ impl ClaudeIntegration {
     }
 
     fn hook_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
-        HookTarget::Claude.entry_plan(
+        HOOKS.entry_plan(
             &self.uze_home,
             resource,
             self.hooks_config_path(),

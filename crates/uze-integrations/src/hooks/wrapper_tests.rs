@@ -6,9 +6,9 @@ use std::{
 use uze_core::hook::{CommandHandlerType, HookEvent};
 
 const TARGETS: [HookTarget; 3] = [
-    HookTarget::Claude,
-    HookTarget::Codex,
-    HookTarget::Antigravity,
+    crate::claude::HOOKS,
+    crate::codex::HOOKS,
+    crate::antigravity::HOOKS,
 ];
 
 fn goldens_dir() -> PathBuf {
@@ -169,9 +169,10 @@ fn run(execution: Run<'_>) -> Answer {
 /// A `stop` payload as each harness sends it: no tool at all, which is
 /// what the wrapper has to leave the handler seeing.
 fn stop_payload(target: HookTarget) -> String {
-    match target {
-        HookTarget::Antigravity => serde_json::json!({"workspacePaths": ["/repo"]}).to_string(),
-        _ => serde_json::json!({"cwd": "/repo"}).to_string(),
+    if target == crate::antigravity::HOOKS {
+        serde_json::json!({"workspacePaths": ["/repo"]}).to_string()
+    } else {
+        serde_json::json!({"cwd": "/repo"}).to_string()
     }
 }
 
@@ -187,23 +188,23 @@ fn session_payload() -> String {
 }
 
 fn payload(target: HookTarget, command: &str) -> String {
-    match target {
-        HookTarget::Antigravity => serde_json::json!({
+    if target == crate::antigravity::HOOKS {
+        return serde_json::json!({
             "toolCall": {"name": "run_command", "args": {"CommandLine": command, "Cwd": "/repo"}},
             "workspacePaths": ["/repo"],
         })
-        .to_string(),
-        _ => serde_json::json!({
-            "tool_name": if target == HookTarget::Codex { "exec_command" } else { "Bash" },
-            "tool_input": if target == HookTarget::Codex {
+        .to_string();
+    }
+    serde_json::json!({
+            "tool_name": if target == crate::codex::HOOKS { "exec_command" } else { "Bash" },
+            "tool_input": if target == crate::codex::HOOKS {
                 serde_json::json!({"cmd": command})
             } else {
                 serde_json::json!({"command": command})
             },
             "cwd": "/repo",
-        })
-        .to_string(),
-    }
+    })
+    .to_string()
 }
 
 /// What a denial exits with, per harness. Claude and Codex document
@@ -211,7 +212,7 @@ fn payload(target: HookTarget, command: &str) -> String {
 /// stdout and logs any non-zero exit as a *failed* hook, so a denial
 /// there exits 0 (measured on 1.1.24).
 fn block_exit(target: HookTarget) -> i32 {
-    if target == HookTarget::Antigravity {
+    if target == crate::antigravity::HOOKS {
         0
     } else {
         2
@@ -251,7 +252,7 @@ fn a_terminated_wrapper_runs_no_further_handler() {
         2,
     );
     let wrapper = root.join("hooks").join("exec");
-    materialize_wrapper(&wrapper, &wrapper_source(HookTarget::Claude).unwrap()).unwrap();
+    materialize_wrapper(&wrapper, &wrapper_source(crate::claude::HOOKS).unwrap()).unwrap();
     let mut child = Command::new("/bin/sh")
         .arg(&wrapper)
         .args(wrapper_arguments(&hook, &root, &hook.handlers))
@@ -264,7 +265,7 @@ fn a_terminated_wrapper_runs_no_further_handler() {
         use std::io::Write;
         let mut stdin = child.stdin.take().unwrap();
         stdin
-            .write_all(payload(HookTarget::Claude, "ls").as_bytes())
+            .write_all(payload(crate::claude::HOOKS, "ls").as_bytes())
             .unwrap();
     }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
@@ -328,7 +329,7 @@ fn a_denial_is_relayed_in_each_harnesss_own_dialect() {
             "{target}: the reason reaches stderr"
         );
         let document: serde_json::Value = serde_json::from_str(answer.stdout.trim()).unwrap();
-        let (decision, reason) = if target == HookTarget::Antigravity {
+        let (decision, reason) = if target == crate::antigravity::HOOKS {
             (&document["decision"], &document["reason"])
         } else {
             (
@@ -436,7 +437,7 @@ fn a_native_tool_the_vocabulary_does_not_bind_carries_raw_input_only() {
         "tool_input": {"anything": "x"},
     })
     .to_string();
-    let answer = run_wrapper(HookTarget::Claude, &root, &hook, &payload, None);
+    let answer = run_wrapper(crate::claude::HOOKS, &root, &hook, &payload, None);
     assert_eq!(answer.exit, 0);
     assert_eq!(
         fs::read_to_string(root.join("seen.txt")).unwrap(),
@@ -612,7 +613,7 @@ fn the_reason_a_harness_is_handed_is_bounded() {
 /// is what this costs when it is wrong.
 #[test]
 fn a_handler_that_ignores_term_does_not_outlive_its_deadline() {
-    let target = HookTarget::Claude;
+    let target = crate::claude::HOOKS;
     let root = package("wrapper-escalation");
     // `trap '' TERM` is SIG_IGN, which survives the `exec`: the
     // grandchild is a `sleep` that cannot be TERMed, only killed.
@@ -670,7 +671,7 @@ fn a_stop_payload_leaves_the_handler_without_a_tool() {
 
 #[test]
 fn a_session_start_hands_the_handler_its_source_and_no_tool() {
-    for target in [HookTarget::Claude, HookTarget::Codex] {
+    for target in [crate::claude::HOOKS, crate::codex::HOOKS] {
         let root = package(&format!("wrapper-session-{target}"));
         write_script(
             &root.join("scripts").join("probe"),
@@ -697,7 +698,7 @@ fn a_session_start_hands_the_handler_its_source_and_no_tool() {
 /// no decision document a harness could read as one.
 #[test]
 fn a_denial_on_session_start_is_only_reported() {
-    for target in [HookTarget::Claude, HookTarget::Codex] {
+    for target in [crate::claude::HOOKS, crate::codex::HOOKS] {
         let root = package(&format!("wrapper-session-deny-{target}"));
         let hook = group_at(
             HookEvent::SessionStart,

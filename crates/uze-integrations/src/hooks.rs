@@ -1,7 +1,11 @@
 //! Hook projections owned by harness integrations (ADR-033, ADR-040):
-//! per-vendor capability profiles, native JSON configuration merging, the
-//! generated `hooks/exec` wrapper each command-hook harness runs, and the
-//! owned OpenCode bridge.
+//! native JSON configuration merging, the generated `hooks/exec` wrapper
+//! each command-hook harness runs, and the owned OpenCode bridge.
+//!
+//! What each harness's hooks *are* — the events and effects it preserves,
+//! the tools it names, the dialect its wrapper answers in — is a
+//! [`HookTarget`] its own vertical declares (`claude::HOOKS`, ...); nothing
+//! here branches on which harness it is projecting into.
 //!
 //! The wrapper is the only implementation of the hook ABI: it reads that
 //! harness's payload, runs the author's handlers and answers in that
@@ -32,10 +36,6 @@ use uze_core::{
 use crate::shared::json_config;
 use crate::shared::plan::{blocked, unsupported};
 
-// ============================================================================
-// Capability profiles: the semantic axes each harness preserves
-// ============================================================================
-
 mod bridge;
 mod entries;
 mod event_entry;
@@ -48,19 +48,64 @@ pub(crate) use event_entry::*;
 pub(crate) use tools::*;
 pub(crate) use wrapper::*;
 
-/// The harnesses a portable hook is projected into.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum HookTarget {
-    Claude,
-    Codex,
-    Antigravity,
-    OpenCode,
+/// What one harness's hooks are: the semantic axes it preserves, the tools
+/// it names, and how a hook reaches it. Each integration declares its own
+/// beside the rest of its vertical; this module only reads them.
+#[derive(Clone, Copy)]
+pub(crate) struct HookTarget {
+    /// The harness's name in UZE's own state and in `HOOK_HARNESS`.
+    pub key: &'static str,
+    pub events: &'static [HookEvent],
+    pub effects: &'static [HookEffect],
+    /// The harness's binding of the portable tool vocabulary: the single
+    /// source the matchers, the generated wrapper and the bridge all read.
+    pub tools: &'static [ToolBinding],
+    pub runner: HookRunner,
+}
+
+/// What runs a delivered hook on the harness.
+#[derive(Clone, Copy)]
+pub(crate) enum HookRunner {
+    /// A command hook in the harness's shared config file, starting the
+    /// generated wrapper.
+    Wrapper {
+        dialect: WrapperDialect,
+        entry: EntryShape,
+    },
+    /// UZE's generated plugin is the runner: the harness has no command
+    /// hooks to start a wrapper from.
+    Bridge,
+}
+
+/// The form a command-hook harness's shared config gives one entry.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum EntryShape {
+    /// An array of group entries per event, whose handler is `command` plus
+    /// `args`: the wrapper is started directly, with nothing to quote.
+    EventExec,
+    /// An array of group entries per event, whose handler is one shell line.
+    EventLine,
+    /// A map of named hooks, each keyed by UZE's entry name.
+    Named,
+}
+
+impl PartialEq for HookTarget {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for HookTarget {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.key)
+    }
 }
 
 #[cfg(test)]
 impl std::fmt::Display for HookTarget {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.key())
+        formatter.write_str(self.key)
     }
 }
 
@@ -73,82 +118,60 @@ pub(crate) struct HookEntry<'a> {
     pub wrapper: &'a Path,
 }
 
+impl<'a> HookEntry<'a> {
+    /// The entry a `HookConfigEntry` receipt records; `None` for any other
+    /// artifact.
+    pub(crate) fn recorded(artifact: &'a ManagedArtifact) -> Option<Self> {
+        let ManagedArtifact::HookConfigEntry {
+            config_file,
+            entry_name,
+            event,
+            expected,
+            wrapper,
+        } = artifact
+        else {
+            return None;
+        };
+        Some(Self {
+            config_file,
+            entry_name,
+            event: *event,
+            expected,
+            wrapper,
+        })
+    }
+}
+
 impl HookTarget {
     /// The harness's name in UZE's own state and in `HOOK_HARNESS`.
     pub(crate) const fn key(self) -> &'static str {
-        match self {
-            Self::Claude => "claude",
-            Self::Codex => "codex",
-            Self::Antigravity => "antigravity",
-            Self::OpenCode => "opencode",
-        }
+        self.key
     }
 
     /// The semantic axes this harness preserves.
-    ///
-    /// Claude Code documents `PreToolUse`/`PostToolUse`/`Stop` command hooks
-    /// with per-group matchers, and Codex mirrors those event names in its
-    /// own `hooks.json` command form: observations, approvals and denials
-    /// are expressible on both. Input rewriting is not yet claimed — a
-    /// `transform` effect therefore degrades instead of silently attaching
-    /// without its rewrite.
-    ///
-    /// Both also fire `SessionStart` natively, matched on the session's
-    /// source.
-    ///
-    /// Antigravity CLI's named hooks carry camelCase payloads and native
-    /// `allow`/`ask`/`deny` decisions. It has no session-start event
-    /// (1.2.x fires `PreToolUse`, `PostToolUse`, `PreInvocation`,
-    /// `PostInvocation`, `Stop`); `PreInvocation` fires on every turn, and
-    /// telling the first from the rest would need per-session state the
-    /// stateless wrapper does not keep, so `SessionStart` is not claimed.
-    ///
-    /// OpenCode's plugin API supplies pre/post tool callbacks that see the
-    /// tool input but cannot block it; there is no declarative hook file, so
-    /// UZE generates an owned, rebuildable plugin instead. `Stop` has no
-    /// OpenCode equivalent and is never claimed, and neither is
-    /// `SessionStart`: a plugin's event stream (2.0.18) never carries
-    /// `session.created` for a new session, and nothing in it tells a new
-    /// session from a continued one (Lab experiment `opencode/session-start`). `deny`/`ask` live only on
-    /// `permission.evaluate`, which carries the action and its resources
-    /// rather than the tool input, so they are Unsupported until the Lab
-    /// proves otherwise. `transform` needs a channel for the handler to
-    /// answer on, which the exit-code contract does not have.
     pub(crate) fn capabilities(self) -> HookCapabilities {
-        let (events, effects): (&[HookEvent], &[HookEffect]) = match self {
-            Self::Claude | Self::Codex => (
-                &[
-                    HookEvent::PreToolUse,
-                    HookEvent::PostToolUse,
-                    HookEvent::Stop,
-                    HookEvent::SessionStart,
-                ],
-                &[HookEffect::Observe, HookEffect::Allow, HookEffect::Deny],
-            ),
-            Self::Antigravity => (
-                &[
-                    HookEvent::PreToolUse,
-                    HookEvent::PostToolUse,
-                    HookEvent::Stop,
-                ],
-                &[
-                    HookEffect::Observe,
-                    HookEffect::Allow,
-                    HookEffect::Ask,
-                    HookEffect::Deny,
-                ],
-            ),
-            Self::OpenCode => (
-                &[HookEvent::PreToolUse, HookEvent::PostToolUse],
-                &[HookEffect::Observe, HookEffect::Allow],
-            ),
-        };
         HookCapabilities {
-            events: events.iter().copied().collect(),
-            effects: effects.iter().copied().collect(),
+            events: self.events.iter().copied().collect(),
+            effects: self.effects.iter().copied().collect(),
             supports_native_matchers: true,
             executes_handlers_in_order: true,
             ..HookCapabilities::default()
+        }
+    }
+
+    /// How this harness's payload is read and its decision written; `None`
+    /// where UZE's generated plugin is its own runner.
+    pub(super) const fn dialect(self) -> Option<WrapperDialect> {
+        match self.runner {
+            HookRunner::Wrapper { dialect, .. } => Some(dialect),
+            HookRunner::Bridge => None,
+        }
+    }
+
+    fn entry_shape(self) -> Option<EntryShape> {
+        match self.runner {
+            HookRunner::Wrapper { entry, .. } => Some(entry),
+            HookRunner::Bridge => None,
         }
     }
 
@@ -164,10 +187,10 @@ impl HookTarget {
         cfg!(unix) && self.dialect().is_some()
     }
 
-    /// Antigravity's shared `hooks.json` is a map of named hooks; the other
-    /// command-hook harnesses keep an array of group entries per event.
+    /// Whether the shared config is a map of named hooks rather than an
+    /// array of group entries per event.
     fn names_entries(self) -> bool {
-        self == Self::Antigravity
+        self.entry_shape() == Some(EntryShape::Named)
     }
 
     /// The plan for a command-hook harness: one entry in its shared config
@@ -185,7 +208,7 @@ impl HookTarget {
             }
             let wrapper = self.wrapper_path(uze_home);
             let entry = if self.names_entries() {
-                agy_named_entry(hook, &wrapper, &resource.package_root)
+                agy_named_entry(self, hook, &wrapper, &resource.package_root)
             } else {
                 self.event_entry(hook, &resource.package_root, &wrapper)
             };
@@ -265,16 +288,15 @@ impl HookTarget {
         }
     }
 
-    /// The group entry for an event-array harness. Claude's entries accept
-    /// `command` + `args`, so its wrapper is started directly with nothing
-    /// to quote; Codex's carry a command string only, one quoted shell line.
+    /// The group entry for an event-array harness, in the handler form its
+    /// entries take.
     fn event_entry(
         self,
         hook: &PortableHook,
         package_root: &Path,
         wrapper: &Path,
     ) -> serde_json::Value {
-        let invocation = if self == Self::Claude {
+        let invocation = if self.entry_shape() == Some(EntryShape::EventExec) {
             HookInvocation::Exec {
                 command: wrapper.display().to_string(),
                 args: wrapper_arguments(hook, package_root, &hook.handlers),

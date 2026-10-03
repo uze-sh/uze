@@ -4,76 +4,27 @@ use super::*;
 
 /// How one harness's payload is read and how its decision is written — the
 /// only slots that differ between the generated `hooks/exec` wrappers.
-pub(super) struct WrapperDialect {
+#[derive(Clone, Copy)]
+pub(crate) struct WrapperDialect {
     /// `jq` filter selecting the native tool name from the payload.
-    pub(super) tool_filter: &'static str,
+    pub(crate) tool_filter: &'static str,
     /// `jq` filter selecting the tool input object.
-    pub(super) input_filter: &'static str,
+    pub(crate) input_filter: &'static str,
     /// `jq` filter selecting the workspace directory.
-    pub(super) cwd_filter: &'static str,
+    pub(crate) cwd_filter: &'static str,
     /// The `sh` body that writes this harness's own denial on stdout, with
     /// `$1` already holding the reason as a JSON string literal.
-    pub(super) deny_document: &'static str,
+    pub(crate) deny_document: &'static str,
     /// The `sh` body that writes what this harness expects when nothing is
     /// denied, with `$1` holding the ABI event name.
-    pub(super) allow_document: &'static str,
+    pub(crate) allow_document: &'static str,
     /// The status the wrapper exits with after writing a denial. Claude and
     /// Codex document exit 2 as the block signal and read the decision only
     /// alongside it; Antigravity reads the decision from stdout and treats
     /// *any* non-zero exit as a failed hook — "pre-tool hook failed", the
     /// permission prompt, and the command runs anyway (measured on 1.1.24,
     /// `command_hook_executor.go`). So the code is a per-harness fact.
-    pub(super) deny_exit: &'static str,
-}
-
-impl HookTarget {
-    /// How this harness's payload is read and its decision written; `None`
-    /// for OpenCode, whose generated plugin is its own runner.
-    pub(super) fn dialect(self) -> Option<WrapperDialect> {
-        match self {
-            HookTarget::Claude => Some(WrapperDialect {
-                tool_filter: ".tool_name // empty",
-                input_filter: ".tool_input // {}",
-                cwd_filter: ".cwd // .context.cwd // empty",
-                // The event name is echoed back in `hookEventName`, which the
-                // harness matches against the event it fired. Every event that
-                // can deny is named: `session_start` never gets this far.
-                deny_document: concat!(
-                    "case $HOOK_EVENT in\n",
-                    "    pre_tool_use) name=PreToolUse ;;\n",
-                    "    post_tool_use) name=PostToolUse ;;\n",
-                    "    stop) name=Stop ;;\n",
-                    "  esac\n",
-                    "  printf '{\"hookSpecificOutput\":{\"hookEventName\":\"%s\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$name\" \"$reason_json\"",
-                ),
-                allow_document: ":",
-                deny_exit: "2",
-            }),
-            HookTarget::Codex => Some(WrapperDialect {
-                tool_filter: ".tool_name // empty",
-                input_filter: ".tool_input // {}",
-                cwd_filter: ".cwd // empty",
-                deny_document: "printf '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$reason_json\"",
-                // Stop is the one event whose stdout must parse as JSON even
-                // when nothing was decided.
-                allow_document: "[ \"$HOOK_EVENT\" = stop ] && printf '{}'",
-                deny_exit: "2",
-            }),
-            HookTarget::Antigravity => Some(WrapperDialect {
-                tool_filter: ".toolCall.name // empty",
-                input_filter: ".toolCall.args // {}",
-                cwd_filter: ".workspacePaths[0] // empty",
-                deny_document: "printf '{\"decision\":\"deny\",\"reason\":%s}' \"$reason_json\"",
-                // Only the pre-tool event carries a decision; the others answer
-                // with the empty object the vendor's contract requires.
-                allow_document: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
-                // The decision is the stdout document; a non-zero exit is a
-                // failed hook here, not a block.
-                deny_exit: "0",
-            }),
-            HookTarget::OpenCode => None,
-        }
-    }
+    pub(crate) deny_exit: &'static str,
 }
 
 /// The `case` arm list translating this harness's native tool names into
@@ -446,28 +397,14 @@ pub(super) fn entry_is_attached(
     receipt: &uze_core::integration::AttachmentReceipt,
     target: HookTarget,
 ) -> bool {
-    let uze_core::integration::ManagedArtifact::HookConfigEntry {
-        config_file,
-        entry_name,
-        event,
-        expected,
-        wrapper,
-    } = &receipt.artifact
-    else {
+    let Some(entry) = HookEntry::recorded(&receipt.artifact) else {
         return false;
     };
-    let inspection = target.entry_state(&HookEntry {
-        config_file,
-        entry_name,
-        event: *event,
-        expected,
-        wrapper,
-    });
-    if inspection.state != AttachmentState::Missing {
+    if target.entry_state(&entry).state != AttachmentState::Missing {
         return true;
     }
-    fs::read_to_string(config_file)
-        .is_ok_and(|config| config.contains(&wrapper.display().to_string()))
+    fs::read_to_string(entry.config_file)
+        .is_ok_and(|config| config.contains(&entry.wrapper.display().to_string()))
 }
 
 /// The native command an entry runs: the wrapper, the package root, the

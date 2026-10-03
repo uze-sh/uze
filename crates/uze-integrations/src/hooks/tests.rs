@@ -32,22 +32,22 @@ fn invocation(hook: &PortableHook) -> HookInvocation {
 #[test]
 fn vendor_aliases_are_explicit() {
     assert_eq!(
-        tool_names(HookTarget::Claude, &HookMatcher::Portable("shell".into())),
+        tool_names(crate::claude::HOOKS, &HookMatcher::Portable("shell".into())),
         ["Bash"]
     );
     assert_eq!(
         tool_names(
-            HookTarget::Antigravity,
+            crate::antigravity::HOOKS,
             &HookMatcher::Portable("shell".into())
         ),
         ["run_command"]
     );
     assert_eq!(
-        tool_names(HookTarget::OpenCode, &HookMatcher::Native("Write".into())),
+        tool_names(crate::opencode::HOOKS, &HookMatcher::Native("Write".into())),
         ["Write"]
     );
     assert_eq!(
-        vocabulary(HookTarget::Claude)
+        vocabulary(crate::claude::HOOKS)
             .binding_for_native("Bash")
             .map(|binding| binding.alias),
         Some("shell"),
@@ -56,10 +56,10 @@ fn vendor_aliases_are_explicit() {
 }
 
 const TARGETS: [HookTarget; 4] = [
-    HookTarget::Claude,
-    HookTarget::Codex,
-    HookTarget::Antigravity,
-    HookTarget::OpenCode,
+    crate::claude::HOOKS,
+    crate::codex::HOOKS,
+    crate::antigravity::HOOKS,
+    crate::opencode::HOOKS,
 ];
 
 #[test]
@@ -89,10 +89,10 @@ fn every_alias_is_bound_on_every_harness_and_carries_its_portable_fields() {
 
 #[test]
 fn a_native_matcher_yields_no_portable_fields() {
-    let table = vocabulary(HookTarget::Claude);
+    let table = vocabulary(crate::claude::HOOKS);
     assert!(table.binding_for_native("SomeVendorOnlyTool").is_none());
     assert_eq!(
-        tool_names(HookTarget::Claude, &HookMatcher::Native("Write".into())),
+        tool_names(crate::claude::HOOKS, &HookMatcher::Native("Write".into())),
         ["Write"]
     );
 }
@@ -105,23 +105,23 @@ fn the_shell_alias_reads_each_harnesss_own_command_field() {
             .and_then(|binding| binding.fields.first())
             .map(|(_, native)| *native)
     };
-    assert_eq!(field(HookTarget::Claude), Some("command"));
-    assert_eq!(field(HookTarget::Codex), Some("cmd"));
-    assert_eq!(field(HookTarget::Antigravity), Some("CommandLine"));
-    assert_eq!(field(HookTarget::OpenCode), Some("command"));
+    assert_eq!(field(crate::claude::HOOKS), Some("command"));
+    assert_eq!(field(crate::codex::HOOKS), Some("cmd"));
+    assert_eq!(field(crate::antigravity::HOOKS), Some("CommandLine"));
+    assert_eq!(field(crate::opencode::HOOKS), Some("command"));
 }
 
 #[test]
 fn a_renamed_vendor_tool_still_normalizes_to_its_alias() {
     let alias = |native| {
-        vocabulary(HookTarget::Codex)
+        vocabulary(crate::codex::HOOKS)
             .binding_for_native(native)
             .map(|binding| binding.alias)
     };
     assert_eq!(alias("exec_command"), Some("shell"));
     assert_eq!(alias("Bash"), Some("shell"));
     assert_eq!(
-        tool_names(HookTarget::Codex, &HookMatcher::Portable("shell".into())),
+        tool_names(crate::codex::HOOKS, &HookMatcher::Portable("shell".into())),
         ["exec_command", "Bash"],
         "the matcher intercepts every name this harness's shell tool answers to"
     );
@@ -153,7 +153,7 @@ fn hook_resource(package: &Path) -> Resource {
 fn a_platform_without_a_wrapper_template_delivers_no_hook() {
     let home = UzeHome::at(Path::new("/tmp/uze-home"));
     let resource = hook_resource(Path::new("/pkg"));
-    let plan = HookTarget::Claude.entry_plan(
+    let plan = crate::claude::HOOKS.entry_plan(
         &home,
         &resource,
         PathBuf::from("/config/settings.json"),
@@ -165,12 +165,12 @@ fn a_platform_without_a_wrapper_template_delivers_no_hook() {
     else {
         panic!("a harness with a template delivers: {:?}", plan.mechanism);
     };
-    assert_eq!(wrapper, HookTarget::Claude.wrapper_path(&home));
+    assert_eq!(wrapper, crate::claude::HOOKS.wrapper_path(&home));
     let entry: serde_json::Value = serde_json::from_str(&expected).unwrap();
     assert_eq!(entry["hooks"][0]["command"], wrapper.display().to_string());
 
     assert!(
-        wrapper_source(HookTarget::OpenCode).is_none(),
+        wrapper_source(crate::opencode::HOOKS).is_none(),
         "a harness the template generator does not cover has no wrapper"
     );
 }
@@ -185,7 +185,7 @@ fn a_hook_that_cannot_be_delivered_is_reported_unsupported() {
     let resource = hook_resource(&package);
     let plan = hook_plan(
         &resource,
-        &HookTarget::Claude.capabilities(),
+        &crate::claude::HOOKS.capabilities(),
         false,
         "evidence.",
         |_| None,
@@ -206,7 +206,7 @@ fn a_hook_that_cannot_be_delivered_is_reported_unsupported() {
 #[test]
 fn group_entry_omits_matcher_for_unmatch_all_and_reserves_native_timeout() {
     let mut hook = hook();
-    let entry = group_entry(HookTarget::Claude, &hook, &invocation(&hook));
+    let entry = group_entry(crate::claude::HOOKS, &hook, &invocation(&hook));
     assert_eq!(entry["matcher"], "Bash|Write");
     assert_eq!(entry["hooks"][0]["type"], "command");
     assert_eq!(
@@ -214,7 +214,7 @@ fn group_entry_omits_matcher_for_unmatch_all_and_reserves_native_timeout() {
         "each handler's own bound plus its kill grace, plus 1s to render"
     );
     hook.matchers = Vec::new();
-    let entry = group_entry(HookTarget::Claude, &hook, &invocation(&hook));
+    let entry = group_entry(crate::claude::HOOKS, &hook, &invocation(&hook));
     assert!(
         entry.get("matcher").is_none(),
         "no matcher key for a match-all group"
@@ -241,7 +241,7 @@ fn the_native_timeout_outlasts_everything_the_wrapper_can_spend() {
     .to_string();
     let hooks =
         uze_core::hook::parse_manifest(Path::new("hooks.json"), manifest.as_bytes()).unwrap();
-    let entry = group_entry(HookTarget::Claude, &hooks[0], &invocation(&hooks[0]));
+    let entry = group_entry(crate::claude::HOOKS, &hooks[0], &invocation(&hooks[0]));
     let native = entry["hooks"][0]["timeout"].as_u64().unwrap();
     let spent: u64 = hooks[0]
         .handlers
@@ -270,13 +270,11 @@ fn a_stop_entry_is_flat_while_a_tool_event_stays_grouped() {
         ..hook()
     };
     let value = serde_json::json!({
-        "protect-env": agy_named_entry(
-            &hook(),
+        "protect-env": agy_named_entry(crate::antigravity::HOOKS, &hook(),
             Path::new("/state/hooks/exec"),
             Path::new("/pkg"),
         ),
-        "archive": agy_named_entry(
-            &stop,
+        "archive": agy_named_entry(crate::antigravity::HOOKS, &stop,
             Path::new("/state/hooks/exec"),
             Path::new("/pkg"),
         ),
@@ -307,7 +305,12 @@ fn a_stop_entry_is_flat_while_a_tool_event_stays_grouped() {
 
 #[test]
 fn agy_named_entry_carries_the_wrapper_and_is_deterministic() {
-    let entry = agy_named_entry(&hook(), Path::new("/state/hooks/exec"), Path::new("/pkg"));
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        Path::new("/state/hooks/exec"),
+        Path::new("/pkg"),
+    );
     let document = serde_json::to_string(&entry).unwrap();
     assert_eq!(entry["PreToolUse"][0]["matcher"], "run_command|Write");
     assert!(
@@ -324,7 +327,12 @@ fn agy_named_entry_carries_the_wrapper_and_is_deterministic() {
     );
     assert_eq!(
         entry,
-        agy_named_entry(&hook(), Path::new("/state/hooks/exec"), Path::new("/pkg")),
+        agy_named_entry(
+            crate::antigravity::HOOKS,
+            &hook(),
+            Path::new("/state/hooks/exec"),
+            Path::new("/pkg")
+        ),
     );
 }
 
@@ -342,7 +350,12 @@ fn a_named_merge_leaves_every_foreign_hook_intact() {
         )
         .unwrap();
     let name = "pkg@market:protect-env";
-    let entry = agy_named_entry(&hook(), Path::new("/state/hooks/exec"), Path::new("/pkg"));
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        Path::new("/state/hooks/exec"),
+        Path::new("/pkg"),
+    );
     let expected = serde_json::to_string(&entry).unwrap();
 
     merge_named_entry(&config, name, &entry).unwrap();
@@ -380,7 +393,12 @@ fn a_drifted_or_unreadable_named_entry_is_never_removed() {
     fs::create_dir_all(&root).unwrap();
     let config = root.join("hooks.json");
     let name = "pkg@market:protect-env";
-    let entry = agy_named_entry(&hook(), Path::new("/state/hooks/exec"), Path::new("/pkg"));
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        Path::new("/state/hooks/exec"),
+        Path::new("/pkg"),
+    );
     let expected = serde_json::to_string(&entry).unwrap();
     merge_named_entry(&config, name, &entry).unwrap();
 
@@ -414,7 +432,12 @@ fn a_named_config_that_uze_created_is_removed_with_its_last_entry() {
     fs::create_dir_all(&root).unwrap();
     let config = root.join("hooks.json");
     let name = "pkg@market:protect-env";
-    let entry = agy_named_entry(&hook(), Path::new("/state/hooks/exec"), Path::new("/pkg"));
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        Path::new("/state/hooks/exec"),
+        Path::new("/pkg"),
+    );
     let expected = serde_json::to_string(&entry).unwrap();
     merge_named_entry(&config, name, &entry).unwrap();
     remove_named_entry(&config, name, &expected).unwrap();
@@ -431,7 +454,7 @@ fn merge_inspect_detach_preserve_foreign_entries_and_order() {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"foreign"}]}]},"theme":"dark"}"#,
         )
         .unwrap();
-    let entry = group_entry(HookTarget::Claude, &hook(), &invocation(&hook()));
+    let entry = group_entry(crate::claude::HOOKS, &hook(), &invocation(&hook()));
     let expected = serde_json::to_string(&entry).unwrap();
     let path = merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
     assert_eq!(path, config);
@@ -484,11 +507,11 @@ fn merging_replaces_the_previous_version_of_the_same_group() {
     let config = root.join("hooks.json");
     let mut old = hook();
     old.handlers[0].timeout = 10;
-    let old_entry = group_entry(HookTarget::Codex, &old, &invocation(&old));
+    let old_entry = group_entry(crate::codex::HOOKS, &old, &invocation(&old));
     merge_event_entry(&config, HookEvent::PreToolUse, &old_entry, &[]).unwrap();
     let mut updated = hook();
     updated.handlers[0].timeout = 20;
-    let new_entry = group_entry(HookTarget::Codex, &updated, &invocation(&updated));
+    let new_entry = group_entry(crate::codex::HOOKS, &updated, &invocation(&updated));
     merge_event_entry(
         &config,
         HookEvent::PreToolUse,
@@ -512,7 +535,7 @@ fn drift_blocks_removal_and_an_empty_file_is_removed() {
     let root = uze_testkit::temp::scratch("hooks-drift");
     fs::create_dir_all(&root).unwrap();
     let config = root.join("hooks.json");
-    let entry = group_entry(HookTarget::Codex, &hook(), &invocation(&hook()));
+    let entry = group_entry(crate::codex::HOOKS, &hook(), &invocation(&hook()));
     let expected = serde_json::to_string(&entry).unwrap();
     merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
     // A user rewrites the UZE group — removal must inspect first and refuse.
@@ -568,7 +591,12 @@ fn drift_blocks_removal_and_an_empty_file_is_removed() {
 
 #[test]
 fn the_opencode_plugin_is_the_wrapper_with_the_packages_groups_as_data() {
-    let plugin = opencode_bridge(&[&hook()], Path::new("/tmp/plugin root"), "hook-demo");
+    let plugin = opencode_bridge(
+        crate::opencode::HOOKS,
+        &[&hook()],
+        Path::new("/tmp/plugin root"),
+        "hook-demo",
+    );
     // V2 plugin API (spec: opencode.ai/v2/docs/build/plugins): the
     // default export is the definition registering ctx.tool.hook
     // callbacks, with no import the harness would have to resolve.
@@ -602,7 +630,12 @@ fn the_opencode_plugin_is_the_wrapper_with_the_packages_groups_as_data() {
     );
     assert_eq!(
         plugin,
-        opencode_bridge(&[&hook()], Path::new("/tmp/plugin root"), "hook-demo"),
+        opencode_bridge(
+            crate::opencode::HOOKS,
+            &[&hook()],
+            Path::new("/tmp/plugin root"),
+            "hook-demo"
+        ),
         "generation is deterministic"
     );
 }
@@ -662,7 +695,7 @@ fn a_merge_keeps_the_users_own_key_order() {
     )
     .unwrap();
 
-    let entry = group_entry(HookTarget::Claude, &hook(), &invocation(&hook()));
+    let entry = group_entry(crate::claude::HOOKS, &hook(), &invocation(&hook()));
     merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
 
     let after = fs::read_to_string(&config).unwrap();
@@ -694,13 +727,13 @@ fn a_wrapper_that_lost_its_executable_bit_is_drift_and_is_repaired() {
 
     let root = uze_testkit::temp::scratch("hooks-wrapper-mode");
     let wrapper = root.join("hooks").join("exec");
-    let source = wrapper_source(HookTarget::Claude).unwrap();
+    let source = wrapper_source(crate::claude::HOOKS).unwrap();
     materialize_wrapper(&wrapper, &source).unwrap();
     fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o644)).unwrap();
 
     assert!(
         matches!(
-            inspect_wrapper(HookTarget::Claude, &wrapper),
+            inspect_wrapper(crate::claude::HOOKS, &wrapper),
             WrapperState::Broken(AttachmentInspection {
                 state: AttachmentState::Drifted,
                 ..
@@ -715,7 +748,7 @@ fn a_wrapper_that_lost_its_executable_bit_is_drift_and_is_repaired() {
         "re-materializing repairs the mode even when the bytes match"
     );
     assert!(matches!(
-        inspect_wrapper(HookTarget::Claude, &wrapper),
+        inspect_wrapper(crate::claude::HOOKS, &wrapper),
         WrapperState::Current
     ));
     assert_eq!(fs::read_to_string(&wrapper).unwrap(), source);
@@ -752,10 +785,19 @@ fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
     fs::create_dir_all(&root).unwrap();
     let home = UzeHome::at(root.join("home"));
     let config = root.join("hooks.json");
-    let wrapper = HookTarget::Antigravity.wrapper_path(&home);
-    materialize_wrapper(&wrapper, &wrapper_source(HookTarget::Antigravity).unwrap()).unwrap();
+    let wrapper = crate::antigravity::HOOKS.wrapper_path(&home);
+    materialize_wrapper(
+        &wrapper,
+        &wrapper_source(crate::antigravity::HOOKS).unwrap(),
+    )
+    .unwrap();
 
-    let entry = agy_named_entry(&hook(), &wrapper, Path::new("/pkg"));
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        &wrapper,
+        Path::new("/pkg"),
+    );
     let expected = serde_json::to_string(&entry).unwrap();
     let names = ["pkg@market:protect-env", "other@market:protect-env"];
     for name in names {
@@ -765,14 +807,14 @@ fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
     }
 
     remove_named_entry(&config, names[0], &expected).unwrap();
-    prune_shared_wrapper(&home, "antigravity", HookTarget::Antigravity);
+    prune_shared_wrapper(&home, "antigravity", crate::antigravity::HOOKS);
     assert!(
         wrapper.exists(),
         "a wrapper another entry still runs is kept"
     );
 
     remove_named_entry(&config, names[1], &expected).unwrap();
-    prune_shared_wrapper(&home, "antigravity", HookTarget::Antigravity);
+    prune_shared_wrapper(&home, "antigravity", crate::antigravity::HOOKS);
     assert!(
         !wrapper.exists(),
         "the last detached entry takes the shared wrapper with it"
@@ -790,10 +832,19 @@ fn an_unreadable_ledger_keeps_the_shared_wrapper() {
     fs::create_dir_all(&root).unwrap();
     let home = UzeHome::at(root.join("home"));
     let config = root.join("hooks.json");
-    let wrapper = HookTarget::Antigravity.wrapper_path(&home);
-    materialize_wrapper(&wrapper, &wrapper_source(HookTarget::Antigravity).unwrap()).unwrap();
+    let wrapper = crate::antigravity::HOOKS.wrapper_path(&home);
+    materialize_wrapper(
+        &wrapper,
+        &wrapper_source(crate::antigravity::HOOKS).unwrap(),
+    )
+    .unwrap();
 
-    let entry = agy_named_entry(&hook(), &wrapper, Path::new("/pkg"));
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        &wrapper,
+        Path::new("/pkg"),
+    );
     let expected = serde_json::to_string(&entry).unwrap();
     merge_named_entry(&config, "pkg@market:protect-env", &entry).unwrap();
     uze_core::state::record_receipt(
@@ -806,7 +857,7 @@ fn an_unreadable_ledger_keeps_the_shared_wrapper() {
     assert!(ledger.exists(), "the receipt was recorded where it is read");
     fs::write(&ledger, b"{ this is not json").unwrap();
 
-    prune_shared_wrapper(&home, "antigravity", HookTarget::Antigravity);
+    prune_shared_wrapper(&home, "antigravity", crate::antigravity::HOOKS);
     assert!(
         wrapper.exists(),
         "an unreadable ledger blocks the destructive step, it does not authorize it"
@@ -824,11 +875,11 @@ fn an_entry_that_drifted_still_counts_as_using_the_wrapper() {
     fs::create_dir_all(&root).unwrap();
     let home = UzeHome::at(root.join("home"));
     let config = root.join("settings.json");
-    let wrapper = HookTarget::Claude.wrapper_path(&home);
-    materialize_wrapper(&wrapper, &wrapper_source(HookTarget::Claude).unwrap()).unwrap();
+    let wrapper = crate::claude::HOOKS.wrapper_path(&home);
+    materialize_wrapper(&wrapper, &wrapper_source(crate::claude::HOOKS).unwrap()).unwrap();
 
     let entry = group_entry(
-        HookTarget::Claude,
+        crate::claude::HOOKS,
         &hook(),
         &HookInvocation::Exec {
             command: wrapper.display().to_string(),
@@ -852,7 +903,7 @@ fn an_entry_that_drifted_still_counts_as_using_the_wrapper() {
         AttachmentState::Drifted
     );
 
-    prune_shared_wrapper(&home, "claude", HookTarget::Claude);
+    prune_shared_wrapper(&home, "claude", crate::claude::HOOKS);
     assert!(
         wrapper.exists(),
         "a wrapper a live entry still names is never removed"
@@ -871,11 +922,11 @@ fn a_wrapper_an_earlier_build_wrote_still_removes() {
     fs::create_dir_all(&root).unwrap();
     let home = UzeHome::at(root.join("home"));
     let config = root.join("settings.json");
-    let wrapper = HookTarget::Claude.wrapper_path(&home);
+    let wrapper = crate::claude::HOOKS.wrapper_path(&home);
     let earlier =
         format!("{WRAPPER_HEADER}, from a template this build no longer writes\nexit 0\n");
     materialize_wrapper(&wrapper, &earlier).unwrap();
-    let entry = HookTarget::Claude.event_entry(&hook(), Path::new("/pkg"), &wrapper);
+    let entry = crate::claude::HOOKS.event_entry(&hook(), Path::new("/pkg"), &wrapper);
     let expected = serde_json::to_string(&entry).unwrap();
     merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
     let delivered = HookEntry {
@@ -887,11 +938,11 @@ fn a_wrapper_an_earlier_build_wrote_still_removes() {
     };
 
     assert_eq!(
-        HookTarget::Claude.inspect_entry(&delivered).state,
+        crate::claude::HOOKS.inspect_entry(&delivered).state,
         AttachmentState::Matched
     );
     assert_eq!(
-        HookTarget::Claude
+        crate::claude::HOOKS
             .detach_entry(&home, "claude", &delivered)
             .unwrap()
             .state,
@@ -911,7 +962,7 @@ fn a_wrapper_without_the_generated_header_is_drift() {
     let wrapper = root.join("hooks").join("exec");
     materialize_wrapper(&wrapper, "#!/bin/sh\nexit 0\n").unwrap();
     assert!(matches!(
-        inspect_wrapper(HookTarget::Claude, &wrapper),
+        inspect_wrapper(crate::claude::HOOKS, &wrapper),
         WrapperState::Broken(AttachmentInspection {
             state: AttachmentState::Drifted,
             ..
@@ -927,7 +978,7 @@ fn an_edited_event_entry_is_drift_on_both_invocation_forms() {
     let root = uze_testkit::temp::scratch("hooks-edited-entry");
     fs::create_dir_all(&root).unwrap();
     let wrapper = Path::new("/state/hooks/exec");
-    for target in [HookTarget::Claude, HookTarget::Codex] {
+    for target in [crate::claude::HOOKS, crate::codex::HOOKS] {
         let config = root.join(format!("{target}.json"));
         let entry = target.event_entry(&hook(), Path::new("/pkg"), wrapper);
         let expected = serde_json::to_string(&entry).unwrap();
@@ -961,8 +1012,8 @@ fn another_packages_entry_through_the_same_wrapper_is_not_drift() {
     fs::create_dir_all(&root).unwrap();
     let config = root.join("hooks.json");
     let wrapper = Path::new("/state/hooks/exec");
-    let ours = HookTarget::Codex.event_entry(&hook(), Path::new("/pkg"), wrapper);
-    let theirs = HookTarget::Codex.event_entry(&hook(), Path::new("/pkg-other"), wrapper);
+    let ours = crate::codex::HOOKS.event_entry(&hook(), Path::new("/pkg"), wrapper);
+    let theirs = crate::codex::HOOKS.event_entry(&hook(), Path::new("/pkg-other"), wrapper);
     merge_event_entry(&config, HookEvent::PreToolUse, &theirs, &[]).unwrap();
     assert_eq!(
         inspect_event_entry(
