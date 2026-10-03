@@ -44,27 +44,44 @@ afterward for the skill to become visible to a normal harness invocation.
 - **AND THEN** no `uze sync` or equivalent command exists or is required
 
 ### Requirement: Attachment is a persistent, UZE-managed, user-scope reference
-A transparent attachment SHALL be a reference (such as a filesystem symlink)
-UZE creates under the harness's own user-scope discovery location, pointing
-at the package's content inside the UZE store, rather than a copy of that
-content. UZE SHALL own the reference's lifecycle: it MAY refresh it when the
-store package changes and SHALL remove it on `uze remove`/uninstall. UZE
-SHALL NOT duplicate the store's package content as a second permanent
-installation.
+A transparent attachment SHALL be an artifact UZE materializes from the
+package in the UZE store into the harness's own user-scope discovery
+location. A file UZE renders (a `SKILL.md`, an agent definition, a manifest,
+an MCP configuration, a policy sidecar) SHALL be written as a regular file,
+and a file UZE carries unchanged SHALL be copied as a regular file; neither
+SHALL be a link, and nothing a harness reads SHALL resolve into the store.
+UZE SHALL own the artifact's lifecycle through a receipt that proves its
+content: it SHALL rebuild the artifact when the store package changes through
+UZE and SHALL remove it on `uze remove`/uninstall. The store SHALL remain the
+single source of truth; a materialized artifact SHALL be reproducible from
+the store and the engine alone.
 
 #### Scenario: Store update is reflected without a rewrite
-- **WHEN** a UZE-managed attachment references a package already installed in
-  the UZE store
+- **WHEN** a UZE-managed attachment was materialized from a package in the
+  UZE store
 - **AND WHEN** that store package's content changes through UZE
-- **THEN** the harness resolves the updated content without UZE recreating
-  the attachment
+- **THEN** the harness resolves the updated content without the operator
+  rewriting or recreating anything: UZE rebuilds the attachment itself
+- **AND THEN** the receipt proves the new content
 
 #### Scenario: Removing a package removes its attachment
 - **WHEN** a package with an active transparent attachment is removed from
   the UZE store
-- **THEN** UZE removes the managed reference for every harness that had it
-- **AND THEN** no dangling reference is left in any harness's discovery
-  location
+- **THEN** UZE removes the managed artifact for every harness that had it
+- **AND THEN** nothing is left in any harness's discovery location
+
+#### Scenario: A loose skill keeps its supporting files visible
+- **WHEN** a skill with `references/` and `scripts/` is delivered to OpenCode
+  through its own global root, `~/.config/opencode/skills`
+- **THEN** `~/.config/opencode/skills/<label>` is a regular directory holding the
+  rendered `SKILL.md` and copies of those files
+- **AND THEN** OpenCode lists them in the skill's `<skill_files>`
+
+#### Scenario: An edited delivered skill is drift, not a silent source
+- **WHEN** the operator edits a file inside a delivered skill directory
+- **THEN** `uze doctor` reports the attachment Drifted
+- **AND THEN** UZE does not remove or overwrite it without the operator's
+  action
 
 ### Requirement: Attachment never disturbs unrelated entries in a shared discovery location
 A harness's user-scope discovery location MAY already contain entries UZE
@@ -142,4 +159,69 @@ as an environment block, never as incompatibility.
   reports an authentication or quota condition
 - **THEN** the probe's verification result is an environment block
 - **AND THEN** the capability is not reported as incompatible or unsupported
+
+### Requirement: A generated directory is replaced whole
+When UZE rebuilds a directory a harness reads (a generated plugin, a skill
+directory), it SHALL build the new tree beside the destination and replace
+the destination in one rename, so a reader observes either the previous tree
+or the new one and never a partially written one. A build that fails SHALL
+leave the destination as it was and SHALL remove what it staged.
+
+#### Scenario: A session open during install reads a whole plugin
+- **WHEN** Claude Code reads a UZE-generated plugin from its directory
+  marketplace while `uze install` rebuilds that plugin
+- **THEN** every file Claude reads belongs to the same build
+
+#### Scenario: A failed rebuild keeps the delivered tree
+- **WHEN** a rebuild fails because a supporting file links outside its package
+- **THEN** the previously delivered directory is unchanged
+- **AND THEN** no staging directory is left beside it
+
+### Requirement: A receipt from an earlier shape is retired before the current one is attached
+When a capability already has a receipt for an integration whose artifact is
+a different kind than the one this build plans for it, UZE SHALL inspect the
+earlier artifact before attaching: a matched one SHALL be detached and its
+receipt forgotten, a missing one SHALL be forgotten, and anything else SHALL
+be left in place with the capability reported as held back and the reason.
+
+#### Scenario: A beta.3 skill link becomes a directory
+- **WHEN** a skill was attached by an earlier build as a symlink at
+  `~/.agents/skills/flow:review`
+- **AND WHEN** this build installs the same package
+- **THEN** the symlink is removed and a regular directory takes its place
+- **AND THEN** the ledger holds only the new receipt
+
+#### Scenario: A changed earlier artifact is not overwritten
+- **WHEN** the earlier symlink was repointed by the operator
+- **THEN** it is left in place
+- **AND THEN** the install reports the skill held back for that harness
+
+### Requirement: Delivery is derived from a measured dialect table
+The system SHALL keep, per harness, a table of measured facts about what the
+harness discovers, follows, expands and accepts, each fact stating the
+harness version it was measured on and the conformance check that proves it.
+A test SHALL fail a fact that names no measured version, or whose check is
+not a function the conformance Lab defines, and the table SHALL be rendered
+into the published harness matrix. The fields a harness accepts on an agent
+SHALL be declared as data in that harness's vertical (its agent dialect), and
+that one declaration SHALL render the delivered file, answer `plugin check`
+and state the loss at install, so the three never disagree.
+
+#### Scenario: A harness that drops a field is told before install
+- **WHEN** an agent declares `model: haiku` at the root and OpenCode's
+  agent dialect does not carry it
+- **THEN** the install delivers the agent without the field and reports it
+  Degraded for OpenCode, naming the field
+
+#### Scenario: A fact names a check the Lab defines
+- **WHEN** a harness states a fact whose `proven_by` names a function the
+  conformance tree does not define, or the fact names no measured version
+- **THEN** the workspace test suite fails, naming the harness and the fact
+
+#### Scenario: A fact proved by the contract is rechecked by the conformance run
+- **WHEN** a fact names a check under `conformance/contract/` and a new
+  harness version stops behaving as the fact says
+- **THEN** that contract check fails in the conformance run, while a fact
+  proved only by an experiment under `conformance/experiments/` is
+  rechecked only when that experiment is run on demand
 

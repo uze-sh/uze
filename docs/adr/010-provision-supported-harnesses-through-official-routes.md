@@ -83,4 +83,4 @@ harness uninstall remain future work.
 - Harness removal is gated on ownership, not on this record: see the
   "Harness removal" section of the source change's `design.md`.
 
-Source change: openspec/changes/provision-harnesses-through-official-sources/
+Source change: openspec/changes/archive/2026-10-03-provision-harnesses-through-official-sources/

@@ -35,7 +35,7 @@ The system SHALL store marketplace entries as `{name, source: Git|Local}` in `~/
 - **THEN** system records nothing and fails naming both readings, `./hiukky/ai` for the directory and `github:hiukky/ai` for the repository
 
 ### Requirement: Marketplace add validates marketplace manifest
-The system SHALL validate that the marketplace source contains a readable `marketplace.json` with `plugins[]` entries (`name`, `source`).
+The system SHALL validate that the marketplace source contains a readable `marketplace.json` with `plugins[]` entries (`name`, `source`), and that the manifest's own `name` is lowercase kebab-case of at most 64 characters (see the `plugin` capability). The name SHALL be checked before anything is recorded or mirrored.
 
 #### Scenario: Valid marketplace
 - **WHEN** `marketplace.json` exists and is well-formed
@@ -44,6 +44,11 @@ The system SHALL validate that the marketplace source contains a readable `marke
 #### Scenario: Invalid marketplace
 - **WHEN** `marketplace.json` is missing or malformed
 - **THEN** `marketplace add` fails with a clear error and records nothing
+
+#### Scenario: A marketplace named outside the rule
+- **WHEN** `marketplace.json` carries `"name": "My_Market"`
+- **THEN** `marketplace add` fails, names `my-market` as the name it meant,
+  and records nothing
 
 ### Requirement: Marketplace list and remove manage registry
 The system SHALL list registered marketplaces, and `market remove <name>` SHALL be the marketplace's teardown on this machine: every package the Store holds from that marketplace is removed first, each through the same machine-removal path a per-package removal runs (inspect-before-detach, receipt-owned teardown, drift safety); the registry entry is removed last, only when none remains.

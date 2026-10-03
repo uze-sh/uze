@@ -64,7 +64,7 @@ The system SHALL, for `uze agent plugin create <name> --market <name> [--descrip
 - **THEN** the command fails naming the existing plugin and writes nothing into it
 
 ### Requirement: Check validates authored plugins and marketplaces offline
-The system SHALL, for `uze agent plugin check <path>` and `uze agent market check <path>`, validate the authored artifact without touching the Store, any harness or the network, and report every finding: manifest parse errors, a package name outside the valid charset, absolute or `..`-shaped path references, `SKILL.md` files missing required frontmatter or a malformed invocation policy, a `hooks.json` violating the handler contract (timeout bounds, deny exit code semantics), a malformed `mcp.json`, and — for marketplace checks — `plugins[]` entries whose `source` does not resolve inside the marketplace or whose plugin fails its own check. A clean artifact SHALL exit zero; any finding SHALL exit non-zero with the reasons on the answer.
+The system SHALL, for `uze agent plugin check <path>` and `uze agent market check <path>`, validate the authored artifact without touching the Store, any harness or the network, and report every finding: manifest parse errors, a plugin or marketplace name outside the name rule (with the corrected name), absolute or `..`-shaped path references, `SKILL.md` files missing required frontmatter, carrying a `name` that is missing, outside the name rule or different from the skill's directory, or carrying a malformed invocation policy, a `hooks.json` violating the handler contract (timeout bounds, deny exit code semantics), a malformed `mcp.json`, and — for marketplace checks — `plugins[]` entries whose `name` is outside the name rule, whose `source` does not resolve inside the marketplace or whose plugin fails its own check. A clean artifact SHALL exit zero; any finding SHALL exit non-zero with the reasons on the answer.
 
 #### Scenario: A plugin that would fail at install fails check first
 - **WHEN** an authored plugin's `plugin.json` names it `-starts-with-dash` and the agent runs `uze agent plugin check` on its directory
@@ -77,6 +77,10 @@ The system SHALL, for `uze agent plugin check <path>` and `uze agent market chec
 #### Scenario: A marketplace check covers its plugins
 - **WHEN** the agent runs `uze agent market check` on a scaffolded marketplace whose one plugin has an invalid `hooks.json`
 - **THEN** the command exits non-zero and the answer locates the finding in that plugin
+
+#### Scenario: A skill a harness would refuse by name
+- **WHEN** a plugin's `skills/greet/SKILL.md` carries `name: hello`, `name: Greet_Skill`, or no `name`
+- **THEN** `uze agent plugin check` exits non-zero and the finding says which, with the corrected name or the directory the name must equal
 
 ### Requirement: The authoring loop ships as a Skill
 The system SHALL ship the guided authoring script as a Skill in the official plugin (`plugins/uze/skills/author/SKILL.md`), whose frontmatter carries the canonical invocation policy permitting both model and user invocation, and whose body teaches the loop: marketplace create or select, plugin scaffold, capability flags, `check` before `install`, installing from the linked marketplace, iterating, and publishing by pushing the marketplace repository. The Skill SHALL be delivered by the official plugin's normal Skill delivery — no integration change.
@@ -95,4 +99,15 @@ The system SHALL classify every new authoring leaf command in `command_performan
 #### Scenario: An unclassified authoring command fails the suite
 - **WHEN** an authoring leaf command is added without a performance classification
 - **THEN** `cargo test` fails naming the command, as with every other leaf
+
+### Requirement: Scaffolds refuse a name outside the rule
+The system SHALL refuse `uze agent market create <name>` and
+`uze agent plugin create <name>` when the name is not lowercase kebab-case
+of at most 64 characters (see the `plugin` capability), before writing
+anything, and the refusal SHALL name the corrected name when one can be
+derived.
+
+#### Scenario: A plugin named in another style
+- **WHEN** the agent runs `uze agent plugin create My_Plugin --market tools`
+- **THEN** the command fails, says `try \`my-plugin\``, and writes no file
 
