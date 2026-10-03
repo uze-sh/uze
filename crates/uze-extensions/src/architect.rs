@@ -233,10 +233,14 @@ pub fn read_artifacts(host: &dyn Host, checkout: &Path, source: ArtifactSource) 
 /// Said once because the surface and `uze agent artifacts check` both say
 /// it, and a project told two different things about the same state has
 /// to work out which one to believe.
-const UNDECLARED: &str = "This project declares no artifacts yet";
-const DECLARE_ARTIFACTS: &str = "Add `artifacts:` with a `path:` to agents.yaml, and keep \
-                                 Mermaid files (.mmd) in that directory — C4 views, sequences \
-                                 and flowcharts are drawn here.";
+const UNDECLARED: &str = "No artifacts declared";
+/// What to do about it differs, because the two are read by different
+/// people: the check by an agent, which declares the directory itself,
+/// and the surface by a person, who asks an agent to.
+const DECLARE_ARTIFACTS: &str = "Point `artifacts.path` in agents.yaml\n\
+                                 at a directory of Mermaid files (.mmd).";
+const ASK_FOR_ARTIFACTS: &str = "Ask an agent to draw them with `uze:architect`:\n\n\
+                                 `/uze:architect diagram this project`";
 
 /// Why a declared directory gave nothing back. Same reason as above.
 fn unreadable(declared: &str, reason: &str) -> (String, String) {
@@ -252,7 +256,7 @@ fn read_the_directory(host: &dyn Host, source: ArtifactSource) -> Artifacts {
         hint: hint.to_owned(),
     };
     match source {
-        ArtifactSource::Undeclared => nothing(UNDECLARED.to_owned(), DECLARE_ARTIFACTS),
+        ArtifactSource::Undeclared => nothing(UNDECLARED.to_owned(), ASK_FOR_ARTIFACTS),
         ArtifactSource::Refused(reason) => nothing(
             reason,
             "Fix `artifacts:` in agents.yaml and open this again.",
@@ -1161,14 +1165,7 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
         footer: footer(state),
         notice: None,
         confirm: None,
-        modes: MODES
-            .iter()
-            .map(|&(showing, label)| Mode {
-                label: label.to_owned(),
-                icon: RowIcon::None,
-                active: showing == state.showing,
-            })
-            .collect(),
+        modes: modes(state),
         // Nothing to be about but the artifacts it draws: the trail is
         // how this surface is walked, and the selectors above it are
         // what stand where the code surface's own halves do.
@@ -1176,6 +1173,23 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
         layout: Layout::Board,
         trail: state.steps(),
     }
+}
+
+/// How the board can be drawn. Offered only where there is a board: a
+/// message has one way of being shown, and a selector over it switches
+/// nothing.
+fn modes(state: &ArchitectView) -> Vec<Mode> {
+    if state.nothing.is_some() {
+        return Vec::new();
+    }
+    MODES
+        .iter()
+        .map(|&(showing, label)| Mode {
+            label: label.to_owned(),
+            icon: RowIcon::None,
+            active: showing == state.showing,
+        })
+        .collect()
 }
 
 /// What the surface can be asked right now. The way up is named only

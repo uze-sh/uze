@@ -268,8 +268,8 @@ fn a_surface_with_nothing_to_draw_says_why_and_what_to_do() {
     let Content::Message { text, hint, .. } = view(&state, SPACE).content else {
         panic!("an undeclared project is a message");
     };
-    assert!(text.contains("declares no artifacts"));
-    assert!(hint.unwrap().contains("agents.yaml"));
+    assert!(text.contains("No artifacts declared"));
+    assert!(hint.unwrap().contains("uze:architect"));
 
     let empty = ArtifactSource::Directory {
         path: PathBuf::from("/project/docs/diagrams"),
@@ -854,7 +854,7 @@ fn a_diagram_that_draws_with_relations_missing_is_not_drawn() {
 fn what_a_project_declares_decides_whether_having_no_diagrams_is_a_fault() {
     let nothing = check(&Written(Vec::new()), ArtifactSource::Undeclared);
     assert!(
-        matches!(nothing, Checkup::Nothing { text, .. } if text.contains("declares no artifacts")),
+        matches!(nothing, Checkup::Nothing { text, .. } if text.contains("No artifacts declared")),
         "declaring none is an answer, not a mistake"
     );
 

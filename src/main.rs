@@ -4554,10 +4554,12 @@ fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
     if let Some(text) = report.unusable.as_ref().or(report.nothing.as_ref()) {
         let mut out = format!("{}\n", text.trim_end_matches('.'));
         if let Some(hint) = &report.hint {
+            // The hint's line breaks balance it on the surface, which
+            // centres each line; a terminal folds it to its own width.
             out.push_str(&format!(
                 "{}\n",
                 progress::aligned_rows_wrapped(
-                    vec![vec![hint.clone()]],
+                    vec![vec![hint.replace('\n', " ")]],
                     progress::terminal_width()
                 )
             ));
