@@ -5351,3 +5351,76 @@ fn the_updated_column_is_when_a_plugin_was_installed() {
     assert!(!tree("▸ draft").contains("ago"), "{}", tree("▸ draft"));
     assert!(tree("team  ").contains("2h ago"), "its most recent");
 }
+
+/// The selection lights the container it is: the whole marketplace card
+/// while its heading is selected, and a plugin with every resource under
+/// it while the keyboard is anywhere inside that plugin — siblings keep
+/// the group's ground, and the cursor alone says which row it is.
+#[test]
+fn the_selection_lights_its_whole_container() {
+    use uze_application::CapabilityKind;
+    use uze_application::application::PluginCapability;
+
+    let mut model = two_market_model();
+    model.expanded_plugins.insert("git@ai".to_owned());
+    model.plugin_resources.insert(
+        "git@ai".to_owned(),
+        vec![PluginCapability {
+            identity: "commit".to_owned(),
+            name: "commit".to_owned(),
+            kind: CapabilityKind::AgentSkill,
+            preview: Default::default(),
+        }],
+    );
+    let selected = theme::color(Token::SurfaceSelected);
+    let ground_of = |model: &TuiModel, needle: &str| {
+        let (terminal, hits) = drawn_at(model, 150, 30);
+        let rows = buffer_rows(&terminal);
+        let y = rows
+            .iter()
+            .position(|row| {
+                row.split('│')
+                    .next()
+                    .is_some_and(|tree| tree.contains(needle))
+            })
+            .unwrap_or_else(|| panic!("{needle} not drawn: {rows:#?}"));
+        let x = hits
+            .iter()
+            .find_map(|(rect, hit)| matches!(hit, Hit::PluginMarket(_)).then_some(rect.x + 1))
+            .expect("a group is drawn");
+        terminal.backend().buffer()[(x, y as u16)].bg
+    };
+
+    model.select_plugin_market(Some("ai".to_owned()));
+    for row in ["ai ", "git", "commit", "env"] {
+        assert_eq!(
+            ground_of(&model, row),
+            selected,
+            "{row} is inside the selected card"
+        );
+    }
+    assert_ne!(
+        ground_of(&model, "uze-official"),
+        selected,
+        "the other card is not"
+    );
+
+    let rows = model.marketplace_rows();
+    let git = model
+        .visible_indices_in(&rows)
+        .iter()
+        .position(|&raw| rows[raw].name == "git")
+        .expect("git is listed");
+    model.select_plugin_row(git, Some("commit".to_owned()));
+    assert_eq!(
+        ground_of(&model, "git"),
+        selected,
+        "the plugin the cursor is in"
+    );
+    assert_eq!(ground_of(&model, "commit"), selected, "and its resources");
+    assert_eq!(
+        ground_of(&model, "env"),
+        theme::color(Token::SurfaceRecessed),
+        "a sibling keeps the group's ground"
+    );
+}

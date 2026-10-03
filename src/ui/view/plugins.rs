@@ -518,7 +518,14 @@ fn tree_lines(
         if members.is_empty() && filtering {
             continue;
         }
-        let ground = (active == Some(market.as_str())).then_some(Token::SurfaceRecessed);
+        // The container the keyboard is in stands out from the rest: the
+        // whole group on the selection's ground while its heading is the
+        // selected row, on the recessed one while a plugin inside it is.
+        let ground = if screen.cursor == PluginTreeRow::Market(market.clone()) {
+            Some(Token::SurfaceSelected)
+        } else {
+            (active == Some(market.as_str())).then_some(Token::SurfaceRecessed)
+        };
         if !lines.is_empty() {
             lines.push(TreeLine::blank(width, None));
         }
@@ -534,12 +541,21 @@ fn tree_lines(
             if expanded && index > 0 && !lines.last().is_some_and(|line| line.gap) {
                 lines.push(TreeLine::in_group(width, ground, market));
             }
+            // A selected plugin is a container of its own: its row and every
+            // resource under it share the selection's ground, and the cursor
+            // alone says which of them the keyboard is on.
+            let block = match &screen.cursor {
+                PluginTreeRow::Plugin(at) | PluginTreeRow::Resource(at, _) if *at == position => {
+                    Some(Token::SurfaceSelected)
+                }
+                _ => ground,
+            };
             lines.push(plugin_line(
-                screen, position, plugin, expanded, ground, columns, width,
+                screen, position, plugin, expanded, block, columns, width,
             ));
             if expanded {
                 lines.extend(resource_lines(
-                    screen, position, plugin, ground, columns, width,
+                    screen, position, plugin, block, columns, width,
                 ));
                 if index < last {
                     lines.push(TreeLine::in_group(width, ground, market));
@@ -549,17 +565,6 @@ fn tree_lines(
         lines.push(TreeLine::in_group(width, ground, market));
     }
     lines
-}
-
-/// The ground a row stands on: the selection's where the keyboard is on
-/// it, its group's otherwise. The cursor ahead of it says the keyboard is
-/// actually here rather than on the screen tabs.
-fn row_ground(selected: bool, group: Option<Token>) -> Option<Token> {
-    if selected {
-        Some(Token::SurfaceSelected)
-    } else {
-        group
-    }
 }
 
 fn name_style(selected: bool, resting: Token) -> Style {
@@ -608,7 +613,7 @@ fn market_line(
     TreeLine::new(
         tree_row(
             width,
-            row_ground(selected, group),
+            group,
             selected && screen.focused,
             MARKET_INDENT,
             vec![
@@ -657,7 +662,7 @@ fn plugin_line(
     TreeLine::new(
         tree_row(
             width,
-            row_ground(selected, group),
+            group,
             selected && screen.focused,
             PLUGIN_INDENT,
             vec![
@@ -775,7 +780,7 @@ fn resource_lines(
             lines.push(TreeLine::new(
                 tree_row(
                     width,
-                    row_ground(selected, group),
+                    group,
                     selected && screen.focused,
                     RESOURCE_INDENT,
                     vec![
