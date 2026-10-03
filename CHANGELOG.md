@@ -4,6 +4,25 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.9](https://github.com/uze-sh/uze/compare/v1.0.0-beta.8...v1.0.0-beta.9) - 2026-10-03
+
+### Features
+
+- **spec:** Read Superpowers and GSD projects in the spec surface ([#175](https://github.com/uze-sh/uze/pull/175)) ([676a1b1](https://github.com/uze-sh/uze/commit/676a1b1acb583dbf7bef9f72ee9c661d0494b8ce))
+
+### Fixes
+
+- **ui:** Scope health alerts to configured harnesses ([#176](https://github.com/uze-sh/uze/pull/176)) ([74f8bf3](https://github.com/uze-sh/uze/commit/74f8bf3ad0f0b7572529c42e7dbe626255d786a7))
+- **ui:** Drop controls from extension empty states ([#177](https://github.com/uze-sh/uze/pull/177)) ([88cb84b](https://github.com/uze-sh/uze/commit/88cb84b0637339590da3ea1dcf04eb7a96d888a4))
+
+### Refactor
+
+- **setup:** Remove the shell rc PATH block take-back ([#174](https://github.com/uze-sh/uze/pull/174)) ([4d3994e](https://github.com/uze-sh/uze/commit/4d3994e8048573901b20cf1b1ca76fd59112c743))
+
+### Documentation
+
+- **demo:** Re-record every demo GIF against the current CLI ([#178](https://github.com/uze-sh/uze/pull/178)) ([b7dda12](https://github.com/uze-sh/uze/commit/b7dda12ee577a827772d258fcfc52d17ad703f8b))
+
 ## [1.0.0-beta.8](https://github.com/uze-sh/uze/compare/v1.0.0-beta.7...v1.0.0-beta.8) - 2026-10-01
 
 ### Fixes
