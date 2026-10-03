@@ -632,6 +632,174 @@ fn reproduction_refuses_bytes_that_are_not_the_bytes_the_lock_pinned() {
     );
 }
 
+/// A project locked at the first revision of `git-market`, on a machine
+/// that added it there, after which the marketplace moved to a second.
+struct MovedMarket {
+    market: uze_testkit::git::Repository,
+    base: PathBuf,
+    home: PathBuf,
+    project: PathBuf,
+    locked_commit: String,
+}
+
+impl MovedMarket {
+    fn new(label: &str) -> Self {
+        let market = uze_testkit::git::Repository::new(label);
+        let locked_commit = write_git_marketplace(&market, "# first\n");
+        let base = uze_testkit::temp::scratch(&format!("{label}-base"));
+        let (home, project) = (base.join("home"), base.join("project"));
+        fs::create_dir_all(project.join(".git")).unwrap();
+        uze_core::state::marketplace_add(
+            &UzeHome::at(&home),
+            "git-market",
+            git_marketplace_source(&market),
+        )
+        .unwrap();
+        UzeApplication::new(UzeHome::at(&home), Vec::new())
+            .project()
+            .add(
+                "flow",
+                "git-market",
+                &project,
+                &AlwaysTrust,
+                &uze_application::NoNameCollisionAuthority,
+            )
+            .unwrap();
+        write_git_marketplace(&market, "# second\n");
+        Self {
+            market,
+            base,
+            home,
+            project,
+            locked_commit,
+        }
+    }
+
+    fn app(&self, home: &std::path::Path) -> UzeApplication {
+        UzeApplication::new(UzeHome::at(home), Vec::new())
+    }
+
+    fn locked_revision(&self) -> String {
+        project_lock::load_lock(&self.project)
+            .unwrap()
+            .unwrap()
+            .marketplaces["git-market"]
+            .revision
+            .clone()
+    }
+}
+
+impl Drop for MovedMarket {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.base);
+        let _ = &self.market;
+    }
+}
+
+/// The lock is a floor: a collaborator moved the pin, this machine pulled
+/// it, and installing raises the machine to it.
+#[test]
+fn install_raises_the_machine_to_a_lock_that_moved_past_it() {
+    let fx = MovedMarket::new("lock-ahead");
+    // The collaborator's machine moves the project's pin.
+    let collaborator = fx.base.join("home-collaborator");
+    fx.app(&collaborator)
+        .project()
+        .install(&fx.project, &AlwaysTrust)
+        .unwrap();
+    fx.app(&collaborator)
+        .project()
+        .update(&fx.project, None, false, &AlwaysTrust)
+        .unwrap();
+    assert_ne!(fx.locked_revision(), fx.locked_commit, "the pin moved");
+
+    let report = fx
+        .app(&fx.home)
+        .project()
+        .install(&fx.project, &AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        matches!(&report, InstallReport::Installed { plugins, .. } if plugins == &["flow".to_owned()]),
+        "{report:?}"
+    );
+    assert_eq!(
+        installed_skill_bodies(&fx.home),
+        vec!["# second\n".to_owned()]
+    );
+}
+
+/// Never a ceiling: a machine that updated past the lock keeps what it
+/// has, the lock is left as the project recorded it, and `status` says the
+/// two differ without calling it a fault.
+#[test]
+fn install_leaves_a_machine_that_moved_past_the_lock_where_it_is() {
+    let fx = MovedMarket::new("machine-ahead");
+    fx.app(&fx.home)
+        .project()
+        .update(&fx.project, None, true, &AlwaysTrust)
+        .unwrap();
+    assert_eq!(
+        installed_skill_bodies(&fx.home),
+        vec!["# second\n".to_owned()]
+    );
+    let lock_before = fs::read(project_lock::lock_path_for(&fx.project)).unwrap();
+
+    fx.app(&fx.home)
+        .project()
+        .install(&fx.project, &AlwaysTrust)
+        .unwrap();
+
+    assert_eq!(
+        installed_skill_bodies(&fx.home),
+        vec!["# second\n".to_owned()],
+        "never a downgrade"
+    );
+    assert_eq!(
+        fs::read(project_lock::lock_path_for(&fx.project)).unwrap(),
+        lock_before,
+        "install moves no pin"
+    );
+    match fx.app(&fx.home).project().lock_status(&fx.project) {
+        ProjectLockStatus::Present { plugins } => assert!(
+            plugins
+                .iter()
+                .any(|p| p.plugin == "flow" && p.installed && p.differs_from_lock),
+            "{plugins:?}"
+        ),
+        other => panic!("expected Present, got {other:?}"),
+    }
+}
+
+/// A plugin a machine first got by reproducing a lock is not pinned to
+/// that lock forever: the machine's own update moves it with everything
+/// else.
+#[test]
+fn a_machine_update_moves_a_plugin_that_was_reproduced_from_a_lock() {
+    let fx = MovedMarket::new("reproduced-moves");
+    let fresh = fx.base.join("home-fresh");
+    fx.app(&fresh)
+        .project()
+        .install(&fx.project, &AlwaysTrust)
+        .unwrap();
+    assert_eq!(installed_skill_bodies(&fresh), vec!["# first\n".to_owned()]);
+
+    fx.app(&fresh)
+        .project()
+        .update(&fx.project, None, true, &AlwaysTrust)
+        .unwrap();
+
+    assert_eq!(
+        installed_skill_bodies(&fresh),
+        vec!["# second\n".to_owned()]
+    );
+    assert_eq!(
+        fx.locked_revision(),
+        fx.locked_commit,
+        "and no project file moved"
+    );
+}
+
 /// The marketplace built into UZE is not a project's to declare: its
 /// plugins are installed for every project by the machine's own bootstrap.
 /// Neither `agents.yaml` nor the lock records one — an entry recording

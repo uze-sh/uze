@@ -258,6 +258,21 @@ the lock never resolved it, resolved it from a different marketplace, or the
 marketplace it comes from is declared differently now. A lock entry the manifest
 no longer declares is not staleness, it is a removal.
 
+### A floor, not a ceiling
+
+A machine runs one revision of each plugin, shared by every project and every
+agent on it, and keeps it at the newest. The lock does not say what runs; it
+says what a machine starts from:
+
+- **A machine without the plugin** installs exactly the locked revision. This
+  is the fresh clone, the teammate, the CI runner.
+- **A machine behind the lock** is raised to it by `uze install`. A teammate
+  moved the pin and you pulled it.
+- **A machine past the lock** keeps what it has. `uze install` never
+  downgrades and never moves a pin, and `uze status` shows the plugin as
+  installed at a revision other than the lock's. That is the ordinary state
+  after an update, not a fault; `uze update` in the project records it.
+
 ## What these files are not
 
 They are **project scope**. Neither records what is installed on your machine:

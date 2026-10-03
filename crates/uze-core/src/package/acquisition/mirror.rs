@@ -362,6 +362,39 @@ pub fn distance(directory: &Path, pinned: &str, head: &str) -> Option<usize> {
     (counted > 0).then_some(counted)
 }
 
+/// Where one commit stands against another in a mirror's history.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Lineage {
+    Same,
+    /// The first is an ancestor of the second: the second is newer.
+    Older,
+    /// The second is an ancestor of the first: the first is newer.
+    Newer,
+    /// Each has commits the other lacks — a rewritten history, or two refs.
+    Diverged,
+}
+
+/// How `commit` relates to `other`, from commits alone, which a blobless
+/// mirror holds.
+///
+/// `None` when the mirror cannot answer: either commit is missing, or the
+/// two share no history at all. Not `Diverged`, which is an answer.
+pub fn lineage(directory: &Path, commit: &str, other: &str) -> Option<Lineage> {
+    reject_option_shaped(commit, "commit").ok()?;
+    reject_option_shaped(other, "commit").ok()?;
+    let commit = resolve(directory, Some(commit)).ok()?;
+    let other = resolve(directory, Some(other)).ok()?;
+    if commit == other {
+        return Some(Lineage::Same);
+    }
+    let base = run(&["merge-base", &commit, &other], Some(directory)).ok()?;
+    Some(match base.trim() {
+        base if base == commit => Lineage::Older,
+        base if base == other => Lineage::Newer,
+        _ => Lineage::Diverged,
+    })
+}
+
 /// One lock per mirror, held across a materialization.
 ///
 /// A checkout into a bare mirror writes the mirror's own `index`, and the
@@ -545,6 +578,28 @@ mod tests {
             None,
             "a ref that moved backwards is not a distance of zero: `Some(0)` \
              is what an identical pair answers, and these are not identical"
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn lineage_says_which_commit_is_newer_and_refuses_to_guess() {
+        let (root, first, second) = origin("mirror-lineage");
+        let mirror = root.join("mirror");
+        ensure(
+            &root.join("origin").to_string_lossy(),
+            &root.join("origin").to_string_lossy(),
+            &mirror,
+        )
+        .unwrap();
+
+        assert_eq!(lineage(&mirror, &first, &first), Some(Lineage::Same));
+        assert_eq!(lineage(&mirror, &first, &second), Some(Lineage::Older));
+        assert_eq!(lineage(&mirror, &second, &first), Some(Lineage::Newer));
+        assert_eq!(
+            lineage(&mirror, "0000000000000000000000000000000000000000", &second),
+            None,
+            "a commit this mirror does not have is no answer, not a divergence"
         );
         fs::remove_dir_all(&root).unwrap();
     }

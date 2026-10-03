@@ -12,33 +12,51 @@ use crate::application::services::Plugins;
 use crate::application::*;
 
 impl Plugins<'_> {
-    /// The package re-read from the checkout its marketplace is linked to,
-    /// or `None` when it is not linked.
+    /// The package re-read through the marketplace it was installed from:
+    /// the checkout the marketplace is linked to, or its mirror. `None`
+    /// for a package no registered marketplace offers.
     ///
-    /// Best-effort by design: a link pointing at a checkout that has since
-    /// been moved or broken must not make the package un-updatable, so a
-    /// failure here falls back to the source the package was installed
-    /// from and the ordinary error surfaces from there.
-    fn linked_source(
+    /// Through the mirror rather than a clone of its own, because the
+    /// mirror is where the catalogue reads the head freshness compares
+    /// against: an update that fetched elsewhere installed the new head
+    /// and left the catalogue naming the old one, so the plugin it had just
+    /// updated read as behind.
+    ///
+    /// The marketplace's registered ref, not the package's own request: a
+    /// machine runs one revision of each plugin and keeps it at the newest,
+    /// and a package reproduced from `agents.lock` carries the locked commit
+    /// *as* its request, which re-resolved could only ever return itself.
+    /// A project's lock is a floor for a machine that has less, never a
+    /// ceiling for one that moved on.
+    ///
+    /// A link is best-effort: one pointing at a checkout that has since
+    /// been moved or broken must not make the package un-updatable, so its
+    /// failure falls back to the source the package was installed from and
+    /// the ordinary error surfaces from there. A mirror's failure is that
+    /// ordinary error already, and is reported rather than paid twice.
+    fn through_marketplace(
         &self,
         installed: &uze_core::StoredPackage,
-    ) -> Option<uze_core::MaterializedPackage> {
+    ) -> Option<Result<uze_core::MaterializedPackage>> {
         let marketplace = installed.id.marketplace();
         let record = uze_core::state::marketplace_get(&self.0.home, marketplace).ok()??;
-        record.link?;
         let request =
             crate::application::marketplace::MarketplaceRequest::of(&record.source).ok()?;
-        request
-            .materialize_plugin(
-                installed.id.plugin_name(),
-                crate::application::marketplace::MirrorAt {
-                    home: &self.0.home,
-                    marketplace,
-                    recent: None,
-                    fetched: &self.0.mirrors_fetched,
-                },
-            )
-            .ok()
+        let linked = record.link.is_some();
+        let materialized = request.materialize_plugin(
+            installed.id.plugin_name(),
+            crate::application::marketplace::MirrorAt {
+                home: &self.0.home,
+                marketplace,
+                recent: None,
+                fetched: &self.0.mirrors_fetched,
+                catalogues: &self.0.marketplace_catalogues,
+            },
+        );
+        match materialized {
+            Err(_) if linked => None,
+            answer => Some(answer),
+        }
     }
 
     #[tracing::instrument(name = "plugins.update", skip_all, fields(id = %id), err)]
@@ -56,14 +74,14 @@ impl Plugins<'_> {
         // Re-resolve the *request*, not the resolution: that is what makes a
         // branch move forward while a pinned commit stays put.
         //
-        // Unless the marketplace is linked to a checkout on this machine,
-        // in which case the request is not where the bytes are any more.
-        // Asked here rather than by the caller because a link is a machine
-        // fact, and this is the machine-level way to bring a package up to
-        // date — so the machine update and a project's own update follow
-        // it alike.
-        let materialized = match self.linked_source(&installed) {
-            Some(request) => request,
+        // Through its marketplace when one offers it, which is where a link
+        // to a checkout on this machine is honoured and where the catalogue
+        // learns the head moved. Asked here rather than by the caller
+        // because both are machine facts, and this is the machine-level way
+        // to bring a package up to date — so the machine update and a
+        // project's own update follow them alike.
+        let materialized = match self.through_marketplace(&installed) {
+            Some(materialized) => materialized?,
             None => self.acquire(&installed.provenance.requested)?,
         };
         self.replace_with(id, materialized, authority)

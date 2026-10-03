@@ -292,6 +292,57 @@ impl MarketplaceCatalogues {
             url,
         )?;
         let commit = acquisition::mirror::resolve(&repository, reference.as_deref())?;
+        self.record(name, source, commit)
+    }
+
+    /// Records what `name`'s registered ref resolves to in its mirror now,
+    /// after an install or an update fetched into it.
+    ///
+    /// Those fetch the same mirror a catalogue is read from, and freshness
+    /// compares an installed commit against the head this entry records.
+    /// Left alone, `uze update` installed the new head while the entry went
+    /// on naming the old one, so every surface reported the plugin it had
+    /// just updated as behind until the entry expired.
+    ///
+    /// Resolved against the *registered* source's ref, not the one the
+    /// fetch was made for: a project may declare a different ref, and what
+    /// this entry answers is what the marketplace offers. Best effort, as
+    /// cache: an entry that cannot be rewritten expires on its own.
+    pub(crate) fn absorb_fetch(&self, home: &UzeHome, name: &str) {
+        let Ok(Some(record)) = uze_core::state::marketplace_get(home, name) else {
+            return;
+        };
+        let PackageSource::Git { reference, .. } = &record.source else {
+            return;
+        };
+        if record.link.is_some() {
+            return;
+        }
+        let repository = self.entry_dir(name).join(REPOSITORY_DIR);
+        let Ok(commit) = acquisition::mirror::resolve(&repository, reference.as_deref()) else {
+            return;
+        };
+        let recorded = fs::read(self.entry_dir(name).join(META_FILE))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Meta>(&bytes).ok());
+        if recorded.is_some_and(|meta| {
+            meta.commit.as_deref() == Some(commit.as_str())
+                && meta.source.same_source(&record.source)
+        }) {
+            return;
+        }
+        if let Ok(catalogue) = self.record(name, &record.source, commit) {
+            self.memo
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(name.to_owned(), catalogue);
+        }
+    }
+
+    /// Writes `name`'s entry as read from its mirror at `commit`.
+    fn record(&self, name: &str, source: &PackageSource, commit: String) -> Result<Catalogue> {
+        let entry = self.entry_dir(name);
+        let repository = entry.join(REPOSITORY_DIR);
         let subpath = subpath_of(source)?;
         let manifest = self.manifest_at(&repository, &commit, &subpath)?;
         let listings = mirrored_listings(&repository, &commit, &subpath, &manifest);

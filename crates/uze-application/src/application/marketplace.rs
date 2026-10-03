@@ -65,6 +65,8 @@ pub(crate) struct MirrorAt<'a> {
     pub(crate) recent: Option<std::time::Duration>,
     /// What this command already fetched, which is fresh whatever `recent`.
     pub(crate) fetched: &'a std::sync::Mutex<Vec<PathBuf>>,
+    /// The catalogue read from the same mirror, told when a fetch moved it.
+    pub(crate) catalogues: &'a super::marketplace_catalogue::MarketplaceCatalogues,
 }
 
 /// Brings every marketplace an operation is about to read up to date at
@@ -77,6 +79,7 @@ pub(crate) struct MirrorAt<'a> {
 pub(crate) fn prefetch_mirrors(
     home: &uze_core::UzeHome,
     fetched: &std::sync::Mutex<Vec<PathBuf>>,
+    catalogues: &super::marketplace_catalogue::MarketplaceCatalogues,
     wanted: &[(String, MarketplaceRequest)],
     recent: Option<std::time::Duration>,
 ) {
@@ -113,10 +116,11 @@ pub(crate) fn prefetch_mirrors(
                         recent,
                     )
                 });
-                if reached.is_ok()
-                    && let Ok(mut fetched) = fetched.lock()
-                {
-                    fetched.push(directory);
+                if reached.is_ok() {
+                    catalogues.absorb_fetch(home, name);
+                    if let Ok(mut fetched) = fetched.lock() {
+                        fetched.push(directory);
+                    }
                 }
             });
         }
@@ -240,6 +244,7 @@ impl MarketplaceRequest {
             at.marketplace,
             &self.repository.identity,
         )?;
+        at.catalogues.absorb_fetch(at.home, at.marketplace);
         if let Ok(mut fetched) = at.fetched.lock()
             && !fetched.contains(&repository)
         {
@@ -666,6 +671,7 @@ impl Marketplace<'_> {
                     marketplace: &marketplace_name,
                     recent: Some(RECENT),
                     fetched: &self.0.mirrors_fetched,
+                    catalogues: &self.0.marketplace_catalogues,
                 },
             )?,
         };
@@ -867,7 +873,7 @@ fn suggesting_other_hosts(
 #[cfg(test)]
 mod mirror_tests {
     use crate::UzeApplication;
-    use crate::application::marketplace_catalogue::mirror_dir;
+    use crate::application::marketplace_catalogue::{mirror_dir, mirrored_head};
     use std::fs;
     use uze_core::UzeHome;
 
@@ -1008,6 +1014,58 @@ mod mirror_tests {
             flow.freshness.established_at_unix.is_some(),
             "carrying when the comparison was made, which is what makes it \
              readable as an answer rather than as a guess"
+        );
+
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// Updating fetches the mirror the catalogue is read from, so the head
+    /// the catalogue records moves with it: the plugin just updated reads
+    /// as up to date at once, not when the catalogue's window runs out.
+    #[test]
+    fn an_updated_plugin_reads_as_up_to_date_before_its_catalogue_expires() {
+        let home_root = uze_testkit::temp::scratch("freshness-after-update");
+        let (repository, _first) = marketplace("freshness-after-update-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        application
+            .marketplace()
+            .install_plugin("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+        fs::write(
+            repository.root().join("plugins/flow/skills/one/SKILL.md"),
+            "---\nname: one\ndescription: d\n---\n\nflow second.\n",
+        )
+        .unwrap();
+        repository.git(&["add", "-A"]);
+        repository.git(&["commit", "-m", "second"]);
+
+        application
+            .plugins()
+            .update("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+
+        // A fresh application, the way the next invocation is: nothing it
+        // answers can come from the memo of the one that updated.
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        let listed = application.plugins().list().unwrap();
+        let flow = listed
+            .iter()
+            .find(|plugin| plugin.active_name == "flow")
+            .expect("flow is installed");
+        assert_eq!(
+            flow.freshness.state,
+            crate::application::FreshnessState::UpToDate,
+            "the revision update installed is the head the catalogue records"
+        );
+        assert_eq!(
+            mirrored_head(&home, "mkt").map(|head| head.commit),
+            Some(repository.head())
         );
 
         fs::remove_dir_all(&home_root).unwrap();
