@@ -1302,27 +1302,52 @@ fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
         argv: vec![
             "/bin/sh".into(),
             "-c".into(),
-            "stty raw -echo; sleep 30".into(),
+            "stty raw -echo; exec sleep 30".into(),
         ],
         env: Vec::new(),
     };
     server.spawn_pane(pane, deaf).unwrap();
-
-    let writing = Arc::clone(&server);
-    thread::spawn(move || writing.write_input(pane, &vec![b'x'; 1 << 20]));
-    // Inside the write, with the pane's writer held, before the map is
-    // asked about — otherwise this passes without testing anything.
+    // `sleep` in front means `stty raw` already ran: written any earlier,
+    // a canonical-mode line discipline drops what overflows and the write
+    // simply finishes.
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     while !server
-        .panes
-        .lock()
-        .expect("panes poisoned")
-        .get(&pane)
-        .is_some_and(|runtime| runtime.writer.try_lock().is_err())
+        .runtime(pane)
+        .and_then(|runtime| runtime.foreground_status())
+        .is_some_and(|(_, process)| process == "sleep")
     {
         assert!(
             std::time::Instant::now() < deadline,
-            "the write never blocked"
+            "the pane never reached `sleep`"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let writing = Arc::clone(&server);
+    let writer = thread::spawn(move || writing.write_input(pane, &vec![b'x'; 1 << 20]));
+    // Inside the write, with the pane's writer held, before the map is
+    // asked about. A platform whose PTY takes the whole megabyte without
+    // blocking never reaches the case this is about, and says so rather
+    // than passing as though it had.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let held = server
+            .panes
+            .lock()
+            .expect("panes poisoned")
+            .get(&pane)
+            .is_some_and(|runtime| runtime.writer.try_lock().is_err());
+        if held {
+            break;
+        }
+        if writer.is_finished() {
+            eprintln!("the write never blocked on this platform; nothing to hold up");
+            server.stop_panes();
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the write neither blocked nor finished"
         );
         thread::sleep(Duration::from_millis(10));
     }
