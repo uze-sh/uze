@@ -471,6 +471,15 @@ pub trait IntegrationPort: Send + Sync {
         Vec::new()
     }
 
+    /// Paths of `package`, relative to its root, that this harness would
+    /// load as components the canonical format does not define and that
+    /// its delivery therefore leaves out. Only paths the package actually
+    /// contains. Empty by default: a harness that mirrors nothing withholds
+    /// nothing. Presentation only, so `inspect` can say what did not travel.
+    fn withheld_paths(&self, _package: &StoredPackage) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Detects whether the harness binary is present and, if cheaply
     /// obtainable, its version. Read-only; performs no filesystem writes.
     ///

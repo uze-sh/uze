@@ -403,6 +403,10 @@ impl IntegrationPort for ClaudeIntegration {
     /// The plugin UZE handed Claude must still be there, in Claude's cache
     /// as much as in UZE's marketplace; and a user agent is named by its
     /// frontmatter `name`, which must be the label it is filed under.
+    fn withheld_paths(&self, package: &StoredPackage) -> Vec<String> {
+        generate::withheld_paths(package)
+    }
+
     fn unreadable(
         &self,
         package: &StoredPackage,

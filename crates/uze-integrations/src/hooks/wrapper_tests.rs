@@ -693,6 +693,27 @@ fn a_session_start_hands_the_handler_its_source_and_no_tool() {
     }
 }
 
+/// A session start carries no tool, but the handler still learns which
+/// harness started it and where its own package is.
+#[test]
+fn a_session_start_hands_the_handler_its_harness_and_its_package_root() {
+    for target in [crate::claude::HOOKS, crate::codex::HOOKS] {
+        let root = package(&format!("wrapper-session-root-{target}"));
+        write_script(
+            &root.join("scripts").join("probe"),
+            "printf '%s|%s' \"$HOOK_HARNESS\" \"$PLUGIN_ROOT\" > \"$PLUGIN_ROOT/seen.txt\"\nexit 0",
+        );
+        let hook = group_at(HookEvent::SessionStart, HookEffect::Observe, &["probe"], 10);
+        let answer = run_wrapper(target, &root, &hook, &session_payload(), None);
+        assert_eq!(answer.exit, 0, "{target}: the session opens");
+        assert_eq!(
+            fs::read_to_string(root.join("seen.txt")).unwrap(),
+            format!("{target}|{}", root.display()),
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
 /// A handler answering with the denial code on a session start has
 /// nothing to deny: the reason is reported and the session opens, with
 /// no decision document a harness could read as one.

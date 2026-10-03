@@ -368,6 +368,15 @@ pub(crate) fn render_inspection(report: &PluginInspection, verbose: bool) -> Str
     rows.push(envelope);
     text.push_str(&progress::aligned_rows(rows));
     text.push_str("\n\n");
+    for delivery in &report.deliveries {
+        for path in &delivery.withheld {
+            notes.push_str(&progress::change(
+                progress::Change::Attention,
+                &delivery.display_name,
+                Some(&format!("{path} not delivered: no portable equivalent")),
+            ));
+        }
+    }
     text.push_str(&notes);
     if !report.plugin.undelivered.is_empty() {
         text.push_str(&render_undelivered(std::slice::from_ref(&report.plugin)));

@@ -68,6 +68,17 @@ pub(super) const NOT_PORTABLE: &[&str] = &[
     "hooks/hooks.json",
 ];
 
+/// Every [`NOT_PORTABLE`] path `package` contains, save the manifest
+/// directory: that one is generated rather than left out.
+pub(super) fn withheld_paths(package: &StoredPackage) -> Vec<String> {
+    NOT_PORTABLE
+        .iter()
+        .filter(|path| **path != ".claude-plugin")
+        .filter(|path| fs::symlink_metadata(package.root.join(path)).is_ok())
+        .map(|path| (*path).to_owned())
+        .collect()
+}
+
 /// Writes the envelope into the fresh directory `dir`: the package's
 /// portable files, then the generated manifest, then the rewritten skill
 /// and agent definitions.

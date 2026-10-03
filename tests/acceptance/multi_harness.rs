@@ -223,3 +223,87 @@ fn a_model_only_skill_reaches_opencode_in_its_own_encoding() {
         "OpenCode's directory carries no Codex policy sidecar"
     );
 }
+
+/// Claude Code loads a plugin's agents from the plugin, namespaced: an agent
+/// riding in the package never also lands in `~/.claude/agents`, and a loose
+/// agent file an earlier build put there is taken back off by the next
+/// install, receipt and all.
+#[test]
+fn claude_agents_ride_in_the_plugin_and_an_earlier_loose_copy_is_retired() {
+    use uze_core::{UzeHome, exposure::ManagedArtifact, state};
+
+    let env = TestEnvironment::isolated();
+    install_fake_harnesses(&env);
+    env.run_ok(uze_bin(), &["setup"]);
+    let package = env.root().join("crew");
+    std::fs::create_dir_all(package.join("agents")).unwrap();
+    std::fs::write(package.join("plugin.json"), r#"{"name":"crew"}"#).unwrap();
+    std::fs::write(
+        package.join("agents/reviewer.md"),
+        "---\nname: reviewer\ndescription: Reviews a change.\n---\nReview.\n",
+    )
+    .unwrap();
+    let (market_args, install_args) =
+        uze_testkit::marketplace::marketplace_install_args(&env.home, &package);
+    env.run_ok(
+        uze_bin(),
+        &market_args.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    let install_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
+    env.run_ok(uze_bin(), &install_args);
+
+    let claude_agents = env.home.join(".claude/agents");
+    let loose = |dir: &std::path::Path| -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(dir)
+            .map(|entries| entries.map(|entry| entry.unwrap().path()).collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(loose(&claude_agents), Vec::<std::path::PathBuf>::new());
+
+    // What an earlier build delivered: the agent as a loose Claude file,
+    // owned by a receipt of its own beside the plugin's.
+    let uze = UzeHome::at(&env.uze_home);
+    let held_elsewhere = state::receipts(&uze, None)
+        .unwrap()
+        .into_iter()
+        .find(|receipt| {
+            receipt
+                .resource_identity
+                .as_deref()
+                .is_some_and(|identity| identity.contains("agents/reviewer.md"))
+        })
+        .expect("another harness holds the agent on its own");
+    let identity = held_elsewhere.resource_identity.clone().unwrap();
+    let earlier = claude_agents.join("crew:reviewer.md");
+    let written = "---\nname: crew:reviewer\ndescription: Reviews a change.\n---\nReview.\n";
+    std::fs::create_dir_all(&claude_agents).unwrap();
+    std::fs::write(&earlier, written).unwrap();
+    state::record_receipt(
+        &uze,
+        uze_core::integration::AttachmentReceipt {
+            package_id: held_elsewhere.package_id,
+            resource_identity: Some(identity.clone()),
+            integration: "claude-code".to_owned(),
+            artifact: ManagedArtifact::GeneratedFile {
+                path: earlier.clone(),
+                content: written.to_owned(),
+            },
+        },
+    )
+    .unwrap();
+
+    env.run_ok(uze_bin(), &install_args);
+
+    assert_eq!(loose(&claude_agents), Vec::<std::path::PathBuf>::new());
+    let claude_receipts: Vec<_> = state::receipts(&uze, None)
+        .unwrap()
+        .into_iter()
+        .filter(|receipt| receipt.integration == "claude-code")
+        .collect();
+    assert!(
+        claude_receipts
+            .iter()
+            .all(|receipt| receipt.resource_identity.as_deref() != Some(identity.as_str())),
+        "the loose receipt is retired with its file: {claude_receipts:?}"
+    );
+}

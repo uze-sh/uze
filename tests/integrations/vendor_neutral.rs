@@ -334,6 +334,44 @@ fn a_failed_publication_leaves_the_package_installed_and_says_so() {
     let _ = fs::remove_dir_all(home.root());
 }
 
+/// A view that failed to publish takes the native route away, and the
+/// install report says which route the harness got instead and why, rather
+/// than leaving the reader to infer it from the publication error.
+#[test]
+fn a_failed_publication_is_named_as_the_reason_for_the_loose_route() {
+    let home = temporary_home("failed-publication-route");
+    let views = home.root().join("views");
+    let application = UzeApplication::new(
+        home.clone(),
+        vec![Box::new(PublishingIntegration::failing(views))],
+    );
+
+    let report = application
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(native_package_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .expect("a failed derived view never fails the installation");
+
+    let [delivery] = report.deliveries.as_slice() else {
+        panic!("one entry per detected harness: {:?}", report.deliveries);
+    };
+    let uze_application::application::HarnessDeliveryOutcome::Delivered {
+        route: uze_application::application::DeliveryRoute::CapabilityByCapability { reason },
+        ..
+    } = &delivery.outcome
+    else {
+        panic!("the harness whose view failed is delivered capability by capability: {delivery:?}");
+    };
+    assert!(
+        reason.contains("the package view could not be published")
+            && reason.contains("fake publication failure"),
+        "{reason}"
+    );
+    let _ = fs::remove_dir_all(home.root());
+}
+
 #[test]
 fn harness_selection_comes_from_the_registered_integrations() {
     let home = temporary_home("selection");

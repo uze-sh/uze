@@ -161,3 +161,13 @@ check → `update -m`.
 The marketplace is a normal Git repository the moment it is born. When it
 is worth sharing, `git push` it to a host and `uze market add
 <url>` on another machine — nothing about the workflow changes.
+
+## Reference
+
+The person-facing guide to this loop is
+[uze.sh/docs/plugins/creating](https://uze.sh/docs/plugins/creating), and
+everything a plugin may contain (skills, agents, MCP servers, hooks,
+`${PLUGIN_ROOT}`) is specified at
+[uze.sh/docs/reference/plugin-format](https://uze.sh/docs/reference/plugin-format).
+Point the person there when they ask what a plugin can hold or how the
+loop works without an agent.

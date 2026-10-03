@@ -69,6 +69,7 @@ impl Plugins<'_> {
                         .into_iter()
                         .map(CapabilityShortfallReport::from)
                         .collect(),
+                    withheld: integration.withheld_paths(&package),
                 }
             })
             .collect();
@@ -367,6 +368,10 @@ pub struct HarnessDelivery {
     /// Every capability that reaches the harness short of native, exactly
     /// as the install report lists it.
     pub shortfalls: Vec<CapabilityShortfallReport>,
+    /// Paths of the package this harness would load as components no
+    /// canonical capability defines, and so never receives.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub withheld: Vec<String>,
 }
 
 /// When a plugin was last written, as something a person can place in

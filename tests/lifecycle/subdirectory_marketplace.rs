@@ -5,7 +5,7 @@
 
 use std::{fs, path::Path};
 
-use uze_application::UzeApplication;
+use uze_application::{UzeApplication, application::Revision};
 use uze_core::{UzeHome, project_lock, trust::AlwaysTrust};
 
 const SUBPATH: &str = "aikit";
@@ -132,6 +132,39 @@ fn a_remote_locator_names_its_subdirectory_after_a_hash() {
         .unwrap();
 
     assert!(installed_skill(&application).contains("remote body"));
+}
+
+/// A mirrored marketplace below its repository's root dates a plugin by
+/// the plugin's own directory under the subpath: a later commit elsewhere
+/// in the repository moves the head, and neither the offered nor the
+/// installed revision with it.
+#[test]
+fn a_mirrored_subdirectory_marketplace_dates_a_plugin_by_its_own_directory() {
+    let (application, repository) = project("subdir-revision");
+    let market = repository.root().parent().unwrap().join("monorepo");
+    monorepo_beside(&repository, &market, "committed body");
+    fs::write(market.join("README.md"), "# moved on\n").unwrap();
+    repository.git_in(&market, &["commit", "--quiet", "-am", "elsewhere"]);
+
+    application
+        .marketplace()
+        .add(&format!("file://{}#{SUBPATH}", market.display()))
+        .unwrap();
+    let dated_by_the_plugin = |revision: &Option<Revision>| matches!(revision, Some(Revision::Commit { subject, .. }) if subject == "first");
+
+    let offered = application
+        .marketplace()
+        .inspect_plugin("mkt", "flow")
+        .unwrap()
+        .revision;
+    assert!(dated_by_the_plugin(&offered), "{offered:?}");
+
+    application
+        .marketplace()
+        .install_plugin("flow@mkt", &AlwaysTrust)
+        .unwrap();
+    let installed = application.plugins().inspect("flow@mkt").unwrap().revision;
+    assert!(dated_by_the_plugin(&installed), "{installed:?}");
 }
 
 #[test]
