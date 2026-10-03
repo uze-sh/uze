@@ -659,14 +659,14 @@ fn plugin_line(
         .map(|resources| counted_capabilities(resources.len()))
         .unwrap_or_default();
     let (status, status_style) = plugin_status(model, plugin);
-    let updated = plugin_revision(model, plugin)
-        .and_then(revision_age)
-        .unwrap_or_else(|| {
-            market_updated(
-                screen.summary(&plugin.marketplace),
-                &screen.offered_by(&plugin.marketplace),
-            )
-        });
+    // The marketplace's own answer on every row of it: a plugin's exact
+    // revision is known only once it has been inspected, and a column that
+    // changed meaning as the selection passed over it read as a clock
+    // jumping. The panel says the revision.
+    let updated = market_updated(
+        screen.summary(&plugin.marketplace),
+        &screen.offered_by(&plugin.marketplace),
+    );
     TreeLine::new(
         tree_row(
             width,
@@ -863,14 +863,6 @@ fn plugin_revision<'a>(
                     && detail.summary.marketplace == plugin.marketplace
             })
             .and_then(|detail| detail.revision.as_ref())
-    }
-}
-
-fn revision_age(revision: &Revision) -> Option<String> {
-    match revision {
-        Revision::Commit { age, .. } => Some(age.clone()),
-        Revision::Bundled { .. } => Some("this release".to_owned()),
-        Revision::Checkout { .. } => None,
     }
 }
 

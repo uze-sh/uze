@@ -67,12 +67,10 @@ scenes:
         expect_timeout: 20
         pause: 1.0
       - click: "Marketplace"
-        say: open the Marketplace screen from the sidebar
-        in: sidebar
-        expect: "skills"
-      - click: "Filter plugins"
+        say: open the Marketplace screen from its tab, the first match from the top
+        expect: "filter plugins"
+      - click: "filter plugins"
         say: click the search field, which nothing could click before
-        in: pane
         expect: "flow"
       - type: "flo"
         submit: false
@@ -87,17 +85,15 @@ scenes:
     when:
       - rclick: "flow"
         say: ask the row for its actions
-        in: pane
         expect: "Install"
       - click: "Install"
         say: take the install offer
-        in: pane
         occurrence: last
         expect: "Install plugin"
       - click: "  Install  "
         say: answer the question with its own button
         in: pane
-        expect: "Installed"
+        expect: "flow .* installed "
         expect_timeout: 45
         pause: 1.5
     then:
