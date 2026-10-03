@@ -296,10 +296,7 @@ pub(crate) fn attach_skill_tree(
         for (relative, bytes) in rendered {
             let file = staging.join(relative);
             if let Some(parent) = file.parent() {
-                fs::create_dir_all(parent).map_err(|source| UzeError::Write {
-                    path: parent.to_path_buf(),
-                    source,
-                })?;
+                fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
             }
             write_file(&file, bytes)?;
         }
@@ -342,10 +339,7 @@ pub(crate) const EXPLICIT_ONLY_POLICY_YAML: &str = "policy:\n  allow_implicit_in
 /// Writes Codex's explicit-only policy sidecar into `skill_dir`.
 pub(crate) fn write_explicit_only_sidecar(skill_dir: &Path) -> Result<()> {
     let agents = skill_dir.join("agents");
-    fs::create_dir_all(&agents).map_err(|source| UzeError::Write {
-        path: agents.clone(),
-        source,
-    })?;
+    fs::create_dir_all(&agents).map_err(UzeError::write(&agents))?;
     write_file(
         &agents.join("openai.yaml"),
         EXPLICIT_ONLY_POLICY_YAML.as_bytes(),
@@ -353,10 +347,7 @@ pub(crate) fn write_explicit_only_sidecar(skill_dir: &Path) -> Result<()> {
 }
 
 pub(crate) fn write_file(path: &Path, content: &[u8]) -> Result<()> {
-    fs::write(path, content).map_err(|source| UzeError::Write {
-        path: path.to_path_buf(),
-        source,
-    })
+    fs::write(path, content).map_err(UzeError::write(path))
 }
 
 #[cfg(test)]

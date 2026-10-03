@@ -359,10 +359,7 @@ pub(crate) fn materialize_explicit_package<D: MarketplaceDialect>(
     package: &StoredPackage,
 ) -> Result<PathBuf> {
     let dir = explicit_package_dir::<D>(uze_home, package);
-    let package_root = fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
-        path: package.root.clone(),
-        source,
-    })?;
+    let package_root = fs::canonicalize(&package.root).map_err(UzeError::read(&package.root))?;
     uze_core::persistence::replace_dir(&dir, |staging| {
         crate::shared::tree::mirror_tree(&package.root, staging, &package_root, &[])
     })?;
@@ -393,7 +390,7 @@ pub(crate) fn remove_generated_dir(
     }
     let dir = dir_for(package_id);
     if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|source| UzeError::Write { path: dir, source })?;
+        fs::remove_dir_all(&dir).map_err(UzeError::write(dir))?;
     }
     Ok(())
 }
@@ -413,10 +410,7 @@ pub(crate) fn republish<D: MarketplaceDialect>(
     // tier that holds nothing but packages.
     let stale = uze_home.store_dir().join(D::CATALOGUE_PATH);
     if stale.is_file() {
-        fs::remove_file(&stale).map_err(|source| UzeError::Write {
-            path: stale.clone(),
-            source,
-        })?;
+        fs::remove_file(&stale).map_err(UzeError::write(&stale))?;
     }
     for package in members::<D>(packages, Origin::Generated) {
         materialize_generated_package::<D>(uze_home, package)?;
@@ -490,10 +484,7 @@ fn child_dirs(dir: &Path) -> Vec<(String, PathBuf)> {
 }
 
 fn remove_tree(dir: &Path) -> Result<()> {
-    fs::remove_dir_all(dir).map_err(|source| UzeError::Write {
-        path: dir.to_path_buf(),
-        source,
-    })
+    fs::remove_dir_all(dir).map_err(UzeError::write(dir))
 }
 
 fn write_catalogue<D: MarketplaceDialect>(

@@ -294,10 +294,7 @@ impl IntegrationPort for ClaudeIntegration {
     }
 
     fn install(&self, home: &UzeHome, detection: &HarnessDetection) -> Result<()> {
-        fs::create_dir_all(&self.skills_dir).map_err(|source| UzeError::Write {
-            path: self.skills_dir.clone(),
-            source,
-        })?;
+        fs::create_dir_all(&self.skills_dir).map_err(UzeError::write(&self.skills_dir))?;
         state::record(
             home,
             self.id(),

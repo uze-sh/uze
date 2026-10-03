@@ -57,18 +57,12 @@ pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Resul
         manifest["mcpServers"] = serde_json::json!("./.mcp.json");
     }
     let plugin_dir = dir.join(".codex-plugin");
-    fs::create_dir_all(&plugin_dir).map_err(|source| UzeError::Write {
-        path: plugin_dir.clone(),
-        source,
-    })?;
+    fs::create_dir_all(&plugin_dir).map_err(UzeError::write(&plugin_dir))?;
     write_file(
         &plugin_dir.join("plugin.json"),
         &serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
     )?;
-    let package_root = fs::canonicalize(&package.root).map_err(|source| UzeError::Read {
-        path: package.root.clone(),
-        source,
-    })?;
+    let package_root = fs::canonicalize(&package.root).map_err(UzeError::read(&package.root))?;
     materialize_generated_skills(package, &package_root, dir)?;
     if let Some(servers) = delivered_mcp_servers(package) {
         write_file(
