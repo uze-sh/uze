@@ -1,0 +1,65 @@
+journey: a workspace stopped before it ever opened still meets an empty machine with the chooser
+tags: [gate, tui, first-run]
+proves: web/content/docs/installation.mdx
+about: |
+  `uze workspace stop` is a command a person can run before they ever
+  opened the workspace: from a script, from habit, or to be sure nothing
+  is running. What it leaves under UZE's state belongs to the terminal
+  runtime, and none of it is a harness being set up. An empty machine that
+  ran it first is still an empty machine, and is still asked which
+  harnesses to install.
+
+  This is its own world rather than a scene of the chooser's journey: the
+  claim is about what came before the first open, and it must fail on its
+  own, not hide behind the plain first run. Declining the question is the
+  other half of the chooser: the workspace opens anyway, with nothing set
+  up and nothing fetched.
+
+world:
+  project: demo-app
+  first_run: true
+
+scenes:
+  - scene: stopping a workspace nobody opened leaves state behind, and sets nothing up
+    when:
+      - shell: rm -f {world}/bin/claude {world}/bin/codex {world}/bin/opencode {world}/bin/agy
+        say: take every harness off the machine, keeping only the installer fetcher
+      - shell: "{uze} workspace stop"
+        say: stop the workspace before it was ever opened
+    then:
+      - dir: "{uze_home}/state/terminal"
+        exists: true
+        about: |
+          the stop leaves the terminal runtime's own state under UZE's, the
+          directory an earlier build read as a machine already set up
+      - file: "{uze_home}/state/provisioning.json"
+        exists: false
+        about: but no harness is recorded as provisioned by a stop
+      - link: "{uze_home}/shims/*"
+        exists: false
+        about: and no launcher is placed by one
+
+  - scene: the first open still asks, and declining sets up nothing
+    when:
+      - open: ["{uze}", "workspace"]
+        say: open the workspace for the first time
+        expect: Harnesses to provision
+        expect_timeout: 60
+        pause: 0.5
+      - key: "Escape"
+        say: decline the question
+        expect: demo-app
+        expect_timeout: 60
+        pause: 1.0
+    then:
+      - file: "{uze_home}/state/provisioning.json"
+        exists: false
+        about: a declined question provisions nothing
+      - link: "{uze_home}/shims/*"
+        exists: false
+        about: and places no launcher
+      - file: "{world}/bin/.invocations/curl.log"
+        exists: false
+        about: and fetches no vendor installer
+      - process: { matching: bash, cwd: "{project}", alive: true }
+        about: the workspace opens on the project all the same
