@@ -2,20 +2,19 @@
 
 use super::*;
 
-/// The wrapper template for Windows PowerShell 5.1.
+/// The Windows twin of the POSIX wrapper: the same contract, compiled into a
+/// script Windows PowerShell 5.1 runs with nothing else installed. The
+/// payload is parsed by .NET's own JSON reader (no `jq`, and none of
+/// `ConvertFrom-Json`'s size limit); each handler runs as its own
+/// PowerShell process under its deadline, and what it started is ended
+/// with it.
 pub(crate) struct PowerShellWrapper;
 
 impl WrapperTemplate for PowerShellWrapper {
     const RELATIVE_PATH: &'static str = "hooks/exec.ps1";
     const HEADER: &'static str = HEADER;
 
-    /// The Windows twin of the POSIX wrapper: the same contract, compiled into a
-    /// script Windows PowerShell 5.1 runs with nothing else installed. The
-    /// payload is parsed by .NET's own JSON reader (no `jq`, and none of
-    /// `ConvertFrom-Json`'s size limit); each handler runs as its own
-    /// PowerShell process under its deadline, and what it started is ended
-    /// with it.
-    fn unfired(target: HookTarget) -> &'static [(HookEvent, &'static str, &'static str)] {
+    fn unfired(target: HookTarget) -> &'static [Unfired] {
         target
             .dialect()
             .and_then(|dialect| dialect.powershell)

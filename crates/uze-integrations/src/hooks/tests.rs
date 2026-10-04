@@ -1097,9 +1097,9 @@ fn codex_s_windows_shell_gap_is_declared_by_the_windows_template_alone() {
     let gap = PowerShellWrapper::unfired(crate::codex::HOOKS);
     assert!(
         gap.iter()
-            .any(|(event, tool, why)| *event == HookEvent::PreToolUse
-                && *tool == "shell"
-                && why.contains("openai/codex/issues/24453")),
+            .any(|unfired| unfired.event == HookEvent::PreToolUse
+                && unfired.tool == "shell"
+                && unfired.why.contains("openai/codex/issues/24453")),
         "{gap:?}"
     );
     assert!(PosixWrapper::unfired(crate::codex::HOOKS).is_empty());

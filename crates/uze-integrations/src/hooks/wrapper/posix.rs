@@ -2,31 +2,30 @@
 
 use super::*;
 
-/// The wrapper template for a POSIX shell.
+/// The wrapper a harness actually executes at hook time: POSIX `sh`, one per
+/// harness, byte-identical for every package. It reads the harness's payload
+/// from stdin, exposes the hook context as `HOOK_*` environment, runs the
+/// handlers sequentially, and answers in the harness's own dialect.
+///
+/// Ordering, first-deny-wins and fail-closed are compiled in here because no
+/// harness provides them: a group's hooks may run in parallel, and a hook
+/// that exits non-zero is non-blocking, so a `deny` guard that crashes would
+/// otherwise let the tool through. `jq` is the wrapper's own dependency and
+/// is guarded by the same rule.
+///
+/// Nothing in this file names the packager: the contract is the file, and
+/// any tool that can write it can deliver a portable hook.
+///
+/// The ABI's "bounded output" lives here too: the wrapper is the only route
+/// left, so the bound the removed in-binary runtime carried has to be the
+/// one [`HANDLER_REASON_LIMIT`] states.
 pub(crate) struct PosixWrapper;
 
 impl WrapperTemplate for PosixWrapper {
     const RELATIVE_PATH: &'static str = "hooks/exec";
     const HEADER: &'static str = HEADER;
 
-    /// The wrapper a harness actually executes at hook time: POSIX `sh`, one per
-    /// harness, byte-identical for every package. It reads the harness's payload
-    /// from stdin, exposes the hook context as `HOOK_*` environment, runs the
-    /// handlers sequentially, and answers in the harness's own dialect.
-    ///
-    /// Ordering, first-deny-wins and fail-closed are compiled in here because no
-    /// harness provides them: a group's hooks may run in parallel, and a hook
-    /// that exits non-zero is non-blocking, so a `deny` guard that crashes would
-    /// otherwise let the tool through. `jq` is the wrapper's own dependency and
-    /// is guarded by the same rule.
-    ///
-    /// Nothing in this file names the packager: the contract is the file, and
-    /// any tool that can write it can deliver a portable hook.
-    ///
-    /// The ABI's "bounded output" lives here too: the wrapper is the only route
-    /// left, so the bound the removed in-binary runtime carried has to be the
-    /// one [`HANDLER_REASON_LIMIT`] states.
-    fn unfired(target: HookTarget) -> &'static [(HookEvent, &'static str, &'static str)] {
+    fn unfired(target: HookTarget) -> &'static [Unfired] {
         target
             .dialect()
             .map_or(&[], |dialect| dialect.posix.unfired)
@@ -243,3 +242,21 @@ exit 0
 /// tells a wrapper an earlier template produced from one somebody else
 /// wrote.
 const HEADER: &str = "#!/bin/sh\n# hooks/exec — generated from hooks.json";
+
+/// The `case` arm list translating this harness's native tool names into
+/// `HOOK_TOOL` and the matched alias's portable field variables, generated
+/// from the one vocabulary the matchers are generated from.
+fn wrapper_alias_table(target: HookTarget) -> String {
+    let mut arms = String::new();
+    for (native, binding) in vocabulary(target).native_names() {
+        let mut assignments = format!("HOOK_TOOL={};", binding.alias);
+        for (portable, native_field) in binding.fields {
+            let variable = uze_core::hook::hook_field_variable(portable);
+            assignments.push_str(&format!(
+                " {variable}=$(printf '%s' \"$HOOK_INPUT\" | \"$JQ\" -r '.{native_field} // empty');"
+            ));
+        }
+        arms.push_str(&format!("    {native}) {assignments} ;;\n"));
+    }
+    arms
+}

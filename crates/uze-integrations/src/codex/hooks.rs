@@ -3,7 +3,7 @@
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
 use crate::hooks::{
-    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
+    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, Unfired, WrapperDialect,
 };
 
 /// Codex mirrors Claude Code's event names in its own `hooks.json` command
@@ -40,12 +40,12 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 allow: "if ($hookEvent -eq 'stop') { [Console]::Out.Write('{}') }",
                 // Measured and reported upstream: a Windows shell command runs
                 // as `command_execution`, which fires no PreToolUse hook.
-                unfired: &[(
-                    HookEvent::PreToolUse,
-                    "shell",
-                    "Codex runs a Windows shell command without firing it \
-                     (https://github.com/openai/codex/issues/24453)",
-                )],
+                unfired: &[Unfired {
+                    event: HookEvent::PreToolUse,
+                    tool: "shell",
+                    why: "Codex runs a Windows shell command without firing it \
+                          (https://github.com/openai/codex/issues/24453)",
+                }],
             }),
             deny_exit: "2",
         },

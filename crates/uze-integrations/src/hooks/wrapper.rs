@@ -46,26 +46,16 @@ pub(crate) struct Decisions {
     pub(crate) deny: &'static str,
     pub(crate) allow: &'static str,
     /// What the harness never fires an event for under this template's
-    /// platform: `(event, portable tool, why)`.
-    pub(crate) unfired: &'static [(HookEvent, &'static str, &'static str)],
+    /// platform.
+    pub(crate) unfired: &'static [Unfired],
 }
 
-/// The `case` arm list translating this harness's native tool names into
-/// `HOOK_TOOL` and the matched alias's portable field variables, generated
-/// from the one vocabulary the matchers are generated from.
-pub(super) fn wrapper_alias_table(target: HookTarget) -> String {
-    let mut arms = String::new();
-    for (native, binding) in vocabulary(target).native_names() {
-        let mut assignments = format!("HOOK_TOOL={};", binding.alias);
-        for (portable, native_field) in binding.fields {
-            let variable = uze_core::hook::hook_field_variable(portable);
-            assignments.push_str(&format!(
-                " {variable}=$(printf '%s' \"$HOOK_INPUT\" | \"$JQ\" -r '.{native_field} // empty');"
-            ));
-        }
-        arms.push_str(&format!("    {native}) {assignments} ;;\n"));
-    }
-    arms
+/// An event the harness never fires for a portable tool, and why.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Unfired {
+    pub(crate) event: HookEvent,
+    pub(crate) tool: &'static str,
+    pub(crate) why: &'static str,
 }
 
 /// Every portable field variable any alias of this harness can set. They are
@@ -100,7 +90,7 @@ pub(crate) trait WrapperTemplate {
     fn source(target: HookTarget) -> Option<String>;
     /// What `target` never fires an event for under this template's
     /// platform (see [`Decisions::unfired`]).
-    fn unfired(target: HookTarget) -> &'static [(HookEvent, &'static str, &'static str)];
+    fn unfired(target: HookTarget) -> &'static [Unfired];
 }
 
 // Every template is compiled on every platform, so the one a platform does
@@ -120,9 +110,7 @@ pub(crate) fn wrapper_source(target: HookTarget) -> Option<String> {
 }
 
 /// What this platform's harness never fires an event for.
-pub(crate) fn unfired_here(
-    target: HookTarget,
-) -> &'static [(HookEvent, &'static str, &'static str)] {
+pub(crate) fn unfired_here(target: HookTarget) -> &'static [Unfired] {
     match shell::FAMILY {
         Family::Posix => PosixWrapper::unfired(target),
         Family::PowerShell => PowerShellWrapper::unfired(target),

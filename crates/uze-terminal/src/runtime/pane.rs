@@ -9,9 +9,6 @@ pub(super) struct PaneRuntime {
     pub(super) writer: Arc<Mutex<Box<dyn Write + Send>>>,
     /// Shared with the thread that reaps it once the pane is stopped.
     pub(super) child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
-    /// Read while the leader is alive: once a finished leader is reaped,
-    /// its group can no longer be asked for, though what it left running
-    /// is still in it. See [`PaneRuntime::end_leftovers`].
     /// The pane's program and everything it starts, ended together. Read
     /// while the leader is alive: once a finished leader is reaped, what it
     /// left running is still in it. See [`PaneRuntime::end_leftovers`].
@@ -101,6 +98,90 @@ impl EventListener for ReplySink {
     }
 }
 
+/// What a pane starts, in its directory and its own environment, and the
+/// group made for it before it starts, where the platform makes one then.
+fn pane_command(
+    id: PaneId,
+    cwd: PathBuf,
+    launch: &Launch,
+) -> Result<(CommandBuilder, Option<uze_platform::process::pane::Group>), RuntimeError> {
+    let argv: Vec<std::ffi::OsString> = if launch.argv().is_empty() {
+        vec![host::default_shell().into()]
+    } else {
+        launch.argv().iter().map(Into::into).collect()
+    };
+    let grouped = uze_platform::process::pane::grouped(argv, host::pane_host().as_deref())
+        .map_err(|error| RuntimeError::Pty(error.to_string()))?;
+    let mut command = CommandBuilder::from_argv(grouped.argv);
+    command.cwd(cwd);
+    // `CommandBuilder` seeds a pane from *this* process's environment,
+    // and this process is the server — started by whatever `uze`
+    // invocation first needed one, which in this project is routinely a
+    // `uze` run from inside a shimmed agent. Without this every plain
+    // shell would inherit that agent's identity stamp, report as the
+    // agent in the sidebar, persist as one, and be relaunched as one on
+    // the next restart. A pane's environment may only carry what that
+    // pane's own launch put there.
+    for inherited in crate::launch::STAMPED_VARIABLES {
+        command.env_remove(inherited);
+    }
+    if let Some(first) = PANE_PATH_FIRST.get() {
+        command.env("PATH", path_with_first(env::var_os("PATH"), first));
+    }
+    for (name, value) in launch.env() {
+        command.env(name, value);
+    }
+    // What tells a `uze` started inside this pane that it is inside one,
+    // so it opens a space here instead of a client within a client.
+    command.env(crate::launch::PANE_VARIABLE, id.0.to_string());
+    host::prepare_pane(&mut command);
+    Ok((command, grouped.group))
+}
+
+/// Feeds the pane's output to its emulator, on a thread of its own, until
+/// the program's end of the terminal closes, and says each time that the
+/// pane changed.
+fn read_output(
+    id: PaneId,
+    mut reader: Box<dyn std::io::Read + Send>,
+    terminal: Arc<Mutex<Term<ReplySink>>>,
+    selection: Arc<Mutex<PaneSelection>>,
+    damage: mpsc::Sender<PaneId>,
+) {
+    thread::spawn(move || {
+        let mut parser: Processor = Processor::new();
+        let mut buffer = [0; 8192];
+        loop {
+            match std::io::Read::read(&mut reader, &mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(read) => {
+                    let mut terminal = terminal.lock().expect("terminal poisoned");
+                    parser.advance(&mut *terminal, &buffer[..read]);
+                    selection
+                        .lock()
+                        .expect("selection poisoned")
+                        .observe(&terminal);
+                    drop(terminal);
+                    let _ = damage.send(id);
+                }
+            }
+        }
+    });
+}
+
+/// Writes back to the program what the emulator answers its queries with
+/// (a cursor position, a colour), on a thread of its own.
+fn answer_queries(replies: mpsc::Receiver<Vec<u8>>, writer: Arc<Mutex<Box<dyn Write + Send>>>) {
+    thread::spawn(move || {
+        while let Ok(bytes) = replies.recv() {
+            if let Ok(mut writer) = writer.lock() {
+                let _ = writer.write_all(&bytes);
+                let _ = writer.flush();
+            }
+        }
+    });
+}
+
 impl PaneRuntime {
     pub(super) fn spawn(
         id: PaneId,
@@ -120,43 +201,13 @@ impl PaneRuntime {
                 pixel_height: 0,
             })
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let argv: Vec<std::ffi::OsString> = if launch.argv().is_empty() {
-            vec![host::default_shell().into()]
-        } else {
-            launch.argv().iter().map(Into::into).collect()
-        };
-        let grouped = uze_platform::process::pane::grouped(argv, host::pane_host().as_deref())
-            .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let mut command = CommandBuilder::from_argv(grouped.argv);
-        command.cwd(cwd);
-        // `CommandBuilder` seeds a pane from *this* process's environment,
-        // and this process is the server — started by whatever `uze`
-        // invocation first needed one, which in this project is routinely a
-        // `uze` run from inside a shimmed agent. Without this every plain
-        // shell would inherit that agent's identity stamp, report as the
-        // agent in the sidebar, persist as one, and be relaunched as one on
-        // the next restart. A pane's environment may only carry what that
-        // pane's own launch put there.
-        for inherited in crate::launch::STAMPED_VARIABLES {
-            command.env_remove(inherited);
-        }
-        if let Some(first) = PANE_PATH_FIRST.get() {
-            command.env("PATH", path_with_first(env::var_os("PATH"), first));
-        }
-        for (name, value) in launch.env() {
-            command.env(name, value);
-        }
-        // What tells a `uze` started inside this pane that it is inside one,
-        // so it opens a space here instead of a client within a client.
-        command.env(crate::launch::PANE_VARIABLE, id.0.to_string());
-        host::prepare_pane(&mut command);
+        let (command, made_group) = pane_command(id, cwd, &launch)?;
         let mut child = pair
             .slave
             .spawn_command(command)
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
         let leader = child.process_id();
-        let group = grouped
-            .group
+        let group = made_group
             .or_else(|| leader.and_then(uze_platform::process::pane::Group::adopt))
             .map(Arc::new);
         let endpoints = pair.master.try_clone_reader().and_then(|reader| {
@@ -178,38 +229,15 @@ impl PaneRuntime {
             &TermSize::new(columns as usize, rows as usize),
             ReplySink::new(reply_sender, palette),
         )));
-        let parser_terminal = Arc::clone(&terminal);
         let selection = Arc::new(Mutex::new(PaneSelection::default()));
-        let parser_selection = Arc::clone(&selection);
-        thread::spawn(move || {
-            let mut reader = reader;
-            let mut parser: Processor = Processor::new();
-            let mut buffer = [0; 8192];
-            loop {
-                match std::io::Read::read(&mut reader, &mut buffer) {
-                    Ok(0) | Err(_) => break,
-                    Ok(read) => {
-                        let mut terminal = parser_terminal.lock().expect("terminal poisoned");
-                        parser.advance(&mut *terminal, &buffer[..read]);
-                        parser_selection
-                            .lock()
-                            .expect("selection poisoned")
-                            .observe(&terminal);
-                        drop(terminal);
-                        let _ = damage.send(id);
-                    }
-                }
-            }
-        });
-        let reply_writer = Arc::clone(&writer);
-        thread::spawn(move || {
-            while let Ok(bytes) = reply_receiver.recv() {
-                if let Ok(mut writer) = reply_writer.lock() {
-                    let _ = writer.write_all(&bytes);
-                    let _ = writer.flush();
-                }
-            }
-        });
+        read_output(
+            id,
+            reader,
+            Arc::clone(&terminal),
+            Arc::clone(&selection),
+            damage,
+        );
+        answer_queries(reply_receiver, Arc::clone(&writer));
         Ok(Self {
             id,
             master: Mutex::new(Some(pair.master)),
@@ -268,12 +296,7 @@ impl PaneRuntime {
             .expect("terminal poisoned")
             .resize(TermSize::new(columns as usize, rows as usize));
     }
-    /// Ends the pane's process and reaps it, on a thread of its own.
-    ///
-    /// `kill` is a SIGHUP with a grace period of up to a fifth of a second
-    /// and then a SIGKILL nobody waits on: done inline it held the request
-    /// that closed the tab for that long, and left every pane whose program
-    /// outlived the grace period a zombie for the life of the server.
+
     /// Ends the pane's process and everything it started, and reaps it,
     /// on a thread of its own: done inline it held the request that closed
     /// the tab, and left a program that outlived its hangup a zombie for
