@@ -34,8 +34,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 2. Compile for Windows (D1, D2)
 
-- [ ] 2.1 Record the baseline `cargo check --workspace --all-targets
+- [x] 2.1 Record the baseline `cargo check --workspace --all-targets
       --target x86_64-pc-windows-msvc` error list in the PR.
+      (Superseded: the baseline was a snapshot of the start, and the branch
+      now builds for both Windows targets with `clippy -D warnings` clean.)
 - [x] 2.2 Add `windows-sys` 0.61 (only the named features) as a
       `cfg(windows)` dependency of `uze-platform`, `uze-core`, `uze-git`,
       `uze-terminal` and the root crate. Make `libc` `cfg(unix)` in
