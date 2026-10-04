@@ -15,6 +15,7 @@ pub mod environment;
 pub mod executable;
 pub mod fs;
 pub mod fs_name;
+pub mod git;
 pub mod home;
 pub mod interrupt;
 pub mod lock;

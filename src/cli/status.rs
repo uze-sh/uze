@@ -96,7 +96,7 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
     if !report.git_found {
         problems.push(format!(
             "git  not found; marketplaces and agent checkouts need it ({})",
-            uze_platform::tools::GIT_INSTALL_HINT
+            uze_platform::git::INSTALL_HINT
         ));
     }
     if report.ssh_missing {

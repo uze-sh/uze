@@ -300,12 +300,7 @@ pub(super) fn create(
     let _ = git(primary, &["worktree", "prune"]);
     let id = CheckoutId::generate();
     let relative = format!("{WORKTREES_DIRECTORY}/{id}");
-    let settings: Vec<String> = uze_platform::tools::GIT_ADDED_CHECKOUT
-        .iter()
-        .flat_map(|(key, value)| ["-c".to_owned(), format!("{key}={value}")])
-        .collect();
-    let mut add: Vec<&str> = settings.iter().map(String::as_str).collect();
-    add.extend(["worktree", "add", "--quiet"]);
+    let mut add = vec!["worktree", "add", "--quiet"];
     match start {
         Start::Branching { base_tip } => add.extend(["-b", branch, "--", &relative, base_tip]),
         Start::Existing => add.extend(["--", &relative, branch]),

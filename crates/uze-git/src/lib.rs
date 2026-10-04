@@ -229,8 +229,14 @@ fn base_command(root: &Path, args: &[&str]) -> Command {
     // Git for Windows cannot open a verbatim `\\?\C:\…` root.
     command
         .arg("-C")
-        .arg(uze_platform::path::strip_verbatim(root))
-        .args(args);
+        .arg(uze_platform::path::strip_verbatim(root));
+    // Every invocation, not only the one that made a checkout: a `-c`
+    // lasts one command, and a long path read by `status` after `worktree
+    // add` wrote it is the same long path.
+    for (key, value) in uze_platform::git::EVERY_INVOCATION {
+        command.arg("-c").arg(format!("{key}={value}"));
+    }
+    command.args(args);
     // A subprocess that stops to ask for a credential never gets an
     // answer: nothing here is attached to a terminal the operator can see.
     command.env("GIT_TERMINAL_PROMPT", "0");
@@ -367,6 +373,24 @@ fn describe_spawn_failure(error: io::Error) -> SpawnError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What the platform needs of every Git invocation reaches every one,
+    /// ahead of the subcommand, where `-c` is read.
+    #[test]
+    fn every_invocation_carries_the_platform_s_settings() {
+        let command = base_command(Path::new("."), &["status"]);
+        let arguments: Vec<String> = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        let subcommand = arguments.iter().position(|argument| argument == "status");
+        for (key, value) in uze_platform::git::EVERY_INVOCATION {
+            let setting = arguments
+                .iter()
+                .position(|argument| *argument == format!("{key}={value}"));
+            assert!(setting.is_some() && setting < subcommand, "{arguments:?}");
+        }
+    }
     use std::{path::PathBuf, time::Instant};
 
     /// A span's name and the `exit` it recorded.

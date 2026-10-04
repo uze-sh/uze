@@ -856,7 +856,7 @@ fn pushed_config(reach: Reach) -> Vec<(String, String)> {
     // A package's bytes are what its commit holds on every machine, or the
     // digest a lock records on one is never reproduced on another.
     config.extend(
-        uze_platform::tools::GIT_FAITHFUL_CHECKOUT
+        uze_platform::git::FAITHFUL_CHECKOUT
             .iter()
             .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
     );
