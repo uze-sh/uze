@@ -38,7 +38,6 @@
 
 use std::{
     env, fs,
-    os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
@@ -209,17 +208,29 @@ fn updated_to(home: &UzeHome, ledger: Ledger) -> Option<String> {
 /// Starts `uze upgrade --background` in a process group of its own, so the Ctrl+C
 /// that ends the next command in this terminal cannot end it too.
 fn hand_off_check() {
-    use std::os::unix::process::CommandExt as _;
     let Ok(binary) = env::current_exe() else {
         return;
     };
-    let _ = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .args(["upgrade", "--background"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .process_group(0)
-        .spawn();
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        command.process_group(0);
+    }
+    // A hidden console of its own: no window flashes, and neither a Ctrl+C
+    // in this terminal nor closing it reaches the check.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let _ = command.spawn();
 }
 
 fn this_binary() -> Option<PathBuf> {
@@ -530,8 +541,8 @@ impl Releases for Published {
     /// API: the redirect carries no rate limit and no JSON, and it is the
     /// same "latest" the installer resolves.
     fn latest(&self) -> Option<String> {
-        let output = Command::new("curl")
-            .args(["-fsSL", "--max-time", "15", "-o", "/dev/null", "-w"])
+        let output = system_tool("curl")
+            .args(["-fsSL", "--max-time", "15", "-o", NULL_DEVICE, "-w"])
             .arg("%{url_effective}")
             .arg(format!("{}/latest", self.base))
             .stdin(Stdio::null())
@@ -543,7 +554,7 @@ impl Releases for Published {
     }
 
     fn changelog(&self, version: &str) -> Option<String> {
-        let output = Command::new("curl")
+        let output = system_tool("curl")
             .args(["-fsSL", "--max-time", "15"])
             .arg(format!("{SOURCES}/v{version}/CHANGELOG.md"))
             .stdin(Stdio::null())
@@ -575,8 +586,8 @@ impl Releases for Published {
             if sha256(&bytes) != expected {
                 return Err(format!("checksum mismatch for {archive}"));
             }
-            let unpack = Command::new("tar")
-                .arg("-xzf")
+            let unpack = system_tool("tar")
+                .arg(if cfg!(windows) { "-xf" } else { "-xzf" })
                 .arg(scratch.join(&archive))
                 .arg("-C")
                 .arg(&unpacked)
@@ -588,15 +599,39 @@ impl Releases for Published {
             if !unpack.success() {
                 return Err(format!("cannot unpack {archive}"));
             }
-            replace(&unpacked.join("uze"), version, target)
+            replace(
+                &unpacked.join(format!("uze{}", env::consts::EXE_SUFFIX)),
+                version,
+                target,
+            )
         })();
         let _ = fs::remove_dir_all(&scratch);
         result
     }
 }
 
+/// Where the null device is, for a tool told to write somewhere.
+const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
+
+/// `curl` and `tar` as the system ships them. On Windows they live in
+/// System32 and are called by that path: under Windows PowerShell `curl` is
+/// an alias for something else, and a `tar` earlier on `PATH` (Git's GNU
+/// tar) cannot read the zip a Windows release is.
+fn system_tool(name: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let system =
+            env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
+        Command::new(system.join("System32").join(format!("{name}.exe")))
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new(name)
+    }
+}
+
 fn fetch(url: &str, to: &Path) -> Result<(), String> {
-    let status = Command::new("curl")
+    let status = system_tool("curl")
         .args(["-fsSL", "--max-time", "300", "-o"])
         .arg(to)
         .arg(url)
@@ -615,8 +650,7 @@ fn fetch(url: &str, to: &Path) -> Result<(), String> {
 /// release it claims to be — the same last step `install.sh` takes, and for
 /// the same reason: a file that does not run is worse than an old one.
 fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
-    fs::set_permissions(staged, fs::Permissions::from_mode(0o755))
-        .map_err(|error| error.to_string())?;
+    make_executable(staged).map_err(|error| error.to_string())?;
     let reported = Command::new(staged)
         .arg("--version")
         .stdin(Stdio::null())
@@ -629,17 +663,99 @@ fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
     // Beside the target, so the rename below never crosses a filesystem —
     // which is the only way it stays a rename rather than a copy that a
     // pane's shim could catch half-written.
-    let beside = target.with_file_name(format!(".uze-update-{}", std::process::id()));
+    let beside = target.with_file_name(format!(
+        ".uze-update-{}{}",
+        std::process::id(),
+        env::consts::EXE_SUFFIX
+    ));
     let placed = (|| {
         fs::copy(staged, &beside)?;
-        fs::set_permissions(&beside, fs::Permissions::from_mode(0o755))?;
+        make_executable(&beside)?;
         fs::File::open(&beside)?.sync_all()?;
-        fs::rename(&beside, target)
+        swap_in(&beside, target)
     })();
     if placed.is_err() {
         let _ = fs::remove_file(&beside);
     }
     placed.map_err(|error| format!("cannot replace {}: {error}", target.display()))
+}
+
+#[cfg(unix)]
+fn make_executable(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// One rename over the target, where the platform allows renaming over a
+/// running executable.
+#[cfg(not(windows))]
+fn swap_in(new: &Path, target: &Path) -> std::io::Result<()> {
+    fs::rename(new, target)
+}
+
+/// Windows refuses to replace an image that is running, but lets it be
+/// renamed: the running one steps aside under a name the next start
+/// sweeps (see [`sweep_set_aside`]), the new one takes its place, and a
+/// failure halfway puts the old one back.
+#[cfg(windows)]
+fn swap_in(new: &Path, target: &Path) -> std::io::Result<()> {
+    let aside = set_aside_name(target);
+    let had_target = target.exists();
+    if had_target {
+        fs::rename(target, &aside)?;
+    }
+    match fs::rename(new, target) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            if had_target {
+                let _ = fs::rename(&aside, target);
+            }
+            Err(error)
+        }
+    }
+}
+
+#[cfg(windows)]
+fn set_aside_name(target: &Path) -> PathBuf {
+    let name = target
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "uze.exe".into());
+    target.with_file_name(format!("{name}.old-{}", std::process::id()))
+}
+
+/// Removes the images an upgrade set aside beside the running binary, once
+/// nothing runs them: Windows refuses to delete a running image, so a
+/// removal that fails is simply tried again at a later start.
+pub fn sweep_set_aside() {
+    #[cfg(windows)]
+    {
+        let Ok(running) = env::current_exe() else {
+            return;
+        };
+        let (Some(directory), Some(name)) = (running.parent(), running.file_name()) else {
+            return;
+        };
+        let prefix = format!("{}.old-", name.to_string_lossy()).to_ascii_lowercase();
+        let Ok(entries) = fs::read_dir(directory) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .starts_with(&prefix)
+            {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
 }
 
 /// The asset `install.sh` would pick for this machine. Where the installer
@@ -650,13 +766,14 @@ fn asset() -> Option<String> {
         arch @ ("x86_64" | "aarch64") => arch,
         _ => return None,
     };
-    let platform = match env::consts::OS {
-        "macos" => format!("{arch}-macos"),
-        "linux" if cfg!(target_env = "musl") => format!("{arch}-linux-musl"),
-        "linux" => format!("{arch}-linux-gnu"),
+    let (platform, extension) = match env::consts::OS {
+        "macos" => (format!("{arch}-macos"), "tar.gz"),
+        "linux" if cfg!(target_env = "musl") => (format!("{arch}-linux-musl"), "tar.gz"),
+        "linux" => (format!("{arch}-linux-gnu"), "tar.gz"),
+        "windows" => (format!("{arch}-windows"), "zip"),
         _ => return None,
     };
-    Some(format!("uze-{platform}.tar.gz"))
+    Some(format!("uze-{platform}.{extension}"))
 }
 
 /// The version a release page's address names — `…/releases/tag/v1.2.3`.
@@ -807,6 +924,8 @@ fn unix_now() -> u64 {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
     use uze_testkit::temp::TempDir;
 
     #[test]

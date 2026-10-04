@@ -63,6 +63,7 @@ fn main() {
     if let Some(name) = shim::detect() {
         shim::run(&name);
     }
+    uze::self_update::sweep_set_aside();
 
     // Help is presentation-only, but every public command routes through the
     // same renderer before Clap can emit its unstyled generated help.

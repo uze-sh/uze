@@ -40,7 +40,15 @@ use uze_workspace::{continuity, conversation::Claim};
 /// unchanged, including a direct `uze` invocation.
 pub fn detect() -> Option<String> {
     let argv0 = env::args_os().next()?;
-    let name = Path::new(&argv0).file_name()?.to_str()?.to_owned();
+    // Windows runs a shim as `claude.exe`, in whatever case it was typed.
+    let name = if cfg!(windows) {
+        Path::new(&argv0)
+            .file_stem()?
+            .to_str()?
+            .to_ascii_lowercase()
+    } else {
+        Path::new(&argv0).file_name()?.to_str()?.to_owned()
+    };
     let home = UzeHome::from_env().ok()?;
     let registry = IntegrationRegistry::builtin(&home).ok()?;
     registry

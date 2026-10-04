@@ -13,6 +13,7 @@
 //!   and before any install, through the same parsers the delivery engine
 //!   uses. Never a second grammar.
 
+use crate::path::Canonical as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -348,13 +349,16 @@ fn write_plugin_files(
         write_file(&guard, include_str!("authoring/guard.sh"))?;
         // A hook command the harness cannot run is the 127 that fails the
         // group silently; the stub ships runnable.
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&guard, fs::Permissions::from_mode(0o755)).map_err(|source| {
-            UzeError::Write {
-                path: guard.clone(),
-                source,
-            }
-        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&guard, fs::Permissions::from_mode(0o755)).map_err(|source| {
+                UzeError::Write {
+                    path: guard.clone(),
+                    source,
+                }
+            })?;
+        }
     }
     if caps.mcp {
         write_file(
@@ -510,7 +514,7 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
     let mut findings = Vec::new();
     // First, as on install: nothing below may read through a link that
     // leaves the plugin.
-    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let canonical = root.canonical().unwrap_or_else(|_| root.to_path_buf());
     if let Err(error) = store::assert_self_contained(&canonical) {
         findings.push(error.to_string());
         return Ok(ValidationReport {

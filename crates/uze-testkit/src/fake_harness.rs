@@ -204,11 +204,7 @@ impl FakeHarnessBuilder {
     /// Writes the executable into `bin_dir` with mode 0o755 and returns the
     /// ready-to-assert handle.
     pub fn build(self) -> FakeHarness {
-        #[cfg(not(unix))]
-        panic!(
-            "FakeHarness generates POSIX sh scripts; supported on Unix only ({})",
-            self.name
-        );
+        unix_only(&self.name);
 
         let (script_path, log_path) = {
             let script_path = self.bin_dir.join(&self.name);
@@ -252,23 +248,13 @@ impl FakeHarnessBuilder {
 
         script.push_str("esac\nexit 0\n");
 
-        use std::os::unix::fs::PermissionsExt;
         std::fs::write(&script_path, script).unwrap_or_else(|error| {
             panic!(
                 "FakeHarness: failed to write {}: {error}",
                 script_path.display()
             )
         });
-        let mut permissions = std::fs::metadata(&script_path)
-            .unwrap_or_else(|error| {
-                panic!(
-                    "FakeHarness: failed to stat {}: {error}",
-                    script_path.display()
-                )
-            })
-            .permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(&script_path, permissions).unwrap();
+        make_executable(&script_path);
 
         FakeHarness {
             name: self.name,
@@ -561,8 +547,7 @@ impl FakeHarness {
     /// the commits an agent makes and how it answers a message, and asserts
     /// on Git instead of on a transcript.
     pub fn scripted_agent(bin_dir: &Path, name: &str) -> FakeHarness {
-        #[cfg(not(unix))]
-        panic!("FakeHarness generates POSIX sh scripts; supported on Unix only ({name})");
+        unix_only(name);
         let invocations_dir = bin_dir.join(".invocations");
         std::fs::create_dir_all(&invocations_dir).unwrap_or_else(|error| {
             panic!(
@@ -577,8 +562,7 @@ impl FakeHarness {
                 script_path.display()
             )
         });
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        make_executable(&script_path);
         FakeHarness {
             name: name.to_owned(),
             script_path,
@@ -778,4 +762,24 @@ impl Standard<'_> {
             .on_prefix(["--session-id"], conversation())
             .on_prefix(["--resume"], conversation())
     }
+}
+
+#[cfg(unix)]
+fn make_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .unwrap_or_else(|error| panic!("FakeHarness: failed to chmod {}: {error}", path.display()));
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) {}
+
+/// The fakes are POSIX `sh` scripts until they dispatch through
+/// `uze-fake-harness`; on any other platform a test reaching one fails here
+/// with the reason, rather than on a script nothing can run.
+fn unix_only(name: &str) {
+    #[cfg(not(unix))]
+    panic!("FakeHarness generates POSIX sh scripts; supported on Unix only ({name})");
+    #[cfg(unix)]
+    let _ = name;
 }
