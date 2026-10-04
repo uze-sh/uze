@@ -16,7 +16,7 @@ use std::{
 
 pub use uze_platform::{
     fs_name::file_name_for,
-    path::{canonical, identity, is_anchored, same_path, strip_verbatim},
+    path::{canonical, identity, is_anchored, is_within, same_path, strip_verbatim},
 };
 
 /// A relative path as every platform spells it: components joined by `/`.

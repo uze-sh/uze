@@ -71,7 +71,7 @@ fn mirror_link(link: &Path, destination: &Path, package_root: &Path) -> Result<(
         path: link.to_path_buf(),
         source: error,
     })?;
-    if !resolved.starts_with(package_root) {
+    if !uze_core::path::is_within(&resolved, package_root) {
         return Err(UzeError::ExposureUnavailable(format!(
             "a generated envelope refuses symlink `{}`: it resolves outside the package",
             link.display()

@@ -34,6 +34,20 @@ pub fn same_path(a: &Path, b: &Path) -> bool {
     identity(a) == identity(b)
 }
 
+/// Whether `path` is `root` or lies under it, by the platform's rules: on
+/// Windows whatever the case and separators either is spelled with.
+pub fn is_within(path: &Path, root: &Path) -> bool {
+    let (path, root) = (
+        identity(&strip_verbatim(path)),
+        identity(&strip_verbatim(root)),
+    );
+    let root = root.trim_end_matches(std::path::MAIN_SEPARATOR);
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|rest| rest.starts_with(std::path::MAIN_SEPARATOR))
+}
+
 /// A path as a command-line tool printed it, in this platform's spelling.
 pub fn from_tool_output(printed: &str) -> PathBuf {
     imp::from_tool_output(printed)
@@ -108,6 +122,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_path_is_within_its_root_and_not_a_sibling_sharing_its_prefix() {
+        let root = Path::new("/work/project");
+        assert!(is_within(Path::new("/work/project"), root));
+        assert!(is_within(Path::new("/work/project/a/b"), root));
+        assert!(!is_within(Path::new("/work/project-two"), root));
+        assert!(!is_within(Path::new("/work"), root));
+    }
+
+    #[test]
     fn a_rooted_path_is_anchored() {
         assert!(is_anchored(Path::new("/etc")));
         assert!(!is_anchored(Path::new("packages/inner")));
@@ -124,6 +147,11 @@ mod tests {
             Path::new("c:/users/a/proj")
         ));
         assert_eq!(from_tool_output("C:/a/b"), PathBuf::from(r"C:\a\b"));
+        assert!(is_within(
+            Path::new("C:/Users/A/proj/.worktrees/x"),
+            Path::new(r"\\?\c:\users\a\proj")
+        ));
+        assert!(is_within(Path::new(r"C:\anything"), Path::new(r"C:\")));
     }
 
     #[cfg(unix)]

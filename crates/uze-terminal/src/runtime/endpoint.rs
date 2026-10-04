@@ -351,7 +351,7 @@ pub(super) fn path_with_first(
         .map(|path| env::split_paths(&path).collect::<Vec<_>>())
         .unwrap_or_default()
         .into_iter()
-        .filter(|entry| entry != first);
+        .filter(|entry| !uze_platform::path::same_path(entry, first));
     env::join_paths(std::iter::once(first.to_path_buf()).chain(rest))
         .unwrap_or_else(|_| first.as_os_str().to_owned())
 }

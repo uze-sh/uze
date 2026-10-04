@@ -144,12 +144,16 @@ fn resolve_real_executable_in(
         // network filesystem. Only an entry that could *be* the shims
         // directory — same final component — is worth resolving; every
         // other entry is compared as spelled.
-        let could_be_shims = dir == shims_dir
-            || (dir.file_name().is_some() && dir.file_name() == shims_dir.file_name());
+        let could_be_shims = crate::path::same_path(&dir, shims_dir)
+            || dir.file_name().is_some_and(|name| {
+                shims_dir
+                    .file_name()
+                    .is_some_and(|shims| crate::path::same_path(Path::new(name), Path::new(shims)))
+            });
         let is_shims_dir = could_be_shims
             && match (dir.canonical().ok(), &canonical_shims_dir) {
-                (Some(a), Some(b)) => &a == b,
-                _ => dir == shims_dir,
+                (Some(a), Some(b)) => crate::path::same_path(&a, b),
+                _ => crate::path::same_path(&dir, shims_dir),
             };
         if is_shims_dir {
             continue;
@@ -168,8 +172,10 @@ fn resolve_real_executable_in(
             // to UZE all the same.
             let leads_back_to_uze = canonical_shims_dir
                 .as_ref()
-                .is_some_and(|shims| resolved.starts_with(shims))
-                || running.as_ref() == Some(&resolved);
+                .is_some_and(|shims| crate::path::is_within(&resolved, shims))
+                || running
+                    .as_ref()
+                    .is_some_and(|running| crate::path::same_path(running, &resolved));
             if !leads_back_to_uze {
                 return Some(resolved);
             }

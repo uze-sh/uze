@@ -98,7 +98,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - `uze-terminal` `state.rs:55` and `runtime/lock.rs:12` call
         `home_dir()` locally.
       - `run_captured` sets `USERPROFILE` as well.
-- [ ] 3.7 Paths: `strip_verbatim`, `same_path` (ordinal, case- and
+- [x] 3.7 Paths: `strip_verbatim`, `same_path` (ordinal, case- and
       separator-insensitive on Windows) and `display` in `uze-core`,
       re-exported through `uze-application` for `src/`.
       - Route the comparing sites through them: `harness_runtime.rs:105-130`,
@@ -106,6 +106,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         `uze-git/repository.rs:72`, `checkout/accounting.rs`.
       - `uze-terminal` `endpoint.rs:391` `path_with_first` uses its own copy.
       - `project_id_for` normalizes once, internally.
+      (Done: `uze_platform::path::is_within` beside `same_path`; the shims
+      directory and running image in `harness_runtime`, a checkout's owner
+      in `accounting`, a link's containment in `shared/tree.rs` and
+      `path_with_first` compare by them. `project_id_for` hashes
+      `identity`.)
 - [x] 3.8 Locators: `forge.rs:378-443` accepts `C:\`, `.\`, `..\` and `~\`;
       in `acquisition.rs:232-241` a drive letter is never `host:`.
 - [x] 3.9 One sharing-violation wait, `uze_platform::fs::rename`: on
