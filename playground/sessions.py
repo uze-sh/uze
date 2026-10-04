@@ -74,7 +74,19 @@ def claude():
         for k, v in oauth.items()
         if k not in ("refreshToken", "refreshTokenExpiresAt")
     }
-    return {".claude/.credentials.json": {"claudeAiOauth": lent}}, remaining
+    # The interactive client also asks its state file which account it is
+    # signed in as, and opens on the sign-in flow without it; `claude -p`
+    # never looks. Only those fields go, none of this machine's history.
+    state = read_json(HOME / ".claude.json") or {}
+    account = {
+        key: state[key]
+        for key in ("oauthAccount", "hasCompletedOnboarding", "lastOnboardingVersion")
+        if key in state
+    }
+    return {
+        ".claude/.credentials.json": {"claudeAiOauth": lent},
+        ".claude.json": account,
+    }, remaining
 
 
 def codex():
