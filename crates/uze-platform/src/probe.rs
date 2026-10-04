@@ -63,6 +63,14 @@ pub fn parent_of(pid: u32) -> Option<u32> {
     platform::parent_of(pid)
 }
 
+/// The process group in the foreground of the terminal `pid` is attached
+/// to: the one a person typing there talks to. `None` with no terminal, or
+/// where the kernel keeps no such thing (Windows; see
+/// [`crate::process::foreground`]).
+pub fn terminal_foreground_of(pid: u32) -> Option<u32> {
+    platform::terminal_foreground_of(pid)
+}
+
 /// The working directory of every other process of this user, or `None`
 /// when the process table cannot be enumerated at all. This process and
 /// the ones it started are left out. A process that exits while being read,
@@ -122,6 +130,20 @@ mod platform {
 
     pub(super) fn parent_of(pid: u32) -> Option<u32> {
         parent_in(std::path::Path::new(&format!("/proc/{pid}")))
+    }
+
+    /// `tpgid`, the sixth field after the command name; `-1` with no
+    /// controlling terminal.
+    pub(super) fn terminal_foreground_of(pid: u32) -> Option<u32> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let (_, after_name) = stat.rsplit_once(')')?;
+        after_name
+            .split_whitespace()
+            .nth(5)?
+            .parse::<i64>()
+            .ok()?
+            .try_into()
+            .ok()
     }
 
     pub(super) fn command_name_of(pid: u32) -> Option<String> {
@@ -292,6 +314,24 @@ mod platform {
             )
         };
         (read == size).then_some(info.pbi_ppid)
+    }
+
+    pub(super) fn terminal_foreground_of(pid: u32) -> Option<u32> {
+        let pid = libc::pid_t::try_from(pid).ok()?;
+        // SAFETY: plain C data for which all-zero is valid.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+        // SAFETY: `info` is `size` bytes, the size this flavor fills.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&raw mut info).cast::<libc::c_void>(),
+                size,
+            )
+        };
+        (read == size && info.e_tpgid != 0).then_some(info.e_tpgid)
     }
 
     /// The short name Darwin records for the running image.
@@ -500,6 +540,10 @@ mod platform {
         None
     }
 
+    pub(super) fn terminal_foreground_of(_pid: u32) -> Option<u32> {
+        None
+    }
+
     pub(super) fn environment_value_of(_pid: u32, _key: &str) -> Option<String> {
         None
     }
@@ -579,6 +623,11 @@ mod platform {
             )
         };
         (status >= 0).then_some(basic.InheritedFromUniqueProcessId as u32)
+    }
+
+    /// A console has no foreground group to name.
+    pub(super) fn terminal_foreground_of(_pid: u32) -> Option<u32> {
+        None
     }
 
     pub(super) fn command_name_of(pid: u32) -> Option<String> {

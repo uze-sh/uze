@@ -432,3 +432,92 @@ impl Group {
         ids.iter().map(|&id| id as u32).collect()
     }
 }
+
+pub(super) fn foreground(
+    _leader: u32,
+    group: Option<&Group>,
+    passes_on: impl Fn(&super::Member, &super::Member) -> bool,
+) -> Option<u32> {
+    let members: Vec<super::Member> = group?
+        .members()
+        .into_iter()
+        .filter_map(|pid| {
+            let name = crate::probe::command_name_of(pid)?;
+            let parent = crate::probe::parent_of(pid);
+            // The pseudoconsole's own host, which hands nothing on.
+            (!name.eq_ignore_ascii_case("conhost")).then_some(super::Member { pid, parent, name })
+        })
+        .collect();
+    in_front(&members, passes_on)
+}
+
+/// From the member no other member started, down through each that
+/// `passes_on`, newest child first, to the first that keeps the console.
+fn in_front(
+    members: &[super::Member],
+    passes_on: impl Fn(&super::Member, &super::Member) -> bool,
+) -> Option<u32> {
+    let is_member = |pid: u32| members.iter().any(|member| member.pid == pid);
+    let mut holder = members
+        .iter()
+        .find(|member| member.parent.is_none_or(|parent| !is_member(parent)))?;
+    while let Some(child) = members
+        .iter()
+        .rev()
+        .find(|child| child.parent == Some(holder.pid) && passes_on(holder, child))
+    {
+        holder = child;
+    }
+    Some(holder.pid)
+}
+
+pub(super) fn finding_command(program: &str, _arguments: &str) -> String {
+    format!("`Get-Process {program}`")
+}
+
+#[cfg(test)]
+mod foreground_tests {
+    use super::in_front;
+    use crate::process::Member;
+
+    fn member(pid: u32, parent: u32, name: &str) -> Member {
+        Member {
+            pid,
+            parent: Some(parent),
+            name: name.to_owned(),
+        }
+    }
+
+    fn shells_and_launchers(holder: &Member, child: &Member) -> bool {
+        holder.name == "pwsh" || child.name == "opencode" && holder.name == "shim"
+    }
+
+    /// What an agent starts while it works is its own, and the agent stays
+    /// in front of the pane through every one of them.
+    #[test]
+    fn an_agent_stays_in_front_while_its_children_come_and_go() {
+        let pane = [
+            member(10, 1, "pwsh"),
+            member(11, 10, "opencode"),
+            member(12, 11, "git"),
+            member(13, 11, "rg"),
+        ];
+        assert_eq!(in_front(&pane, shells_and_launchers), Some(11));
+        assert_eq!(in_front(&pane[..2], shells_and_launchers), Some(11));
+    }
+
+    /// A harness run through a launcher is in front, not the launcher
+    /// waiting on it; a shell with nothing running is.
+    #[test]
+    fn the_console_is_followed_through_shells_and_the_launcher_only() {
+        let launched = [
+            member(10, 1, "pwsh"),
+            member(11, 10, "shim"),
+            member(12, 11, "opencode"),
+            member(13, 12, "node"),
+        ];
+        assert_eq!(in_front(&launched, shells_and_launchers), Some(12));
+        assert_eq!(in_front(&launched[..1], shells_and_launchers), Some(10));
+        assert_eq!(in_front(&[], shells_and_launchers), None);
+    }
+}

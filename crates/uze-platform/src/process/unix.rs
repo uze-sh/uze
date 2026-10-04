@@ -199,6 +199,18 @@ impl Group {
     }
 }
 
+pub(super) fn foreground(
+    leader: u32,
+    _group: Option<&Group>,
+    _passes_on: impl Fn(&super::Member, &super::Member) -> bool,
+) -> Option<u32> {
+    crate::probe::terminal_foreground_of(leader)
+}
+
+pub(super) fn finding_command(program: &str, arguments: &str) -> String {
+    format!("`pgrep -fa '{program} {arguments}'`")
+}
+
 #[cfg(test)]
 mod tests {
     /// `kill(2)` reads `0` as the caller's own process group and a negative

@@ -142,7 +142,7 @@ pub(super) fn serves_this_build(socket: &Path) -> bool {
 /// or directory` about a path the operator never typed.
 pub(super) fn unreachable(socket: &Path, cause: Option<RuntimeError>) -> RuntimeError {
     let because = cause.map_or_else(String::new, |cause| format!(" ({cause})"));
-    let find = host::FIND_SERVER;
+    let find = host::find_server();
     RuntimeError::Protocol(format!(
         "a uze is serving this workspace and answers nowhere this build looks — not at \
          {}{because} — and the claim does not name it, so it is older than this build's \

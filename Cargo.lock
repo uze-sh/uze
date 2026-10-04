@@ -3302,7 +3302,6 @@ dependencies = [
  "uze-document",
  "uze-platform",
  "uze-testkit",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

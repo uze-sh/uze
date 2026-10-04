@@ -10,6 +10,7 @@
 pub mod clock;
 pub mod cpu;
 pub mod desktop;
+pub mod endpoint;
 pub mod environment;
 pub mod executable;
 pub mod fs;

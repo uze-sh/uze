@@ -443,18 +443,9 @@ impl TestEnvironment {
     }
 }
 
-/// `canonicalize`, without the `\\?\` prefix Windows adds: production code
-/// canonicalizes through `uze_core::path::canonical`, which drops it, and a
-/// scratch path must compare equal to what that hands back.
+/// `canonicalize`, as production code canonicalizes (without the verbatim
+/// prefix Windows adds), so a scratch path compares equal to what that
+/// hands back.
 fn canonical(path: &Path) -> std::io::Result<PathBuf> {
-    let resolved = path.canonicalize()?;
-    #[cfg(windows)]
-    if let Some(rest) = resolved
-        .to_str()
-        .and_then(|text| text.strip_prefix(r"\\?\"))
-        && !rest.starts_with("UNC\\")
-    {
-        return Ok(PathBuf::from(rest));
-    }
-    Ok(resolved)
+    uze_platform::path::canonical(path)
 }

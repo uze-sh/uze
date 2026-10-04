@@ -57,7 +57,7 @@ use windows_sys::Win32::{
     },
 };
 
-use uze_platform::{process::current_user, win::wide};
+use crate::{process::current_user, win::wide};
 
 const BUFFER: u32 = 64 * 1024;
 
@@ -555,8 +555,7 @@ pub fn pair() -> io::Result<(Stream, Stream)> {
 /// An endpoint a test owns, named after its scratch `directory`: the pipe
 /// namespace is machine-wide, so the directory is what keeps two tests
 /// apart.
-#[cfg(test)]
-pub(crate) fn scratch_endpoint(directory: &Path, name: &str) -> PathBuf {
+pub fn scratch_endpoint(directory: &Path, name: &str) -> PathBuf {
     let directory = directory
         .as_os_str()
         .as_encoded_bytes()

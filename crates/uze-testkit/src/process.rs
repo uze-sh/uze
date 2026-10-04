@@ -18,25 +18,12 @@ pub fn profile(home: &Path) -> Vec<(&'static str, PathBuf)> {
         ("HOME", home.to_path_buf()),
         ("USERPROFILE", home.to_path_buf()),
     ];
-    for (variable, directory) in profile_directories::DIRECTORIES {
+    for (variable, directory) in uze_platform::home::PROFILE_DIRECTORIES {
         let directory = home.join(directory);
         let _ = std::fs::create_dir_all(&directory);
         variables.push((variable, directory));
     }
     variables
-}
-
-#[cfg(not(windows))]
-mod profile_directories {
-    pub(super) const DIRECTORIES: [(&str, &str); 0] = [];
-}
-
-#[cfg(windows)]
-mod profile_directories {
-    pub(super) const DIRECTORIES: [(&str, &str); 2] = [
-        ("APPDATA", r"AppData\Roaming"),
-        ("LOCALAPPDATA", r"AppData\Local"),
-    ];
 }
 
 /// Held by every test that installs a Ctrl+C watch or raises an interrupt:
@@ -76,30 +63,14 @@ pub fn path_with(first: &[&Path]) -> OsString {
     std::env::join_paths(directories).unwrap_or_else(|error| panic!("PATH does not join: {error}"))
 }
 
-#[cfg(unix)]
+/// The system's own tools, after the directory Git is in where the
+/// ambient `PATH` has it: a test runs Git, and a system without it in its
+/// own directories (Windows) still finds it.
 fn system_directories() -> Vec<PathBuf> {
-    vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")]
-}
-
-/// Git's own directory, found where the ambient `PATH` has it, and the
-/// system's: `System32` and Windows PowerShell, which every authored
-/// command runs in.
-#[cfg(windows)]
-fn system_directories() -> Vec<PathBuf> {
-    let system = std::env::var_os("SystemRoot")
-        .map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from)
-        .join("System32");
-    let git = std::env::var_os("PATH")
-        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-        .unwrap_or_default()
+    uze_platform::executable::on_path("git")
+        .and_then(|git| git.parent().map(Path::to_path_buf))
         .into_iter()
-        .find(|directory| {
-            uze_platform::executable::candidates(directory, "git")
-                .iter()
-                .any(|candidate| candidate.is_file())
-        });
-    git.into_iter()
-        .chain([system.join("WindowsPowerShell").join("v1.0"), system])
+        .chain(uze_platform::tools::system_directories())
         .collect()
 }
 
@@ -146,45 +117,6 @@ impl IsolatedHome for Command {
 /// Writes `bytes` to `path` as an executable, through a process that has
 /// exited before this returns (see the Unix half for why).
 pub fn install_executable(path: &Path, bytes: &[u8]) {
-    executable::install_executable(path, bytes)
-}
-
-#[cfg(unix)]
-mod executable {
-    use std::path::Path;
-    use std::process::{Command, Stdio};
-
-    /// A file cannot be `exec`ed while any descriptor to it is open for
-    /// writing, and a test binary spawns from several threads at once: a
-    /// descriptor this process opens is copied into every child a sibling
-    /// test forks, until that child's own `exec` closes it. That instant is
-    /// the kernel's `ETXTBSY`, and it belongs to the harness, not to the
-    /// test. Writing through a child of our own leaves the descriptor in a
-    /// process that is gone — waited on — by the time anything runs the
-    /// file.
-    pub(super) fn install_executable(path: &Path, bytes: &[u8]) {
-        let mut writer = Command::new("sh")
-            .args(["-c", r#"cat > "$1" && chmod 0755 "$1""#, "sh"])
-            .arg(path)
-            .stdin(Stdio::piped())
-            .spawn()
-            .expect("a POSIX shell is on PATH");
-        let mut stdin = writer.stdin.take().expect("stdin is piped");
-        std::io::Write::write_all(&mut stdin, bytes).expect("the writer reads its whole input");
-        drop(stdin);
-        let status = writer.wait().expect("the writer is waited on");
-        assert!(status.success(), "installing {}: {status}", path.display());
-    }
-}
-
-#[cfg(windows)]
-mod executable {
-    use std::path::Path;
-
-    /// Windows runs what a file holds without an executable bit, and a
-    /// handle another process inherited does not keep it from starting.
-    pub(super) fn install_executable(path: &Path, bytes: &[u8]) {
-        std::fs::write(path, bytes)
-            .unwrap_or_else(|error| panic!("installing {}: {error}", path.display()));
-    }
+    uze_platform::executable::install(path, bytes)
+        .unwrap_or_else(|error| panic!("installing {}: {error}", path.display()));
 }

@@ -46,9 +46,27 @@ pub fn expand(typed: &str) -> PathBuf {
     }
 }
 
+/// The directories a user's profile names by variable beside the home,
+/// relative to it: `APPDATA` and `LOCALAPPDATA` on Windows, where a program
+/// looks for them before it looks at the home; none on Unix.
+pub const PROFILE_DIRECTORIES: &[(&str, &str)] = imp::PROFILE_DIRECTORIES;
+
+/// A directory a long-running process can stand in without holding
+/// anybody's work in use: `/` on Unix. Windows has none every user may
+/// stand in that is nobody's checkout, so the person's home, theirs alone.
+pub fn unclaimed_directory() -> PathBuf {
+    imp::unclaimed_directory()
+}
+
 #[cfg(unix)]
 mod imp {
     use std::path::PathBuf;
+
+    pub(super) fn unclaimed_directory() -> PathBuf {
+        PathBuf::from("/")
+    }
+
+    pub(super) const PROFILE_DIRECTORIES: &[(&str, &str)] = &[];
 
     pub(super) const VARIABLE: &str = "HOME";
     pub(super) const VARIABLES: &[&str] = &["HOME"];
@@ -61,6 +79,15 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use std::path::PathBuf;
+
+    pub(super) fn unclaimed_directory() -> PathBuf {
+        user_home().unwrap_or_else(std::env::temp_dir)
+    }
+
+    pub(super) const PROFILE_DIRECTORIES: &[(&str, &str)] = &[
+        ("APPDATA", r"AppData\Roaming"),
+        ("LOCALAPPDATA", r"AppData\Local"),
+    ];
 
     pub(super) const VARIABLE: &str = "USERPROFILE";
     pub(super) const VARIABLES: &[&str] = &["USERPROFILE", "HOME"];

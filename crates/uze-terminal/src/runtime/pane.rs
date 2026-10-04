@@ -16,6 +16,9 @@ pub(super) struct PaneRuntime {
     /// while the leader is alive: once a finished leader is reaped, what it
     /// left running is still in it. See [`PaneRuntime::end_leftovers`].
     pub(super) group: Option<Arc<uze_platform::process::Group>>,
+    /// The pid of the pane's program, read once at spawn: `child` is held
+    /// for the whole of a stop, and a foreground read must not wait on it.
+    pub(super) leader: Option<u32>,
     pub(super) terminal: Arc<Mutex<Term<ReplySink>>>,
     /// What this pane was spawned as — kept so a workspace restart can
     /// respawn the same launch in the same tab (see [`Server::persist`]),
@@ -151,8 +154,8 @@ impl PaneRuntime {
             .slave
             .spawn_command(command)
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let group = child
-            .process_id()
+        let leader = child.process_id();
+        let group = leader
             .and_then(uze_platform::process::Group::adopt)
             .map(Arc::new);
         let endpoints = pair.master.try_clone_reader().and_then(|reader| {
@@ -211,6 +214,7 @@ impl PaneRuntime {
             master: Mutex::new(Some(pair.master)),
             writer,
             child: Arc::new(Mutex::new(child)),
+            leader,
             group,
             terminal,
             launch,
@@ -345,8 +349,7 @@ impl PaneRuntime {
     /// The process in the foreground of this pane, as the platform knows
     /// it (see [`host::foreground`]).
     fn foreground_process(&self) -> Option<u32> {
-        let master = self.master.lock().expect("master poisoned");
-        host::foreground(&**master.as_ref()?, self.group.as_deref())
+        host::foreground(self.leader?, self.group.as_deref())
     }
 
     pub(super) fn snapshot(&self) -> PaneSnapshot {

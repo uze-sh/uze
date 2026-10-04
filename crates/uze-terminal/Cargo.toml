@@ -31,27 +31,10 @@ serde_json = { version = "1", features = ["preserve_order"] }
 bincode = "=1.3.3"
 thiserror = "2"
 
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-# The Windows backend: named pipes, Job Objects and the process facts the
-# kernel holds. Published by Microsoft and already in the tree through
-# portable-pty; only the API families named here are compiled.
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = [
-  "Win32_Foundation",
-  "Win32_Security",
-  "Win32_Security_Authorization",
-  "Win32_Storage_FileSystem",
-  "Win32_System_IO",
-  "Win32_System_Pipes",
-  "Win32_System_Threading",
-  "Win32_System_JobObjects",
-  "Win32_System_Diagnostics_ToolHelp",
-  "Win32_System_Diagnostics_Debug",
-  "Win32_System_Kernel",
-  "Wdk_System_Threading",
-] }
-
 [dev-dependencies]
 uze-testkit = { path = "../uze-testkit" }
+
+# The tests reach the kernel directly to plant a FIFO and to watch a child
+# exit; the runtime itself asks only `uze-platform`.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"

@@ -16,7 +16,7 @@ pub use std::os::unix::net::{UnixListener as Listener, UnixStream as Stream};
 /// limit and nothing about which directory exhausted it. The smaller of the
 /// two, less a little, is what [`endpoint`] holds itself to, so the same
 /// directory is usable on either platform.
-pub(crate) const MAX_SOCKET_PATH: usize = 100;
+pub const MAX_SOCKET_PATH: usize = 100;
 
 /// Beside the workspace, under `home`, unless that path is too long for a
 /// socket: then the session's runtime directory, the system temp dir and
@@ -90,7 +90,7 @@ pub fn accept(listener: &Listener) -> io::Result<Stream> {
 }
 
 pub fn peer_pid(stream: &Stream) -> Option<u32> {
-    uze_platform::probe::socket_peer(stream)
+    crate::probe::socket_peer(stream)
 }
 
 /// Removes the socket file a stopped server leaves.
@@ -160,7 +160,6 @@ pub fn pair() -> io::Result<(Stream, Stream)> {
 }
 
 /// An endpoint a test owns: a socket file in its scratch `directory`.
-#[cfg(test)]
-pub(crate) fn scratch_endpoint(directory: &Path, name: &str) -> PathBuf {
+pub fn scratch_endpoint(directory: &Path, name: &str) -> PathBuf {
     directory.join(name)
 }

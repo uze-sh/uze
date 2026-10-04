@@ -37,7 +37,7 @@ mod pane;
 mod persist;
 mod process;
 mod server;
-mod transport;
+use uze_platform::endpoint as transport;
 
 pub use endpoint::*;
 pub use framing::*;

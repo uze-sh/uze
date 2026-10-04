@@ -2,8 +2,8 @@
 //! short enough for `sun_path`, and left behind by a server that crashed.
 
 use super::*;
-use crate::runtime::transport::MAX_SOCKET_PATH;
 use std::os::unix::fs::PermissionsExt;
+use uze_platform::endpoint::MAX_SOCKET_PATH;
 
 /// `XDG_RUNTIME_DIR` is somebody else's variable and can be arbitrarily
 /// deep. A socket path that does not fit `sun_path` fails at `bind` with

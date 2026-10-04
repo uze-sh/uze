@@ -45,6 +45,13 @@ pub fn is_executable(path: &Path) -> bool {
     imp::is_executable(path)
 }
 
+/// Whether an image's `file_name` is `program`'s, in the forms a replaced
+/// image takes here: `(deleted)` after it on Linux, `.old-<pid>` on Windows
+/// ([`replace_running`]), any case there.
+pub fn is_image_of(file_name: &str, program: &str) -> bool {
+    imp::is_image_of(file_name, program)
+}
+
 /// `name` as an executable's file name here: `uze` or `uze.exe`.
 pub fn file_name(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
@@ -60,6 +67,18 @@ pub fn invoked_name(argv0: &OsStr) -> Option<String> {
 /// bits on Unix. Windows keeps no such mark, so a file there always has it.
 pub fn is_marked_runnable(path: &Path) -> bool {
     imp::is_marked_runnable(path)
+}
+
+/// Writes `bytes` to `path` as a program, through a process that has exited
+/// before this returns. On Unix a file cannot be run while any descriptor
+/// to it is open for writing, and a process that spawns from several
+/// threads copies every descriptor it opens into each child a sibling
+/// forks, until that child's own `exec` closes it: the kernel's `ETXTBSY`.
+/// Written by a child of its own, the descriptor is in a process that is
+/// gone by the time anything runs the file. Windows runs a file without an
+/// executable bit, and an inherited handle does not keep it from starting.
+pub fn install(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    imp::install(path, bytes)
 }
 
 /// Marks `path` as a program this platform may run.
@@ -87,6 +106,16 @@ pub fn replace_running(new: &Path, target: &Path) -> io::Result<()> {
 /// running it.
 pub fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
     imp::place_launcher(program, at)
+}
+
+/// A file of its own at `at` that runs what `program` runs and knows itself
+/// by `at`'s name, wherever what runs one file is seen on another: a hard
+/// link on Unix (a copy where the two filesystems differ), which costs
+/// nothing and locks nothing; a copy on Windows, where a running image
+/// locks its file, which every hard link to it is, so one running would
+/// read as every other being in use.
+pub fn place_copy(program: &Path, at: &Path) -> io::Result<()> {
+    imp::place_copy(program, at)
 }
 
 /// Places `program` again at every launcher in `directory` (see
@@ -135,8 +164,40 @@ mod imp {
         fs::set_permissions(path, fs::Permissions::from_mode(0o755))
     }
 
+    pub(super) fn place_copy(program: &Path, at: &Path) -> io::Result<()> {
+        fs::hard_link(program, at).or_else(|_| fs::copy(program, at).map(|_| ()))
+    }
+
+    pub(super) fn install(path: &Path, bytes: &[u8]) -> io::Result<()> {
+        use std::process::{Command, Stdio};
+        let mut writer = Command::new("/bin/sh")
+            .args(["-c", r#"cat > "$1" && chmod 0755 "$1""#, "sh"])
+            .arg(path)
+            .stdin(Stdio::piped())
+            .spawn()?;
+        let mut stdin = writer
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("stdin"))?;
+        std::io::Write::write_all(&mut stdin, bytes)?;
+        drop(stdin);
+        let status = writer.wait()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(io::Error::other(format!(
+                "writing {}: {status}",
+                path.display()
+            )))
+        }
+    }
+
     pub(super) fn is_marked_runnable(path: &Path) -> bool {
         fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+    }
+
+    pub(super) fn is_image_of(file_name: &str, program: &str) -> bool {
+        file_name.strip_suffix(" (deleted)").unwrap_or(file_name) == program
     }
 
     /// A rename over a running image is allowed: the running process keeps
@@ -202,8 +263,22 @@ mod imp {
         Ok(())
     }
 
+    pub(super) fn install(path: &Path, bytes: &[u8]) -> io::Result<()> {
+        fs::write(path, bytes)
+    }
+
+    pub(super) fn place_copy(program: &Path, at: &Path) -> io::Result<()> {
+        fs::copy(program, at).map(|_| ())
+    }
+
     pub(super) fn is_marked_runnable(path: &Path) -> bool {
         path.is_file()
+    }
+
+    pub(super) fn is_image_of(file_name: &str, program: &str) -> bool {
+        let name = file_name.to_ascii_lowercase();
+        let image = super::file_name(program).to_ascii_lowercase();
+        name == image || name.starts_with(&format!("{image}.old-"))
     }
 
     /// Windows refuses to replace an image that is running but lets it be

@@ -171,6 +171,40 @@ pub fn current_user() -> io::Result<String> {
 /// it starts, ended together when the pane closes.
 pub struct Group(imp::Group);
 
+/// One live process of a [`Group`], as [`foreground`] reads it.
+#[derive(Clone, Debug)]
+pub struct Member {
+    pub pid: u32,
+    /// The process that started it, where the platform says.
+    pub parent: Option<u32>,
+    /// Its short command name ([`crate::probe::command_name_of`]).
+    pub name: String,
+}
+
+/// The process a person at the terminal `leader` was started on is talking
+/// to. Unix keeps it: the terminal's foreground process group, which a
+/// shell gives each command it runs and the command's own children share,
+/// so an agent stays in front while it runs `git`. Windows' ConPTY keeps no
+/// such thing, so it is found the way the console was passed: from the
+/// process `group` started first, down through each that `passes_on` (a
+/// shell running a command, a launcher running a program) to the first
+/// that keeps it. What that one starts is its own work, never the
+/// foreground; the newest process was, and it was an agent's `git` as
+/// often as the agent.
+pub fn foreground(
+    leader: u32,
+    group: Option<&Group>,
+    passes_on: impl Fn(&Member, &Member) -> bool,
+) -> Option<u32> {
+    imp::foreground(leader, group.map(|group| &group.0), passes_on)
+}
+
+/// How a person finds the running `program arguments` from their own
+/// shell, to end it by hand, as a command they can type.
+pub fn finding_command(program: &str, arguments: &str) -> String {
+    imp::finding_command(program, arguments)
+}
+
 impl Group {
     /// Takes `pid` (just spawned) and what it will start as one unit, or
     /// `None` where it cannot be: on Unix a program that does not lead a

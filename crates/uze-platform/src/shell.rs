@@ -23,6 +23,23 @@ pub enum Family {
 /// The family of this platform's shell.
 pub const FAMILY: Family = imp::FAMILY;
 
+/// The shell a person's own terminal opens: `$SHELL` on Unix; on Windows
+/// PowerShell 7 when it is installed, else the Windows PowerShell every
+/// supported Windows carries. A person's interactive shell is a preference,
+/// so the newer one is preferred; the commands UZE runs always use the one
+/// that is always there ([`command`]).
+pub fn interactive() -> String {
+    imp::interactive()
+}
+
+/// What a terminal emulator puts in the environment of the programs it
+/// runs: `TERM` on Unix, when the emulator's own environment has none; on
+/// Windows `COLORTERM`, since its programs read no `TERM`, and a few change
+/// behaviour when it names a Unix terminal.
+pub fn terminal_environment() -> Vec<(&'static str, &'static str)> {
+    imp::terminal_environment()
+}
+
 /// What starts this shell on a line, before the line itself: what a
 /// generated runtime spawns (`[...ARGV, line]`).
 pub const ARGV: &[&str] = imp::ARGV;
@@ -107,6 +124,18 @@ mod imp {
     pub(super) const KEY: &str = "posix";
     pub(super) const FAMILY: super::Family = super::Family::Posix;
 
+    pub(super) fn interactive() -> String {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())
+    }
+
+    pub(super) fn terminal_environment() -> Vec<(&'static str, &'static str)> {
+        if std::env::var_os("TERM").is_some() {
+            Vec::new()
+        } else {
+            vec![("TERM", "xterm-256color")]
+        }
+    }
+
     pub(super) fn spelling<'a>(posix: &'a str, _windows: &'a str) -> &'a str {
         posix
     }
@@ -171,6 +200,20 @@ mod imp {
 mod imp {
     pub(super) const KEY: &str = "windows";
     pub(super) const FAMILY: super::Family = super::Family::PowerShell;
+
+    pub(super) fn interactive() -> String {
+        let installed = crate::executable::on_path("pwsh").is_some();
+        if installed {
+            "pwsh.exe"
+        } else {
+            "powershell.exe"
+        }
+        .to_owned()
+    }
+
+    pub(super) fn terminal_environment() -> Vec<(&'static str, &'static str)> {
+        vec![("COLORTERM", "truecolor")]
+    }
 
     pub(super) fn spelling<'a>(_posix: &'a str, windows: &'a str) -> &'a str {
         windows
