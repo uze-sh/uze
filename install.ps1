@@ -1,6 +1,6 @@
 # uze: the official installer for Windows.
 #
-#   irm https://uze.sh/i.ps1 | iex
+#   irm https://uze.sh/i | iex
 #
 # Downloads the prebuilt `uze.exe` for this machine from GitHub Releases,
 # verifies its SHA-256 checksum, installs it into the user's programs
@@ -10,7 +10,7 @@
 # Uninstall (the binary, its Path entry, the harness launchers, and the
 # workspace server), keeping ~\.uze unless -Purge is given:
 #
-#   & ([scriptblock]::Create((irm https://uze.sh/i.ps1))) -Uninstall [-Purge]
+#   & ([scriptblock]::Create((irm https://uze.sh/i))) -Uninstall [-Purge]
 #
 # Environment overrides:
 #   UZE_VERSION   Pin a release (e.g. 1.0.0-beta.1); default: latest.

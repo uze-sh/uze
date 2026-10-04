@@ -712,7 +712,12 @@ Other CI changes:
 
 - `cliff.release.toml` gains PowerShell install and verify lines, plus the
   SmartScreen and Smart App Control notes.
-- `web/vercel.json` rewrites `/i.ps1`.
+- `web/vercel.json` serves `/i` to both shells, one address and each shell's
+  own command (`curl -fsSL https://uze.sh/i | sh`, `irm https://uze.sh/i |
+  iex`): a request whose `User-Agent` names PowerShell (`WindowsPowerShell/5.1`,
+  `PowerShell/7`) gets `install.ps1`, any other `install.sh`, as before. The
+  answer varies by `User-Agent` and is not cached. `/i.ps1` stays, for an
+  address already written down.
 
 ### D20 — The journey runner gains a Windows backend
 

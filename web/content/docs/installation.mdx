@@ -32,7 +32,7 @@ description: Install uze, set up your agents, and keep it current
     is offered. To try it now, in PowerShell:
 
     ```powershell
-    $env:UZE_WINDOWS_PREVIEW = '1'; irm https://uze.sh/i.ps1 | iex
+    $env:UZE_WINDOWS_PREVIEW = '1'; irm https://uze.sh/i | iex
     ```
 
     It needs Windows 10 22H2 or Windows 11 (x64 or Arm),
@@ -116,7 +116,7 @@ and every hour after, and tells you when one is installed; restart to use it.
    On Windows, the installer does it, and takes uze off your `Path`:
 
    ```powershell
-   & ([scriptblock]::Create((irm https://uze.sh/i.ps1))) -Uninstall -Purge
+   & ([scriptblock]::Create((irm https://uze.sh/i))) -Uninstall -Purge
    ```
 
    Leave out `-Purge` to keep `~\.uze`.

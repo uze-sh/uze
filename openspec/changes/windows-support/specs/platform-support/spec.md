@@ -83,7 +83,7 @@ verbatim prefix.
 
 ### Requirement: The PowerShell installer resolves an asset from the host and fails closed
 
-UZE SHALL publish `install.ps1`, run as `irm https://uze.sh/i.ps1 | iex`. It
+UZE SHALL publish `install.ps1`, run as `irm https://uze.sh/i | iex`. It
 SHALL meet the POSIX installer's requirements:
 
 - **Asset resolution:** derive the asset from the host's *native*

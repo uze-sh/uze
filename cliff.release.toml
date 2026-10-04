@@ -114,13 +114,13 @@ mismatch.
 On Windows 10 22H2 or 11, x64 or Arm, in PowerShell:
 
 ```powershell
-irm https://uze.sh/i.ps1 | iex
+irm https://uze.sh/i | iex
 ```
 {% if version %}
 Pin this release:
 
 ```powershell
-$env:UZE_VERSION = '{{ version | trim_start_matches(pat="v") }}'; irm https://uze.sh/i.ps1 | iex
+$env:UZE_VERSION = '{{ version | trim_start_matches(pat="v") }}'; irm https://uze.sh/i | iex
 ```
 {% endif %}
 It needs Git for Windows, and installs into

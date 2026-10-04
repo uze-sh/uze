@@ -96,7 +96,7 @@ journeys. Windows clears that bar, or it is not offered.
 - **Release and install.**
   - `uze-{x86_64,aarch64}-windows.zip` (crt-static), in SHASUMS, provenance
     and an all-target SBOM.
-  - `install.ps1` via `irm https://uze.sh/i.ps1 | iex`, with an uninstall.
+  - `install.ps1` via `irm https://uze.sh/i | iex`, with an uninstall.
   - A generated Scoop manifest.
   - The Windows rows stay behind a switch that is flipped, together with the
     installer, only after the proof passes.

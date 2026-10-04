@@ -5,7 +5,7 @@
 #   $env:UZE_BASE_URL = 'file:///C:/path/to/candidate'
 #   $env:UZE_VERSION = '<version>'
 #   $env:UZE_WINDOWS_PREVIEW = '1'
-#   irm https://uze.sh/i.ps1 | iex
+#   irm https://uze.sh/i | iex
 name: Release candidate
 
 on:
