@@ -388,7 +388,9 @@ need to).
   infrastructure in `crates/uze-testkit` (isolated `TestEnvironment`,
   `FakeHarness`, canonical/scenario fixtures), and the taxonomy documented
   in `tests/README.md` (L0-L4).
-- `playground/` — WSL/distro install helpers (`make wsl-lab`) and a
+- `playground/` — disposable worlds to try this checkout by hand
+  (`make playground-windows`: Windows Sandbox; `make playground-linux`: a
+  throwaway WSL distribution) and a
   default local plugin used for manual dogfooding.
 - `docs/adr/` — numbered architecture decision records (read before making
   a structural change; recent ones cover generated native-package
