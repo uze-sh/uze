@@ -353,7 +353,9 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         `%USERPROFILE%\.local\bin\claude.exe`;
       - Codex: `https://chatgpt.com/codex/install.ps1`;
       - Antigravity: `https://antigravity.google/cli/install.ps1`, with its
-        location confirmed;
+        location confirmed: `%LOCALAPPDATA%\agy\bin\agy.exe`, which the
+        installer adds to the user's `Path` (1.2.16 installed and delivered
+        in Windows Sandbox, 2026-10-04);
       - OpenCode: no automatic route. An installed `opencode.exe` takes
         `opencode upgrade`; otherwise it is Blocked, naming the
         `scoop`/`choco`/`npm` commands.
