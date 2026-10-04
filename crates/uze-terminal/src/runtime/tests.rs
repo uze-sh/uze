@@ -1531,6 +1531,10 @@ fn relaunch_command_for_process_recognizes_a_named_process_but_not_a_plain_shell
     // a candidate naming a file rather than a command is refused.
     assert_eq!(relaunch_command_for_process("/tmp/payload"), None);
     assert_eq!(relaunch_command_for_process("./payload"), None);
+    assert_eq!(relaunch_command_for_process(r"C:\Temp\payload"), None);
+    assert_eq!(relaunch_command_for_process(r".\payload"), None);
+    assert_eq!(relaunch_command_for_process("C:payload"), None);
+    assert_eq!(relaunch_command_for_process("PowerShell"), None);
     assert_eq!(
         relaunch_command_for_process("claude"),
         Some(vec!["claude".to_owned()])

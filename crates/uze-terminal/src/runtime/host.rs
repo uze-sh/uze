@@ -112,10 +112,6 @@ mod imp {
         command.env("COLORTERM", "truecolor");
     }
 
-    /// What a shell is called when it runs a command for a person: it
-    /// starts the command and waits, handing it the console.
-    const SHELLS: &[&str] = &["cmd", "powershell", "pwsh", "bash", "sh"];
-
     pub(super) fn foreground(_master: &dyn MasterPty, group: Option<&Group>) -> Option<u32> {
         let members: Vec<Member> = group?
             .members()
@@ -127,7 +123,9 @@ mod imp {
             })
             .collect();
         in_front(&members, |holder, child| {
-            SHELLS
+            // A shell runs a command for a person by starting it and
+            // waiting, handing it the console.
+            super::super::process::PLAIN_SHELL_PROCESS_NAMES
                 .iter()
                 .any(|shell| holder.name.eq_ignore_ascii_case(shell))
                 || super::super::pane::shim_launched_name(child.pid).is_some()

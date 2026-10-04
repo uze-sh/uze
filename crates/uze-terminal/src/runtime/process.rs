@@ -47,7 +47,10 @@ pub(super) fn relaunch_command_for_process(process: &str) -> Option<Vec<String>>
     let trimmed = process.trim();
     if trimmed.is_empty()
         || trimmed.contains(['/', '\\', ':'])
-        || PLAIN_SHELL_PROCESS_NAMES.contains(&trimmed)
+        // Windows names a process in whatever case its image was given.
+        || PLAIN_SHELL_PROCESS_NAMES
+            .iter()
+            .any(|shell| shell.eq_ignore_ascii_case(trimmed))
     {
         return None;
     }
