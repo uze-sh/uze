@@ -99,6 +99,11 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
             uze_platform::tools::GIT_INSTALL_HINT
         ));
     }
+    if let Some(refusal) = &report.shell_refusal {
+        problems.push(format!(
+            "shell  {refusal}; setup steps, gates and hooks need it"
+        ));
+    }
     if let Some(error) = &report.ledger_error {
         problems.push(format!("ledger  {error}"));
     }

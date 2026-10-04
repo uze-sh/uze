@@ -1454,6 +1454,7 @@ mod tests {
                     }],
                 },
                 git_found: true,
+                shell_refusal: None,
             }),
             ..RefreshData::default()
         }

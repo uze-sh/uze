@@ -76,6 +76,16 @@ pub fn spelling<'a>(posix: &'a str, windows: &'a str) -> &'a str {
     imp::spelling(posix, windows)
 }
 
+/// Why this machine's shell would refuse what UZE hands it, if it would:
+/// asked of the shell itself, so it costs a process (callers cache it).
+/// Never on Unix. On Windows, a Group Policy execution policy that does not
+/// let a local script run (`-ExecutionPolicy Bypass` yields to it, and the
+/// hook wrapper is a script file), or a language mode short of
+/// `FullLanguage` (the wrapper loads a .NET serializer).
+pub fn refusal() -> Option<String> {
+    imp::refusal()
+}
+
 /// The extension of a script file this shell reads, without the dot.
 pub const SCRIPT_EXTENSION: Option<&str> = imp::SCRIPT_EXTENSION;
 
@@ -85,6 +95,10 @@ mod imp {
 
     pub(super) fn spelling<'a>(posix: &'a str, _windows: &'a str) -> &'a str {
         posix
+    }
+
+    pub(super) fn refusal() -> Option<String> {
+        None
     }
     pub(super) const ARGV: &[&str] = &["sh", "-c"];
     pub(super) const SCRIPT_EXTENSION: Option<&str> = None;
@@ -145,6 +159,41 @@ mod imp {
 
     pub(super) fn spelling<'a>(_posix: &'a str, windows: &'a str) -> &'a str {
         windows
+    }
+
+    pub(super) fn refusal() -> Option<String> {
+        let probe = "(Get-ExecutionPolicy -Scope MachinePolicy).ToString(); \
+                     (Get-ExecutionPolicy -Scope UserPolicy).ToString(); \
+                     $ExecutionContext.SessionState.LanguageMode.ToString()";
+        let output = super::command(probe)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        let answer = String::from_utf8_lossy(&output.stdout).into_owned();
+        refusal_in(&answer)
+    }
+
+    /// The probe's three lines: the machine's and the user's Group Policy
+    /// execution policy, then the language mode.
+    pub(super) fn refusal_in(answer: &str) -> Option<String> {
+        let mut lines = answer.lines().map(str::trim);
+        let (machine, user, language) = (lines.next()?, lines.next()?, lines.next()?);
+        let blocking = |policy: &str| matches!(policy, "Restricted" | "AllSigned");
+        if let Some((scope, policy)) = [("the machine", machine), ("this user", user)]
+            .into_iter()
+            .find(|(_, policy)| blocking(policy))
+        {
+            return Some(format!(
+                "Group Policy sets PowerShell's execution policy for {scope} to {policy}, so \
+                 the hook wrappers UZE generates cannot run"
+            ));
+        }
+        (language != "FullLanguage").then(|| {
+            format!(
+                "PowerShell runs in {language} mode, in which the hook wrappers UZE \
+                 generates cannot run"
+            )
+        })
     }
     pub(super) const ARGV: &[&str] = &[
         "powershell.exe",
@@ -207,6 +256,30 @@ mod imp {
             .chain(arguments.iter().map(|argument| quote(argument)))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn a_policy_or_a_language_mode_that_stops_scripts_is_named() {
+        assert_eq!(
+            refusal_in("Undefined\r\nUndefined\r\nFullLanguage\r\n"),
+            None
+        );
+        assert_eq!(refusal_in("RemoteSigned\nBypass\nFullLanguage"), None);
+        let machine = refusal_in("AllSigned\nUndefined\nFullLanguage").unwrap();
+        assert!(machine.contains("the machine to AllSigned"), "{machine}");
+        let user = refusal_in("Undefined\nRestricted\nFullLanguage").unwrap();
+        assert!(user.contains("this user to Restricted"), "{user}");
+        let constrained = refusal_in("Undefined\nUndefined\nConstrainedLanguage").unwrap();
+        assert!(constrained.contains("ConstrainedLanguage"), "{constrained}");
+    }
+
+    /// A machine no policy reaches (the Sandbox, a CI runner) runs what UZE
+    /// hands its shell: the probe itself answers.
+    #[cfg(test)]
+    #[test]
+    fn an_unmanaged_machine_s_shell_refuses_nothing() {
+        assert_eq!(refusal(), None);
     }
 
     pub(super) fn script(path: &str) -> (String, Vec<String>) {

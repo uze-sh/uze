@@ -232,6 +232,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       hooks are Unsupported with the reason. `uze doctor` reports it with
       the machine checks (`git.exe`, `ssh.exe` when an SSH marketplace
       exists, VT, OS build, `Path`, Smart App Control).
+      (Done: `uze_platform::shell::refusal`, kept a day in
+      `cache/shell.json`, and `uze doctor`'s `shell` problem beside `git`.
+      Open: hooks reported Unsupported on such a machine, and the other
+      machine checks.)
 - [x] 5.5 Trust shows and compares both spellings; a Windows-only change
       re-prompts. A `hooks.json` parse failure fails trust closed
       (`trust.rs:157`).

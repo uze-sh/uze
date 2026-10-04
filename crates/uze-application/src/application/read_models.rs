@@ -1225,6 +1225,10 @@ pub struct DoctorReport {
     /// repositories and agents work in Git checkouts, so without it nothing
     /// but the built-in plugins can be installed.
     pub git_found: bool,
+    /// Why this machine's shell would refuse what UZE hands it (a Group
+    /// Policy execution policy, a constrained language mode on Windows),
+    /// when it would: setup steps, gates and hooks all run in it.
+    pub shell_refusal: Option<String>,
 }
 
 /// The friendliest name available for a resource in a `PluginCapability`

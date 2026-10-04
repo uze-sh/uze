@@ -132,6 +132,42 @@ impl fmt::Display for ShellCommand {
     }
 }
 
+/// What [`refusal`] last observed, and when.
+#[derive(Deserialize, Serialize)]
+struct Observed {
+    refusal: Option<String>,
+    observed_at_unix_secs: u64,
+}
+
+/// How long an observation of the shell stands: a policy or a language
+/// mode changes with a machine's administration, not between commands.
+const OBSERVED_FOR_SECS: u64 = 24 * 60 * 60;
+
+/// Why this machine's shell would refuse what UZE hands it, if it would
+/// (see [`uze_platform::shell::refusal`]): asking costs a process, so the
+/// answer is kept in the cache for a day.
+pub fn refusal(home: &crate::home::UzeHome) -> Option<String> {
+    let path = home.shell_observation_cache_path();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let remembered = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Observed>(&bytes).ok())
+        .filter(|observed| now.saturating_sub(observed.observed_at_unix_secs) < OBSERVED_FOR_SECS);
+    if let Some(observed) = remembered {
+        return observed.refusal;
+    }
+    let refusal = uze_platform::shell::refusal();
+    if let Ok(bytes) = serde_json::to_vec(&Observed {
+        refusal: refusal.clone(),
+        observed_at_unix_secs: now,
+    }) {
+        let _ = crate::persistence::write_atomic(&path, &bytes);
+    }
+    refusal
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

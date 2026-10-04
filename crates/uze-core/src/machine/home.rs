@@ -331,6 +331,12 @@ impl UzeHome {
         self.cache_dir().join("harness_detection.json")
     }
 
+    /// What this machine's shell was last observed to refuse (see
+    /// `shell::refusal`): observed again when gone or stale.
+    pub fn shell_observation_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("shell.json")
+    }
+
     /// Cross-invocation cache of per-receipt attachment *read* results
     /// (see `application::inspection_cache` and ADR 018). Same
     /// reconstructable-optimization caveat as the detection cache: never

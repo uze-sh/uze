@@ -238,6 +238,7 @@ impl Health<'_> {
             leftovers,
             maintenance: MaintenanceReport::default(),
             git_found: uze_core::subprocess::program_on_path("git"),
+            shell_refusal: uze_core::shell::refusal(&self.0.home),
         }
     }
 

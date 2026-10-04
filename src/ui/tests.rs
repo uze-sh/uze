@@ -168,6 +168,7 @@ fn model_with_data() -> TuiModel {
         leftovers: Default::default(),
         maintenance: MaintenanceReport::default(),
         git_found: true,
+        shell_refusal: None,
     });
     model.remembered.context_status = Some(ProjectContextStatus {
         root: PathBuf::from("/home/project"),
@@ -1702,6 +1703,7 @@ fn overview_alerts_classify_conflicts_as_high_and_missing_as_low() {
         leftovers: Default::default(),
         maintenance: MaintenanceReport::default(),
         git_found: true,
+        shell_refusal: None,
     };
     let alerts = actionable_alerts(Some(&doctor));
     assert_eq!(alerts[0].severity, Severity::High);
@@ -2235,6 +2237,7 @@ fn attachment_health_is_never_unknown_after_a_refresh() {
         leftovers: Default::default(),
         maintenance: MaintenanceReport::default(),
         git_found: true,
+        shell_refusal: None,
     });
     let (terminal, _hits) = drawn_at(&model, 100, 40);
     let rows = buffer_rows(&terminal);
