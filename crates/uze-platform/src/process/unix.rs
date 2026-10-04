@@ -144,6 +144,10 @@ pub(super) fn spawn_detached(command: &mut Command) -> io::Result<super::Detache
 
 pub(super) const SYSTEM_ENVIRONMENT: &[&str] = &[];
 
+pub(super) fn launched_by(pid: u32, launcher: u32) -> bool {
+    pid == launcher
+}
+
 /// `exec`: the program replaces this one, keeping its pid.
 pub(super) fn run_in_place(command: &mut Command) -> io::Error {
     command.exec()

@@ -114,9 +114,71 @@ pub(super) const SYSTEM_ENVIRONMENT: &[&str] = &[
     "TMP",
 ];
 
+pub(super) fn launched_by(pid: u32, launcher: u32) -> bool {
+    parent_of(pid) == Some(launcher)
+        && matches!(
+            (started(launcher), started(pid)),
+            (Some(launcher), Some(child)) if launcher <= child
+        )
+}
+
+/// The pid `pid` was started by, read from a process snapshot.
+fn parent_of(pid: u32) -> Option<u32> {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+    };
+    // SAFETY: a snapshot of every process, closed by `Owned`.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let snapshot = Owned(snapshot);
+    // SAFETY: zeroed is valid once dwSize is set.
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    // SAFETY: `entry` is sized as the API requires and outlives each call.
+    let mut more = unsafe { Process32FirstW(snapshot.0, &mut entry) } != 0;
+    while more {
+        if entry.th32ProcessID == pid {
+            return Some(entry.th32ParentProcessID);
+        }
+        // SAFETY: as above.
+        more = unsafe { Process32NextW(snapshot.0, &mut entry) } != 0;
+    }
+    None
+}
+
+/// When `pid` started, in 100 ns ticks; what tells a process from a later
+/// one that reused its pid.
+fn started(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::{Foundation::FILETIME, System::Threading::GetProcessTimes};
+    let process = open(pid, PROCESS_QUERY_LIMITED_INFORMATION)?;
+    // SAFETY: zeroed FILETIMEs are valid outputs.
+    let mut times: [FILETIME; 4] = unsafe { std::mem::zeroed() };
+    let [created, exited, kernel, user] = &mut times;
+    // SAFETY: valid handle; every out-pointer outlives the call.
+    if unsafe { GetProcessTimes(process.0, created, exited, kernel, user) } == 0 {
+        return None;
+    }
+    Some((u64::from(times[0].dwHighDateTime) << 32) | u64::from(times[0].dwLowDateTime))
+}
+
 /// Windows has no `exec`: the program runs as a child sharing this
-/// console, and its exit status becomes this process's.
+/// console, and its exit status becomes this process's. A Ctrl+C reaches
+/// every process on the console; this one answers it as handled and keeps
+/// waiting, so the program it ran decides what an interrupt means — as it
+/// would were it in this process's place. A handler routine, unlike the
+/// console's ignore flag, is not inherited.
 pub(super) fn run_in_place(command: &mut Command) -> io::Error {
+    use windows_sys::{
+        Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler},
+        core::BOOL,
+    };
+    unsafe extern "system" fn handled(event: u32) -> BOOL {
+        BOOL::from(event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT)
+    }
+    // SAFETY: registers a routine that touches nothing.
+    unsafe { SetConsoleCtrlHandler(Some(handled), 1) };
     match command.status() {
         Ok(status) => std::process::exit(status.code().unwrap_or(1)),
         Err(error) => error,

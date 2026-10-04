@@ -113,6 +113,14 @@ pub fn clear_environment(command: &mut Command) {
     }
 }
 
+/// Whether `pid` is the program a launcher whose pid is `launcher` ran with
+/// [`run_in_place`]: that same pid on Unix, where the launcher `exec`s; its
+/// direct child on Windows, started after it — a parent pid Windows reused
+/// for a later process names somebody else.
+pub fn launched_by(pid: u32, launcher: u32) -> bool {
+    imp::launched_by(pid, launcher)
+}
+
 /// Runs `command` in this process's place, with its exit status as this
 /// process's own. Returns only when it could not be started.
 pub fn run_in_place(command: &mut Command) -> io::Error {

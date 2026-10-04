@@ -3,7 +3,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 1. Transport port and process crate, proven on Unix (D3, D4)
 
-- [ ] 1.1 Extract `uze-terminal/src/runtime/transport/` (`Endpoint`,
+- [x] 1.1 Extract `uze-terminal/src/runtime/transport/` (`Endpoint`,
       `Listener`, `Connection`, `split()`, `peer_pid()`) with today's Unix
       code behind it. These stop naming `UnixStream`:
       - `attach()`, `Handshake`, `forward_events`, `connect_waiting`,
@@ -11,9 +11,9 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - `src/ui/orchestrator/session.rs:69` and `orchestrator.rs:441`.
 
       Linux and macOS suites stay green with no behaviour change.
-- [ ] 1.2 Move the endpoint watch, the `/tmp` rebind, `private_directory` and
+- [x] 1.2 Move the endpoint watch, the `/tmp` rebind, `private_directory` and
       `MAX_SOCKET_PATH` behind the Unix transport.
-- [ ] 1.3 Create the `uze-platform` leaf crate with the Unix implementations
+- [x] 1.3 Create the `uze-platform` leaf crate with the Unix implementations
       moved in:
       - `ProcessTree`, from `uze-core` subprocess process groups and
         `uze-git` `run_within`;
@@ -24,11 +24,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       `pid_t` becomes `u32` in signatures. Rewire `uze-core`, `uze-git` and
       `uze-terminal` to it.
-- [ ] 1.4 Layering: teach `tests/architecture/layering.rs` the new leaf and
+- [x] 1.4 Layering: teach `tests/architecture/layering.rs` the new leaf and
       `uze-terminal`'s widened rule. Update AGENTS.md's workspace layout.
-- [ ] 1.5 Add `uze-platform` to `docs/architecture/crate-layering.mmd`, then
+- [x] 1.5 Add `uze-platform` to `docs/architecture/crate-layering.mmd`, then
       run `cargo test -p uze-extensions` and `uze agent artifacts check`.
-- [ ] 1.6 Add a root `.gitattributes` (`* text=auto eol=lf`), and verify
+- [x] 1.6 Add a root `.gitattributes` (`* text=auto eol=lf`), and verify
       that `include_str!` templates, goldens and the embedded marketplace are
       byte-identical after a fresh checkout.
 
@@ -36,7 +36,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 - [ ] 2.1 Record the baseline `cargo check --workspace --all-targets
       --target x86_64-pc-windows-msvc` error list in the PR.
-- [ ] 2.2 Add `windows-sys` 0.61 (only the named features) as a
+- [x] 2.2 Add `windows-sys` 0.61 (only the named features) as a
       `cfg(windows)` dependency of `uze-platform`, `uze-core`, `uze-git`,
       `uze-terminal` and the root crate. Make `libc` `cfg(unix)` in
       `uze-terminal` and the root crate. Record the provenance and
@@ -47,7 +47,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         `uze-testkit/src/fake_harness.rs:255,580`;
       - test-only code: `uze-integrations/src/codex/generate.rs:409,416,446`,
         `uze-application/src/application/tests.rs:385`.
-- [ ] 2.4 Add Windows stubs that answer *unknown* or return an error (never
+- [x] 2.4 Add Windows stubs that answer *unknown* or return an error (never
       success) wherever a Windows implementation lands later in this list,
       so that the workspace type-checks.
 - [ ] 2.5 Add the Windows `check` and the `x86_64`/`aarch64` msvc `clippy`
@@ -58,7 +58,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 3. Platform-honest primitives (D3, D8, D9, D15)
 
-- [ ] 3.1 `uze-platform` on Windows:
+- [x] 3.1 `uze-platform` on Windows:
       - `ProcessTree`: a suspended spawn, then Job Object assignment, then
         `ResumeThread` via a Toolhelp thread snapshot, terminating the
         process if the assignment fails;
@@ -73,7 +73,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - a Toolhelp table walk filtered by SID.
 
       Add one Windows test per fact.
-- [ ] 3.3 Delete `kill_reaped_process_group`'s `taskkill`. Back
+- [x] 3.3 Delete `kill_reaped_process_group`'s `taskkill`. Back
       `with_process_group`, `uze-git` `run_within`/`run_bounded` (whose
       deadline now holds on Windows), the provisioning runner and
       `run_shell_bounded` with `ProcessTree`.
@@ -88,7 +88,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [ ] 3.5 `persistence::process_is_alive` through `probe`. An *unknown*
       answer is never treated as alive or dead, and
       `remove_abandoned_swaps` skips an unknown pid.
-- [ ] 3.6 Home: `UzeHome::from_env` on `std::env::home_dir()`.
+- [x] 3.6 Home: `UzeHome::from_env` on `std::env::home_dir()`.
       - The integrations' `from_env` (claude.rs:127, codex.rs:124,
         opencode.rs:113, antigravity.rs:170) take home from `UzeHome`.
       - `uze-terminal` `state.rs:55` and `runtime/lock.rs:12` call
@@ -102,7 +102,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         `uze-git/repository.rs:72`, `checkout/accounting.rs`.
       - `uze-terminal` `endpoint.rs:391` `path_with_first` uses its own copy.
       - `project_id_for` normalizes once, internally.
-- [ ] 3.8 Locators: `forge.rs:378-443` accepts `C:\`, `.\`, `..\` and `~\`;
+- [x] 3.8 Locators: `forge.rs:378-443` accepts `C:\`, `.\`, `..\` and `~\`;
       in `acquisition.rs:232-241` a drive letter is never `host:`.
 - [ ] 3.9 One sharing-violation retry helper, also clearing read-only
       attributes and tolerating a leftover retired directory. Used by
@@ -289,7 +289,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 7. Shims and provisioning (D13)
 
-- [ ] 7.1 `runtime_shim.rs:49-82` places `<harness>.exe` as a copy of
+- [x] 7.1 `runtime_shim.rs:49-82` places `<harness>.exe` as a copy of
       `uze.exe`.
       - A differing shim is swapped by rename-aside, never overwritten.
       - The comparison is size and mtime first, then a hash; it runs off
@@ -297,7 +297,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - `EXE_SUFFIX` at `tasks.rs:140` and `doctor.rs:756`.
       - The `.old-*` sweep covers the shims directory.
       - Both patterns are named in `UzeHome`.
-- [ ] 7.2 `shim::detect` matches on `file_stem`. On Windows,
+- [x] 7.2 `shim::detect` matches on `file_stem`. On Windows,
       `run_replacing_process` runs the harness in a `ProcessTree`, swallows
       Ctrl+C for itself and forwards the exit code. The workspace identifies
       the harness through `UZE_SHIM_PID` and the foreground walk.
@@ -319,7 +319,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       `platform_has_automated_route` becomes per integration and per
       platform. `uze setup` does not update a harness whose executable a
       pane holds.
-- [ ] 7.5 Claude's sandbox preference is reported Unsupported on native
+- [x] 7.5 Claude's sandbox preference is reported Unsupported on native
       Windows (`claude/preferences.rs:61`).
 - [ ] 7.6 Update ADR-010's Windows paragraph to the routes now automated.
 
@@ -335,14 +335,15 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - a shim refresh.
 
       Update `the_asset_is_the_one_the_installer_picks`.
-- [ ] 8.2 `src/main.rs`: `--quiet` through `SetStdHandle(NUL)`, and a
+- [x] 8.2 `src/main.rs`: `--quiet` through `SetStdHandle(NUL)`, and a
       `BrokenPipe` on stdout ends quietly.
 - [ ] 8.3 Colour from `is_terminal()` plus VT enable (`progress.rs:98`).
       Home display through the re-exported `display`: `src/ui.rs:314`,
       `progress.rs:320`, `orchestrator.rs:361`, `tabs.rs:437`,
       `root_picker.rs:360`.
-- [ ] 8.4 Opener: `cmd /c start "" <url>`, with `$BROWSER` split through
-      `split_paths` (`src/ui/worker.rs:1226-1286`).
+- [x] 8.4 Opener: `explorer.exe <url>` (`uze_platform::desktop::URL_OPENERS`),
+      which hands an address to the default browser with none of the
+      `cmd /c start` parsing that splits one at its `&`.
 - [ ] 8.5 Keys:
       - drop `Release`/`Repeat` before notice dismissal
         (`session/keys.rs:92-101`, `session/manage.rs:97-106`);

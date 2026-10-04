@@ -1154,3 +1154,43 @@ fn every_path_uze_owns_is_named_in_the_map() {
          that."
     );
 }
+
+/// The workspace crates `manifest` depends on outside its tests: every
+/// `uze-…` key of a `[dependencies]` or `[target.….dependencies]` table.
+fn workspace_dependencies(manifest: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut in_dependencies = false;
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_dependencies = line.ends_with("dependencies]") && !line.contains("dev-dependencies");
+            continue;
+        }
+        if in_dependencies
+            && let Some((name, _)) = line.split_once('=')
+            && name.trim().starts_with("uze-")
+        {
+            found.push(name.trim().to_owned());
+        }
+    }
+    found
+}
+
+/// `uze-platform` answers what differs per operating system for `uze-core`,
+/// `uze-git` and the terminal runtime alike, so it may depend on none of
+/// them — and `uze-terminal`, which owns the panes and nothing of UZE's,
+/// depends on no crate here but the two it obeys.
+#[test]
+fn the_platform_crate_is_a_leaf_and_the_terminal_reaches_only_it_and_documents() {
+    let root = repository_root();
+    let manifest = |crate_name: &str| {
+        std::fs::read_to_string(root.join("crates").join(crate_name).join("Cargo.toml")).unwrap()
+    };
+    assert_eq!(
+        workspace_dependencies(&manifest("uze-platform")),
+        Vec::<String>::new(),
+        "uze-platform names no workspace crate outside its tests"
+    );
+    let mut terminal = workspace_dependencies(&manifest("uze-terminal"));
+    terminal.sort();
+    assert_eq!(terminal, ["uze-document", "uze-platform"]);
+}

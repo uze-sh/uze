@@ -436,20 +436,19 @@ impl PaneRuntime {
 /// shim — a bypassed launch, a harness that isn't shimmed, or a plain
 /// shell — in which case `foreground_status` falls back to `comm`.
 ///
-/// The name is accepted only from the process the shim stamped it on.
+/// The name is accepted only from the process the shim launched.
 /// `UZE_SHIM_NAME` is an ordinary environment variable: every child of a
 /// shimmed agent inherits it, so a shell running *under* one would
 /// otherwise answer with its ancestor's identity. `UZE_SHIM_PID` carries
-/// the pid the stamp was made for — the shim `exec`s, so that pid is the
-/// agent's own — and an inherited pair no longer names the process it is
-/// read from.
+/// the shim's own pid, and only the program it ran in its place
+/// (`uze_platform::process::launched_by`) answers to it.
 pub(super) fn shim_launched_name(pgid: u32) -> Option<String> {
     let stamped: u32 =
         uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_PID_VARIABLE)?
             .trim()
             .parse()
             .ok()?;
-    if stamped != pgid {
+    if !uze_platform::process::launched_by(pgid, stamped) {
         return None;
     }
     uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_NAME_VARIABLE)

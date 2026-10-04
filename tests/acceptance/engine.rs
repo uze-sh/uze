@@ -1032,10 +1032,14 @@ fn a_harness_typed_into_a_pane_goes_through_its_launcher() {
         seen.lines().any(|line| line == "UZE_SHIM_NAME=claude"),
         "the real binary was reached through its launcher: {seen}"
     );
+    let launcher: u32 = seen
+        .lines()
+        .find_map(|line| line.strip_prefix("UZE_SHIM_PID="))
+        .and_then(|launcher| launcher.parse().ok())
+        .expect("the launcher stamped its pid");
     assert!(
-        seen.lines()
-            .any(|line| line == format!("UZE_SHIM_PID={pid}")),
-        "and the stamp names the harness's own process: {seen}"
+        uze_platform::process::launched_by(pid.parse().unwrap(), launcher),
+        "and the stamp names the launch that ran the harness: {seen}"
     );
     engine.wait_for_session_where("the pane runs claude through its launcher", |session| {
         session
