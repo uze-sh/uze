@@ -294,10 +294,16 @@ fn add_and_inspect_use_the_same_injected_uze_home() {
 #[test]
 fn setup_reports_absent_harnesses_as_failure_without_writing_state() {
     let home = temporary_home("cli-setup-absent");
+    // Through a proxy nobody answers: a route that downloads a harness by an
+    // absolute path (OpenCode's on Windows) would otherwise install it.
+    let unreachable = "http://127.0.0.1:9";
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
         .isolated_home(&home)
         .env("PATH", "")
+        .env("HTTPS_PROXY", unreachable)
+        .env("https_proxy", unreachable)
+        .env("ALL_PROXY", unreachable)
         .arg("setup")
         .output()
         .unwrap();

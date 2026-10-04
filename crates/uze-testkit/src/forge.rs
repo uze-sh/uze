@@ -294,6 +294,19 @@ fn backend(stream: &mut TcpStream, root: &Path, request: &Request) -> std::io::R
     stream.write_all(body)
 }
 
+/// The forge's side of a fetch over SSH: `git upload-pack` for
+/// `repository` on this process's own stdin and stdout, as `sshd` hands a
+/// client's command to it. Its exit code, or `None` when it did not run.
+pub(crate) fn upload_pack(repository: &Path) -> Option<i32> {
+    Command::new("git")
+        .args(["-c", "uploadpack.allowFilter=true"])
+        .args(["-c", "uploadpack.allowAnySHA1InWant=true", "upload-pack"])
+        .arg(repository)
+        .status()
+        .ok()?
+        .code()
+}
+
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())

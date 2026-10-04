@@ -94,8 +94,8 @@ fn every_registered_harness_installs_through_its_documented_official_route() {
 }
 
 /// The PowerShell routes the vendors publish for Windows, and OpenCode's
-/// absence of one: a harness with no official automated route there is
-/// blocked with its manual routes named, and nothing is run.
+/// absence of one: UZE fetches the build OpenCode's own installer would,
+/// asking its update service first, with the system's own `curl`.
 #[cfg(windows)]
 #[test]
 fn every_registered_harness_installs_through_its_documented_windows_route() {
@@ -118,13 +118,26 @@ fn every_registered_harness_installs_through_its_documented_windows_route() {
         }
     }
 
-    const ROUTES: [(&str, Option<&str>); 4] = [
-        ("claude-code", Some("https://claude.ai/install.ps1")),
-        ("codex", Some("https://chatgpt.com/codex/install.ps1")),
-        ("opencode", None),
+    enum Route {
+        Installer(&'static str),
+        Distribution(&'static str),
+    }
+    const ROUTES: [(&str, Route); 4] = [
+        (
+            "claude-code",
+            Route::Installer("https://claude.ai/install.ps1"),
+        ),
+        (
+            "codex",
+            Route::Installer("https://chatgpt.com/codex/install.ps1"),
+        ),
+        (
+            "opencode",
+            Route::Distribution("https://opencode.ai/update/api/latest/cli/npm"),
+        ),
         (
             "antigravity",
-            Some("https://antigravity.google/cli/install.ps1"),
+            Route::Installer("https://antigravity.google/cli/install.ps1"),
         ),
     ];
 
@@ -140,14 +153,16 @@ fn every_registered_harness_installs_through_its_documented_windows_route() {
     let uze_home = UzeHome::at(root.join("uze"));
     let registry = IntegrationRegistry::isolated(&root, &uze_home);
 
-    for (id, url) in ROUTES {
+    for (id, route) in ROUTES {
         let integration = registry.get(id).unwrap();
         let runner = Refusing(Mutex::new(Vec::new()));
         let result = integration.provision(&runner).unwrap();
         let commands = runner.0.into_inner().unwrap();
-        match url {
-            Some(url) => {
-                assert_eq!(commands.len(), 1, "{id}: {commands:?}");
+        assert_eq!(commands.len(), 1, "{id}: {commands:?}");
+        assert_eq!(result.action, ProvisionAction::Install, "{id}");
+        assert_eq!(result.status, ProvisionStatus::Failed, "{id}");
+        match route {
+            Route::Installer(url) => {
                 let install = &commands[0];
                 assert_eq!(install.program, uze_platform::shell::ARGV[0], "{id}");
                 let script = install.arguments.last().unwrap();
@@ -156,12 +171,18 @@ fn every_registered_harness_installs_through_its_documented_windows_route() {
                         && script.contains("Invoke-Expression"),
                     "{id} must hand {url} to PowerShell: {script}"
                 );
-                assert_eq!(result.action, ProvisionAction::Install, "{id}");
-                assert_eq!(result.status, ProvisionStatus::Failed, "{id}");
             }
-            None => {
-                assert!(commands.is_empty(), "{id} runs nothing: {commands:?}");
-                assert_eq!(result.status, ProvisionStatus::Blocked, "{id}");
+            Route::Distribution(url) => {
+                let fetch = &commands[0];
+                assert_eq!(
+                    std::path::Path::new(&fetch.program),
+                    uze_platform::tools::system_program("curl"),
+                    "{id}"
+                );
+                assert!(
+                    fetch.arguments.iter().any(|argument| argument == url),
+                    "{id}: {fetch:?}"
+                );
             }
         }
     }

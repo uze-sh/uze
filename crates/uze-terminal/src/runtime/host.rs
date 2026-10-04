@@ -125,10 +125,10 @@ mod imp {
         in_front(&members, |holder, child| {
             // A shell runs a command for a person by starting it and
             // waiting, handing it the console.
-            super::super::process::PLAIN_SHELL_PROCESS_NAMES
+            crate::runtime::process::PLAIN_SHELL_PROCESS_NAMES
                 .iter()
                 .any(|shell| holder.name.eq_ignore_ascii_case(shell))
-                || super::super::pane::shim_launched_name(child.pid).is_some()
+                || crate::runtime::pane::shim_launched_name(child.pid).is_some()
         })
     }
 

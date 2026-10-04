@@ -146,9 +146,10 @@ const RULES: &[Rule] = &[
             (
                 "crates/uze-testkit/src/forge.rs",
                 "test infrastructure playing the *server*: it runs `git http-backend` \
-             as CGI for a loopback forge, which needs the CGI environment and \
-             binary stdin and stdout that neither client contract has, and it \
-             reaches no repository on anyone's behalf",
+             as CGI for a loopback forge, and `git upload-pack` behind its stand-in \
+             `ssh`, which need the CGI environment and binary stdin and stdout \
+             that neither client contract has, and it reaches no repository on \
+             anyone's behalf",
             ),
         ],
         budget: &[],

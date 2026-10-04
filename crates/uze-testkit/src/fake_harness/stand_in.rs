@@ -195,14 +195,9 @@ fn forge_ssh(root: &Path, arguments: &[String]) -> ExitCode {
     let repository = Some(root.join(path))
         .filter(|repository| repository.is_dir())
         .unwrap_or_else(|| root.join(path.strip_suffix(".git").unwrap_or(path)));
-    let served = std::process::Command::new("git")
-        .args(["-c", "uploadpack.allowFilter=true"])
-        .args(["-c", "uploadpack.allowAnySHA1InWant=true", "upload-pack"])
-        .arg(&repository)
-        .status();
-    match served.map(|status| status.code()) {
-        Ok(Some(code)) => ExitCode::from(code as u8),
-        _ => ExitCode::from(REFUSED),
+    match crate::forge::upload_pack(&repository) {
+        Some(code) => ExitCode::from(code as u8),
+        None => ExitCode::from(REFUSED),
     }
 }
 
