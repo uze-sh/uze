@@ -37,6 +37,21 @@ mod tests {
     /// thread and requests), carries every byte in order each way. A
     /// connection whose two directions share state (the overlapped pipe's
     /// handle) would lose or mix data here first.
+    /// Not a test of its own: connects to the endpoint `UZE_ENDPOINT_PROBE`
+    /// names and prints what came of it, for a check driven from outside
+    /// with a server of another account.
+    #[test]
+    #[ignore = "driven by hand against another account's server"]
+    fn connect_to_the_endpoint_named_in_the_environment() {
+        let Some(endpoint) = std::env::var_os("UZE_ENDPOINT_PROBE") else {
+            return;
+        };
+        match super::connect(std::path::Path::new(&endpoint)) {
+            Ok(_) => println!("connected"),
+            Err(error) => println!("refused: {:?}: {error}", error.kind()),
+        }
+    }
+
     #[test]
     fn a_connection_read_and_written_at_once_carries_every_byte() {
         const FRAMES: usize = 2_000;

@@ -81,8 +81,23 @@ pub fn bind(endpoint: &Path) -> io::Result<Listener> {
     Ok(listener)
 }
 
+/// Reaches the server at `endpoint`, and only a server of this user. The
+/// directory holding the socket admits nobody else, so this is the same
+/// question asked of the connection itself, as the Windows half must.
 pub fn connect(endpoint: &Path) -> io::Result<Stream> {
-    Stream::connect(endpoint)
+    let stream = Stream::connect(endpoint)?;
+    // SAFETY: no arguments, and it cannot fail.
+    let me = unsafe { libc::geteuid() };
+    match crate::probe::socket_peer_uid(&stream) {
+        Some(uid) if uid != me => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "{} is served by another user (uid {uid})",
+                endpoint.display()
+            ),
+        )),
+        _ => Ok(stream),
+    }
 }
 
 pub fn accept(listener: &Listener) -> io::Result<Stream> {

@@ -209,11 +209,17 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       boundary and the name only has to be stable; a busy server is waited
       for two seconds, after which the caller's own read and write
       deadlines apply.)
-- [ ] 4.2 The client opens with `SECURITY_IDENTIFICATION` and verifies the
+- [x] 4.2 The client opens with `SECURITY_IDENTIFICATION` and verifies the
       pipe owner SID, the server pid plus its start time, and that the image
       is `uze` (including `uze.exe.old-*`). Otherwise it reports the holder.
       `unreachable()` names `Get-Process uze` on Windows. Unix gains the
       symmetric server-uid check.
+      (Done in `uze_platform::endpoint::connect`: the pipe's owner SID, or,
+      for an elevated server's pipe owned by Administrators, the server
+      process's user; the peer uid on Unix. A pipe another account created
+      under the name is refused, checked in Windows Sandbox with a second
+      account. Decided: no start time, since the pid is the kernel's answer
+      for this connection and the image and the user are read from it.)
 - [x] 4.3 Server spawn (`process.rs:45-110`):
       - `EXE_SUFFIX`;
       - `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP |

@@ -509,8 +509,82 @@ pub fn bind(endpoint: &Path) -> io::Result<Listener> {
     Listener::bind(endpoint)
 }
 
+/// Reaches the server at `endpoint`, and only a server of this user: the
+/// pipe namespace is machine-wide, so another account could have created
+/// the name first, and a client that wrote to it would hand that account
+/// its requests. The pipe's owner says who created it; an elevated server's
+/// pipe is owned by the Administrators group instead, and then the server
+/// process's own user is asked.
 pub fn connect(endpoint: &Path) -> io::Result<Stream> {
-    Stream::connect(endpoint)
+    let stream = Stream::connect(endpoint)?;
+    let me = current_user()?;
+    let owner = pipe_owner(stream.shared.handle.0)?;
+    let ours = owner == me
+        || owner == ADMINISTRATORS
+            && stream
+                .peer_pid()
+                .and_then(crate::process::user_of)
+                .as_deref()
+                == Some(me.as_str());
+    if ours {
+        Ok(stream)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "{} is served by another account ({owner})",
+                endpoint.display()
+            ),
+        ))
+    }
+}
+
+/// The well-known SID of the built-in Administrators group.
+const ADMINISTRATORS: &str = "S-1-5-32-544";
+
+/// The SID that owns the pipe `handle` names, as a string.
+fn pipe_owner(handle: HANDLE) -> io::Result<String> {
+    use windows_sys::Win32::Security::{
+        Authorization::{ConvertSidToStringSidW, GetSecurityInfo, SE_KERNEL_OBJECT},
+        OWNER_SECURITY_INFORMATION, PSID,
+    };
+    let mut owner: PSID = ptr::null_mut();
+    let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    // SAFETY: `owner` points into `descriptor`, which is freed below with
+    // LocalFree as the API requires; every other out-pointer may be null.
+    let status = unsafe {
+        GetSecurityInfo(
+            handle,
+            SE_KERNEL_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != 0 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    let mut text: *mut u16 = ptr::null_mut();
+    // SAFETY: `owner` is valid while `descriptor` is; `text` is freed below.
+    let converted = unsafe { ConvertSidToStringSidW(owner, &mut text) };
+    let sid = (converted != 0).then(|| {
+        // SAFETY: a NUL-terminated wide string from the conversion above.
+        unsafe {
+            let len = (0..).take_while(|&i| *text.add(i) != 0).count();
+            String::from_utf16_lossy(std::slice::from_raw_parts(text, len))
+        }
+    });
+    // SAFETY: both were allocated with LocalAlloc by the calls above.
+    unsafe {
+        if !text.is_null() {
+            LocalFree(text.cast());
+        }
+        LocalFree(descriptor);
+    }
+    sid.ok_or_else(io::Error::last_os_error)
 }
 
 pub fn accept(listener: &Listener) -> io::Result<Stream> {

@@ -28,6 +28,14 @@ pub fn socket_peer(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
     platform::peer_pid(stream)
 }
 
+/// The user id of the process at the other end of `stream`, stamped by the
+/// kernel when the connection was made. `None` where the platform does not
+/// say.
+#[cfg(unix)]
+pub fn socket_peer_uid(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
+    platform::peer_uid(stream)
+}
+
 /// The executable image `pid` is currently running. Stops matching a path
 /// once the binary behind it is replaced underneath a live process (a
 /// `cargo install --force` mid-session), which is exactly what makes it
@@ -118,6 +126,26 @@ mod platform {
             )
         };
         (asked == 0 && peer.pid > 0).then_some(peer.pid as u32)
+    }
+
+    pub(super) fn peer_uid(stream: &UnixStream) -> Option<u32> {
+        let mut peer = libc::ucred {
+            pid: 0,
+            uid: 0,
+            gid: 0,
+        };
+        let mut size = size_of::<libc::ucred>() as libc::socklen_t;
+        // SAFETY: as in `peer_pid`.
+        let asked = unsafe {
+            libc::getsockopt(
+                stream.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                (&raw mut peer).cast(),
+                &raw mut size,
+            )
+        };
+        (asked == 0).then_some(peer.uid)
     }
 
     pub(super) fn executable_of(pid: u32) -> Option<PathBuf> {
@@ -227,6 +255,13 @@ mod platform {
             )
         };
         (asked == 0 && pid > 0).then_some(pid as u32)
+    }
+
+    pub(super) fn peer_uid(stream: &UnixStream) -> Option<u32> {
+        let (mut uid, mut gid): (libc::uid_t, libc::gid_t) = (0, 0);
+        // SAFETY: both out-pointers are live values of the types asked for.
+        let asked = unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) };
+        (asked == 0).then_some(uid)
     }
 
     pub(super) fn executable_of(pid: u32) -> Option<PathBuf> {
@@ -521,6 +556,10 @@ mod platform {
     use std::path::PathBuf;
 
     pub(super) fn peer_pid(_stream: &UnixStream) -> Option<u32> {
+        None
+    }
+
+    pub(super) fn peer_uid(_stream: &UnixStream) -> Option<u32> {
         None
     }
 
