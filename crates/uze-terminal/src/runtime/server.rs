@@ -664,11 +664,11 @@ impl Server {
             // Best-effort: label the sidebar tree with the real shell name
             // immediately instead of leaving the "shell" placeholder until
             // the next status tick.
-            if let Some((cwd, process)) = runtime.foreground_status() {
-                session.update_pane_status(pane_id, cwd, process);
-            }
-            if let Some(through) = runtime.foreground_through_launcher() {
-                session.update_pane_launcher(pane_id, through);
+            if let Some(reading) = runtime.reading() {
+                if let Some((cwd, process)) = reading.status {
+                    session.update_pane_status(pane_id, cwd, process);
+                }
+                session.update_pane_launcher(pane_id, reading.through_launcher);
             }
         }
         let runtime = Arc::new(runtime);
@@ -721,9 +721,12 @@ impl Server {
         let probes: Vec<(PaneId, PathBuf, String, bool)> = runtimes
             .iter()
             .filter_map(|(id, runtime)| {
-                let through = runtime.foreground_through_launcher().unwrap_or(false);
-                runtime
-                    .foreground_status()
+                let reading = runtime.reading();
+                let through = reading
+                    .as_ref()
+                    .is_some_and(|reading| reading.through_launcher);
+                reading
+                    .and_then(|reading| reading.status)
                     .map(|(cwd, process)| (*id, cwd, process, through))
             })
             .collect();

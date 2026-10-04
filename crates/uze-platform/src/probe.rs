@@ -628,17 +628,31 @@ mod platform {
             return None;
         }
         let process = Process(handle);
-        let mut buffer = vec![0u16; 32 * 1024];
-        let mut len = buffer.len() as u32;
-        // SAFETY: `buffer` holds `len` u16s and outlives the call.
-        if unsafe {
-            QueryFullProcessImageNameW(process.0, PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut len)
-        } == 0
-        {
-            return None;
+        const ERROR_INSUFFICIENT_BUFFER: i32 = 122;
+        // Asked for every process of every pane each second: a path fits in
+        // a kilobyte unless it is a long one, which asks again with room
+        // for the longest Windows allows.
+        for capacity in [1024, 32 * 1024] {
+            let mut buffer = vec![0u16; capacity];
+            let mut len = buffer.len() as u32;
+            // SAFETY: `buffer` holds `len` u16s and outlives the call.
+            let answered = unsafe {
+                QueryFullProcessImageNameW(
+                    process.0,
+                    PROCESS_NAME_WIN32,
+                    buffer.as_mut_ptr(),
+                    &mut len,
+                )
+            } != 0;
+            if answered {
+                buffer.truncate(len as usize);
+                return Some(PathBuf::from(String::from_utf16_lossy(&buffer)));
+            }
+            if std::io::Error::last_os_error().raw_os_error() != Some(ERROR_INSUFFICIENT_BUFFER) {
+                return None;
+            }
         }
-        buffer.truncate(len as usize);
-        Some(PathBuf::from(String::from_utf16_lossy(&buffer)))
+        None
     }
 
     pub(super) fn parent_of(pid: u32) -> Option<u32> {

@@ -39,7 +39,7 @@ fn passes_on(holder: &Member, child: &Member) -> bool {
         .iter()
         .any(|shell| holder.name.eq_ignore_ascii_case(shell))
         || holder.name.eq_ignore_ascii_case("uze")
-        || super::pane::shim_launched_name(child.pid).is_some()
+        || super::pane::shim_launched(child.pid)
 }
 
 /// What a pane's program is started through where it can only join its

@@ -617,7 +617,7 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
     let mut last_seen = None;
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     while std::time::Instant::now() < deadline {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && *process == expected_name
         {
@@ -694,7 +694,7 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
     let mut status = None;
     let mut last_seen = None;
     for _ in 0..500 {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && process == "claude"
         {
@@ -748,11 +748,11 @@ fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
     let mut through = None;
     let mut last_seen = None;
     for _ in 0..500 {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && (process == "claude" || process == "uze")
         {
-            through = pane.foreground_through_launcher();
+            through = pane.reading().map(|reading| reading.through_launcher);
             break;
         }
         last_seen = reading.or(last_seen);
@@ -1253,7 +1253,7 @@ fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     while !server
         .runtime(pane)
-        .and_then(|runtime| runtime.foreground_status())
+        .and_then(|runtime| runtime.reading().and_then(|reading| reading.status))
         .is_some_and(|(_, process)| process == "sleep")
     {
         assert!(
@@ -2138,7 +2138,7 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
     // process it forked from, which here is this test binary.
     let mut reported = None;
     for _ in 0..500 {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && *process == expected_name
         {
@@ -2153,7 +2153,7 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
         .expect("master poisoned")
         .as_ref()
         .and_then(|master| master.process_group_leader());
-    let through_launcher = pane.foreground_through_launcher();
+    let through_launcher = pane.reading().map(|reading| reading.through_launcher);
     pane.stop();
 
     assert!(
@@ -2450,7 +2450,7 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
     let mut reported = None;
     let mut last_seen = None;
     for _ in 0..500 {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && process == "2.1.251"
         {

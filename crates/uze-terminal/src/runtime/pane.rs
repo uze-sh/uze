@@ -341,23 +341,14 @@ impl PaneRuntime {
                 .is_some()
     }
 
-    /// Best-effort `(cwd, process name)` for whatever is currently running
-    /// in the foreground of this pane — the same two facts `tmux` shows as
+    /// Best-effort reading of whatever runs in the foreground of this pane:
+    /// its directory and name (the two facts `tmux` shows as
     /// `pane_current_path`/`pane_current_command`, asked of the kernel
-    /// through [`uze_platform::probe`]. `None` when the platform cannot answer, or
-    /// when the process exited between the group-leader lookup and the read.
-    pub(super) fn foreground_status(&self) -> Option<(PathBuf, String)> {
-        let pgid = self.foreground_process()?;
-        let cwd = uze_platform::probe::current_directory_of(pgid)?;
-        let process =
-            shim_launched_name(pgid).or_else(|| uze_platform::probe::command_name_of(pgid))?;
-        Some((cwd, process))
-    }
-
-    /// Whether the foreground process carries the stamp of the launcher
-    /// that started it, read from its own environment (`/proc` on Linux,
-    /// `KERN_PROCARGS2` on macOS). `None` when there is no foreground
-    /// process to ask.
+    /// through [`uze_platform::probe`]), and whether it carries the stamp of
+    /// the launcher that started it, read from its own environment. `None`
+    /// when there is no foreground process; its status `None` when the
+    /// platform cannot answer, or the process exited between the lookup and
+    /// the read, which leaves the stamp still worth saying.
     ///
     /// The shim itself, caught before its `exec`, is the launcher at work:
     /// it already answers to the harness's name (`comm` is the symlink it
@@ -365,9 +356,22 @@ impl PaneRuntime {
     /// in the environment it hands the harness. The probe made right after
     /// a spawn lands in exactly that window, so reading it as a bypass
     /// warned about every agent the workspace launched.
-    pub(super) fn foreground_through_launcher(&self) -> Option<bool> {
-        let pgid = self.foreground_process()?;
-        Some(shim_launched_name(pgid).is_some() || runs_uze(pgid))
+    ///
+    /// The foreground is found once and its stamp read once: on Windows that
+    /// is a walk of the pane's processes and a read of each one's
+    /// environment, every second, for every pane.
+    pub(super) fn reading(&self) -> Option<ForegroundReading> {
+        let pid = self.foreground_process()?;
+        let launched = shim_launched_name(pid);
+        let through_launcher = launched.is_some() || runs_uze(pid);
+        let status = uze_platform::probe::current_directory_of(pid).and_then(|cwd| {
+            let process = launched.or_else(|| uze_platform::probe::command_name_of(pid))?;
+            Some((cwd, process))
+        });
+        Some(ForegroundReading {
+            status,
+            through_launcher,
+        })
     }
 
     /// The process in the foreground of this pane, as the platform knows
@@ -483,15 +487,24 @@ impl PaneRuntime {
 /// the shim's own pid, and only the program it ran in its place
 /// (`uze_platform::process::launched_by`) answers to it.
 pub(super) fn shim_launched_name(pgid: u32) -> Option<String> {
-    let stamped: u32 =
-        uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_PID_VARIABLE)?
-            .trim()
-            .parse()
-            .ok()?;
-    if !uze_platform::process::launched_by(pgid, stamped) {
-        return None;
-    }
-    uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_NAME_VARIABLE)
+    shim_launched(pgid)
+        .then(|| uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_NAME_VARIABLE))
+        .flatten()
+}
+
+/// Whether UZE's launcher started `pid`, from the stamp it carries: one
+/// read of its environment, for a caller that needs no more than that.
+pub(super) fn shim_launched(pid: u32) -> bool {
+    uze_platform::probe::environment_value_of(pid, crate::launch::SHIM_PID_VARIABLE)
+        .and_then(|stamped| stamped.trim().parse::<u32>().ok())
+        .is_some_and(|stamped| uze_platform::process::launched_by(pid, stamped))
+}
+
+/// What a pane's foreground is, read once (see [`PaneRuntime::reading`]).
+pub(super) struct ForegroundReading {
+    /// Its directory and name.
+    pub(super) status: Option<(PathBuf, String)>,
+    pub(super) through_launcher: bool,
 }
 
 pub(super) fn cell_coordinates(
