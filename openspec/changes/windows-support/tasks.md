@@ -192,7 +192,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 4. Terminal runtime on Windows (D5–D8)
 
-- [ ] 4.1 Windows transport:
+- [x] 4.1 Windows transport:
       - an overlapped named pipe with `FIRST_PIPE_INSTANCE`,
         `REJECT_REMOTE_CLIENTS` and a DACL for the token user SID;
       - a pipe name from `sha256(UZE_HOME, SID)`;
@@ -203,7 +203,8 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       Write the invariants at the top of the module, and add a
       concurrent read/write stress test.
-      (Done but the stress test. Decided: the name hashes `UZE_HOME` and
+      (Done, the stress test included: 2,000 frames each way at once over
+      one connection, in Windows Sandbox. Decided: the name hashes `UZE_HOME` and
       the SID with FNV-1a, since the DACL and the client's checks are the
       boundary and the name only has to be stable; a busy server is waited
       for two seconds, after which the caller's own read and write
