@@ -368,6 +368,26 @@ mod imp {
     }
 
     /// A program is in use while it runs, and free once it has ended.
+    /// A batch launcher is found by the name a person types, through
+    /// `PATHEXT`, as npm's `codex.cmd` is `codex`. Windows only: Unix runs
+    /// no file by an extension it does not name.
+    #[cfg(test)]
+    #[test]
+    fn a_batch_launcher_is_found_by_its_bare_name() {
+        let root = uze_testkit::temp::scratch("pathext");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("tool.cmd"), "@echo off\r\necho launched\r\n").unwrap();
+        let mut environment = uze_testkit::env::scope();
+        environment.set("PATH", &root);
+        environment.remove("PATHEXT");
+        let found = crate::executable::on_path("tool");
+        drop(environment);
+        assert_eq!(found, Some(root.join("tool.cmd")));
+        let output = std::process::Command::new(found.unwrap()).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "launched");
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[cfg(test)]
     #[test]
     fn a_running_program_is_in_use_until_it_ends() {

@@ -313,6 +313,34 @@ fn a_credential_bearing_url_is_rejected_and_never_echoed() {
     );
 }
 
+/// A package's bytes are what its commit holds on every machine: a file
+/// committed with `\n` under `text=auto` reads back with `\n`, and the
+/// package digests to the same value, wherever it is acquired. Git for
+/// Windows ships `core.autocrlf=true`, which would otherwise write `\r\n`
+/// and make the digest a lock records on Linux unreachable on Windows.
+#[test]
+fn a_package_holds_the_same_bytes_and_digest_on_every_platform() {
+    let fixture = Fixture::with_layout("faithful-bytes", |root| {
+        write_package(root, "faithful", false);
+        fs::write(root.join(".gitattributes"), "* text=auto\n").unwrap();
+        fs::write(root.join("skills/example/notes.md"), "one\ntwo\n").unwrap();
+    });
+    let materialized = acquire(&PackageSource::git(&fixture.url)).unwrap();
+    assert_eq!(
+        fs::read(materialized.root().join("skills/example/notes.md")).unwrap(),
+        b"one\ntwo\n"
+    );
+    assert_eq!(
+        uze_core::digest::tree_sha256(materialized.root()).unwrap(),
+        FAITHFUL_DIGEST,
+        "the digest every platform reaches for this package"
+    );
+}
+
+/// Recorded on Linux, where no checkout setting rewrites a line ending.
+const FAITHFUL_DIGEST: &str =
+    "sha256:d687a26d62a1adaf81d9bff51c3e0c7b2bb3cfe1e73a99778511586468b71449";
+
 /// The scratch checkout is UZE's, and it must not survive the operation.
 #[test]
 fn the_materialized_checkout_is_removed_when_dropped() {

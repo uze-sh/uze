@@ -154,13 +154,16 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       with `rust-lld`. The console code page is left alone: Rust writes a
       console in UTF-16, so the code page decides nothing UZE shows, and a
       changed one would outlive UZE in the person's console.)
-- [ ] 3.14 Windows tests:
+- [x] 3.14 Windows tests:
       - lock contention across two processes, with the holder pid readable;
       - a deadline killing a grandchild;
       - a `.cmd` resolved through `PATHEXT`;
       - the verbatim and case compare;
       - a sharing-violation retry;
       - a cross-platform digest using `text=auto` and symlink fixtures.
+      (Each passes in Windows Sandbox; the digest is pinned to the value
+      Linux reaches. The symlink fixture is 6.8's, which decides how a Git
+      link entry is recorded on Windows.)
 - [x] 3.15 No platform `cfg` in production code outside `uze-platform` (D3):
       - permissions in `uze-integrations` (`shared/tree.rs`,
         `hooks/wrapper.rs`) through `uze_platform::executable`;

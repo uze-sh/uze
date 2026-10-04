@@ -125,6 +125,65 @@ mod tests {
     }
 
     #[test]
+    fn a_holder_in_another_process_refuses_this_one_and_is_named() {
+        use std::io::{BufRead, Write as _};
+        let path = scratch("across-processes");
+        let mut holder = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "lock::tests::hold_the_lock_named_in_the_environment",
+            ])
+            .args(["--ignored", "--nocapture", "--test-threads", "1"])
+            .env(HOLDER, &path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut lines = std::io::BufReader::new(holder.stdout.take().unwrap()).lines();
+        assert!(
+            // The harness prints the test's name on the same line first.
+            lines.any(|line| line.is_ok_and(|line| line.ends_with("held"))),
+            "the holder took the lock"
+        );
+
+        let other = open(&path);
+        let refused = try_lock(&other, Mode::Exclusive).unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!("pid={}", holder.id()),
+            "who holds it is still readable"
+        );
+
+        drop(holder.stdin.take());
+        assert!(holder.wait().unwrap().success());
+        try_lock(&other, Mode::Exclusive).unwrap();
+        drop(other);
+        let _ = std::io::stdout().flush();
+        let _ = std::fs::remove_file(&path);
+    }
+
+    const HOLDER: &str = "UZE_PLATFORM_LOCK_HOLDER";
+
+    /// Not a test of its own: the second process of the one above, which
+    /// takes the lock, says so, and holds it until its input closes.
+    #[test]
+    #[ignore = "started by a_holder_in_another_process_refuses_this_one_and_is_named"]
+    fn hold_the_lock_named_in_the_environment() {
+        use std::io::{Read as _, Write as _};
+        let Some(path) = std::env::var_os(HOLDER) else {
+            return;
+        };
+        let mut file = open(std::path::Path::new(&path));
+        try_lock(&file, Mode::Exclusive).unwrap();
+        write!(file, "pid={}", std::process::id()).unwrap();
+        file.flush().unwrap();
+        println!("held");
+        std::io::stdout().flush().unwrap();
+        let _ = std::io::stdin().read(&mut [0u8; 1]);
+    }
+
+    #[test]
     fn an_exclusive_holder_refuses_another_and_keeps_its_contents_readable() {
         use std::io::Write as _;
         let path = scratch("exclusive");

@@ -277,6 +277,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Ending a tree ends what its root started: a grandchild the shell
+    /// started and waits on is gone once the tree is. Windows only: a Job
+    /// Object is what holds the grandchild there, and the Unix process
+    /// group is proven by the terminal's and the subprocess tests.
+    #[cfg(windows)]
+    #[test]
+    fn ending_a_tree_ends_the_grandchild_it_started() {
+        let root = uze_testkit::temp::scratch("tree-grandchild");
+        std::fs::create_dir_all(&root).unwrap();
+        let recorded = root.join("grandchild.pid");
+        let line = format!(
+            "$p = Start-Process powershell.exe -ArgumentList '-NoProfile','-Command','Start-Sleep 60' \
+             -PassThru -WindowStyle Hidden; Set-Content -LiteralPath {} $p.Id; Wait-Process -Id $p.Id",
+            crate::shell::quote(&recorded.display().to_string())
+        );
+        let mut command = crate::shell::command(&line);
+        command.stdin(std::process::Stdio::null());
+        let (mut child, tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let grandchild = loop {
+            if let Some(pid) = std::fs::read_to_string(&recorded)
+                .ok()
+                .and_then(|text| text.trim().parse::<u32>().ok())
+            {
+                break pid;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the grandchild started"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        assert_eq!(alive(grandchild), Some(true));
+
+        tree.end();
+        let _ = child.wait();
+        wait_without_reaping(grandchild);
+        assert_ne!(
+            alive(grandchild),
+            Some(true),
+            "the grandchild ended with its tree"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn a_shell_line_with_no_terminal_still_runs() {
         let mut command = crate::shell::command("exit 7");
