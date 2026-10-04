@@ -65,9 +65,7 @@ pub const REAL_HOME_SUBDIRS: &[&str] = &[
 /// [`TestEnvironment::apply`] has overwritten `HOME`.
 fn real_home() -> Option<PathBuf> {
     static REAL_HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
-    REAL_HOME
-        .get_or_init(|| std::env::var_os("HOME").map(PathBuf::from))
-        .clone()
+    REAL_HOME.get_or_init(uze_platform::home::user_home).clone()
 }
 
 /// Panics if `path` could reach the developer's real home or a real harness
@@ -430,8 +428,10 @@ impl TestEnvironment {
     /// that can go through a child process should use [`TestEnvironment::command`].
     pub fn apply(&self) -> ProcessEnvGuard<'static> {
         let mut scope = crate::env::scope();
+        for key in crate::process::HOME_VARIABLES {
+            scope.set(key, &self.home);
+        }
         scope
-            .set("HOME", &self.home)
             .set("UZE_HOME", &self.uze_home)
             .set("PATH", self.scoped_path());
         for key in crate::process::XDG_BASE_DIRS {

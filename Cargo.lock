@@ -3308,8 +3308,10 @@ dependencies = [
 name = "uze-testkit"
 version = "1.0.0-beta.10"
 dependencies = [
+ "serde",
  "serde_json",
  "uze-git",
+ "uze-platform",
 ]
 
 [[package]]

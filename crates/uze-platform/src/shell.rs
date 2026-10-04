@@ -70,12 +70,31 @@ pub fn words(line: &str) -> Option<Vec<String>> {
     imp::words(line)
 }
 
+/// This shell reading the script at `path`, which need not be executable:
+/// `sh <path>`, or PowerShell told to run the file.
+pub fn read_script(path: &std::path::Path) -> Command {
+    let (program, arguments) = imp::read_script(&path.display().to_string());
+    let mut command = Command::new(program);
+    command.args(arguments);
+    command
+}
+
+/// Of a line written once for each shell, the one this platform's shell
+/// runs.
+pub fn spelling<'a>(posix: &'a str, windows: &'a str) -> &'a str {
+    imp::spelling(posix, windows)
+}
+
 /// The extension of a script file this shell reads, without the dot.
 pub const SCRIPT_EXTENSION: Option<&str> = imp::SCRIPT_EXTENSION;
 
 #[cfg(unix)]
 mod imp {
     pub(super) const KEY: &str = "posix";
+
+    pub(super) fn spelling<'a>(posix: &'a str, _windows: &'a str) -> &'a str {
+        posix
+    }
     pub(super) const ARGV: &[&str] = &["sh", "-c"];
     pub(super) const SCRIPT_EXTENSION: Option<&str> = None;
 
@@ -91,6 +110,10 @@ mod imp {
 
     pub(super) fn script(path: &str) -> (String, Vec<String>) {
         (path.to_owned(), Vec::new())
+    }
+
+    pub(super) fn read_script(path: &str) -> (String, Vec<String>) {
+        (ARGV[0].to_owned(), vec![path.to_owned()])
     }
 
     /// Bare words, single-quoted runs and backslash-escaped characters.
@@ -132,6 +155,10 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     pub(super) const KEY: &str = "windows";
+
+    pub(super) fn spelling<'a>(_posix: &'a str, windows: &'a str) -> &'a str {
+        windows
+    }
     pub(super) const ARGV: &[&str] = &[
         "powershell.exe",
         "-NoProfile",
@@ -193,6 +220,11 @@ mod imp {
             .chain(arguments.iter().map(|argument| quote(argument)))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    /// A file PowerShell runs is already one it reads.
+    pub(super) fn read_script(path: &str) -> (String, Vec<String>) {
+        script(path)
     }
 
     pub(super) fn script(path: &str) -> (String, Vec<String>) {

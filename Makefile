@@ -145,7 +145,7 @@ journey-image: ## Build the pinned journey runtime image (tmux, git, python).
 	docker build -f journeys/Dockerfile -t $(JOURNEY_IMAGE) journeys/
 
 journey-docker: build journey-image ## Run a journey inside the pinned container, against this build.
-	$(CARGO) build --locked -p uze-testkit --bin uze-fake-harness
+	$(CARGO) build --locked --features dev-servers --bin uze-fake-harness
 	mkdir -p journeys/.evidence
 	docker run --rm --init \
 		--user "$$(id -u):$$(id -g)" -e HOME=/tmp/journey-home \

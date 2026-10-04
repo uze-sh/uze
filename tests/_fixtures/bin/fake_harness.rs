@@ -1,4 +1,9 @@
-//! Writes the standard harness stand-ins into a directory.
+//! The harness stand-ins, and the tool that writes them.
+//!
+//! Started as `uze-fake-harness`, it writes the standard stand-ins into a
+//! directory. Started under any other name — the copy or link
+//! `uze_testkit::fake_harness` placed as `claude`, `codex.exe` — it *is* that
+//! stand-in, and answers by the table written beside it.
 //!
 //! The Rust suites get them by calling
 //! `uze_testkit::fake_harness::Standard::install` directly; the journey
@@ -20,6 +25,18 @@ use std::{path::PathBuf, process::ExitCode};
 use uze_testkit::fake_harness::{FakeHarness, Standard};
 
 fn main() -> ExitCode {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if let Ok(executable) = std::env::current_exe()
+        && executable
+            .file_stem()
+            .is_some_and(|stem| stem != "uze-fake-harness")
+    {
+        return uze_testkit::fake_harness::stand_in::run(&executable, &arguments);
+    }
+    write_the_standard_set()
+}
+
+fn write_the_standard_set() -> ExitCode {
     let mut bin_dir: Option<PathBuf> = None;
     let mut home: Option<PathBuf> = None;
     let mut state_dir: Option<PathBuf> = None;

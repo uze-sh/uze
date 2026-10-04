@@ -1,8 +1,77 @@
 //! Executables a test runs without ever having held a descriptor to them.
 
-use std::ffi::OsStr;
-use std::path::Path;
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+/// Every variable some platform reads the user's home from: `HOME` on Unix
+/// (and by Git everywhere), `USERPROFILE` on Windows. A test's home is all
+/// of them, or the machine's own leaks in through the one left out.
+pub const HOME_VARIABLES: [&str; 2] = ["HOME", "USERPROFILE"];
+
+/// Held by every test that installs a Ctrl+C watch or raises an interrupt:
+/// the watch is one per process, so a test raising its interrupt would
+/// otherwise end the child a concurrent test is waiting on.
+pub fn interrupts() -> std::sync::MutexGuard<'static, ()> {
+    static INTERRUPTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    INTERRUPTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// A relative path written with `/` as this platform spells it, for
+/// comparing against what the product prints or records.
+pub fn native(relative: &str) -> String {
+    relative
+        .split('/')
+        .collect::<PathBuf>()
+        .display()
+        .to_string()
+}
+
+/// A `PATH` holding the system's own tools and Git, and nothing a developer
+/// installed: what a test that must not find a harness by accident runs on.
+pub fn system_path() -> OsString {
+    std::env::join_paths(system_directories())
+        .unwrap_or_else(|error| panic!("system PATH does not join: {error}"))
+}
+
+/// `first`, then [`system_path`]: a test's own stand-ins ahead of the
+/// system's tools.
+pub fn path_with(first: &[&Path]) -> OsString {
+    let directories = first
+        .iter()
+        .map(|directory| directory.to_path_buf())
+        .chain(system_directories());
+    std::env::join_paths(directories).unwrap_or_else(|error| panic!("PATH does not join: {error}"))
+}
+
+#[cfg(unix)]
+fn system_directories() -> Vec<PathBuf> {
+    vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")]
+}
+
+/// Git's own directory, found where the ambient `PATH` has it, and the
+/// system's: `System32` and Windows PowerShell, which every authored
+/// command runs in.
+#[cfg(windows)]
+fn system_directories() -> Vec<PathBuf> {
+    let system = std::env::var_os("SystemRoot")
+        .map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from)
+        .join("System32");
+    let git = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .find(|directory| {
+            uze_platform::executable::candidates(directory, "git")
+                .iter()
+                .any(|candidate| candidate.is_file())
+        });
+    git.into_iter()
+        .chain([system.join("WindowsPowerShell").join("v1.0"), system])
+        .collect()
+}
 
 /// The base directories a harness derives from `HOME` unless they are set.
 /// A test's `HOME` isolates nothing while these still name the machine's
@@ -29,7 +98,9 @@ pub trait IsolatedHome {
 
 impl IsolatedHome for Command {
     fn isolated_home(&mut self, home: impl AsRef<OsStr>) -> &mut Self {
-        self.env("HOME", home);
+        for key in HOME_VARIABLES {
+            self.env(key, home.as_ref());
+        }
         for key in XDG_BASE_DIRS.into_iter().chain(GIT_CONFIG_REDIRECTS) {
             self.env_remove(key);
         }

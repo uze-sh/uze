@@ -308,7 +308,7 @@ def standin_binary() -> Path:
         if candidate.exists():
             return candidate
     die(
-        "no uze-fake-harness binary: run `cargo build -p uze-testkit --bin uze-fake-harness`. "
+        "no uze-fake-harness binary: run `cargo build --features dev-servers --bin uze-fake-harness`. "
         "The stand-ins come from uze-testkit so this tier and the Rust suites cannot come to "
         "disagree about what a harness does."
     )
