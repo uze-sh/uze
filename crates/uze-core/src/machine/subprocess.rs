@@ -325,6 +325,7 @@ fn combine_streams(stdout: &Stream, stderr: &Stream) -> String {
 #[cfg(test)]
 mod tests {
 
+    // Signals a process, as only Unix does.
     #[cfg(unix)]
     #[test]
     fn an_interrupt_kills_a_child_the_terminal_no_longer_reaches() {
@@ -351,6 +352,7 @@ mod tests {
     }
 
     /// Every pid `/proc` reports in group `pgid`; empty without `/proc`.
+    // Reads /proc, which only Linux has.
     #[cfg(unix)]
     fn group_members(pgid: u32) -> Vec<u32> {
         let Ok(entries) = std::fs::read_dir("/proc") else {

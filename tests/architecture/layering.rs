@@ -1099,72 +1099,31 @@ fn only_uze_platform_names_a_platform() {
     );
 }
 
-/// The files whose tests are gated to a platform without saying why, and
-/// how many such gates each still has. The debt only shrinks: a gate added
-/// anywhere states its reason, and one here is paid by writing it or by
-/// letting the test run everywhere.
-const UNEXPLAINED_TEST_GATES: &[(&str, usize)] = &[
-    (
-        "crates/uze-application/src/application/inspection_cache.rs",
-        1,
-    ),
-    ("crates/uze-application/src/application/maintenance.rs", 1),
-    (
-        "crates/uze-application/src/application/services/tasks/tests.rs",
-        5,
-    ),
-    ("crates/uze-application/src/application/tests.rs", 12),
-    ("crates/uze-core/src/config.rs", 1),
-    ("crates/uze-core/src/delivery/exposure.rs", 1),
-    ("crates/uze-core/src/delivery/integration.rs", 1),
-    ("crates/uze-core/src/delivery/leftovers.rs", 2),
-    ("crates/uze-core/src/delivery/persistence.rs", 5),
-    ("crates/uze-core/src/delivery/reconciliation.rs", 4),
-    ("crates/uze-core/src/digest.rs", 3),
-    ("crates/uze-core/src/machine/harness_runtime.rs", 6),
-    ("crates/uze-core/src/machine/process_cwd.rs", 1),
-    ("crates/uze-core/src/machine/provisioning.rs", 2),
-    ("crates/uze-core/src/machine/subprocess.rs", 2),
-    ("crates/uze-core/src/package/acquisition/forge.rs", 1),
-    ("crates/uze-core/src/package/acquisition/git.rs", 1),
-    ("crates/uze-core/src/package/acquisition/marketplace.rs", 1),
-    ("crates/uze-core/src/package/acquisition/mirror.rs", 1),
-    ("crates/uze-core/src/package/authoring/tests.rs", 1),
-    ("crates/uze-core/src/package/store.rs", 1),
-    ("crates/uze-core/src/project/context.rs", 1),
-    ("crates/uze-git/src/lib.rs", 1),
-    ("crates/uze-integrations/src/antigravity/plugin.rs", 1),
-    ("crates/uze-integrations/src/claude.rs", 1),
-    ("crates/uze-integrations/src/claude/mcp.rs", 1),
-    ("crates/uze-integrations/src/codex/generate.rs", 2),
-    ("crates/uze-integrations/src/hooks.rs", 2),
-    ("crates/uze-integrations/src/hooks/tests.rs", 5),
-    ("crates/uze-integrations/src/shared/path.rs", 2),
-    ("crates/uze-integrations/src/shared/process.rs", 4),
-    ("crates/uze-integrations/src/shared/provision.rs", 1),
-    ("crates/uze-integrations/src/shared/tree.rs", 2),
-    ("crates/uze-workspace/src/prompt_history.rs", 1),
-    ("src/cli/setup.rs", 1),
-    ("src/self_update.rs", 2),
-    ("src/telemetry.rs", 1),
-    ("src/ui/extension_host.rs", 2),
-    ("src/ui/root_picker/tests.rs", 1),
-    ("tests/cli/grammar.rs", 2),
-    ("tests/cli/machine.rs", 8),
-    ("tests/integrations/hooks.rs", 6),
-    ("tests/integrations/provisioning.rs", 2),
-    ("tests/packages/acquisition.rs", 1),
-    ("tests/packages/containment.rs", 1),
-    ("tests/packages/store.rs", 2),
-    ("tests/project/consumer.rs", 1),
-    ("tests/projection/invocation.rs", 1),
-];
+/// Whether the gate at `index` says why it is one: a comment beside it, or
+/// one in the comments and attributes right above it (its doc comment
+/// included), that names the platform or what only it has.
+fn explains_its_platform(lines: &[&str], index: usize) -> bool {
+    const NAMED: [&str; 5] = ["Unix", "Windows", "Linux", "macOS", "POSIX"];
+    let names = |text: &str| NAMED.iter().any(|platform| text.contains(platform));
+    if lines[index]
+        .split_once("//")
+        .is_some_and(|(_, comment)| names(comment))
+    {
+        return true;
+    }
+    lines[..index]
+        .iter()
+        .rev()
+        .map(|line| line.trim())
+        .take_while(|line| line.starts_with("//") || line.starts_with("#["))
+        .any(|line| line.starts_with("//") && names(line))
+}
 
-/// A test gated to a platform says why, in a `//` comment on the line above
-/// the gate or beside it: some behaviour exists on one platform only (a
-/// mode bit, a symlink without privilege, a FIFO), and a gate that does
-/// not say so cannot be told from a test that was only ever written for
-/// one machine.
+/// A test gated to a platform says why, in the comments right above the
+/// gate or beside it, naming the platform or what only it has: some
+/// behaviour exists on one platform only (a mode bit, a symlink without
+/// privilege, a FIFO), and a gate that does not say so cannot be told from
+/// a test that was only ever written for one machine.
 #[test]
 fn a_test_gated_to_a_platform_says_why() {
     let root = repository_root();
@@ -1189,32 +1148,19 @@ fn a_test_gated_to_a_platform_says_why() {
             .enumerate()
             .filter(|(index, line)| {
                 let code = line.split("//").next().unwrap_or_default();
-                let previous = index
-                    .checked_sub(1)
-                    .and_then(|above| lines.get(above))
-                    .map(|line| line.trim())
-                    .unwrap_or_default();
-                let explained = line.contains("//")
-                    || (previous.starts_with("//") && !previous.starts_with("///"));
-                names_a_platform(code) && !explained
+                names_a_platform(code) && !explains_its_platform(&lines, *index)
             })
             .count();
-        let allowed = UNEXPLAINED_TEST_GATES
-            .iter()
-            .find(|(file, _)| *file == relative)
-            .map_or(0, |(_, count)| *count);
-        if unexplained > allowed {
-            over.push(format!(
-                "  {relative}: {unexplained} without a reason (allowed {allowed})"
-            ));
+        if unexplained > 0 {
+            over.push(format!("  {relative}: {unexplained} without a reason"));
         }
     }
     assert!(
         over.is_empty(),
         "\n\ntests gated to a platform without saying why:\n\n{}\n\n\
-         Write the reason in a `//` comment above the gate, or let the test run \
-         on every platform through uze-platform's concepts. Never raise an \
-         allowance.\n",
+         Say why in a comment above the gate, naming the platform or what only \
+         it has, or let the test run on every platform through uze-platform's \
+         concepts.\n",
         over.join("\n")
     );
 }

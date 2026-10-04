@@ -69,6 +69,7 @@ fn working_directories() -> Option<Vec<PathBuf>> {
 mod tests {
     use super::*;
 
+    // Signals a process, as only Unix does.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn a_process_working_in_a_directory_is_seen_there() {

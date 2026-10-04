@@ -170,13 +170,13 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         the server's directory, the `uze` image name) in the modules they
         belong to;
       - `uze-testkit`'s process helpers on the same concepts.
-- [ ] 3.16 `tests/architecture/layering.rs` fails the build over a platform
+- [x] 3.16 `tests/architecture/layering.rs` fails the build over a platform
       `cfg` in production code outside `uze-platform`, and over a test gated
       to a platform with no comment saying why. Every existing gate gets its
       reason, or is removed where the behaviour exists on both platforms.
-      (Both rules hold: `only_uze_platform_names_a_platform` with no debt,
-      `a_test_gated_to_a_platform_says_why` with a per-file allowance of the
-      150 gates that had no reason, which only shrinks. Open: paying it.)
+      (Both rules hold with no debt: of the 150 gates that had no reason,
+      21 tests now run on every platform, and every other gate's comment
+      names the platform or what only it has.)
 
 ## 4. Terminal runtime on Windows (D5–D8)
 

@@ -15,6 +15,7 @@
 //! ordinary account make only in developer mode. What Windows acquisition
 //! does with a Git link entry is its own rule (task 6.8).
 
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #![cfg(unix)]
 
 use std::{

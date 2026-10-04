@@ -2827,7 +2827,7 @@ struct ReadyProcess {
     output: std::io::BufReader<std::process::ChildStdout>,
 }
 
-// See `ReadyProcess`.
+// See `ReadyProcess`: a POSIX shell, for the Unix tests.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 impl ReadyProcess {
     fn spawn(shell: &Path) -> Self {

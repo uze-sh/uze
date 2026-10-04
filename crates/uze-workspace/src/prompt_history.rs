@@ -512,6 +512,7 @@ mod tests {
         clear(&temp.home, a).unwrap();
     }
 
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     #[test]
     fn history_is_owner_only() {

@@ -453,6 +453,7 @@ mod tests {
         );
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn something_other_than_a_directory_is_never_replaced() {
@@ -468,7 +469,6 @@ mod tests {
         assert_eq!(siblings(&root), ["elsewhere", "flow:review"]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn staging_left_by_a_dead_process_is_removed_and_a_live_one_kept() {
         let root = uze_testkit::temp::scratch("replace-dir-abandoned");
@@ -483,6 +483,7 @@ mod tests {
         assert!(live.exists());
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_preserving_write_goes_through_a_symlink_and_keeps_the_mode() {
@@ -516,6 +517,7 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_preserving_write_through_a_dangling_symlink_creates_its_target() {
@@ -650,6 +652,7 @@ mod tests {
     /// The case `Drop` cannot cover: a holder killed outright. The kernel
     /// closes its descriptors, so the lock is free for the next process with
     /// nothing to reclaim and nobody to ask about a pid.
+    // Signals a process, as only Unix does.
     #[cfg(unix)]
     #[test]
     fn a_holder_killed_outright_releases_the_lock() {

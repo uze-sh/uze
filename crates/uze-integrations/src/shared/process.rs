@@ -435,6 +435,7 @@ mod tests {
         );
     }
 
+    // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     #[test]
     fn capture_collects_output_and_status_of_a_successful_vendor() {
@@ -453,6 +454,7 @@ mod tests {
         assert_eq!(output.stdout, b"hello");
     }
 
+    // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     #[test]
     fn capture_collects_stderr_of_a_failing_vendor() {
@@ -467,6 +469,7 @@ mod tests {
         assert_eq!(output.stderr, b"bad\n");
     }
 
+    // Drives POSIX programs (`sh`, `sleep`) as stand-ins.
     #[cfg(unix)]
     #[test]
     fn capture_bounds_the_wait_even_when_a_backgrounded_descendant_holds_the_pipe_open() {
@@ -490,6 +493,7 @@ mod tests {
         );
     }
 
+    // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     #[test]
     fn capture_appends_a_truncation_notice_when_the_output_cap_is_hit() {

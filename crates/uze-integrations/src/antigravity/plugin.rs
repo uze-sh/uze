@@ -483,6 +483,7 @@ mod plugin_tests {
 
     /// With no manifest to read, the CLI is asked, and it says there is
     /// nothing imported in a sentence rather than in JSON.
+    // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     #[test]
     fn the_cli_saying_nothing_is_imported_lists_nothing_imported() {

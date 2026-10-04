@@ -819,6 +819,7 @@ mod lifecycle_tests {
         assert_eq!(check("{bad"), AttachmentState::Blocked);
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn detaching_a_skill_reference_cleans_an_unreferenced_owned_shim() {

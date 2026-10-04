@@ -3,6 +3,7 @@
 //! vendor installer and no network is reached. The update routes are the
 //! CLI's registry-complete setup matrix (`tests/cli/machine.rs`).
 
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 #[test]
 fn every_registered_harness_installs_through_its_documented_official_route() {

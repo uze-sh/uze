@@ -983,6 +983,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    // A FIFO, which Windows has no file for.
     #[cfg(unix)]
     #[test]
     fn a_package_file_that_is_a_fifo_is_refused_without_waiting_for_a_writer() {

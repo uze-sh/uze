@@ -196,6 +196,7 @@ fn fake_harness_bin_dir(label: &str) -> PathBuf {
 /// A fake legacy V2-only installation. The isolated PATH deliberately has no
 /// stable `opencode`: this proves `uze setup opencode` handles `opencode2`
 /// without passing it the stable CLI's incompatible `upgrade` subcommand.
+// Its stand-in programs are POSIX shell scripts.
 #[cfg(unix)]
 fn fake_legacy_opencode_bin_dir(label: &str) -> PathBuf {
     let dir = temporary_home(label);
@@ -479,6 +480,7 @@ fn setup_conformance_matrix_covers_every_registered_harness() {
 }
 
 #[test]
+// OpenCode's installer is POSIX shell; Windows gets its distributed build instead.
 #[cfg(unix)]
 fn setup_opencode_legacy_binary_uses_installer_not_stable_upgrade() {
     let home = temporary_home("cli-setup-opencode2-home");
@@ -641,6 +643,7 @@ fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
 /// opencode` verifies it there and says where it is, and that the shell it
 /// runs in does not reach it until a new one starts.
 #[test]
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
     use std::os::unix::fs::PermissionsExt;
@@ -711,6 +714,7 @@ fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
 /// puts it, `~/.local/bin/<program>`, which the shell `uze setup` runs in
 /// does not reach yet: setup verifies it there, says where it is, puts the
 /// shim in front of it, and warns about nothing.
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn assert_fresh_native_install_found_outside_path(
     program: &str,
@@ -785,6 +789,7 @@ fn assert_fresh_native_install_found_outside_path(
 }
 
 #[test]
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn setup_claude_reports_where_a_fresh_install_landed_outside_path() {
     assert_fresh_native_install_found_outside_path(
@@ -796,6 +801,7 @@ fn setup_claude_reports_where_a_fresh_install_landed_outside_path() {
 }
 
 #[test]
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn setup_codex_reports_where_a_fresh_install_landed_outside_path() {
     assert_fresh_native_install_found_outside_path(

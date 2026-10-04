@@ -425,6 +425,7 @@ fn choosing_an_agents_slot_opens_the_repository_it_was_cut_from() {
     assert_eq!(typed.chosen(), Some(repository));
 }
 
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
 fn a_symlink_to_a_directory_is_offered_and_a_file_is_not() {

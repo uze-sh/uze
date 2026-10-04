@@ -725,6 +725,7 @@ fn a_merge_keeps_the_users_own_key_order() {
 /// under the umask and chmods afterwards, so a crash between the two
 /// leaves the right bytes unrunnable — exit 126, which a `deny` group
 /// turns into a permanent block.
+// Unix file modes, which Windows does not keep.
 #[cfg(unix)]
 #[test]
 fn a_wrapper_that_lost_its_executable_bit_is_drift_and_is_repaired() {
@@ -921,7 +922,6 @@ fn an_entry_that_drifted_still_counts_as_using_the_wrapper() {
 /// delivered before: the wrapper is generated tier, so an earlier
 /// build's copy is still UZE's to remove, and the next attach
 /// reproduces the current one.
-#[cfg(unix)]
 #[test]
 fn a_wrapper_an_earlier_build_wrote_still_removes() {
     let root = uze_testkit::temp::scratch("hooks-stale-wrapper");
@@ -961,6 +961,7 @@ fn a_wrapper_an_earlier_build_wrote_still_removes() {
 
 /// Only the header marks a wrapper as generated; a file somebody else
 /// put there is still not UZE's to remove.
+// Its stand-in programs are POSIX shell scripts.
 #[cfg(unix)]
 #[test]
 fn a_wrapper_without_the_generated_header_is_drift() {

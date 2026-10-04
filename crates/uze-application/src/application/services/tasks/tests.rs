@@ -1984,6 +1984,7 @@ mod task_service_tests {
     /// document and its lock exist: a read still succeeds and every write
     /// after it fails, which is the shape of a full disk or a read-only
     /// `$UZE_HOME`.
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     fn refuse_writes(app: &UzeApplication, root: &Path) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
@@ -1995,6 +1996,7 @@ mod task_service_tests {
         directory
     }
 
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     fn allow_writes(directory: &Path) {
         use std::os::unix::fs::PermissionsExt;
@@ -2010,6 +2012,7 @@ mod task_service_tests {
     /// nothing on the machine remembers. Said as a report, never as
     /// silence: an answer with no report in it is what the client renders
     /// as "nothing ready", and the operator is looking at the task.
+    // Refuses writes with a Unix file mode (`refuse_writes`).
     #[cfg(unix)]
     #[test]
     fn a_delivery_that_could_not_claim_its_task_says_why() {
@@ -2052,6 +2055,7 @@ mod task_service_tests {
     /// between the claim and the record — the one window where a delivery
     /// can happen and go unrecorded now that claiming is a write of its
     /// own.
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     #[test]
     fn a_delivery_that_could_not_be_recorded_says_so() {
@@ -2212,6 +2216,7 @@ mod task_service_tests {
     /// A slot nothing records is worse than no slot: nothing parks it,
     /// nothing collects it, and the agent is told it is isolated. The
     /// placement gives it back and says why instead.
+    // Refuses writes with a Unix file mode (`refuse_writes`).
     #[cfg(unix)]
     #[test]
     fn a_placement_that_could_not_be_recorded_gives_the_slot_back() {

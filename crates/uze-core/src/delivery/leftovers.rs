@@ -83,6 +83,7 @@ fn collect(directory: &Path, found: &mut Vec<Leftover>) {
 mod tests {
     use super::*;
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_link_back_up_the_tree_is_not_followed() {
@@ -225,6 +226,7 @@ pub fn remove_dangling(home: &UzeHome, reference: &DanglingReference) -> crate::
     Ok(true)
 }
 
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(all(test, unix))]
 mod dangling_tests {
     use super::*;

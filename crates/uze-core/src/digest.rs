@@ -198,6 +198,7 @@ mod tests {
     /// A tree that names itself is the shape a remote repository can ship;
     /// following it is an unbounded walk, so the digest must terminate —
     /// reading the link rather than entering it.
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_directory_symlink_pointing_at_the_tree_itself_does_not_recurse() {
@@ -211,6 +212,7 @@ mod tests {
     /// A symlink is part of what a package does — `assert_self_contained`
     /// admits a relative, contained one — so a marketplace must not be able
     /// to add, remove or repoint one behind an unchanged `integrity`.
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn adding_or_repointing_a_symlink_changes_the_digest() {
@@ -232,6 +234,7 @@ mod tests {
     /// A link and a file spelled the same, carrying the same string, are
     /// two different packages: one resolves elsewhere at read time and the
     /// other does not.
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_symlink_does_not_digest_as_a_file_holding_its_target() {

@@ -550,6 +550,7 @@ mod subdirectory_tests {
         }
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_working_tree_directory_linked_outside_the_checkout_is_refused() {

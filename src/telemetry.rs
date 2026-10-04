@@ -539,6 +539,7 @@ mod tests {
     /// users. `prompt_history` already keeps its own record at `0600`;
     /// leaving the journal beside it world-readable answered the same
     /// question two different ways.
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     #[test]
     fn the_journal_is_reachable_by_its_owner_alone() {

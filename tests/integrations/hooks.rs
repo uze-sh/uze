@@ -73,11 +73,14 @@ fn spelled_for_every_shell(manifest: &str) -> String {
 /// (openai/codex#24453), so a shell guard is reported there, never delivered.
 #[cfg(unix)]
 const CODEX_GUARDS_SHELL: CompatibilityRoute = CompatibilityRoute::Native;
+// What Codex was measured to fire on Windows (see above).
 #[cfg(windows)]
 const CODEX_GUARDS_SHELL: CompatibilityRoute = CompatibilityRoute::Unsupported;
 
+// What Antigravity was measured to take on Windows (see above).
 #[cfg(unix)]
 const ANTIGRAVITY_DELIVERS: CompatibilityRoute = CompatibilityRoute::Native;
+// What Antigravity was measured to take on Windows (see above).
 #[cfg(windows)]
 const ANTIGRAVITY_DELIVERS: CompatibilityRoute = CompatibilityRoute::Unsupported;
 

@@ -631,6 +631,7 @@ fn check_reports_a_reference_outside_the_plugin() -> Result<()> {
     Ok(())
 }
 
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
 fn check_reports_a_link_install_would_refuse() -> Result<()> {

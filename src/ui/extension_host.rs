@@ -649,6 +649,7 @@ mod tests {
         std::fs::remove_dir_all(&directory).ok();
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_save_never_follows_a_link_out_of_its_repository() {
@@ -668,6 +669,7 @@ mod tests {
         std::fs::remove_dir_all(&outside).ok();
     }
 
+    // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     #[test]
     fn a_save_keeps_the_permissions_the_file_had() {

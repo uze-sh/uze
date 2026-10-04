@@ -450,6 +450,7 @@ mod tests {
     use super::*;
     use std::fs;
 
+    // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     fn make_executable(path: &Path) {
         use std::os::unix::fs::PermissionsExt;
@@ -458,6 +459,7 @@ mod tests {
     }
 
     #[test]
+    // Its stand-in programs are POSIX scripts (`make_executable`).
     #[cfg(unix)]
     fn resolves_real_executable_skipping_shims_dir_even_when_it_is_first_on_path() {
         let mut env = uze_testkit::env::scope();
@@ -483,6 +485,7 @@ mod tests {
     }
 
     #[test]
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     fn a_path_entry_that_links_into_the_shims_dir_is_skipped_too() {
         let mut env = uze_testkit::env::scope();
@@ -512,6 +515,7 @@ mod tests {
     }
 
     #[test]
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     fn the_running_executable_is_never_resolved_as_the_harness() {
         let mut env = uze_testkit::env::scope();
@@ -544,6 +548,7 @@ mod tests {
     }
 
     #[test]
+    // Its stand-in programs are POSIX scripts (`make_executable`).
     #[cfg(unix)]
     fn no_real_executable_on_path_resolves_to_none_not_the_shim() {
         let mut env = uze_testkit::env::scope();

@@ -441,6 +441,7 @@ mod generated_native_tests {
 
     /// A symlink that escapes the package is refused by name — never
     /// followed into foreign bytes, never silently dropped.
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn envelope_refuses_a_symlink_that_escapes_the_package() {

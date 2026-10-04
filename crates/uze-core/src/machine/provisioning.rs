@@ -232,6 +232,7 @@ mod tests {
         assert_eq!(probe.output, ProcessOutput::Quiet);
     }
 
+    // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     #[test]
     fn a_vendor_switch_reaches_the_child_on_top_of_the_inherited_environment() {

@@ -854,6 +854,7 @@ fn unix_now() -> u64 {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt as _;
     use uze_testkit::temp::TempDir;

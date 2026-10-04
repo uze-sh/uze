@@ -427,7 +427,6 @@ fn claude_declares_plain_and_namespaces_natively_without_double_prefix() {
 
 #[test]
 fn claude_shim_namespace_matches_plugin_and_never_double_prefixes() {
-    #[cfg(unix)]
     {
         let root = temp("claude-shim");
         let home = UzeHome::at(&root);

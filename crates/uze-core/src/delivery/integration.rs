@@ -850,6 +850,7 @@ mod artifact_representation_tests {
 }
 
 /// Both cases are receipt-owned symlinks.
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(all(test, unix))]
 mod lifecycle_tests {
     use super::*;

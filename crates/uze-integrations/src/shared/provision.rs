@@ -197,6 +197,7 @@ pub(crate) fn provision_cli(
     )
 }
 
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(all(test, unix))]
 mod official_installer_tests {
     use std::process::Command;

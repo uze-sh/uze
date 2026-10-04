@@ -921,6 +921,7 @@ fn not_unicode() -> std::ffi::OsString {
     std::ffi::OsString::from_vec(vec![0xff])
 }
 
+// A string that is not Unicode is a lone surrogate on Windows, an invalid byte on Unix.
 #[cfg(windows)]
 fn not_unicode() -> std::ffi::OsString {
     use std::os::windows::ffi::OsStringExt as _;

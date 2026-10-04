@@ -435,6 +435,7 @@ mod wrapper_parity_tests;
 
 /// The generated wrapper against real `sh`: the same cases the reference
 /// runtime answers, run through the file a harness would actually execute.
+// The generated POSIX wrapper, run by a real `sh`.
 #[cfg(all(test, unix))]
 mod wrapper_tests;
 
@@ -442,5 +443,6 @@ mod wrapper_tests;
 /// V2-shaped plugin context. Skipped where Bun is absent: the plugin is a
 /// delivered artifact for a harness that embeds Bun, and the goldens above
 /// keep its bytes honest without it.
+// Runs the generated plugin under Bun with Unix file modes.
 #[cfg(all(test, unix))]
 mod opencode_runtime_tests;

@@ -91,6 +91,7 @@ impl IntegrationPort for AllResourceSymlinkIntegration {
 
     fn attach_receipt(&self, resource: &Resource) -> Result<Option<AttachmentReceipt>> {
         let path = self.root.join(resource.name());
+        // A symbolic link, which Windows lets an ordinary account make only in developer mode.
         #[cfg(unix)]
         {
             let already_correct = fs::read_link(&path)
@@ -153,6 +154,7 @@ impl IntegrationPort for PartialIntegration {
             ));
         }
         let path = self.root.join("first-managed-resource");
+        // A symbolic link, which Windows lets an ordinary account make only in developer mode.
         #[cfg(unix)]
         std::os::unix::fs::symlink(&resource.capability.path, &path).map_err(|source| {
             UzeError::Write {
@@ -289,6 +291,7 @@ pub(crate) fn a_package_whose_guard_cannot_run_here_is_not_installed() {
     fs::remove_dir_all(root).unwrap();
 }
 
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
 pub(crate) fn removal_uses_reconciliation_and_preserves_drift() {
@@ -1080,6 +1083,7 @@ pub(crate) fn market_inspect_errors_on_an_unregistered_marketplace() {
 /// after one capability was already attached, and nothing of the attempt
 /// may remain — not the attachment, not its receipt, not the Store entry
 /// `status` and `doctor` would go on listing.
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
 pub(crate) fn an_install_its_only_harness_refuses_leaves_nothing_behind() {
@@ -1123,6 +1127,7 @@ pub(crate) fn an_install_its_only_harness_refuses_leaves_nothing_behind() {
 /// One harness takes the package and the other refuses: the package stays,
 /// the refusing harness is left with nothing half-attached, and every
 /// listing says which harness it did not reach and why.
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
 pub(crate) fn an_install_one_of_two_harnesses_refuses_is_recorded_as_partial() {
@@ -1276,11 +1281,13 @@ pub(crate) fn a_failed_reinstall_keeps_the_package_that_was_there() {
 
 /// A harness that takes part of a package as one generated envelope and
 /// the rest capability by capability.
+// A stand-in integration whose envelope is a symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 struct EnvelopingIntegration {
     root: PathBuf,
 }
 
+// A stand-in integration that links its artifacts, as only Unix does without a privilege.
 #[cfg(unix)]
 impl IntegrationPort for EnvelopingIntegration {
     fn id(&self) -> &'static str {
@@ -1361,6 +1368,7 @@ impl IntegrationPort for EnvelopingIntegration {
 /// The report used to keep one location per harness and drop every
 /// capability delivered beside a package — which is exactly how a
 /// duplicate delivery went unseen.
+// Uses the linking stand-in integration above, Unix only.
 #[cfg(unix)]
 #[test]
 pub(crate) fn the_install_report_names_the_envelope_and_every_attachment_beside_it() {
@@ -1433,6 +1441,7 @@ pub(crate) fn remove_is_idempotent_without_claiming_history_for_absent_state() {
     fs::remove_dir_all(root).unwrap();
 }
 
+// Uses the linking stand-in integration above, Unix only.
 #[cfg(unix)]
 #[test]
 pub(crate) fn multi_mcp_package_has_independent_receipts_through_safe_removal() {
@@ -2021,6 +2030,7 @@ impl IntegrationPort for HealthySymlinkIntegration {
     }
     fn attach_receipt(&self, resource: &Resource) -> Result<Option<AttachmentReceipt>> {
         let path = self.root.join(resource.name());
+        // A symbolic link, which Windows lets an ordinary account make only in developer mode.
         #[cfg(unix)]
         {
             let already_correct = fs::read_link(&path)
@@ -2085,6 +2095,7 @@ impl IntegrationPort for ForeignFailingIntegration {
             return Ok(None);
         }
         let path = self.root.join(resource.name());
+        // A symbolic link, which Windows lets an ordinary account make only in developer mode.
         #[cfg(unix)]
         {
             if path.symlink_metadata().is_ok() {
@@ -2340,6 +2351,7 @@ fn setup_is_idempotent_with_foreign_state_present() {
 }
 
 #[test]
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 fn shim_failure_is_reported_but_does_not_abort_setup() {
     let root = uze_testkit::temp::scratch("setup-shim-resilience");

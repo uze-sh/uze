@@ -130,6 +130,7 @@ mod tests {
             &source.join("linked.sh"),
         )
         .unwrap();
+        // Unix file modes, which Windows does not keep.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -160,6 +161,7 @@ mod tests {
         let linked = target.join("linked.sh");
         assert!(!linked.is_symlink());
         assert_eq!(fs::read_to_string(linked).unwrap(), "script");
+        // Unix file modes, which Windows does not keep.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

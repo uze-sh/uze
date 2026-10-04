@@ -478,6 +478,7 @@ impl uze_application::ProcessRunner for CapturingRunner {
     }
 }
 
+// Drives POSIX programs (`sh`, `sleep`) as stand-ins.
 #[cfg(all(test, unix))]
 mod capturing_runner_tests {
     use std::time::{Duration, Instant};

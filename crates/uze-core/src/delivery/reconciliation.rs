@@ -141,6 +141,7 @@ mod tests {
     use std::fs;
 
     use crate::UzeHome;
+    // Used only by the Unix test below, which links its artifacts.
     #[cfg(unix)]
     use crate::{
         exposure::ExposurePlan, integration::HarnessDetection, router::HarnessCapabilities,
@@ -148,8 +149,10 @@ mod tests {
 
     use super::*;
 
+    // Used only by the Unix test below, which links its artifacts.
     #[cfg(unix)]
     struct TestIntegration;
+    // A stand-in integration that links its artifacts, as only Unix does without a privilege.
     #[cfg(unix)]
     impl IntegrationPort for TestIntegration {
         fn id(&self) -> &'static str {
@@ -170,6 +173,7 @@ mod tests {
         UzeHome::at(uze_testkit::temp::scratch(label))
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn reconciliation_and_removal_plan_preserve_drift() {

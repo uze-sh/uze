@@ -477,6 +477,7 @@ mod tests {
         assert!(!reaches_a_remote(&[]));
     }
 
+    // Drives POSIX programs (`sh`, `sleep`) as stand-ins.
     #[cfg(unix)]
     #[test]
     fn a_command_past_its_limit_is_stopped_and_reported() {
