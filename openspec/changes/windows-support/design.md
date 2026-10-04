@@ -468,7 +468,7 @@ measured on Windows and recorded with the harness version (task 6.2):
 
 | Harness | Windows entry |
 |---|---|
-| Claude Code | exec form: `command: "powershell.exe"`, `args: [-NoProfile, -NonInteractive, -ExecutionPolicy, Bypass, -File, <path>, <group>]`, no shell. The minimum Claude version with `args` is pinned |
+| Claude Code | exec form: `command: "powershell.exe"`, `args: [-NoProfile, -NonInteractive, -ExecutionPolicy, Bypass, -File, <path>, <group>]`, no shell. Measured on 2.1.289: the entry fires, and the shell tool is `PowerShell` (its `tool_input.command`), so `shell` matches `Bash|PowerShell`; a deny group blocks the command |
 | Codex | the `commandWindows` field, in PowerShell syntax: `& '<path>' <group>` via `powershell.exe -File` |
 | Antigravity | an unquoted command line through `cmd /C`. The wrapper lives under a path with no spaces, using the 8.3 short path when `%USERPROFILE%` has one. A test runs the entry through `cmd /C` the way agy does |
 | OpenCode | the bridge spawns `powershell.exe` with the Windows spelling. The choice is made at generation time, never `/bin/sh` |
@@ -478,6 +478,8 @@ Paths in entries use forward slashes, which every Windows shell accepts.
 **Codex shell commands.** Codex's `PreToolUse` does not fire for shell
 commands on Windows, so a group matching shell on Codex/Windows is reported
 **Unsupported** with the issue link until a measured version fires it.
+Measured on 0.160.0: no payload reaches an entry under `command` or
+`commandWindows` while Codex runs `powershell.exe -Command`.
 
 **Cost.** A `PreToolUse` costs two PowerShell starts, the wrapper's and the
 handler's. Measured on a Windows 11 host: p50 658 ms with one handler, 375 ms

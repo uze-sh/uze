@@ -90,6 +90,7 @@ $env:HOOK_PATH = ''
 $env:HOOK_QUERY = ''
 switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {  # the portable vocabulary
   'Bash' { $env:HOOK_TOOL = 'shell'; $env:HOOK_COMMAND = Text (Pick $toolInput @('command')) }
+  'PowerShell' { $env:HOOK_TOOL = 'shell'; $env:HOOK_COMMAND = Text (Pick $toolInput @('command')) }
   'Read' { $env:HOOK_TOOL = 'file.read'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
   'Write' { $env:HOOK_TOOL = 'file.write'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
   'MultiEdit' { $env:HOOK_TOOL = 'file.edit'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }

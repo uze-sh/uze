@@ -36,7 +36,7 @@ fn invocation(hook: &PortableHook) -> HookInvocation {
 fn vendor_aliases_are_explicit() {
     assert_eq!(
         tool_names(crate::claude::HOOKS, &HookMatcher::Portable("shell".into())),
-        ["Bash"]
+        ["Bash", "PowerShell"]
     );
     assert_eq!(
         tool_names(
@@ -211,7 +211,7 @@ fn a_hook_that_cannot_be_delivered_is_reported_unsupported() {
 fn group_entry_omits_matcher_for_unmatch_all_and_reserves_native_timeout() {
     let mut hook = hook();
     let entry = group_entry(crate::claude::HOOKS, &hook, &invocation(&hook));
-    assert_eq!(entry["matcher"], "Bash|Write");
+    assert_eq!(entry["matcher"], "Bash|PowerShell|Write");
     assert_eq!(entry["hooks"][0]["type"], "command");
     assert_eq!(
         entry["hooks"][0]["timeout"], 12,

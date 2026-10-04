@@ -60,10 +60,12 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
 };
 
 const TOOLS: &[ToolBinding] = &[
+    // Claude Code's shell tool is `PowerShell` on Windows, with the same
+    // `command` field (measured on 2.1.289); `Bash` everywhere else.
     ToolBinding {
         alias: "shell",
         native_tool: Some("Bash"),
-        also_matches: &[],
+        also_matches: &["PowerShell"],
         fields: &[("command", "command")],
     },
     ToolBinding {

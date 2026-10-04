@@ -332,6 +332,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         (openai/codex#24453);
       - the label a loose skill and agent shows under `<plugin>-<capability>`;
       - the MCP `.cmd` launcher form.
+      (Measured in Windows Sandbox: Claude Code 2.1.289 fires the exec form
+      and names its shell tool `PowerShell`, now matched, and a deny group
+      blocks it end to end; Codex 0.160.0 fires nothing for shell. Open:
+      Antigravity, the labels, and the MCP launcher form.)
 - [ ] 6.3 Generate those entries per harness. Paths use forward slashes.
       The OpenCode bridge (`hooks/bridge.rs:196`) spawns `powershell.exe`
       on Windows. `hooks/entries.rs` quoting becomes per dialect.

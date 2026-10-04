@@ -388,7 +388,7 @@ fn claude_merges_into_settings_json_preserving_foreign_content() {
     assert_eq!(groups[0]["hooks"][0]["command"], "foreign");
     assert_eq!(document["theme"], "dark");
     let entry = &groups[1];
-    assert_eq!(entry["matcher"], "Bash");
+    assert_eq!(entry["matcher"], "Bash|PowerShell");
     assert!(
         entry["hooks"][0]["args"].is_array(),
         "the wrapper is started through the exec form"
