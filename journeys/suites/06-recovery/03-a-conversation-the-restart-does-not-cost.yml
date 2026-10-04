@@ -86,22 +86,8 @@ scenes:
       # still running. Scoping by `HOME` rather than by the command line is
       # deliberate: it reaches the panes too, which is what "the way a reboot
       # does it" means.
-      - shell: |
-          for pid in $(pgrep -f '{uze}'); do
-            [ "$pid" = "$$" ] && continue
-            if [ -r "/proc/$pid/environ" ]; then
-              inherited=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null)
-            else
-              inherited=$(ps -Ewwo command= -p "$pid" 2>/dev/null | tr ' ' '\n')
-            fi
-            printf '%s\n' "$inherited" | grep -qx 'HOME={home}' && kill -9 "$pid"
-          done
+      - kill: "{uze}"
         say: kill everything holding this workspace, the way a reboot does it
-        check: false
-      - wait: shell
-        until: "! pgrep -f 'terminal [s]erve --root {project}' > /dev/null"
-        timeout: 20
-        say: nothing is holding the panes any more
       - open: ["{uze}", "workspace"]
         say: open the workspace again, which starts a server and restores what it held
         expect: demo-app

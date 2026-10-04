@@ -597,6 +597,7 @@ GESTURES = (
     "type",
     "key",
     "shell",
+    "kill",
     "wait",
 )
 AIMED = ("click", "rclick", "dclick", "drag")
@@ -767,6 +768,26 @@ class Runner:
                 f"{self.label(step)}: shell failed ({result.returncode})\n"
                 f"{result.stdout}{result.stderr}"
             )
+
+    def _kill(self, step: dict) -> None:
+        """Ends every process of this world matching `kill`, at once and
+        without asking, the way a reboot ends them, and waits for them to be
+        gone. Read from the process table, which every platform answers."""
+        pattern = self.resolve(step["kill"])
+        victims = [int(pid) for pid in machine.pids_matching(pattern) if self.owns(pid)]
+        for pid in victims:
+            machine.kill(pid)
+        deadline = time.monotonic() + float(step.get("timeout", 20))
+        while survivors := [pid for pid in victims if machine.process_alive(pid)]:
+            if time.monotonic() > deadline:
+                raise Failed(f"{self.label(step)}: still running: {survivors}")
+            time.sleep(0.2)
+
+    def owns(self, pid: int | str) -> bool:
+        """Whether `pid` belongs to this world: it carries the world's HOME,
+        which no other world's process and none of the developer's does."""
+        environ = machine.process_environ(pid)
+        return bool(environ) and f"HOME={self.world.home}".encode() in environ
 
     def inherited(self, inherit: dict) -> dict:
         """The variables `inherit["names"]` holds in the environment of the
@@ -1272,8 +1293,7 @@ class Checker:
             die(problem)
         found = []
         for pid in machine.pids_matching(spec["matching"]):
-            environ = machine.process_environ(pid)
-            if environ is None or f"HOME={self.world.home}".encode() not in environ:
+            if not self.runner.owns(pid):
                 continue
             if where:
                 cwd = machine.process_cwd(pid)
