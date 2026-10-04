@@ -192,9 +192,9 @@ pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Re
 
     // What the tree declared is what a checkout writes, so this only
     // answers for whatever the listing could not see.
-    assert_within_size_budget(destination)?;
+    let checked_out = size_within(destination, MAX_MATERIALIZED_BYTES)?;
     let links = unmade_links(destination)?;
-    stand_in_for_links(destination, &links)?;
+    stand_in_for_links(destination, &links, MAX_MATERIALIZED_BYTES - checked_out)?;
 
     // The repository's own metadata is not package content, and leaving it in
     // place would let a `.git` directory travel into the Store.
@@ -233,22 +233,51 @@ fn unmade_links(checkout: &Path) -> Result<crate::digest::Links> {
 
 /// Puts a copy of each unmade link's target where the link would be, so a
 /// harness reading the package finds what the link names rather than a file
-/// holding its path. A target outside the package is refused, as a link is;
-/// one that names nothing leaves the file Git wrote.
-fn stand_in_for_links(checkout: &Path, links: &crate::digest::Links) -> Result<()> {
+/// holding its path; one that names nothing leaves the file Git wrote.
+///
+/// The copies are bytes the repository did not carry, so each is weighed
+/// against what is left of the size budget before it is made. Refused, as
+/// the repository is: a target outside the package, as a link is; one that
+/// holds the link itself, which would copy a directory into itself without
+/// end; one in Git's own metadata, which never travels into the Store; and
+/// one holding another unmade link, whose copy would depend on the order
+/// the two were made in.
+fn stand_in_for_links(
+    checkout: &Path,
+    links: &crate::digest::Links,
+    mut budget: u64,
+) -> Result<()> {
+    let refuse = |path: &Path, target: &Path, why: &str| {
+        UzeError::AcquisitionFailed(format!(
+            "the link `{}` (`{}`) {why}",
+            path.display(),
+            target.display()
+        ))
+    };
+    let unmade: Vec<PathBuf> = links.keys().map(|path| checkout.join(path)).collect();
     for (path, target) in links {
         let link = checkout.join(path);
         let resolved = lexically_within(checkout, &link.parent().unwrap_or(checkout).join(target))
-            .ok_or_else(|| {
-                UzeError::AcquisitionFailed(format!(
-                    "the link `{}` points outside the package (`{}`)",
-                    path.display(),
-                    target.display()
-                ))
-            })?;
+            .ok_or_else(|| refuse(path, target, "points outside the package"))?;
         if !resolved.exists() {
             continue;
         }
+        if link.starts_with(&resolved) {
+            return Err(refuse(path, target, "points at a directory that holds it"));
+        }
+        let in_git = resolved
+            .strip_prefix(checkout)
+            .is_ok_and(|inside| inside.components().any(|part| part.as_os_str() == ".git"))
+            || checkout.join(".git").starts_with(&resolved);
+        if in_git {
+            return Err(refuse(path, target, "points at Git's own metadata"));
+        }
+        if unmade.iter().any(|other| other.starts_with(&resolved)) {
+            return Err(refuse(path, target, "points at another link"));
+        }
+        budget = budget
+            .checked_sub(size_within(&resolved, budget)?)
+            .ok_or_else(over_budget)?;
         fs::remove_file(&link).map_err(UzeError::write(&link))?;
         if resolved.is_dir() {
             crate::store::copy_tree(&resolved, &link)?;
@@ -426,24 +455,37 @@ fn record_size(record: &[u8]) -> u64 {
 }
 
 pub(super) fn assert_within_size_budget(root: &Path) -> Result<()> {
-    fn total(path: &Path, accumulated: &mut u64) -> Result<()> {
-        for entry in fs::read_dir(path).map_err(UzeError::read(path))? {
-            let entry = entry.map_err(UzeError::read(path))?;
-            let metadata = entry.metadata().map_err(UzeError::read(entry.path()))?;
-            if metadata.is_dir() {
-                total(&entry.path(), accumulated)?;
-            } else {
-                *accumulated += metadata.len();
+    size_within(root, MAX_MATERIALIZED_BYTES).map(|_| ())
+}
+
+/// The bytes under `path` (a file or a directory), refused the moment they
+/// pass `budget` rather than counted to the end. A link counts as itself and
+/// is never followed: `skills/up -> ..` would otherwise be counted forever.
+fn size_within(path: &Path, budget: u64) -> Result<u64> {
+    fn total(path: &Path, accumulated: &mut u64, budget: u64) -> Result<()> {
+        let metadata = fs::symlink_metadata(path).map_err(UzeError::read(path))?;
+        if !metadata.is_dir() {
+            *accumulated += metadata.len();
+        } else {
+            for entry in fs::read_dir(path).map_err(UzeError::read(path))? {
+                let entry = entry.map_err(UzeError::read(path))?;
+                total(&entry.path(), accumulated, budget)?;
             }
-            if *accumulated > MAX_MATERIALIZED_BYTES {
-                return Err(UzeError::AcquisitionFailed(format!(
-                    "materialized repository exceeds {MAX_MATERIALIZED_BYTES} bytes"
-                )));
-            }
+        }
+        if *accumulated > budget {
+            return Err(over_budget());
         }
         Ok(())
     }
-    total(root, &mut 0)
+    let mut accumulated = 0;
+    total(path, &mut accumulated, budget)?;
+    Ok(accumulated)
+}
+
+fn over_budget() -> UzeError {
+    UzeError::AcquisitionFailed(format!(
+        "materialized repository exceeds {MAX_MATERIALIZED_BYTES} bytes"
+    ))
 }
 
 /// What one Git invocation may carry beyond the stripped environment.
@@ -1201,6 +1243,94 @@ pub fn resolve_subdirectory(root: &Path, subdirectory: &Path) -> Result<PathBuf>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tree of files, written where the checkout would have left them.
+    fn checkout_with(label: &str, files: &[(&str, &str)]) -> PathBuf {
+        let root = uze_testkit::temp::scratch(label);
+        for (path, contents) in files {
+            let path = root.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, contents).unwrap();
+        }
+        root
+    }
+
+    fn links(pairs: &[(&str, &str)]) -> crate::digest::Links {
+        pairs
+            .iter()
+            .map(|(path, target)| (PathBuf::from(path), PathBuf::from(target)))
+            .collect()
+    }
+
+    #[test]
+    fn an_unmade_link_is_replaced_by_what_it_names() {
+        let root = checkout_with(
+            "stand-in-copied",
+            &[("skills/a/SKILL.md", "body"), ("skills/b", "a")],
+        );
+        stand_in_for_links(&root, &links(&[("skills/b", "a")]), u64::MAX).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("skills/b/SKILL.md")).unwrap(),
+            "body"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Copying a directory into itself never ends: the disk fills, or the
+    /// stack runs out, during an install of somebody else's plugin.
+    #[test]
+    fn a_link_to_a_directory_holding_it_is_refused() {
+        for target in ["..", "."] {
+            let root = checkout_with("stand-in-self", &[("a/l", target), ("a/f", "x")]);
+            let error =
+                stand_in_for_links(&root, &links(&[("a/l", target)]), u64::MAX).expect_err(target);
+            assert!(error.to_string().contains("holds it"), "{error}");
+            assert!(
+                !root.join("a/l/a").exists(),
+                "nothing was copied for {target}"
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_link_into_git_s_metadata_is_refused() {
+        let root = checkout_with(
+            "stand-in-git",
+            &[(".git/config", "[core]"), ("l", ".git/config")],
+        );
+        let error = stand_in_for_links(&root, &links(&[("l", ".git/config")]), u64::MAX)
+            .expect_err("git metadata");
+        assert!(error.to_string().contains("Git's own metadata"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_link_to_a_directory_holding_another_link_is_refused() {
+        let root = checkout_with(
+            "stand-in-chained",
+            &[("a/inner", "../c"), ("c/f", "x"), ("b", "a")],
+        );
+        let error = stand_in_for_links(&root, &links(&[("a/inner", "../c"), ("b", "a")]), u64::MAX)
+            .expect_err("chained");
+        assert!(error.to_string().contains("another link"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Weighed before it is written: a copy that would pass the budget
+    /// leaves the checkout as it was.
+    #[test]
+    fn a_copy_past_the_budget_is_refused_before_it_is_made() {
+        let root = checkout_with("stand-in-budget", &[("a/f", "0123456789"), ("b", "a")]);
+        let error = stand_in_for_links(&root, &links(&[("b", "a")]), 5).expect_err("budget");
+        assert!(error.to_string().contains("exceeds"), "{error}");
+        assert_eq!(
+            fs::read_to_string(root.join("b")).unwrap(),
+            "a",
+            "the file Git wrote stays"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 
     /// The shared temporary directory is writable by every local user, so a
     /// repository planted where the old reader pointed `GIT_DIR` must not
