@@ -186,6 +186,24 @@ fn a_separator_is_typed_into_the_line_rather_than_acted_on() {
     assert_eq!(names(&picker), ["inner"]);
 }
 
+/// A root walked to by typing is spelled as the platform spells paths, not
+/// with the separator typed: on Windows, `group/engine` typed under
+/// `C:\projects` was recorded as `C:\projects\group/engine`.
+#[test]
+fn a_root_walked_to_by_typing_is_spelled_the_platforms_way() {
+    let (root, mut picker) = picker_over("root-picker-spelling", &["group/engine"]);
+
+    for character in "group/engine".chars() {
+        picker.typed(character);
+    }
+    picker.move_selection(1);
+
+    assert_eq!(
+        picker.chosen().map(PathBuf::into_os_string),
+        Some(root.join("group").join("engine").into_os_string())
+    );
+}
+
 /// The two spellings that leave the directory the prompt opened on: the
 /// same ones a shell answers to.
 #[test]

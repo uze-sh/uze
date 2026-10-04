@@ -118,7 +118,7 @@ impl RootPicker {
     /// inside it: everything before the last separator, and everything
     /// after it.
     fn split_input(&self) -> (PathBuf, &str) {
-        match self.input.rfind('/') {
+        match self.input.rfind(std::path::is_separator) {
             Some(cut) => {
                 let (directory, segment) = self.input.split_at(cut + 1);
                 (self.resolve(directory), segment)
@@ -129,13 +129,16 @@ impl RootPicker {
 
     /// Where a typed directory lands: `~` and a leading separator leave
     /// `origin` behind the way they do in a shell, and everything else is
-    /// read from where the prompt opened.
+    /// read from where the prompt opened. Rebuilt from its components, so
+    /// the path is spelled with the platform's own separator whichever one
+    /// was typed: a space is recorded at the root this answers.
     fn resolve(&self, typed: &str) -> PathBuf {
-        if typed.starts_with('~') || typed.starts_with('/') {
+        let landed = if typed.starts_with('~') || typed.starts_with('/') {
             expand_home(typed)
         } else {
             self.origin.join(typed)
-        }
+        };
+        landed.components().collect()
     }
 
     pub(super) fn selected(&self) -> usize {
