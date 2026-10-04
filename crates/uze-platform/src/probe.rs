@@ -24,7 +24,7 @@ use std::path::PathBuf;
 /// claim for itself. (A Windows named pipe records both ends' pids itself,
 /// and is asked through its own handle.)
 #[cfg(unix)]
-pub fn socket_peer(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
+pub(crate) fn socket_peer(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
     platform::peer_pid(stream)
 }
 
@@ -32,7 +32,7 @@ pub fn socket_peer(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
 /// kernel when the connection was made. `None` where the platform does not
 /// say.
 #[cfg(unix)]
-pub fn socket_peer_uid(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
+pub(crate) fn socket_peer_uid(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
     platform::peer_uid(stream)
 }
 

@@ -15,7 +15,7 @@ pub(super) struct PaneRuntime {
     /// The pane's program and everything it starts, ended together. Read
     /// while the leader is alive: once a finished leader is reaped, what it
     /// left running is still in it. See [`PaneRuntime::end_leftovers`].
-    pub(super) group: Option<Arc<uze_platform::process::Group>>,
+    pub(super) group: Option<Arc<uze_platform::process::pane::Group>>,
     /// The pid of the pane's program, read once at spawn: `child` is held
     /// for the whole of a stop, and a foreground read must not wait on it.
     pub(super) leader: Option<u32>,
@@ -125,7 +125,7 @@ impl PaneRuntime {
         } else {
             launch.argv().iter().map(Into::into).collect()
         };
-        let grouped = uze_platform::process::grouped(argv, host::pane_host().as_deref())
+        let grouped = uze_platform::process::pane::grouped(argv, host::pane_host().as_deref())
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
         let mut command = CommandBuilder::from_argv(grouped.argv);
         command.cwd(cwd);
@@ -157,7 +157,7 @@ impl PaneRuntime {
         let leader = child.process_id();
         let group = grouped
             .group
-            .or_else(|| leader.and_then(uze_platform::process::Group::adopt))
+            .or_else(|| leader.and_then(uze_platform::process::pane::Group::adopt))
             .map(Arc::new);
         let endpoints = pair.master.try_clone_reader().and_then(|reader| {
             pair.master

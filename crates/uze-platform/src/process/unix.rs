@@ -202,7 +202,7 @@ impl Group {
 pub(super) fn foreground(
     leader: u32,
     _group: Option<&Group>,
-    _passes_on: impl Fn(&super::Member, &super::Member) -> bool,
+    _passes_on: impl Fn(&super::pane::Member, &super::pane::Member) -> bool,
 ) -> Option<u32> {
     crate::probe::terminal_foreground_of(leader)
 }

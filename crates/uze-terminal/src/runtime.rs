@@ -53,7 +53,7 @@ pub use transport::{Stream, connect, pair as stream_pair};
 /// starts in its place where a program joins its group only from inside
 /// (see `host::pane_host`). Returns only when it could not run `argv`.
 pub fn host_pane(group: &str, argv: &[std::ffi::OsString]) -> std::io::Error {
-    uze_platform::process::host_grouped(group, argv)
+    uze_platform::process::pane::host_grouped(group, argv)
 }
 
 /// ADR-038: the endpoint is local and user-private; no network transport is
@@ -68,11 +68,13 @@ pub enum RuntimeError {
     Pty(String),
 }
 
+/// One home, one identity, however its path was spelled: on Windows a
+/// home reached as `C:\Users\X` and as `c:\users\x` (or `\\?\C:\…`) is one
+/// workspace, and two identities would start a second server for it.
 fn identity_of(root: &Path) -> String {
-    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let hash = canonical
-        .as_os_str()
-        .as_encoded_bytes()
+    let canonical = uze_platform::path::canonical(root).unwrap_or_else(|_| root.to_path_buf());
+    let hash = uze_platform::path::identity(&canonical)
+        .as_bytes()
         .iter()
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)

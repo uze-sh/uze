@@ -489,16 +489,20 @@ impl Group {
 pub(super) fn foreground(
     _leader: u32,
     group: Option<&Group>,
-    passes_on: impl Fn(&super::Member, &super::Member) -> bool,
+    passes_on: impl Fn(&super::pane::Member, &super::pane::Member) -> bool,
 ) -> Option<u32> {
-    let members: Vec<super::Member> = group?
+    let members: Vec<super::pane::Member> = group?
         .members()
         .into_iter()
         .filter_map(|pid| {
             let name = crate::probe::command_name_of(pid)?;
             let parent = crate::probe::parent_of(pid);
             // The pseudoconsole's own host, which hands nothing on.
-            (!name.eq_ignore_ascii_case("conhost")).then_some(super::Member { pid, parent, name })
+            (!name.eq_ignore_ascii_case("conhost")).then_some(super::pane::Member {
+                pid,
+                parent,
+                name,
+            })
         })
         .collect();
     in_front(&members, passes_on)
@@ -507,8 +511,8 @@ pub(super) fn foreground(
 /// From the member no other member started, down through each that
 /// `passes_on`, newest child first, to the first that keeps the console.
 fn in_front(
-    members: &[super::Member],
-    passes_on: impl Fn(&super::Member, &super::Member) -> bool,
+    members: &[super::pane::Member],
+    passes_on: impl Fn(&super::pane::Member, &super::pane::Member) -> bool,
 ) -> Option<u32> {
     let is_member = |pid: u32| members.iter().any(|member| member.pid == pid);
     let mut holder = members
@@ -579,7 +583,7 @@ pub(super) fn finding_command(program: &str, _arguments: &str) -> String {
 #[cfg(test)]
 mod foreground_tests {
     use super::in_front;
-    use crate::process::Member;
+    use crate::process::pane::Member;
 
     fn member(pid: u32, parent: u32, name: &str) -> Member {
         Member {

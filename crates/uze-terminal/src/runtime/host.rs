@@ -7,7 +7,7 @@
 use std::{env, path::PathBuf};
 
 use portable_pty::CommandBuilder;
-use uze_platform::process::{Group, Member};
+use uze_platform::process::pane::{Group, Member};
 
 /// What a pane runs when it is given nothing to run: `UZE_SHELL` when set,
 /// else the person's own interactive shell.
@@ -27,11 +27,11 @@ pub(super) fn prepare_pane(command: &mut CommandBuilder) {
 }
 
 /// The process in the foreground of a pane whose program is `leader` (see
-/// [`uze_platform::process::foreground`]). The console passes on through a
+/// [`uze_platform::process::pane::foreground`]). The console passes on through a
 /// shell running a command for a person, and through UZE's launcher
 /// running a harness.
 pub(super) fn foreground(leader: u32, group: Option<&Group>) -> Option<u32> {
-    uze_platform::process::foreground(leader, group, passes_on)
+    uze_platform::process::pane::foreground(leader, group, passes_on)
 }
 
 fn passes_on(holder: &Member, child: &Member) -> bool {
@@ -43,7 +43,7 @@ fn passes_on(holder: &Member, child: &Member) -> bool {
 }
 
 /// What a pane's program is started through where it can only join its
-/// group from inside ([`uze_platform::process::grouped`]): the serving
+/// group from inside ([`uze_platform::process::pane::grouped`]): the serving
 /// binary's `terminal host-pane`, once one was named
 /// ([`super::endpoint::host_panes_with`]).
 pub(super) fn pane_host() -> Option<Vec<std::ffi::OsString>> {

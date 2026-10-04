@@ -234,12 +234,14 @@ impl Session {
     /// it. One root names one space: a directory reached by two spellings
     /// is the same place, and there is nothing else for a space to be.
     pub fn space_for(&self, seat: &SpaceSeat) -> Option<SpaceId> {
-        let canonical = |root: &Path| root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let canonical = |root: &Path| {
+            uze_platform::path::canonical(root).unwrap_or_else(|_| root.to_path_buf())
+        };
         let wanted = canonical(&seat.root);
         self.workspace
             .spaces
             .iter()
-            .find(|space| canonical(&space.root) == wanted)
+            .find(|space| uze_platform::path::same_path(&canonical(&space.root), &wanted))
             .map(|space| space.id)
     }
 

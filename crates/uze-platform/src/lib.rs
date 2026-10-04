@@ -29,4 +29,4 @@ pub mod stdio;
 pub mod target;
 pub mod tools;
 #[cfg(windows)]
-pub mod win;
+pub(crate) mod win;

@@ -1,6 +1,5 @@
-//! What every Windows implementation here, and the Windows backends built
-//! on this crate, share: wide strings, owned kernel handles and registry
-//! values.
+//! What every Windows implementation in this crate shares: wide strings,
+//! owned kernel handles and registry values.
 
 use std::{
     ffi::{OsStr, OsString},
