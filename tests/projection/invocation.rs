@@ -382,7 +382,10 @@ fn labels_never_touch_canonical_identity_store_or_receipts() {
     let ManagedArtifact::GeneratedTree { path, .. } = &receipt.artifact else {
         panic!("expected a materialized skill directory");
     };
-    assert_eq!(path.file_name().unwrap(), "workflow:review");
+    assert_eq!(
+        path.file_name().unwrap(),
+        uze_core::path::file_name_for("workflow:review").as_str()
+    );
     // Store bytes stay byte-identical.
     assert_eq!(
         fs::read(package.root.join("skills/review/SKILL.md")).unwrap(),
@@ -438,7 +441,10 @@ fn claude_shim_namespace_matches_plugin_and_never_double_prefixes() {
         let ManagedArtifact::GeneratedTree { path, .. } = &receipt.artifact else {
             panic!("expected a materialized skill directory");
         };
-        assert_eq!(path.file_name().unwrap(), "workflow:review");
+        assert_eq!(
+            path.file_name().unwrap(),
+            uze_core::path::file_name_for("workflow:review").as_str()
+        );
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(path.join(".claude-plugin/plugin.json")).unwrap())
                 .unwrap();

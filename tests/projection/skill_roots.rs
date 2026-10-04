@@ -660,7 +660,13 @@ fn an_mcp_entry_an_earlier_build_rooted_in_the_store_is_restated() {
         if let uze_core::integration::ManagedArtifact::VendorConfigEntry { command, .. } =
             &mut earlier.artifact
         {
-            *command = stored.join(command.strip_prefix(&delivered).unwrap());
+            // The same text replaced as in the configuration above, so the
+            // two still agree: the earlier build wrote one entry, not two.
+            *command = PathBuf::from(
+                command
+                    .to_string_lossy()
+                    .replace(&*delivered.to_string_lossy(), &stored.to_string_lossy()),
+            );
         }
         uze_core::state::record_receipt(&uze_home, earlier).unwrap();
 

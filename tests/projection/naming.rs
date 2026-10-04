@@ -338,7 +338,10 @@ fn two_packages_with_the_same_skill_name_coexist_deterministically() {
     // never renames `frontend:review`.
     assert_eq!(
         names,
-        vec!["frontend:review".to_owned(), "security:review".to_owned()]
+        vec![
+            uze_core::path::file_name_for("frontend:review"),
+            uze_core::path::file_name_for("security:review")
+        ]
     );
 
     // Removing one must not disturb the other.
