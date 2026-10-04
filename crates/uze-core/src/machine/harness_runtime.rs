@@ -93,11 +93,28 @@ impl HarnessRuntimeContribution {
 /// `None`: that would re-enter PATH search and could resolve straight back
 /// to the shim.
 pub fn resolve_real_executable(names: &[&str], shims_dir: &Path) -> Option<PathBuf> {
+    resolve_real_executable_in(harness_search_path(), names, shims_dir)
+}
+
+/// [`resolve_real_executable`] in the `PATH` a shell opened now would
+/// search, where the platform keeps one apart from this process's: what an
+/// installer that only added its directory to it has made reachable to
+/// every new shell, though not to the one this runs in.
+pub fn resolve_for_a_new_shell(names: &[&str], shims_dir: &Path) -> Option<PathBuf> {
+    let path = uze_platform::environment::path_of_a_new_shell()?;
+    resolve_real_executable_in(std::env::split_paths(&path), names, shims_dir)
+}
+
+fn resolve_real_executable_in(
+    search_path: impl IntoIterator<Item = PathBuf>,
+    names: &[&str],
+    shims_dir: &Path,
+) -> Option<PathBuf> {
     let canonical_shims_dir = shims_dir.canonical().ok();
     let running = std::env::current_exe()
         .and_then(|executable| executable.canonical())
         .ok();
-    for dir in harness_search_path() {
+    for dir in search_path {
         // Canonicalizing is a filesystem round trip per `PATH` entry, and
         // on a WSL `PATH` carrying Windows directories each one crosses a
         // network filesystem. Only an entry that could *be* the shims

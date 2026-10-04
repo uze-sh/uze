@@ -9,6 +9,7 @@
 
 pub mod clock;
 pub mod desktop;
+pub mod environment;
 pub mod executable;
 pub mod fs;
 pub mod fs_name;
