@@ -65,6 +65,13 @@ impl Fixture {
     }
 
     fn with_layout(label: &str, layout: impl FnOnce(&Path)) -> Self {
+        Self::with_index(label, layout, |_| {})
+    }
+
+    /// [`Fixture::with_layout`], with `index` run on the staged tree before
+    /// it is committed: what plumbing records that no working tree has to
+    /// hold, a symbolic link on a machine that cannot make one.
+    fn with_index(label: &str, layout: impl FnOnce(&Path), index: impl FnOnce(&Path)) -> Self {
         let root = temporary(label);
         let work = root.join("work");
         fs::create_dir_all(&work).unwrap();
@@ -74,6 +81,7 @@ impl Fixture {
         );
         layout(&work);
         git(&["add", "-A"], &work);
+        index(&work);
         git(&["commit", "--quiet", "-m", "initial"], &work);
         let bare = uze_testkit::git::publish_to_origin(&work, "trunk");
         let url = format!("file://{}", bare.display());
@@ -340,6 +348,50 @@ fn a_package_holds_the_same_bytes_and_digest_on_every_platform() {
 /// Recorded on Linux, where no checkout setting rewrites a line ending.
 const FAITHFUL_DIGEST: &str =
     "sha256:d687a26d62a1adaf81d9bff51c3e0c7b2bb3cfe1e73a99778511586468b71449";
+
+/// A symbolic link the repository holds reads, through its own path, as
+/// what it points at, and the package digests to one value, whether the
+/// checkout made the link (Linux) or wrote a file Git records as one
+/// (Windows, where an ordinary account makes none).
+#[test]
+fn a_link_in_the_repository_reads_and_digests_the_same_on_every_platform() {
+    let fixture = Fixture::with_index(
+        "linked-package",
+        |root| write_package(root, "linked", false),
+        |work| {
+            // The link's blob is its target, as Git stores every link.
+            fs::write(work.join(".link-target"), "example").unwrap();
+            let blob = git(&["hash-object", "-w", ".link-target"], work);
+            fs::remove_file(work.join(".link-target")).unwrap();
+            git(
+                &[
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    &format!("120000,{},skills/linked", blob.trim()),
+                ],
+                work,
+            );
+        },
+    );
+    let materialized = acquire(&PackageSource::git(&fixture.url)).unwrap();
+    assert!(
+        fs::read_to_string(materialized.root().join("skills/linked/SKILL.md"))
+            .unwrap()
+            .contains("name: example"),
+        "the link reads as the skill it points at"
+    );
+    assert_eq!(
+        uze_core::digest::tree_sha256_with_links(materialized.root(), materialized.links())
+            .unwrap(),
+        LINKED_DIGEST,
+        "the digest every platform reaches for this package"
+    );
+}
+
+/// Recorded on Linux, where the checkout makes the link itself.
+const LINKED_DIGEST: &str =
+    "sha256:6b68b75d602c15fce9a97b65602272f81a027843284baec92426793807f4a226";
 
 /// The scratch checkout is UZE's, and it must not survive the operation.
 #[test]

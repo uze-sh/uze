@@ -278,15 +278,25 @@ pub struct MaterializedPackage {
     /// separately from `root` because `root` may be narrowed to a
     /// subdirectory while cleanup still owns the whole checkout.
     owned_scratch: Option<PathBuf>,
+    /// The symbolic links the package holds that its checkout could not
+    /// make, relative to `root` (see [`crate::digest::tree_sha256_with_links`]).
+    links: crate::digest::Links,
 }
 
 impl MaterializedPackage {
+    /// The symbolic links the package holds that its checkout could not
+    /// make, relative to [`MaterializedPackage::root`].
+    pub fn links(&self) -> &crate::digest::Links {
+        &self.links
+    }
+
     /// A directory UZE created and must remove once the Store has ingested it.
     pub fn owned(root: PathBuf, provenance: Provenance) -> Self {
         Self {
             owned_scratch: Some(root.clone()),
             root,
             provenance,
+            links: crate::digest::Links::new(),
         }
     }
 
@@ -296,6 +306,7 @@ impl MaterializedPackage {
             root,
             provenance,
             owned_scratch: None,
+            links: crate::digest::Links::new(),
         }
     }
 
@@ -380,11 +391,23 @@ pub fn acquire(source: &PackageSource) -> Result<MaterializedPackage> {
                 },
             );
             let checkout = scratch.join("checkout");
-            let commit = git::materialize(url, reference.as_deref(), &checkout)?;
+            let git::Checkout { commit, links } =
+                git::materialize(url, reference.as_deref(), &checkout)?;
             let root = match subdirectory {
                 Some(subdirectory) => git::resolve_subdirectory(&checkout, subdirectory)?,
-                None => checkout,
+                None => checkout.clone(),
             };
+            // Named from the package's own root, which a subdirectory narrows.
+            let prefix = root
+                .strip_prefix(&checkout)
+                .unwrap_or(Path::new(""))
+                .to_path_buf();
+            materialized.links = links
+                .into_iter()
+                .filter_map(|(path, target)| {
+                    Some((path.strip_prefix(&prefix).ok()?.to_path_buf(), target))
+                })
+                .collect();
             materialized.retarget(
                 root,
                 Provenance {

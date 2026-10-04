@@ -1272,9 +1272,16 @@ impl Project<'_> {
         else {
             return Ok(false);
         };
+        // Pinnable bytes that cannot be read fail the lock: one written
+        // without the digest they were owed would reproduce anything.
+        let integrity = if reproducible {
+            Some(self.0.store.digest(&stored)?)
+        } else {
+            None
+        };
         lock.plugins.insert(
             plugin.to_owned(),
-            LockedPlugin::resolved(marketplace, &stored.root, reproducible)?,
+            LockedPlugin::resolved(marketplace, integrity),
         );
         lock.marketplaces.insert(
             marketplace.to_owned(),

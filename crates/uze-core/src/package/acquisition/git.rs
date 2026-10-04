@@ -137,7 +137,14 @@ pub(super) fn reject_option_shaped(value: &str, what: &str) -> Result<()> {
 /// resolved commit.
 ///
 /// `destination` must not exist; the caller owns it and its cleanup.
-pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Result<String> {
+/// What a checkout of a commit produced: the commit, and the symbolic links
+/// its tree holds that the checkout could not make (see [`unmade_links`]).
+pub struct Checkout {
+    pub commit: String,
+    pub links: crate::digest::Links,
+}
+
+pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Result<Checkout> {
     reject_inline_credentials(url)?;
     reject_option_shaped(url, "repository url")?;
     if let Some(reference) = reference {
@@ -186,6 +193,8 @@ pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Re
     // What the tree declared is what a checkout writes, so this only
     // answers for whatever the listing could not see.
     assert_within_size_budget(destination)?;
+    let links = unmade_links(destination)?;
+    stand_in_for_links(destination, &links)?;
 
     // The repository's own metadata is not package content, and leaving it in
     // place would let a `.git` directory travel into the Store.
@@ -193,7 +202,79 @@ pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Re
     if git_dir.exists() {
         fs::remove_dir_all(&git_dir).map_err(UzeError::write(git_dir))?;
     }
-    Ok(commit)
+    Ok(Checkout { commit, links })
+}
+
+/// The symbolic links the checked-out tree holds that the checkout could not
+/// make. Where links cannot be made (`core.symlinks=false`, Windows' case
+/// for an ordinary account), Git writes each as a file holding its target;
+/// its index still says it is a link (mode `120000`). Empty wherever the
+/// checkout made them, since those are links on disk the digest reads.
+fn unmade_links(checkout: &Path) -> Result<crate::digest::Links> {
+    let listing = run(&["ls-files", "--stage", "-z"], Some(checkout))?;
+    let mut links = crate::digest::Links::new();
+    for record in listing.split('\0') {
+        let Some((stage, path)) = record.split_once('\t') else {
+            continue;
+        };
+        if !stage.starts_with("120000 ") {
+            continue;
+        }
+        let on_disk = checkout.join(path);
+        let metadata = fs::symlink_metadata(&on_disk).map_err(UzeError::read(&on_disk))?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        let target = fs::read_to_string(&on_disk).map_err(UzeError::read(&on_disk))?;
+        links.insert(PathBuf::from(path), PathBuf::from(target));
+    }
+    Ok(links)
+}
+
+/// Puts a copy of each unmade link's target where the link would be, so a
+/// harness reading the package finds what the link names rather than a file
+/// holding its path. A target outside the package is refused, as a link is;
+/// one that names nothing leaves the file Git wrote.
+fn stand_in_for_links(checkout: &Path, links: &crate::digest::Links) -> Result<()> {
+    for (path, target) in links {
+        let link = checkout.join(path);
+        let resolved = lexically_within(checkout, &link.parent().unwrap_or(checkout).join(target))
+            .ok_or_else(|| {
+                UzeError::AcquisitionFailed(format!(
+                    "the link `{}` points outside the package (`{}`)",
+                    path.display(),
+                    target.display()
+                ))
+            })?;
+        if !resolved.exists() {
+            continue;
+        }
+        fs::remove_file(&link).map_err(UzeError::write(&link))?;
+        if resolved.is_dir() {
+            crate::store::copy_tree(&resolved, &link)?;
+        } else {
+            fs::copy(&resolved, &link).map_err(UzeError::write(&link))?;
+        }
+    }
+    Ok(())
+}
+
+/// `path` with `.` and `..` resolved on paper, when it stays inside `root`.
+fn lexically_within(root: &Path, path: &Path) -> Option<PathBuf> {
+    let mut resolved = PathBuf::new();
+    for component in path.strip_prefix(root).ok()?.components() {
+        match component {
+            std::path::Component::Normal(part) => resolved.push(part),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !resolved.pop() {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(root.join(resolved))
 }
 
 /// Turns a request into an immutable commit.

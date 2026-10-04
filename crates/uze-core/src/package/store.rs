@@ -397,6 +397,11 @@ struct Registration {
     /// `id.plugin_name()`. `Some(alias)` is only ever written by an explicit
     /// `alias` collision resolution at install time.
     active_name: Option<String>,
+    /// The symbolic links the package holds that its checkout could not make,
+    /// which stand in its directory as copies of what they point at. Read by
+    /// [`UzeStore::digest`]; absent from every entry that has none.
+    #[serde(default, skip_serializing_if = "crate::digest::Links::is_empty")]
+    links: crate::digest::Links,
 }
 
 impl UzeStore {
@@ -525,6 +530,7 @@ impl UzeStore {
                     active_name: active_name
                         .filter(|alias| *alias != name)
                         .map(str::to_owned),
+                    links: package.links().clone(),
                 },
             );
             self.save_registry(&registry)
@@ -557,6 +563,20 @@ impl UzeStore {
             .iter()
             .map(|(id, registration)| self.stored(id, registration))
             .collect())
+    }
+
+    /// The digest of `package`'s bytes: links its checkout could not make
+    /// count as the links they are (see [`crate::digest::tree_sha256_with_links`]),
+    /// so a package digests to one value on every platform.
+    pub fn digest(&self, package: &StoredPackage) -> Result<String> {
+        let links = self
+            .load_registry()?
+            .packages
+            .get(&package.id)
+            .map(|registration| registration.links.clone())
+            .unwrap_or_default();
+        crate::digest::tree_sha256_with_links(&package.root, &links)
+            .map_err(UzeError::read(&package.root))
     }
 
     fn stored(&self, id: &PackageId, registration: &Registration) -> StoredPackage {

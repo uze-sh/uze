@@ -52,10 +52,23 @@ pub fn short_hex(bytes: &[u8]) -> String {
 /// contained one — so a marketplace adding, removing or repointing one has
 /// to move the digest.
 pub fn tree_sha256(root: &std::path::Path) -> std::io::Result<String> {
+    tree_sha256_with_links(root, &Links::new())
+}
+
+/// Where a package holds a link it could not make as one, and what the link
+/// points at: the path it would sit at, relative to the package root.
+pub type Links = std::collections::BTreeMap<std::path::PathBuf, std::path::PathBuf>;
+
+/// [`tree_sha256`] of a tree in which `links` stand where Git recorded
+/// symbolic links a checkout could not make (Windows, where an ordinary
+/// account makes none): each digests as the link it is, never as the copy
+/// of its target standing in its place, so a package digests to the same
+/// value wherever it was acquired.
+pub fn tree_sha256_with_links(root: &std::path::Path, links: &Links) -> std::io::Result<String> {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
 
-    let mut entries = collect_entries(root)?;
+    let mut entries = collect_entries(root, links)?;
     entries.sort_by(|left, right| left.path().cmp(right.path()));
 
     let mut hasher = Sha256::new();
@@ -119,12 +132,24 @@ impl Entry {
 /// `is_dir` follows and which would otherwise descend until the stack
 /// overflows — an abort, before any validation the caller meant to run.
 /// A link is read, never followed, for the same reason.
-fn collect_entries(root: &std::path::Path) -> std::io::Result<Vec<Entry>> {
+fn collect_entries(root: &std::path::Path, links: &Links) -> std::io::Result<Vec<Entry>> {
     let mut pending = vec![root.to_path_buf()];
-    let mut entries = Vec::new();
+    let mut entries: Vec<Entry> = links
+        .iter()
+        .map(|(path, target)| Entry::Link {
+            path: path.clone(),
+            target: target.clone(),
+        })
+        .collect();
     while let Some(directory) = pending.pop() {
         for entry in std::fs::read_dir(&directory)? {
             let path = entry?.path();
+            if path
+                .strip_prefix(root)
+                .is_ok_and(|relative| links.contains_key(relative))
+            {
+                continue;
+            }
             let metadata = std::fs::symlink_metadata(&path)?;
             if metadata.file_type().is_symlink() {
                 if let Ok(relative) = path.strip_prefix(root) {
@@ -150,6 +175,33 @@ fn collect_entries(root: &std::path::Path) -> std::io::Result<Vec<Entry>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A link Git recorded but a checkout could not make, standing in as a
+    /// copy of its target, digests as the link it is: what a checkout that
+    /// made the link reaches. Unix only: the tree it is compared with holds
+    /// the symbolic link itself, which Windows lets an ordinary account make
+    /// only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_recorded_link_digests_as_the_link_it_stands_for() {
+        let linked = tree("digest-real-link", &[("skills/a/SKILL.md", "body")]);
+        std::os::unix::fs::symlink("a", linked.join("skills/b")).unwrap();
+        let copied = tree(
+            "digest-recorded-link",
+            &[("skills/a/SKILL.md", "body"), ("skills/b/SKILL.md", "body")],
+        );
+        let links = Links::from([(
+            std::path::PathBuf::from("skills/b"),
+            std::path::PathBuf::from("a"),
+        )]);
+        assert_eq!(
+            tree_sha256_with_links(&copied, &links).unwrap(),
+            tree_sha256(&linked).unwrap()
+        );
+        assert_ne!(tree_sha256(&copied).unwrap(), tree_sha256(&linked).unwrap());
+        let _ = std::fs::remove_dir_all(copied);
+        let _ = std::fs::remove_dir_all(linked);
+    }
 
     fn tree(label: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
         let root = uze_testkit::temp::scratch(label);
