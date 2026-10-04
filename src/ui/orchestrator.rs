@@ -1277,6 +1277,8 @@ struct Channels {
     code_measures: Answers<MeasureResolution>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
     policy_regions: Answers<PolicyRegionResolution>,
+    /// A project's gates this machine cannot run, read where it opens.
+    unspelled_gates: Answers<UnspelledGates>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
 }
@@ -1414,6 +1416,9 @@ struct Remembered {
     /// edited by hand, so the report is made once a session rather than on
     /// every refresh.
     policy_region_reported: BTreeSet<PathBuf>,
+    /// The projects already said to have a gate this machine cannot run,
+    /// so it is said once a session.
+    unspelled_gates_reported: BTreeSet<PathBuf>,
     /// The names a harness launched through the workspace's shim runs
     /// under, once the registry has answered, and whether it was asked.
     launchers: Option<Vec<String>>,

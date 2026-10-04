@@ -251,9 +251,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       UZE projects into `AGENTS.md`. (Neither the worktree skill nor the
       region spells a command; the per-platform form is documented in
       `reference/project-files`.)
-- [ ] 5.8 The workspace client says, when it opens on a project, which
+- [x] 5.8 The workspace client says, when it opens on a project, which
       gates this machine cannot run (the read model is `uze status`'s
-      `steps_not_spelled_here`).
+      `steps_not_spelled_here`; `reads::spawn_unspelled_gates`, a warning
+      toast once a session per project).
 
 ## 6. Hooks and delivery on Windows (D12, D16, D17)
 

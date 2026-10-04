@@ -43,11 +43,11 @@ mod workspace_tests {
         CompletionBehavior, DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer,
         GitBadge, GitResolution, PendingDrop, PlacementResolution, PromptScope, RootPicker,
         ScrollDirection, SpecResolution, SpecSummaryState, SupportResolution, TabDragGroup,
-        UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView, WorkspaceModel,
-        adopt_agent_labels, agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
-        can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
-        forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
-        open_commit_detail, open_spec, pane_relative, pending_tab_drop,
+        UnspelledGates, UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView,
+        WorkspaceModel, adopt_agent_labels, agent_activity_frame, agent_identity_for_tab,
+        answered_or, blank_pane, can_close_tab_from_menu, checkout_lost, encode_mouse,
+        evaluation_key, forward_paste, forward_scroll, next_agent_label, next_shell_label,
+        open_architect, open_code, open_commit_detail, open_spec, pane_relative, pending_tab_drop,
         render::{
             self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
@@ -2619,6 +2619,37 @@ mod workspace_tests {
     /// undeliverable again, and repainting every 120 ms forever, because
     /// a pending delivery is one of the three things that keep the
     /// spinner's clock turning.
+    /// A project whose gate this machine cannot run is said when its space
+    /// opens, once, with the gate and the spelling it lacks.
+    #[test]
+    fn a_gate_this_machine_cannot_run_is_said_once() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-unspelled-gate"));
+        let mut driven = driven(agent_with_task(WorkStateView::Ready, 1), &home);
+        for _ in 0..2 {
+            driven
+                .attach
+                .channels
+                .unspelled_gates
+                .sender
+                .send(UnspelledGates {
+                    project: PathBuf::from("/repo"),
+                    gates: vec!["make check".to_owned()],
+                    platform: "windows",
+                })
+                .unwrap();
+        }
+        driven.pump();
+
+        let toasts = &driven.attach.model.remembered.toasts;
+        assert_eq!(toasts.len(), 1, "said once");
+        assert_eq!(toasts[0].text, "A gate cannot run on this machine");
+        assert!(
+            toasts[0].detail.contains("`make check`") && toasts[0].detail.contains("`windows`"),
+            "{}",
+            toasts[0].detail
+        );
+    }
+
     #[test]
     fn a_delivery_that_answered_nothing_still_gives_the_task_back() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-delivery-silence"));

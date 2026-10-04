@@ -298,6 +298,7 @@ impl Attach<'_> {
         }
         self.absorb_surface_answers();
         self.absorb_policy_regions();
+        self.absorb_unspelled_gates();
         self.absorb_launchers();
         self.schedule_surface_reads();
         if self.model.expire_agent_activity(Instant::now()) {
