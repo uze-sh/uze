@@ -138,6 +138,21 @@ The direction is journey → page, not page → journey: the suite changes far
 more often than the site, the link belongs where the change happens, and the
 site's frontmatter schema stays untouched.
 
+### A journey can say where it cannot run
+
+```yaml
+unsupported:
+  windows: |
+    No Windows release exists yet to upgrade from.
+```
+
+A platform (`linux`, `macos`, `windows`) and the reason, in the journey,
+where the claim is written. `run` prints the reason instead of performing
+it, `list` prints the platform, and `journey validate` refuses a platform it
+does not know or one with no reason. It is a statement that the suite stops
+proving a claim somewhere, so it is never decided by the runner on a
+journey's behalf.
+
 ### Worlds repeat before they deserve a name
 
 The `world:` block stays in the journey, where a reader can see it without

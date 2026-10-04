@@ -1,6 +1,10 @@
 journey: the release a user has installed hands its work to this build
 tags: [upgrade, tui, recovery]
 proves: web/content/docs/workspace/agents.mdx
+unsupported:
+  windows: |
+    No Windows release exists yet to upgrade from: the previous release is
+    built from its tag, and every tag so far predates native Windows.
 about: |
   Every other tier proves this build against a document a test wrote. That
   proves a ladder step and not the claim, which is about two binaries

@@ -1350,10 +1350,39 @@ def load(path: Path) -> dict:
         die(f"{path}: {error}")
 
 
+# The platforms a journey can be declared unsupported on, as
+# `machine.PLATFORM` names them.
+PLATFORMS = ("linux", "macos", "windows")
+
+
+def unsupported_here(spec: dict) -> str | None:
+    """Why this journey cannot run on this platform, when it says so.
+
+    A declaration in the journey, with its reason, rather than a skip
+    decided here: a claim the suite stops proving somewhere has to be
+    visible where the claim is written, and `journey list` prints it.
+    """
+    reason = (spec.get("unsupported") or {}).get(machine.PLATFORM)
+    return " ".join(reason.split()) if reason else None
+
+
 def validate(spec: dict, path: Path | None = None) -> list[str]:
     problems = []
     if not spec.get("journey"):
         problems.append("the journey has no name")
+    unsupported = spec.get("unsupported") or {}
+    if not isinstance(unsupported, dict):
+        problems.append("`unsupported` maps a platform to the reason it cannot run")
+    else:
+        for platform, reason in unsupported.items():
+            if platform not in PLATFORMS:
+                problems.append(
+                    f"`unsupported` names {platform!r}, which is not one of {PLATFORMS}"
+                )
+            if not isinstance(reason, str) or not reason.strip():
+                problems.append(
+                    f"`unsupported` gives {platform!r} no reason — say why it cannot run"
+                )
     # A journey may name the user-facing page whose claim it backs. This
     # catches structural drift — a page that lost its proof, a proof that
     # points nowhere — and tells whoever changes the flow which page to
@@ -1441,6 +1470,8 @@ def command_list(args) -> int:
         proves = spec.get("proves") or []
         for page in [proves] if isinstance(proves, str) else proves:
             print(f"      {DIM}proves {page}{OFF}")
+        for platform in spec.get("unsupported") or {}:
+            print(f"      {YELLOW}unsupported on {platform}{OFF}")
     print()
     return 0
 
@@ -1550,7 +1581,14 @@ def command_run_all(args) -> int:
             f"{RED}{len(failed)} of {len(specs)} journeys failed{OFF}: {', '.join(failed)}"
         )
         return 1
-    say(f"{len(specs)} journeys held")
+    unsupported = sum(1 for spec in specs if unsupported_here(load(spec)))
+    if unsupported:
+        say(
+            f"{len(specs) - unsupported} journeys held, "
+            f"{unsupported} unsupported on {machine.PLATFORM}"
+        )
+    else:
+        say(f"{len(specs)} journeys held")
     return 0
 
 
@@ -1560,6 +1598,10 @@ def run_one(args, path: Path) -> int:
         for problem in problems:
             print(f"{RED}✕{OFF} {problem}")
         return 1
+    if reason := unsupported_here(spec):
+        print(f"\n{BOLD}{spec['journey']}{OFF}")
+        print(f"{YELLOW}−{OFF} unsupported on {machine.PLATFORM}: {reason}")
+        return 0
 
     world = build_world(spec, path.stem, binary_path(), keep=args.keep)
     stamp = time.strftime("%Y%m%d-%H%M%S")
