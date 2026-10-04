@@ -3,6 +3,7 @@
 //! back.
 
 use super::*;
+use uze_platform::shell::{self, Family};
 
 /// How one harness's payload is read and how its decision is written — the
 /// only slots that differ between the generated wrappers.
@@ -85,7 +86,7 @@ pub(super) fn wrapper_field_variables(target: HookTarget) -> Vec<String> {
 
 /// A generated wrapper's template: the one contract (ADR-040) compiled for
 /// one shell. Each is a pure function of the harness, and the one this
-/// platform runs is [`HostWrapper`].
+/// platform runs is the one its shell family names ([`wrapper_source`]).
 pub(crate) trait WrapperTemplate {
     /// Where the wrapper sits inside its delivered artifact: one path an
     /// author or reviewer can look for on every harness.
@@ -103,36 +104,39 @@ pub(crate) trait WrapperTemplate {
 }
 
 // Every template is compiled on every platform, so the one a platform does
-// not run is still generated and tested where the suite runs.
-#[cfg_attr(not(unix), allow(dead_code))]
+// not run is still generated and tested where the suite runs; which one a
+// harness here gets is the shell family the platform names.
 mod posix;
-#[cfg_attr(not(windows), allow(dead_code))]
 mod powershell;
-#[cfg_attr(not(unix), allow(unused_imports))]
 pub(crate) use posix::PosixWrapper;
-#[cfg_attr(not(windows), allow(unused_imports))]
 pub(crate) use powershell::PowerShellWrapper;
-
-/// The wrapper template this platform's harnesses run.
-#[cfg(unix)]
-pub(crate) type HostWrapper = PosixWrapper;
-#[cfg(windows)]
-pub(crate) type HostWrapper = PowerShellWrapper;
 
 /// The wrapper this platform's harness runs (see [`WrapperTemplate`]).
 pub(crate) fn wrapper_source(target: HookTarget) -> Option<String> {
-    HostWrapper::source(target)
+    match shell::FAMILY {
+        Family::Posix => PosixWrapper::source(target),
+        Family::PowerShell => PowerShellWrapper::source(target),
+    }
 }
 
 /// What this platform's harness never fires an event for.
 pub(crate) fn unfired_here(
     target: HookTarget,
 ) -> &'static [(HookEvent, &'static str, &'static str)] {
-    HostWrapper::unfired(target)
+    match shell::FAMILY {
+        Family::Posix => PosixWrapper::unfired(target),
+        Family::PowerShell => PowerShellWrapper::unfired(target),
+    }
 }
 
-pub(super) const WRAPPER_HEADER: &str = HostWrapper::HEADER;
-pub(crate) const WRAPPER_RELATIVE_PATH: &str = HostWrapper::RELATIVE_PATH;
+pub(super) const WRAPPER_HEADER: &str = match shell::FAMILY {
+    Family::Posix => PosixWrapper::HEADER,
+    Family::PowerShell => PowerShellWrapper::HEADER,
+};
+pub(crate) const WRAPPER_RELATIVE_PATH: &str = match shell::FAMILY {
+    Family::Posix => PosixWrapper::RELATIVE_PATH,
+    Family::PowerShell => PowerShellWrapper::RELATIVE_PATH,
+};
 
 /// How much of a handler's stderr becomes the reason a harness is handed.
 /// "Bounded output" is part of the hook ABI (ADR-033), and the generated
@@ -169,32 +173,14 @@ pub(crate) fn materialize_wrapper(path: &Path, source: &str) -> Result<()> {
 /// permanent block — so this is drift, not a cosmetic difference. On a
 /// platform without Unix modes there is no bit to lose.
 pub(super) fn is_executable(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        true
-    }
+    uze_platform::executable::is_marked_runnable(path)
 }
 
 pub(super) fn make_executable(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).map_err(|source| {
-            UzeError::Write {
-                path: path.to_path_buf(),
-                source,
-            }
-        })?;
-    }
-    #[cfg(not(unix))]
-    let _ = path;
-    Ok(())
+    uze_platform::executable::make_runnable(path).map_err(|source| UzeError::Write {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 /// Removes a shared wrapper once no hook entry of this integration is left

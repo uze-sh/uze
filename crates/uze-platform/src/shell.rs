@@ -10,6 +10,19 @@ use std::process::Command;
 /// The key a manifest spells this platform's command under.
 pub const KEY: &str = imp::KEY;
 
+/// The language this platform's shell reads, for a caller that writes a
+/// script in it: one template per family, chosen by this value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Family {
+    /// `sh`, as POSIX defines it.
+    Posix,
+    /// Windows PowerShell 5.1.
+    PowerShell,
+}
+
+/// The family of this platform's shell.
+pub const FAMILY: Family = imp::FAMILY;
+
 /// What starts this shell on a line, before the line itself: what a
 /// generated runtime spawns (`[...ARGV, line]`).
 pub const ARGV: &[&str] = imp::ARGV;
@@ -92,6 +105,7 @@ pub const SCRIPT_EXTENSION: Option<&str> = imp::SCRIPT_EXTENSION;
 #[cfg(unix)]
 mod imp {
     pub(super) const KEY: &str = "posix";
+    pub(super) const FAMILY: super::Family = super::Family::Posix;
 
     pub(super) fn spelling<'a>(posix: &'a str, _windows: &'a str) -> &'a str {
         posix
@@ -156,6 +170,7 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     pub(super) const KEY: &str = "windows";
+    pub(super) const FAMILY: super::Family = super::Family::PowerShell;
 
     pub(super) fn spelling<'a>(_posix: &'a str, windows: &'a str) -> &'a str {
         windows

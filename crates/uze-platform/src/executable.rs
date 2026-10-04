@@ -56,6 +56,12 @@ pub fn invoked_name(argv0: &OsStr) -> Option<String> {
     imp::invoked_name(Path::new(argv0))
 }
 
+/// Whether `path` carries the mark [`make_runnable`] sets: the executable
+/// bits on Unix. Windows keeps no such mark, so a file there always has it.
+pub fn is_marked_runnable(path: &Path) -> bool {
+    imp::is_marked_runnable(path)
+}
+
 /// Marks `path` as a program this platform may run.
 pub fn make_runnable(path: &Path) -> io::Result<()> {
     imp::make_runnable(path)
@@ -129,6 +135,10 @@ mod imp {
         fs::set_permissions(path, fs::Permissions::from_mode(0o755))
     }
 
+    pub(super) fn is_marked_runnable(path: &Path) -> bool {
+        fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+    }
+
     /// A rename over a running image is allowed: the running process keeps
     /// the inode it started from.
     pub(super) fn replace_running(new: &Path, target: &Path) -> io::Result<()> {
@@ -190,6 +200,10 @@ mod imp {
     /// Whether a file runs is its name's business here.
     pub(super) fn make_runnable(_path: &Path) -> io::Result<()> {
         Ok(())
+    }
+
+    pub(super) fn is_marked_runnable(path: &Path) -> bool {
+        path.is_file()
     }
 
     /// Windows refuses to replace an image that is running but lets it be
