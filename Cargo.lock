@@ -3183,6 +3183,7 @@ dependencies = [
  "uze-git",
  "uze-integrations",
  "uze-keys",
+ "uze-platform",
  "uze-terminal",
  "uze-testkit",
  "uze-theme",
@@ -3200,6 +3201,7 @@ dependencies = [
  "uze-core",
  "uze-integrations",
  "uze-keys",
+ "uze-platform",
  "uze-testkit",
  "uze-workspace",
 ]
@@ -3218,7 +3220,7 @@ dependencies = [
  "tracing",
  "uze-document",
  "uze-git",
- "uze-process",
+ "uze-platform",
  "uze-testkit",
 ]
 
@@ -3251,7 +3253,7 @@ dependencies = [
  "libc",
  "tracing",
  "tracing-subscriber",
- "uze-process",
+ "uze-platform",
  "uze-testkit",
 ]
 
@@ -3263,6 +3265,7 @@ dependencies = [
  "toml_edit",
  "tracing",
  "uze-core",
+ "uze-platform",
  "uze-testkit",
 ]
 
@@ -3275,10 +3278,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "uze-process"
+name = "uze-platform"
 version = "1.0.0-beta.10"
 dependencies = [
  "libc",
+ "uze-testkit",
  "windows-sys 0.61.2",
 ]
 
@@ -3295,7 +3299,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "uze-document",
- "uze-process",
+ "uze-platform",
  "uze-testkit",
  "windows-sys 0.61.2",
 ]
@@ -3330,6 +3334,7 @@ dependencies = [
  "uze-core",
  "uze-document",
  "uze-git",
+ "uze-platform",
  "uze-testkit",
 ]
 

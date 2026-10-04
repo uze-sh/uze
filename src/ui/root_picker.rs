@@ -357,13 +357,7 @@ fn read_directories(directory: &Path) -> Vec<Candidate> {
 /// Resolves what the user typed against `$HOME`: `~` and a bare relative
 /// path both name something inside it, since that is where checkouts live.
 pub(super) fn expand_home(typed: &str) -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let path = PathBuf::from(typed);
-    match (typed.strip_prefix('~'), home) {
-        (Some(rest), Some(home)) => home.join(rest.trim_start_matches('/')),
-        (None, Some(home)) if path.is_relative() => home.join(path),
-        _ => path,
-    }
+    uze_platform::home::expand(typed)
 }
 
 #[cfg(test)]

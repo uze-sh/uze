@@ -161,7 +161,7 @@ fn hook_executions(resource: &Resource) -> Vec<ExecutableCapability> {
                 .enumerate()
                 .map(|(index, handler)| ExecutableCapability {
                     name: format!("{}#{index}", hook.id),
-                    command: handler.command,
+                    command: handler.command.describe(),
                     arguments: Vec::new(),
                     environment: BTreeMap::new(),
                     working_directory: None,
@@ -268,7 +268,7 @@ mod tests {
                     matchers: Vec::new(),
                     handlers: vec![crate::hook::CommandHook {
                         handler_type: crate::hook::CommandHandlerType::Command,
-                        command: "scripts/check".to_owned(),
+                        command: "scripts/check".into(),
                         timeout: 10,
                     }],
                     effect: crate::hook::HookEffect::Deny,

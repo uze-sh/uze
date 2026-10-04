@@ -1050,49 +1050,6 @@ pub(super) fn spawn_status_ticker(server: Arc<Server>) {
     });
 }
 
-/// Puts back the directory the endpoint lives in, held to the same
-/// ownership and mode [`socket_path`] demanded of it in the first place — a
-/// cleaner that took the socket usually took the directory too.
-#[cfg(unix)]
-pub(super) fn restore_endpoint_directory(socket: &Path) -> io::Result<()> {
-    let Some(directory) = socket.parent() else {
-        return Ok(());
-    };
-    fs::create_dir_all(directory)?;
-    private_directory(directory, current_uid())
-}
-
-/// The process group `pid` leads, when it leads one of its own: a pane's
-/// program is started in a session of its own, so its group is its pid.
-/// `None` for anything else — above all this process's own group, which a
-/// group signal must never reach.
-#[cfg(unix)]
-pub(super) fn own_process_group(pid: u32) -> Option<libc::pid_t> {
-    let pid = libc::pid_t::try_from(pid).ok().filter(|pid| *pid > 1)?;
-    // SAFETY: `getpgid` reads the group of a positive pid and touches no
-    // memory of ours; `getpgrp` takes no arguments and cannot fail.
-    let (group, ours) = unsafe { (libc::getpgid(pid), libc::getpgrp()) };
-    (group == pid && group != ours).then_some(group)
-}
-
-/// The real user id of this process.
-#[cfg(unix)]
-pub(super) fn current_uid() -> libc::uid_t {
-    // SAFETY: `getuid` takes no arguments, cannot fail, and touches no
-    // memory of ours.
-    unsafe { libc::getuid() }
-}
-
-/// What identifies the socket a server bound, so a later look at the same
-/// path can tell "still the one I am listening on" from "gone".
-#[cfg(unix)]
-pub(super) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
-    use std::os::unix::fs::MetadataExt;
-
-    let metadata = fs::metadata(path).ok()?;
-    Some((metadata.dev(), metadata.ino()))
-}
-
 /// Puts the server back at its endpoint when the endpoint stops being the
 /// one it bound.
 ///
@@ -1115,20 +1072,19 @@ pub(super) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
 /// endpoint nobody serves. `serve` takes the same lock before it
 /// clears the endpoint, which makes "rebound, then cleared" and "stopped,
 /// so never rebound" the only two orderings there are.
-#[cfg(unix)]
 pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
     thread::spawn(move || {
-        let mut bound = socket_identity(&server.socket);
+        let mut bound = transport::identity(&server.socket);
         loop {
             thread::sleep(STATUS_PROBE_INTERVAL);
             let stopped = server.stopped.lock().expect("stop state poisoned");
             if *stopped {
                 break;
             }
-            if socket_identity(&server.socket) == bound {
+            if transport::identity(&server.socket) == bound {
                 continue;
             }
-            match restore_endpoint_directory(&server.socket)
+            match transport::restore(&server.socket)
                 .map_err(RuntimeError::from)
                 .and_then(|()| bind_endpoint(&server.socket))
             {
@@ -1137,7 +1093,7 @@ pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
                         socket = %server.socket.display(),
                         "the terminal endpoint vanished under a live server; rebound it"
                     );
-                    bound = socket_identity(&server.socket);
+                    bound = transport::identity(&server.socket);
                     let accepting = Arc::clone(&server);
                     // The listener this replaces is left blocked in
                     // `accept` on an inode nothing can reach any more, so it
@@ -1148,21 +1104,6 @@ pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
                     tracing::warn!(%error, "could not rebind the terminal endpoint")
                 }
             }
-        }
-    });
-}
-
-/// Stops the server when an `uze` of any build asks it to through the
-/// named stop event — the cooperative half of retiring a server, which on
-/// Unix is `SIGTERM`. The event's name is derived from the endpoint, and
-/// its shape is a thing no build changes.
-#[cfg(windows)]
-pub(super) fn spawn_stop_event(server: Arc<Server>) {
-    let name = windows::stop_event_name(&server.socket);
-    thread::spawn(move || {
-        if windows::wait_for_stop(&name).is_ok() {
-            server.persist();
-            server.shut_down();
         }
     });
 }

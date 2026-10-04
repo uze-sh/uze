@@ -217,20 +217,7 @@ fn hand_off_check() {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        command.process_group(0);
-    }
-    // A hidden console of its own: no window flashes, and neither a Ctrl+C
-    // in this terminal nor closing it reaches the check.
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt as _;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-    let _ = command.spawn();
+    let _ = uze_platform::process::spawn_detached(&mut command);
 }
 
 fn this_binary() -> Option<PathBuf> {
@@ -542,7 +529,14 @@ impl Releases for Published {
     /// same "latest" the installer resolves.
     fn latest(&self) -> Option<String> {
         let output = system_tool("curl")
-            .args(["-fsSL", "--max-time", "15", "-o", NULL_DEVICE, "-w"])
+            .args([
+                "-fsSL",
+                "--max-time",
+                "15",
+                "-o",
+                uze_platform::fs::NULL_DEVICE,
+                "-w",
+            ])
             .arg("%{url_effective}")
             .arg(format!("{}/latest", self.base))
             .stdin(Stdio::null())
@@ -586,8 +580,10 @@ impl Releases for Published {
             if sha256(&bytes) != expected {
                 return Err(format!("checksum mismatch for {archive}"));
             }
+            // Both GNU tar and the bsdtar Windows ships tell a gzip from a
+            // zip by its bytes.
             let unpack = system_tool("tar")
-                .arg(if cfg!(windows) { "-xf" } else { "-xzf" })
+                .arg("-xf")
                 .arg(scratch.join(&archive))
                 .arg("-C")
                 .arg(&unpacked)
@@ -600,7 +596,7 @@ impl Releases for Published {
                 return Err(format!("cannot unpack {archive}"));
             }
             replace(
-                &unpacked.join(format!("uze{}", env::consts::EXE_SUFFIX)),
+                &unpacked.join(uze_platform::executable::file_name("uze")),
                 version,
                 target,
             )
@@ -610,24 +606,8 @@ impl Releases for Published {
     }
 }
 
-/// Where the null device is, for a tool told to write somewhere.
-const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
-
-/// `curl` and `tar` as the system ships them. On Windows they live in
-/// System32 and are called by that path: under Windows PowerShell `curl` is
-/// an alias for something else, and a `tar` earlier on `PATH` (Git's GNU
-/// tar) cannot read the zip a Windows release is.
 fn system_tool(name: &str) -> Command {
-    #[cfg(windows)]
-    {
-        let system =
-            env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
-        Command::new(system.join("System32").join(format!("{name}.exe")))
-    }
-    #[cfg(not(windows))]
-    {
-        Command::new(name)
-    }
+    uze_platform::tools::system(name)
 }
 
 fn fetch(url: &str, to: &Path) -> Result<(), String> {
@@ -650,7 +630,7 @@ fn fetch(url: &str, to: &Path) -> Result<(), String> {
 /// release it claims to be — the same last step `install.sh` takes, and for
 /// the same reason: a file that does not run is worse than an old one.
 fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
-    make_executable(staged).map_err(|error| error.to_string())?;
+    make_runnable(staged).map_err(|error| error.to_string())?;
     let reported = Command::new(staged)
         .arg("--version")
         .stdin(Stdio::null())
@@ -670,9 +650,9 @@ fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
     ));
     let placed = (|| {
         fs::copy(staged, &beside)?;
-        make_executable(&beside)?;
+        make_runnable(&beside)?;
         fs::File::open(&beside)?.sync_all()?;
-        swap_in(&beside, target)
+        uze_platform::executable::replace_running(&beside, target)
     })();
     if placed.is_err() {
         let _ = fs::remove_file(&beside);
@@ -680,81 +660,13 @@ fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
     placed.map_err(|error| format!("cannot replace {}: {error}", target.display()))
 }
 
-#[cfg(unix)]
-fn make_executable(path: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt as _;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
-}
-
-#[cfg(not(unix))]
-fn make_executable(_path: &Path) -> std::io::Result<()> {
-    Ok(())
-}
-
-/// One rename over the target, where the platform allows renaming over a
-/// running executable.
-#[cfg(not(windows))]
-fn swap_in(new: &Path, target: &Path) -> std::io::Result<()> {
-    fs::rename(new, target)
-}
-
-/// Windows refuses to replace an image that is running, but lets it be
-/// renamed: the running one steps aside under a name the next start
-/// sweeps (see [`sweep_set_aside`]), the new one takes its place, and a
-/// failure halfway puts the old one back.
-#[cfg(windows)]
-fn swap_in(new: &Path, target: &Path) -> std::io::Result<()> {
-    let aside = set_aside_name(target);
-    let had_target = target.exists();
-    if had_target {
-        fs::rename(target, &aside)?;
-    }
-    match fs::rename(new, target) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            if had_target {
-                let _ = fs::rename(&aside, target);
-            }
-            Err(error)
-        }
-    }
-}
-
-#[cfg(windows)]
-fn set_aside_name(target: &Path) -> PathBuf {
-    let name = target
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "uze.exe".into());
-    target.with_file_name(format!("{name}.old-{}", std::process::id()))
-}
+use uze_platform::executable::make_runnable;
 
 /// Removes the images an upgrade set aside beside the running binary, once
-/// nothing runs them: Windows refuses to delete a running image, so a
-/// removal that fails is simply tried again at a later start.
+/// nothing runs them.
 pub fn sweep_set_aside() {
-    #[cfg(windows)]
-    {
-        let Ok(running) = env::current_exe() else {
-            return;
-        };
-        let (Some(directory), Some(name)) = (running.parent(), running.file_name()) else {
-            return;
-        };
-        let prefix = format!("{}.old-", name.to_string_lossy()).to_ascii_lowercase();
-        let Ok(entries) = fs::read_dir(directory) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            if entry
-                .file_name()
-                .to_string_lossy()
-                .to_ascii_lowercase()
-                .starts_with(&prefix)
-            {
-                let _ = fs::remove_file(entry.path());
-            }
-        }
+    if let Ok(running) = env::current_exe() {
+        uze_platform::executable::sweep_replaced(&running);
     }
 }
 
@@ -762,13 +674,23 @@ pub fn sweep_set_aside() {
 /// has to ask `ldd` which C library the system uses, a running binary
 /// already knows which one it was built against.
 fn asset() -> Option<String> {
-    let arch = match env::consts::ARCH {
+    asset_for(
+        env::consts::OS,
+        env::consts::ARCH,
+        cfg!(target_env = "musl"),
+    )
+}
+
+/// The release archive built for `os` on `arch`: the table `release.yml`
+/// publishes and the installers read.
+fn asset_for(os: &str, arch: &str, musl: bool) -> Option<String> {
+    let arch = match arch {
         arch @ ("x86_64" | "aarch64") => arch,
         _ => return None,
     };
-    let (platform, extension) = match env::consts::OS {
+    let (platform, extension) = match os {
         "macos" => (format!("{arch}-macos"), "tar.gz"),
-        "linux" if cfg!(target_env = "musl") => (format!("{arch}-linux-musl"), "tar.gz"),
+        "linux" if musl => (format!("{arch}-linux-musl"), "tar.gz"),
         "linux" => (format!("{arch}-linux-gnu"), "tar.gz"),
         "windows" => (format!("{arch}-windows"), "zip"),
         _ => return None,
@@ -972,19 +894,21 @@ mod tests {
 
     #[test]
     fn the_asset_is_the_one_the_installer_picks() {
-        let asset = asset().expect("every platform uze runs on has a release asset");
         assert!(
-            asset.starts_with("uze-") && asset.ends_with(".tar.gz"),
-            "{asset}"
+            asset().is_some(),
+            "every platform uze runs on has a release asset"
         );
-        if cfg!(target_os = "macos") {
-            assert!(asset.contains("-macos"), "{asset}");
-        } else {
-            assert!(
-                asset.contains("-linux-gnu") || asset.contains("-linux-musl"),
-                "{asset}"
-            );
+        for (os, arch, musl, expected) in [
+            ("linux", "x86_64", false, "uze-x86_64-linux-gnu.tar.gz"),
+            ("linux", "aarch64", true, "uze-aarch64-linux-musl.tar.gz"),
+            ("macos", "aarch64", false, "uze-aarch64-macos.tar.gz"),
+            ("windows", "x86_64", false, "uze-x86_64-windows.zip"),
+            ("windows", "aarch64", false, "uze-aarch64-windows.zip"),
+        ] {
+            assert_eq!(asset_for(os, arch, musl).as_deref(), Some(expected));
         }
+        assert_eq!(asset_for("freebsd", "x86_64", false), None);
+        assert_eq!(asset_for("linux", "riscv64", false), None);
     }
 
     #[test]
@@ -1369,6 +1293,8 @@ mod tests {
         assert_eq!(ledger.checked_at, 10_000);
     }
 
+    /// The stand-in release is a shell script, which only Unix runs.
+    #[cfg(unix)]
     #[test]
     fn a_replacement_that_does_not_run_as_the_release_is_refused() {
         let dir = TempDir::new("self-update-replace");

@@ -9,7 +9,7 @@ use super::*;
 pub(super) fn uze_home_dir() -> PathBuf {
     env::var_os("UZE_HOME")
         .map(PathBuf::from)
-        .or_else(|| env::home_dir().map(|home| home.join(".uze")))
+        .or_else(|| uze_platform::home::user_home().map(|home| home.join(".uze")))
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -109,7 +109,7 @@ pub(super) fn record_claimant(file: &mut fs::File) {
 pub(super) fn claim_holder() -> Option<u32> {
     let recorded = fs::read_to_string(workspace_lock_path()).ok()?;
     let pid: u32 = recorded.trim().parse().ok()?;
-    signalable(pid).filter(|target| runs_uze(*target))?;
+    runs_uze(pid).then_some(())?;
     Some(pid)
 }
 
@@ -156,14 +156,14 @@ pub(super) fn open_workspace_lock() -> io::Result<fs::File> {
         .open(&path)
 }
 
-pub(super) use uze_process::lock::Mode as LockMode;
+pub(super) use uze_platform::lock::Mode as LockMode;
 
 pub(super) fn try_lock(file: &fs::File, mode: LockMode) -> Result<(), LockRefusal> {
-    uze_process::lock::try_lock(file, mode).map_err(classify_lock_refusal)
+    uze_platform::lock::try_lock(file, mode).map_err(classify_lock_refusal)
 }
 
 pub(super) fn unlock(file: &fs::File) {
-    uze_process::lock::unlock(file);
+    uze_platform::lock::unlock(file);
 }
 
 /// Why `flock` said no.
@@ -175,7 +175,6 @@ pub(super) fn unlock(file: &fs::File) {
 /// to go and stop a server that does not exist, permanently, with no
 /// command that could clear it.
 #[derive(Debug)]
-#[cfg_attr(windows, allow(dead_code))]
 pub(super) enum LockRefusal {
     Interrupted,
     Contended,
@@ -183,16 +182,9 @@ pub(super) enum LockRefusal {
 }
 
 pub(super) fn classify_lock_refusal(error: io::Error) -> LockRefusal {
-    if error.kind() == io::ErrorKind::WouldBlock {
-        return LockRefusal::Contended;
-    }
-    #[cfg(windows)]
-    return LockRefusal::Unsupported(error);
-    #[cfg(unix)]
-    match error.raw_os_error() {
-        Some(libc::EINTR) => LockRefusal::Interrupted,
-        // The same number on Linux, two names elsewhere; both mean held.
-        Some(code) if code == libc::EWOULDBLOCK || code == libc::EAGAIN => LockRefusal::Contended,
+    match error.kind() {
+        io::ErrorKind::Interrupted => LockRefusal::Interrupted,
+        io::ErrorKind::WouldBlock => LockRefusal::Contended,
         _ => LockRefusal::Unsupported(error),
     }
 }

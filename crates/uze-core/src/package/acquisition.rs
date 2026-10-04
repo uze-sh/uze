@@ -437,14 +437,7 @@ pub fn scratch_directory() -> Result<PathBuf> {
         "uze-acquire-{}-{nonce}-{sequence}",
         std::process::id()
     ));
-    #[cfg_attr(not(unix), allow(unused_mut))]
-    let mut builder = fs::DirBuilder::new();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(&path).map_err(UzeError::write(&path))?;
+    uze_platform::fs::create_private_dir(&path).map_err(UzeError::write(&path))?;
     Ok(path)
 }
 

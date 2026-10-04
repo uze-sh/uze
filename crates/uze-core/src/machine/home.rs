@@ -447,24 +447,7 @@ impl UzeHome {
     }
 }
 
-/// The user's home directory, the one place every part of UZE asks for it.
-///
-/// `$HOME` on Unix, where tests and wrappers point it elsewhere on purpose.
-/// On Windows the profile directory (`USERPROFILE`): that is where every
-/// harness keeps its configuration, and a `HOME` some shells export (Git
-/// Bash, MSYS) names a directory none of them read.
-pub fn user_home() -> Option<PathBuf> {
-    #[cfg(windows)]
-    {
-        env::home_dir().filter(|home| !home.as_os_str().is_empty())
-    }
-    #[cfg(not(windows))]
-    {
-        env::var_os("HOME")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-    }
-}
+pub use uze_platform::home::{expand, shorten, user_home};
 
 fn absolute_or_refuse(variable: &'static str, value: std::ffi::OsString) -> Result<PathBuf> {
     let path = PathBuf::from(value);

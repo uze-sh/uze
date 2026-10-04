@@ -17,7 +17,7 @@ tracing = "0.1"
 # durability rule written in two places is what it exists to prevent.
 uze-document = { path = "../uze-document" }
 # Locks that hold across processes, and what Windows says about a process.
-uze-process = { path = "../uze-process" }
+uze-platform = { path = "../uze-platform" }
 alacritty_terminal = "0.26"
 portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }

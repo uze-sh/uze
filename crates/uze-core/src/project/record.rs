@@ -160,27 +160,12 @@ fn carry_across_the_move(home: &UzeHome, id: &str, directory: &Path) {
 /// its own. Gathering the records into one directory must not quietly
 /// widen that: the least private thing decides the mode, so the whole
 /// directory takes the strictest one any of its contents needs.
-#[cfg(unix)]
 fn create_private(directory: &Path) -> Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
-    if directory.is_dir() {
-        return Ok(());
-    }
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(directory)
-        .map_err(|source| crate::error::UzeError::Write {
+    uze_platform::fs::create_private_dir_all(directory).map_err(|source| {
+        crate::error::UzeError::Write {
             path: directory.to_path_buf(),
             source,
-        })
-}
-
-#[cfg(not(unix))]
-fn create_private(directory: &Path) -> Result<()> {
-    fs::create_dir_all(directory).map_err(|source| crate::error::UzeError::Write {
-        path: directory.to_path_buf(),
-        source,
+        }
     })
 }
 

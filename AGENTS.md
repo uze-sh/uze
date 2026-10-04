@@ -254,16 +254,24 @@ need to).
   makes this the opposite of scattered compatibility, which this project
   refuses — the current struct stays clean *because* the old shapes live
   in the ladder.
-- `crates/uze-process` — what UZE asks the operating system about
-  processes and files, answered once per platform: a lock that holds across
-  processes (`flock`; `LockFileEx` on a byte range that keeps the holder's
-  pid readable), and on Windows a process's image, liveness and SID, ending
-  a process with its whole tree, and Job Objects. A leaf crate naming no
-  domain, no path and no harness, because `uze-core`, `uze-git` and the
-  terminal runtime all need it and none may depend on another for it.
+- `crates/uze-platform` — what UZE asks the operating system, answered
+  once per platform: processes and their trees (process groups; Job
+  Objects), kernel facts about a process (`probe`), cross-process locks, the
+  shell an authored line runs in (`sh -c`; Windows PowerShell 5.1), paths,
+  the home directory, private files, executables and the image a running
+  binary is replaced by, stdio, the desktop's URL openers and the system's
+  own tools. **One concept per module, one API per concept, and one
+  implementation per platform selected by `cfg` at that module's boundary**
+  (`mod unix;`/`mod windows;` behind `use … as imp`): nothing that uses it
+  branches on the operating system, and a `cfg!` at a call site anywhere
+  else in the workspace is a missing concept here. Distinct per-platform
+  data gets distinct types, never optional fields on a shared one. A leaf
+  crate naming no domain, no UZE path and no harness, because `uze-core`,
+  `uze-git`, the terminal runtime and the binary all need it and none may
+  depend on another for it.
 - `crates/uze-terminal` — the local terminal runtime: a server owning the
   pseudoterminals and a versioned client protocol, so a pane survives a
-  client leaving. Depends on nothing in the workspace but `uze-process`
+  client leaving. Depends on nothing in the workspace but `uze-platform`
   and `uze-document`, whose rule it obeys like everything else that
   persists — the path to its own workspace is the only thing it computes
   for itself.

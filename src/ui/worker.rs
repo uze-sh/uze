@@ -1246,11 +1246,7 @@ fn open_in_browser(url: &str) -> Option<String> {
     // Mac died as "no browser to open it with" unless the operator had set
     // `$BROWSER`. Written when Linux was the only reader, and found by
     // asking a second platform.
-    let native: &[&str] = if cfg!(target_os = "macos") {
-        &["open"]
-    } else {
-        &["xdg-open", "sensible-browser", "explorer.exe"]
-    };
+    let native = uze_platform::desktop::URL_OPENERS;
     for opener in preferred.into_iter().chain(native.iter().copied()) {
         let mut words = opener.split_whitespace();
         let Some(program) = words.next() else {

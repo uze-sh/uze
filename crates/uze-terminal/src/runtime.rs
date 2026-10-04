@@ -24,13 +24,13 @@ use crate::{
     Palette, PaneDamage, PaneId, PaneSnapshot, RenderCell, Seating, SelectionGesture, Session,
     SpaceId, SpaceSeat, TabId, TerminalColor,
     launch::Launch,
-    process_probe,
     selection::PaneSelection,
     state::{OpenedSpace, PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed},
 };
 
 mod endpoint;
 mod framing;
+mod host;
 mod lock;
 mod outbox;
 mod pane;
@@ -38,8 +38,6 @@ mod persist;
 mod process;
 mod server;
 mod transport;
-#[cfg(windows)]
-pub(crate) mod windows;
 
 pub use endpoint::*;
 pub use framing::*;
@@ -49,7 +47,7 @@ use pane::*;
 use persist::*;
 use process::*;
 use server::*;
-pub use transport::Stream;
+pub use transport::{Stream, pair as stream_pair};
 
 /// ADR-038: the endpoint is local and user-private; no network transport is
 /// exposed by this runtime.

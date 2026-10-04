@@ -142,11 +142,7 @@ pub(super) fn serves_this_build(socket: &Path) -> bool {
 /// or directory` about a path the operator never typed.
 pub(super) fn unreachable(socket: &Path, cause: Option<RuntimeError>) -> RuntimeError {
     let because = cause.map_or_else(String::new, |cause| format!(" ({cause})"));
-    let find = if cfg!(windows) {
-        "`Get-Process uze`"
-    } else {
-        "`pgrep -fa 'uze terminal serve'`"
-    };
+    let find = host::FIND_SERVER;
     RuntimeError::Protocol(format!(
         "a uze is serving this workspace and answers nowhere this build looks — not at \
          {}{because} — and the claim does not name it, so it is older than this build's \
@@ -216,7 +212,7 @@ pub(super) fn listener_at(socket: &Path) -> Listener {
 pub(super) fn identify(pid: u32) -> Listener {
     if runs_this_executable(pid) {
         Listener::ThisBuild(pid)
-    } else if signalable(pid).is_some_and(runs_uze) {
+    } else if runs_uze(pid) {
         Listener::AnotherBuild(pid)
     } else {
         Listener::Unrecognized
@@ -248,64 +244,9 @@ pub(super) fn identify(pid: u32) -> Listener {
 /// turn. Falling back does not weaken isolation: the socket is named
 /// after a hash of `UZE_HOME`, so two homes stay two endpoints wherever
 /// they land.
-#[cfg(windows)]
 pub fn socket_path() -> Result<PathBuf, RuntimeError> {
-    // The pipe namespace is machine-wide, so the user's SID is part of the
-    // name: two users with homes at one path are still two endpoints.
-    let identity = identity_of(&uze_home_dir());
-    let user = windows::current_user_sid()?;
-    let user = user.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-    });
-    Ok(PathBuf::from(format!(
-        r"\\.\pipe\uze-{identity}-{user:016x}"
-    )))
-}
-
-#[cfg(unix)]
-pub fn socket_path() -> Result<PathBuf, RuntimeError> {
-    let identity = identity_of(&uze_home_dir());
-    let named = |root: &Path| root.join(format!("uze-{identity}.sock"));
-    let owner = current_uid();
-
-    let candidates = [
-        uze_home_dir().join("state").join("terminal"),
-        env::var_os("XDG_RUNTIME_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(env::temp_dir)
-            .join(format!("uze-runtime-{owner}")),
-        env::temp_dir().join(format!("uze-runtime-{owner}")),
-        PathBuf::from("/tmp").join(format!("uze-runtime-{owner}")),
-    ];
-
-    let mut refused = None;
-    let runtime = candidates
-        .into_iter()
-        .find(|candidate| {
-            if named(candidate).as_os_str().len() > MAX_SOCKET_PATH {
-                return false;
-            }
-            // A sandboxed terminal can expose a runtime directory while
-            // denying writes below it, and a directory that already
-            // exists may be somebody else's — either way the next
-            // candidate is tried rather than the whole attach failing.
-            match fs::create_dir_all(candidate).and_then(|()| private_directory(candidate, owner)) {
-                Ok(()) => true,
-                Err(error) => {
-                    refused = Some(error);
-                    false
-                }
-            }
-        })
-        .ok_or_else(|| {
-            refused.unwrap_or_else(|| {
-                io::Error::other(
-                    "no runtime directory short enough for a socket path; \
-                     set XDG_RUNTIME_DIR to a shorter one",
-                )
-            })
-        })?;
-    Ok(named(&runtime))
+    let home = uze_home_dir();
+    Ok(transport::endpoint(&home, &identity_of(&home))?)
 }
 
 /// Asks the running server for a space at `seat` — created when
@@ -432,10 +373,12 @@ pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
     let listener = bind_endpoint(&socket)?;
     spawn_damage_broadcaster(Arc::clone(&state), damage);
     spawn_status_ticker(Arc::clone(&state));
-    #[cfg(unix)]
     spawn_endpoint_watch(Arc::clone(&state));
-    #[cfg(windows)]
-    spawn_stop_event(Arc::clone(&state));
+    let stopping = Arc::clone(&state);
+    uze_platform::process::listen_for_stop(&stop_channel(&socket), move || {
+        stopping.persist();
+        stopping.shut_down();
+    });
 
     let accepting = Arc::clone(&state);
     thread::spawn(move || accept_connections(listener, accepting));
@@ -447,33 +390,12 @@ pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
     // whether to rebind, so the watch cannot put it back, and a rebind in
     // progress finishes before the clearing.
     let _stopped = state.await_stop();
-    #[cfg(unix)]
-    let _ = fs::remove_file(&socket);
+    transport::clear(&socket);
     Ok(())
 }
 
-/// Binds the endpoint over whatever sits at its path — only ever called by
-/// the server holding the workspace claim, for which nothing there can be a
-/// live peer. The socket is created inside a directory [`socket_path`] has
-/// already proven to be this user's and unreachable by anyone else, so the
-/// moment between `bind` and the mode below is not a window anything can
-/// walk through.
-#[cfg(unix)]
-pub(super) fn bind_endpoint(socket: &Path) -> Result<transport::Listener, RuntimeError> {
-    use std::os::unix::fs::PermissionsExt;
-
-    match fs::remove_file(socket) {
-        Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error.into()),
-        _ => {}
-    }
-    let listener = transport::bind(socket)?;
-    fs::set_permissions(socket, fs::Permissions::from_mode(0o600))?;
-    Ok(listener)
-}
-
-/// A pipe has no file to clear and no mode to set: its security descriptor
-/// is created with it, granting this user alone (see `transport`).
-#[cfg(windows)]
+/// Binds the endpoint — only ever called by the server holding the
+/// workspace claim, for which nothing at the endpoint can be a live peer.
 pub(super) fn bind_endpoint(socket: &Path) -> Result<transport::Listener, RuntimeError> {
     Ok(transport::bind(socket)?)
 }
@@ -503,50 +425,3 @@ pub(super) fn accept_connections(listener: transport::Listener, server: Arc<Serv
 /// How long the accept loop rests after a failed `accept`, so a descriptor
 /// limit does not turn it into a busy loop.
 pub(super) const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(50);
-
-/// How long a Unix-domain socket path may be, with room to spare.
-///
-/// `sockaddr_un.sun_path` holds 104 bytes on macOS and 108 on Linux, and the
-/// whole path has to fit or `bind` fails with `SUN_LEN` — an error naming the
-/// limit and nothing about which directory exhausted it. The smaller of the
-/// two, less a little, is what [`socket_path`] holds itself to, so the
-/// same directory is usable on either platform.
-#[cfg(unix)]
-pub(super) const MAX_SOCKET_PATH: usize = 100;
-
-/// Proves `candidate` is a directory `owner` owns and nobody else can reach
-/// into — the condition for putting a socket in it that carries every
-/// pane's contents and accepts input into every agent.
-///
-/// Existing is not evidence of anything. `create_dir_all` answers `Ok(())`
-/// for a path that is already there, *including a symlink to a directory*,
-/// and `set_permissions` follows symlinks. Where no `XDG_RUNTIME_DIR` is
-/// set — WSL, containers, CI, any non-logind shell — the runtime directory
-/// lands in a world-writable temp dir under a name any local user can
-/// predict and create first. `symlink_metadata` is what asks about the
-/// entry itself rather than about whatever it points at.
-#[cfg(unix)]
-pub(super) fn private_directory(candidate: &Path, owner: libc::uid_t) -> io::Result<()> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
-    let metadata = fs::symlink_metadata(candidate)?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(io::Error::other(format!(
-            "{} is not a directory",
-            candidate.display()
-        )));
-    }
-    if metadata.uid() != owner {
-        return Err(io::Error::other(format!(
-            "{} belongs to another user",
-            candidate.display()
-        )));
-    }
-    // Ours, so a mode that lets anyone else in is ours to correct rather
-    // than to refuse — this is the ordinary first-run path when the umask
-    // is permissive.
-    if metadata.mode() & 0o077 != 0 {
-        fs::set_permissions(candidate, fs::Permissions::from_mode(0o700))?;
-    }
-    Ok(())
-}

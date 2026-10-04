@@ -64,14 +64,7 @@ pub(crate) fn read_package_file(path: &Path) -> Result<Vec<u8>> {
         path: path.to_path_buf(),
         source,
     };
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    let file = options.open(path).map_err(failed)?;
+    let file = uze_platform::fs::open_without_blocking(path).map_err(failed)?;
     if !file.metadata().map_err(failed)?.is_file() {
         return Err(failed(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,

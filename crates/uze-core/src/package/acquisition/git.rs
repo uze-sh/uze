@@ -705,29 +705,10 @@ fn ssh_command() -> String {
     }
 }
 
-#[cfg(unix)]
+/// A private directory for the control sockets, with room for the
+/// 40-character hash `%C` expands to.
 fn multiplexing_directory() -> Option<PathBuf> {
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
-    // SAFETY: getuid cannot fail and touches no memory.
-    let uid = unsafe { libc::getuid() };
-    let directory = match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(runtime) => PathBuf::from(runtime).join("uze-ssh"),
-        None => std::env::temp_dir().join(format!("uze-ssh-{uid}")),
-    };
-    let _ = fs::DirBuilder::new().mode(0o700).create(&directory);
-    // Never followed: a link planted here would point the socket elsewhere.
-    let metadata = fs::symlink_metadata(&directory).ok()?;
-    let private =
-        metadata.is_dir() && metadata.uid() == uid && metadata.permissions().mode() & 0o077 == 0;
-    // A socket path has to fit `sun_path`, with room for the 40-character
-    // hash `%C` expands to.
-    let fits = directory.as_os_str().len() + 42 < 100;
-    (private && fits && !directory.to_string_lossy().contains('"')).then_some(directory)
-}
-
-#[cfg(not(unix))]
-fn multiplexing_directory() -> Option<PathBuf> {
-    None
+    uze_platform::fs::user_socket_directory("uze-ssh", 42)
 }
 
 /// The configuration an attempt carries, beyond the stripped environment's.

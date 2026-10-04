@@ -13,7 +13,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       Linux and macOS suites stay green with no behaviour change.
 - [ ] 1.2 Move the endpoint watch, the `/tmp` rebind, `private_directory` and
       `MAX_SOCKET_PATH` behind the Unix transport.
-- [ ] 1.3 Create the `uze-process` leaf crate with the Unix implementations
+- [ ] 1.3 Create the `uze-platform` leaf crate with the Unix implementations
       moved in:
       - `ProcessTree`, from `uze-core` subprocess process groups and
         `uze-git` `run_within`;
@@ -26,7 +26,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       `uze-terminal` to it.
 - [ ] 1.4 Layering: teach `tests/architecture/layering.rs` the new leaf and
       `uze-terminal`'s widened rule. Update AGENTS.md's workspace layout.
-- [ ] 1.5 Add `uze-process` to `docs/architecture/crate-layering.mmd`, then
+- [ ] 1.5 Add `uze-platform` to `docs/architecture/crate-layering.mmd`, then
       run `cargo test -p uze-extensions` and `uze agent artifacts check`.
 - [ ] 1.6 Add a root `.gitattributes` (`* text=auto eol=lf`), and verify
       that `include_str!` templates, goldens and the embedded marketplace are
@@ -37,7 +37,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [ ] 2.1 Record the baseline `cargo check --workspace --all-targets
       --target x86_64-pc-windows-msvc` error list in the PR.
 - [ ] 2.2 Add `windows-sys` 0.61 (only the named features) as a
-      `cfg(windows)` dependency of `uze-process`, `uze-core`, `uze-git`,
+      `cfg(windows)` dependency of `uze-platform`, `uze-core`, `uze-git`,
       `uze-terminal` and the root crate. Make `libc` `cfg(unix)` in
       `uze-terminal` and the root crate. Record the provenance and
       transitive weight, per AGENTS.md's Dependencies section.
@@ -58,13 +58,13 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 3. Platform-honest primitives (D3, D8, D9, D15)
 
-- [ ] 3.1 `uze-process` on Windows:
+- [ ] 3.1 `uze-platform` on Windows:
       - `ProcessTree`: a suspended spawn, then Job Object assignment, then
         `ResumeThread` via a Toolhelp thread snapshot, terminating the
         process if the assignment fails;
       - `which` (`PATH` × `PATHEXT`);
       - `interrupt` (`SetConsoleCtrlHandler`).
-- [ ] 3.2 `uze-process::probe` on Windows:
+- [ ] 3.2 `uze-platform::probe` on Windows:
       - the pipe peer pid;
       - `QueryFullProcessImageNameW`;
       - the image stem;

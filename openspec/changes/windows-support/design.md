@@ -66,7 +66,7 @@ stale. `windows-sys` 0.61 is already in the tree, transitively.
 
 - One code path per decision. Platform differences live behind boundaries,
   never at call sites:
-  - the new `uze-process` leaf crate;
+  - the new `uze-platform` leaf crate;
   - `persistence`;
   - `UzeHome`;
   - the terminal transport.
@@ -116,7 +116,7 @@ already in `Cargo.lock`, and compiles no C. It becomes a
 `[target.'cfg(windows)'.dependencies]` entry, with only the features each
 crate names, in these crates:
 
-- `uze-process`
+- `uze-platform`
 - `uze-core`
 - `uze-git`
 - `uze-terminal`
@@ -129,12 +129,17 @@ crate names, in these crates:
 - `uds_windows`: weaker peer identity, and it contradicts ADR-038.
 - `dunce` and `home`: each is one function.
 
-### D3 — A `uze-process` leaf crate owns processes
+### D3 — A `uze-platform` leaf crate owns what differs per platform
 
 The dependency graph forbids putting process primitives in `uze-core`, since
-`uze-git` and `uze-terminal` both need them. A new leaf crate, `uze-process`,
+`uze-git` and `uze-terminal` both need them. A new leaf crate, `uze-platform`,
 depends on nothing in the workspace and names no domain, no path and no
-harness. It holds four things:
+harness. Every module in it is one concept with one API, and an
+implementation per platform selected by `cfg` at the module's boundary, so
+no call site in the workspace branches on the operating system. Besides the
+shell (D10, D11), home and paths (D15), names Windows can hold (D16),
+filesystem privacy and links, the running image's replacement (D14) and
+stdio, it holds four process concepts:
 
 | Item | What it is | Unix | Windows |
 |---|---|---|---|
@@ -161,7 +166,7 @@ Who uses it:
   reaped is never named again.
 
 This changes the layering: `uze-terminal`'s rule becomes "depends on nothing
-in the workspace but `uze-document` and `uze-process`". `crate-layering.mmd`
+in the workspace but `uze-document` and `uze-platform`". `crate-layering.mmd`
 and AGENTS.md are updated in this change.
 
 ### D4 — The transport port ADR-038 promised
@@ -758,7 +763,7 @@ Winget is deferred.
 
 ### Diagrams
 
-`crate-layering.mmd` gains `uze-process` (process trees and kernel facts),
+`crate-layering.mmd` gains `uze-platform` (process trees and kernel facts),
 with edges from `machine`, `git` and `terminal`. The terminal crate's arrow to
 `document` stays. `containers.mmd` is unchanged: the terminal server still
 hosts over a PTY on all three platforms. AGENTS.md's workspace-layout entry
@@ -767,7 +772,7 @@ new leaf.
 
 ## Candidate ADRs
 
-- **`uze-process`, a leaf crate for processes and kernel facts (D3):** a
+- **`uze-platform`, a leaf crate for processes and kernel facts (D3):** a
   boundary moved out of `uze-terminal` and `uze-core`.
 - **Win32 through `windows-sys` and no wrapper crate (D2).**
 - **A named-pipe transport private to its user (D4/D5):** ADR-038's backend

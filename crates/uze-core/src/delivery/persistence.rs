@@ -52,16 +52,19 @@ use std::{
 
 use crate::{Result, UzeError, home::UzeHome};
 
-/// Creates `link` pointing at `target`, or reports that this platform has
-/// no symbolic links for UZE to own.
-#[cfg(unix)]
+/// Creates `link` pointing at `target`, or reports that this platform
+/// grants UZE no symbolic links to own.
 pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(target, link).map_err(UzeError::write(link))
-}
-
-#[cfg(not(unix))]
-pub fn create_symlink(_target: &Path, link: &Path) -> Result<()> {
-    Err(UzeError::SymlinkUnsupported(link.to_path_buf()))
+    uze_platform::fs::symlink(target, link).map_err(|source| {
+        if source.kind() == std::io::ErrorKind::Unsupported {
+            UzeError::SymlinkUnsupported(link.to_path_buf())
+        } else {
+            UzeError::Write {
+                path: link.to_path_buf(),
+                source,
+            }
+        }
+    })
 }
 
 pub fn write_atomic(path: &Path, payload: &[u8]) -> Result<()> {
@@ -148,35 +151,8 @@ fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Res
 }
 
 /// Swaps two directories in one step where the kernel offers it.
-#[cfg(target_os = "linux")]
 fn exchange(a: &Path, b: &Path) -> std::io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-
-    const RENAME_EXCHANGE: libc::c_uint = 1 << 1;
-    let a = CString::new(a.as_os_str().as_bytes())?;
-    let b = CString::new(b.as_os_str().as_bytes())?;
-    // A raw syscall rather than `libc::renameat2`, which the musl release
-    // targets do not all export.
-    let status = unsafe {
-        libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD,
-            a.as_ptr(),
-            libc::AT_FDCWD,
-            b.as_ptr(),
-            RENAME_EXCHANGE,
-        )
-    };
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn exchange(_a: &Path, _b: &Path) -> std::io::Result<()> {
-    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    uze_platform::fs::exchange(a, b)
 }
 
 /// A hidden sibling of `name` owned by this process: hidden, because it sits
@@ -212,21 +188,10 @@ fn remove_abandoned_swaps(parent: &Path, name: &str) {
     }
 }
 
-#[cfg(unix)]
+/// Alive unless the platform says plainly that nothing runs at `pid`: a pid
+/// it will not answer for may be somebody's live staging, and is left alone.
 fn process_is_alive(pid: u32) -> bool {
-    let Ok(pid) = libc::pid_t::try_from(pid) else {
-        return false;
-    };
-    // Signal 0 checks existence only; EPERM still means the process exists.
-    let signalled = unsafe { libc::kill(pid, 0) } == 0;
-    signalled || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-}
-
-/// Alive unless Windows says plainly that nothing runs at `pid`: a pid it
-/// will not answer for may be somebody's live staging, and is left alone.
-#[cfg(windows)]
-fn process_is_alive(pid: u32) -> bool {
-    uze_process::windows::is_alive(pid) != Some(false)
+    uze_platform::process::alive(pid) != Some(false)
 }
 
 /// Where `path` ends up once every symbolic link on the way is followed,
@@ -318,15 +283,9 @@ fn temporary_path(path: &Path, parent: &Path) -> PathBuf {
     ))
 }
 
-#[cfg(unix)]
 fn sync_directory(path: &Path) {
-    if let Ok(directory) = File::open(path) {
-        let _ = directory.sync_all();
-    }
+    uze_platform::fs::sync_directory(path);
 }
-
-#[cfg(not(unix))]
-fn sync_directory(_path: &Path) {}
 
 /// Process-wide mutation guard for one UZE home.
 ///
@@ -419,7 +378,7 @@ fn try_lock_exclusive_briefly(file: &File) -> std::io::Result<()> {
 /// Takes an exclusive advisory lock on `file` without waiting: a held lock
 /// is `WouldBlock`, and the lock lasts as long as the file stays open.
 pub fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
-    uze_process::lock::try_lock(file, uze_process::lock::Mode::Exclusive)
+    uze_platform::lock::try_lock(file, uze_platform::lock::Mode::Exclusive)
 }
 
 #[cfg(test)]

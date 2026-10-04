@@ -1,5 +1,5 @@
 [package]
-name = "uze-process"
+name = "uze-platform"
 version.workspace = true
 edition = "2024"
 rust-version = "1.97"
@@ -23,4 +23,12 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
   "Win32_System_JobObjects",
   "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_Kernel",
+  "Win32_System_Console",
+  "Win32_System_Time",
+  "Wdk_System_Threading",
 ] }
+
+[dev-dependencies]
+uze-testkit = { path = "../uze-testkit" }

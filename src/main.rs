@@ -43,16 +43,9 @@ use uze_application::{
 /// client, both of which write to Unix sockets, and with the default
 /// disposition a peer hanging up would kill the server — and every pane it
 /// owns — instead of surfacing as the `EPIPE` the runtime handles.
-#[cfg(unix)]
 fn die_quietly_on_a_closed_pipe() {
-    // Safety: called once, before any thread is spawned and before anything
-    // is written, and `SIG_DFL` is the disposition the process started life
-    // with — it installs no handler of our own.
-    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
+    uze_platform::stdio::die_quietly_on_a_closed_pipe();
 }
-
-#[cfg(not(unix))]
-fn die_quietly_on_a_closed_pipe() {}
 
 fn main() {
     // Checked before any `clap` parsing, on `argv[0]` alone: a process
@@ -318,13 +311,7 @@ fn run(cli: Cli, leaf: &str) -> Result<()> {
 /// stderr, still reach the person. Done once at the descriptor rather than
 /// at every `println!`, so no report can forget to ask.
 fn silence_stdout() {
-    #[cfg(unix)]
-    if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
-        use std::os::fd::AsRawFd;
-        // Safety: both descriptors are open; stdout is replaced before
-        // anything is written to it.
-        unsafe { libc::dup2(null.as_raw_fd(), libc::STDOUT_FILENO) };
-    }
+    uze_platform::stdio::silence_stdout();
 }
 
 /// The leaf command path `argv` names, spelled the way a person types it

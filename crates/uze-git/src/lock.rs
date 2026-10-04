@@ -88,5 +88,5 @@ fn lock_path(root: &Path) -> Option<PathBuf> {
 }
 
 fn try_lock(file: &File) -> std::io::Result<()> {
-    uze_process::lock::try_lock(file, uze_process::lock::Mode::Exclusive)
+    uze_platform::lock::try_lock(file, uze_platform::lock::Mode::Exclusive)
 }

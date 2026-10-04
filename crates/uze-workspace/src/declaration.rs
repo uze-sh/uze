@@ -195,19 +195,19 @@ mod tests {
             .worktrees
             .unwrap();
         assert_eq!(one.setup.len(), 1);
-        let expected = if cfg!(windows) {
-            "pnpm i; Copy-Item a b"
-        } else {
-            "pnpm i && cp a b"
-        };
-        assert_eq!(one.setup[0].here(), Some(expected));
+        assert_eq!(one.setup[0].spelling("posix"), Some("pnpm i && cp a b"));
+        assert_eq!(
+            one.setup[0].spelling("windows"),
+            Some("pnpm i; Copy-Item a b")
+        );
 
         let mixed = parsed("worktrees:\n  gate:\n    - cargo test\n    - windows: cargo test --target x86_64-pc-windows-msvc\n")
             .unwrap()
             .worktrees
             .unwrap();
         assert_eq!(mixed.gate.len(), 2);
-        assert_eq!(mixed.gate[1].here().is_some(), cfg!(windows));
+        assert_eq!(mixed.gate[1].spelling("posix"), None);
+        assert!(mixed.gate[1].spelling("windows").is_some());
     }
 
     #[test]

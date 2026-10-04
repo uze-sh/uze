@@ -5,7 +5,6 @@
 //! a client leaves the workspace.
 
 pub mod launch;
-mod process_probe;
 mod protocol;
 mod runtime;
 mod selection;
@@ -17,7 +16,7 @@ pub use protocol::{
 };
 pub use runtime::{
     RuntimeError, Stream, attach, open_space, put_first_on_pane_path, read_event, send_request,
-    serve, socket_path, stop,
+    serve, socket_path, stop, stream_pair,
 };
 pub use state::{
     NewSpace, Pane, PaneId, Session, Space, SpaceId, SpaceSeat, Tab, TabId, Workspace,

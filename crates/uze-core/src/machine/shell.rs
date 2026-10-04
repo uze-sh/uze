@@ -12,6 +12,9 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+const POSIX: &str = "posix";
+const WINDOWS: &str = "windows";
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ShellCommand {
@@ -32,15 +35,20 @@ pub struct Spellings {
 impl ShellCommand {
     /// The spelling this platform runs, if the author wrote one.
     pub fn here(&self) -> Option<&str> {
-        match self {
-            Self::Line(line) => (!cfg!(windows)).then_some(line.as_str()),
-            Self::PerPlatform(spellings) => if cfg!(windows) {
-                spellings.windows.as_deref()
-            } else {
-                spellings.posix.as_deref()
-            }
-            .filter(|line| !line.trim().is_empty()),
-        }
+        self.spelling(Self::platform())
+    }
+
+    /// The spelling written for the platform `key` names (`posix`,
+    /// `windows`): a plain line is the POSIX one.
+    pub fn spelling(&self, key: &str) -> Option<&str> {
+        let written = match (self, key) {
+            (Self::Line(line), POSIX) => Some(line.as_str()),
+            (Self::Line(_), _) => None,
+            (Self::PerPlatform(spellings), POSIX) => spellings.posix.as_deref(),
+            (Self::PerPlatform(spellings), WINDOWS) => spellings.windows.as_deref(),
+            (Self::PerPlatform(_), _) => None,
+        };
+        written.filter(|line| !line.trim().is_empty())
     }
 
     /// What names this command to a person: the spelling that runs here,
@@ -56,9 +64,45 @@ impl ShellCommand {
         }
     }
 
+    /// Whether no spelling was written at all.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Line(line) => line.trim().is_empty(),
+            Self::PerPlatform(spellings) => {
+                [&spellings.posix, &spellings.windows]
+                    .into_iter()
+                    .all(|spelling| {
+                        spelling
+                            .as_deref()
+                            .is_none_or(|line| line.trim().is_empty())
+                    })
+            }
+        }
+    }
+
+    /// Every spelling, as one line a person approving it reads: a plain
+    /// line as written, a pair with both halves named. What trust shows
+    /// and compares, so changing either spelling asks again.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Line(line) => line.clone(),
+            Self::PerPlatform(spellings) => {
+                [("posix", &spellings.posix), ("windows", &spellings.windows)]
+                    .into_iter()
+                    .filter_map(|(platform, spelling)| {
+                        spelling
+                            .as_deref()
+                            .map(|line| format!("{platform}: {line}"))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            }
+        }
+    }
+
     /// The platform this build runs on, as a manifest key names it.
     pub fn platform() -> &'static str {
-        if cfg!(windows) { "windows" } else { "posix" }
+        uze_platform::shell::KEY
     }
 }
 
@@ -91,16 +135,14 @@ mod tests {
             serde_json::from_str(r#"{"posix": "./guard", "windows": "./guard.ps1"}"#).unwrap();
         let windows_only: ShellCommand =
             serde_json::from_str(r#"{"windows": "Copy-Item a b"}"#).unwrap();
-        if cfg!(windows) {
-            assert_eq!(line.here(), None);
-            assert_eq!(pair.here(), Some("./guard.ps1"));
-            assert_eq!(windows_only.here(), Some("Copy-Item a b"));
-        } else {
-            assert_eq!(line.here(), Some("pnpm install"));
-            assert_eq!(pair.here(), Some("./guard"));
-            assert_eq!(windows_only.here(), None);
-        }
+        assert_eq!(line.spelling(POSIX), Some("pnpm install"));
+        assert_eq!(line.spelling(WINDOWS), None);
+        assert_eq!(pair.spelling(POSIX), Some("./guard"));
+        assert_eq!(pair.spelling(WINDOWS), Some("./guard.ps1"));
+        assert_eq!(windows_only.spelling(POSIX), None);
+        assert_eq!(windows_only.spelling(WINDOWS), Some("Copy-Item a b"));
         assert_eq!(line.label(), "pnpm install");
+        assert_eq!(pair.here(), pair.spelling(ShellCommand::platform()));
     }
 
     #[test]

@@ -32,7 +32,7 @@ journeys. Windows clears that bar, or it is not offered.
   - `git.exe`, from any distribution, is the only prerequisite.
   - No Git Bash, `sh`, WSL or POSIX tool is on any path uze runs. CI proves
     it by running the Windows suite with none of them reachable.
-- **A `uze-process` leaf crate.** Process trees (Job Objects on Windows,
+- **A `uze-platform` leaf crate.** Process trees (Job Objects on Windows,
   process groups on Unix) and kernel facts (peer, image, cwd, environment,
   liveness) live under `uze-core`, `uze-git` and `uze-terminal`. The
   dependency graph forbids them anywhere else.
@@ -164,7 +164,7 @@ portable-hooks delta and its ADR-040 addendum build on settled text.
 ## Impact
 
 - **Crates:**
-  - new `uze-process`;
+  - new `uze-platform`;
   - `uze-terminal`: transport port, Windows backend, stop event, pane jobs;
   - `uze-core`: home, paths, locks, persistence, acquisition, `Command`,
     trust, authoring;

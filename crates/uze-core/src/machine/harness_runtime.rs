@@ -209,37 +209,9 @@ fn unescape_mount_field(field: &str) -> String {
 
 /// Shared by the PATH walks in this module and in `detection_cache` — the
 /// same question, asked for the same reason, so it has one answer.
-#[cfg(unix)]
-pub(crate) fn is_executable_file(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-}
-
-#[cfg(not(unix))]
-pub(crate) fn is_executable_file(path: &Path) -> bool {
-    path.is_file()
-}
-
-/// The files a program named `name` could be in `dir`: the name itself on
-/// Unix; on Windows every extension `PATHEXT` lists, in its order, since a
-/// harness installed by npm is `codex.cmd` and one installed natively is
-/// `claude.exe`, and the name typed is neither.
-pub fn executable_candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
-    if cfg!(windows) && Path::new(name).extension().is_none() {
-        let extensions = std::env::var("PATHEXT")
-            .ok()
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_owned());
-        extensions
-            .split(';')
-            .filter(|extension| !extension.is_empty())
-            .map(|extension| dir.join(format!("{name}{}", extension.to_ascii_lowercase())))
-            .collect()
-    } else {
-        vec![dir.join(name)]
-    }
-}
+pub(crate) use uze_platform::executable::{
+    candidates as executable_candidates, is_executable as is_executable_file,
+};
 
 /// Deterministic, filesystem-safe id for a project root. A project's
 /// canonical path used directly as a directory name risks length limits,

@@ -40,15 +40,7 @@ use uze_workspace::{continuity, conversation::Claim};
 /// unchanged, including a direct `uze` invocation.
 pub fn detect() -> Option<String> {
     let argv0 = env::args_os().next()?;
-    // Windows runs a shim as `claude.exe`, in whatever case it was typed.
-    let name = if cfg!(windows) {
-        Path::new(&argv0)
-            .file_stem()?
-            .to_str()?
-            .to_ascii_lowercase()
-    } else {
-        Path::new(&argv0).file_name()?.to_str()?.to_owned()
-    };
+    let name = uze_platform::executable::invoked_name(&argv0)?;
     let home = UzeHome::from_env().ok()?;
     let registry = IntegrationRegistry::builtin(&home).ok()?;
     registry
@@ -242,31 +234,12 @@ fn exec_or_die(
     run_replacing_process(command, executable)
 }
 
-#[cfg(unix)]
 fn run_replacing_process(mut command: std::process::Command, executable: &Path) -> ! {
-    use std::os::unix::process::CommandExt;
-    // `exec` only returns on failure.
-    let error = command.exec();
+    let error = uze_platform::process::run_in_place(&mut command);
     die(&format!(
         "failed to exec `{}`: {error}",
         executable.display()
     ));
-}
-
-/// Non-Unix fallback: `exec`-style process replacement has no equivalent in
-/// `std` there, so this spawns and waits, forwarding the exit code. Not the
-/// primary, empirically-verified path — Windows/WSL is explicitly deferred;
-/// this only keeps the shim from being
-/// Unix-only at compile time.
-#[cfg(not(unix))]
-fn run_replacing_process(mut command: std::process::Command, executable: &Path) -> ! {
-    match command.status() {
-        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-        Err(error) => die(&format!(
-            "failed to launch `{}`: {error}",
-            executable.display()
-        )),
-    }
 }
 
 fn die(message: &str) -> ! {

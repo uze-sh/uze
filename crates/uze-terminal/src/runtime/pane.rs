@@ -11,12 +11,10 @@ pub(super) struct PaneRuntime {
     /// Read while the leader is alive: once a finished leader is reaped,
     /// its group can no longer be asked for, though what it left running
     /// is still in it. See [`PaneRuntime::end_leftovers`].
-    #[cfg(unix)]
-    pub(super) process_group: Option<libc::pid_t>,
-    /// Windows has no process groups: the pane's program and everything it
-    /// starts are kept in one Job Object, which is what ends them together.
-    #[cfg(windows)]
-    pub(super) job: Option<Arc<windows::PaneJob>>,
+    /// The pane's program and everything it starts, ended together. Read
+    /// while the leader is alive: once a finished leader is reaped, what it
+    /// left running is still in it. See [`PaneRuntime::end_leftovers`].
+    pub(super) group: Option<Arc<uze_platform::process::Group>>,
     pub(super) terminal: Arc<Mutex<Term<ReplySink>>>,
     /// What this pane was spawned as — kept so a workspace restart can
     /// respawn the same launch in the same tab (see [`Server::persist`]),
@@ -110,7 +108,7 @@ impl PaneRuntime {
                 builder.args(args);
                 builder
             }
-            None => CommandBuilder::new(default_shell()),
+            None => CommandBuilder::new(host::default_shell()),
         };
         command.cwd(cwd);
         // `CommandBuilder` seeds a pane from *this* process's environment,
@@ -133,31 +131,15 @@ impl PaneRuntime {
         // What tells a `uze` started inside this pane that it is inside one,
         // so it opens a space here instead of a client within a client.
         command.env(crate::launch::PANE_VARIABLE, id.0.to_string());
-        // Windows programs do not read `TERM`, and a few change behaviour
-        // when it is set to something they take for a Unix terminal.
-        #[cfg(unix)]
-        if env::var_os("TERM").is_none() {
-            command.env("TERM", "xterm-256color");
-        }
-        #[cfg(windows)]
-        command.env("COLORTERM", "truecolor");
+        host::prepare_pane(&mut command);
         let mut child = pair
             .slave
             .spawn_command(command)
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        #[cfg(unix)]
-        let process_group = child.process_id().and_then(own_process_group);
-        #[cfg(windows)]
-        let job = child.process_id().and_then(|pid| {
-            let job = windows::PaneJob::new().ok()?;
-            match job.assign(pid) {
-                Ok(()) => Some(Arc::new(job)),
-                Err(error) => {
-                    tracing::warn!(%error, pid, "could not put a pane's program in its job");
-                    None
-                }
-            }
-        });
+        let group = child
+            .process_id()
+            .and_then(uze_platform::process::Group::adopt)
+            .map(Arc::new);
         let endpoints = pair.master.try_clone_reader().and_then(|reader| {
             pair.master
                 .take_writer()
@@ -214,10 +196,7 @@ impl PaneRuntime {
             master: Mutex::new(pair.master),
             writer,
             child: Arc::new(Mutex::new(child)),
-            #[cfg(unix)]
-            process_group,
-            #[cfg(windows)]
-            job,
+            group,
             terminal,
             launch,
             last_sent: Mutex::new(None),
@@ -277,62 +256,35 @@ impl PaneRuntime {
     /// and then a SIGKILL nobody waits on: done inline it held the request
     /// that closed the tab for that long, and left every pane whose program
     /// outlived the grace period a zombie for the life of the server.
-    #[cfg(windows)]
+    /// Ends the pane's process and everything it started, and reaps it,
+    /// on a thread of its own: done inline it held the request that closed
+    /// the tab, and left a program that outlived its hangup a zombie for
+    /// the life of the server.
     pub(super) fn stop(&self) -> thread::JoinHandle<()> {
         let child = Arc::clone(&self.child);
-        let job = self.job.clone();
+        let group = self.group.clone();
         thread::spawn(move || {
             let mut child = child.lock().expect("child poisoned");
-            let _ = child.kill();
-            if let Some(job) = job {
-                job.terminate();
-            }
-            let _ = child.wait();
-        })
-    }
-
-    #[cfg(unix)]
-    pub(super) fn stop(&self) -> thread::JoinHandle<()> {
-        let child = Arc::clone(&self.child);
-        thread::spawn(move || {
-            let mut child = child.lock().expect("child poisoned");
-            let group = child.process_id().and_then(own_process_group);
-            // Waited on whether or not the signal landed: a program that
+            // Waited on whether or not the kill landed: a program that
             // already exited is exactly the zombie this is here to reap.
             let _ = child.kill();
             // What the leader started and left behind: a harness's workers
             // that ignore the hangup would otherwise outlive the pane, and
             // hold its terminal open so its reader never ends either.
             if let Some(group) = group {
-                // SAFETY: `group` is a positive process-group id that is
-                // the pane's own and not this process's (`own_process_group`),
-                // so the negation addresses exactly that group.
-                unsafe { libc::kill(-group, libc::SIGKILL) };
+                group.end();
             }
             let _ = child.wait();
         })
     }
 
-    /// Kills what a finished agent left running in its group: workers that
+    /// Ends what a finished agent left running in its group: workers that
     /// ignore the hangup keep the old terminal open, and its reader alive.
     /// Called only right after [`PaneRuntime::finished_agent`] reaped the
-    /// leader. A group id outlives its leader only while members remain,
-    /// so the longer the gap, the likelier an empty group's id has gone to
-    /// a newer process that leads a group of its own.
-    #[cfg(windows)]
+    /// leader.
     pub(super) fn end_leftovers(&self) {
-        if let Some(job) = &self.job {
-            job.terminate();
-        }
-    }
-
-    #[cfg(unix)]
-    pub(super) fn end_leftovers(&self) {
-        if let Some(group) = self.process_group {
-            // SAFETY: `group` is a positive process-group id that was the
-            // pane's own and not this process's at spawn
-            // (`own_process_group`), and its leader was reaped a moment ago.
-            unsafe { libc::kill(-group, libc::SIGKILL) };
+        if let Some(group) = &self.group {
+            group.end();
         }
     }
 
@@ -351,12 +303,13 @@ impl PaneRuntime {
     /// Best-effort `(cwd, process name)` for whatever is currently running
     /// in the foreground of this pane — the same two facts `tmux` shows as
     /// `pane_current_path`/`pane_current_command`, asked of the kernel
-    /// through [`process_probe`]. `None` when the platform cannot answer, or
+    /// through [`uze_platform::probe`]. `None` when the platform cannot answer, or
     /// when the process exited between the group-leader lookup and the read.
     pub(super) fn foreground_status(&self) -> Option<(PathBuf, String)> {
         let pgid = self.foreground_process()?;
-        let cwd = process_probe::current_directory_of(pgid)?;
-        let process = shim_launched_name(pgid).or_else(|| process_probe::command_name_of(pgid))?;
+        let cwd = uze_platform::probe::current_directory_of(pgid)?;
+        let process =
+            shim_launched_name(pgid).or_else(|| uze_platform::probe::command_name_of(pgid))?;
         Some((cwd, process))
     }
 
@@ -376,25 +329,11 @@ impl PaneRuntime {
         Some(shim_launched_name(pgid).is_some() || runs_uze(pgid))
     }
 
-    /// The process in the foreground of this pane: the terminal's
-    /// foreground process group on Unix. ConPTY keeps no such thing, so on
-    /// Windows it is the newest process in the pane's job — what a person
-    /// typed last, the shell when they typed nothing.
-    #[cfg(unix)]
-    fn foreground_process(&self) -> Option<Pid> {
-        self.master
-            .lock()
-            .expect("master poisoned")
-            .process_group_leader()
-    }
-
-    #[cfg(windows)]
-    fn foreground_process(&self) -> Option<Pid> {
-        let job = self.job.as_ref()?;
-        job.pids()
-            .into_iter()
-            .rev()
-            .find(|pid| !process_probe::command_name_of(*pid).is_some_and(|name| name == "conhost"))
+    /// The process in the foreground of this pane, as the platform knows
+    /// it (see [`host::foreground`]).
+    fn foreground_process(&self) -> Option<u32> {
+        let master = self.master.lock().expect("master poisoned");
+        host::foreground(&**master, self.group.as_deref())
     }
 
     pub(super) fn snapshot(&self) -> PaneSnapshot {
@@ -504,15 +443,16 @@ impl PaneRuntime {
 /// the pid the stamp was made for — the shim `exec`s, so that pid is the
 /// agent's own — and an inherited pair no longer names the process it is
 /// read from.
-pub(super) fn shim_launched_name(pgid: Pid) -> Option<String> {
-    let stamped: Pid = process_probe::environment_value_of(pgid, crate::launch::SHIM_PID_VARIABLE)?
-        .trim()
-        .parse()
-        .ok()?;
+pub(super) fn shim_launched_name(pgid: u32) -> Option<String> {
+    let stamped: u32 =
+        uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_PID_VARIABLE)?
+            .trim()
+            .parse()
+            .ok()?;
     if stamped != pgid {
         return None;
     }
-    process_probe::environment_value_of(pgid, crate::launch::SHIM_NAME_VARIABLE)
+    uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_NAME_VARIABLE)
 }
 
 pub(super) fn cell_coordinates(
@@ -684,32 +624,4 @@ fn drawn_state(snapshot: &PaneSnapshot) -> (u16, u16, Cursor, bool, MouseMode, b
         snapshot.mouse,
         snapshot.bracketed_paste,
     )
-}
-
-/// What a pane runs when it is given nothing to run: the person's shell.
-#[cfg(unix)]
-fn default_shell() -> String {
-    env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())
-}
-
-/// `UZE_SHELL` when set, else PowerShell 7 when it is installed, else the
-/// Windows PowerShell every supported Windows carries. A person's
-/// interactive shell is a preference, so the newer one is preferred here;
-/// commands a project declares always run in the one shell that is always
-/// there.
-#[cfg(windows)]
-fn default_shell() -> String {
-    if let Some(shell) = env::var_os("UZE_SHELL") {
-        return shell.to_string_lossy().into_owned();
-    }
-    let on_path = |name: &str| {
-        env::var_os("PATH").is_some_and(|path| {
-            env::split_paths(&path).any(|directory| directory.join(name).is_file())
-        })
-    };
-    if on_path("pwsh.exe") {
-        "pwsh.exe".into()
-    } else {
-        "powershell.exe".into()
-    }
 }

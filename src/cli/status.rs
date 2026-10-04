@@ -96,11 +96,7 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
     if !report.git_found {
         problems.push(format!(
             "git  not found; marketplaces and agent checkouts need it ({})",
-            if cfg!(windows) {
-                "winget install Git.Git"
-            } else {
-                "install it with your package manager"
-            }
+            uze_platform::tools::GIT_INSTALL_HINT
         ));
     }
     if let Some(error) = &report.ledger_error {

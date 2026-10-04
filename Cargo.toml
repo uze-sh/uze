@@ -25,7 +25,7 @@ members = [
   "crates/uze-terminal",
   "crates/uze-theme",
   "crates/uze-document",
-  "crates/uze-process",
+  "crates/uze-platform",
   "crates/uze-keys",
 ]
 default-members = ["."]
@@ -49,6 +49,7 @@ uze-core = { path = "crates/uze-core" }
 uze-workspace = { path = "crates/uze-workspace" }
 uze-integrations = { path = "crates/uze-integrations" }
 uze-application = { path = "crates/uze-application" }
+uze-platform = { path = "crates/uze-platform" }
 uze-extensions = { path = "crates/uze-extensions" }
 uze-git = { path = "crates/uze-git" }
 uze-terminal = { path = "crates/uze-terminal" }

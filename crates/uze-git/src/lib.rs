@@ -131,29 +131,10 @@ impl Output {
     }
 }
 
-/// `root` as Git can open it. Git for Windows does not understand the
-/// verbatim `\\?\C:\…` spelling `canonicalize` produces, and answers a
-/// `-C` given one with a file it cannot find.
-fn spelled_for_git(root: &Path) -> std::borrow::Cow<'_, Path> {
-    #[cfg(windows)]
-    if let Some(rest) = root.to_str().and_then(|text| text.strip_prefix(r"\\?\"))
-        && !rest.starts_with("UNC\\")
-    {
-        return std::borrow::Cow::Owned(std::path::PathBuf::from(rest));
-    }
-    std::borrow::Cow::Borrowed(root)
-}
-
-/// A path as Git printed it, in the spelling this platform uses. Git for
-/// Windows prints `C:/x/y`; joined with anything else that becomes
-/// `C:/x/y\z`, which compares equal as a `Path` and differently as text —
-/// the form ids are hashed from and people read.
+/// A path as Git printed it, in this platform's spelling (Git for Windows
+/// prints `C:/x/y`).
 pub fn native_path(printed: &str) -> std::path::PathBuf {
-    if cfg!(windows) {
-        std::path::PathBuf::from(printed.replace('/', "\\"))
-    } else {
-        std::path::PathBuf::from(printed)
-    }
+    uze_platform::path::from_tool_output(printed)
 }
 
 /// Runs a Git command that only observes. Never takes the repository write
@@ -245,9 +226,10 @@ pub fn locked<R>(
 
 fn base_command(root: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
+    // Git for Windows cannot open a verbatim `\\?\C:\…` root.
     command
         .arg("-C")
-        .arg(spelled_for_git(root).as_os_str())
+        .arg(uze_platform::path::strip_verbatim(root))
         .args(args);
     // A subprocess that stops to ask for a credential never gets an
     // answer: nothing here is attached to a terminal the operator can see.
@@ -275,28 +257,15 @@ fn reaches_a_remote(args: &[&str]) -> bool {
     false
 }
 
-/// Starts the command in a session of its own, with no controlling
-/// terminal. `GIT_TERMINAL_PROMPT` silences Git, not the SSH it runs, and
-/// an SSH wanting a passphrase or a host-key answer opens `/dev/tty`
-/// directly — which, under the workspace client, is the raw-mode terminal
-/// the operator is typing into. Without one to open, it fails and says so.
-#[cfg(unix)]
+/// Starts the command with no terminal of its own to ask on.
+/// `GIT_TERMINAL_PROMPT` silences Git, not the SSH it runs, and an SSH
+/// wanting a passphrase or a host-key answer opens the terminal directly —
+/// which, under the workspace client, is the raw-mode terminal the operator
+/// is typing into. Without one to open, it fails and says so. On Unix this
+/// is also a session, and so a group, of its own: what [`run_within`] ends.
 fn detach_from_terminal(command: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    // SAFETY: `setsid` is async-signal-safe and touches no memory of the
-    // parent, which is all a `pre_exec` hook may do between fork and exec.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
+    uze_platform::process::without_terminal(command);
 }
-
-#[cfg(not(unix))]
-fn detach_from_terminal(_command: &mut Command) {}
 
 fn run(command: Command, args: &[&str]) -> Result<Output, SpawnError> {
     if reaches_a_remote(args) {
@@ -330,10 +299,9 @@ fn run_to_completion(mut command: Command) -> Result<Output, SpawnError> {
 }
 
 /// [`run_to_completion`] for a command that may never end on its own: past
-/// `limit` its whole process group — Git and the SSH it started, which
-/// [`detach_from_terminal`] put in a session of their own — is killed and
-/// reaped, and the wait is reported rather than continued.
-#[cfg(unix)]
+/// `limit` Git and everything it started — the SSH it runs, which
+/// [`detach_from_terminal`] put in a group of their own — are ended while
+/// Git is still unreaped, and the wait is reported rather than continued.
 fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnError> {
     use std::time::Instant;
 
@@ -354,12 +322,7 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
                 pause = (pause * 2).min(Duration::from_millis(100));
             }
             outcome => {
-                // Still unreaped here, so the group id cannot yet belong to
-                // anybody else.
-                let group = child.id() as libc::pid_t;
-                // SAFETY: `kill` takes no pointers; a negative pid names the
-                // process group `setsid` made this child the leader of.
-                unsafe { libc::kill(-group, libc::SIGKILL) };
+                uze_platform::process::end_group(child.id());
                 let _ = child.wait();
                 return Err(match outcome {
                     Err(error) => describe_spawn_failure(error),
@@ -381,7 +344,6 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
 
 /// Reads a child's pipe to its end on a thread of its own, so neither
 /// pipe can fill while the other is being read.
-#[cfg(any(unix, windows))]
 fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
     std::thread::spawn(move || {
         let mut bytes = Vec::new();
@@ -390,56 +352,6 @@ fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandl
         }
         bytes
     })
-}
-
-/// [`run_to_completion`] for a command that may never end on its own: past
-/// `limit` Git and everything it started (the SSH it runs) are ended, while
-/// the `Child` still holds Git's handle so no pid in the tree can have been
-/// reused, and the wait is reported rather than continued.
-#[cfg(windows)]
-fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnError> {
-    use std::time::Instant;
-
-    let span =
-        tracing::debug_span!("git", args = %arguments_of(&command), exit = tracing::field::Empty);
-    let _entered = span.enter();
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command.spawn().map_err(describe_spawn_failure)?;
-    let stdout = drain(child.stdout.take());
-    let stderr = drain(child.stderr.take());
-    let deadline = Instant::now() + limit;
-    let mut pause = Duration::from_millis(5);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => {
-                std::thread::sleep(pause);
-                pause = (pause * 2).min(Duration::from_millis(100));
-            }
-            outcome => {
-                uze_process::windows::kill_tree(child.id());
-                let _ = child.wait();
-                return Err(match outcome {
-                    Err(error) => describe_spawn_failure(error),
-                    Ok(_) => SpawnError(format!(
-                        "git did not finish within {}s and was stopped",
-                        limit.as_secs()
-                    )),
-                });
-            }
-        }
-    };
-    span.record("exit", status.code().unwrap_or(-1));
-    Ok(Output {
-        code: status.code(),
-        stdout: String::from_utf8_lossy(&stdout.join().unwrap_or_default()).into_owned(),
-        stderr: String::from_utf8_lossy(&stderr.join().unwrap_or_default()).into_owned(),
-    })
-}
-
-#[cfg(not(any(unix, windows)))]
-fn run_within(command: Command, _limit: Duration) -> Result<Output, SpawnError> {
-    run_to_completion(command)
 }
 
 fn arguments_of(command: &Command) -> String {

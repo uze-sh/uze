@@ -1520,11 +1520,11 @@ that cannot answer must not be read as a negative answer — the endpoint keeps
 the state it had rather than tearing down a healthy server, and a pane
 reports no foreground status rather than an invented one.
 
-Adding a platform means teaching `process_probe`, never widening a `cfg` at
-a call site.
+Adding a platform means teaching `uze_platform::probe`, never widening a
+`cfg` at a call site.
 
-> `crates/uze-terminal/src/process_probe.rs::tests::the_platform_answers_about_this_process`
-> `crates/uze-terminal/src/process_probe.rs::tests::a_key_matches_only_itself`
+> `crates/uze-platform/src/probe.rs::tests::the_platform_answers_about_this_process`
+> `crates/uze-platform/src/probe.rs::tests::a_key_matches_only_itself`
 > `crates/uze-terminal/src/runtime/tests.rs::foreground_status_prefers_the_shim_identity_over_a_version_named_comm`
 
 ### Nothing a peer sends is acted on before it is bounded
@@ -1600,11 +1600,11 @@ socket carrying every pane's contents is put in it.
 > `crates/uze-terminal/src/runtime/tests.rs::a_crashed_server_nobody_reaped_holds_no_claim`
 > `crates/uze-terminal/src/runtime/tests.rs::a_server_answering_at_no_endpoint_this_build_names_is_still_stopped`
 > `crates/uze-terminal/src/runtime/tests.rs::a_claim_this_build_cannot_name_is_reported_rather_than_called_stopped`
-> `crates/uze-terminal/src/runtime/tests.rs::a_stale_socket_is_reclaimed_by_the_server_that_binds`
+> `crates/uze-terminal/src/runtime/tests/socket_files.rs::a_stale_socket_is_reclaimed_by_the_server_that_binds`
 > `crates/uze-terminal/src/runtime/tests.rs::a_server_of_another_build_is_retired_and_lets_go_of_the_workspace`
 > `crates/uze-terminal/src/runtime/tests.rs::a_process_that_is_not_uze_is_never_signalled`
-> `crates/uze-terminal/src/runtime/tests.rs::a_pid_that_does_not_name_one_process_is_never_signalled`
-> `crates/uze-terminal/src/runtime/tests.rs::a_runtime_directory_that_is_not_ours_to_own_is_stepped_over`
+> `crates/uze-platform/src/process/unix.rs::tests::a_pid_that_does_not_name_one_process_is_never_signalled`
+> `crates/uze-terminal/src/runtime/tests/socket_files.rs::a_runtime_directory_that_is_not_ours_to_own_is_stepped_over`
 
 ### A live server is ended only when it cannot serve the client that found it
 

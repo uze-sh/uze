@@ -109,7 +109,7 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("uze-process-{name}-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("uze-platform-{name}-{}", std::process::id()));
         let _ = std::fs::remove_file(&path);
         path
     }

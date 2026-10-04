@@ -359,7 +359,7 @@ fn describe_delivery_outcome(report: &DeliveryReport) -> String {
 /// bootstraps a space at the seat it was started with, before any client
 /// attaches.
 fn seating_at(seat: uze_terminal::SpaceSeat) -> uze_terminal::Seating {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = uze_platform::home::user_home();
     if home.is_some_and(|home| home == seat.root) {
         return uze_terminal::Seating::At(seat);
     }

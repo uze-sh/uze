@@ -340,15 +340,8 @@ fn measure(root: &Path, others: &[PathBuf]) -> (u64, Option<SystemTime>) {
     (bytes, newest)
 }
 
-#[cfg(unix)]
 fn allocated(metadata: &std::fs::Metadata) -> u64 {
-    use std::os::unix::fs::MetadataExt;
-    metadata.blocks() * 512
-}
-
-#[cfg(not(unix))]
-fn allocated(metadata: &std::fs::Metadata) -> u64 {
-    metadata.len()
+    uze_platform::fs::allocated_size(metadata)
 }
 
 /// Every worktree of one project, as the operator's checkouts view reads it.

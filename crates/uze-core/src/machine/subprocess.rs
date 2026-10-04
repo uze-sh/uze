@@ -27,19 +27,8 @@ const READER_GRACE: Duration = Duration::from_secs(2);
 
 /// Runs `command` in its own process group so a timeout can kill the whole
 /// tree (the process AND its descendants), never just the direct child.
-/// No-op on platforms without process groups.
 pub fn with_process_group(mut command: Command) -> Command {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
-    }
+    uze_platform::process::in_own_group(&mut command);
     command
 }
 
@@ -114,231 +103,27 @@ fn wait_until(
 /// `/dev/tty` then gets no terminal to ask on and takes its default, rather
 /// than waiting for an answer nobody is shown until its deadline.
 pub fn without_controlling_terminal(mut command: Command) -> Command {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // SAFETY: `setsid` is async-signal-safe and touches no memory.
-        unsafe {
-            command.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-    }
-    // A hidden console of its own: nothing it asks can reach the person's
-    // terminal, and no window flashes up for it.
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    uze_platform::process::without_terminal(&mut command);
     command
 }
 
-#[cfg(unix)]
-static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub use uze_platform::interrupt::InterruptWatch;
 
-#[cfg(unix)]
-extern "C" fn note_interrupt(_signal: libc::c_int) {
-    INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
-}
-
-/// Catches `SIGINT` while it lives, restoring whatever handled it before.
-pub struct InterruptWatch {
-    #[cfg(unix)]
-    previous: libc::sigaction,
-}
-
-impl InterruptWatch {
-    #[cfg(unix)]
-    pub fn install() -> Self {
-        INTERRUPTED.store(false, std::sync::atomic::Ordering::SeqCst);
-        // SAFETY: both structs are plain data, zeroed is valid for them, and
-        // the handler only stores to an atomic.
-        unsafe {
-            let mut action: libc::sigaction = std::mem::zeroed();
-            action.sa_sigaction = note_interrupt as extern "C" fn(libc::c_int) as usize;
-            libc::sigemptyset(&mut action.sa_mask);
-            let mut previous: libc::sigaction = std::mem::zeroed();
-            libc::sigaction(libc::SIGINT, &action, &mut previous);
-            Self { previous }
-        }
-    }
-
-    #[cfg(not(unix))]
-    pub fn install() -> Self {
-        Self {}
-    }
-
-    pub fn interrupted(&self) -> bool {
-        #[cfg(unix)]
-        {
-            INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
-        }
-        #[cfg(not(unix))]
-        {
-            false
-        }
-    }
-
-    /// Restores the previous handler and delivers the interrupt to it, so
-    /// the process ends the way the Ctrl-C would have ended it.
-    pub fn deliver(self) {
-        drop(self);
-        #[cfg(unix)]
-        // SAFETY: plain `raise(3)`.
-        unsafe {
-            libc::raise(libc::SIGINT);
-        }
-    }
-}
-
-impl Drop for InterruptWatch {
-    fn drop(&mut self) {
-        #[cfg(unix)]
-        // SAFETY: `previous` is what `sigaction` handed back on install.
-        unsafe {
-            libc::sigaction(libc::SIGINT, &self.previous, std::ptr::null_mut());
-        }
-    }
-}
-
-/// Blocks until `pid` has exited, leaving it for [`Child::wait`] to reap.
-#[cfg(unix)]
 fn wait_without_reaping(pid: u32) {
-    let id = libc::id_t::from(pid);
-    // SAFETY: `siginfo_t` is plain data the kernel fills in; zeroed is a
-    // valid value for it.
-    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-    loop {
-        // SAFETY: `info` outlives the call, and `WNOWAIT` leaves the child
-        // for `Child::wait` to reap.
-        let outcome =
-            unsafe { libc::waitid(libc::P_PID, id, &mut info, libc::WEXITED | libc::WNOWAIT) };
-        if outcome == 0 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
-            return;
-        }
-    }
+    uze_platform::process::wait_without_reaping(pid);
 }
 
-#[cfg(not(unix))]
-fn wait_without_reaping(_pid: u32) {}
-
-/// Kills a whole process group — the process plus any descendant it started.
-///
-/// This issues the `kill(2)` syscalls directly and must never shell out to
-/// `/bin/kill`. procps-ng's `kill` parses a negative pid by its *first digit
-/// only* (`case '?'`: `pid = '0' - optopt`, then exits), so `kill -KILL -1234`
-/// or `-KILL -10000` becomes `kill(-1, SIGKILL)` — every process the user
-/// owns, including the login shell, `systemd --user`, and the agent that ran
-/// the tests — while `-KILL -2345` becomes a silent no-op against group 2.
-/// The latter is the "group signal misses a member under WSL2" quirk this
-/// helper used to work around with a `/proc` sweep; the former is what took
-/// the whole WSL session down whenever a timed-out child's pid started with
-/// `1`. The sweep is kept as a belt-and-braces pass for a descendant that
-/// left the group (`setsid`) between the two signals.
-///
-/// Only for a child not yet reaped: it also signals `pid` itself. Once the
-/// child has been waited on, use [`kill_reaped_process_group`].
-#[cfg(unix)]
+/// Kills a whole process group — the process plus any descendant it
+/// started. Only for a child not yet reaped: it also signals `pid` itself.
+/// Once the child has been waited on, use [`kill_reaped_process_group`].
 pub fn kill_process_group(pid: u32) {
-    signal_group(pid, true);
+    uze_platform::process::end_group(pid);
 }
 
 /// [`kill_process_group`] for a child already reaped — the group a
-/// descendant still holding a pipe belongs to. Its pid is no longer this
-/// process's to signal: the kernel may have handed it to anybody.
-#[cfg(unix)]
+/// descendant still holding a pipe belongs to.
 pub fn kill_reaped_process_group(pid: u32) {
-    signal_group(pid, false);
-}
-
-#[cfg(unix)]
-fn signal_group(pid: u32, leader_unreaped: bool) {
-    // `kill(0)` / `kill(-1)` would target our own group / every process we
-    // own. No child ever has such a pid; refuse rather than risk it.
-    let Ok(pgid) = libc::pid_t::try_from(pid) else {
-        return;
-    };
-    if pgid <= 1 {
-        return;
-    }
-    // SAFETY: plain `kill(2)` calls on a pid we spawned; no memory involved.
-    unsafe {
-        libc::kill(-pgid, libc::SIGKILL);
-        // Also signal the direct child by pid, in case it changed its own
-        // process group before the group signal landed.
-        if leader_unreaped {
-            libc::kill(pgid, libc::SIGKILL);
-        }
-    }
-    for member in process_group_members(pid) {
-        if let Ok(member) = libc::pid_t::try_from(member)
-            && member > 1
-        {
-            // SAFETY: as above.
-            unsafe {
-                libc::kill(member, libc::SIGKILL);
-            }
-        }
-    }
-}
-
-/// Ends `pid` and everything it started. Called while the `Child` behind
-/// `pid` is unreaped, so its handle keeps the pid from being reused.
-#[cfg(windows)]
-pub fn kill_process_group(pid: u32) {
-    uze_process::windows::kill_tree(pid);
-}
-
-/// Nothing: once its leader is reaped, a Windows pid may already name
-/// somebody else's process, and there is no group id that outlives it the
-/// way a Unix one does. What the leader left running was ended with it by
-/// [`kill_process_group`] while it could still be named safely.
-#[cfg(windows)]
-pub fn kill_reaped_process_group(_pid: u32) {}
-
-/// Reads `/proc` directly (rather than shelling out to `ps --pgid`) to list
-/// every PID currently reporting `pgid` as its process group.
-///
-/// Empty on a platform without `/proc` — macOS included — and that is
-/// correct rather than merely tolerable: this sweep is the belt-and-braces
-/// pass for a descendant that left the group via `setsid`, added for a WSL2
-/// quirk. The two `kill(2)` calls above are what actually kill the group,
-/// and they are portable. A platform where the sweep finds nothing loses a
-/// backstop, not the kill.
-#[cfg(unix)]
-fn process_group_members(pgid: u32) -> Vec<u32> {
-    let mut members = Vec::new();
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return members;
-    };
-    for entry in entries.flatten() {
-        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
-            continue;
-        };
-        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
-            continue;
-        };
-        // Fields are space-separated, but the second field (comm) is
-        // parenthesized and may itself contain spaces or parens, so split
-        // on the last ')' rather than naively splitting on whitespace.
-        let Some((_, after_comm)) = stat.rsplit_once(')') else {
-            continue;
-        };
-        // After comm: state(0) ppid(1) pgrp(2) ...
-        let pgrp = after_comm
-            .split_whitespace()
-            .nth(2)
-            .and_then(|field| field.parse::<u32>().ok());
-        if pgrp == Some(pgid) {
-            members.push(pid);
-        }
-    }
-    members
+    uze_platform::process::end_reaped_group(pid);
 }
 
 /// Reads a child handle to EOF, keeping the **last** `cap` bytes and
@@ -400,44 +185,10 @@ pub fn program_on_path(program: &str) -> bool {
         })
 }
 
-/// `command` handed to the shell this platform runs authored lines in: the
-/// POSIX shell, or Windows PowerShell 5.1, the one every supported Windows
-/// carries.
-///
-/// PowerShell does not stop a line at a native command that fails, and its
-/// own exit status is not that command's. So the line runs with cmdlet
-/// errors terminating, and ends by exiting with the last native command's
-/// code when that code is not zero: `pnpm install; Copy-Item a b` fails when
-/// `pnpm install` does, unless a later native command succeeds after it.
+/// `command` handed to the shell this platform runs authored lines in (see
+/// [`uze_platform::shell`]).
 pub fn shell_invocation(command: &str) -> Command {
-    #[cfg(windows)]
-    {
-        let mut invocation = Command::new("powershell.exe");
-        invocation.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-        ]);
-        invocation.arg(format!(
-            "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = \
-             [Text.UTF8Encoding]::new($false); {command}\n\
-             if ($LASTEXITCODE) {{ exit $LASTEXITCODE }}"
-        ));
-        invocation
-    }
-    #[cfg(not(windows))]
-    {
-        let shell = if Path::new("/bin/sh").exists() {
-            "/bin/sh"
-        } else {
-            "sh"
-        };
-        let mut invocation = Command::new(shell);
-        invocation.arg("-c").arg(command);
-        invocation
-    }
+    uze_platform::shell::command(command)
 }
 
 /// Runs a shell command in `cwd`, bounded in time and output. Returns
@@ -622,10 +373,25 @@ mod tests {
         assert_eq!(ending, Ending::Interrupted);
         assert!(started.elapsed() < Duration::from_secs(10));
         drop(watch);
-        assert!(
-            process_group_members(group).is_empty(),
-            "the whole tree is gone"
-        );
+        assert!(group_members(group).is_empty(), "the whole tree is gone");
+    }
+
+    /// Every pid `/proc` reports in group `pgid`; empty without `/proc`.
+    #[cfg(unix)]
+    fn group_members(pgid: u32) -> Vec<u32> {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .filter_map(|entry| {
+                let pid = entry.file_name().to_string_lossy().parse::<u32>().ok()?;
+                let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
+                let (_, after_comm) = stat.rsplit_once(')')?;
+                let group = after_comm.split_whitespace().nth(2)?.parse::<u32>().ok()?;
+                (group == pgid).then_some(pid)
+            })
+            .collect()
     }
     #[test]
     fn a_program_is_found_only_where_path_actually_holds_an_executable() {

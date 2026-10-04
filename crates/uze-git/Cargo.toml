@@ -10,12 +10,12 @@ publish = false
 
 [dependencies]
 # Locks that hold across processes, and ending a process with its tree.
-uze-process = { path = "../uze-process" }
+uze-platform = { path = "../uze-platform" }
 # Spans on every process this crate runs; a no-op until the binary
 # subscribes (see `src/telemetry.rs`).
 tracing = "0.1"
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(unix)'.dev-dependencies]
 libc = "0.2"
 
 [dev-dependencies]

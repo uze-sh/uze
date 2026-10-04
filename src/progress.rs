@@ -318,17 +318,7 @@ pub fn report_title(name: &str, detail: Option<&str>) -> String {
 
 /// `path` as a person reads it: under `$HOME` it starts with `~`.
 pub fn path(path: &std::path::Path) -> String {
-    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from)
-        && !home.as_os_str().is_empty()
-        && let Ok(rest) = path.strip_prefix(&home)
-    {
-        return if rest.as_os_str().is_empty() {
-            "~".to_owned()
-        } else {
-            format!("~/{}", rest.display())
-        };
-    }
-    path.display().to_string()
+    uze_platform::home::shorten(path)
 }
 
 /// `1 plugin`, `3 plugins`.

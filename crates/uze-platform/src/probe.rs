@@ -19,18 +19,12 @@
 
 use std::path::PathBuf;
 
-use crate::runtime::Stream;
-
-/// A process id as the platform's own process calls take it.
+/// The pid of the process on the other end of a Unix-domain socket, as the
+/// kernel stamped it onto the connection — never something the peer could
+/// claim for itself. (A Windows named pipe records both ends' pids itself,
+/// and is asked through its own handle.)
 #[cfg(unix)]
-pub type Pid = libc::pid_t;
-#[cfg(windows)]
-pub type Pid = u32;
-
-/// The pid of the process on the other end of `stream`, as the kernel
-/// stamped it onto the connection — never something the peer could claim
-/// for itself.
-pub fn peer_pid(stream: &Stream) -> Option<u32> {
+pub fn socket_peer(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
     platform::peer_pid(stream)
 }
 
@@ -43,13 +37,13 @@ pub fn executable_of(pid: u32) -> Option<PathBuf> {
 }
 
 /// The directory `pid` is standing in.
-pub fn current_directory_of(pid: Pid) -> Option<PathBuf> {
+pub fn current_directory_of(pid: u32) -> Option<PathBuf> {
     platform::current_directory_of(pid)
 }
 
 /// The short command name of `pid` — what `ps` prints, and what a harness is
 /// free to overwrite with a title of its own.
-pub fn command_name_of(pid: Pid) -> Option<String> {
+pub fn command_name_of(pid: u32) -> Option<String> {
     platform::command_name_of(pid)
 }
 
@@ -59,15 +53,23 @@ pub fn command_name_of(pid: Pid) -> Option<String> {
 /// readable only for the same user, and only up to whatever bound the
 /// platform puts on it. `None` covers all of "no such variable", "not
 /// permitted" and "did not fit".
-pub fn environment_value_of(pid: Pid, key: &str) -> Option<String> {
+pub fn environment_value_of(pid: u32, key: &str) -> Option<String> {
     platform::environment_value_of(pid, key)
 }
 
+/// The working directory of every other process of this user, or `None`
+/// when the process table cannot be enumerated at all. This process and
+/// the ones it started are left out. A process that exits while being read,
+/// or whose directory the platform withholds, is skipped.
+pub fn working_directories() -> Option<Vec<PathBuf>> {
+    platform::working_directories()
+}
+
 /// Splits a NUL-separated environment block and returns `key`'s value.
-#[cfg(unix)]
 ///
-/// Shared by both platforms: Linux reads this block out of `/proc`, macOS
-/// out of `sysctl`, and the shape they hand back is the same one.
+/// Shared by both Unix platforms: Linux reads this block out of `/proc`,
+/// macOS out of `sysctl`, and the shape they hand back is the same one.
+#[cfg(unix)]
 fn value_in_environment_block(block: &[u8], key: &str) -> Option<String> {
     let prefix = format!("{key}=");
     block
@@ -108,20 +110,63 @@ mod platform {
         std::fs::read_link(format!("/proc/{pid}/exe")).ok()
     }
 
-    pub(super) fn current_directory_of(pid: libc::pid_t) -> Option<PathBuf> {
+    pub(super) fn current_directory_of(pid: u32) -> Option<PathBuf> {
         std::fs::read_link(format!("/proc/{pid}/cwd")).ok()
     }
 
-    pub(super) fn command_name_of(pid: libc::pid_t) -> Option<String> {
+    pub(super) fn command_name_of(pid: u32) -> Option<String> {
         std::fs::read_to_string(format!("/proc/{pid}/comm"))
             .ok()
             .map(|comm| comm.trim().to_owned())
             .filter(|comm| !comm.is_empty())
     }
 
-    pub(super) fn environment_value_of(pid: libc::pid_t, key: &str) -> Option<String> {
+    pub(super) fn environment_value_of(pid: u32, key: &str) -> Option<String> {
         let block = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
         super::value_in_environment_block(&block, key)
+    }
+
+    pub(super) fn working_directories() -> Option<Vec<PathBuf>> {
+        use std::os::unix::fs::MetadataExt;
+
+        let own = std::process::id();
+        // SAFETY: `getuid` takes no arguments, cannot fail, and touches no
+        // memory of ours.
+        let uid = unsafe { libc::getuid() };
+        let entries = std::fs::read_dir("/proc").ok()?;
+        let mut directories = Vec::new();
+        for entry in entries.flatten() {
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            let process = entry.path();
+            if pid == own || parent_of(&process) == Some(own) {
+                continue;
+            }
+            if std::fs::metadata(&process)
+                .map(|metadata| metadata.uid())
+                .ok()
+                != Some(uid)
+            {
+                continue;
+            }
+            if let Ok(directory) = std::fs::read_link(process.join("cwd")) {
+                directories.push(directory);
+            }
+        }
+        Some(directories)
+    }
+
+    /// The parent pid in `/proc/<pid>/stat`, read after the command name,
+    /// which is parenthesised and may itself hold spaces and parentheses.
+    fn parent_of(process: &std::path::Path) -> Option<u32> {
+        let stat = std::fs::read_to_string(process.join("stat")).ok()?;
+        let (_, after_name) = stat.rsplit_once(')')?;
+        after_name.split_whitespace().nth(1)?.parse().ok()
     }
 }
 
@@ -166,7 +211,8 @@ mod platform {
         (written > 0).then(|| path_from(&buffer[..written as usize]))
     }
 
-    pub(super) fn current_directory_of(pid: libc::pid_t) -> Option<PathBuf> {
+    pub(super) fn current_directory_of(pid: u32) -> Option<PathBuf> {
+        let pid = libc::pid_t::try_from(pid).ok()?;
         // SAFETY: zeroed is a valid `proc_vnodepathinfo` (it is plain data),
         // and the size handed to `proc_pidinfo` is the struct's own.
         let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
@@ -198,7 +244,8 @@ mod platform {
     /// see [`command_name_of`].
     const INTERPRETERS: &[&str] = &["sh", "bash", "dash", "zsh", "ksh", "ash"];
 
-    pub(super) fn command_name_of(pid: libc::pid_t) -> Option<String> {
+    pub(super) fn command_name_of(pid: u32) -> Option<String> {
+        let pid = libc::pid_t::try_from(pid).ok()?;
         let name = proc_name(pid);
         // Linux and Darwin disagree about what a `#!` script is called, and
         // the disagreement is load-bearing: Linux sets `comm` from the file
@@ -259,7 +306,8 @@ mod platform {
     /// every status poll; a process whose block genuinely exceeds the bound
     /// answers `None`, which the caller already treats as "fall back to the
     /// command name".
-    pub(super) fn environment_value_of(pid: libc::pid_t, key: &str) -> Option<String> {
+    pub(super) fn environment_value_of(pid: u32, key: &str) -> Option<String> {
+        let pid = libc::pid_t::try_from(pid).ok()?;
         let (_, environment) = process_arguments(pid)?;
         super::value_in_environment_block(&environment, key)
     }
@@ -320,6 +368,80 @@ mod platform {
     fn path_from(bytes: &[u8]) -> PathBuf {
         PathBuf::from(std::ffi::OsStr::from_bytes(bytes))
     }
+
+    pub(super) fn working_directories() -> Option<Vec<PathBuf>> {
+        use std::{
+            ffi::{CStr, c_int, c_void},
+            mem::size_of,
+            os::unix::ffi::OsStrExt,
+        };
+
+        let own = std::process::id();
+        // SAFETY: `getuid` takes no arguments, cannot fail, and touches no
+        // memory of ours.
+        let uid = unsafe { libc::getuid() };
+        // SAFETY: a null buffer asks only for the number of pids.
+        let estimate = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+        if estimate <= 0 {
+            return None;
+        }
+        // Room for processes started between the two calls.
+        let mut pids = vec![0 as libc::pid_t; estimate as usize + 64];
+        let capacity = c_int::try_from(pids.len() * size_of::<libc::pid_t>()).ok()?;
+        // SAFETY: the buffer is `capacity` bytes of pids, as the call expects.
+        let listed =
+            unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast::<c_void>(), capacity) };
+        if listed <= 0 {
+            return None;
+        }
+        pids.truncate(listed as usize);
+
+        let mut directories = Vec::new();
+        for pid in pids.into_iter().filter(|pid| *pid > 0) {
+            // SAFETY: both structs are plain C data for which all-zero is valid.
+            let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+            let info_size = size_of::<libc::proc_bsdinfo>() as c_int;
+            // SAFETY: `info` is `info_size` bytes, the size this flavor fills.
+            let read = unsafe {
+                libc::proc_pidinfo(
+                    pid,
+                    libc::PROC_PIDTBSDINFO,
+                    0,
+                    (&raw mut info).cast::<c_void>(),
+                    info_size,
+                )
+            };
+            if read != info_size
+                || info.pbi_uid != uid
+                || info.pbi_pid == own
+                || info.pbi_ppid == own
+            {
+                continue;
+            }
+            let mut paths: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+            let paths_size = size_of::<libc::proc_vnodepathinfo>() as c_int;
+            // SAFETY: `paths` is `paths_size` bytes, the size this flavor fills.
+            let read = unsafe {
+                libc::proc_pidinfo(
+                    pid,
+                    libc::PROC_PIDVNODEPATHINFO,
+                    0,
+                    (&raw mut paths).cast::<c_void>(),
+                    paths_size,
+                )
+            };
+            if read != paths_size {
+                continue;
+            }
+            // SAFETY: `vip_path` is a NUL-terminated C string of at most
+            // MAXPATHLEN bytes, laid out as a flat array.
+            let path = unsafe { CStr::from_ptr(paths.pvi_cdir.vip_path.as_ptr().cast()) };
+            if !path.to_bytes().is_empty() {
+                directories.push(PathBuf::from(std::ffi::OsStr::from_bytes(path.to_bytes())));
+            }
+        }
+        Some(directories)
+    }
 }
 
 /// Neither `/proc` nor `libproc`. The endpoint keeps whatever answer it had
@@ -338,15 +460,19 @@ mod platform {
         None
     }
 
-    pub(super) fn current_directory_of(_pid: libc::pid_t) -> Option<PathBuf> {
+    pub(super) fn current_directory_of(_pid: u32) -> Option<PathBuf> {
         None
     }
 
-    pub(super) fn command_name_of(_pid: libc::pid_t) -> Option<String> {
+    pub(super) fn command_name_of(_pid: u32) -> Option<String> {
         None
     }
 
-    pub(super) fn environment_value_of(_pid: libc::pid_t, _key: &str) -> Option<String> {
+    pub(super) fn environment_value_of(_pid: u32, _key: &str) -> Option<String> {
+        None
+    }
+
+    pub(super) fn working_directories() -> Option<Vec<PathBuf>> {
         None
     }
 }
@@ -376,14 +502,28 @@ mod platform {
         },
     };
 
-    use crate::runtime::Stream;
-
-    pub(super) fn peer_pid(stream: &Stream) -> Option<u32> {
-        stream.peer_pid()
-    }
-
+    /// The image path, read with the least access Windows grants for it.
     pub(super) fn executable_of(pid: u32) -> Option<PathBuf> {
-        crate::runtime::windows::image_of(pid)
+        use windows_sys::Win32::System::Threading::{
+            PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+        };
+        // SAFETY: null on failure, otherwise closed by `Process`.
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if handle.is_null() {
+            return None;
+        }
+        let process = Process(handle);
+        let mut buffer = vec![0u16; 32 * 1024];
+        let mut len = buffer.len() as u32;
+        // SAFETY: `buffer` holds `len` u16s and outlives the call.
+        if unsafe {
+            QueryFullProcessImageNameW(process.0, PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut len)
+        } == 0
+        {
+            return None;
+        }
+        buffer.truncate(len as usize);
+        Some(PathBuf::from(String::from_utf16_lossy(&buffer)))
     }
 
     pub(super) fn command_name_of(pid: u32) -> Option<String> {
@@ -508,14 +648,55 @@ mod platform {
             Some(String::from_utf16_lossy(&units))
         }
     }
+
+    /// Every process in one snapshot, its cwd read from its PEB. Another
+    /// user's processes cannot be opened for reading, so they are left out
+    /// by the same rule that keeps their directories private.
+    pub(super) fn working_directories() -> Option<Vec<PathBuf>> {
+        use windows_sys::Win32::{
+            Foundation::INVALID_HANDLE_VALUE,
+            System::Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+                TH32CS_SNAPPROCESS,
+            },
+        };
+
+        // SAFETY: a snapshot of every process, closed by `Process`.
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let snapshot = Process(snapshot);
+        let own = std::process::id();
+        // SAFETY: zeroed is valid once dwSize is set.
+        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut directories = Vec::new();
+        // SAFETY: `entry` is sized as the API requires and outlives each call.
+        let mut more = unsafe { Process32FirstW(snapshot.0, &mut entry) } != 0;
+        while more {
+            let (pid, parent) = (entry.th32ProcessID, entry.th32ParentProcessID);
+            if pid != own
+                && parent != own
+                && let Some(directory) = current_directory_of(pid)
+            {
+                directories.push(directory);
+            }
+            // SAFETY: as above.
+            more = unsafe { Process32NextW(snapshot.0, &mut entry) } != 0;
+        }
+        Some(directories)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        command_name_of, current_directory_of, environment_value_of, value_in_environment_block,
-    };
+    #[cfg(unix)]
+    use super::value_in_environment_block;
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+    use super::{command_name_of, current_directory_of, environment_value_of};
 
+    #[cfg(unix)]
     #[test]
     fn a_value_is_read_out_of_a_nul_separated_block() {
         let block = b"PATH=/bin\0UZE_SHIM_NAME=claude\0HOME=/root\0";
@@ -528,6 +709,7 @@ mod tests {
     /// A variable set to nothing is not a name, and reporting `""` as the
     /// process running in a pane would blank the label rather than fall back
     /// to the command name.
+    #[cfg(unix)]
     #[test]
     fn an_empty_value_is_not_an_answer() {
         assert_eq!(
@@ -539,6 +721,7 @@ mod tests {
     /// The prefix has to be the whole name: `SHIM_NAME` must not be answered
     /// by `UZE_SHIM_NAME`, and `UZE_SHIM_NAME_EXTRA` must not answer
     /// `UZE_SHIM_NAME`.
+    #[cfg(unix)]
     #[test]
     fn a_key_matches_only_itself() {
         let block = b"UZE_SHIM_NAME_EXTRA=no\0UZE_SHIM_NAME=yes\0";
@@ -568,7 +751,7 @@ mod tests {
         uze_testkit::process::install_executable(&script, b"#!/bin/sh\nsleep 30\n");
 
         let mut child = std::process::Command::new(&script).spawn().unwrap();
-        let named = wait_for_name(child.id() as libc::pid_t, "uzeprobe");
+        let named = wait_for_name(child.id(), "uzeprobe");
         let _ = child.kill();
         let _ = child.wait();
         let _ = std::fs::remove_dir_all(&dir);
@@ -599,7 +782,7 @@ mod tests {
             .args(["-c", "sleep 30; :"])
             .spawn()
             .unwrap();
-        let named = wait_for_name(child.id() as libc::pid_t, "bash");
+        let named = wait_for_name(child.id(), "bash");
         let _ = child.kill();
         let _ = child.wait();
 
@@ -620,7 +803,7 @@ mod tests {
     /// name is not what a pre-`exec` child looks like, and comparing
     /// against it accepted exactly the moment this is trying to skip.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn wait_for_name(pid: libc::pid_t, expected: &str) -> Option<String> {
+    fn wait_for_name(pid: u32, expected: &str) -> Option<String> {
         let mut last_seen = None;
         for _ in 0..200 {
             let seen = command_name_of(pid);
@@ -638,9 +821,9 @@ mod tests {
     /// that tells a Linux reviewer whether the macOS half compiles into
     /// something that actually works — or the reverse.
     #[test]
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     fn the_platform_answers_about_this_process() {
-        let me = std::process::id() as libc::pid_t;
+        let me = std::process::id();
         assert_eq!(
             current_directory_of(me).and_then(|cwd| cwd.canonicalize().ok()),
             std::env::current_dir()

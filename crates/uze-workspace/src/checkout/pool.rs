@@ -394,16 +394,6 @@ pub fn materialize(
     warnings
 }
 
-#[cfg(unix)]
 pub(super) fn symlink(source: &Path, destination: &Path) -> std::io::Result<()> {
-    std::os::unix::fs::symlink(source, destination)
-}
-
-#[cfg(not(unix))]
-pub(super) fn symlink(source: &Path, destination: &Path) -> std::io::Result<()> {
-    if source.is_dir() {
-        std::os::windows::fs::symlink_dir(source, destination)
-    } else {
-        std::os::windows::fs::symlink_file(source, destination)
-    }
+    uze_platform::fs::symlink(source, destination)
 }

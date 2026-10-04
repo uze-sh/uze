@@ -9,6 +9,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+uze-platform = { path = "../uze-platform" }
 # Spans on every process this crate runs; a no-op until the binary
 # subscribes (see `src/telemetry.rs`).
 tracing = "0.1"

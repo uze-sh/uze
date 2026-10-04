@@ -281,16 +281,8 @@ where
 /// Best-effort: a journal that cannot be restricted is still a journal,
 /// and failing the run over its mode would lose the record this exists
 /// to keep.
-#[cfg(unix)]
 fn restrict_to_owner(dir: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::create_dir_all(dir);
-    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
-}
-
-#[cfg(not(unix))]
-fn restrict_to_owner(dir: &std::path::Path) {
-    let _ = std::fs::create_dir_all(dir);
+    let _ = uze_platform::fs::create_private_dir_all(dir);
 }
 
 /// Drops the oldest days of `name`'s journal until what is left fits in
