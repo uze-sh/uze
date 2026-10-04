@@ -66,6 +66,9 @@ public static class Program {
             [Environment]::SetEnvironmentVariable($key, $variables[$key])
         }
         try {
+            # What the installer writes on stderr is its answer, read below;
+            # under a caller's `Stop` (CI runs steps so) it would throw here.
+            $ErrorActionPreference = 'Continue'
             $output = & $shell -NoProfile -ExecutionPolicy Bypass -File $installer @Arguments 2>&1
             [pscustomobject]@{ Code = $LASTEXITCODE; Output = ($output | Out-String) }
         } finally {
