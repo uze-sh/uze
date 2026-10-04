@@ -57,6 +57,12 @@ pub fn environment_value_of(pid: u32, key: &str) -> Option<String> {
     platform::environment_value_of(pid, key)
 }
 
+/// The process that started `pid`. Only as good as the platform's record:
+/// the pid it names may have exited, and been reused, since.
+pub fn parent_of(pid: u32) -> Option<u32> {
+    platform::parent_of(pid)
+}
+
 /// The working directory of every other process of this user, or `None`
 /// when the process table cannot be enumerated at all. This process and
 /// the ones it started are left out. A process that exits while being read,
@@ -114,6 +120,10 @@ mod platform {
         std::fs::read_link(format!("/proc/{pid}/cwd")).ok()
     }
 
+    pub(super) fn parent_of(pid: u32) -> Option<u32> {
+        parent_in(std::path::Path::new(&format!("/proc/{pid}")))
+    }
+
     pub(super) fn command_name_of(pid: u32) -> Option<String> {
         std::fs::read_to_string(format!("/proc/{pid}/comm"))
             .ok()
@@ -144,7 +154,7 @@ mod platform {
                 continue;
             };
             let process = entry.path();
-            if pid == own || parent_of(&process) == Some(own) {
+            if pid == own || parent_in(&process) == Some(own) {
                 continue;
             }
             if std::fs::metadata(&process)
@@ -163,7 +173,7 @@ mod platform {
 
     /// The parent pid in `/proc/<pid>/stat`, read after the command name,
     /// which is parenthesised and may itself hold spaces and parentheses.
-    fn parent_of(process: &std::path::Path) -> Option<u32> {
+    fn parent_in(process: &std::path::Path) -> Option<u32> {
         let stat = std::fs::read_to_string(process.join("stat")).ok()?;
         let (_, after_name) = stat.rsplit_once(')')?;
         after_name.split_whitespace().nth(1)?.parse().ok()
@@ -264,6 +274,24 @@ mod platform {
             }
             _ => name,
         }
+    }
+
+    pub(super) fn parent_of(pid: u32) -> Option<u32> {
+        let pid = libc::pid_t::try_from(pid).ok()?;
+        // SAFETY: plain C data for which all-zero is valid.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+        // SAFETY: `info` is `size` bytes, the size this flavor fills.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&raw mut info).cast::<libc::c_void>(),
+                size,
+            )
+        };
+        (read == size).then_some(info.pbi_ppid)
     }
 
     /// The short name Darwin records for the running image.
@@ -468,6 +496,10 @@ mod platform {
         None
     }
 
+    pub(super) fn parent_of(_pid: u32) -> Option<u32> {
+        None
+    }
+
     pub(super) fn environment_value_of(_pid: u32, _key: &str) -> Option<String> {
         None
     }
@@ -524,6 +556,29 @@ mod platform {
         }
         buffer.truncate(len as usize);
         Some(PathBuf::from(String::from_utf16_lossy(&buffer)))
+    }
+
+    pub(super) fn parent_of(pid: u32) -> Option<u32> {
+        use windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
+        // SAFETY: null on failure, otherwise owned by `Process`.
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if handle.is_null() {
+            return None;
+        }
+        let process = Process(handle);
+        // SAFETY: zeroed is a valid empty structure.
+        let mut basic: PROCESS_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: `basic` is the structure the class names, by size.
+        let status = unsafe {
+            NtQueryInformationProcess(
+                process.0,
+                ProcessBasicInformation,
+                (&mut basic as *mut PROCESS_BASIC_INFORMATION).cast(),
+                std::mem::size_of::<PROCESS_BASIC_INFORMATION>() as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        (status >= 0).then_some(basic.InheritedFromUniqueProcessId as u32)
     }
 
     pub(super) fn command_name_of(pid: u32) -> Option<String> {
@@ -694,7 +749,7 @@ mod tests {
     #[cfg(unix)]
     use super::value_in_environment_block;
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]
-    use super::{command_name_of, current_directory_of, environment_value_of};
+    use super::{command_name_of, current_directory_of, environment_value_of, parent_of};
 
     #[cfg(unix)]
     #[test]
@@ -816,7 +871,8 @@ mod tests {
         last_seen
     }
 
-    /// The three process questions, asked about this very process, on any
+    /// The process questions, asked about this very process (and its parent
+    /// about a child of it), on any
     /// platform that claims to answer them. Cheap, and it is the only thing
     /// that tells a Linux reviewer whether the macOS half compiles into
     /// something that actually works — or the reverse.
@@ -835,6 +891,14 @@ mod tests {
             command_name_of(me).is_some_and(|name| !name.is_empty()),
             "the platform must report a command name for a live process"
         );
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let parent = parent_of(child.id());
+        let _ = child.wait();
+        assert_eq!(parent, Some(me), "a child started here names this process");
         // Set by the harness that runs this test, in this process, before
         // the probe reads it back out of the kernel's own copy.
         let mut environment = uze_testkit::env::scope();

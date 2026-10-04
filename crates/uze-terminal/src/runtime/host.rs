@@ -20,9 +20,9 @@ pub(super) fn prepare_pane(command: &mut CommandBuilder) {
 }
 
 /// The process in the foreground of a pane: the terminal's foreground
-/// group on Unix; on Windows, where ConPTY keeps no such thing, the newest
-/// process in the pane's group — what a person typed last, the shell when
-/// they typed nothing.
+/// group on Unix; on Windows, where ConPTY keeps no such thing, the process
+/// the pane's shell or UZE's launcher handed the console to, the shell when
+/// it handed it to nobody.
 pub(super) fn foreground(master: &dyn MasterPty, group: Option<&Group>) -> Option<u32> {
     imp::foreground(master, group)
 }
@@ -112,11 +112,58 @@ mod imp {
         command.env("COLORTERM", "truecolor");
     }
 
+    /// What a shell is called when it runs a command for a person: it
+    /// starts the command and waits, handing it the console.
+    const SHELLS: &[&str] = &["cmd", "powershell", "pwsh", "bash", "sh"];
+
     pub(super) fn foreground(_master: &dyn MasterPty, group: Option<&Group>) -> Option<u32> {
-        group?.members().into_iter().rev().find(|pid| {
-            uze_platform::probe::command_name_of(*pid)
-                .is_none_or(|name| !name.eq_ignore_ascii_case("conhost"))
+        let members: Vec<Member> = group?
+            .members()
+            .into_iter()
+            .filter_map(|pid| {
+                let name = uze_platform::probe::command_name_of(pid)?;
+                let parent = uze_platform::probe::parent_of(pid);
+                (!name.eq_ignore_ascii_case("conhost")).then_some(Member { pid, parent, name })
+            })
+            .collect();
+        in_front(&members, |holder, child| {
+            SHELLS
+                .iter()
+                .any(|shell| holder.name.eq_ignore_ascii_case(shell))
+                || super::super::pane::shim_launched_name(child.pid).is_some()
         })
+    }
+
+    /// One live process of a pane's group.
+    #[derive(Debug)]
+    struct Member {
+        pid: u32,
+        parent: Option<u32>,
+        name: String,
+    }
+
+    /// The process holding the pane's console. Unix answers this with the
+    /// foreground group, which a shell gives each command it runs and which
+    /// the command's own children share; so an agent stays in front while
+    /// it runs `git` or a language server. Here it is found the way the
+    /// console was passed: from the process the pane started, down through
+    /// each one that `hands_over` (a shell running a command, the launcher
+    /// running a harness) to the first that keeps it. The newest process in
+    /// the group, which this used to answer, is whatever the agent started
+    /// last, and the pane came and went from the sidebar with every one.
+    fn in_front(members: &[Member], hands_over: impl Fn(&Member, &Member) -> bool) -> Option<u32> {
+        let is_member = |pid: u32| members.iter().any(|member| member.pid == pid);
+        let mut holder = members
+            .iter()
+            .find(|member| member.parent.is_none_or(|parent| !is_member(parent)))?;
+        while let Some(child) = members
+            .iter()
+            .rev()
+            .find(|child| child.parent == Some(holder.pid) && hands_over(holder, child))
+        {
+            holder = child;
+        }
+        Some(holder.pid)
     }
 
     /// Windows has no directory every user may stand in that is nobody's
@@ -130,5 +177,51 @@ mod imp {
     pub(super) fn is_uze_image(file_name: &str) -> bool {
         let name = file_name.to_ascii_lowercase();
         name == "uze.exe" || name.starts_with("uze.exe.old-")
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Member, in_front};
+
+        fn member(pid: u32, parent: u32, name: &str) -> Member {
+            Member {
+                pid,
+                parent: Some(parent),
+                name: name.to_owned(),
+            }
+        }
+
+        fn shells_and_launchers(holder: &Member, child: &Member) -> bool {
+            holder.name == "pwsh" || child.name == "opencode" && holder.name == "shim"
+        }
+
+        /// What an agent starts while it works is its own, and the agent
+        /// stays in front of the pane through every one of them.
+        #[test]
+        fn an_agent_stays_in_front_while_its_children_come_and_go() {
+            let pane = [
+                member(10, 1, "pwsh"),
+                member(11, 10, "opencode"),
+                member(12, 11, "git"),
+                member(13, 11, "rg"),
+            ];
+            assert_eq!(in_front(&pane, shells_and_launchers), Some(11));
+            assert_eq!(in_front(&pane[..2], shells_and_launchers), Some(11));
+        }
+
+        /// A harness run through UZE's launcher is in front, not the
+        /// launcher waiting on it; a shell with nothing running is.
+        #[test]
+        fn the_console_is_followed_through_shells_and_the_launcher_only() {
+            let launched = [
+                member(10, 1, "pwsh"),
+                member(11, 10, "shim"),
+                member(12, 11, "opencode"),
+                member(13, 12, "node"),
+            ];
+            assert_eq!(in_front(&launched, shells_and_launchers), Some(12));
+            assert_eq!(in_front(&launched[..1], shells_and_launchers), Some(10));
+            assert_eq!(in_front(&[], shells_and_launchers), None);
+        }
     }
 }
