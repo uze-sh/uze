@@ -47,9 +47,13 @@ pub fn open_without_blocking(path: &Path) -> io::Result<File> {
     imp::open_without_blocking(path)
 }
 
-/// Creates `link` pointing at `target`. Windows grants symbolic links only
-/// with Developer Mode or elevation; without either this is an error of
-/// kind [`io::ErrorKind::Unsupported`], never a silent copy.
+/// Creates `link` pointing at `target`. A symbolic link on Unix. On Windows
+/// a link to a directory is a junction, which every user may make and the
+/// standard library reads as a link like any other (`is_symlink`,
+/// `read_link`, removed by [`remove_link`]); a link to a file is a symbolic
+/// link, which Windows grants only with Developer Mode or elevation, and
+/// without either this is an error of kind [`io::ErrorKind::Unsupported`],
+/// never a silent copy.
 pub fn symlink(target: &Path, link: &Path) -> io::Result<()> {
     imp::symlink(target, link)
 }
@@ -245,12 +249,13 @@ mod imp {
     }
 
     pub(super) fn symlink(target: &Path, link: &Path) -> io::Result<()> {
-        let linked = if target.is_dir() {
-            std::os::windows::fs::symlink_dir(target, link)
-        } else {
-            std::os::windows::fs::symlink_file(target, link)
-        };
-        linked.map_err(|error| {
+        let anchored = link
+            .parent()
+            .map_or_else(|| target.to_path_buf(), |parent| parent.join(target));
+        if anchored.is_dir() {
+            return junction(&anchored, link);
+        }
+        std::os::windows::fs::symlink_file(target, link).map_err(|error| {
             // ERROR_PRIVILEGE_NOT_HELD: neither Developer Mode nor elevation.
             if error.raw_os_error() == Some(1314) {
                 io::Error::new(io::ErrorKind::Unsupported, error)
@@ -258,6 +263,80 @@ mod imp {
                 error
             }
         })
+    }
+
+    /// An empty directory at `link` made a mount point for `target`, an
+    /// absolute path: the reparse data `mklink /J` writes.
+    fn junction(target: &Path, link: &Path) -> io::Result<()> {
+        let target = crate::path::strip_verbatim(&std::path::absolute(target)?);
+        std::fs::create_dir(link)?;
+        let mounted = mount(link, &target);
+        if mounted.is_err() {
+            let _ = std::fs::remove_dir(link);
+        }
+        mounted
+    }
+
+    fn mount(link: &Path, target: &Path) -> io::Result<()> {
+        use std::os::windows::{ffi::OsStrExt, fs::OpenOptionsExt, io::AsRawHandle};
+        use windows_sys::Win32::System::IO::DeviceIoControl;
+
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FSCTL_SET_REPARSE_POINT: u32 = 0x0009_00A4;
+        const IO_REPARSE_TAG_MOUNT_POINT: u32 = 0xA000_0003;
+
+        let directory = File::options()
+            .write(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(link)?;
+        let printed: Vec<u16> = target.as_os_str().encode_wide().collect();
+        let substitute: Vec<u16> = std::ffi::OsStr::new(r"\??\")
+            .encode_wide()
+            .chain(printed.iter().copied())
+            .collect();
+        let bytes = |units: &[u16]| u16::try_from(units.len() * 2).ok();
+        let (Some(substitute_length), Some(printed_length)) = (bytes(&substitute), bytes(&printed))
+        else {
+            return Err(io::ErrorKind::InvalidFilename.into());
+        };
+        // The mount point buffer: four offsets and lengths, then both names,
+        // each NUL-terminated.
+        let mut names = substitute;
+        names.push(0);
+        names.extend(&printed);
+        names.push(0);
+        let data_length = u16::try_from(8 + names.len() * 2)
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidFilename))?;
+        let mut buffer = Vec::with_capacity(8 + usize::from(data_length));
+        buffer.extend(IO_REPARSE_TAG_MOUNT_POINT.to_le_bytes());
+        buffer.extend(data_length.to_le_bytes());
+        buffer.extend(0u16.to_le_bytes());
+        buffer.extend(0u16.to_le_bytes());
+        buffer.extend(substitute_length.to_le_bytes());
+        buffer.extend((substitute_length + 2).to_le_bytes());
+        buffer.extend(printed_length.to_le_bytes());
+        buffer.extend(names.iter().flat_map(|unit| unit.to_le_bytes()));
+        let mut returned = 0u32;
+        // SAFETY: the handle is open for writing for the call, and the
+        // buffer holds exactly the bytes its length says.
+        let set = unsafe {
+            DeviceIoControl(
+                directory.as_raw_handle(),
+                FSCTL_SET_REPARSE_POINT,
+                buffer.as_ptr().cast(),
+                buffer.len() as u32,
+                std::ptr::null_mut(),
+                0,
+                &mut returned,
+                std::ptr::null_mut(),
+            )
+        };
+        if set == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 
     pub(super) fn open_for_times(path: &Path) -> io::Result<File> {
@@ -329,5 +408,33 @@ mod imp {
 
     pub(super) fn user_socket_directory(_label: &str, _room: usize) -> Option<std::path::PathBuf> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A link to a directory is read through, reads back as a link to it,
+    /// and goes without what it pointed at: what every caller relies on,
+    /// on a platform where it is a junction as much as where it is a
+    /// symbolic link.
+    #[test]
+    fn a_directory_link_reads_through_and_goes_alone() {
+        let root = uze_testkit::temp::scratch("directory-link");
+        let target = root.join("target dir");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("f.txt"), "x").unwrap();
+        let link = root.join("link");
+
+        symlink(&target, &link).unwrap();
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(std::fs::read_link(&link).unwrap(), target);
+        assert_eq!(std::fs::read_to_string(link.join("f.txt")).unwrap(), "x");
+
+        remove_link(&link).unwrap();
+        assert!(!link.exists());
+        assert!(target.join("f.txt").is_file());
+        let _ = std::fs::remove_dir_all(root);
     }
 }
