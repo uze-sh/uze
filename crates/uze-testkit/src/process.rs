@@ -2,7 +2,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 /// Every variable a user's home is read from, each with what it names
 /// under a test's `home`, the directories made: a test's home is all of
@@ -144,25 +144,47 @@ impl IsolatedHome for Command {
 }
 
 /// Writes `bytes` to `path` as an executable, through a process that has
-/// exited before this returns.
-///
-/// A file cannot be `exec`ed while any descriptor to it is open for
-/// writing, and a test binary spawns from several threads at once: a
-/// descriptor this process opens is copied into every child a sibling test
-/// forks, until that child's own `exec` closes it. That instant is the
-/// kernel's `ETXTBSY`, and it belongs to the harness, not to the test.
-/// Writing through a child of our own leaves the descriptor in a process
-/// that is gone — waited on — by the time anything runs the file.
+/// exited before this returns (see the Unix half for why).
 pub fn install_executable(path: &Path, bytes: &[u8]) {
-    let mut writer = Command::new("sh")
-        .args(["-c", r#"cat > "$1" && chmod 0755 "$1""#, "sh"])
-        .arg(path)
-        .stdin(Stdio::piped())
-        .spawn()
-        .expect("a POSIX shell is on PATH");
-    let mut stdin = writer.stdin.take().expect("stdin is piped");
-    std::io::Write::write_all(&mut stdin, bytes).expect("the writer reads its whole input");
-    drop(stdin);
-    let status = writer.wait().expect("the writer is waited on");
-    assert!(status.success(), "installing {}: {status}", path.display());
+    executable::install_executable(path, bytes)
+}
+
+#[cfg(unix)]
+mod executable {
+    use std::path::Path;
+    use std::process::{Command, Stdio};
+
+    /// A file cannot be `exec`ed while any descriptor to it is open for
+    /// writing, and a test binary spawns from several threads at once: a
+    /// descriptor this process opens is copied into every child a sibling
+    /// test forks, until that child's own `exec` closes it. That instant is
+    /// the kernel's `ETXTBSY`, and it belongs to the harness, not to the
+    /// test. Writing through a child of our own leaves the descriptor in a
+    /// process that is gone — waited on — by the time anything runs the
+    /// file.
+    pub(super) fn install_executable(path: &Path, bytes: &[u8]) {
+        let mut writer = Command::new("sh")
+            .args(["-c", r#"cat > "$1" && chmod 0755 "$1""#, "sh"])
+            .arg(path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("a POSIX shell is on PATH");
+        let mut stdin = writer.stdin.take().expect("stdin is piped");
+        std::io::Write::write_all(&mut stdin, bytes).expect("the writer reads its whole input");
+        drop(stdin);
+        let status = writer.wait().expect("the writer is waited on");
+        assert!(status.success(), "installing {}: {status}", path.display());
+    }
+}
+
+#[cfg(windows)]
+mod executable {
+    use std::path::Path;
+
+    /// Windows runs what a file holds without an executable bit, and a
+    /// handle another process inherited does not keep it from starting.
+    pub(super) fn install_executable(path: &Path, bytes: &[u8]) {
+        std::fs::write(path, bytes)
+            .unwrap_or_else(|error| panic!("installing {}: {error}", path.display()));
+    }
 }

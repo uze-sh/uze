@@ -46,6 +46,9 @@ function Fail([string]$reason) {
   Allow-Native
   exit 0
 }
+# A fault of the wrapper itself is a failure like a handler's: any other
+# exit would read to the harness as an error that lets the tool through.
+trap { Fail "hooks/exec: $_" }
 
 # --- the harness's payload becomes the hook context ----------------------
 function Pick($value, [object[]]$path) {
@@ -53,7 +56,7 @@ function Pick($value, [object[]]$path) {
     if ($null -eq $value) { return $null }
     if ($step -is [int]) {
       if ($value -is [System.Collections.IList] -and $step -lt $value.Count) { $value = $value[$step] } else { return $null }
-    } elseif ($value -is [System.Collections.IDictionary] -and $value.Contains($step)) {
+    } elseif ($value -is [System.Collections.IDictionary] -and $value.ContainsKey($step)) {
       $value = $value[$step]
     } else { return $null }
   }

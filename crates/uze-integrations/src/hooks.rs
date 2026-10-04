@@ -413,6 +413,10 @@ pub(crate) fn hook_entry_name(resource: &Resource, hook: &PortableHook) -> Strin
 #[cfg(test)]
 mod tests;
 
+/// The wrapper this platform's harnesses run, on its own platform.
+#[cfg(test)]
+mod host_wrapper_tests;
+
 /// The generated wrapper against real `sh`: the same cases the reference
 /// runtime answers, run through the file a harness would actually execute.
 #[cfg(all(test, unix))]
