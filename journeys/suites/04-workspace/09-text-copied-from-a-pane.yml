@@ -45,9 +45,17 @@ scenes:
     when:
       - shell: |
           cat > "{world}/mouse-owner.py" <<'PY'
-          import os, sys, tty
+          import os, sys
           fd = sys.stdin.fileno()
-          tty.setraw(fd)
+          try:
+              import tty
+              tty.setraw(fd)
+          except ImportError:
+              # Windows: the console's raw mode, its input as VT sequences.
+              import ctypes, msvcrt
+              kernel = ctypes.windll.kernel32
+              kernel.SetConsoleMode(msvcrt.get_osfhandle(fd), 0x0200 | 0x0080)
+              kernel.SetConsoleMode(msvcrt.get_osfhandle(1), 0x0001 | 0x0004)
           sys.stdout.write("\x1b[?1002h\x1b[?1006h\x1b[2J\x1b[H")
           sys.stdout.write("owner-says grab-this-word\r\n")
           sys.stdout.flush()
