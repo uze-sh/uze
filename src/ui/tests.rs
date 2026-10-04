@@ -3222,7 +3222,7 @@ fn overview_install_intent_reaches_install_project_environment() {
     );
     let result = receiver.recv_timeout(Duration::from_secs(30)).unwrap();
     match result {
-        super::worker::WorkerResult::Mutated(Ok((message, data))) => {
+        super::worker::WorkerResult::Mutated(_, Ok((message, data))) => {
             assert!(
                 message.contains("Installed"),
                 "install must report success, got {message}"
@@ -3240,7 +3240,7 @@ fn overview_install_intent_reaches_install_project_environment() {
             );
             assert!(project.missing_plugins.is_empty());
         }
-        super::worker::WorkerResult::Mutated(Err(error)) => {
+        super::worker::WorkerResult::Mutated(_, Err(error)) => {
             panic!("expected Mutated(Ok(..)), got Mutated(Err({error}))")
         }
         super::worker::WorkerResult::TrustRequired { plugin, detail, .. } => {

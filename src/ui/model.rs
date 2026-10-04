@@ -573,7 +573,7 @@ pub(crate) struct TuiModel {
     /// What each mutation asked for and not yet answered is doing, oldest
     /// first: they run one at a time, in the order asked (see
     /// `worker::in_mutation_lane`), so the first is the one running.
-    pub(crate) mutations: VecDeque<String>,
+    pub(crate) mutations: VecDeque<(MutationTicket, String)>,
     /// At most one health/maintenance worker is allowed at a time. Refresh
     /// intents while it runs are deliberately coalesced rather than spawning
     /// competing inspections against the same receipt ledger.
@@ -796,19 +796,30 @@ pub(crate) struct Remembered {
     pub(crate) profiles_selected: usize,
 }
 
+/// Which asked mutation an answer is for. An answer is paired with its
+/// question by this, never by the order answers arrive in: one path that
+/// asked without answering would otherwise put every later label on the
+/// wrong mutation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MutationTicket(u64);
+
 impl TuiModel {
     /// A mutation asked for: it runs after those already asked, and the
-    /// line says what runs and how many wait.
-    pub(crate) fn mutation_asked(&mut self, doing: String) {
-        self.mutations.push_back(doing);
+    /// line says what runs and how many wait. The ticket goes with the
+    /// work, and comes back with its answer.
+    pub(crate) fn mutation_asked(&mut self, doing: String) -> MutationTicket {
+        static ISSUED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let ticket = MutationTicket(ISSUED.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        self.mutations.push_back((ticket, doing));
         self.status = Status::Working(self.mutations_in_flight());
+        ticket
     }
 
-    /// The oldest mutation answered with `outcome`. An outcome that leaves
+    /// The mutation `ticket` answered with `outcome`. An outcome that leaves
     /// nothing to say on its own shares the line with the work still to run;
     /// an error has it to itself until the next answer.
-    pub(crate) fn mutation_answered(&mut self, outcome: Status) {
-        self.mutations.pop_front();
+    pub(crate) fn mutation_answered(&mut self, ticket: MutationTicket, outcome: Status) {
+        self.mutations.retain(|(asked, _)| *asked != ticket);
         self.status = match outcome {
             _ if self.mutations.is_empty() => outcome,
             Status::Success(said) => {
@@ -820,7 +831,11 @@ impl TuiModel {
     }
 
     fn mutations_in_flight(&self) -> String {
-        let running = self.mutations.front().cloned().unwrap_or_default();
+        let running = self
+            .mutations
+            .front()
+            .map(|(_, doing)| doing.clone())
+            .unwrap_or_default();
         match self.mutations.len() {
             0 | 1 => running,
             many => format!("{running} · {} queued", many - 1),

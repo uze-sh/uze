@@ -21,7 +21,9 @@ use uze_application::{
     },
 };
 
-use super::model::{Confirmation, Overlay, RefreshData, Status, TrustedRetry, TuiModel};
+use super::model::{
+    Confirmation, MutationTicket, Overlay, RefreshData, Status, TrustedRetry, TuiModel,
+};
 use super::orchestrator::answered_or;
 use super::tui_application;
 
@@ -171,15 +173,25 @@ pub(crate) enum WorkerResult {
         Intent,
         std::result::Result<uze_application::application::MarketplacePluginDetail, String>,
     ),
-    Mutated(std::result::Result<(String, RefreshData), String>),
+    Mutated(
+        MutationTicket,
+        std::result::Result<(String, RefreshData), String>,
+    ),
     TrustRequired {
+        ticket: MutationTicket,
         plugin: String,
         detail: String,
         retry: TrustedRetry,
     },
     ContextAnalyzed(std::result::Result<(ProjectContextStatus, ContextPlan), String>),
-    ContextApplied(std::result::Result<(String, ContextReconciliationReport), String>),
-    ProfileApplied(std::result::Result<(String, Vec<ProfileApplyResult>, RefreshData), String>),
+    ContextApplied(
+        MutationTicket,
+        std::result::Result<(String, ContextReconciliationReport), String>,
+    ),
+    ProfileApplied(
+        MutationTicket,
+        std::result::Result<(String, Vec<ProfileApplyResult>, RefreshData), String>,
+    ),
     ProfilePreviewed(
         super::model::PreviewQuestion,
         std::result::Result<ProfilePreview, String>,
@@ -264,8 +276,9 @@ pub(crate) fn dispatch(
             });
         }
         Intent::Remove(id) => {
-            model.mutation_asked(format!("Removing {id}…"));
+            let ticket = model.mutation_asked(format!("Removing {id}…"));
             spawn_mutation(
+                ticket,
                 home.clone(),
                 sender.clone(),
                 model.context_root.clone(),
@@ -273,9 +286,10 @@ pub(crate) fn dispatch(
             );
         }
         Intent::Update(id, grant) => {
-            model.mutation_asked(format!("Updating {id}…"));
+            let ticket = model.mutation_asked(format!("Updating {id}…"));
             let retry_id = id.clone();
             spawn_trust_sensitive(
+                ticket,
                 home.clone(),
                 sender.clone(),
                 model.context_root.clone(),
@@ -293,8 +307,9 @@ pub(crate) fn dispatch(
         Intent::Setup(harness) => set_up(harness, home, sender, model),
         Intent::AddMarketplace(source) => add_marketplace(source, home, sender, model),
         Intent::RemoveMarketplace(name) => {
-            model.mutation_asked(format!("Removing marketplace {name}…"));
+            let ticket = model.mutation_asked(format!("Removing marketplace {name}…"));
             spawn_mutation(
+                ticket,
                 home.clone(),
                 sender.clone(),
                 model.context_root.clone(),
@@ -311,8 +326,9 @@ pub(crate) fn dispatch(
         }
         Intent::ContextApply(root) => apply_context(root, home, sender, model),
         Intent::CreateProfile(id) => {
-            model.mutation_asked(format!("Creating profile \"{id}\"…"));
+            let ticket = model.mutation_asked(format!("Creating profile \"{id}\"…"));
             spawn_mutation(
+                ticket,
                 home.clone(),
                 sender.clone(),
                 model.context_root.clone(),
@@ -324,8 +340,9 @@ pub(crate) fn dispatch(
             );
         }
         Intent::DeleteProfile(id) => {
-            model.mutation_asked(format!("Deleting profile \"{id}\"…"));
+            let ticket = model.mutation_asked(format!("Deleting profile \"{id}\"…"));
             spawn_mutation(
+                ticket,
                 home.clone(),
                 sender.clone(),
                 model.context_root.clone(),
@@ -427,8 +444,9 @@ fn read_release_notes(version: String, home: &UzeHome, sender: &Sender<WorkerRes
 }
 
 fn set_up(harness: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
-    model.mutation_asked(format!("Setting up {harness}…"));
+    let ticket = model.mutation_asked(format!("Setting up {harness}…"));
     spawn_mutation(
+        ticket,
         home.clone(),
         sender.clone(),
         model.context_root.clone(),
@@ -486,8 +504,9 @@ fn add_marketplace(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.mutation_asked(format!("Adding marketplace from {source}…"));
+    let ticket = model.mutation_asked(format!("Adding marketplace from {source}…"));
     spawn_mutation(
+        ticket,
         home.clone(),
         sender.clone(),
         model.context_root.clone(),
@@ -539,8 +558,9 @@ fn install_project_environment(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.mutation_asked("Installing project environment…".to_owned());
+    let ticket = model.mutation_asked("Installing project environment…".to_owned());
     spawn_mutation(
+        ticket,
         home.clone(),
         sender.clone(),
         model.context_root.clone(),
@@ -590,7 +610,7 @@ fn apply_context(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.mutation_asked("Applying context reconciliation…".to_owned());
+    let ticket = model.mutation_asked("Applying context reconciliation…".to_owned());
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     in_mutation_lane(move || {
@@ -605,7 +625,7 @@ fn apply_context(
             },
             Err("Applying context reconciliation failed".to_owned()),
         );
-        let _ = sender.send(WorkerResult::ContextApplied(result));
+        let _ = sender.send(WorkerResult::ContextApplied(ticket, result));
     });
 }
 
@@ -664,11 +684,12 @@ fn install(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.mutation_asked(format!("Installing {name}…"));
+    let ticket = model.mutation_asked(format!("Installing {name}…"));
     let retry_name = name.clone();
     let retry_marketplace = marketplace.clone();
     let spec = format!("{name}@{marketplace}");
     spawn_trust_sensitive(
+        ticket,
         home.clone(),
         sender.clone(),
         model.context_root.clone(),
@@ -707,7 +728,7 @@ fn apply_profile(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.mutation_asked(format!("Applying \"{id}\"…"));
+    let ticket = model.mutation_asked(format!("Applying \"{id}\"…"));
     let (home, sender, context_root) = (home.clone(), sender.clone(), model.context_root.clone());
     let parent = tracing::Span::current();
     in_mutation_lane(move || {
@@ -731,7 +752,7 @@ fn apply_profile(
             },
             Err(failed),
         );
-        let _ = sender.send(WorkerResult::ProfileApplied(result));
+        let _ = sender.send(WorkerResult::ProfileApplied(ticket, result));
     });
 }
 
@@ -868,6 +889,7 @@ fn in_mutation_lane(job: impl FnOnce() + Send + 'static) {
 }
 
 fn spawn_mutation(
+    ticket: MutationTicket,
     home: UzeHome,
     sender: Sender<WorkerResult>,
     context_root: PathBuf,
@@ -889,7 +911,7 @@ fn spawn_mutation(
             },
             Err("The operation failed".to_owned()),
         );
-        let _ = sender.send(WorkerResult::Mutated(result));
+        let _ = sender.send(WorkerResult::Mutated(ticket, result));
     });
 }
 
@@ -900,6 +922,7 @@ fn spawn_mutation(
 /// `TrustGrant::Granted` is only ever reached by that dialog's own explicit
 /// confirmation re-dispatching the same action.
 fn spawn_trust_sensitive(
+    ticket: MutationTicket,
     home: UzeHome,
     sender: Sender<WorkerResult>,
     context_root: PathBuf,
@@ -925,6 +948,7 @@ fn spawn_trust_sensitive(
         );
         let Some(outcome) = outcome else {
             let _ = sender.send(WorkerResult::Mutated(
+                ticket,
                 Err("The operation failed".to_owned()),
             ));
             return;
@@ -932,11 +956,13 @@ fn spawn_trust_sensitive(
         match outcome {
             Ok(message) => {
                 let _ = sender.send(WorkerResult::Mutated(
+                    ticket,
                     answered_refresh(home, &context_root).map(|data| (message, data)),
                 ));
             }
             Err(UzeError::TrustRequired { package, detail }) => {
                 let _ = sender.send(WorkerResult::TrustRequired {
+                    ticket,
                     plugin: if package.is_empty() {
                         package_hint
                     } else {
@@ -947,7 +973,7 @@ fn spawn_trust_sensitive(
                 });
             }
             Err(error) => {
-                let _ = sender.send(WorkerResult::Mutated(Err(error.to_string())));
+                let _ = sender.send(WorkerResult::Mutated(ticket, Err(error.to_string())));
             }
         }
     });
@@ -1057,16 +1083,17 @@ pub(crate) fn drain_worker_results(
                 model.marketplace_detail = Some(detail);
                 model.inspection_in_flight = None;
             }
-            WorkerResult::Mutated(Ok((message, data))) => {
+            WorkerResult::Mutated(ticket, Ok((message, data))) => {
                 model.refreshed(data);
                 // What was inspected before the change describes a plugin
                 // that no longer stands as it did; the drawer asks again.
                 model.plugin_detail = None;
                 model.marketplace_detail = None;
                 model.inspection_in_flight = None;
-                model.mutation_answered(Status::Success(message));
+                model.mutation_answered(ticket, Status::Success(message));
             }
             WorkerResult::TrustRequired {
+                ticket,
                 plugin,
                 detail,
                 retry,
@@ -1079,21 +1106,21 @@ pub(crate) fn drain_worker_results(
                     },
                     focus: None,
                 };
-                model.mutation_answered(Status::Idle);
+                model.mutation_answered(ticket, Status::Idle);
             }
             WorkerResult::ContextAnalyzed(Ok((status, plan))) => {
                 model.remembered.context_status = Some(status);
                 model.remembered.context_plan = Some(plan);
                 model.status = Status::Idle;
             }
-            WorkerResult::ContextApplied(Ok((message, report))) => {
-                model.mutation_answered(Status::Success(message));
+            WorkerResult::ContextApplied(ticket, Ok((message, report))) => {
+                model.mutation_answered(ticket, Status::Success(message));
                 let _ = report;
             }
-            WorkerResult::ProfileApplied(Ok((message, results, data))) => {
+            WorkerResult::ProfileApplied(ticket, Ok((message, results, data))) => {
                 model.refreshed(data);
                 model.profile_apply_results = results;
-                model.mutation_answered(Status::Success(message));
+                model.mutation_answered(ticket, Status::Success(message));
                 model.status_expires_at = Some(Instant::now() + Duration::from_secs(5));
             }
             WorkerResult::ProfilePreviewed(question, result) => {
@@ -1117,10 +1144,10 @@ pub(crate) fn drain_worker_results(
                     model.status = Status::Error(error);
                 }
             }
-            WorkerResult::Mutated(Err(error))
-            | WorkerResult::ContextApplied(Err(error))
-            | WorkerResult::ProfileApplied(Err(error)) => {
-                model.mutation_answered(Status::Error(error));
+            WorkerResult::Mutated(ticket, Err(error))
+            | WorkerResult::ContextApplied(ticket, Err(error))
+            | WorkerResult::ProfileApplied(ticket, Err(error)) => {
+                model.mutation_answered(ticket, Status::Error(error));
             }
             WorkerResult::ContextAnalyzed(Err(error)) => model.status = Status::Error(error),
         }
@@ -1459,7 +1486,8 @@ mod tests {
         let home = UzeHome::at(uze_testkit::temp::scratch("worker-panic"));
         let (sender, receiver) = mpsc::channel();
 
-        spawn_mutation(home, sender, PathBuf::from("/"), |_| {
+        let ticket = TuiModel::default().mutation_asked("Failing…".to_owned());
+        spawn_mutation(ticket, home, sender, PathBuf::from("/"), |_| {
             panic!("the operation panicked")
         });
 
@@ -1467,7 +1495,8 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(30))
             .expect("the worker answered");
         assert!(
-            matches!(&answer, WorkerResult::Mutated(Err(error)) if error == "The operation failed"),
+            matches!(&answer, WorkerResult::Mutated(answered, Err(error))
+                if *answered == ticket && error == "The operation failed"),
             "a panic is a failure the screen can say"
         );
     }
@@ -1496,20 +1525,28 @@ mod tests {
             }
         };
 
+        let mut model = TuiModel::default();
         spawn_mutation(
+            model.mutation_asked("First…".to_owned()),
             home.clone(),
             sender.clone(),
             PathBuf::from("/"),
             operation(Some(first_waits)),
         );
-        spawn_mutation(home, sender, PathBuf::from("/"), operation(None));
+        spawn_mutation(
+            model.mutation_asked("Second…".to_owned()),
+            home,
+            sender,
+            PathBuf::from("/"),
+            operation(None),
+        );
         first_may_end.send(()).unwrap();
 
         for _ in 0..2 {
             let answer = receiver
                 .recv_timeout(std::time::Duration::from_secs(30))
                 .expect("both answered");
-            assert!(matches!(answer, WorkerResult::Mutated(Ok(_))));
+            assert!(matches!(answer, WorkerResult::Mutated(_, Ok(_))));
         }
         assert!(!overlapped.load(std::sync::atomic::Ordering::SeqCst));
     }
@@ -1519,23 +1556,45 @@ mod tests {
     #[test]
     fn the_status_line_follows_mutations_through_the_queue() {
         let mut model = TuiModel::default();
-        model.mutation_asked("Setting up codex…".to_owned());
-        model.mutation_asked("Setting up opencode…".to_owned());
+        let codex = model.mutation_asked("Setting up codex…".to_owned());
+        let opencode = model.mutation_asked("Setting up opencode…".to_owned());
         assert_eq!(
             model.status,
             Status::Working("Setting up codex… · 1 queued".to_owned())
         );
 
-        model.mutation_answered(Status::Success("codex 0.160.0 installed".to_owned()));
+        model.mutation_answered(codex, Status::Success("codex 0.160.0 installed".to_owned()));
         assert_eq!(
             model.status,
             Status::Working("codex 0.160.0 installed · Setting up opencode…".to_owned())
         );
 
-        model.mutation_answered(Status::Success("opencode v2.0.22 installed".to_owned()));
+        model.mutation_answered(
+            opencode,
+            Status::Success("opencode v2.0.22 installed".to_owned()),
+        );
         assert_eq!(
             model.status,
             Status::Success("opencode v2.0.22 installed".to_owned())
+        );
+    }
+
+    /// An answer takes down the mutation it answers, whatever arrived
+    /// before it: one that never answers leaves its own label, and no other.
+    #[test]
+    fn an_answer_is_paired_with_its_own_question() {
+        let mut model = TuiModel::default();
+        let _unanswered = model.mutation_asked("Removing flow…".to_owned());
+        let profile = model.mutation_asked("Creating profile \"work\"…".to_owned());
+
+        model.mutation_answered(
+            profile,
+            Status::Success("Created profile \"work\"".to_owned()),
+        );
+        assert_eq!(
+            model.status,
+            Status::Working("Created profile \"work\" · Removing flow…".to_owned()),
+            "the line still names the mutation that has not answered"
         );
     }
 
@@ -1728,6 +1787,7 @@ mod tests {
     fn a_refusal_for_trust_asks_before_retrying() {
         let model = drained(
             vec![WorkerResult::TrustRequired {
+                ticket: TuiModel::default().mutation_asked("Updating flow…".to_owned()),
                 plugin: "flow@market".to_owned(),
                 detail: "runs hooks".to_owned(),
                 retry: TrustedRetry::Update("flow@market".to_owned()),
