@@ -95,7 +95,7 @@ fn color_enabled() -> bool {
     if std::env::var_os("CLICOLOR_FORCE").is_some_and(|value| !value.is_empty() && value != "0") {
         return true;
     }
-    std::io::stdout().is_terminal() && std::env::var("TERM").is_ok_and(|term| term != "dumb")
+    uze_platform::stdio::escapes_reach_the_terminal()
 }
 
 fn paint(text: impl AsRef<str>, style: Style) -> String {

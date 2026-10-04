@@ -21,6 +21,16 @@ pub fn terminal() -> Option<(std::fs::File, std::fs::File)> {
     imp::terminal()
 }
 
+/// Whether escape sequences written to stdout reach a terminal that draws
+/// them as styling: stdout is a terminal, and on Unix one that names itself
+/// something other than `dumb`; on Windows a console, in which processing
+/// them is switched on here, once, as a console leaves it off for a
+/// program that does not ask (the classic console host's default).
+pub fn escapes_reach_the_terminal() -> bool {
+    static ANSWER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ANSWER.get_or_init(imp::escapes_reach_the_terminal)
+}
+
 /// Sends everything later written to stdout nowhere, for this process and
 /// the children it starts, while stderr still reaches the person.
 pub fn silence_stdout() {
@@ -42,6 +52,11 @@ mod imp {
         Some((open(false)?, open(true)?))
     }
 
+    pub(super) fn escapes_reach_the_terminal() -> bool {
+        use std::io::IsTerminal as _;
+        std::io::stdout().is_terminal() && std::env::var("TERM").is_ok_and(|term| term != "dumb")
+    }
+
     pub(super) fn die_quietly_on_a_closed_pipe() {
         // Safety: `SIG_DFL` is the disposition the process started life
         // with; it installs no handler of our own.
@@ -59,7 +74,25 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use std::os::windows::io::IntoRawHandle;
-    use windows_sys::Win32::System::Console::{STD_OUTPUT_HANDLE, SetStdHandle};
+    use windows_sys::Win32::System::Console::{
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_OUTPUT_HANDLE,
+        SetConsoleMode, SetStdHandle,
+    };
+
+    /// A console's mode is the console's, not this process's: setting it
+    /// on stdout is what every program that draws in colour does, and it
+    /// fails where stdout is no console.
+    pub(super) fn escapes_reach_the_terminal() -> bool {
+        // SAFETY: a standard handle is this process's for its lifetime;
+        // both calls read or write only the mode passed by reference.
+        unsafe {
+            let output = GetStdHandle(STD_OUTPUT_HANDLE);
+            let mut mode = 0;
+            GetConsoleMode(output, &mut mode) != 0
+                && (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0
+                    || SetConsoleMode(output, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0)
+        }
+    }
 
     /// The console's own input and screen buffers.
     pub(super) fn terminal() -> Option<(std::fs::File, std::fs::File)> {

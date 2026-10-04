@@ -361,14 +361,16 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       Update `the_asset_is_the_one_the_installer_picks`.
 - [x] 8.2 `src/main.rs`: `--quiet` through `SetStdHandle(NUL)`, and a
       `BrokenPipe` on stdout ends quietly.
-- [ ] 8.3 Colour from `is_terminal()` plus VT enable (`progress.rs:98`).
+- [x] 8.3 Colour from `is_terminal()` plus VT enable (`progress.rs:98`),
+      through `uze_platform::stdio::escapes_reach_the_terminal` (it used
+      to require `TERM`, which Windows never sets).
       Home display through the re-exported `display`: `src/ui.rs:314`,
       `progress.rs:320`, `orchestrator.rs:361`, `tabs.rs:437`,
       `root_picker.rs:360`.
 - [x] 8.4 Opener: `explorer.exe <url>` (`uze_platform::desktop::URL_OPENERS`),
       which hands an address to the default browser with none of the
       `cmd /c start` parsing that splits one at its `&`.
-- [ ] 8.5 Keys:
+- [x] 8.5 Keys:
       - drop `Release`/`Repeat` before notice dismissal
         (`session/keys.rs:92-101`, `session/manage.rs:97-106`);
       - Ctrl+Alt plus a printable character is text when unbound
