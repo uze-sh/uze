@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Opens a fresh Windows Sandbox with this checkout's uze installed the way a
-# person installs it, the playground marketplace registered, and Windows
-# Terminal ready. Run from WSL: `make playground-windows`.
+# person installs it and the playground marketplace registered, for an
+# ordinary account (`UZE_PLAYGROUND_USER=admin` for the Sandbox's
+# administrator, in Windows Terminal). Run from WSL: `make playground-windows`.
 #
 # uze.exe is cross-built here: the Windows SDK comes from `xwin` (installed
 # into the playground's cache on first use, after you accept Microsoft's
@@ -56,8 +57,13 @@ with zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as archive:
 PY
 stage_release "$stage" "$stage/uze-x86_64-windows.zip"
 stage_market "$stage"
-cp "${repo_root}/install.ps1" "${playground_root}/windows/prepare.ps1" "$built/playground-mcp.exe" "$stage/"
+cp "${repo_root}/install.ps1" "${playground_root}/windows/prepare.ps1" \
+  "${playground_root}/windows/setup-user.ps1" "$built/playground-mcp.exe" "$stage/"
 printf '%s' "$(version)" > "$stage/version"
+# Whose world it is: an ordinary account by default (see prepare.ps1).
+user="${UZE_PLAYGROUND_USER:-standard}"
+[ "$user" = standard ] || [ "$user" = admin ] || die "UZE_PLAYGROUND_USER is standard or admin"
+printf '%s' "$user" > "$stage/user"
 
 host_folder="$(wslpath -w "$stage")"
 cat > "$stage/uze-playground.wsb" <<WSB

@@ -11,7 +11,7 @@ Both are started from WSL.
 |---|---|---|
 | Open | `make playground-windows` | `make playground-linux` |
 | World | Windows Sandbox | a WSL distribution named `uze-playground` (Ubuntu 24.04) |
-| Shell | Windows Terminal, PowerShell 5.1 | bash, as the user `person` |
+| Shell | PowerShell 5.1, as the ordinary user `person` | bash, as the user `person` |
 | Gone | when the Sandbox window closes | `make playground-linux-down` (or the next `make playground-linux`) |
 
 Each one builds uze and the playground's MCP server from this checkout,
@@ -24,7 +24,7 @@ world, which then:
 - registers the `playground` marketplace (a Git repository made from
   [`plugin/`](plugin));
 - creates `~/projects/demo`, a Git repository with an `AGENTS.md`;
-- on Windows, installs Windows Terminal and opens it there.
+- opens a shell there, as an ordinary user.
 
 Then try, for example:
 
@@ -54,6 +54,14 @@ terms, downloads the Windows CRT and SDK (about 650 MB) into
 `~/.cache/uze-playground/xwin`; linking uses the Rust toolchain's own
 `rust-lld`. Set `UZE_PLAYGROUND_ACCEPT_XWIN_LICENSE=1` to accept without the
 prompt.
+
+Windows Sandbox signs in as an administrator with UAC off, so everything it
+starts is elevated, which is not what a person's own session is: Codex, for
+one, refuses to start its daemon elevated, and an administrator does not meet
+the limits an ordinary account does. So the world creates an ordinary account,
+`person`, installs uze for it and opens its PowerShell console.
+`UZE_PLAYGROUND_USER=admin make playground-windows` keeps the administrator
+instead, in Windows Terminal (installed per account, so only there).
 
 The world is staged in `%LOCALAPPDATA%\uze-playground\windows`, mapped into
 the Sandbox as `C:\playground`. Preparing takes about a minute after the
