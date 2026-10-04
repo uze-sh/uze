@@ -232,7 +232,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       hooks are Unsupported with the reason. `uze doctor` reports it with
       the machine checks (`git.exe`, `ssh.exe` when an SSH marketplace
       exists, VT, OS build, `Path`, Smart App Control).
-- [ ] 5.5 Trust shows and compares both spellings; a Windows-only change
+- [x] 5.5 Trust shows and compares both spellings; a Windows-only change
       re-prompts. A `hooks.json` parse failure fails trust closed
       (`trust.rs:157`).
 - [x] 5.6 `uze agent plugin check` warns about a handler with no `windows`
