@@ -1012,7 +1012,7 @@ fn test_module_declarations(path: &std::path::Path) -> Vec<PathBuf> {
     let lines: Vec<&str> = contents.lines().collect();
     let mut declared = Vec::new();
     for (index, line) in lines.iter().enumerate() {
-        if line.trim() != "#[cfg(test)]" {
+        if !is_test_gate(line) {
             continue;
         }
         let Some(next) = lines.get(index + 1) else {
@@ -1037,11 +1037,194 @@ fn test_module_declarations(path: &std::path::Path) -> Vec<PathBuf> {
     declared
 }
 
+/// `#[cfg(test)]`, or a `cfg` that compiles what follows only under test
+/// (`all(test, unix)`).
+fn is_test_gate(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("#[cfg(") && contains_word(line, "test")
+}
+
+fn contains_word(text: &str, word: &str) -> bool {
+    text.match_indices(word).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + word.len()..].chars().next();
+        let boundary = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        boundary(before) && boundary(after)
+    })
+}
+
+/// Whether `code` (a line with its comment cut off) is an attribute or a
+/// `cfg!` that names a platform.
+fn names_a_platform(code: &str) -> bool {
+    let trimmed = code.trim_start();
+    let gate = trimmed.starts_with("#[") || trimmed.starts_with("#![") || code.contains("cfg!(");
+    gate && code.contains("cfg")
+        && ["unix", "windows", "target_os", "target_family"]
+            .iter()
+            .any(|platform| contains_word(code, platform))
+}
+
+/// Production code outside `uze-platform` names no platform: a crate that
+/// needs to decide something per platform is missing a concept there, and
+/// a `cfg` written where the decision is needed is how one platform's
+/// behaviour grows a fork the other never sees (D3).
+#[test]
+fn only_uze_platform_names_a_platform() {
+    let root = repository_root();
+    let mut found = Vec::new();
+    for scope in ["src", "crates"] {
+        for (path, contents) in production_sources(&root.join(scope)) {
+            let relative = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if relative.starts_with("crates/uze-platform/") || relative.contains("/tests/") {
+                continue;
+            }
+            for line in contents.lines() {
+                let code = line.split("//").next().unwrap_or_default();
+                if names_a_platform(code) && !is_test_gate(line) {
+                    found.push(format!("  {relative}: {}", line.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "\n\nplatform named outside uze-platform:\n\n{}\n\n\
+         Add the concept to uze-platform (a value when the decision is data, a \
+         function when it is behaviour) and call it from here.\n",
+        found.join("\n")
+    );
+}
+
+/// The files whose tests are gated to a platform without saying why, and
+/// how many such gates each still has. The debt only shrinks: a gate added
+/// anywhere states its reason, and one here is paid by writing it or by
+/// letting the test run everywhere.
+const UNEXPLAINED_TEST_GATES: &[(&str, usize)] = &[
+    (
+        "crates/uze-application/src/application/inspection_cache.rs",
+        1,
+    ),
+    ("crates/uze-application/src/application/maintenance.rs", 1),
+    (
+        "crates/uze-application/src/application/services/tasks/tests.rs",
+        5,
+    ),
+    ("crates/uze-application/src/application/tests.rs", 12),
+    ("crates/uze-core/src/config.rs", 1),
+    ("crates/uze-core/src/delivery/exposure.rs", 1),
+    ("crates/uze-core/src/delivery/integration.rs", 1),
+    ("crates/uze-core/src/delivery/leftovers.rs", 2),
+    ("crates/uze-core/src/delivery/persistence.rs", 5),
+    ("crates/uze-core/src/delivery/reconciliation.rs", 4),
+    ("crates/uze-core/src/digest.rs", 3),
+    ("crates/uze-core/src/machine/harness_runtime.rs", 6),
+    ("crates/uze-core/src/machine/process_cwd.rs", 1),
+    ("crates/uze-core/src/machine/provisioning.rs", 2),
+    ("crates/uze-core/src/machine/subprocess.rs", 2),
+    ("crates/uze-core/src/package/acquisition/forge.rs", 1),
+    ("crates/uze-core/src/package/acquisition/git.rs", 1),
+    ("crates/uze-core/src/package/acquisition/marketplace.rs", 1),
+    ("crates/uze-core/src/package/acquisition/mirror.rs", 1),
+    ("crates/uze-core/src/package/authoring/tests.rs", 1),
+    ("crates/uze-core/src/package/store.rs", 1),
+    ("crates/uze-core/src/project/context.rs", 1),
+    ("crates/uze-git/src/lib.rs", 1),
+    ("crates/uze-integrations/src/antigravity/plugin.rs", 1),
+    ("crates/uze-integrations/src/claude.rs", 1),
+    ("crates/uze-integrations/src/claude/mcp.rs", 1),
+    ("crates/uze-integrations/src/codex/generate.rs", 2),
+    ("crates/uze-integrations/src/hooks.rs", 2),
+    ("crates/uze-integrations/src/hooks/tests.rs", 5),
+    ("crates/uze-integrations/src/shared/path.rs", 2),
+    ("crates/uze-integrations/src/shared/process.rs", 4),
+    ("crates/uze-integrations/src/shared/provision.rs", 1),
+    ("crates/uze-integrations/src/shared/tree.rs", 2),
+    ("crates/uze-terminal/src/runtime/tests.rs", 42),
+    ("crates/uze-workspace/src/prompt_history.rs", 1),
+    ("src/cli/setup.rs", 1),
+    ("src/self_update.rs", 2),
+    ("src/telemetry.rs", 1),
+    ("src/ui/extension_host.rs", 2),
+    ("src/ui/root_picker/tests.rs", 1),
+    ("tests/cli/grammar.rs", 2),
+    ("tests/cli/machine.rs", 8),
+    ("tests/integrations/hooks.rs", 6),
+    ("tests/integrations/provisioning.rs", 2),
+    ("tests/packages/acquisition.rs", 1),
+    ("tests/packages/containment.rs", 1),
+    ("tests/packages/store.rs", 2),
+    ("tests/project/consumer.rs", 1),
+    ("tests/projection/invocation.rs", 1),
+];
+
+/// A test gated to a platform says why, in a `//` comment on the line above
+/// the gate or beside it: some behaviour exists on one platform only (a
+/// mode bit, a symlink without privilege, a FIFO), and a gate that does
+/// not say so cannot be told from a test that was only ever written for
+/// one machine.
+#[test]
+fn a_test_gated_to_a_platform_says_why() {
+    let root = repository_root();
+    let mut files = Vec::new();
+    for scope in ["src", "crates", "tests"] {
+        collect_rust_files(&root.join(scope), &mut files);
+    }
+    let mut over = Vec::new();
+    for path in files {
+        let relative = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.starts_with("crates/uze-platform/src/") {
+            continue;
+        }
+        let contents = fs::read_to_string(&path).unwrap_or_default();
+        let lines: Vec<&str> = contents.lines().collect();
+        let unexplained = lines
+            .iter()
+            .enumerate()
+            .filter(|(index, line)| {
+                let code = line.split("//").next().unwrap_or_default();
+                let previous = index
+                    .checked_sub(1)
+                    .and_then(|above| lines.get(above))
+                    .map(|line| line.trim())
+                    .unwrap_or_default();
+                let explained = line.contains("//")
+                    || (previous.starts_with("//") && !previous.starts_with("///"));
+                names_a_platform(code) && !explained
+            })
+            .count();
+        let allowed = UNEXPLAINED_TEST_GATES
+            .iter()
+            .find(|(file, _)| *file == relative)
+            .map_or(0, |(_, count)| *count);
+        if unexplained > allowed {
+            over.push(format!(
+                "  {relative}: {unexplained} without a reason (allowed {allowed})"
+            ));
+        }
+    }
+    assert!(
+        over.is_empty(),
+        "\n\ntests gated to a platform without saying why:\n\n{}\n\n\
+         Write the reason in a `//` comment above the gate, or let the test run \
+         on every platform through uze-platform's concepts. Never raise an \
+         allowance.\n",
+        over.join("\n")
+    );
+}
+
 pub(crate) fn strip_test_modules(contents: &str) -> String {
     let mut out = Vec::new();
     let mut lines = contents.lines().peekable();
     while let Some(line) = lines.next() {
-        if line.trim() == "#[cfg(test)]"
+        if is_test_gate(line)
             && let Some(next) = lines.peek()
             && next.trim_start().starts_with("mod ")
             && next.contains('{')
