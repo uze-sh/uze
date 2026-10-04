@@ -24,6 +24,10 @@ pub fn add_to_user_path(directory: &std::path::Path) -> std::io::Result<bool> {
     imp::add_to_user_path(directory)
 }
 
+/// Windows' alone: its user `Path` is the only search path UZE adds to.
+#[cfg(windows)]
+pub(crate) use imp::holds;
+
 #[cfg(unix)]
 mod imp {
     use std::ffi::OsString;
@@ -42,13 +46,33 @@ mod imp {
     use std::ffi::{OsStr, OsString};
 
     use windows_sys::Win32::System::Registry::{
-        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_EXPAND_SZ, RRF_NOEXPAND, RegSetKeyValueW,
+        HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_EXPAND_SZ, RRF_NOEXPAND, RegSetKeyValueW,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         HWND_BROADCAST, SMTO_ABORTIFHUNG, SendMessageTimeoutW, WM_SETTINGCHANGE,
     };
 
-    use crate::win::wide;
+    use std::path::Path;
+
+    use crate::win::{registry_string, wide};
+
+    /// Whether the search path `path` already reaches `directory`: an entry
+    /// names it by the platform's rules for a path, whatever separator it ends
+    /// with. The one rule both the installer's check and doctor's ask.
+    pub(crate) fn holds(path: &OsStr, directory: &Path) -> bool {
+        let bare = |entry: &Path| {
+            let spelled = entry.to_string_lossy();
+            let trimmed = spelled.trim_end_matches(std::path::is_separator);
+            Path::new(if trimmed.is_empty() {
+                spelled.as_ref()
+            } else {
+                trimmed
+            })
+            .to_path_buf()
+        };
+        let wanted = bare(directory);
+        std::env::split_paths(path).any(|entry| crate::path::same_path(&bare(&entry), &wanted))
+    }
 
     const MACHINE: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
     const USER: &str = "Environment";
@@ -58,28 +82,27 @@ mod imp {
     pub(super) fn path_of_a_new_shell() -> Option<OsString> {
         let parts: Vec<OsString> = [(HKEY_LOCAL_MACHINE, MACHINE), (HKEY_CURRENT_USER, USER)]
             .into_iter()
-            .filter_map(|(root, key)| string_value(root, key, "Path", 0))
+            .filter_map(|(root, key)| registry_string(root, key, "Path", 0).ok().flatten())
             .filter(|value| !value.is_empty())
             .collect();
         (!parts.is_empty()).then(|| parts.join(OsStr::new(";")))
     }
 
+    /// A `Path` that cannot be read is an error, never an empty one: written
+    /// back as empty, it would replace every directory the person had on
+    /// it with this one. What is written back is the value as stored, its
+    /// `%VARIABLE%`s unexpanded and its bytes untouched; only the check
+    /// reads it expanded, as a new shell does.
     pub(super) fn add_to_user_path(directory: &std::path::Path) -> std::io::Result<bool> {
-        let current =
-            string_value(HKEY_CURRENT_USER, USER, "Path", RRF_NOEXPAND).unwrap_or_default();
-        let entry = directory.as_os_str().to_string_lossy();
-        let present = current.to_string_lossy().split(';').any(|existing| {
-            existing
-                .trim_end_matches('\\')
-                .eq_ignore_ascii_case(entry.trim_end_matches('\\'))
-        });
-        if present {
+        let stored = registry_string(HKEY_CURRENT_USER, USER, "Path", RRF_NOEXPAND)?;
+        let expanded = registry_string(HKEY_CURRENT_USER, USER, "Path", 0)?;
+        if expanded.is_some_and(|expanded| holds(&expanded, directory)) {
             return Ok(false);
         }
-        let mut path = OsString::from(entry.as_ref());
-        if !current.is_empty() {
+        let mut path = directory.as_os_str().to_owned();
+        if let Some(stored) = stored.filter(|stored| !stored.is_empty()) {
             path.push(";");
-            path.push(&current);
+            path.push(&stored);
         }
         let value = wide(&path);
         let key = wide(OsStr::new(USER));
@@ -116,15 +139,31 @@ mod imp {
         };
         Ok(true)
     }
-
-    fn string_value(root: HKEY, key: &str, name: &str, extra: u32) -> Option<OsString> {
-        crate::win::registry_string(root, key, name, extra)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One rule for "already on the path", whatever the entry ends with.
+    /// Windows only: the user's `Path` in the registry is the only one UZE
+    /// adds to, and so the only one it asks this of.
+    #[cfg(windows)]
+    #[test]
+    fn a_directory_is_held_by_an_entry_naming_it() {
+        use imp::holds;
+        let directory = std::env::temp_dir().join("uze-bin");
+        let spelled = directory.to_string_lossy().into_owned();
+        let separator = std::path::MAIN_SEPARATOR;
+        let path = |entries: &[&str]| std::env::join_paths(entries).unwrap();
+        assert!(holds(&path(&["/elsewhere", &spelled]), &directory));
+        assert!(holds(
+            &path(&[&format!("{spelled}{separator}")]),
+            &directory
+        ));
+        assert!(!holds(&path(&["/elsewhere"]), &directory));
+        assert!(!holds(&path(&[&format!("{spelled}-other")]), &directory));
+    }
 
     /// Where the platform keeps it, it is the path every program on the
     /// machine is found by, so the system's own directory is on it.

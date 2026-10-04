@@ -35,49 +35,55 @@ impl Drop for Owned {
 
 /// A registry string, its `%VARIABLE%` references expanded unless `extra`
 /// carries `RRF_NOEXPAND`: `RegGetValueW` expands an expandable string
-/// unless told not to.
-pub(crate) fn registry_string(root: HKEY, key: &str, name: &str, extra: u32) -> Option<OsString> {
+/// unless told not to. `None` when the value is absent; an error when it is
+/// there and could not be read, which a caller about to write the value
+/// back must never mistake for absent.
+pub(crate) fn registry_string(
+    root: HKEY,
+    key: &str,
+    name: &str,
+    extra: u32,
+) -> std::io::Result<Option<OsString>> {
+    const ERROR_FILE_NOT_FOUND: u32 = 2;
+    const ERROR_MORE_DATA: u32 = 234;
     let key = wide(OsStr::new(key));
     let name = wide(OsStr::new(name));
     let flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | extra;
+    // The value can grow between asking its size and reading it, which the
+    // read answers with `ERROR_MORE_DATA` and the size it needs now.
     let mut size = 0u32;
-    // SAFETY: both strings are NUL-terminated; a null buffer asks only for
-    // the size.
-    let status = unsafe {
-        RegGetValueW(
-            root,
-            key.as_ptr(),
-            name.as_ptr(),
-            flags,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            &mut size,
-        )
-    };
-    if status != 0 || size == 0 {
-        return None;
-    }
-    let mut buffer = vec![0u16; (size as usize).div_ceil(2)];
-    // SAFETY: `buffer` holds `size` bytes, as the call above asked for.
-    let status = unsafe {
-        RegGetValueW(
-            root,
-            key.as_ptr(),
-            name.as_ptr(),
-            flags,
-            std::ptr::null_mut(),
-            buffer.as_mut_ptr().cast(),
-            &mut size,
-        )
-    };
-    if status != 0 {
-        return None;
+    let mut buffer: Vec<u16> = Vec::new();
+    loop {
+        // SAFETY: both strings are NUL-terminated; `buffer` holds `size`
+        // bytes, and a null buffer asks only for the size.
+        let status = unsafe {
+            RegGetValueW(
+                root,
+                key.as_ptr(),
+                name.as_ptr(),
+                flags,
+                std::ptr::null_mut(),
+                if buffer.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    buffer.as_mut_ptr().cast()
+                },
+                &mut size,
+            )
+        };
+        match status {
+            ERROR_FILE_NOT_FOUND => return Ok(None),
+            ERROR_MORE_DATA => buffer = vec![0u16; (size as usize).div_ceil(2)],
+            0 if buffer.is_empty() && size > 0 => buffer = vec![0u16; (size as usize).div_ceil(2)],
+            0 => break,
+            failed => return Err(std::io::Error::from_raw_os_error(failed as i32)),
+        }
     }
     let length = buffer
         .iter()
         .position(|&unit| unit == 0)
         .unwrap_or(buffer.len());
-    Some(OsString::from_wide(&buffer[..length]))
+    Ok(Some(OsString::from_wide(&buffer[..length])))
 }
 
 /// A registry `DWORD`.

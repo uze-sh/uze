@@ -50,7 +50,9 @@ mod imp {
             r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
             "CurrentBuildNumber",
             0,
-        )?
+        )
+        .ok()
+        .flatten()?
         .to_str()?
         .parse()
         .ok()?;
@@ -78,9 +80,7 @@ mod imp {
     fn path() -> Option<Concern> {
         let directory = std::env::current_exe().ok()?.parent()?.to_path_buf();
         let path = crate::environment::path_of_a_new_shell()?;
-        let reached =
-            std::env::split_paths(&path).any(|entry| crate::path::same_path(&entry, &directory));
-        (!reached).then(|| Concern {
+        (!crate::environment::holds(&path, &directory)).then(|| Concern {
             subject: "path",
             detail: format!(
                 "{} is not on the Path a new shell gets; run the installer again",
