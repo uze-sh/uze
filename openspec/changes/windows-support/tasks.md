@@ -229,7 +229,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [ ] 5.5 Trust shows and compares both spellings; a Windows-only change
       re-prompts. A `hooks.json` parse failure fails trust closed
       (`trust.rs:157`).
-- [ ] 5.6 `uze agent plugin check` warns about a handler with no `windows`
+- [x] 5.6 `uze agent plugin check` warns about a handler with no `windows`
       spelling, and notes the minimum uze version the map form requires.
 - [ ] 5.7 The scaffold (`authoring.rs:348` + `guard.sh`) writes
       `scripts/guard` and `scripts/guard.ps1` and declares both spellings.
@@ -262,7 +262,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [ ] 6.3 Generate those entries per harness. Paths use forward slashes.
       The OpenCode bridge (`hooks/bridge.rs:196`) spawns `powershell.exe`
       on Windows. `hooks/entries.rs` quoting becomes per dialect.
-- [ ] 6.4 A group with a `deny` or `ask` effect and no Windows spelling
+- [x] 6.4 A group with a `deny` or `ask` effect and no Windows spelling
       makes the install fail non-zero, naming the group, with nothing of the
       package attached. Observational groups are reported Unsupported. A
       Codex/Windows shell-matching group is Unsupported, with the issue

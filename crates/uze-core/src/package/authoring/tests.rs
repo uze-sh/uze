@@ -802,3 +802,51 @@ fn check_names_what_keeps_a_package_from_agent_plugins_without_refusing_it() -> 
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }
+
+/// A handler written for one shell is reported before anything is
+/// installed: on Windows a guard with no `windows` spelling refuses the
+/// package, and an observing group is left out.
+#[test]
+fn check_names_a_handler_with_no_windows_spelling() {
+    let market = scratch("check-windows-spelling");
+    scaffold_marketplace("tools", None, &market).unwrap_or_else(|_| {
+        // No Git identity here: the market directory alone is enough.
+        fs::create_dir_all(market.join("plugins")).unwrap();
+        market.clone()
+    });
+    let plugin = market.join("plugins/guarded");
+    fs::create_dir_all(&plugin).unwrap();
+    fs::write(
+        plugin.join("plugin.json"),
+        r#"{"name":"guarded","version":"1.0.0","description":"Guarded"}"#,
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("hooks.json"),
+        r#"{"hooks":{"PreToolUse":[
+            {"id":"guard","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"check"}]},
+            {"id":"both","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":{"posix":"check","windows":"check"}}]}
+        ]}}"#,
+    )
+    .unwrap();
+
+    let report = check_plugin(&plugin).unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("hook `guard`")
+                && warning.contains("no `windows` spelling")),
+        "{:?}",
+        report.warnings
+    );
+    assert!(
+        !report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("hook `both`") && warning.contains("no `windows`")),
+        "{:?}",
+        report.warnings
+    );
+    let _ = fs::remove_dir_all(market);
+}

@@ -345,20 +345,20 @@ fn write_plugin_files(
         )?;
         let scripts = plugin_root.join("scripts");
         create_dir(&scripts)?;
+        // One handler per shell, each declared as that shell's spelling in
+        // hooks.json, so the stub group is delivered on every platform.
         let guard = scripts.join("guard");
         write_file(&guard, include_str!("authoring/guard.sh"))?;
+        write_file(
+            &scripts.join("guard.ps1"),
+            include_str!("authoring/guard.ps1"),
+        )?;
         // A hook command the harness cannot run is the 127 that fails the
         // group silently; the stub ships runnable.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&guard, fs::Permissions::from_mode(0o755)).map_err(|source| {
-                UzeError::Write {
-                    path: guard.clone(),
-                    source,
-                }
-            })?;
-        }
+        uze_platform::executable::make_runnable(&guard).map_err(|source| UzeError::Write {
+            path: guard.clone(),
+            source,
+        })?;
     }
     if caps.mcp {
         write_file(
@@ -610,6 +610,13 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
                             .extend(common.warnings.into_iter().map(|w| format!("{path}: {w}")));
                     }
                 }
+                if resource.capability.kind == CapabilityKind::Hook
+                    && let Ok(hook) = serde_json::from_slice::<crate::hook::PortableHook>(
+                        &resource.capability.payload,
+                    )
+                {
+                    warnings.extend(spelling_warnings(&hook));
+                }
                 delivers.push(resource.identity());
             }
         }
@@ -622,6 +629,28 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
         warnings,
         agent_plugins,
     })
+}
+
+/// What a hook group's handlers leave out of Windows.
+fn spelling_warnings(hook: &crate::hook::PortableHook) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for handler in &hook.handlers {
+        let command = &handler.command;
+        if command.spelling("windows").is_none() {
+            let consequence = if hook.effect.fails_closed() {
+                "installing the package is refused there, since the guard could not run"
+            } else {
+                "the group is not delivered there"
+            };
+            warnings.push(format!(
+                "hook `{}`: `{}` has no `windows` spelling — {consequence}",
+                hook.id,
+                command.describe()
+            ));
+        }
+    }
+    warnings.dedup();
+    warnings
 }
 
 /// What a harness reading this `SKILL.md`, from the directory named

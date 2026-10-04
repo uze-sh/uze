@@ -247,6 +247,48 @@ pub(crate) fn add_installs_portable_package_without_invoking_absent_harnesses() 
     fs::remove_dir_all(root).unwrap();
 }
 
+/// A package whose guard has no spelling for this platform is refused
+/// whole, before the Store holds a byte of it: delivered without its guard
+/// it would let through every operation the guard checks.
+#[test]
+pub(crate) fn a_package_whose_guard_cannot_run_here_is_not_installed() {
+    let root = uze_testkit::temp::scratch("guard-unspelled");
+    let package = root.join("guarded");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("plugin.json"),
+        r#"{"name":"guarded","version":"1.0.0","description":"A guard for another shell"}"#,
+    )
+    .unwrap();
+    let other = uze_platform::shell::spelling("windows", "posix");
+    fs::write(
+        package.join("hooks.json"),
+        format!(
+            r#"{{"hooks":{{"PreToolUse":[{{"id":"guard","matcher":"shell","effect":"deny","hooks":[{{"type":"command","command":{{"{other}":"check"}}}}]}}]}}}}"#
+        ),
+    )
+    .unwrap();
+    let app = UzeApplication::new(UzeHome::at(root.join("uze")), Vec::new());
+
+    let refused = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(&package),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap_err();
+
+    assert!(
+        matches!(&refused, UzeError::GuardUnspelledHere { groups, .. } if groups == &["guard"]),
+        "{refused}"
+    );
+    assert!(
+        app.plugins().list().unwrap().is_empty(),
+        "nothing is stored"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[cfg(unix)]
 #[test]
 pub(crate) fn removal_uses_reconciliation_and_preserves_drift() {

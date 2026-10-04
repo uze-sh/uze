@@ -6,7 +6,14 @@
         "matcher": "shell",
         "effect": "deny",
         "hooks": [
-          { "type": "command", "command": "${PLUGIN_ROOT}/scripts/guard", "timeout": 10 }
+          {
+            "type": "command",
+            "command": {
+              "posix": "${PLUGIN_ROOT}/scripts/guard",
+              "windows": "& \"${PLUGIN_ROOT}/scripts/guard.ps1\""
+            },
+            "timeout": 10
+          }
         ]
       }
     ]

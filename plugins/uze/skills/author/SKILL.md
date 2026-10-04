@@ -89,7 +89,12 @@ The default is a skill plugin: `plugin.json` plus
 `skills/<name>/SKILL.md` — edit the skill body, and choose the
 `invoke:` policy deliberately (who may trigger it). `--hook` adds a
 portable `hooks.json` and a handler stub obeying the `HOOK_*`/exit-code
-contract; `--mcp` adds an `mcp.json` and a working stdio server stub under
+contract, once per shell: `scripts/guard` (`sh`) and `scripts/guard.ps1`
+(Windows PowerShell), each named as that shell's spelling of the one
+`command` (`{"posix": …, "windows": …}`; a uze from before Windows
+support refuses that form, so it pins the minimum). A handler with no `windows` spelling is not delivered on
+Windows, and a guard (`deny`, `ask`) without one is refused there, the
+package with it — `uze agent plugin check` names each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `scripts/` (keep its stdout for the protocol alone — log to stderr);
 `--agent` adds an agent definition under `agents/<name>.md`;
 `--instructions` adds a prose contribution the project's `AGENTS.md`

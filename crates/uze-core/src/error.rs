@@ -37,6 +37,17 @@ pub enum UzeError {
     },
     #[error("invalid portable hook manifest at {path}: {reason}")]
     InvalidHookManifest { path: PathBuf, reason: String },
+    #[error(
+        "`{package}` is not installed: its guard {groups} has no {platform} spelling, and a guard \
+         that cannot run here would let every operation it checks through — give each handler a \
+         `{platform}` spelling (`\"command\": {{\"posix\": …, \"{platform}\": …}}`)",
+        groups = groups.iter().map(|group| format!("`{group}`")).collect::<Vec<_>>().join(", ")
+    )]
+    GuardUnspelledHere {
+        package: String,
+        groups: Vec<String>,
+        platform: &'static str,
+    },
     #[error("bundle manifest is missing in {0}")]
     MissingManifest(PathBuf),
     #[error("unsafe path reference in {path}: {reference}")]

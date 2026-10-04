@@ -77,6 +77,13 @@ pub enum HookEffect {
 }
 
 impl HookEffect {
+    /// Whether a handler that cannot be evaluated decides against the
+    /// operation: a guard, whose failing to run must never let the tool
+    /// through.
+    pub const fn fails_closed(self) -> bool {
+        matches!(self, Self::Ask | Self::Deny | Self::Transform)
+    }
+
     pub const fn abi_name(self) -> &'static str {
         match self {
             Self::Observe => "observe",
@@ -136,6 +143,32 @@ pub struct PortableHook {
     pub handlers: Vec<CommandHook>,
     pub effect: HookEffect,
     pub order: usize,
+}
+
+impl PortableHook {
+    /// Whether a handler of this group has no spelling for this platform's
+    /// shell, so the group cannot run here as its author wrote it.
+    pub fn unspelled_here(&self) -> bool {
+        self.handlers
+            .iter()
+            .any(|handler| handler.command.here().is_none())
+    }
+}
+
+/// The guard groups of the package at `package_root` with a handler this
+/// platform has no spelling for. Such a guard would be left out of the
+/// delivery, and every operation it guards would go through unchecked: a
+/// package declaring one is not installed here at all.
+pub fn guards_unspelled_here(package_root: &Path) -> Result<Vec<String>> {
+    let manifest_path = package_root.join(HOOKS_FILE_NAME);
+    let Ok(bytes) = std::fs::read(&manifest_path) else {
+        return Ok(Vec::new());
+    };
+    Ok(parse_manifest(&manifest_path, &bytes)?
+        .into_iter()
+        .filter(|hook| hook.effect.fails_closed() && hook.unspelled_here())
+        .map(|hook| hook.id)
+        .collect())
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -498,6 +531,29 @@ fn invalid<T>(path: &Path, reason: &str) -> Result<T> {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// A guard written only for the other platform's shell cannot run
+    /// here, and is named; an observing group or a guard spelled for both
+    /// is not.
+    #[test]
+    fn a_guard_spelled_only_for_another_platform_is_named_here() {
+        let other = uze_platform::shell::spelling("windows", "posix");
+        let root = uze_testkit::temp::scratch("guards-unspelled");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(HOOKS_FILE_NAME),
+            format!(
+                r#"{{"hooks":{{"PreToolUse":[
+                    {{"id":"elsewhere","matcher":"shell","effect":"deny","hooks":[{{"type":"command","command":{{"{other}":"check"}}}}]}},
+                    {{"id":"everywhere","matcher":"shell","effect":"deny","hooks":[{{"type":"command","command":{{"posix":"check","windows":"check"}}}}]}},
+                    {{"id":"watching","matcher":"shell","hooks":[{{"type":"command","command":{{"{other}":"log"}}}}]}}
+                ]}}}}"#
+            ),
+        )
+        .unwrap();
+        assert_eq!(guards_unspelled_here(&root).unwrap(), ["elsewhere"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn parses_ordered_portable_groups_and_defaults_timeout() {

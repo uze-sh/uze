@@ -84,6 +84,18 @@ impl Plugins<'_> {
         active_name: Option<&str>,
         name_authority: &dyn NameCollisionAuthority,
     ) -> Result<AddPluginReport> {
+        // A guard this platform cannot run is refused before anything of the
+        // package is stored or attached: delivered without it, the package
+        // would let through every operation the guard was there to check.
+        let unspelled = uze_core::hook::guards_unspelled_here(materialized.root())?;
+        if !unspelled.is_empty() {
+            let package = uze_core::acquisition::inspect_capabilities(&materialized)?.package_id;
+            return Err(UzeError::GuardUnspelledHere {
+                package,
+                groups: unspelled,
+                platform: uze_core::shell::ShellCommand::platform(),
+            });
+        }
         // Any installation changes vendor-visible state; cached inspection
         // verdicts must not outlive it (ADR 018).
         self.0.inspection_cache.invalidate();
