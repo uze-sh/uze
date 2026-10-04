@@ -4,6 +4,11 @@
 //! that file, and none of them are read while working on the production
 //! surface they cover.
 
+// The cases that plant receipt-owned symlinks are Unix-only: a Windows
+// account may hold no right to create one, and delivery copies there. What
+// only they use is unused elsewhere.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
+
 use std::{
     fs,
     sync::{
@@ -382,7 +387,7 @@ pub(crate) fn replace_resolution_removes_the_existing_active_plugin_and_installs
 #[test]
 pub(crate) fn replace_resolution_aborts_and_preserves_the_existing_plugin_when_removal_is_blocked()
 {
-    use std::os::unix::fs::symlink;
+    use uze_platform::fs::symlink;
     let root = uze_testkit::temp::scratch("replace-blocked");
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(home.clone(), vec![Box::new(SymlinkIntegration)]);

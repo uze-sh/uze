@@ -3181,7 +3181,11 @@ fn overview_install_intent_reaches_install_project_environment() {
     let empty_path_dir = base.join("empty-path");
     std::fs::create_dir_all(&empty_path_dir).unwrap();
     let git = which_git();
-    std::os::unix::fs::symlink(&git, empty_path_dir.join("git")).unwrap();
+    uze_platform::fs::symlink(
+        &git,
+        &empty_path_dir.join(uze_platform::executable::file_name("git")),
+    )
+    .unwrap();
     environment.set("PATH", &empty_path_dir);
 
     let uze_home = UzeHome::at(&home);

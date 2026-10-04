@@ -840,7 +840,8 @@ mod artifact_representation_tests {
     }
 }
 
-#[cfg(test)]
+/// Both cases are receipt-owned symlinks.
+#[cfg(all(test, unix))]
 mod lifecycle_tests {
     use super::*;
     use std::{fs, path::PathBuf};
@@ -854,7 +855,6 @@ mod lifecycle_tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn symlink_receipt_is_safe_only_when_ownership_still_matches() {
         use std::os::unix::fs::symlink;
@@ -908,7 +908,6 @@ mod lifecycle_tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[cfg(unix)]
     #[test]
     fn unreadable_symlink_state_is_blocked() {
         use std::os::unix::fs::PermissionsExt;

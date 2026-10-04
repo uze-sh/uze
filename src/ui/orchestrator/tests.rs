@@ -8337,7 +8337,7 @@ mod workspace_tests {
     /// the channels a background read answers through.
     pub(super) struct Driven<'a> {
         pub(super) attach: Attach<'a>,
-        server: std::os::unix::net::UnixStream,
+        server: uze_terminal::Stream,
         events: std::sync::mpsc::Receiver<ClientEvent>,
         /// The reader thread's end, held so the channel stays connected.
         /// Dropping it is exactly what the real reader does when the
@@ -8414,7 +8414,11 @@ mod workspace_tests {
 
         /// Every request written to the server since the last read.
         fn sent(&mut self) -> Vec<ClientRequest> {
-            self.server.set_nonblocking(true).unwrap();
+            // Whatever has arrived: a read that waits past this is one
+            // nothing was written for.
+            self.server
+                .set_read_timeout(Some(std::time::Duration::from_millis(10)))
+                .unwrap();
             let mut buffer = Vec::new();
             let mut chunk = [0u8; 8192];
             while let Ok(read) = std::io::Read::read(&mut self.server, &mut chunk) {
@@ -8492,7 +8496,7 @@ mod workspace_tests {
     }
 
     pub(super) fn driven(model: WorkspaceModel, home: &UzeHome) -> Driven<'_> {
-        let (client, server) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (client, server) = uze_terminal::stream_pair().unwrap();
         let (events, events_rx) = std::sync::mpsc::channel();
         Driven {
             attach: Attach {

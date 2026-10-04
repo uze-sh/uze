@@ -25,6 +25,11 @@
 //! internal call site can possibly re-enter the shim," and it fails loudly
 //! and specifically (file + line) the moment someone reintroduces one.
 
+// The cases that drive shebang stand-ins are Unix-only until the stand-ins
+// dispatch through `uze-fake-harness` (windows-support task 9.2); what only
+// they use is unused elsewhere.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
+
 use std::{fs, path::Path};
 
 use uze_core::UzeHome;

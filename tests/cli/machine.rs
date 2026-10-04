@@ -1,3 +1,8 @@
+// The cases that drive shebang stand-ins are Unix-only until the stand-ins
+// dispatch through `uze-fake-harness` (windows-support task 9.2); what only
+// they use is unused elsewhere.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
+
 use std::{path::PathBuf, process::Command};
 use uze_testkit::process::IsolatedHome;
 
@@ -857,6 +862,7 @@ fn setup_codex_reports_where_a_fresh_install_landed_outside_path() {
 /// for both — matching the target `uze setup` / `uze add` / plain harness
 /// invocation experience, minus the real invocation itself. Setup running
 /// twice must not duplicate recorded state or managed artifacts.
+#[cfg(unix)]
 #[test]
 fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     let home = temporary_home("cli-setup-then-add-home");
@@ -982,6 +988,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
 /// extra UZE setup step is required before their first package works. `add`
 /// detects the executable, prepares only UZE-owned prerequisites, then
 /// attaches the package through the normal integration lifecycle.
+#[cfg(unix)]
 #[test]
 fn add_prepares_a_detected_opencode_and_attaches_without_prior_setup() {
     let home = temporary_home("cli-add-autoprepares-opencode-home");
@@ -1026,6 +1033,7 @@ fn add_prepares_a_detected_opencode_and_attaches_without_prior_setup() {
 /// fixture for both, idempotently, without a real harness binary. No
 /// network, credentials, or LLM involved — this only proves the
 /// attach/idempotency/removal mechanics, not real harness behavior.
+#[cfg(unix)]
 #[test]
 fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     let home = temporary_home("cli-mcp-home");

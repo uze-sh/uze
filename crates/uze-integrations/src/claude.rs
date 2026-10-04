@@ -277,8 +277,12 @@ impl IntegrationPort for ClaudeIntegration {
         let route = OfficialRoute {
             label: "Claude Code",
             program: "claude",
-            install: official_installer("https://claude.ai/install.sh", "bash"),
+            install: official_installer(
+                Some(("https://claude.ai/install.sh", "bash")),
+                Some("https://claude.ai/install.ps1"),
+            ),
             update: ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
+            environment: &[],
             method: "official-native-installer",
             manual_route: "https://code.claude.com/docs/en/installation",
         };
@@ -764,13 +768,10 @@ mod lifecycle_tests {
     use std::path::Path;
 
     use crate::shared::mcp::McpEntry;
-    use uze_core::home::UzeHome;
-    use uze_core::integration::{
-        AttachmentReceipt, AttachmentState, IntegrationPort, ManagedArtifact,
-    };
+    use uze_core::integration::AttachmentState;
 
+    use super::fs;
     use super::mcp::inspect_claude_mcp;
-    use super::{ClaudeIntegration, fs};
 
     fn check(value: &str) -> AttachmentState {
         let root = uze_testkit::temp::scratch("claude-config");
@@ -817,7 +818,10 @@ mod lifecycle_tests {
     #[cfg(unix)]
     #[test]
     fn detaching_a_skill_reference_cleans_an_unreferenced_owned_shim() {
+        use super::ClaudeIntegration;
         use std::os::unix::fs::symlink;
+        use uze_core::home::UzeHome;
+        use uze_core::integration::{AttachmentReceipt, IntegrationPort, ManagedArtifact};
 
         let root = uze_testkit::temp::scratch("claude-shim");
         let uze_home = UzeHome::at(root.join("uze"));

@@ -14,26 +14,25 @@ fn the_named_directory_leads_the_pane_path_once() {
 }
 
 use super::{
-    ANSWERS_WITHIN, Arrival, Launch, Listener, MAX_FRAME, MAX_PANE_DIMENSION, MAX_SOCKET_PATH,
-    Outbox, PaneRuntime, PersistedWorkspace, ReplySink, RuntimeError, Selection, Server,
-    WORKSPACE_SCHEMA_VERSION, WorkspaceLock, arrival, bind_endpoint, forward_events,
-    held_by_a_server, identify, identity_of, listener_at, load_persisted_workspace_at,
-    persisted_state_path, read_event, read_message, relaunch_command_for_process, retire,
-    send_request, serves_this_build, signalable, snapshot, socket_path, view_for,
-    workspace_is_claimed, workspace_lock_path, write_atomically, write_message,
+    ANSWERS_WITHIN, Arrival, Launch, Listener, MAX_FRAME, MAX_PANE_DIMENSION, Outbox, PaneRuntime,
+    PersistedWorkspace, ReplySink, RuntimeError, Selection, Server, WORKSPACE_SCHEMA_VERSION,
+    WorkspaceLock, arrival, bind_endpoint, forward_events, held_by_a_server, identity_of,
+    load_persisted_workspace_at, persisted_state_path, read_event, read_message,
+    relaunch_command_for_process, send_request, serves_this_build, snapshot, socket_path, view_for,
+    workspace_is_claimed, write_atomically, write_message,
 };
-use std::os::unix::fs::PermissionsExt;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use super::{identify, listener_at, retire, workspace_lock_path};
 use std::sync::{Arc, Mutex};
 
-// Several tests below carry
-// `#[cfg(any(target_os = "linux", target_os = "macos"))]`. That is not a
-// list of platforms anybody chose; it is the set `process_probe` can
-// answer on, and these are the tests that start a real server, read a
-// real pane's foreground status, or relaunch a persisted one — all of
-// which need the kernel to say where a process is standing and what it
-// is running. On a platform where the probe returns `None` they would
-// assert against an answer nothing can give. Widen the gate by teaching
-// `process_probe` a new platform, never by widening it here.
+// Several tests below, and the helpers only they use, carry
+// `#[cfg(any(target_os = "linux", target_os = "macos"))]`. They start a
+// real server, read a real pane's foreground status, or relaunch a
+// persisted one — which needs the probe to say where a process is
+// standing and what it runs — and they drive POSIX programs (`sh`,
+// `sleep`, FIFOs, process groups) to get there. Windows answers the
+// probe; its panes are proven by tests written for its own programs, not
+// by widening this gate.
 
 use crate::Palette;
 
@@ -42,7 +41,9 @@ use crate::Palette;
 fn reply_sink(sender: std::sync::mpsc::Sender<Vec<u8>>) -> ReplySink {
     ReplySink::new(sender, Arc::new(Mutex::new(Palette::default())))
 }
-use crate::state::{PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use crate::state::PLACEHOLDER_PANE_SIZE;
+use crate::state::{SpaceSeed, TabSeed};
 use crate::{MouseMode, PaneId, TerminalColor};
 use crate::{Session, SpaceId, TabId};
 use alacritty_terminal::{
@@ -151,45 +152,6 @@ fn two_terminals_that_disagree_about_the_environment_share_one_endpoint() {
     let _ = std::fs::remove_dir_all(&elsewhere);
 }
 
-/// `XDG_RUNTIME_DIR` is somebody else's variable and can be arbitrarily
-/// deep. A socket path that does not fit `sun_path` fails at `bind` with
-/// an error naming the limit and not the directory — which reached a
-/// user as `could not acquire package: terminal runtime I/O error: path
-/// must be shorter than SUN_LEN`, from a command that has nothing to do
-/// with sockets.
-#[test]
-fn a_runtime_directory_too_long_for_a_socket_is_stepped_over() {
-    let deep = uze_testkit::temp::socket_scratch("deep").join("a".repeat(120));
-    std::fs::create_dir_all(&deep).unwrap();
-    let mut env = uze_testkit::env::scope();
-    // Both of the candidates that come before `/tmp`: a home is
-    // wherever the operator put it, and so is somebody else's
-    // runtime directory.
-    env.set("UZE_HOME", &deep);
-    env.set("XDG_RUNTIME_DIR", &deep);
-
-    let socket = socket_path().expect("a too-long runtime directory is not fatal");
-    assert!(
-        socket.as_os_str().len() <= MAX_SOCKET_PATH,
-        "the chosen socket path must fit sun_path, got {} bytes: {}",
-        socket.as_os_str().len(),
-        socket.display()
-    );
-    assert!(
-        !socket.starts_with(&deep),
-        "the directory that could not hold the socket must not have been chosen"
-    );
-    // Binding is the only real proof: the length rule exists to make this
-    // call succeed, so the test performs it rather than trusting the
-    // arithmetic.
-    let _ = std::fs::remove_file(&socket);
-    let listener = std::os::unix::net::UnixListener::bind(&socket)
-        .expect("the chosen path must actually bind");
-    drop(listener);
-    let _ = std::fs::remove_file(&socket);
-    let _ = std::fs::remove_dir_all(&deep);
-}
-
 /// "Nothing is running" is the ordinary state of `uze workspace stop`,
 /// and it used to exit non-zero: a machine that has not opened the TUI
 /// since boot has no socket, and a `/tmp` cleaner taking the socket out
@@ -210,17 +172,9 @@ fn stopping_a_runtime_that_is_not_running_is_not_a_failure() {
     let _ = std::fs::remove_file(&socket);
     assert!(
         super::stop().is_ok(),
-        "no socket at all is nothing to stop, not a failure"
+        "no endpoint at all is nothing to stop, not a failure"
     );
 
-    // The shape a cleaner leaves: the file is there, the server is not.
-    leave_a_stale_socket(&socket);
-    assert!(
-        super::stop().is_ok(),
-        "a socket nobody answers is nothing to stop either"
-    );
-
-    let _ = std::fs::remove_file(&socket);
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
@@ -232,8 +186,8 @@ fn stopping_a_runtime_that_is_not_running_is_not_a_failure() {
 fn the_listener_is_told_apart_by_what_it_runs() {
     let scratch = uze_testkit::temp::socket_scratch("identify");
     std::fs::create_dir_all(&scratch).unwrap();
-    let socket = scratch.join("test.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
+    let listener = super::transport::bind(&socket).unwrap();
     assert_eq!(
         listener_at(&socket),
         Listener::ThisBuild(std::process::id()),
@@ -255,41 +209,6 @@ fn the_listener_is_told_apart_by_what_it_runs() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-/// A socket file nobody listens on names nobody, so there is nobody to
-/// signal.
-#[test]
-fn a_socket_nobody_listens_on_names_nobody() {
-    let scratch = uze_testkit::temp::socket_scratch("nobody");
-    std::fs::create_dir_all(&scratch).unwrap();
-    let socket = scratch.join("test.sock");
-    leave_a_stale_socket(&socket);
-
-    assert_eq!(listener_at(&socket), Listener::Nobody);
-
-    let _ = std::fs::remove_dir_all(&scratch);
-}
-
-/// The server holding the workspace claim binds over whatever it finds
-/// at the socket path: a crashed server's leftover file is not a peer,
-/// and refusing to bind over it left the workspace unreachable.
-#[test]
-fn a_stale_socket_is_reclaimed_by_the_server_that_binds() {
-    let scratch = uze_testkit::temp::socket_scratch("reclaim");
-    std::fs::create_dir_all(&scratch).unwrap();
-    let socket = scratch.join("test.sock");
-    leave_a_stale_socket(&socket);
-    assert!(std::os::unix::net::UnixStream::connect(&socket).is_err());
-
-    let listener = bind_endpoint(&socket).expect("a stale socket is bound over");
-    assert!(
-        std::os::unix::net::UnixStream::connect(&socket).is_ok(),
-        "the reclaimed endpoint answers"
-    );
-
-    drop(listener);
-    let _ = std::fs::remove_dir_all(&scratch);
-}
-
 /// A server of another build — a `make install` over a running one — is
 /// ended, and not merely abandoned: it holds the workspace claim, and a
 /// fresh server cannot restore the workspace until it lets go.
@@ -305,7 +224,10 @@ fn a_server_of_another_build_is_retired_and_lets_go_of_the_workspace() {
     let mut old = ClaimHolder::spawn_as(&another_build_of_this_binary(&scratch), &uze_home);
     assert!(workspace_is_claimed());
 
-    retire(old.pid(), &scratch.join("test.sock"));
+    retire(
+        old.pid(),
+        &super::transport::scratch_endpoint(&scratch, "test.sock"),
+    );
 
     assert!(
         !workspace_is_claimed(),
@@ -877,7 +799,7 @@ fn only_asking_to_open_a_space_may_create_one() {
     let server = Arc::new(server);
 
     let attach = |seating: crate::Seating| {
-        let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (client, driver) = super::transport::pair().unwrap();
         let serving = {
             let server = Arc::clone(&server);
             std::thread::spawn(move || server.handle_client(client))
@@ -956,7 +878,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
         .set("XDG_RUNTIME_DIR", &runtime_dir);
     let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
     let server = Arc::new(server);
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -1109,7 +1031,7 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
     let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
     let server = Arc::new(server);
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -1224,10 +1146,11 @@ fn a_stopped_pane_leaves_no_zombie() {
 
     pane.stop().join().expect("the reaper finished");
 
-    // SAFETY: signal 0 only asks whether `pid` is addressable; nothing
-    // is delivered, and `pid` is the positive id of our own child.
-    let addressable = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
-    assert!(!addressable, "pid {pid} survived as a zombie");
+    assert_ne!(
+        uze_platform::process::alive(pid),
+        Some(true),
+        "pid {pid} survived as a zombie"
+    );
 }
 
 /// A program's first output can land before its pane is registered,
@@ -1424,7 +1347,7 @@ fn attaching_without_a_root_neither_creates_nor_reopens_a_space() {
         launch
     };
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -2021,7 +1944,7 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
         .pane
         .id;
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -2124,7 +2047,7 @@ fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
         head: (10, 22),
     };
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -2248,7 +2171,7 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
     );
     let leader = leader.expect("the spawned shell owns the PTY foreground group");
     assert_eq!(
-        crate::process_probe::environment_value_of(leader, "UZE_SHIM_NAME"),
+        uze_platform::probe::environment_value_of(leader as u32, "UZE_SHIM_NAME"),
         None,
         "a pane's environment may only carry what that pane's own launch put there"
     );
@@ -2288,6 +2211,7 @@ fn seat_at(root: &Path) -> crate::SpaceSeat {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn sleep_five() -> Launch {
     Launch::Program {
         argv: vec!["sleep".to_owned(), "5".to_owned()],
@@ -2553,7 +2477,10 @@ fn a_process_that_is_not_uze_is_never_signalled() {
     env.set("UZE_HOME", &scratch);
 
     let bystander = ReadyProcess::spawn(Path::new("/bin/sh"));
-    retire(bystander.pid(), &scratch.join("test.sock"));
+    retire(
+        bystander.pid(),
+        &super::transport::scratch_endpoint(&scratch, "test.sock"),
+    );
 
     assert!(
         bystander.finish(),
@@ -2584,49 +2511,6 @@ fn a_crashed_server_nobody_reaped_holds_no_claim() {
     );
 
     zombie.reap();
-    let _ = std::fs::remove_dir_all(&scratch);
-}
-
-/// The endpoint directory decides where a socket carrying every pane's
-/// contents lives. `create_dir_all` answers `Ok(())` for a path that is
-/// already there — a symlink to somewhere else included — and
-/// `set_permissions` follows symlinks, so "it exists" is not evidence
-/// of anything where the name is one any local user can predict.
-#[test]
-fn a_runtime_directory_that_is_not_ours_to_own_is_stepped_over() {
-    let scratch = uze_testkit::temp::socket_scratch("dirowner");
-    let xdg = scratch.join("xdg");
-    let elsewhere = scratch.join("elsewhere");
-    std::fs::create_dir_all(&xdg).unwrap();
-    std::fs::create_dir_all(&elsewhere).unwrap();
-    let owner = super::current_uid();
-    let candidate = xdg.join(format!("uze-runtime-{owner}"));
-    std::os::unix::fs::symlink(&elsewhere, &candidate).unwrap();
-
-    let mut env = uze_testkit::env::scope();
-    // `UZE_HOME` leads the candidates, so it is pointed somewhere too
-    // long to hold a socket: what is under test is the runtime
-    // directory behind it.
-    env.set("UZE_HOME", scratch.join("h".repeat(120)));
-    env.set("XDG_RUNTIME_DIR", &xdg);
-    let socket = socket_path().expect("a bad candidate is stepped over, not fatal");
-    assert!(
-        !socket.starts_with(&xdg),
-        "a symlinked candidate must not be adopted, got {}",
-        socket.display()
-    );
-
-    // A directory this user genuinely owns is theirs to correct rather
-    // than to refuse — a permissive umask on first run is the ordinary
-    // way one is created too open.
-    std::fs::remove_file(&candidate).unwrap();
-    std::fs::create_dir_all(&candidate).unwrap();
-    std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o777)).unwrap();
-    let socket = socket_path().expect("our own directory is usable");
-    assert!(socket.starts_with(&candidate));
-    let mode = std::fs::metadata(&candidate).unwrap().permissions().mode();
-    assert_eq!(mode & 0o777, 0o700, "the mode is corrected, not inherited");
-
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
@@ -2747,40 +2631,6 @@ fn a_workspace_deleted_under_its_server_reads_as_unclaimed() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-/// Where the process [`leave_a_stale_socket`] runs binds its socket.
-const STALE_SOCKET: &str = "UZE_TERMINAL_TEST_STALE_SOCKET";
-
-/// The process side of [`leave_a_stale_socket`]. Ignored so the suite
-/// never runs it on its own, and guarded by [`STALE_SOCKET`] so
-/// `--include-ignored` binds nothing.
-#[test]
-#[ignore = "binds a socket and exits, run by leave_a_stale_socket in a process of its own"]
-fn binds_a_socket_and_exits() {
-    if let Some(path) = std::env::var_os(STALE_SOCKET) {
-        std::os::unix::net::UnixListener::bind(path).expect("the socket path binds");
-    }
-}
-
-/// A socket file nobody listens on — the shape a crashed server leaves.
-///
-/// Bound by a process of its own that has exited before this returns:
-/// a listener this process bound and dropped is copied into every child
-/// a sibling test forks until that child's `exec`, and answers a
-/// connect for as long.
-fn leave_a_stale_socket(path: &Path) {
-    let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--ignored",
-            "--exact",
-            "runtime::tests::binds_a_socket_and_exits",
-        ])
-        .env(STALE_SOCKET, path)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .expect("this test binary runs itself");
-    assert!(status.success() && path.exists(), "{status}");
-}
-
 /// Set on the process that plays the other server in the claim tests.
 const CLAIM_HOLDER: &str = "UZE_TERMINAL_TEST_HOLDS_CLAIM";
 /// What that process says once the claim is its.
@@ -2821,7 +2671,9 @@ fn holds_the_workspace_claim_while_its_stdin_is_open() {
             let server = Arc::new(server);
             let listener = bind_endpoint(&socket).expect("the holder binds its endpoint");
             std::thread::spawn(move || {
-                for stream in listener.incoming().flatten() {
+                for stream in
+                    std::iter::repeat_with(|| super::transport::accept(&listener)).flatten()
+                {
                     let server = Arc::clone(&server);
                     std::thread::spawn(move || server.handle_client(stream));
                 }
@@ -2856,6 +2708,7 @@ impl ClaimHolder {
         Self::spawn_with(executable, uze_home, None)
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     /// A holder that is a whole server: it binds this `UZE_HOME`'s
     /// endpoint over `project` and answers handshakes, which is what an
     /// attach asks of a server before it decides anything about it.
@@ -2898,6 +2751,7 @@ impl ClaimHolder {
         }
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn pid(&self) -> u32 {
         self.process.id()
     }
@@ -2941,6 +2795,7 @@ impl Zombie {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 /// This test binary under the name `uze` at another path: to the
 /// process table, a `uze` that is not this build.
 fn another_build_of_this_binary(scratch: &Path) -> PathBuf {
@@ -2959,6 +2814,7 @@ fn another_build_of_this_binary(scratch: &Path) -> PathBuf {
     copy
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 /// A shell that has certainly `exec`ed — it said so — and waits to be
 /// told to finish.
 struct ReadyProcess {
@@ -2966,6 +2822,7 @@ struct ReadyProcess {
     output: std::io::BufReader<std::process::ChildStdout>,
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl ReadyProcess {
     fn spawn(shell: &Path) -> Self {
         let mut process = std::process::Command::new(shell)
@@ -3092,7 +2949,7 @@ fn a_client_is_told_what_the_runtime_could_not_carry() {
 
     // A socket pair stands in for the endpoint: what is being proven
     // is what a client is told once it attaches, not how it got there.
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -3267,7 +3124,7 @@ fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() 
         );
     }
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -3337,7 +3194,7 @@ fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() 
 /// see pile up behind it.
 #[test]
 fn a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen() {
-    let (peer, socket) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (peer, socket) = super::transport::pair().unwrap();
     let (outbox, receiver) = super::Outbox::new();
     let events = Arc::new(outbox);
     let writing = {
@@ -3391,7 +3248,7 @@ fn stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to() {
 
     let mut ready = false;
     for _ in 0..200 {
-        if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
+        if super::transport::connect(&socket).is_ok() {
             ready = true;
             break;
         }
@@ -3418,32 +3275,26 @@ fn stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to() {
 /// on NFS, FUSE or a 9p mount, with no command that could clear it.
 #[test]
 fn only_a_held_lock_reads_as_another_server() {
-    let refusal = |errno| super::classify_lock_refusal(std::io::Error::from_raw_os_error(errno));
+    let refusal = |kind| super::classify_lock_refusal(std::io::Error::from(kind));
     assert!(matches!(
-        refusal(libc::EWOULDBLOCK),
+        refusal(std::io::ErrorKind::WouldBlock),
         super::LockRefusal::Contended
     ));
     assert!(matches!(
-        refusal(libc::EINTR),
+        refusal(std::io::ErrorKind::Interrupted),
         super::LockRefusal::Interrupted
     ));
-    for unsupported in [libc::ENOLCK, libc::EOPNOTSUPP, libc::ENOSYS, libc::EBADF] {
+    for unsupported in [
+        std::io::ErrorKind::Unsupported,
+        std::io::ErrorKind::PermissionDenied,
+        std::io::ErrorKind::InvalidInput,
+        std::io::ErrorKind::Other,
+    ] {
         assert!(
             matches!(refusal(unsupported), super::LockRefusal::Unsupported(_)),
-            "errno {unsupported} is a filesystem that cannot lock, not a server that holds one"
+            "{unsupported:?} is a filesystem that cannot lock, not a server that holds one"
         );
     }
-}
-
-/// `kill(2)` reads `0` as the caller's own process group and a negative
-/// pid as a group, `-1` as every process the user owns. A pid that does
-/// not fit is never turned into one of those.
-#[test]
-fn a_pid_that_does_not_name_one_process_is_never_signalled() {
-    assert_eq!(signalable(0), None);
-    assert_eq!(signalable(u32::MAX), None, "which would read as -1");
-    assert_eq!(signalable(i32::MAX as u32 + 1), None);
-    assert_eq!(signalable(4192325), Some(4192325));
 }
 
 /// Only two facts decide what an attach does to the endpoint: who holds
@@ -3486,7 +3337,7 @@ fn an_attach_replaces_only_a_server_it_can_name() {
 /// the peer's side, so what ends the thread can only be the channel.
 #[test]
 fn a_clients_writer_thread_ends_with_the_client() {
-    let (_peer, socket) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (_peer, socket) = super::transport::pair().unwrap();
     let (outbox, receiver) = Outbox::new();
     let outbox = Arc::new(outbox);
     let backlog = outbox.backlog();
@@ -3518,16 +3369,16 @@ fn a_peer_the_server_refuses_is_hung_up_on() {
     }
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home);
-    let socket = scratch.join("test.sock");
+    let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
     let (server, _damage) = Server::new(seat_at(&project), socket.clone()).unwrap();
     let server = Arc::new(server);
-    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let listener = super::transport::bind(&socket).unwrap();
     let serving = thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
+        let stream = super::transport::accept(&listener).unwrap();
         server.handle_client(stream);
     });
 
-    let mut peer = std::os::unix::net::UnixStream::connect(&socket).unwrap();
+    let mut peer = super::transport::connect(&socket).unwrap();
     peer.set_read_timeout(Some(ANSWERS_WITHIN)).unwrap();
     send_request(
         &mut peer,
@@ -3572,12 +3423,12 @@ fn a_server_that_answers_this_builds_handshake_serves_it() {
     }
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home);
-    let socket = scratch.join("test.sock");
+    let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
     let (server, _damage) = Server::new(seat_at(&project), socket.clone()).unwrap();
     let server = Arc::new(server);
-    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let listener = super::transport::bind(&socket).unwrap();
     let serving = std::thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
+        let stream = super::transport::accept(&listener).unwrap();
         server.handle_client(stream);
     });
 
@@ -3601,10 +3452,10 @@ fn a_server_that_cannot_answer_is_never_taken_for_one_that_can() {
     let scratch = uze_testkit::temp::socket_scratch("serves-refused");
     std::fs::create_dir_all(&scratch).unwrap();
 
-    let refusing = scratch.join("refusing.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&refusing).unwrap();
+    let refusing = super::transport::scratch_endpoint(&scratch, "refusing.sock");
+    let listener = super::transport::bind(&refusing).unwrap();
     let answering = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let mut stream = super::transport::accept(&listener).unwrap();
         let _ = write_message(
             &mut stream,
             &crate::ClientEvent::Error {
@@ -3618,20 +3469,20 @@ fn a_server_that_cannot_answer_is_never_taken_for_one_that_can() {
     );
     let _ = answering.join();
 
-    let hanging_up = scratch.join("hanging-up.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&hanging_up).unwrap();
-    let dropping = std::thread::spawn(move || drop(listener.accept().unwrap()));
+    let hanging_up = super::transport::scratch_endpoint(&scratch, "hanging-up.sock");
+    let listener = super::transport::bind(&hanging_up).unwrap();
+    let dropping = std::thread::spawn(move || drop(super::transport::accept(&listener).unwrap()));
     assert!(
         !serves_this_build(&hanging_up),
         "and neither can one that hangs up on the handshake"
     );
     let _ = dropping.join();
 
-    let silent = scratch.join("silent.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&silent).unwrap();
+    let silent = super::transport::scratch_endpoint(&scratch, "silent.sock");
+    let listener = super::transport::bind(&silent).unwrap();
     let (answered, asked) = std::sync::mpsc::channel::<()>();
     let holding = std::thread::spawn(move || {
-        let held = listener.accept().unwrap();
+        let held = super::transport::accept(&listener).unwrap();
         let _ = asked.recv();
         drop(held);
     });
@@ -3645,7 +3496,7 @@ fn a_server_that_cannot_answer_is_never_taken_for_one_that_can() {
     let _ = holding.join();
 
     assert!(
-        !serves_this_build(&scratch.join("nobody.sock")),
+        !serves_this_build(&super::transport::scratch_endpoint(&scratch, "nobody.sock")),
         "an endpoint nothing is behind answers nothing either"
     );
 
@@ -3716,7 +3567,7 @@ fn a_second_client_attaches_to_a_live_server_of_another_build() {
 /// [`HANDSHAKE_DEADLINE`] says it prevents.
 #[test]
 fn a_dribbling_peer_runs_out_of_handshake_rather_than_restarting_it() {
-    let (peer, socket) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (peer, socket) = super::transport::pair().unwrap();
     let dribbling = std::thread::spawn(move || {
         let mut peer = peer;
         for _ in 0..40 {
@@ -3779,3 +3630,8 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
         "and the bound still has to fit what a handshake actually says"
     );
 }
+
+/// The endpoint as a file in a directory: what a Unix-domain socket is and a
+/// named pipe is not.
+#[cfg(unix)]
+mod socket_files;

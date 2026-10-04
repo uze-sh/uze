@@ -404,7 +404,8 @@ mod generated_native_tests {
     /// The envelope mirrors a Skill's supporting files too, keeping a helper
     /// script executable, and resolves a file symlink the package keeps
     /// inside itself to the bytes it names — Codex's cache copy would drop
-    /// the link.
+    /// the link. A mode bit and a symlink a test may create are Unix facts.
+    #[cfg(unix)]
     #[test]
     fn envelope_mirrors_supporting_files_and_resolves_in_package_symlinks() {
         use std::os::unix::fs::PermissionsExt;
@@ -440,6 +441,7 @@ mod generated_native_tests {
 
     /// A symlink that escapes the package is refused by name — never
     /// followed into foreign bytes, never silently dropped.
+    #[cfg(unix)]
     #[test]
     fn envelope_refuses_a_symlink_that_escapes_the_package() {
         let (_root, pkg) = make_plain_package("mirror-escape", false);

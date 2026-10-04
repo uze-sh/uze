@@ -140,16 +140,17 @@ pub fn plan_remove(report: &ReconciliationReport) -> PackageRemovalPlan {
 mod tests {
     use std::fs;
 
+    use crate::UzeHome;
+    #[cfg(unix)]
     use crate::{
-        UzeHome,
-        exposure::ExposurePlan,
-        integration::{HarnessDetection, ManagedArtifact},
-        router::HarnessCapabilities,
+        exposure::ExposurePlan, integration::HarnessDetection, router::HarnessCapabilities,
     };
 
     use super::*;
 
+    #[cfg(unix)]
     struct TestIntegration;
+    #[cfg(unix)]
     impl IntegrationPort for TestIntegration {
         fn id(&self) -> &'static str {
             "test"
@@ -172,6 +173,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn reconciliation_and_removal_plan_preserve_drift() {
+        use crate::integration::ManagedArtifact;
         use std::os::unix::fs::symlink;
         let home = home("drift");
         let root = home.root().join("fixture");

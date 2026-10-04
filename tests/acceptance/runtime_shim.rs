@@ -34,7 +34,6 @@ fn create_executable(path: &Path, script: &str) {
     std::fs::set_permissions(path, permissions).unwrap();
 }
 
-#[cfg(unix)]
 #[test]
 fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion() {
     let env = TestEnvironment::isolated();
@@ -124,7 +123,6 @@ fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion(
 /// (`src/shim.rs::run` → `exec_or_die`), not just the internal detection
 /// path the test above covers, and checks the one thing that dispatch must
 /// hand the real binary: its own invoked name, in its environment.
-#[cfg(unix)]
 #[test]
 fn shim_dispatch_stamps_its_own_invoked_name_into_the_real_binarys_environment() {
     let env = TestEnvironment::isolated();

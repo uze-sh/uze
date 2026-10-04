@@ -82,8 +82,8 @@ fn harness_recording_its_conversations(env: &TestEnvironment) -> FakeHarness {
 fn shim(env: &TestEnvironment) -> PathBuf {
     let shims = UzeHome::at(&env.uze_home).shims_dir();
     std::fs::create_dir_all(&shims).unwrap();
-    let path = shims.join(HARNESS);
-    std::os::unix::fs::symlink(uze_bin(), &path).unwrap();
+    let path = shims.join(uze_platform::executable::file_name(HARNESS));
+    uze_platform::fs::symlink(uze_bin(), &path).unwrap();
     path
 }
 
@@ -142,7 +142,6 @@ fn launches(harness: &FakeHarness) -> Vec<Vec<String>> {
     harness.invocations()
 }
 
-#[cfg(unix)]
 #[test]
 fn a_relaunched_agent_resumes_the_conversation_its_task_was_left_in() {
     let env = TestEnvironment::isolated();
@@ -166,7 +165,6 @@ fn a_relaunched_agent_resumes_the_conversation_its_task_was_left_in() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn an_invocation_the_operator_composed_is_launched_exactly_as_typed() {
     let env = TestEnvironment::isolated();
@@ -194,7 +192,6 @@ fn an_invocation_the_operator_composed_is_launched_exactly_as_typed() {
 /// A launch that carries no identity is the operator's own, wherever it
 /// is made — a managed task's checkout included. Continuity is for the
 /// launches UZE composes, and the directory was never what said so.
-#[cfg(unix)]
 #[test]
 fn a_launch_carrying_no_identity_is_launched_untouched_even_inside_a_slot() {
     let env = TestEnvironment::isolated();
@@ -214,7 +211,6 @@ fn a_launch_carrying_no_identity_is_launched_untouched_even_inside_a_slot() {
 /// An identity the record contradicts is no identity: claimed from the
 /// operator's checkout rather than the task's own slot, it carries nothing
 /// over, so a process cannot reach a task by naming it from elsewhere.
-#[cfg(unix)]
 #[test]
 fn an_identity_claimed_from_the_wrong_directory_is_launched_untouched() {
     let env = TestEnvironment::isolated();
@@ -249,7 +245,6 @@ fn an_identity_claimed_from_the_wrong_directory_is_launched_untouched() {
 /// but does not own it: it is an ordinary invocation, and the enclosing
 /// agent's conversation is untouched — two processes never share one
 /// resume.
-#[cfg(unix)]
 #[test]
 fn a_launch_nested_inside_an_agents_launch_is_ordinary() {
     let env = TestEnvironment::isolated();
@@ -284,7 +279,6 @@ fn a_launch_nested_inside_an_agents_launch_is_ordinary() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn the_bypass_escape_hatch_still_carries_nothing() {
     let env = TestEnvironment::isolated();

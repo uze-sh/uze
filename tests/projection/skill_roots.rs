@@ -128,7 +128,6 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
 }
 
 /// A fake `codex` that answers every plugin CLI call successfully.
-#[cfg(unix)]
 fn fake_codex_bin_dir(root: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let dir = root.join("fake-bin");
@@ -141,7 +140,6 @@ fn fake_codex_bin_dir(root: &Path) -> PathBuf {
     dir
 }
 
-#[cfg(unix)]
 fn with_fake_codex(root: &Path, f: impl FnOnce()) {
     let fake_bin = fake_codex_bin_dir(root);
     let mut scope = uze_testkit::env::scope();
@@ -153,7 +151,6 @@ fn with_fake_codex(root: &Path, f: impl FnOnce()) {
 /// JSON (via env vars) so integration-owned package receipts can be
 /// inspected and detached truthfully in tests that exercise per-integration
 /// detach/update.
-#[cfg(unix)]
 fn with_truthful_fake_codex(
     root: &Path,
     marketplace_json: &str,
@@ -182,7 +179,6 @@ fn with_truthful_fake_codex(
 /// Codex and OpenCode against one machine: the OpenCode config file sits
 /// at `<root>/opencode/opencode.json`, so its skills root is
 /// `<root>/opencode/skills`.
-#[cfg(unix)]
 fn codex_and_opencode(root: &Path) -> (UzeApplication, PathBuf, PathBuf, UzeHome) {
     let agents_home = root.join("agents-home");
     let uze_home = UzeHome::at(root.join("uze-home"));
@@ -211,7 +207,6 @@ fn codex_and_opencode(root: &Path) -> (UzeApplication, PathBuf, PathBuf, UzeHome
 
 /// A `flow` package whose `review` skill is user-only and ships a script
 /// and a reference beside its `SKILL.md`.
-#[cfg(unix)]
 fn review_fixture(root: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let fixture_root = root.join("fixture");
@@ -251,7 +246,6 @@ fn links_under(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-#[cfg(unix)]
 fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
     use std::os::unix::fs::PermissionsExt;
     let root = temp("skill-root-opencode");
@@ -294,7 +288,6 @@ fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
 }
 
 #[test]
-#[cfg(unix)]
 fn codex_alone_keeps_the_user_only_skill_hidden_from_the_model() {
     let root = temp("skill-root-codex-only");
     with_fake_codex(&root, || {
@@ -335,7 +328,6 @@ fn codex_alone_keeps_the_user_only_skill_hidden_from_the_model() {
 }
 
 #[test]
-#[cfg(unix)]
 fn an_update_rebuilds_the_directory_and_the_receipt_still_matches() {
     let root = temp("skill-root-update");
     let (application, _, opencode_skills, uze_home) = codex_and_opencode(&root);
@@ -380,7 +372,6 @@ fn an_update_rebuilds_the_directory_and_the_receipt_still_matches() {
 }
 
 #[test]
-#[cfg(unix)]
 fn an_edited_skill_is_drift_and_is_left_as_the_operator_left_it() {
     let root = temp("skill-root-drift");
     with_fake_codex(&root, || {
@@ -416,7 +407,6 @@ fn an_edited_skill_is_drift_and_is_left_as_the_operator_left_it() {
 }
 
 #[test]
-#[cfg(unix)]
 fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
     let root = temp("skill-root-upgrade");
     with_fake_codex(&root, || {
@@ -480,7 +470,6 @@ fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
 }
 
 #[test]
-#[cfg(unix)]
 fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
     let root = temp("skill-root-blocked-one");
     with_fake_codex(&root, || {
@@ -545,7 +534,6 @@ fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
 /// out of the Store: the file it points at exists, and a write through it —
 /// a hook building into its root — leaves the bytes the lock pins alone.
 #[test]
-#[cfg(unix)]
 fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
     let root = temp("skill-root-plugin-root");
     with_fake_codex(&root, || {
@@ -593,7 +581,6 @@ fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
 /// is UZE's own, by its receipt: the next install replaces it with the
 /// delivered root rather than refusing it as somebody else's.
 #[test]
-#[cfg(unix)]
 fn an_mcp_entry_an_earlier_build_rooted_in_the_store_is_restated() {
     let root = temp("skill-root-mcp-restated");
     with_fake_codex(&root, || {

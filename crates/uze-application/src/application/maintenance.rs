@@ -421,7 +421,9 @@ impl Health<'_> {
     }
 }
 
-#[cfg(test)]
+/// Each case restores a receipt-owned symlink, which a Windows account
+/// without the right to create one never gets (delivery copies there).
+#[cfg(all(test, unix))]
 mod tests {
     use std::{fs, path::PathBuf};
 
@@ -437,7 +439,6 @@ mod tests {
 
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn restores_a_missing_receipt_owned_symlink_without_touching_plugin_bytes() {
         let root = uze_testkit::temp::scratch("maintenance");
@@ -482,7 +483,6 @@ mod tests {
         assert_eq!(fs::read_link(link).unwrap(), target);
     }
 
-    #[cfg(unix)]
     #[test]
     fn preserves_a_drifted_receipt_owned_symlink() {
         let root = uze_testkit::temp::scratch("maintenance-drift");
@@ -530,7 +530,6 @@ mod tests {
         assert_eq!(fs::read_link(link).unwrap(), foreign);
     }
 
-    #[cfg(unix)]
     #[test]
     fn an_orphaned_receipt_is_cleaned_and_frees_the_slot_it_occupied() {
         // Reproduces the real failure a store id format change (this

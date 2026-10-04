@@ -49,16 +49,12 @@ fn selection_shown(view: &CodeView) -> bool {
     !view.diff_pending() && shown(view).is_some_and(|heading| heading.contains(&name))
 }
 
-fn cpu() -> (Duration, Duration) {
-    let of = |who| {
-        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
-        unsafe { libc::getrusage(who, &mut usage) };
-        let time = |t: libc::timeval| {
-            Duration::from_secs(t.tv_sec as u64) + Duration::from_micros(t.tv_usec as u64)
-        };
-        time(usage.ru_utime) + time(usage.ru_stime)
-    };
-    (of(libc::RUSAGE_SELF), of(libc::RUSAGE_CHILDREN))
+/// A share of one processor over `wall`, or `n/a` where it is not known.
+fn share(spent: Option<Duration>, wall: f64) -> String {
+    spent.map_or_else(
+        || "n/a".to_owned(),
+        |spent| format!("{:.2}", spent.as_secs_f64() / wall),
+    )
 }
 
 struct Loop<'a> {
@@ -101,17 +97,22 @@ impl Loop<'_> {
         started.elapsed()
     }
 
-    fn idle(&mut self, span: Duration) -> (f64, f64) {
-        let (own, children) = cpu();
+    /// The processor share this client and the Git it ran took while
+    /// idling for `span`.
+    fn idle(&mut self, span: Duration) -> (String, String) {
+        let before = uze_platform::process::cpu_time();
         let started = Instant::now();
         while started.elapsed() < span {
             self.turn();
         }
-        let (own_after, children_after) = cpu();
+        let after = uze_platform::process::cpu_time();
         let wall = started.elapsed().as_secs_f64();
         (
-            (own_after - own).as_secs_f64() / wall,
-            (children_after - children).as_secs_f64() / wall,
+            share(Some(after.own - before.own), wall),
+            share(
+                after.children.zip(before.children).map(|(a, b)| a - b),
+                wall,
+            ),
         )
     }
 
@@ -162,7 +163,7 @@ fn code_surface_under_load() {
     // The badge's own cadence, with nothing open: the floor every other
     // number sits on.
     let (own, children) = run.idle(Duration::from_secs(8));
-    println!("idle, nothing open          uze={own:.2} cpu  git={children:.2} cpu");
+    println!("idle, nothing open          uze={own} cpu  git={children} cpu");
 
     run.key(alt('g'));
     let open = run.until("the first diff", |model| {
@@ -189,7 +190,7 @@ fn code_surface_under_load() {
     summary("changes: next file → diff", &mut clicks);
 
     let (own, children) = run.idle(Duration::from_secs(8));
-    println!("idle, changes open          uze={own:.2} cpu  git={children:.2} cpu");
+    println!("idle, changes open          uze={own} cpu  git={children} cpu");
 
     open_code_at(&mut run.driven.attach.model, &repo, &file);
     let first = run.until("the file", |model| {

@@ -5,6 +5,11 @@
 //! Migrated verbatim from the former `tests/integration_conformance.rs`
 //! (sections 8, 9, 12 and the store-byte proof).
 
+// The cases that drive shebang stand-ins are Unix-only until the stand-ins
+// dispatch through `uze-fake-harness` (windows-support task 9.2); what only
+// they use is unused elsewhere.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
+
 //! Integration Conformance Test Suite.
 //!
 //! Formalizes behavioral invariants that Claude, Codex, Antigravity, and
@@ -247,7 +252,6 @@ exit 0
     dir
 }
 
-#[cfg(unix)]
 #[cfg(unix)]
 #[test]
 fn no_duplicate_capability_receipt_when_a_package_covers_the_resource() {
