@@ -38,7 +38,7 @@ pub fn private_file(options: &mut OpenOptions) -> &mut OpenOptions {
 /// Narrows an existing file to this user alone (`0600`; a protected ACL on
 /// Windows): a file renamed into place does not keep what the one it
 /// replaced had.
-pub fn restrict_to_owner(path: &Path) {
+pub fn restrict_to_owner(path: &Path) -> io::Result<()> {
     imp::restrict_to_owner(path)
 }
 
@@ -152,9 +152,9 @@ mod imp {
         options.mode(0o600)
     }
 
-    pub(super) fn restrict_to_owner(path: &Path) {
+    pub(super) fn restrict_to_owner(path: &Path) -> io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
     }
 
     pub(super) fn open_without_blocking(path: &Path) -> io::Result<File> {
@@ -272,8 +272,8 @@ mod imp {
         options
     }
 
-    pub(super) fn restrict_to_owner(path: &Path) {
-        let _ = owner_only(path, "");
+    pub(super) fn restrict_to_owner(path: &Path) -> io::Result<()> {
+        owner_only(path, "")
     }
 
     /// Replaces `path`'s ACL with one granting the current token's user,
@@ -580,7 +580,7 @@ mod tests {
             .open(&file)
             .unwrap();
         std::fs::write(&file, "{}").unwrap();
-        restrict_to_owner(&file);
+        restrict_to_owner(&file).unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "{}");
         assert!(create_private_dir(&directory).is_err(), "never adopted");
         let _ = std::fs::remove_dir_all(&root);

@@ -262,8 +262,9 @@ fn compact(file: &Path) -> Result<()> {
         payload.push(b'\n');
     }
     write_atomic(file, &payload)?;
-    restrict_to_owner(file);
-    Ok(())
+    // `write_atomic` renames a fresh file into place, which does not keep
+    // the mode the append path gave the one it replaced.
+    uze_platform::fs::restrict_to_owner(file).map_err(UzeError::write(file))
 }
 
 fn create_private_dir(dir: &Path) -> Result<()> {
@@ -275,12 +276,6 @@ fn private_append_options() -> OpenOptions {
     options.create(true).append(true);
     uze_platform::fs::private_file(&mut options);
     options
-}
-
-/// `write_atomic` renames a fresh file into place, so a compaction would
-/// otherwise reset the mode the append path established.
-fn restrict_to_owner(file: &Path) {
-    uze_platform::fs::restrict_to_owner(file);
 }
 
 fn now_secs() -> u64 {

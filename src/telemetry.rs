@@ -245,7 +245,7 @@ where
     // A journal that cannot be opened is not a reason to fail the run the
     // journal is about: the process goes on with nothing written, exactly
     // as it did before there was one.
-    restrict_to_owner(&dir);
+    create_private_journal_dir(&dir);
     prune_to_size(&dir, &name, JOURNAL_BYTES);
     let appender = match tracing_appender::rolling::Builder::new()
         .rotation(tracing_appender::rolling::Rotation::DAILY)
@@ -281,7 +281,7 @@ where
 /// Best-effort: a journal that cannot be restricted is still a journal,
 /// and failing the run over its mode would lose the record this exists
 /// to keep.
-fn restrict_to_owner(dir: &std::path::Path) {
+fn create_private_journal_dir(dir: &std::path::Path) {
     let _ = uze_platform::fs::create_private_dir_all(dir);
 }
 

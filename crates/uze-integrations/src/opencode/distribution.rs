@@ -100,10 +100,15 @@ fn install_through(
     let destination = directory.join(&binary_name);
     // Beside its destination, so placing it is a rename on one volume.
     let staged = directory.join(format!(".{binary_name}.new"));
-    std::fs::copy(&built, &staged).map_err(|error| error.to_string())?;
-    uze_platform::executable::make_runnable(&staged).map_err(|error| error.to_string())?;
-    uze_platform::executable::replace_running(&staged, &destination)
-        .map_err(|error| error.to_string())?;
+    let placed = std::fs::copy(&built, &staged)
+        .and_then(|_| uze_platform::executable::make_runnable(&staged))
+        .and_then(|()| uze_platform::executable::replace_running(&staged, &destination));
+    if let Err(error) = placed {
+        // Beside the person's own binaries: nothing of a failed attempt
+        // stays there.
+        let _ = std::fs::remove_file(&staged);
+        return Err(error.to_string());
+    }
     if let Err(error) = uze_platform::environment::add_to_user_path(&directory) {
         tracing::warn!(%error, "OpenCode's directory was not added to PATH");
     }
