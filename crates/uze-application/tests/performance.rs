@@ -404,6 +404,14 @@ fn extension_switch_meets_the_budget() {
 fn doctor_meets_the_budget() {
     let world = World::build("budget-doctor");
     world.within_budget("doctor", |app| app.health().report());
+    // The budget is met from the best of several runs, and the first, cold
+    // one is never seen; a doctor that asked the shell would pay a process
+    // start there (hundreds of milliseconds on Windows) and fill the cache
+    // for the runs measured. It asks nothing: no observation was made.
+    assert!(
+        !world.home.shell_observation_cache_path().exists(),
+        "doctor started the shell to observe it"
+    );
 }
 
 #[test]

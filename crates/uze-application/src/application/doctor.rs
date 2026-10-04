@@ -238,7 +238,7 @@ impl Health<'_> {
             leftovers,
             maintenance: MaintenanceReport::default(),
             git_found: uze_core::subprocess::program_on_path("git"),
-            shell_refusal: uze_core::shell::refusal(&self.0.home),
+            shell_refusal: uze_core::shell::remembered_refusal(&self.0.home),
             ssh_missing: uze_core::state::marketplace_list(&self.0.home)
                 .unwrap_or_default()
                 .iter()

@@ -151,9 +151,7 @@ pub fn refusal(home: &crate::home::UzeHome) -> Option<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
-    let remembered = std::fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Observed>(&bytes).ok())
+    let remembered = observed(home)
         .filter(|observed| now.saturating_sub(observed.observed_at_unix_secs) < OBSERVED_FOR_SECS);
     if let Some(observed) = remembered {
         return observed.refusal;
@@ -166,6 +164,21 @@ pub fn refusal(home: &crate::home::UzeHome) -> Option<String> {
         let _ = crate::persistence::write_atomic(&path, &bytes);
     }
     refusal
+}
+
+/// What [`refusal`] last observed, however long ago, without asking the
+/// shell: for a report that must not start a process to answer (doctor is
+/// budgeted in milliseconds, and PowerShell takes hundreds to start). No
+/// observation yet is `None`: nothing on this machine has needed the shell
+/// to run what UZE generates.
+pub fn remembered_refusal(home: &crate::home::UzeHome) -> Option<String> {
+    observed(home).and_then(|observed| observed.refusal)
+}
+
+fn observed(home: &crate::home::UzeHome) -> Option<Observed> {
+    std::fs::read(home.shell_observation_cache_path())
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Observed>(&bytes).ok())
 }
 
 #[cfg(test)]
