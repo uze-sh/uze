@@ -8492,7 +8492,7 @@ mod workspace_tests {
         )
         .unwrap();
         std::fs::create_dir_all(home.shims_dir()).unwrap();
-        std::fs::write(home.shims_dir().join(identity.binary), "").unwrap();
+        std::fs::write(home.shim_path(identity.binary), "").unwrap();
     }
 
     pub(super) fn driven(model: WorkspaceModel, home: &UzeHome) -> Driven<'_> {

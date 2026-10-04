@@ -111,7 +111,10 @@ fn drift_blocks_destructive_remove_and_preserves_the_artifact() {
     // directory would be a Conflict, not Drift).
     let managed = env
         .home
-        .join(".config/opencode/skills/uze-agent-skill-conformance:uze-e2e");
+        .join(".config/opencode/skills")
+        .join(uze_core::path::file_name_for(
+            "uze-agent-skill-conformance:uze-e2e",
+        ));
     assert!(
         managed.is_dir() && !managed.is_symlink(),
         "expected the managed OpenCode skill directory, got a different projection"

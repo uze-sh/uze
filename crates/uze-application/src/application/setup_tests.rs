@@ -581,7 +581,8 @@ fn the_workspace_sets_up_what_is_installed_without_updating_it() {
             .home
             .shims_dir()
             .join(uze_platform::executable::file_name("routed"))
-            .is_symlink()
+            .is_file(),
+        "the launcher is placed, a link on Unix and a copy on Windows"
     );
     assert_eq!(world.app.workspace().entry(), WorkspaceEntry::Ready);
     assert!(world.app.workspace().agent_identities()[0].configured);

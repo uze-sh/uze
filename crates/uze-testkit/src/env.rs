@@ -43,10 +43,10 @@ impl<'a> ProcessEnvGuard<'a> {
 
     /// Removes `key`, remembering the previous value so it can be restored.
     /// Points every variable a home is read from at `home` (see
-    /// [`crate::process::HOME_VARIABLES`]).
-    pub fn home(&mut self, home: impl AsRef<std::ffi::OsStr>) -> &mut Self {
-        for key in crate::process::HOME_VARIABLES {
-            self.set(key, home.as_ref());
+    /// [`crate::process::profile`]).
+    pub fn home(&mut self, home: impl AsRef<std::path::Path>) -> &mut Self {
+        for (key, value) in crate::process::profile(home.as_ref()) {
+            self.set(key, value);
         }
         self
     }

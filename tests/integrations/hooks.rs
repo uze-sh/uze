@@ -74,6 +74,40 @@ const ANTIGRAVITY_DELIVERS: CompatibilityRoute = CompatibilityRoute::Native;
 #[cfg(windows)]
 const ANTIGRAVITY_DELIVERS: CompatibilityRoute = CompatibilityRoute::Unsupported;
 
+/// What a hook entry runs, read back: the generated wrapper it starts and
+/// the arguments the wrapper is handed. `words` is the entry's command
+/// followed by its arguments; this platform's shell may start a script
+/// through an interpreter, so the wrapper is the last word of
+/// [`uze_platform::shell::script`]'s form, wherever that puts it.
+fn wrapper_invocation(words: &[String]) -> (PathBuf, Vec<String>) {
+    // The form is the program and then its arguments, with the script's
+    // path as its last word: the program itself on Unix.
+    let (_, arguments) = uze_platform::shell::script("");
+    let path_at = arguments.len();
+    let wrapper = words
+        .get(path_at)
+        .unwrap_or_else(|| panic!("the entry starts a script: {words:?}"));
+    (PathBuf::from(wrapper), words[path_at + 1..].to_vec())
+}
+
+/// Whether `path` is the wrapper UZE generates, under the name this
+/// platform's template gives it.
+fn is_generated_wrapper(path: &Path) -> bool {
+    path.file_stem().is_some_and(|stem| stem == "exec")
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|directory| directory == "hooks")
+}
+
+/// The words a hook entry's `command` and `args` start.
+fn entry_words(handler: &serde_json::Value) -> Vec<String> {
+    std::iter::once(&handler["command"])
+        .chain(handler["args"].as_array().into_iter().flatten())
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect()
+}
+
 fn deny_group() -> &'static str {
     r#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/scripts/check","timeout":10}]}]}}"#
 }
@@ -155,7 +189,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     assert_eq!(
         antigravity.exposure_plan(archive).route,
-        CompatibilityRoute::Native
+        ANTIGRAVITY_DELIVERS
     );
 
     // Ask cannot be enforced on Claude (not in its declared effect set) and
@@ -182,7 +216,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     assert_eq!(
         antigravity.exposure_plan(prompt).route,
-        CompatibilityRoute::Native,
+        ANTIGRAVITY_DELIVERS,
         "Antigravity documents native allow/ask/deny decisions"
     );
 }
@@ -342,25 +376,24 @@ fn claude_merges_into_settings_json_preserving_foreign_content() {
     assert_eq!(document["theme"], "dark");
     let entry = &groups[1];
     assert_eq!(entry["matcher"], "Bash");
-    let command = entry["hooks"][0]["command"].as_str().unwrap();
     assert!(
-        command.ends_with("/hooks/exec"),
-        "the entry runs the generated wrapper, not the packager: {command}"
+        entry["hooks"][0]["args"].is_array(),
+        "the wrapper is started through the exec form"
+    );
+    let words = entry_words(&entry["hooks"][0]);
+    let (wrapper, args) = wrapper_invocation(&words);
+    assert!(
+        is_generated_wrapper(&wrapper),
+        "the entry runs the generated wrapper, not the packager: {words:?}"
     );
     assert!(
-        !command.contains("hook-exec"),
+        !words.iter().any(|word| word.contains("hook-exec")),
         "no UZE binary may sit on the hook's execution path"
     );
     assert!(
-        Path::new(command).is_file(),
+        wrapper.is_file(),
         "the wrapper the entry names must exist on disk"
     );
-    let args: Vec<&str> = entry["hooks"][0]["args"]
-        .as_array()
-        .expect("the wrapper is started through the exec form")
-        .iter()
-        .map(|value| value.as_str().unwrap())
-        .collect();
     assert_eq!(args[1], "pre_tool_use");
     assert_eq!(args[2], "deny");
     assert!(
@@ -660,10 +693,11 @@ fn reinstalling_replaces_a_previous_packager_entry_and_leaves_foreign_ones() {
         "the old UZE entry was replaced, not added to"
     );
     assert_eq!(groups[0], foreign, "the foreign entry is untouched");
-    let command = groups[1]["hooks"][0]["command"].as_str().unwrap();
+    let words = entry_words(&groups[1]["hooks"][0]);
+    let (wrapper, _) = wrapper_invocation(&words);
     assert!(
-        command.ends_with("/hooks/exec") && !command.contains("hook-exec"),
-        "the entry now runs the generated wrapper: {command}"
+        is_generated_wrapper(&wrapper) && !words.iter().any(|word| word.contains("hook-exec")),
+        "the entry now runs the generated wrapper: {words:?}"
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -705,8 +739,10 @@ fn codex_writes_its_own_hooks_json_command_form() {
     let groups = document["hooks"]["PreToolUse"].as_array().unwrap();
     assert_eq!(groups.len(), 1);
     let command = groups[0]["hooks"][0]["command"].as_str().unwrap();
+    let words = uze_platform::shell::words(command).expect("one line the shell reads");
+    let (wrapper, args) = wrapper_invocation(&words);
     assert!(
-        command.contains("/hooks/exec' ") && command.contains(" 'pre_tool_use' 'deny' "),
+        is_generated_wrapper(&wrapper) && args[1..3] == ["pre_tool_use", "deny"],
         "Codex's entry is one shell line invoking the generated wrapper: {command}"
     );
     assert!(

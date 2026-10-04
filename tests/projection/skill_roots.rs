@@ -641,32 +641,34 @@ fn an_mcp_entry_an_earlier_build_rooted_in_the_store_is_restated() {
                     )
             })
             .expect("OpenCode holds the server as a config entry");
-        let delivered = uze_home
-            .runtime_dir()
-            .join("packages/served@local")
-            .to_string_lossy()
-            .into_owned();
-        let stored = uze_home
-            .plugins_dir()
-            .join("local/served")
-            .to_string_lossy()
-            .into_owned();
+        let delivered = uze_home.runtime_dir().join("packages").join("served@local");
+        let stored = uze_home.plugins_dir().join("local").join("served");
+        // As the configuration's text spells them: a JSON string escapes
+        // the separator Windows writes.
+        let in_json = |path: &Path| {
+            let quoted = serde_json::to_string(&path.to_string_lossy()).unwrap();
+            quoted.trim_matches('"').to_owned()
+        };
         let config = fs::read_to_string(&config_path).unwrap();
-        assert!(config.contains(&delivered), "{config}");
-        fs::write(&config_path, config.replace(&delivered, &stored)).unwrap();
+        assert!(config.contains(&in_json(&delivered)), "{config}");
+        fs::write(
+            &config_path,
+            config.replace(&in_json(&delivered), &in_json(&stored)),
+        )
+        .unwrap();
         let mut earlier = receipt.clone();
         if let uze_core::integration::ManagedArtifact::VendorConfigEntry { command, .. } =
             &mut earlier.artifact
         {
-            *command = PathBuf::from(command.to_string_lossy().replace(&delivered, &stored));
+            *command = stored.join(command.strip_prefix(&delivered).unwrap());
         }
         uze_core::state::record_receipt(&uze_home, earlier).unwrap();
 
         install();
 
         let config = fs::read_to_string(&config_path).unwrap();
-        assert!(config.contains(&delivered), "restated: {config}");
-        assert!(!config.contains(&stored), "{config}");
+        assert!(config.contains(&in_json(&delivered)), "restated: {config}");
+        assert!(!config.contains(&in_json(&stored)), "{config}");
         let receipt = uze_core::state::receipts(&uze_home, Some("served@local"))
             .unwrap()
             .into_iter()

@@ -98,7 +98,7 @@ fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion(
 /// pane by reading `UZE_SHIM_NAME` back out of the launched process's live
 /// environment — necessary because a harness is free to overwrite its own
 /// `comm` (Claude Code sets its process title to its version string). This
-/// exercises the actual dispatch a shim symlink invocation takes
+/// exercises the actual dispatch a shim invocation takes
 /// (`src/shim.rs::run` → `exec_or_die`), not just the internal detection
 /// path the test above covers, and checks the one thing that dispatch must
 /// hand the real binary: its own invoked name, in its environment.
@@ -108,7 +108,7 @@ fn shim_dispatch_stamps_its_own_invoked_name_into_the_real_binarys_environment()
     let shims = UzeHome::at(&env.uze_home).shims_dir();
     std::fs::create_dir_all(&shims).unwrap();
     let shim_entry = shims.join(uze_platform::executable::file_name("claude"));
-    uze_platform::fs::symlink(uze_bin(), &shim_entry).unwrap();
+    uze_platform::executable::place_launcher(uze_bin(), &shim_entry).unwrap();
 
     // The "real" claude, further down PATH than the shim entry — dumps its
     // own live environment so the assertion can see exactly what the shim

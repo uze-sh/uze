@@ -999,7 +999,7 @@ fn a_harness_typed_into_a_pane_goes_through_its_launcher() {
     assert!(
         UzeHome::at(&engine.env.uze_home)
             .shims_dir()
-            .join("claude")
+            .join(uze_platform::executable::file_name("claude"))
             .exists(),
         "setup placed the harness's launcher"
     );

@@ -4,10 +4,40 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// Every variable some platform reads the user's home from: `HOME` on Unix
-/// (and by Git everywhere), `USERPROFILE` on Windows. A test's home is all
-/// of them, or the machine's own leaks in through the one left out.
-pub const HOME_VARIABLES: [&str; 2] = ["HOME", "USERPROFILE"];
+/// Every variable a user's home is read from, each with what it names
+/// under a test's `home`, the directories made: a test's home is all of
+/// them, or the machine's own leaks in through the one left out.
+///
+/// `HOME` on Unix (and by Git everywhere), `USERPROFILE` on Windows. A
+/// Windows profile is also its per-user application directories, and they
+/// must exist: .NET answers an empty path for a known folder that does
+/// not, and PowerShell then writes its module cache relative to wherever it
+/// was started — into the checkout a pane opened in.
+pub fn profile(home: &Path) -> Vec<(&'static str, PathBuf)> {
+    let mut variables = vec![
+        ("HOME", home.to_path_buf()),
+        ("USERPROFILE", home.to_path_buf()),
+    ];
+    for (variable, directory) in profile_directories::DIRECTORIES {
+        let directory = home.join(directory);
+        let _ = std::fs::create_dir_all(&directory);
+        variables.push((variable, directory));
+    }
+    variables
+}
+
+#[cfg(not(windows))]
+mod profile_directories {
+    pub(super) const DIRECTORIES: [(&str, &str); 0] = [];
+}
+
+#[cfg(windows)]
+mod profile_directories {
+    pub(super) const DIRECTORIES: [(&str, &str); 2] = [
+        ("APPDATA", r"AppData\Roaming"),
+        ("LOCALAPPDATA", r"AppData\Local"),
+    ];
+}
 
 /// Held by every test that installs a Ctrl+C watch or raises an interrupt:
 /// the watch is one per process, so a test raising its interrupt would
@@ -90,21 +120,26 @@ pub const XDG_BASE_DIRS: [&str; 4] = [
 /// configuration instead of the `.gitconfig` in the home it was given.
 pub const GIT_CONFIG_REDIRECTS: [&str; 2] = ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"];
 
+/// Keeps Git off the machine's system configuration, which a test's home
+/// does not replace: Git for Windows ships one setting `core.autocrlf`, so
+/// a file an agent wrote with `\n` would read back with `\r\n`.
+pub const GIT_CONFIG_NOSYSTEM: (&str, &str) = ("GIT_CONFIG_NOSYSTEM", "1");
+
 /// Points a child process at a test's own `HOME`, and every XDG base
-/// directory and Git configuration with it.
+/// directory and Git configuration with it: the machine's is never read.
 pub trait IsolatedHome {
     fn isolated_home(&mut self, home: impl AsRef<OsStr>) -> &mut Self;
 }
 
 impl IsolatedHome for Command {
     fn isolated_home(&mut self, home: impl AsRef<OsStr>) -> &mut Self {
-        for key in HOME_VARIABLES {
-            self.env(key, home.as_ref());
+        for (key, value) in profile(Path::new(home.as_ref())) {
+            self.env(key, value);
         }
         for key in XDG_BASE_DIRS.into_iter().chain(GIT_CONFIG_REDIRECTS) {
             self.env_remove(key);
         }
-        self
+        self.env(GIT_CONFIG_NOSYSTEM.0, GIT_CONFIG_NOSYSTEM.1)
     }
 }
 

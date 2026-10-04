@@ -458,7 +458,7 @@ mod tests {
     fn something_other_than_a_directory_is_never_replaced() {
         let root = uze_testkit::temp::scratch("replace-dir-conflict");
         fs::create_dir_all(root.join("elsewhere")).unwrap();
-        let destination = root.join("flow:review");
+        let destination = root.join(crate::path::file_name_for("flow:review"));
         std::os::unix::fs::symlink(root.join("elsewhere"), &destination).unwrap();
 
         let outcome = replace_dir(&destination, |_| Ok(()));

@@ -1782,7 +1782,10 @@ fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
         String::from_utf8_lossy(&first.stderr)
     );
     let agents = home.join(".config/opencode/agents");
-    let labelled = agents.join("crew:reviewer.md");
+    let labelled = agents.join(format!(
+        "{}.md",
+        uze_core::path::file_name_for("crew:reviewer")
+    ));
     assert!(labelled.is_file() && !labelled.is_symlink());
 
     // The ledger and the disk as 1.0.0-beta.3 left them.
@@ -1871,11 +1874,17 @@ fn a_skill_and_an_agent_of_one_name_are_both_delivered() {
     let report = String::from_utf8_lossy(&add.stdout);
     assert!(!report.contains("not delivered"), "{report}");
     assert!(
-        home.join(".config/opencode/skills/crew:review/SKILL.md")
+        home.join(".config/opencode/skills")
+            .join(uze_core::path::file_name_for("crew:review"))
+            .join("SKILL.md")
             .is_file()
     );
     assert!(
-        home.join(".config/opencode/agents/crew:review.md")
+        home.join(".config/opencode/agents")
+            .join(format!(
+                "{}.md",
+                uze_core::path::file_name_for("crew:review")
+            ))
             .is_file()
     );
     let _ = fs::remove_dir_all(home);
@@ -2307,7 +2316,10 @@ fn an_earlier_agent_file_the_operator_edited_is_held_back_not_replaced() {
         String::from_utf8_lossy(&first.stderr)
     );
     let agents = home.join(".config/opencode/agents");
-    let labelled = agents.join("crew:reviewer.md");
+    let labelled = agents.join(format!(
+        "{}.md",
+        uze_core::path::file_name_for("crew:reviewer")
+    ));
     assert!(labelled.is_file());
 
     // What an earlier build wrote, under the name it gave the agent.
@@ -2398,7 +2410,11 @@ fn doctor_reports_an_agent_whose_file_is_gone_as_missing() {
         "{}",
         String::from_utf8_lossy(&add.stderr)
     );
-    std::fs::remove_file(home.join(".config/opencode/agents/crew:reviewer.md")).unwrap();
+    std::fs::remove_file(home.join(".config/opencode/agents").join(format!(
+        "{}.md",
+        uze_core::path::file_name_for("crew:reviewer")
+    )))
+    .unwrap();
 
     let findings = crew_findings(&home, &path, "opencode");
     assert!(
@@ -2412,6 +2428,8 @@ fn doctor_reports_an_agent_whose_file_is_gone_as_missing() {
 
 /// A hook entry delivered intact but under another name than its plan
 /// gives it is reported renamed, saying the name it answers to instead.
+/// Antigravity CLI's named entries, which only the POSIX wrapper makes.
+#[cfg(unix)]
 #[test]
 fn doctor_reports_a_hook_delivered_under_another_name_as_renamed() {
     use uze_core::{UzeHome, exposure::ManagedArtifact, state};
@@ -2475,7 +2493,8 @@ fn doctor_reports_a_hook_delivered_under_another_name_as_renamed() {
 }
 
 /// `crew`, carrying an MCP server and hooks for two events: `ensure-ui`
-/// on session start and `watch` before a shell command.
+/// on session start and `watch` before a shell command, each spelled for
+/// both shells.
 fn crew_with_a_server_and_hooks(home: &std::path::Path) -> PathBuf {
     let package = home.join("crew");
     std::fs::create_dir_all(&package).unwrap();
@@ -2487,7 +2506,7 @@ fn crew_with_a_server_and_hooks(home: &std::path::Path) -> PathBuf {
     .unwrap();
     std::fs::write(
         package.join("hooks.json"),
-        r#"{"hooks":{"SessionStart":[{"id":"ensure-ui","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/ensure-ui"}]}],"PreToolUse":[{"id":"watch","matcher":"shell","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/watch"}]}]}}"#,
+        r#"{"hooks":{"SessionStart":[{"id":"ensure-ui","hooks":[{"type":"command","command":{"posix":"${PLUGIN_ROOT}/ensure-ui","windows":"& '${PLUGIN_ROOT}/ensure-ui.ps1'"}}]}],"PreToolUse":[{"id":"watch","matcher":"shell","hooks":[{"type":"command","command":{"posix":"${PLUGIN_ROOT}/watch","windows":"& '${PLUGIN_ROOT}/watch.ps1'"}}]}]}}"#,
     )
     .unwrap();
     package
@@ -2551,7 +2570,8 @@ fn inspect_names_the_servers_and_hooks_a_harness_receives() {
 
 /// Antigravity CLI fires no session start: the install reports that
 /// group Unsupported there, with why, and still delivers the package's
-/// other hook to it.
+/// other hook to it — through the POSIX wrapper, the only one it takes.
+#[cfg(unix)]
 #[test]
 fn antigravity_reports_a_session_start_hook_unsupported_and_takes_the_rest() {
     let home = temporary_home("cli-antigravity-session-start");

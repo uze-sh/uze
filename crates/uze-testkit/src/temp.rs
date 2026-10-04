@@ -428,10 +428,12 @@ impl TestEnvironment {
     /// that can go through a child process should use [`TestEnvironment::command`].
     pub fn apply(&self) -> ProcessEnvGuard<'static> {
         let mut scope = crate::env::scope();
-        for key in crate::process::HOME_VARIABLES {
-            scope.set(key, &self.home);
-        }
         scope
+            .home(&self.home)
+            .set(
+                crate::process::GIT_CONFIG_NOSYSTEM.0,
+                crate::process::GIT_CONFIG_NOSYSTEM.1,
+            )
             .set("UZE_HOME", &self.uze_home)
             .set("PATH", self.scoped_path());
         for key in crate::process::XDG_BASE_DIRS {

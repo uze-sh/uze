@@ -1504,19 +1504,7 @@ fn a_finished_direct_agent_is_replaced_by_a_shell_in_its_pane() {
         .pane;
     server.spawn_pane(pane, exits_at_once(Vec::new())).unwrap();
 
-    for _ in 0..40 {
-        server.restore_finished_agent_panes();
-        let restored = server
-            .panes
-            .lock()
-            .expect("panes poisoned")
-            .get(&pane)
-            .is_some_and(|runtime| runtime.launch == Launch::Shell);
-        if restored {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
+    wait_for_shell_respawn(&server, pane);
     assert!(
         server
             .panes
@@ -2240,6 +2228,26 @@ fn exits_at_once(env: Vec<(String, String)>) -> Launch {
     }
 }
 
+/// Waits for `pane`, whose program ends at once, to be given the person's
+/// shell in its place. That program is a shell line, and a PowerShell
+/// started cold takes seconds to begin and end.
+fn wait_for_shell_respawn(server: &Server, pane: PaneId) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        server.restore_finished_agent_panes();
+        let restored = server
+            .panes
+            .lock()
+            .expect("panes poisoned")
+            .get(&pane)
+            .is_some_and(|runtime| runtime.launch == Launch::Shell);
+        if restored {
+            return;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
 fn stamp(id: &str) -> Vec<(String, String)> {
     vec![(
         crate::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
@@ -2385,19 +2393,7 @@ fn a_shell_respawn_carries_no_launch_environment() {
         .clone();
     assert_eq!(launched, stamp("agent-done"), "the tab reports the launch");
 
-    for _ in 0..40 {
-        server.restore_finished_agent_panes();
-        let restored = server
-            .panes
-            .lock()
-            .expect("panes poisoned")
-            .get(&pane)
-            .is_some_and(|runtime| runtime.launch == Launch::Shell);
-        if restored {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
+    wait_for_shell_respawn(&server, pane);
     let panes = server.panes.lock().expect("panes poisoned");
     let runtime = panes.get(&pane).expect("the pane was respawned");
     assert_eq!(runtime.launch, Launch::Shell);

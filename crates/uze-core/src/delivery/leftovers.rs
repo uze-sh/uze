@@ -245,12 +245,19 @@ mod dangling_tests {
         let gone = home
             .root()
             .join("runtime/attachments/a-harness/skills/git/pr");
-        crate::persistence::create_symlink(&gone, &discovery.join("git:pr")).unwrap();
+        crate::persistence::create_symlink(
+            &gone,
+            &discovery.join(crate::path::file_name_for("git:pr")),
+        )
+        .unwrap();
 
         let found = dangling_references(&home, std::slice::from_ref(&discovery), &BTreeSet::new());
 
         assert_eq!(found.len(), 1, "{found:?}");
-        assert_eq!(found[0].path, discovery.join("git:pr"));
+        assert_eq!(
+            found[0].path,
+            discovery.join(crate::path::file_name_for("git:pr"))
+        );
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -260,7 +267,7 @@ mod dangling_tests {
         let gone = home
             .root()
             .join("runtime/attachments/a-harness/skills/git/pr");
-        let link = discovery.join("git:pr");
+        let link = discovery.join(crate::path::file_name_for("git:pr"));
         crate::persistence::create_symlink(&gone, &link).unwrap();
 
         let claimed: BTreeSet<PathBuf> = [link].into_iter().collect();
@@ -274,7 +281,11 @@ mod dangling_tests {
         let (root, home, discovery) = world("dangling-resolves");
         let alive = home.root().join("store/plugins/ai/git");
         fs::create_dir_all(&alive).unwrap();
-        crate::persistence::create_symlink(&alive, &discovery.join("git:pr")).unwrap();
+        crate::persistence::create_symlink(
+            &alive,
+            &discovery.join(crate::path::file_name_for("git:pr")),
+        )
+        .unwrap();
 
         assert!(dangling_references(&home, &[discovery], &BTreeSet::new()).is_empty());
         fs::remove_dir_all(&root).unwrap();
@@ -284,7 +295,11 @@ mod dangling_tests {
     fn a_reference_pointing_outside_uze_home_is_never_reported() {
         let (root, home, discovery) = world("dangling-foreign");
         let theirs = root.join("somewhere-else/their-skill");
-        crate::persistence::create_symlink(&theirs, &discovery.join("their:skill")).unwrap();
+        crate::persistence::create_symlink(
+            &theirs,
+            &discovery.join(crate::path::file_name_for("their:skill")),
+        )
+        .unwrap();
 
         assert!(dangling_references(&home, &[discovery], &BTreeSet::new()).is_empty());
         fs::remove_dir_all(&root).unwrap();
@@ -296,7 +311,7 @@ mod dangling_tests {
         let gone = home
             .root()
             .join("runtime/attachments/a-harness/skills/git/pr");
-        let link = discovery.join("git:pr");
+        let link = discovery.join(crate::path::file_name_for("git:pr"));
         crate::persistence::create_symlink(&gone, &link).unwrap();
         let found = dangling_references(&home, std::slice::from_ref(&discovery), &BTreeSet::new());
 

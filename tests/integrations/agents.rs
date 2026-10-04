@@ -290,16 +290,13 @@ fn claude_exposes_an_agent_only_under_its_plugin_qualified_label() {
         );
         let claude = ClaudeIntegration::new(root.join("claude"), UzeHome::at(root.join("uze")));
 
-        // The name an agent file is written under, as this platform can
-        // hold it.
-        let on_disk = uze_core::path::file_name_for(label);
         assert_eq!(
             claude
                 .packaged_exposure_name(&package, &resource)
                 .as_deref(),
-            Some(on_disk.as_str())
+            Some(label)
         );
-        assert_eq!(claude.exposure_name_candidates(&resource), vec![on_disk]);
+        assert_eq!(claude.exposure_name_candidates(&resource), vec![label]);
         let plan = claude.exposure_plan(&resource);
         let uze_core::exposure::ExposureMechanism::Managed(
             uze_core::integration::ManagedArtifact::GeneratedFile { path, content },
@@ -307,7 +304,11 @@ fn claude_exposes_an_agent_only_under_its_plugin_qualified_label() {
         else {
             panic!("a loose Claude agent is a generated file: {plan:?}");
         };
-        assert_eq!(path.file_stem().unwrap(), label);
+        // The label as the name this platform can hold a file under.
+        assert_eq!(
+            path.file_stem().unwrap(),
+            uze_core::path::file_name_for(label).as_str()
+        );
         assert!(
             content.starts_with(&format!("---\nname: {label}\n")),
             "{content}"

@@ -73,13 +73,13 @@ fn harness_recording_its_conversations(env: &TestEnvironment) -> FakeHarness {
         .build()
 }
 
-/// The shim symlink UZE creates at setup, planted directly so the test
+/// The shim UZE places at setup, planted directly so the test
 /// exercises the launch boundary without depending on provisioning.
 fn shim(env: &TestEnvironment) -> PathBuf {
     let shims = UzeHome::at(&env.uze_home).shims_dir();
     std::fs::create_dir_all(&shims).unwrap();
     let path = shims.join(uze_platform::executable::file_name(HARNESS));
-    uze_platform::fs::symlink(uze_bin(), &path).unwrap();
+    uze_platform::executable::place_launcher(uze_bin(), &path).unwrap();
     path
 }
 

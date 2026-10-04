@@ -107,15 +107,16 @@ fn the_package_manager_alone_never_meets_the_workspace() {
 
     // And outside the workspace a harness command is the harness's own
     // binary: nothing puts uze's shims on this person's PATH.
-    let resolved = env
-        .command("sh")
-        .args(["-c", "command -v claude"])
-        .output()
-        .unwrap();
-    let resolved = String::from_utf8_lossy(&resolved.stdout);
+    let resolved = std::env::split_paths(&env.scoped_path()).find_map(|directory| {
+        uze_platform::executable::candidates(&directory, "claude")
+            .into_iter()
+            .find(|candidate| candidate.is_file())
+    });
     assert!(
-        !resolved.contains(&env.uze_home.join("shims").display().to_string()),
-        "claude resolves to {resolved}"
+        !resolved
+            .as_ref()
+            .is_some_and(|path| path.starts_with(env.uze_home.join("shims"))),
+        "claude resolves to {resolved:?}"
     );
 }
 
