@@ -5607,6 +5607,33 @@ mod workspace_tests {
         );
     }
 
+    /// AltGr types into the picker: a Windows console reports it as
+    /// Ctrl+Alt, and `/` is AltGr+Q on ABNT2, so a path typed there lost
+    /// every separator.
+    #[test]
+    fn altgr_types_its_character_into_the_picker() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-altgr"));
+        let mut driven = driven(agent_session_in("/repo"), &home);
+        let chord = uze_keys::active()
+            .chord_for(uze_keys::Action::NewSpace, &[uze_keys::Scope::Workspace])
+            .expect("space creation is reachable from the keyboard");
+        driven.press_key(key_event(chord));
+
+        let alt_graph = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        driven.press_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE));
+        driven.press_key(KeyEvent::new(KeyCode::Char('/'), alt_graph));
+        driven.press_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+
+        let picker = driven
+            .attach
+            .model
+            .root_picker
+            .as_ref()
+            .expect("the picker is still open");
+        assert_eq!(picker.input(), "g/e");
+    }
+
     /// The management surface is a modal over the workspace, not a mode
     /// beside it: the action that opens it closes it again, the frame
     /// draws it over everything, and the client behind it stays attached.

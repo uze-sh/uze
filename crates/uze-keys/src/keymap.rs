@@ -200,7 +200,20 @@ impl Keymap {
 /// that produces a character. `Shift` is typing — it is how a capital is
 /// written.
 fn is_text(chord: Chord) -> bool {
-    !chord.mods.ctrl && !chord.mods.alt && matches!(chord.key, Key::Char(_) | Key::Space)
+    let plain = !chord.mods.ctrl && !chord.mods.alt;
+    match chord.key {
+        Key::Space => plain,
+        Key::Char(character) => plain || is_alt_graph(chord, character),
+        _ => false,
+    }
+}
+
+/// A character AltGr typed, where the terminal reports AltGr as Ctrl+Alt
+/// (a Windows console does): `/`, `@`, `{` on the layouts that put them
+/// there, ABNT2's among them. A letter or a digit under Ctrl+Alt is a
+/// chord, which no layout types that way.
+fn is_alt_graph(chord: Chord, character: char) -> bool {
+    chord.mods.ctrl && chord.mods.alt && !character.is_ascii_alphanumeric()
 }
 
 /// Every pair of bindings that would make one mnemonic mean two things in
@@ -341,6 +354,16 @@ mod tests {
         assert_eq!(keymap.resolve(chord("j"), &filtering), Resolution::Text);
         assert_eq!(keymap.resolve(chord("R"), &filtering), Resolution::Text);
         assert_eq!(keymap.resolve(chord("space"), &filtering), Resolution::Text);
+        // AltGr, which a Windows console reports as Ctrl+Alt: `/` is AltGr+Q
+        // on ABNT2, and a path typed into a prompt lost its separators.
+        assert_eq!(
+            keymap.resolve(chord("ctrl+alt+/"), &filtering),
+            Resolution::Text
+        );
+        assert_ne!(
+            keymap.resolve(chord("ctrl+alt+q"), &filtering),
+            Resolution::Text
+        );
         // Its own bindings still answer.
         assert_eq!(
             keymap.resolve(chord("esc"), &filtering),
