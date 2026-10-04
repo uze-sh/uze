@@ -282,6 +282,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       `exec.ps1` answers every fixture identically. The latency budget
       (≤ 400 ms p50 per `PreToolUse`) is measured and recorded.
+      (First cut: `hooks/host_wrapper_tests.rs` runs the wrapper of the
+      platform it runs on, payload bytes on stdin, for allow, deny with the
+      handler's reason, a failing guard and an unreadable payload denying,
+      and a failing observer allowing.)
 - [ ] 6.6 On-disk names on Windows: `<plugin>-<capability>` with collision
       detection that fails, naming both packages. Refuse reserved device
       names, `< > " / \ | ? *`, control characters and a trailing dot or
@@ -312,9 +316,14 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [ ] 7.3 `.cmd`/`.bat` launchers spawn correctly from the shim,
       `run_captured` and `CapturingRunner` (`src/cli/setup.rs:431`).
       Surface `std`'s `InvalidInput` for arguments it cannot escape.
-- [ ] 7.4 Windows provisioning routes, kept in each integration and run via
-      `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm … |
-      iex"`:
+- [ ] 7.4 Windows provisioning routes, kept in each integration and run in
+      Windows PowerShell, the script downloaded as text (`irm` hands a
+      script served as `application/octet-stream` back as bytes) and run
+      with `Invoke-Expression`, in a hidden console of its own (with no
+      console at all PowerShell runs nothing). After the installer, the
+      executable is looked for again on this process's `PATH`, then on the
+      one a new shell gets from the registry. Claude (2.1.289) and Codex
+      (0.160.0) installed and delivered in Windows Sandbox, 2026-10-04:
       - Claude: `https://claude.ai/install.ps1`, verified at
         `%USERPROFILE%\.local\bin\claude.exe`;
       - Codex: `https://chatgpt.com/codex/install.ps1`;
