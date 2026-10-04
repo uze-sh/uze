@@ -2155,7 +2155,8 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
         .master
         .lock()
         .expect("master poisoned")
-        .process_group_leader();
+        .as_ref()
+        .and_then(|master| master.process_group_leader());
     let through_launcher = pane.foreground_through_launcher();
     pane.stop();
 

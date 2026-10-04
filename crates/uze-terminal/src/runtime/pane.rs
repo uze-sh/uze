@@ -4,7 +4,8 @@ use super::*;
 
 pub(super) struct PaneRuntime {
     pub(super) id: PaneId,
-    pub(super) master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
+    /// Taken only when the pane is let go (see its `Drop`).
+    pub(super) master: Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>,
     pub(super) writer: Arc<Mutex<Box<dyn Write + Send>>>,
     /// Shared with the thread that reaps it once the pane is stopped.
     pub(super) child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
@@ -28,6 +29,20 @@ pub(super) struct PaneRuntime {
     /// follow the content under a selection the moment it is drawn. Always
     /// locked after `terminal`, never before it.
     pub(super) selection: Arc<Mutex<PaneSelection>>,
+}
+
+/// Closing a pseudoterminal's master can wait: ConPTY's
+/// `ClosePseudoConsole` returns only once the output it still holds has
+/// been read. Done on whichever thread let the pane go, it held that
+/// request for as long; done on the reader's own, it would wait on itself.
+/// So the master is closed on a thread of its own while the reader keeps
+/// draining to its end, which is also what lets the reader end at all.
+impl Drop for PaneRuntime {
+    fn drop(&mut self) {
+        if let Some(master) = self.master.get_mut().ok().and_then(Option::take) {
+            thread::spawn(move || drop(master));
+        }
+    }
 }
 
 /// Answers a pane's own program, including its OSC 10/11 colour queries.
@@ -193,7 +208,7 @@ impl PaneRuntime {
         });
         Ok(Self {
             id,
-            master: Mutex::new(pair.master),
+            master: Mutex::new(Some(pair.master)),
             writer,
             child: Arc::new(Mutex::new(child)),
             group,
@@ -235,16 +250,14 @@ impl PaneRuntime {
     }
 
     pub(super) fn resize(&self, columns: u16, rows: u16) {
-        let _ = self
-            .master
-            .lock()
-            .expect("master poisoned")
-            .resize(PtySize {
+        if let Some(master) = self.master.lock().expect("master poisoned").as_ref() {
+            let _ = master.resize(PtySize {
                 rows,
                 cols: columns,
                 pixel_width: 0,
                 pixel_height: 0,
             });
+        }
         self.terminal
             .lock()
             .expect("terminal poisoned")
@@ -333,7 +346,7 @@ impl PaneRuntime {
     /// it (see [`host::foreground`]).
     fn foreground_process(&self) -> Option<u32> {
         let master = self.master.lock().expect("master poisoned");
-        host::foreground(&**master, self.group.as_deref())
+        host::foreground(&**master.as_ref()?, self.group.as_deref())
     }
 
     pub(super) fn snapshot(&self) -> PaneSnapshot {
