@@ -152,7 +152,8 @@ fn every_registered_harness_installs_through_its_documented_windows_route() {
                 assert_eq!(install.program, uze_platform::shell::ARGV[0], "{id}");
                 let script = install.arguments.last().unwrap();
                 assert!(
-                    script.contains(&format!("irm {url} | iex")),
+                    script.contains(&format!("-Uri '{url}'"))
+                        && script.contains("Invoke-Expression"),
                     "{id} must hand {url} to PowerShell: {script}"
                 );
                 assert_eq!(result.action, ProvisionAction::Install, "{id}");
