@@ -368,7 +368,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       package attached. Observational groups are reported Unsupported. A
       Codex/Windows shell-matching group is Unsupported, with the issue
       link.
-- [ ] 6.5 The shared fixture set:
+- [x] 6.5 The shared fixture set:
       - `sh` goldens plus a Windows spelling per fixture;
       - a large payload (over 2 MB);
       - non-ASCII content.
@@ -381,9 +381,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       runs on to every one of them, by decision, and `exec.ps1` answers them
       all on Windows. Measured on a Windows 11 host: `exec.ps1` with one
       handler, p50 658 ms (375 ms of it the wrapper's own PowerShell, the
-      rest the handler's). Open: the 400 ms budget, which needs the handler
-      run in the wrapper's process (D12's runspace) rather than a second
-      `powershell.exe`.
+      rest the handler's). Decided (D12): on Windows the budget is two
+      PowerShell starts, p50 ≤ 700 ms. A runspace was measured in Windows
+      Sandbox and refused: a handler's `exit 3` never reaches its caller,
+      and creating one still costs about 200 ms.
 - [x] 6.6 On-disk names on Windows: `<plugin>-<capability>` with collision
       detection that fails, naming both packages. Refuse reserved device
       names, `< > " / \ | ? *`, control characters and a trailing dot or

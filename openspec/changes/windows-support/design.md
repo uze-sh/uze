@@ -483,9 +483,14 @@ Measured on 0.160.0: no payload reaches an entry under `command` or
 
 **Cost.** A `PreToolUse` costs two PowerShell starts, the wrapper's and the
 handler's. Measured on a Windows 11 host: p50 658 ms with one handler, 375 ms
-of it the wrapper alone, against a budget of 400 ms. The budget stays the
-target; meeting it without losing the reason is open (a handler started
-directly when its spelling names an executable is the next step).
+of it the wrapper alone. The 400 ms budget written for the POSIX wrapper is
+not reachable by a PowerShell wrapper at all, since its own start takes most
+of it, so on Windows the budget is what two starts cost: p50 ≤ 700 ms. Running
+the handler in a runspace of the wrapper's own process was measured and
+refused: a handler's `exit 3` does not reach the caller of a runspace, and
+that exit code is the contract, while creating the runspace still costs about
+200 ms. Lowering the cost further needs a wrapper that is not a script, which
+is a decision of its own.
 
 **Shared fixtures.** The `sh` goldens become a shared fixture set, gaining a
 Windows spelling per fixture, a large-payload fixture and a non-ASCII fixture.
