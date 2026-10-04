@@ -58,7 +58,7 @@ fn documented_install_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBu
         .collect();
     if let Some(home) = var(uze_platform::home::VARIABLE).map(PathBuf::from) {
         dirs.push(home.join("bin"));
-        dirs.push(home.join(".opencode/bin"));
+        dirs.push(home.join(".opencode").join("bin"));
     }
     dirs
 }
