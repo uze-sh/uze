@@ -168,15 +168,9 @@ pub(crate) fn provision_cli(
         return Ok(ProvisioningResult::failed(action, method, reason));
     }
     // Looked for again: an installer can put the program where nothing
-    // was before, in a directory it added only to the PATH a new shell
-    // searches.
-    let programs = [route.program];
-    let executable = uze_core::harness_runtime::resolve_real_executable(&programs, shims_dir)
-        .or_else(|| uze_core::harness_runtime::resolve_for_a_new_shell(&programs, shims_dir))
-        .map_or_else(
-            || executable.to_owned(),
-            |found| found.to_string_lossy().into_owned(),
-        );
+    // was before.
+    let executable =
+        super::process::real_executable(route.program, shims_dir, Some(PathBuf::from(executable)));
     let executable = executable.as_str();
     let verified = runner.run(&ProcessSpec::new(executable, ["--version"]));
     if !matches!(verified, Ok(output) if output.success) {

@@ -40,10 +40,13 @@ const VENDOR_OUTPUT_CAP: usize = 256 * 1024;
 /// `~/.uze/shims` sits ahead of the real binary on `PATH`, and the shim
 /// prepends `--add-dir <dir>` to whatever follows — for `["update"]` a
 /// variadic option swallows the subcommand and the CLI starts an
-/// interactive session instead. `fallback` names a documented install
-/// location to try before the bare name.
+/// interactive session instead. Looked for on this process's `PATH`, then
+/// on the one a new shell searches (an installer may have added its
+/// directory there only); `fallback` names a documented install location
+/// to try before the bare name.
 pub(crate) fn real_executable(name: &str, shims_dir: &Path, fallback: Option<PathBuf>) -> String {
     uze_core::harness_runtime::resolve_real_executable(&[name], shims_dir)
+        .or_else(|| uze_core::harness_runtime::resolve_for_a_new_shell(&[name], shims_dir))
         .or(fallback)
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_else(|| name.to_owned())
