@@ -282,10 +282,14 @@ pass. The server opens the job by name.
 thread: output keeps draining until it returns, because before Windows 11
 24H2 it waits forever on an undrained pipe.
 
-**Foreground status.** The newest leaf among the job's processes
-(`JobObjectBasicProcessIdList`), with parents from
-`InheritedFromUniqueProcessId` checked against creation time. The trampoline
-and the shim are skipped.
+**Foreground status.** ConPTY keeps no foreground group, so it is found the
+way the console was passed: among the job's processes
+(`JobObjectBasicProcessIdList`, parents from `InheritedFromUniqueProcessId`),
+from the one the pane started, down through each shell running a command and
+the launcher running a harness, to the first that keeps the console. What
+that process starts stays its work, as it stays in its group on Unix. The
+newest leaf, the first answer, was an agent's own `git` or language server
+as often as the agent, and the pane came and went from the sidebar.
 
 **Default interactive shell.** `UZE_SHELL`, else `pwsh.exe` if it is on
 `PATH`, else `powershell.exe`. `COMSPEC` is not consulted. This is a person's

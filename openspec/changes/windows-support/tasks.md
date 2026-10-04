@@ -122,6 +122,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - `.netrc`/`_netrc` from `UzeHome`.
 
       Also set `core.longpaths=true` on `git worktree add`.
+      (Done: the Windows variables, `GIT_FAITHFUL_CHECKOUT` with
+      `core.fileMode=false`, `.netrc`/`_netrc`, and `GIT_ADDED_CHECKOUT` on
+      `worktree add`. The null paths stay `/dev/null`, which Git for
+      Windows reads and `NUL` it cannot open as a config file. Open: the
+      Windows test of a clone.)
 - [x] 3.11 `create_symlink` callers each get a Windows answer, none needing
       a privilege an ordinary session lacks:
       - a link to a directory is a junction (`uze_platform::fs::symlink`),
@@ -140,6 +145,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       (`longPathAware`, UTF-8 `activeCodePage`) through
       `cargo:rustc-link-arg-bins`. The client sets the console code pages
       to 65001.
+      (Done: `build.rs` compiles `src/uze.manifest` into a `.res` the linker
+      takes, since `/MANIFEST:EMBED` needs `mt.exe` and the release links
+      with `rust-lld`. The console code page is left alone: Rust writes a
+      console in UTF-16, so the code page decides nothing UZE shows, and a
+      changed one would outlive UZE in the person's console.)
 - [ ] 3.14 Windows tests:
       - lock contention across two processes, with the holder pid readable;
       - a deadline killing a grandchild;
@@ -161,6 +171,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       Write the invariants at the top of the module, and add a
       concurrent read/write stress test.
+      (Done but the stress test. Decided: the name hashes `UZE_HOME` and
+      the SID with FNV-1a, since the DACL and the client's checks are the
+      boundary and the name only has to be stable; a busy server is waited
+      for two seconds, after which the caller's own read and write
+      deadlines apply.)
 - [ ] 4.2 The client opens with `SECURITY_IDENTIFICATION` and verifies the
       pipe owner SID, the server pid plus its start time, and that the image
       is `uze` (including `uze.exe.old-*`). Otherwise it reports the holder.
@@ -185,10 +200,13 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       server opens the job by name. `stop`, `end_leftovers` and shutdown
       become `TerminateJobObject`. The process-group code in
       `server.rs:1068-1088` is Unix-only.
-- [ ] 4.6 `ClosePseudoConsole` is called off the reader thread, with output
-      drained until it returns.
-- [ ] 4.7 Foreground status from the job's process list (newest leaf, with
-      parents checked by creation time, trampoline and shim skipped). Feed
+- [x] 4.6 `ClosePseudoConsole` is called off the reader thread, with output
+      drained until it returns. (`PaneRuntime`'s `Drop` closes the master
+      on a thread of its own while the reader drains.)
+- [x] 4.7 Foreground status from the job's process list: from the process
+      the pane started, down through each shell running a command and the
+      launcher running a harness, to the first that keeps the console (the
+      newest process was an agent's own `git` as often as the agent). Feed
       it into `refresh_pane_status` and `shim_launched_name`.
       `PLAIN_SHELL_PROCESS_NAMES` adds `cmd`, `powershell`, `pwsh` and
       `bash`, matched on the stem. Relaunch refuses `\` and `:`.
