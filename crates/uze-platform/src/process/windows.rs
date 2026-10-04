@@ -207,12 +207,14 @@ pub(super) fn cpu_time() -> super::CpuTime {
 }
 
 /// A hidden console of its own (not the launching one, so neither closing
-/// it nor a Ctrl+C there reaches the child), and out of the launching
-/// terminal's job, which some hosts close with everything in it. A host
-/// that forbids leaving its job gets a child that ends with it.
+/// it nor a Ctrl+C there reaches the child), a process group of its own (so
+/// a Ctrl+Break sent to the launcher's group does not either), and out of
+/// the launching terminal's job, which some hosts close with everything in
+/// it. A host that forbids leaving its job gets a child that ends with it.
 pub(super) fn spawn_detached(command: &mut Command) -> io::Result<super::Detached> {
+    const DETACHED: u32 = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP;
     if let Ok(child) = command
-        .creation_flags(CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB)
+        .creation_flags(DETACHED | CREATE_BREAKAWAY_FROM_JOB)
         .spawn()
     {
         return Ok(super::Detached {
@@ -221,7 +223,7 @@ pub(super) fn spawn_detached(command: &mut Command) -> io::Result<super::Detache
         });
     }
     Ok(super::Detached {
-        child: command.creation_flags(CREATE_NO_WINDOW).spawn()?,
+        child: command.creation_flags(DETACHED).spawn()?,
         outlives_host: false,
     })
 }
