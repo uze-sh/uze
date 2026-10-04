@@ -169,6 +169,19 @@ This changes the layering: `uze-terminal`'s rule becomes "depends on nothing
 in the workspace but `uze-document` and `uze-platform`". `crate-layering.mmd`
 and AGENTS.md are updated in this change.
 
+**The boundary is enforced, both ways.** Production code outside
+`uze-platform` names no platform: no `cfg(unix)`, `cfg(windows)` or
+`target_os`, at a call site or at a module boundary. A crate that needs to
+decide something per platform is missing a concept here, and the concept is
+added, as a value when the decision is data (the shell family a hook wrapper
+is written for) and as a function when it is behaviour. Tests may be gated,
+because some behaviour exists on one platform only (a mode bit, a symlink
+without privilege, a FIFO, a Job Object), but a gate states why in a comment
+beside it, and a test of behaviour both platforms have runs on both through
+these same concepts. `tests/architecture/layering.rs` fails the build over
+either: a platform `cfg` in production code outside this crate, or a test
+gate with no reason.
+
 ### D4 — The transport port ADR-038 promised
 
 `uze-terminal` gains `runtime/transport/`:

@@ -159,6 +159,21 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - the verbatim and case compare;
       - a sharing-violation retry;
       - a cross-platform digest using `text=auto` and symlink fixtures.
+- [ ] 3.15 No platform `cfg` in production code outside `uze-platform` (D3):
+      - permissions in `uze-integrations` (`shared/tree.rs`,
+        `hooks/wrapper.rs`) through `uze_platform::executable`;
+      - the hook wrapper chosen from the shell family `uze_platform::shell`
+        names, a value, not a `cfg`;
+      - the terminal's local transport (named pipe, Unix socket, peer
+        checks) as a `uze-platform` concept the terminal consumes;
+      - the terminal host's facts (interactive shell, a pane's foreground,
+        the server's directory, the `uze` image name) in the modules they
+        belong to;
+      - `uze-testkit`'s process helpers on the same concepts.
+- [ ] 3.16 `tests/architecture/layering.rs` fails the build over a platform
+      `cfg` in production code outside `uze-platform`, and over a test gated
+      to a platform with no comment saying why. Every existing gate gets its
+      reason, or is removed where the behaviour exists on both platforms.
 
 ## 4. Terminal runtime on Windows (D5–D8)
 
