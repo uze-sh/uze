@@ -25,11 +25,11 @@ use windows_sys::Win32::{
         },
         Threading::{
             CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
-            CREATE_SUSPENDED, CreateEventW, EVENT_MODIFY_STATE, GetCurrentProcess,
-            GetExitCodeProcess, INFINITE, OpenEventW, OpenProcess, OpenProcessToken, OpenThread,
-            PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE,
-            PROCESS_TERMINATE, ResumeThread, SetEvent, THREAD_SUSPEND_RESUME, TerminateProcess,
-            WaitForSingleObject,
+            CREATE_SUSPENDED, CreateEventW, DETACHED_PROCESS, EVENT_MODIFY_STATE,
+            GetCurrentProcess, GetExitCodeProcess, INFINITE, OpenEventW, OpenProcess,
+            OpenProcessToken, OpenThread, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA,
+            PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, ResumeThread, SetEvent, THREAD_SUSPEND_RESUME,
+            TerminateProcess, WaitForSingleObject,
         },
     },
 };
@@ -253,9 +253,12 @@ pub(super) fn spawn_tree(
     seat: super::Seat,
 ) -> io::Result<(std::process::Child, Tree)> {
     use std::os::windows::io::AsRawHandle;
+    // No console at all, not a hidden one: a question put to `CONIN$` in a
+    // hidden console waits for an answer nobody can give, where opening it
+    // in no console fails and the asker takes its default.
     let seated = match seat {
         super::Seat::OwnGroup => CREATE_NEW_PROCESS_GROUP,
-        super::Seat::NoTerminal => CREATE_NO_WINDOW,
+        super::Seat::NoTerminal => DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
     };
     let tree = job(false)?;
     let mut child = command.creation_flags(CREATE_SUSPENDED | seated).spawn()?;

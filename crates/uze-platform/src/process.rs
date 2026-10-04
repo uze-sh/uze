@@ -45,8 +45,8 @@ pub enum Seat {
     OwnGroup,
     /// No terminal to ask anything on: a question it would put to a person
     /// gets no answer and takes its default instead of waiting for one
-    /// nobody is shown. A session of its own on Unix, a hidden console of
-    /// its own on Windows.
+    /// nobody is shown. A session of its own on Unix, no console at all on
+    /// Windows.
     NoTerminal,
 }
 
