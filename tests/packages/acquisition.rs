@@ -382,8 +382,7 @@ fn a_link_in_the_repository_reads_and_digests_the_same_on_every_platform() {
         "the link reads as the skill it points at"
     );
     assert_eq!(
-        uze_core::digest::tree_sha256_with_links(materialized.root(), materialized.links())
-            .unwrap(),
+        materialized.digest().unwrap(),
         LINKED_DIGEST,
         "the digest every platform reaches for this package"
     );

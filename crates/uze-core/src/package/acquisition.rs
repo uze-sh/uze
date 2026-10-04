@@ -290,6 +290,13 @@ impl MaterializedPackage {
         &self.links
     }
 
+    /// The digest of the package's bytes, its unmade links counted as the
+    /// links they are: the value a lock pins, on every platform.
+    pub fn digest(&self) -> Result<String> {
+        crate::digest::tree_sha256_with_links(&self.root, &self.links)
+            .map_err(UzeError::read(&self.root))
+    }
+
     /// A directory UZE created and must remove once the Store has ingested it.
     pub fn owned(root: PathBuf, provenance: Provenance) -> Self {
         Self {
