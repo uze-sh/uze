@@ -497,6 +497,8 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       (Done: no inline fake runs where a stand-in can; the remaining `#!/bin/sh` bytes are package data or the POSIX installer route, and `/tmp` literals are path data. Every gate says why, enforced by 3.16, and the platform-neutral tests run everywhere.)
 - [ ] 9.3 `cargo test --workspace --no-fail-fast` passes under `pwsh` on
       `windows-2025` and `windows-11-arm`. The x64 row becomes gating.
+      (The x64 row passes and gates. The Arm row runs and reports; it gates
+      once it has been green as the x64 one was.)
 
 ## 10. Journeys on Windows (D20)
 

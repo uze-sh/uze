@@ -99,9 +99,11 @@ jobs:
           # actually has. An `x86_64-apple-darwin` entry belongs here as a
           # third row once this one has a history of being green.
           macos='{"platform":"macos","runner":"macos-15","clippy":true}'
-          # Native Windows, x64. Not gating yet: the row has to build a
-          # history of being green first (windows-support task 9.3).
+          # Native Windows, x64: gating, green since the platform settled.
           windows='{"platform":"windows","runner":"windows-2025","clippy":true}'
+          # Native Windows on Arm. Not gating yet: it has to build a history
+          # of being green first, as the x64 row did (task 9.3).
+          windows_arm='{"platform":"windows-arm","runner":"windows-11-arm","clippy":false}'
 
           # Anything that is not a pull request answers "everything". A push
           # to `main` and the nightly are the record of whether that commit
@@ -110,7 +112,7 @@ jobs:
             {
               echo "lab=true"
               echo "journeys=true"
-              echo "platforms=[${linux},${macos},${windows}]"
+              echo "platforms=[${linux},${macos},${windows},${windows_arm}]"
               echo "journey_platforms=[${linux},${macos}]"
               echo "installer_windows=true"
             } >> "${GITHUB_OUTPUT}"
@@ -145,7 +147,7 @@ jobs:
 
           platforms="${linux}"
           if reaches "${platform_surface}"; then platforms="${platforms},${macos}"; fi
-          if reaches "${windows_surface}"; then platforms="${platforms},${windows}"; fi
+          if reaches "${windows_surface}"; then platforms="${platforms},${windows},${windows_arm}"; fi
           platforms="[${platforms}]"
           journey_platforms="[${linux}]"
           if reaches "${journey_platform_surface}"; then journey_platforms="[${linux},${macos}]"; fi
@@ -221,8 +223,8 @@ jobs:
     needs: changes
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
-    # Windows reports until it has a history of being green (task 9.3).
-    continue-on-error: ${{ matrix.platform == 'windows' }}
+    # Windows on Arm reports until it has a history of being green (task 9.3).
+    continue-on-error: ${{ matrix.platform == 'windows-arm' }}
     strategy:
       # The first run on a new platform is worth the complete list of what
       # does not hold there, not the name of the first leg that stopped.
