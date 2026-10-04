@@ -197,6 +197,12 @@ pub fn transports(url: &str) -> Result<Vec<Transport>> {
     }])
 }
 
+/// Whether `source` names a repository reached over SSH as typed
+/// (`ssh://…`, `git@host:owner/repo`): one this machine needs an `ssh` for.
+pub fn reached_over_ssh(source: &str) -> bool {
+    source.starts_with("ssh://") || scp(source).is_some()
+}
+
 /// The SSH spelling of an HTTPS identity. Port and path prefix are not
 /// guessed: a forge that serves SSH elsewhere is `~/.ssh/config`'s to say.
 pub fn ssh_endpoint(identity: &str) -> Option<String> {

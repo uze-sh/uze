@@ -40,11 +40,9 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use std::ffi::{OsStr, OsString};
-    use std::os::windows::ffi::OsStringExt;
 
     use windows_sys::Win32::System::Registry::{
-        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_EXPAND_SZ, RRF_NOEXPAND,
-        RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegGetValueW, RegSetKeyValueW,
+        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_EXPAND_SZ, RRF_NOEXPAND, RegSetKeyValueW,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         HWND_BROADCAST, SMTO_ABORTIFHUNG, SendMessageTimeoutW, WM_SETTINGCHANGE,
@@ -119,51 +117,8 @@ mod imp {
         Ok(true)
     }
 
-    /// A string value, its `%VARIABLE%` references expanded unless `extra`
-    /// carries `RRF_NOEXPAND`: `RegGetValueW` expands an expandable string
-    /// unless told not to.
     fn string_value(root: HKEY, key: &str, name: &str, extra: u32) -> Option<OsString> {
-        let key = wide(OsStr::new(key));
-        let name = wide(OsStr::new(name));
-        let flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | extra;
-        let mut size = 0u32;
-        // SAFETY: both strings are NUL-terminated; a null buffer asks only
-        // for the size.
-        let status = unsafe {
-            RegGetValueW(
-                root,
-                key.as_ptr(),
-                name.as_ptr(),
-                flags,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                &mut size,
-            )
-        };
-        if status != 0 || size == 0 {
-            return None;
-        }
-        let mut buffer = vec![0u16; (size as usize).div_ceil(2)];
-        // SAFETY: `buffer` holds `size` bytes, as the call above asked for.
-        let status = unsafe {
-            RegGetValueW(
-                root,
-                key.as_ptr(),
-                name.as_ptr(),
-                flags,
-                std::ptr::null_mut(),
-                buffer.as_mut_ptr().cast(),
-                &mut size,
-            )
-        };
-        if status != 0 {
-            return None;
-        }
-        let length = buffer
-            .iter()
-            .position(|&unit| unit == 0)
-            .unwrap_or(buffer.len());
-        Some(OsString::from_wide(&buffer[..length]))
+        crate::win::registry_string(root, key, name, extra)
     }
 }
 

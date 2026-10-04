@@ -299,15 +299,19 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       `uze status` lists every project command missing a spelling for this
       platform.
-- [ ] 5.4 Detect a Group Policy execution policy and Constrained Language
+- [x] 5.4 Detect a Group Policy execution policy and Constrained Language
       Mode once, in the detection cache. On such a machine, commands and
       hooks are Unsupported with the reason. `uze doctor` reports it with
       the machine checks (`git.exe`, `ssh.exe` when an SSH marketplace
       exists, VT, OS build, `Path`, Smart App Control).
       (Done: `uze_platform::shell::refusal`, kept a day in
       `cache/shell.json`, and `uze doctor`'s `shell` problem beside `git`.
-      Open: hooks reported Unsupported on such a machine, and the other
-      machine checks.)
+      Then: a hook group is Unsupported on such a machine, with the
+      refusal as its reason; `uze_platform::machine::concerns` names an
+      old Windows build, Smart App Control enforcing, and `uze` off a new
+      shell's `Path`, which `uze doctor` reports as warnings, and `ssh`
+      missing while a marketplace is reached over SSH as a problem. VT is
+      the build check's: every build UZE supports has it.)
 - [x] 5.5 Trust shows and compares both spellings; a Windows-only change
       re-prompts. A `hooks.json` parse failure fails trust closed
       (`trust.rs:157`).

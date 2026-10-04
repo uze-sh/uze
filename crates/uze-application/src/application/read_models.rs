@@ -1229,6 +1229,21 @@ pub struct DoctorReport {
     /// Policy execution policy, a constrained language mode on Windows),
     /// when it would: setup steps, gates and hooks all run in it.
     pub shell_refusal: Option<String>,
+    /// Whether a marketplace is reached over SSH while no `ssh` resolves:
+    /// the next refresh of it cannot happen.
+    pub ssh_missing: bool,
+    /// What else about this machine keeps UZE from working as it should.
+    pub machine_concerns: Vec<MachineConcern>,
+}
+
+/// One thing about the machine a person should know (see
+/// `uze_platform::machine`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct MachineConcern {
+    /// What it is about: `windows`, `smart app control`, `path`.
+    pub subject: String,
+    /// What is the matter, and what to do about it.
+    pub detail: String,
 }
 
 /// The friendliest name available for a resource in a `PluginCapability`

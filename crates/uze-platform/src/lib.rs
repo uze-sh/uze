@@ -18,6 +18,7 @@ pub mod fs_name;
 pub mod home;
 pub mod interrupt;
 pub mod lock;
+pub mod machine;
 pub mod path;
 pub mod probe;
 pub mod process;

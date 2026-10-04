@@ -239,6 +239,21 @@ impl Health<'_> {
             maintenance: MaintenanceReport::default(),
             git_found: uze_core::subprocess::program_on_path("git"),
             shell_refusal: uze_core::shell::refusal(&self.0.home),
+            ssh_missing: uze_core::state::marketplace_list(&self.0.home)
+                .unwrap_or_default()
+                .iter()
+                .any(|(_, record)| {
+                    matches!(&record.source, uze_core::PackageSource::Git { url, .. }
+                        if uze_core::acquisition::forge::reached_over_ssh(url))
+                })
+                && !uze_core::subprocess::program_on_path("ssh"),
+            machine_concerns: uze_platform::machine::concerns()
+                .into_iter()
+                .map(|concern| MachineConcern {
+                    subject: concern.subject.to_owned(),
+                    detail: concern.detail,
+                })
+                .collect(),
         }
     }
 

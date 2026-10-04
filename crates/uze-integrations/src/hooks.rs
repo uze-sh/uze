@@ -210,6 +210,14 @@ impl HookTarget {
         config_file: PathBuf,
         evidence: &str,
     ) -> ExposurePlan {
+        // The wrapper runs in this machine's shell, and a machine whose
+        // policy refuses it would run none of the handlers: said before
+        // attaching, rather than found by the first tool call.
+        if let Some(refusal) = uze_core::shell::refusal(uze_home) {
+            return unsupported(format!(
+                "this machine's shell refuses the hook's wrapper: {refusal}"
+            ));
+        }
         hook_plan(resource, &self.capabilities(), false, evidence, |hook| {
             if !self.deliverable() {
                 return None;

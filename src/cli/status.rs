@@ -99,6 +99,14 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
             uze_platform::tools::GIT_INSTALL_HINT
         ));
     }
+    if report.ssh_missing {
+        problems.push(
+            "ssh  not found; a marketplace is reached over SSH and cannot be refreshed".to_owned(),
+        );
+    }
+    for concern in &report.machine_concerns {
+        warnings.push(format!("{}  {}", concern.subject, concern.detail));
+    }
     if let Some(refusal) = &report.shell_refusal {
         problems.push(format!(
             "shell  {refusal}; setup steps, gates and hooks need it"

@@ -1560,6 +1560,8 @@ mod tests {
                 },
                 git_found: true,
                 shell_refusal: None,
+                ssh_missing: false,
+                machine_concerns: Vec::new(),
             }),
             ..RefreshData::default()
         }
