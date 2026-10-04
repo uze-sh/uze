@@ -107,9 +107,9 @@ scenes:
       - cmd:
           run: |
             {python} -c "
-            import glob, json
+            import glob, json, pathlib
             markers = glob.glob('{uze_home}/state/projects/*/project.json')
-            print('\n'.join(json.load(open(m))['root'] for m in markers))
+            print('\n'.join(pathlib.Path(json.load(open(m))['root']).as_posix() for m in markers))
             "
           stdout_contains: "{project}"
         about: and the records name the repository they belong to
