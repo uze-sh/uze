@@ -485,7 +485,10 @@ Measured on 0.160.0: no payload reaches an entry under `command` or
 handler's. Measured on a Windows 11 host: p50 658 ms with one handler, 375 ms
 of it the wrapper alone. The 400 ms budget written for the POSIX wrapper is
 not reachable by a PowerShell wrapper at all, since its own start takes most
-of it, so on Windows the budget is what two starts cost: p50 ≤ 700 ms. Running
+of it, so on Windows the budget is what two starts cost: p50 ≤ 700 ms for a
+group of one handler. Each handler is a start of its own, about 280 ms more
+(658 − 375), so a group of `n` is held to 375 + 325·`n` ms; the budget is per
+handler because the cost is. Running
 the handler in a runspace of the wrapper's own process was measured and
 refused: a handler's `exit 3` does not reach the caller of a runspace, and
 that exit code is the contract, while creating the runspace still costs about
