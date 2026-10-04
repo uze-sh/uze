@@ -47,6 +47,19 @@ built="${CARGO_TARGET_DIR:-${repo_root}/target}/${target}/release"
 
 # --- the world -------------------------------------------------------------
 stage="$(world_root windows)"
+# Windows runs one Sandbox at a time and refuses a second without a word,
+# and an open one holds the staged folder, so it is closed first: its world
+# is disposable by definition.
+if tasklist.exe /FI "IMAGENAME eq WindowsSandboxServer.exe" 2>/dev/null | grep -qi WindowsSandbox; then
+  say "Closing the Sandbox already open"
+  taskkill.exe /IM WindowsSandboxRemoteSession.exe /F >/dev/null 2>&1 || true
+  taskkill.exe /IM WindowsSandboxServer.exe /F >/dev/null 2>&1 || true
+  for _ in $(seq 1 30); do
+    tasklist.exe 2>/dev/null | grep -qi vmmemWindowsSandbox || break
+    sleep 2
+  done
+fi
+
 say "Staging the world in ${stage}"
 rm -rf "$stage"
 mkdir -p "$stage"

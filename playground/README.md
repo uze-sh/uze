@@ -11,7 +11,7 @@ Both are started from WSL.
 |---|---|---|
 | Open | `make playground-windows` | `make playground-linux` |
 | World | Windows Sandbox | a WSL distribution named `uze-playground` (Ubuntu 24.04) |
-| Shell | PowerShell 5.1, as the ordinary user `person` | bash, as the user `person` |
+| Shell | Windows Terminal, as the ordinary user `person` | bash, as the user `person` |
 | Gone | when the Sandbox window closes | `make playground-linux-down` (or the next `make playground-linux`) |
 
 Each one builds uze and the playground's MCP server from this checkout,
@@ -59,16 +59,18 @@ Windows Sandbox signs in as an administrator with UAC off, so everything it
 starts is elevated, which is not what a person's own session is: Codex, for
 one, refuses to start its daemon elevated, and an administrator does not meet
 the limits an ordinary account does. So the world creates an ordinary account,
-`person`, installs uze for it and opens its PowerShell console.
+`person`, installs uze for it and opens Windows Terminal as that account (its
+unpackaged build, which needs no Store and runs for any account).
 `UZE_PLAYGROUND_USER=admin make playground-windows` keeps the administrator
-instead, in Windows Terminal (installed per account, so only there).
+instead.
 
 The world is staged in `%LOCALAPPDATA%\uze-playground\windows`, mapped into
 the Sandbox as `C:\playground`. Preparing takes about a minute after the
 Sandbox opens; `C:\playground\prepare.log` (the same file on your side) says
 how far it got, and why, if a step failed.
 
-Windows runs one Sandbox at a time: close any other before opening this one.
+Windows runs one Sandbox at a time, so opening the world closes one already
+open.
 A freshly built `uze.exe` runs in the Sandbox even where Smart App Control
 blocks it on your own Windows.
 

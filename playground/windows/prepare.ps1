@@ -2,9 +2,9 @@
 # as an administrator with UAC off, so everything it starts is elevated;
 # Codex, for one, refuses to run elevated, and an administrator hides what an
 # ordinary account would meet. So by default the world is an ordinary user's,
-# `person`, in a PowerShell console of their own; `UZE_PLAYGROUND_USER=admin`
-# keeps the administrator, in Windows Terminal. Progress goes to
-# C:\playground\prepare.log, which the host sees.
+# `person`; `UZE_PLAYGROUND_USER=admin` keeps the administrator. Either way it
+# opens in Windows Terminal. Progress goes to C:\playground\prepare.log, which
+# the host sees.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $stage = 'C:\playground'
@@ -23,6 +23,7 @@ function Latest-Asset([string]$repository, [string]$pattern) {
 $asAdministrator = (Get-Content "$stage\user" -Raw).Trim() -eq 'admin'
 $password = 'Playground-Person-1!'
 $credential = $null
+$script:terminal = $null
 
 try {
     # For every account: under Program Files, on the machine's Path.
@@ -34,20 +35,21 @@ try {
     [Environment]::SetEnvironmentVariable('Path', "$env:ProgramFiles\MinGit\cmd;$machinePath", 'Machine')
     $env:Path = "$env:ProgramFiles\MinGit\cmd;$env:Path"
 
+    # Its unpackaged build, which runs for any account: the packaged one is
+    # installed per account, and the Sandbox has no Store to fetch its
+    # frameworks from.
+    Note 'terminal: Windows Terminal'
+    try {
+        $kit = Latest-Asset 'microsoft/terminal' '^Microsoft\.WindowsTerminal_[\d.]+_x64\.zip$'
+        Invoke-WebRequest $kit.browser_download_url -OutFile "$env:TEMP\terminal.zip" -UseBasicParsing
+        Expand-Zip "$env:TEMP\terminal.zip" "$env:ProgramFiles\WindowsTerminal"
+        $script:terminal = (Get-ChildItem "$env:ProgramFiles\WindowsTerminal" -Recurse -Filter wt.exe | Select-Object -First 1).FullName
+        Note "terminal: $script:terminal"
+    } catch {
+        Note "terminal: not installed ($_); a PowerShell window is opened instead"
+    }
+
     if ($asAdministrator) {
-        # Its preinstall kit carries the framework packages the Sandbox has
-        # no Store to fetch. Installed per user, so only for this one.
-        Note 'terminal: Windows Terminal'
-        try {
-            $kit = Latest-Asset 'microsoft/terminal' '_Windows10_PreinstallKit\.zip$'
-            Invoke-WebRequest $kit.browser_download_url -OutFile "$env:TEMP\terminal.zip" -UseBasicParsing
-            Expand-Zip "$env:TEMP\terminal.zip" "$env:TEMP\terminal"
-            Get-ChildItem "$env:TEMP\terminal" -Filter '*x64*.appx' | ForEach-Object { Add-AppxPackage $_.FullName }
-            Add-AppxPackage (Get-ChildItem "$env:TEMP\terminal" -Filter '*.msixbundle' | Select-Object -First 1).FullName
-            Note 'terminal: installed'
-        } catch {
-            Note "terminal: not installed ($_); a PowerShell window is opened instead"
-        }
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$stage\setup-user.ps1" -Stage $stage -Log $log
         $home_ = $env:USERPROFILE
     } else {
@@ -89,12 +91,15 @@ playground marketplace.
 Progress and errors of this preparation: C:\playground\prepare.log
 "@
 $greeting = "Write-Host @'`n$welcome`n'@"
-$arguments = '-NoExit', '-Command', $greeting
-$terminal = Get-Command wt.exe -ErrorAction SilentlyContinue
-if ($credential) {
-    Start-Process powershell.exe -Credential $credential -LoadUserProfile -WorkingDirectory $project -ArgumentList $arguments
-} elseif ($terminal) {
-    Start-Process $terminal.Source -ArgumentList (@('-d', $project, 'powershell.exe') + $arguments)
+$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($greeting))
+$shell = 'powershell.exe', '-NoExit', '-EncodedCommand', $encoded
+# Windows Terminal is a window of its own; a console started directly would
+# share this script's, which the Sandbox's logon command never shows, so the
+# fallback goes through `start`, which always opens one.
+$program, $arguments = if ($script:terminal) {
+    $script:terminal, (@('-d', $project) + $shell)
 } else {
-    Start-Process powershell.exe -WorkingDirectory $project -ArgumentList $arguments
+    'cmd.exe', (@('/c', 'start', '"uze playground"') + $shell)
 }
+$account = if ($credential) { @{ Credential = $credential; LoadUserProfile = $true } } else { @{} }
+Start-Process $program -WorkingDirectory $project -ArgumentList $arguments @account
