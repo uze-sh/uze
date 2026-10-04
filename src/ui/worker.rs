@@ -264,7 +264,7 @@ pub(crate) fn dispatch(
             });
         }
         Intent::Remove(id) => {
-            model.status = Status::Working(format!("Removing {id}…"));
+            model.mutation_asked(format!("Removing {id}…"));
             spawn_mutation(
                 home.clone(),
                 sender.clone(),
@@ -273,7 +273,7 @@ pub(crate) fn dispatch(
             );
         }
         Intent::Update(id, grant) => {
-            model.status = Status::Working(format!("Updating {id}…"));
+            model.mutation_asked(format!("Updating {id}…"));
             let retry_id = id.clone();
             spawn_trust_sensitive(
                 home.clone(),
@@ -293,7 +293,7 @@ pub(crate) fn dispatch(
         Intent::Setup(harness) => set_up(harness, home, sender, model),
         Intent::AddMarketplace(source) => add_marketplace(source, home, sender, model),
         Intent::RemoveMarketplace(name) => {
-            model.status = Status::Working(format!("Removing marketplace {name}…"));
+            model.mutation_asked(format!("Removing marketplace {name}…"));
             spawn_mutation(
                 home.clone(),
                 sender.clone(),
@@ -311,7 +311,7 @@ pub(crate) fn dispatch(
         }
         Intent::ContextApply(root) => apply_context(root, home, sender, model),
         Intent::CreateProfile(id) => {
-            model.status = Status::Working(format!("Creating profile \"{id}\"…"));
+            model.mutation_asked(format!("Creating profile \"{id}\"…"));
             spawn_mutation(
                 home.clone(),
                 sender.clone(),
@@ -324,7 +324,7 @@ pub(crate) fn dispatch(
             );
         }
         Intent::DeleteProfile(id) => {
-            model.status = Status::Working(format!("Deleting profile \"{id}\"…"));
+            model.mutation_asked(format!("Deleting profile \"{id}\"…"));
             spawn_mutation(
                 home.clone(),
                 sender.clone(),
@@ -427,7 +427,7 @@ fn read_release_notes(version: String, home: &UzeHome, sender: &Sender<WorkerRes
 }
 
 fn set_up(harness: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
-    model.status = Status::Working(format!("Setting up {harness}…"));
+    model.mutation_asked(format!("Setting up {harness}…"));
     spawn_mutation(
         home.clone(),
         sender.clone(),
@@ -486,7 +486,7 @@ fn add_marketplace(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.status = Status::Working(format!("Adding marketplace from {source}…"));
+    model.mutation_asked(format!("Adding marketplace from {source}…"));
     spawn_mutation(
         home.clone(),
         sender.clone(),
@@ -539,7 +539,7 @@ fn install_project_environment(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.status = Status::Working("Installing project environment…".to_owned());
+    model.mutation_asked("Installing project environment…".to_owned());
     spawn_mutation(
         home.clone(),
         sender.clone(),
@@ -590,10 +590,10 @@ fn apply_context(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.status = Status::Working("Applying context reconciliation…".to_owned());
+    model.mutation_asked("Applying context reconciliation…".to_owned());
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
-    thread::spawn(move || {
+    in_mutation_lane(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.worker").entered();
         let result = answered_or(
@@ -664,7 +664,7 @@ fn install(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.status = Status::Working(format!("Installing {name}…"));
+    model.mutation_asked(format!("Installing {name}…"));
     let retry_name = name.clone();
     let retry_marketplace = marketplace.clone();
     let spec = format!("{name}@{marketplace}");
@@ -707,10 +707,10 @@ fn apply_profile(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    model.status = Status::Working(format!("Applying \"{id}\"…"));
+    model.mutation_asked(format!("Applying \"{id}\"…"));
     let (home, sender, context_root) = (home.clone(), sender.clone(), model.context_root.clone());
     let parent = tracing::Span::current();
-    thread::spawn(move || {
+    in_mutation_lane(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.worker").entered();
         let failed = format!("Applying \"{id}\" failed");
@@ -843,6 +843,30 @@ fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<Re
     })
 }
 
+/// Runs `job` after every mutation already asked of this process.
+///
+/// UZE's mutation lock admits one writer and refuses a second rather than
+/// queueing it, which is right between two processes and wrong inside this
+/// one: a person who sets up two harnesses in a row asked for both. So the
+/// client's own mutations take turns on one thread, and the lock is left to
+/// say what it is for, another process writing.
+fn in_mutation_lane(job: impl FnOnce() + Send + 'static) {
+    type Job = Box<dyn FnOnce() + Send>;
+    static LANE: std::sync::OnceLock<Sender<Job>> = std::sync::OnceLock::new();
+    let lane = LANE.get_or_init(|| {
+        let (sender, jobs) = std::sync::mpsc::channel::<Job>();
+        // A job that panics answers nothing, but must not take the lane
+        // with it: every mutation after it would wait forever.
+        thread::spawn(move || {
+            for job in jobs {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+            }
+        });
+        sender
+    });
+    let _ = lane.send(Box::new(job));
+}
+
 fn spawn_mutation(
     home: UzeHome,
     sender: Sender<WorkerResult>,
@@ -850,7 +874,7 @@ fn spawn_mutation(
     operation: impl FnOnce(&UzeApplication) -> Result<String> + Send + 'static,
 ) {
     let parent = tracing::Span::current();
-    thread::spawn(move || {
+    in_mutation_lane(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.mutation").entered();
         let result = answered_or(
@@ -887,7 +911,7 @@ fn spawn_trust_sensitive(
     retry: TrustedRetry,
 ) {
     let parent = tracing::Span::current();
-    thread::spawn(move || {
+    in_mutation_lane(move || {
         let _parent = parent.enter();
         let _span = tracing::info_span!("tui.trust_sensitive").entered();
         let outcome = answered_or(
@@ -1040,7 +1064,7 @@ pub(crate) fn drain_worker_results(
                 model.plugin_detail = None;
                 model.marketplace_detail = None;
                 model.inspection_in_flight = None;
-                model.status = Status::Success(message);
+                model.mutation_answered(Status::Success(message));
             }
             WorkerResult::TrustRequired {
                 plugin,
@@ -1055,7 +1079,7 @@ pub(crate) fn drain_worker_results(
                     },
                     focus: None,
                 };
-                model.status = Status::Idle;
+                model.mutation_answered(Status::Idle);
             }
             WorkerResult::ContextAnalyzed(Ok((status, plan))) => {
                 model.remembered.context_status = Some(status);
@@ -1063,13 +1087,13 @@ pub(crate) fn drain_worker_results(
                 model.status = Status::Idle;
             }
             WorkerResult::ContextApplied(Ok((message, report))) => {
-                model.status = Status::Success(message);
+                model.mutation_answered(Status::Success(message));
                 let _ = report;
             }
             WorkerResult::ProfileApplied(Ok((message, results, data))) => {
                 model.refreshed(data);
                 model.profile_apply_results = results;
-                model.status = Status::Success(message);
+                model.mutation_answered(Status::Success(message));
                 model.status_expires_at = Some(Instant::now() + Duration::from_secs(5));
             }
             WorkerResult::ProfilePreviewed(question, result) => {
@@ -1094,9 +1118,11 @@ pub(crate) fn drain_worker_results(
                 }
             }
             WorkerResult::Mutated(Err(error))
-            | WorkerResult::ContextAnalyzed(Err(error))
             | WorkerResult::ContextApplied(Err(error))
-            | WorkerResult::ProfileApplied(Err(error)) => model.status = Status::Error(error),
+            | WorkerResult::ProfileApplied(Err(error)) => {
+                model.mutation_answered(Status::Error(error));
+            }
+            WorkerResult::ContextAnalyzed(Err(error)) => model.status = Status::Error(error),
         }
     }
     arrived
@@ -1443,6 +1469,73 @@ mod tests {
         assert!(
             matches!(&answer, WorkerResult::Mutated(Err(error)) if error == "The operation failed"),
             "a panic is a failure the screen can say"
+        );
+    }
+
+    /// Two mutations asked back to back both run, the second only once the
+    /// first is done: the process's own writes never meet at the lock.
+    #[test]
+    fn mutations_asked_together_run_one_after_the_other() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("worker-lane"));
+        let (sender, receiver) = mpsc::channel();
+        let (first_may_end, first_waits) = mpsc::channel::<()>();
+        let running = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let overlapped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let operation = |release: Option<mpsc::Receiver<()>>| {
+            let (running, overlapped) = (running.clone(), overlapped.clone());
+            move |_: &UzeApplication| {
+                use std::sync::atomic::Ordering;
+                if running.fetch_add(1, Ordering::SeqCst) > 0 {
+                    overlapped.store(true, Ordering::SeqCst);
+                }
+                if let Some(release) = release {
+                    let _ = release.recv_timeout(std::time::Duration::from_secs(30));
+                }
+                running.fetch_sub(1, Ordering::SeqCst);
+                Ok("done".to_owned())
+            }
+        };
+
+        spawn_mutation(
+            home.clone(),
+            sender.clone(),
+            PathBuf::from("/"),
+            operation(Some(first_waits)),
+        );
+        spawn_mutation(home, sender, PathBuf::from("/"), operation(None));
+        first_may_end.send(()).unwrap();
+
+        for _ in 0..2 {
+            let answer = receiver
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .expect("both answered");
+            assert!(matches!(answer, WorkerResult::Mutated(Ok(_))));
+        }
+        assert!(!overlapped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    /// The line says what runs and how many wait, and each answer as it
+    /// comes, with the work still to run beside it.
+    #[test]
+    fn the_status_line_follows_mutations_through_the_queue() {
+        let mut model = TuiModel::default();
+        model.mutation_asked("Setting up codex…".to_owned());
+        model.mutation_asked("Setting up opencode…".to_owned());
+        assert_eq!(
+            model.status,
+            Status::Working("Setting up codex… · 1 queued".to_owned())
+        );
+
+        model.mutation_answered(Status::Success("codex 0.160.0 installed".to_owned()));
+        assert_eq!(
+            model.status,
+            Status::Working("codex 0.160.0 installed · Setting up opencode…".to_owned())
+        );
+
+        model.mutation_answered(Status::Success("opencode v2.0.22 installed".to_owned()));
+        assert_eq!(
+            model.status,
+            Status::Success("opencode v2.0.22 installed".to_owned())
         );
     }
 
