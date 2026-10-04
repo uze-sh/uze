@@ -25,6 +25,12 @@ use uze_core::{
 /// platform with no spelling has no automated route, and setup names the
 /// vendor's own page instead of guessing.
 ///
+/// The Windows script is read as text whatever its content type says. In
+/// Windows PowerShell `irm` hands a script served as
+/// `application/octet-stream` (as `claude.ai/install.ps1` is) back as
+/// bytes, and `iex` then evaluates each byte as a number: nothing is
+/// installed and the line exits zero.
+///
 /// The POSIX script is fetched in full before it runs. In the pipe the
 /// interpreter's status is the pipeline's, so a download that failed
 /// reported success, and one cut off midway ran whatever part of the
@@ -39,7 +45,15 @@ pub(crate) fn official_installer(
                 "installer=$(curl -fsSL {url}) && printf '%s\\n' \"$installer\" | {interpreter}"
             )
         }),
-        windows: windows.map(|url| format!("irm {url} | iex")),
+        windows: windows.map(|url| {
+            format!(
+                "[Net.ServicePointManager]::SecurityProtocol = \
+                 [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12; \
+                 $response = Invoke-WebRequest -UseBasicParsing -Uri '{url}'; \
+                 $installer = [Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray()); \
+                 Invoke-Expression $installer.TrimStart([char]0xFEFF)"
+            )
+        }),
     })
 }
 
