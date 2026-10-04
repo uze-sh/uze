@@ -259,7 +259,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       `bash`, matched on the stem. Relaunch refuses `\` and `:`.
 - [x] 4.8 Default pane shell: `UZE_SHELL`, else `pwsh`, else `powershell`
       (no `COMSPEC`). No `TERM` is set on Windows; `COLORTERM=truecolor` is.
-- [ ] 4.9 Windows tests:
+- [x] 4.9 Windows tests:
       - Ctrl+C stops `ping -t` in a pane;
       - the startup DSR is answered;
       - resize reflow;
@@ -269,8 +269,8 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       (Done but the launching console: a pane's prompt (its startup
       question answered), Ctrl+C ending `ping -t`, a resize, and the reader
       ending with its pane pass in Windows Sandbox; a pipe another account
-      made under the name is refused by `endpoint::connect`. Open: a test
-      that closes the console a server was started from.)
+      made under the name is refused by `endpoint::connect`; a detached
+      child outlives the console it was started from, its `conhost` ended.)
 
 ## 5. Commands per platform (D10, D11)
 
@@ -400,9 +400,13 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       projected as `cmd /c <command> <args>`
       (`uze_platform::executable::direct_launch`, applied where a server is
       resolved, so the envelope and the managed entry both carry it).
-- [ ] 6.8 Windows acquisition records Git link entries as links, by
+- [x] 6.8 Windows acquisition records Git link entries as links, by
       `digest.rs`'s rule, and materializes them as in-package copies for
       harnesses.
+      (Git's index names them (mode `120000`) where the checkout wrote a
+      file; the target is copied in its place, the Store registration keeps
+      the links, and `UzeStore::digest` counts each as a link. A package
+      with one digests to the value Linux reaches, in Windows Sandbox.)
 
 ## 7. Shims and provisioning (D13)
 

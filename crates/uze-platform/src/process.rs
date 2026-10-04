@@ -277,6 +277,71 @@ pub(crate) use windows::user_of;
 mod tests {
     use super::*;
 
+    /// What a detached child outlives: the console it was started from,
+    /// closed. The launcher here has a console of its own, and closing it is
+    /// ending its `conhost`, which takes every process attached to it, as
+    /// the window's close button does. Windows only: a Unix terminal closing
+    /// is a hangup, which the detached child's own session never receives.
+    #[cfg(windows)]
+    #[test]
+    fn a_detached_child_outlives_the_console_it_was_started_from() {
+        use std::io::BufRead;
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        let mut launcher = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "process::tests::start_a_detached_child_and_wait"])
+            .args(["--ignored", "--nocapture", "--test-threads", "1"])
+            .env(DETACH, "1")
+            .creation_flags(CREATE_NEW_CONSOLE)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let child: u32 = std::io::BufReader::new(launcher.stdout.take().unwrap())
+            .lines()
+            .map_while(Result::ok)
+            .find_map(|line| line.rsplit("detached ").next()?.trim().parse().ok())
+            .expect("the launcher said which child it started");
+        let listed = Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command"])
+            .arg(format!(
+                "(Get-CimInstance Win32_Process -Filter \"ParentProcessId={} AND Name='conhost.exe'\").ProcessId",
+                launcher.id()
+            ))
+            .output()
+            .unwrap();
+        let console: Vec<u32> = String::from_utf8_lossy(&listed.stdout)
+            .lines()
+            .filter_map(|line| line.trim().parse().ok())
+            .collect();
+        assert!(!console.is_empty(), "the launcher has a console of its own");
+        for host in console {
+            terminate(host);
+        }
+        let _ = launcher.wait();
+        assert_eq!(
+            alive(child),
+            Some(true),
+            "the detached child outlived the console"
+        );
+        terminate(child);
+    }
+
+    const DETACH: &str = "UZE_PLATFORM_DETACH";
+
+    /// Not a test of its own: the launcher above, which starts a detached
+    /// child, says which, and waits to be ended with its console.
+    #[test]
+    #[ignore = "started by a_detached_child_outlives_the_console_it_was_started_from"]
+    fn start_a_detached_child_and_wait() {
+        if std::env::var_os(DETACH).is_none() {
+            return;
+        }
+        let mut command = crate::shell::command("Start-Sleep 60");
+        let detached = spawn_detached(&mut command).unwrap();
+        println!("detached {}", detached.child.id());
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+
     /// A line of this platform's shell runs, and says how it ended, with no
     /// terminal to ask on: Windows PowerShell given no console at all ran
     /// nothing and exited zero.
