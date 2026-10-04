@@ -15,9 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{Result, UzeError},
     integration::HarnessDetection,
-    subprocess::{
-        Ending, InterruptWatch, wait_with_timeout_or_interrupt, without_controlling_terminal,
-    },
+    subprocess::{Ending, InterruptWatch, Seat, spawn_tree, wait_with_timeout_or_interrupt},
 };
 
 /// One integration-owned command. `program` and `arguments` are never
@@ -115,7 +113,7 @@ impl ProcessRunner for SystemProcessRunner {
 
 /// Runs `spec` through `command`, whose output the caller has already
 /// directed. The child gets no terminal of its own (see
-/// [`without_controlling_terminal`]), so the Ctrl-C the terminal no longer
+/// [`Seat::NoTerminal`]), so the Ctrl-C the terminal no longer
 /// delivers to it is forwarded here: its whole tree is killed, then `uze`
 /// takes the interrupt as it would have.
 pub fn run_provisioning(mut command: Command, spec: &ProcessSpec) -> Result<ProcessResult> {
@@ -128,11 +126,9 @@ pub fn run_provisioning(mut command: Command, spec: &ProcessSpec) -> Result<Proc
         source,
     };
     let watch = InterruptWatch::install();
-    let mut child = without_controlling_terminal(command)
-        .spawn()
+    let (mut child, tree) = spawn_tree(&mut command, Seat::NoTerminal).map_err(process_error)?;
+    let (status, ending) = wait_with_timeout_or_interrupt(&mut child, &tree, spec.timeout, &watch)
         .map_err(process_error)?;
-    let (status, ending) =
-        wait_with_timeout_or_interrupt(&mut child, spec.timeout, &watch).map_err(process_error)?;
     if ending == Ending::Interrupted {
         watch.deliver();
         return Err(process_error(io::Error::from(io::ErrorKind::Interrupted)));
@@ -239,6 +235,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_vendor_switch_reaches_the_child_on_top_of_the_inherited_environment() {
+        let _interrupts = uze_testkit::process::interrupts();
         let check = ProcessSpec::new(
             "sh",
             ["-c", r#"test "$UZE_PROBE_SWITCH" = 1 && test -n "$PATH""#],
@@ -323,7 +320,10 @@ mod tests {
         /// A session leader holds no controlling terminal until it opens
         /// one, so nothing it starts can ask a question on `/dev/tty`.
         fn assert_runs_in_a_session_of_its_own(spec: ProcessSpec, marker: &'static str) {
-            std::thread::spawn(move || {
+            let _interrupts = uze_testkit::process::interrupts();
+            // Joined before the lock is let go: the runner's watch is the
+            // process's until its child ends.
+            let runner = std::thread::spawn(move || {
                 let _ = SystemProcessRunner.run(&spec);
             });
             let child = find_marked_sleep_child(marker, Instant::now() + Duration::from_secs(5));
@@ -334,6 +334,7 @@ mod tests {
             );
             assert_eq!(stat_field(child, 3), Some(child), "its own session");
             assert_eq!(stat_field(child, 4), Some(0), "no controlling terminal");
+            let _ = runner.join();
         }
 
         #[test]

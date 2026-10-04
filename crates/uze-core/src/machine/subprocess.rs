@@ -25,22 +25,21 @@ const MAX_SHELL_OUTPUT_BYTES: usize = 64 * 1024;
 /// one case that is not — a descendant still holding a pipe open.
 const READER_GRACE: Duration = Duration::from_secs(2);
 
-/// Runs `command` in its own process group so a timeout can kill the whole
-/// tree (the process AND its descendants), never just the direct child.
-pub fn with_process_group(mut command: Command) -> Command {
-    uze_platform::process::in_own_group(&mut command);
-    command
-}
+pub use uze_platform::process::{Seat, Tree, spawn_tree};
 
 /// Polls `child` to completion but never longer than `timeout`.
 ///
 /// Returning `(status, false)` means the process exited on its own.
-/// Returning `(status, true)` means the deadline was reached: the whole
-/// process group was killed (sweeping `/proc` for stragglers twice, because
-/// a descendant forked between the two can otherwise survive the group
-/// signal) and the direct child was reaped so it cannot stay a zombie.
-pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<(ExitStatus, bool)> {
-    let (status, ending) = wait_until(child, timeout, || false)?;
+/// Returning `(status, true)` means the deadline was reached: the child's
+/// whole [`Tree`] was ended (twice, because a descendant forked between the
+/// two can otherwise survive the first) and the direct child was reaped so
+/// it cannot stay a zombie.
+pub fn wait_with_timeout(
+    child: &mut Child,
+    tree: &Tree,
+    timeout: Duration,
+) -> io::Result<(ExitStatus, bool)> {
+    let (status, ending) = wait_until(child, tree, timeout, || false)?;
     Ok((status, ending == Ending::TimedOut))
 }
 
@@ -51,19 +50,21 @@ pub enum Ending {
     Interrupted,
 }
 
-/// [`wait_with_timeout`] for a child started [`without_controlling_terminal`]:
-/// the terminal's Ctrl-C no longer reaches it, so an interrupt `watch` saw
-/// kills its group the way the deadline would.
+/// [`wait_with_timeout`] for a child seated [`Seat::NoTerminal`]: the
+/// terminal's Ctrl-C no longer reaches it, so an interrupt `watch` saw ends
+/// its tree the way the deadline would.
 pub fn wait_with_timeout_or_interrupt(
     child: &mut Child,
+    tree: &Tree,
     timeout: Duration,
     watch: &InterruptWatch,
 ) -> io::Result<(ExitStatus, Ending)> {
-    wait_until(child, timeout, || watch.interrupted())
+    wait_until(child, tree, timeout, || watch.interrupted())
 }
 
 fn wait_until(
     child: &mut Child,
+    tree: &Tree,
     timeout: Duration,
     interrupted: impl Fn() -> bool,
 ) -> io::Result<(ExitStatus, Ending)> {
@@ -78,19 +79,19 @@ fn wait_until(
                 } else {
                     Ending::TimedOut
                 };
-                kill_process_group(pid);
+                tree.end();
                 // The second sweep happens while the child is dead but not
                 // yet reaped: until it is, neither its pid nor its group id
-                // can be handed to another process, so both signals can
-                // only reach what this child started.
+                // can be handed to another process, so both can only reach
+                // what this child started.
                 wait_without_reaping(pid);
-                kill_process_group(pid);
+                tree.end();
                 let status = child.wait()?;
                 return Ok((status, ending));
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
             Err(source) => {
-                kill_process_group(pid);
+                tree.end();
                 let _ = child.wait();
                 return Err(source);
             }
@@ -98,32 +99,10 @@ fn wait_until(
     }
 }
 
-/// Starts `command` in a session of its own: its own process group, and no
-/// controlling terminal. A vendor installer that asks a question on
-/// `/dev/tty` then gets no terminal to ask on and takes its default, rather
-/// than waiting for an answer nobody is shown until its deadline.
-pub fn without_controlling_terminal(mut command: Command) -> Command {
-    uze_platform::process::without_terminal(&mut command);
-    command
-}
-
 pub use uze_platform::interrupt::InterruptWatch;
 
 fn wait_without_reaping(pid: u32) {
     uze_platform::process::wait_without_reaping(pid);
-}
-
-/// Kills a whole process group — the process plus any descendant it
-/// started. Only for a child not yet reaped: it also signals `pid` itself.
-/// Once the child has been waited on, use [`kill_reaped_process_group`].
-pub fn kill_process_group(pid: u32) {
-    uze_platform::process::end_group(pid);
-}
-
-/// [`kill_process_group`] for a child already reaped — the group a
-/// descendant still holding a pipe belongs to.
-pub fn kill_reaped_process_group(pid: u32) {
-    uze_platform::process::end_reaped_group(pid);
 }
 
 /// Reads a child handle to EOF, keeping the **last** `cap` bytes and
@@ -196,15 +175,14 @@ pub fn shell_invocation(command: &str) -> Command {
 /// project-declared commands (a checkout's setup, a delivery's gate, a
 /// forge CLI) whose output is what the operator or the agent is told.
 pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool, String) {
-    let invocation = shell_invocation(command);
-    let child = with_process_group(invocation)
+    let mut invocation = shell_invocation(command);
+    invocation
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .current_dir(cwd)
-        .spawn();
-    let mut child = match child {
-        Ok(child) => child,
+        .current_dir(cwd);
+    let (mut child, tree) = match spawn_tree(&mut invocation, Seat::OwnGroup) {
+        Ok(spawned) => spawned,
         Err(error) => return (false, format!("could not run `{command}`: {error}")),
     };
     // One reader per stream, never one reading them in turn: a pipe holds
@@ -213,10 +191,9 @@ pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool,
     // block the child, so stdout never reaches EOF either and the whole
     // command hangs until its deadline — reported as a timeout, with nothing
     // captured to say otherwise.
-    let pid = child.id();
     let stdout = drain_on_thread(child.stdout.take().expect("piped"));
     let stderr = drain_on_thread(child.stderr.take().expect("piped"));
-    let (status, timed_out) = match wait_with_timeout(&mut child, timeout) {
+    let (status, timed_out) = match wait_with_timeout(&mut child, &tree, timeout) {
         Ok(outcome) => outcome,
         Err(error) => return (false, format!("`{command}` failed: {error}")),
     };
@@ -224,8 +201,8 @@ pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool,
     // the readers finish; a descendant that left the group could still hold
     // one open, so the wait is bounded rather than unconditional.
     let mut swept = false;
-    let stdout = stdout.collect(pid, &mut swept);
-    let stderr = stderr.collect(pid, &mut swept);
+    let stdout = stdout.collect(&tree, &mut swept);
+    let stderr = stderr.collect(&tree, &mut swept);
     let captured = combine_streams(&stdout, &stderr);
     if timed_out {
         // What the command managed to say before the deadline is usually the
@@ -270,14 +247,13 @@ fn drain_on_thread<R: Read + Send + 'static>(handle: R) -> Drain {
 }
 
 impl Drain {
-    /// Waits out the reader, sweeping the process group once if it cannot
-    /// finish.
+    /// Waits out the reader, sweeping the tree once if it cannot finish.
     ///
     /// A descendant that left the group — a `setsid`'d daemon, a dev server,
     /// a language server a suite started — still holds the pipe, so the
     /// reader never sees EOF. Killing the group is what closes it; `swept`
     /// keeps the two streams from each paying for their own kill.
-    fn collect(self, pid: u32, swept: &mut bool) -> Stream {
+    fn collect(self, tree: &Tree, swept: &mut bool) -> Stream {
         if let Ok((bytes, dropped)) = self.answer.recv_timeout(READER_GRACE) {
             // Sending is the reader's last act, so this joins a thread that
             // is already on its way out rather than waiting on one.
@@ -285,7 +261,7 @@ impl Drain {
             return Stream::Read { bytes, dropped };
         }
         if !*swept {
-            kill_reaped_process_group(pid);
+            tree.end_survivors();
             *swept = true;
         }
         match self.answer.recv_timeout(READER_GRACE) {
@@ -352,14 +328,11 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn an_interrupt_kills_a_child_the_terminal_no_longer_reaches() {
+        let _interrupts = uze_testkit::process::interrupts();
         let watch = InterruptWatch::install();
-        let mut child = without_controlling_terminal({
-            let mut command = Command::new("sh");
-            command.args(["-c", "sleep 30 & sleep 30"]);
-            command
-        })
-        .spawn()
-        .unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30 & sleep 30"]);
+        let (mut child, tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
         let group = child.id();
         // SAFETY: plain `raise(3)`; the watch catches it.
         unsafe {
@@ -368,7 +341,8 @@ mod tests {
 
         let started = Instant::now();
         let (_, ending) =
-            wait_with_timeout_or_interrupt(&mut child, Duration::from_secs(60), &watch).unwrap();
+            wait_with_timeout_or_interrupt(&mut child, &tree, Duration::from_secs(60), &watch)
+                .unwrap();
 
         assert_eq!(ending, Ending::Interrupted);
         assert!(started.elapsed() < Duration::from_secs(10));
@@ -395,11 +369,24 @@ mod tests {
     }
     #[test]
     fn a_program_is_found_only_where_path_actually_holds_an_executable() {
-        assert!(super::program_on_path("sh"), "the system shell is on PATH");
+        assert!(
+            super::program_on_path(uze_platform::shell::ARGV[0]),
+            "the system shell is on PATH"
+        );
         assert!(!super::program_on_path("a-program-nobody-installed"));
     }
 
     use super::*;
+
+    /// One step, spelled for each shell, as a project declares one: what is
+    /// under test is how a step is run and reported, in whichever shell this
+    /// platform runs it.
+    fn step(posix: &str, windows: &str) -> String {
+        crate::shell::ShellCommand::spelled(posix, windows)
+            .here()
+            .expect("the step is spelled for every platform")
+            .to_owned()
+    }
 
     #[test]
     fn read_bounded_caps_and_counts_what_it_dropped() {
@@ -445,7 +432,10 @@ mod tests {
         let started = Instant::now();
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "head -c 1048576 /dev/zero | tr '\\0' 'e' 1>&2; echo done",
+            &step(
+                "head -c 1048576 /dev/zero | tr '\\0' 'e' 1>&2; echo done",
+                "[Console]::Error.Write('e' * 1048576); 'done'",
+            ),
             Duration::from_secs(30),
         );
         assert!(succeeded, "the command did not exit zero: {output}");
@@ -463,7 +453,10 @@ mod tests {
     fn a_command_writing_past_the_cap_still_exits_zero_with_truncated_output() {
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "head -c 1048576 /dev/zero | tr '\\0' 'o'",
+            &step(
+                "head -c 1048576 /dev/zero | tr '\\0' 'o'",
+                "[Console]::Out.Write('o' * 1048576)",
+            ),
             Duration::from_secs(30),
         );
         assert!(succeeded, "a verbose command was reported as failed");
@@ -487,8 +480,12 @@ mod tests {
     fn a_failing_gate_reports_the_failure_and_not_the_progress_noise() {
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "i=0; while [ $i -lt 4000 ]; do echo \"   Compiling crate-$i v0.1.0\"; \
-             i=$((i+1)); done; echo 'FAILURES: test_auth_redirect FAILED'; exit 1",
+            &step(
+                "i=0; while [ $i -lt 4000 ]; do echo \"   Compiling crate-$i v0.1.0\"; \
+                 i=$((i+1)); done; echo 'FAILURES: test_auth_redirect FAILED'; exit 1",
+                "foreach ($i in 0..3999) { \"   Compiling crate-$i v0.1.0\" }; \
+                 'FAILURES: test_auth_redirect FAILED'; exit 1",
+            ),
             Duration::from_secs(60),
         );
         assert!(!succeeded);
@@ -507,7 +504,7 @@ mod tests {
     fn a_timed_out_command_reports_what_it_managed_to_say() {
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "echo preface; sleep 30",
+            &step("echo preface; sleep 30", "'preface'; Start-Sleep 30"),
             Duration::from_millis(300),
         );
         assert!(!succeeded);
@@ -527,7 +524,11 @@ mod tests {
         let started = Instant::now();
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "sleep 60 & echo 'the step said this'",
+            &step(
+                "sleep 60 & echo 'the step said this'",
+                "Start-Process -NoNewWindow powershell.exe '-NoProfile','-Command','Start-Sleep 60'; \
+                 'the step said this'",
+            ),
             Duration::from_secs(30),
         );
         assert!(succeeded);
@@ -560,23 +561,25 @@ mod tests {
 
     #[test]
     fn wait_with_timeout_kills_a_hung_child() {
-        let mut child = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let (mut child, tree) = spawn_tree(
+            &mut uze_platform::shell::command(&step("sleep 30", "Start-Sleep 30")),
+            Seat::OwnGroup,
+        )
+        .unwrap();
         let (status, timed_out) =
-            wait_with_timeout(&mut child, Duration::from_millis(300)).unwrap();
+            wait_with_timeout(&mut child, &tree, Duration::from_millis(300)).unwrap();
         assert!(timed_out);
         assert!(!status.success());
     }
 
     #[test]
     fn wait_with_timeout_returns_promptly_for_a_fast_child() {
-        // `/bin/sh -c 'exit 0'`, not `/bin/true`: macOS keeps `true` under
-        // `/usr/bin` and ships no `/bin/true`. `/bin/sh` is the one path
-        // POSIX promises, and any process that exits at once will do.
-        let mut child = Command::new("/bin/sh")
-            .args(["-c", "exit 0"])
-            .spawn()
-            .unwrap();
-        let (status, timed_out) = wait_with_timeout(&mut child, Duration::from_secs(5)).unwrap();
+        // The shell exiting at once, not `true`: macOS ships no `/bin/true`
+        // and Windows none at all, and any process that exits at once will do.
+        let (mut child, tree) =
+            spawn_tree(&mut uze_platform::shell::command("exit 0"), Seat::OwnGroup).unwrap();
+        let (status, timed_out) =
+            wait_with_timeout(&mut child, &tree, Duration::from_secs(5)).unwrap();
         assert!(!timed_out);
         assert!(status.success());
     }

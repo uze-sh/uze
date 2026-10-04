@@ -235,9 +235,6 @@ fn base_command(root: &Path, args: &[&str]) -> Command {
     // answer: nothing here is attached to a terminal the operator can see.
     command.env("GIT_TERMINAL_PROMPT", "0");
     command.stdin(Stdio::null());
-    if reaches_a_remote(args) {
-        detach_from_terminal(&mut command);
-    }
     command
 }
 
@@ -255,16 +252,6 @@ fn reaches_a_remote(args: &[&str]) -> bool {
         }
     }
     false
-}
-
-/// Starts the command with no terminal of its own to ask on.
-/// `GIT_TERMINAL_PROMPT` silences Git, not the SSH it runs, and an SSH
-/// wanting a passphrase or a host-key answer opens the terminal directly —
-/// which, under the workspace client, is the raw-mode terminal the operator
-/// is typing into. Without one to open, it fails and says so. On Unix this
-/// is also a session, and so a group, of its own: what [`run_within`] ends.
-fn detach_from_terminal(command: &mut Command) {
-    uze_platform::process::without_terminal(command);
 }
 
 fn run(command: Command, args: &[&str]) -> Result<Output, SpawnError> {
@@ -299,9 +286,14 @@ fn run_to_completion(mut command: Command) -> Result<Output, SpawnError> {
 }
 
 /// [`run_to_completion`] for a command that may never end on its own: past
-/// `limit` Git and everything it started — the SSH it runs, which
-/// [`detach_from_terminal`] put in a group of their own — are ended while
-/// Git is still unreaped, and the wait is reported rather than continued.
+/// `limit` Git and everything it started are ended as one tree while Git
+/// is still unreaped, and the wait is reported rather than continued.
+///
+/// The tree has no terminal to ask on. `GIT_TERMINAL_PROMPT` silences Git,
+/// not the SSH it runs, and an SSH wanting a passphrase or a host-key
+/// answer opens the terminal directly — which, under the workspace client,
+/// is the raw-mode terminal the operator is typing into. Without one to
+/// open, it fails and says so.
 fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnError> {
     use std::time::Instant;
 
@@ -309,7 +301,9 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
         tracing::debug_span!("git", args = %arguments_of(&command), exit = tracing::field::Empty);
     let _entered = span.enter();
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command.spawn().map_err(describe_spawn_failure)?;
+    let (mut child, tree) =
+        uze_platform::process::spawn_tree(&mut command, uze_platform::process::Seat::NoTerminal)
+            .map_err(describe_spawn_failure)?;
     let stdout = drain(child.stdout.take());
     let stderr = drain(child.stderr.take());
     let deadline = Instant::now() + limit;
@@ -322,7 +316,7 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
                 pause = (pause * 2).min(Duration::from_millis(100));
             }
             outcome => {
-                uze_platform::process::end_group(child.id());
+                tree.end();
                 let _ = child.wait();
                 return Err(match outcome {
                     Err(error) => describe_spawn_failure(error),
@@ -488,7 +482,6 @@ mod tests {
     fn a_command_past_its_limit_is_stopped_and_reported() {
         let mut command = Command::new("sh");
         command.args(["-c", "sleep 30 & sleep 30"]);
-        detach_from_terminal(&mut command);
         let started = Instant::now();
 
         let outcome = run_within(command, Duration::from_millis(200));

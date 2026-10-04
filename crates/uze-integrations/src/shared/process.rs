@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use uze_core::{
     Result, UzeError,
     integration::HarnessDetection,
-    subprocess::{kill_reaped_process_group, read_bounded, wait_with_timeout, with_process_group},
+    subprocess::{Seat, read_bounded, spawn_tree, wait_with_timeout},
 };
 
 /// Wall-clock budget for any single vendor CLI invocation. A vendor binary
@@ -172,14 +172,16 @@ fn run_captured<S: AsRef<OsStr>>(
     let _entered = span.enter();
     let mut command = Command::new(program);
     if let Some(home) = home {
-        command.env("HOME", home);
+        for variable in uze_platform::home::VARIABLES {
+            command.env(variable, home);
+        }
     }
     command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = with_process_group(command).spawn()?;
+    let (mut child, tree) = spawn_tree(&mut command, Seat::OwnGroup)?;
     let Some(mut stdout) = child.stdout.take() else {
         return Err(io::Error::other("captured stdout was not piped"));
     };
@@ -210,7 +212,7 @@ fn run_captured<S: AsRef<OsStr>>(
     thread::spawn(move || {
         let _ = stderr_tx.send(read_bounded(&mut stderr, VENDOR_OUTPUT_CAP));
     });
-    let (status, timed_out) = wait_with_timeout(&mut child, timeout)?;
+    let (status, timed_out) = wait_with_timeout(&mut child, &tree, timeout)?;
     span.record("exit", status.code().unwrap_or(-1));
     if timed_out {
         tracing::warn!("vendor cli timed out");
@@ -226,7 +228,7 @@ fn run_captured<S: AsRef<OsStr>>(
             // holding the stdout pipe open. Sweep the group again (already
             // killed once inside `wait_with_timeout` if it timed out, but
             // that branch was not taken here) before giving up.
-            kill_reaped_process_group(child.id());
+            tree.end_survivors();
             return Err(timeout_error());
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -236,7 +238,7 @@ fn run_captured<S: AsRef<OsStr>>(
     let stderr_bytes = match stderr_rx.recv_timeout(remaining) {
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            kill_reaped_process_group(child.id());
+            tree.end_survivors();
             return Err(timeout_error());
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -362,12 +364,12 @@ mod tests {
         assert!(is_cli_safe_token("my-server_1"));
     }
 
-    /// A non-success exit status without touching vendor installs — the
-    /// platform's own `false` command is the canonical source.
+    /// A non-success exit status without touching vendor installs: the
+    /// platform's own shell, told to fail.
     fn failing_status() -> std::process::ExitStatus {
-        std::process::Command::new("false")
+        uze_platform::shell::command("exit 1")
             .status()
-            .expect("`false` must exist on every supported platform")
+            .expect("the platform shell runs")
     }
 
     #[test]
@@ -413,10 +415,13 @@ mod tests {
     #[test]
     fn capture_times_out_on_a_hung_vendor() {
         let started = std::time::Instant::now();
+        let sleep = uze_core::shell::ShellCommand::spelled("sleep 30", "Start-Sleep 30");
+        let (program, arguments) = uze_platform::shell::invocation(sleep.here().unwrap());
+        let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
         let error = capture_with_timeout(
-            Path::new("/bin/sleep"),
-            Path::new("/tmp"),
-            &["30"],
+            Path::new(&program),
+            &std::env::temp_dir(),
+            &arguments,
             Duration::from_millis(500),
         )
         .expect_err("a hung vendor must fail, not hang the caller");

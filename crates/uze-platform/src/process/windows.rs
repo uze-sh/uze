@@ -2,13 +2,11 @@
 //! named stop events, and creation flags that keep a child off the
 //! launching console.
 
-use std::{
-    collections::HashMap, ffi::OsStr, io, os::windows::process::CommandExt, process::Command, ptr,
-};
+use std::{ffi::OsStr, io, os::windows::process::CommandExt, process::Command, ptr};
 
 use windows_sys::Win32::{
     Foundation::{
-        ERROR_INVALID_PARAMETER, FILETIME, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
+        ERROR_INVALID_PARAMETER, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
         STILL_ACTIVE,
     },
     Security::{
@@ -17,8 +15,7 @@ use windows_sys::Win32::{
     },
     System::{
         Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
-            TH32CS_SNAPPROCESS,
+            CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
         },
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -27,10 +24,11 @@ use windows_sys::Win32::{
             QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
         },
         Threading::{
-            CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CreateEventW,
-            EVENT_MODIFY_STATE, GetCurrentProcess, GetExitCodeProcess, GetProcessTimes, INFINITE,
-            OpenEventW, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
-            PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, SetEvent, TerminateProcess,
+            CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
+            CREATE_SUSPENDED, CreateEventW, EVENT_MODIFY_STATE, GetCurrentProcess,
+            GetExitCodeProcess, INFINITE, OpenEventW, OpenProcess, OpenProcessToken, OpenThread,
+            PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE,
+            PROCESS_TERMINATE, ResumeThread, SetEvent, THREAD_SUSPEND_RESUME, TerminateProcess,
             WaitForSingleObject,
         },
     },
@@ -99,17 +97,6 @@ pub(super) fn listen_for_stop(channel: &str, on_stop: impl FnOnce() + Send + 'st
     });
 }
 
-pub(super) fn end_group(pid: u32) {
-    for member in tree_of(pid) {
-        terminate(member);
-    }
-}
-
-/// Nothing: once its leader is reaped a Windows pid may already name
-/// somebody else's process, and no group outlives its leader the way a
-/// Unix one does. [`end_group`] reached the tree while it could.
-pub(super) fn end_reaped_group(_pid: u32) {}
-
 pub(super) fn wait_without_reaping(pid: u32) {
     if let Some(process) = open(pid, PROCESS_SYNCHRONIZE) {
         // SAFETY: valid handle with synchronize access.
@@ -117,22 +104,16 @@ pub(super) fn wait_without_reaping(pid: u32) {
     }
 }
 
-/// A process group of its own, so a Ctrl+C on this console does not reach
-/// it; the tree is what [`end_group`] ends.
-pub(super) fn in_own_group(command: &mut Command) {
-    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
-}
+pub(super) const SYSTEM_ENVIRONMENT: &[&str] = &[
+    "SystemRoot",
+    "SystemDrive",
+    "windir",
+    "ComSpec",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+];
 
-/// A hidden console of its own: nothing it asks can reach the person's
-/// terminal, and no window flashes up for it.
-pub(super) fn without_terminal(command: &mut Command) {
-    command.creation_flags(CREATE_NO_WINDOW);
-}
-
-/// A hidden console of its own (not the launching one, so neither closing
-/// it nor a Ctrl+C there reaches the child), and out of the launching
-/// terminal's job, which some hosts close with everything in it. A host
-/// that forbids leaving its job gets a child that ends with it.
 /// Windows has no `exec`: the program runs as a child sharing this
 /// console, and its exit status becomes this process's.
 pub(super) fn run_in_place(command: &mut Command) -> io::Error {
@@ -163,6 +144,10 @@ pub(super) fn cpu_time() -> super::CpuTime {
     }
 }
 
+/// A hidden console of its own (not the launching one, so neither closing
+/// it nor a Ctrl+C there reaches the child), and out of the launching
+/// terminal's job, which some hosts close with everything in it. A host
+/// that forbids leaving its job gets a child that ends with it.
 pub(super) fn spawn_detached(command: &mut Command) -> io::Result<super::Detached> {
     if let Ok(child) = command
         .creation_flags(CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB)
@@ -222,88 +207,16 @@ pub(super) fn current_user() -> io::Result<String> {
     Ok(sid)
 }
 
-/// When `pid` started; what tells a process from a later one that reused
-/// its pid.
-fn started(pid: u32) -> Option<u64> {
-    let process = open(pid, PROCESS_QUERY_LIMITED_INFORMATION)?;
-    // SAFETY: zeroed FILETIMEs are valid outputs.
-    let (mut created, mut exited, mut kernel, mut user): (FILETIME, FILETIME, FILETIME, FILETIME) =
-        unsafe { std::mem::zeroed() };
-    // SAFETY: valid handle; every out-pointer outlives the call.
-    if unsafe { GetProcessTimes(process.0, &mut created, &mut exited, &mut kernel, &mut user) } == 0
-    {
-        return None;
+/// A new Job Object. With `kill_on_close`, closing the last handle to it
+/// ends every member; without, the members outlive the handle.
+fn job(kill_on_close: bool) -> io::Result<Owned> {
+    // SAFETY: an unnamed job with default security.
+    let job = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
+    if job.is_null() {
+        return Err(io::Error::last_os_error());
     }
-    Some((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
-}
-
-/// Every running process's parent, read in one snapshot.
-fn parents() -> Vec<(u32, u32)> {
-    // SAFETY: a snapshot of every process, closed by `Owned`.
-    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-    if snapshot == INVALID_HANDLE_VALUE {
-        return Vec::new();
-    }
-    let snapshot = Owned(snapshot);
-    // SAFETY: zeroed is valid once dwSize is set.
-    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
-    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-    let mut found = Vec::new();
-    // SAFETY: `entry` is sized as the API requires and outlives each call.
-    let mut more = unsafe { Process32FirstW(snapshot.0, &mut entry) } != 0;
-    while more {
-        found.push((entry.th32ProcessID, entry.th32ParentProcessID));
-        // SAFETY: as above.
-        more = unsafe { Process32NextW(snapshot.0, &mut entry) } != 0;
-    }
-    found
-}
-
-/// `pid` and everything it started, descendants first. A parent pid names
-/// the parent at the child's creation and Windows reuses pids, so a
-/// "child" older than the process now at that pid is a stranger's.
-fn tree_of(pid: u32) -> Vec<u32> {
-    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-    for (child, parent) in parents() {
-        if child != parent {
-            children.entry(parent).or_default().push(child);
-        }
-    }
-    let mut ordered = Vec::new();
-    let mut pending = vec![(pid, started(pid))];
-    while let Some((current, current_started)) = pending.pop() {
-        for &child in children
-            .get(&current)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-        {
-            let child_started = started(child);
-            let younger = matches!(
-                (current_started, child_started),
-                (Some(parent), Some(child)) if child >= parent
-            );
-            if younger && !ordered.contains(&child) {
-                pending.push((child, child_started));
-            }
-        }
-        ordered.push(current);
-    }
-    ordered.reverse();
-    ordered
-}
-
-/// A Job Object: everything a member starts joins it, and closing the last
-/// handle to it ends every member.
-pub(super) struct Group(Owned);
-
-impl Group {
-    pub(super) fn adopt(pid: u32) -> Option<Self> {
-        // SAFETY: an unnamed job with default security.
-        let job = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
-        if job.is_null() {
-            return None;
-        }
-        let job = Owned(job);
+    let job = Owned(job);
+    if kill_on_close {
         // SAFETY: zeroed is the documented empty limit structure.
         let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
@@ -316,10 +229,90 @@ impl Group {
                 std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
             )
         };
+        if limited == 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(job)
+}
+
+pub(super) struct Tree(Owned);
+
+impl Tree {
+    /// A job ends its members whether or not the child itself was reaped.
+    pub(super) fn end(&self, _leader_unreaped: bool) {
+        // SAFETY: valid job handle.
+        unsafe { TerminateJobObject(self.0.0, 1) };
+    }
+}
+
+/// Suspended, then in the job, then running: a child that ran before it
+/// joined could start a process outside it.
+pub(super) fn spawn_tree(
+    command: &mut Command,
+    seat: super::Seat,
+) -> io::Result<(std::process::Child, Tree)> {
+    use std::os::windows::io::AsRawHandle;
+    let seated = match seat {
+        super::Seat::OwnGroup => CREATE_NEW_PROCESS_GROUP,
+        super::Seat::NoTerminal => CREATE_NO_WINDOW,
+    };
+    let tree = job(false)?;
+    let mut child = command.creation_flags(CREATE_SUSPENDED | seated).spawn()?;
+    // SAFETY: both handles are valid; the child's is owned by `child`.
+    let joined = unsafe { AssignProcessToJobObject(tree.0, child.as_raw_handle()) } != 0;
+    let started = joined && resume_primary_thread(child.id());
+    if !started {
+        let error = io::Error::last_os_error();
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
+    Ok((child, Tree(tree)))
+}
+
+/// Resumes the one thread a suspended new process has, found in a thread
+/// snapshot: `std` keeps no handle to it.
+fn resume_primary_thread(pid: u32) -> bool {
+    // SAFETY: a snapshot of every thread, closed by `Owned`.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return false;
+    }
+    let snapshot = Owned(snapshot);
+    // SAFETY: zeroed is valid once dwSize is set.
+    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+    // SAFETY: `entry` is sized as the API requires and outlives each call.
+    let mut more = unsafe { Thread32First(snapshot.0, &mut entry) } != 0;
+    while more {
+        if entry.th32OwnerProcessID == pid {
+            // SAFETY: opening a thread of a process this one created.
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if thread.is_null() {
+                return false;
+            }
+            let thread = Owned(thread);
+            // SAFETY: valid thread handle with suspend/resume access.
+            return unsafe { ResumeThread(thread.0) } != u32::MAX;
+        }
+        // SAFETY: as above.
+        more = unsafe { Thread32Next(snapshot.0, &mut entry) } != 0;
+    }
+    false
+}
+
+/// A pane's Job Object: everything a member starts joins it, and closing
+/// the last handle to it ends every member.
+pub(super) struct Group(Owned);
+
+impl Group {
+    pub(super) fn adopt(pid: u32) -> Option<Self> {
+        let job = job(true).ok()?;
         let process = open(pid, PROCESS_SET_QUOTA | PROCESS_TERMINATE)?;
         // SAFETY: both handles are valid.
         let assigned = unsafe { AssignProcessToJobObject(job.0, process.0) };
-        (limited != 0 && assigned != 0).then_some(Self(job))
+        (assigned != 0).then_some(Self(job))
     }
 
     pub(super) fn end(&self) {

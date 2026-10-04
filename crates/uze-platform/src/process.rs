@@ -37,38 +37,52 @@ pub fn listen_for_stop(channel: &str, on_stop: impl FnOnce() + Send + 'static) {
     imp::listen_for_stop(channel, on_stop)
 }
 
-/// Ends an unreaped child and everything it started. The child must have
-/// been started [`in_own_group`]; it is still unreaped, so no pid in the
-/// group can have been handed to anybody else.
-pub fn end_group(pid: u32) {
-    imp::end_group(pid)
+/// Where a [`Tree`] is started.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Seat {
+    /// A group of its own on this terminal: a Ctrl+C meant for the person's
+    /// command here does not reach it.
+    OwnGroup,
+    /// No terminal to ask anything on: a question it would put to a person
+    /// gets no answer and takes its default instead of waiting for one
+    /// nobody is shown. A session of its own on Unix, a hidden console of
+    /// its own on Windows.
+    NoTerminal,
 }
 
-/// What [`end_group`] can still do once the child itself was reaped: end
-/// what it left in its group where the platform keeps the group alive past
-/// its leader. Nothing where it does not, since the pid may already be
-/// somebody else's.
-pub fn end_reaped_group(pid: u32) {
-    imp::end_reaped_group(pid)
+/// A child and every process it starts, ended as one: a process group on
+/// Unix, a Job Object on Windows, which a descendant joins whether or not
+/// it outlives the child. Dropping it ends nothing.
+pub struct Tree(imp::Tree);
+
+impl Tree {
+    /// Ends the child and everything it started. The child must still be
+    /// unreaped, so no pid in the tree can have been handed to anybody
+    /// else.
+    pub fn end(&self) {
+        self.0.end(true)
+    }
+
+    /// What [`Tree::end`] can still do once the child itself was reaped:
+    /// end what it left behind — a dev server, a language server holding
+    /// its pipes.
+    pub fn end_survivors(&self) {
+        self.0.end(false)
+    }
+}
+
+/// Spawns `command` as the root of a [`Tree`] seated as `seat`. On Windows
+/// the child starts suspended and runs only once it is in the job, so
+/// nothing it starts can be outside it.
+pub fn spawn_tree(command: &mut Command, seat: Seat) -> io::Result<(Child, Tree)> {
+    let (child, tree) = imp::spawn_tree(command, seat)?;
+    Ok((child, Tree(tree)))
 }
 
 /// Blocks until `pid` has exited, leaving it for `Child::wait` to reap, so
-/// its group can still be ended in between.
+/// its tree can still be ended in between.
 pub fn wait_without_reaping(pid: u32) {
     imp::wait_without_reaping(pid)
-}
-
-/// Starts `command` in a group of its own, so [`end_group`] reaches it and
-/// everything it starts, and a Ctrl+C meant for this terminal does not.
-pub fn in_own_group(command: &mut Command) {
-    imp::in_own_group(command)
-}
-
-/// Starts `command` with no terminal to ask anything on: a question it
-/// would put to a person gets no answer and takes its default instead of
-/// waiting for one nobody is shown.
-pub fn without_terminal(command: &mut Command) {
-    imp::without_terminal(command)
 }
 
 /// Spawns `command` so it outlives the terminal that started it: closing
@@ -84,6 +98,19 @@ pub struct Detached {
     /// Windows job that forbids breakaway): it then ends with that host,
     /// which the caller says.
     pub outlives_host: bool,
+}
+
+/// Clears `command`'s environment down to `PATH` and what a process on this
+/// platform cannot run without: nothing more on Unix; on Windows the
+/// system's own variables, without which Winsock does not start and no
+/// HTTPS clone reaches its host.
+pub fn clear_environment(command: &mut Command) {
+    command.env_clear();
+    for key in std::iter::once("PATH").chain(imp::SYSTEM_ENVIRONMENT.iter().copied()) {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
 }
 
 /// Runs `command` in this process's place, with its exit status as this

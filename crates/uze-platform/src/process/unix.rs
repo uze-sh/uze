@@ -41,12 +41,38 @@ pub(super) fn request_stop(pid: u32, _channel: &str) {
 
 pub(super) fn listen_for_stop(_channel: &str, _on_stop: impl FnOnce() + Send + 'static) {}
 
-pub(super) fn end_group(pid: u32) {
-    signal_group(pid, true);
+pub(super) struct Tree(u32);
+
+impl Tree {
+    pub(super) fn end(&self, leader_unreaped: bool) {
+        signal_group(self.0, leader_unreaped);
+    }
 }
 
-pub(super) fn end_reaped_group(pid: u32) {
-    signal_group(pid, false);
+pub(super) fn spawn_tree(
+    command: &mut Command,
+    seat: super::Seat,
+) -> io::Result<(std::process::Child, Tree)> {
+    match seat {
+        super::Seat::OwnGroup => {
+            command.process_group(0);
+        }
+        // A session of its own is also a group of its own, led by the
+        // child: `setsid` refuses a process that already leads one.
+        // SAFETY: `setsid` is async-signal-safe and touches no memory,
+        // which is all a `pre_exec` hook may do between fork and exec.
+        super::Seat::NoTerminal => unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        },
+    }
+    let child = command.spawn()?;
+    let tree = Tree(child.id());
+    Ok((child, tree))
 }
 
 fn signal_group(pid: u32, leader_unreaped: bool) {
@@ -107,23 +133,6 @@ pub(super) fn wait_without_reaping(pid: u32) {
     }
 }
 
-pub(super) fn in_own_group(command: &mut Command) {
-    command.process_group(0);
-}
-
-pub(super) fn without_terminal(command: &mut Command) {
-    // SAFETY: `setsid` is async-signal-safe and touches no memory, which is
-    // all a `pre_exec` hook may do between fork and exec.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-}
-
 pub(super) fn spawn_detached(command: &mut Command) -> io::Result<super::Detached> {
     // A group of its own, or a `SIGHUP` when the launching terminal closes
     // and a `Ctrl+C` to its foreground group reach the child.
@@ -132,6 +141,8 @@ pub(super) fn spawn_detached(command: &mut Command) -> io::Result<super::Detache
         outlives_host: true,
     })
 }
+
+pub(super) const SYSTEM_ENVIRONMENT: &[&str] = &[];
 
 /// `exec`: the program replaces this one, keeping its pid.
 pub(super) fn run_in_place(command: &mut Command) -> io::Error {
