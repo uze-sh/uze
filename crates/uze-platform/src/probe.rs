@@ -540,6 +540,13 @@ mod platform {
         Some(PathBuf::from(trimmed.unwrap_or(&text)))
     }
 
+    /// Another process's memory read as the UTF-16 Windows keeps its
+    /// strings in.
+    fn utf16_units(bytes: &[u8]) -> Vec<u16> {
+        let (pairs, _) = bytes.as_chunks::<2>();
+        pairs.iter().map(|&pair| u16::from_le_bytes(pair)).collect()
+    }
+
     pub(super) fn environment_value_of(pid: u32, key: &str) -> Option<String> {
         let process = Process::open(pid)?;
         let parameters = process.parameters()?;
@@ -547,10 +554,7 @@ mod platform {
         let block = process.pointer(parameters + 0x80)?;
         let size = process.pointer(parameters + 0x3F0)?.min(1 << 20);
         let bytes = process.read(block, size)?;
-        let units: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-            .collect();
+        let units = utf16_units(&bytes);
         let prefix = format!("{key}=");
         units
             .split(|&unit| unit == 0)
@@ -641,11 +645,7 @@ mod platform {
                 return None;
             }
             let bytes = self.read(buffer, len)?;
-            let units: Vec<u16> = bytes
-                .chunks_exact(2)
-                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-                .collect();
-            Some(String::from_utf16_lossy(&units))
+            Some(String::from_utf16_lossy(&utf16_units(&bytes)))
         }
     }
 

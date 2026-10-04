@@ -140,8 +140,12 @@ mod tests {
         assert_eq!(refused.kind(), io::ErrorKind::WouldBlock);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "pid=42");
 
-        drop(holder);
+        // Released by `unlock`, not by dropping the holder: a sibling test
+        // forking a child holds a copy of every descriptor until that child
+        // execs, and with it the lock a close alone would end.
+        unlock(&holder);
         try_lock(&other, Mode::Exclusive).unwrap();
+        drop(holder);
         drop(other);
         let _ = std::fs::remove_file(&path);
     }
