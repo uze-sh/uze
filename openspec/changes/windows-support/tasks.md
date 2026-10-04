@@ -118,14 +118,17 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - `.netrc`/`_netrc` from `UzeHome`.
 
       Also set `core.longpaths=true` on `git worktree add`.
-- [ ] 3.11 `create_symlink` callers each get a Windows answer:
-      - Claude's project resource projection (`claude/runtime.rs:120-172`)
-        uses a junction, swapped by rename-aside;
-      - `checkout/pool.rs:387-399` uses a junction for directories and a
-        copy for files;
-      - `exposure::attach_symlink` makes a copy under a new copied-artifact
-        receipt kind. That is an attachments-ledger shape bump plus one rung,
-        so inspect-before-detach compares content, not `read_link`.
+- [x] 3.11 `create_symlink` callers each get a Windows answer, none needing
+      a privilege an ordinary session lacks:
+      - a link to a directory is a junction (`uze_platform::fs::symlink`),
+        which the standard library reads as a link, so Claude's runtime
+        projection and every `read_link` comparison stand unchanged;
+      - `checkout/pool.rs` links through `fs::link_entry`: a junction for a
+        directory, a hard link for a file (the primary's file under a
+        second name, read as it is now, where a copy would be stale at
+        once);
+      - `exposure::attach_symlink` makes only directory references, which
+        are junctions.
 - [ ] 3.12 Private directories (`record.rs:164`, `acquisition.rs:442`,
       `telemetry.rs:286`, prompt history) get an owner-only DACL on
       Windows. Prompt history's local day uses `GetTimeZoneInformation`.

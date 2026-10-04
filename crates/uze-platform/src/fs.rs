@@ -58,6 +58,16 @@ pub fn symlink(target: &Path, link: &Path) -> io::Result<()> {
     imp::symlink(target, link)
 }
 
+/// Makes `link` reach `target`, a file or a directory, with what every
+/// user may make here: a symbolic link on Unix; on Windows a junction for a
+/// directory and, for a file, a hard link (the same file under a second
+/// name, so on the same volume), since a symbolic link to a file needs a
+/// privilege an ordinary session lacks. Reads through it see the target as
+/// it is now; a target replaced by rename is no longer reached.
+pub fn link_entry(target: &Path, link: &Path) -> io::Result<()> {
+    imp::link_entry(target, link)
+}
+
 /// Removes the link at `link`, never what it points at, whichever kind of
 /// target it was made for: Windows keeps a link to a directory as a
 /// directory entry, which only `remove_dir` takes.
@@ -149,6 +159,10 @@ mod imp {
 
     pub(super) fn remove_link(link: &Path) -> io::Result<()> {
         std::fs::remove_file(link)
+    }
+
+    pub(super) fn link_entry(target: &Path, link: &Path) -> io::Result<()> {
+        symlink(target, link)
     }
 
     pub(super) fn open_for_times(path: &Path) -> io::Result<File> {
@@ -263,6 +277,14 @@ mod imp {
                 error
             }
         })
+    }
+
+    pub(super) fn link_entry(target: &Path, link: &Path) -> io::Result<()> {
+        if target.is_dir() {
+            symlink(target, link)
+        } else {
+            std::fs::hard_link(target, link)
+        }
     }
 
     /// An empty directory at `link` made a mount point for `target`, an

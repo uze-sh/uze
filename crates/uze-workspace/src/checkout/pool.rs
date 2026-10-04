@@ -365,7 +365,7 @@ pub fn materialize(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<
             warnings.push(format!("could not prepare `{}`: {error}", link.display()));
             continue;
         }
-        if let Err(error) = symlink(&source, &destination) {
+        if let Err(error) = uze_platform::fs::link_entry(&source, &destination) {
             warnings.push(format!("could not link `{}`: {error}", link.display()));
         }
     }
@@ -402,8 +402,4 @@ pub fn materialize(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<
             }),
     );
     warnings
-}
-
-pub(super) fn symlink(source: &Path, destination: &Path) -> std::io::Result<()> {
-    uze_platform::fs::symlink(source, destination)
 }

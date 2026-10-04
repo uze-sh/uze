@@ -961,7 +961,7 @@ fn setting_up(setup: uze_core::shell::ShellCommand) -> WorktreePolicy {
 }
 
 #[test]
-fn a_linked_file_is_a_symlink_and_a_missing_target_only_warns() {
+fn a_linked_file_reaches_the_primarys_and_a_missing_target_only_warns() {
     let repository = repository("slots-materialize");
     let primary = repository.root();
     fs::write(primary.join(".env"), "SECRET=1\n").unwrap();
@@ -972,13 +972,11 @@ fn a_linked_file_is_a_symlink_and_a_missing_target_only_warns() {
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].contains(".env.local"));
     let linked = slot.path.join(".env");
-    assert!(
-        fs::symlink_metadata(&linked)
-            .unwrap()
-            .file_type()
-            .is_symlink()
-    );
     assert_eq!(fs::read_to_string(&linked).unwrap(), "SECRET=1\n");
+    // Linked, not copied: what the primary's file holds now is what the
+    // checkout reads.
+    fs::write(primary.join(".env"), "SECRET=2\n").unwrap();
+    assert_eq!(fs::read_to_string(&linked).unwrap(), "SECRET=2\n");
     assert!(
         materialize(primary, &slot.path, &linking(&[".env"])).is_empty(),
         "idempotent"
