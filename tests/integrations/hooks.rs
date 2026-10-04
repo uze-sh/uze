@@ -36,11 +36,43 @@ fn hook_package(label: &str, manifest: &str) -> (PathBuf, Vec<Resource>) {
         r#"{"name":"hook-demo","version":"1.0.0","description":"Hooks fixture"}"#,
     )
     .unwrap();
-    fs::write(pkg.join("hooks.json"), manifest).unwrap();
+    fs::write(pkg.join("hooks.json"), spelled_for_every_shell(manifest)).unwrap();
     let id = PackageId::from_plugin_name("hook-demo", &pkg.join("plugin.json")).unwrap();
     let resources = package_resources_at(&id, &pkg).unwrap();
     (root, resources)
 }
+
+/// `manifest` with every handler line declared for both shells, as an
+/// author writing for every platform declares it: what is under test here is
+/// delivery, which the same text proves under either spelling.
+fn spelled_for_every_shell(manifest: &str) -> String {
+    let mut document: serde_json::Value = serde_json::from_str(manifest).unwrap();
+    for groups in document["hooks"]
+        .as_object_mut()
+        .into_iter()
+        .flat_map(|events| events.values_mut())
+        .filter_map(serde_json::Value::as_array_mut)
+    {
+        for handler in groups
+            .iter_mut()
+            .filter_map(|group| group["hooks"].as_array_mut())
+            .flatten()
+        {
+            if let Some(line) = handler["command"].as_str().map(str::to_owned) {
+                handler["command"] = serde_json::json!({ "posix": line, "windows": line });
+            }
+        }
+    }
+    document.to_string()
+}
+
+/// Antigravity's hooks reach it only through the POSIX wrapper: on Windows
+/// no entry form is measured to survive its `cmd /C`, so they are reported,
+/// never delivered (`antigravity/hooks.rs`).
+#[cfg(unix)]
+const ANTIGRAVITY_DELIVERS: CompatibilityRoute = CompatibilityRoute::Native;
+#[cfg(windows)]
+const ANTIGRAVITY_DELIVERS: CompatibilityRoute = CompatibilityRoute::Unsupported;
 
 fn deny_group() -> &'static str {
     r#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/scripts/check","timeout":10}]}]}}"#
@@ -101,7 +133,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     assert_eq!(
         antigravity.exposure_plan(protect).route,
-        CompatibilityRoute::Native
+        ANTIGRAVITY_DELIVERS
     );
 
     // Stop must never claim an OpenCode equivalence (spec scenario).
@@ -209,7 +241,7 @@ fn session_start_is_native_where_fired_and_unsupported_where_not() {
     );
     assert_eq!(
         antigravity.exposure_plan(watch).route,
-        CompatibilityRoute::Native,
+        ANTIGRAVITY_DELIVERS,
         "the package's other groups still reach Antigravity"
     );
     assert_eq!(
@@ -1096,6 +1128,8 @@ fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_never_bridged() {
 /// Lab, `hooks > delivery`, against the vendor's own plugin guide). So the
 /// hook is a capability-level delivery — one named entry in a shared file —
 /// and the package plan claims nothing about it.
+/// Antigravity's delivery itself, which only the POSIX wrapper makes.
+#[cfg(unix)]
 #[test]
 fn antigravity_delivers_hooks_as_named_entries_in_the_shared_config() {
     let (_root, resources) = hook_package("agy-hooks", deny_group());
@@ -1144,6 +1178,8 @@ fn antigravity_delivers_hooks_as_named_entries_in_the_shared_config() {
 
 /// Attach, inspect and detach against a `hooks.json` that already holds a
 /// hand-written hook: UZE owns exactly its own named key.
+/// Antigravity's delivery itself, which only the POSIX wrapper makes.
+#[cfg(unix)]
 #[test]
 fn antigravity_hook_delivery_never_touches_a_foreign_named_hook() {
     let (_root, resources) = hook_package("agy-hooks-merge", deny_group());

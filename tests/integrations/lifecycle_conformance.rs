@@ -5,11 +5,6 @@
 //! Migrated verbatim from the former `tests/integration_conformance.rs`
 //! (sections 8, 9, 12 and the store-byte proof).
 
-// The cases that drive shebang stand-ins are Unix-only until the stand-ins
-// dispatch through `uze-fake-harness` (windows-support task 9.2); what only
-// they use is unused elsewhere.
-#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
-
 //! Integration Conformance Test Suite.
 //!
 //! Formalizes behavioral invariants that Claude, Codex, Antigravity, and
@@ -60,6 +55,8 @@ use uze_integrations::{
     antigravity::AntigravityIntegration, claude::ClaudeIntegration, codex::CodexIntegration,
     opencode::OpenCodeIntegration,
 };
+
+use uze_testkit::fake_harness::{Action, FakeHarness};
 
 use super::{
     fixtures::{build_package, mark_setup, skill_resource, temp},
@@ -149,7 +146,6 @@ fn assert_skill_lifecycle_and_drift_safety(integration: &dyn IntegrationPort, re
     fs::remove_file(path).ok();
 }
 
-#[cfg(unix)]
 #[test]
 fn every_harness_attaches_inspects_detaches_and_refuses_to_destroy_drift() {
     // One assertion, asked of every registered harness. It used to be four
@@ -224,35 +220,27 @@ impl uze_core::provisioning::ProcessRunner for NeverCalledProcessRunner {
     }
 }
 
-#[cfg(unix)]
 fn fake_always_succeeding_bin_dir(root: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let dir = root.join("fake-bin");
-    fs::create_dir_all(&dir).unwrap();
-    let script = r#"#!/bin/sh
-if [ "$1" = "plugin" ]; then
-  case "$2" in
-    list) echo '{"imports":[]}'; exit 0 ;;
-    install) mkdir -p "$HOME/.gemini/config/plugins/flow" && cp -R "$3/." "$HOME/.gemini/config/plugins/flow/"; exit 0 ;;
-  esac
-fi
-case "$*" in
-  *--json*) echo '{"marketplaces":[],"installed":[],"plugins":[]}' ;;
-  *--output-format=json*) echo '[]' ;;
-esac
-exit 0
-"#;
     for name in ["claude", "codex", "agy"] {
-        let path = dir.join(name);
-        fs::write(&path, script).unwrap();
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
+        FakeHarness::new(&dir, name)
+            .on_prefix(["plugin", "list"], Action::stdout(r#"{"imports":[]}"#))
+            .on_prefix(
+                ["plugin", "install"],
+                Action::StagePlugin {
+                    under_home: PathBuf::from(".gemini/config/plugins"),
+                },
+            )
+            .on_containing(
+                "--json",
+                Action::stdout(r#"{"marketplaces":[],"installed":[],"plugins":[]}"#),
+            )
+            .on_containing("--output-format=json", Action::stdout("[]"))
+            .build();
     }
     dir
 }
 
-#[cfg(unix)]
 #[test]
 fn no_duplicate_capability_receipt_when_a_package_covers_the_resource() {
     let root = temp("no-duplicate-receipt");
@@ -327,15 +315,12 @@ fn no_duplicate_capability_receipt_when_a_package_covers_the_resource() {
     let _ = fs::remove_dir_all(pkg_root);
 }
 
-#[cfg(unix)]
 #[test]
 fn a_failing_vendor_cli_propagates_the_error_and_leaves_no_partial_state() {
     // Every fake in this suite answers exit 0 to anything, so a regression
     // in vendor-failure propagation (`claude mcp add` rejected, installer
     // denied) would ship green. The testkit's rule table can fail
     // explicitly; assert the error surfaces and nothing partial is left.
-    use uze_testkit::fake_harness::{Action, FakeHarness};
-
     let root = temp("vendor-fails");
     let uze_home = UzeHome::at(root.join("uze"));
     let integration = ClaudeIntegration::new(root.join("claude-home"), uze_home.clone());

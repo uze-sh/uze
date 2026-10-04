@@ -42,10 +42,31 @@ pub enum Action {
     Exit(i32),
     /// Touch a marker file and exit 0.
     TouchFile(PathBuf),
+    /// Print the environment the stand-in was started with, one
+    /// `NAME=value` per line, and exit 0: what a launcher handed the
+    /// harness, read back.
+    PrintEnvironment,
+    /// Record `PID=<its own pid>` and its environment at `into`, whole or
+    /// not at all, then hold its process for a minute: a harness started in
+    /// a pane, caught running.
+    RecordLaunch { into: PathBuf },
     /// Simulate a vendor `mcp add` state transition: skip
     /// `--scope <x>`/`--transport <y>`/`--`, take the next token as the
     /// entry name, touch `<state_dir>/<name>`, exit 0.
     McpEntryMark(PathBuf),
+    /// A vendor's MCP registry, one marker file per entry under
+    /// `state_dir`: `mcp get <name>` succeeds when the entry is there,
+    /// `mcp remove <name>` drops it, and `mcp add …` records the name
+    /// [`Action::McpEntryMark`] would — refused, as the vendor refuses it,
+    /// when `names` is [`McpNames::Claude`] and the name breaks Claude's
+    /// rule. Any other `mcp` verb succeeds.
+    McpRegistry { state_dir: PathBuf, names: McpNames },
+    /// Stage the plugin directory `plugin install <source>` names under
+    /// `<home>/<under_home>/<its declared name>`, the way Antigravity's CLI
+    /// does, `<home>` being the home the stand-in was started with.
+    StagePlugin { under_home: PathBuf },
+    /// Write `reason` on stderr and exit 1: a vendor refusing.
+    Refuse { reason: String },
     /// Simulate a vendor `plugin install <source>`: copy the source
     /// directory (argv position `arg_index`, 1-based like a shell's `$N`)
     /// into `<dest>/<basename>` and exit 0.
@@ -105,6 +126,14 @@ const ASKS_ON_THE_TERMINAL: &str = r#"if ( : </dev/tty ) 2>/dev/null; then
   read -r answer </dev/tty
 fi"#;
 
+/// Which names a stand-in's MCP registry takes.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum McpNames {
+    Any,
+    /// Letters, digits, hyphens and underscores only.
+    Claude,
+}
+
 /// Vendor flavor for [`Action::VendorMarketplace`].
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum MarketplaceVendor {
@@ -125,6 +154,8 @@ pub(crate) enum Pattern {
     Exact(String),
     /// Prefix match: the joined argv starts with these tokens.
     Prefix(String),
+    /// The joined argv holds this anywhere.
+    Containing(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -137,9 +168,11 @@ pub(crate) struct Rule {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum Role {
     /// A vendor CLI answering by its rule table; `--version` answers
-    /// `version_line` unless a rule claims it first.
+    /// `version_line` before any rule is asked.
     Rules {
         log: PathBuf,
+        /// Shared by several stand-ins: `<executable>|<args>` per call.
+        shared_log: Option<PathBuf>,
         version_line: String,
         rules: Vec<Rule>,
     },
@@ -152,6 +185,7 @@ pub struct FakeHarnessBuilder {
     name: String,
     bin_dir: PathBuf,
     invocations_dir: PathBuf,
+    shared_log: Option<PathBuf>,
     rules: Vec<Rule>,
     version_line: String,
 }
@@ -176,6 +210,23 @@ impl FakeHarnessBuilder {
         self
     }
 
+    /// `on` with the joined argv holding `token` anywhere (`--json`).
+    pub fn on_containing(mut self, token: &str, action: Action) -> Self {
+        self.rules.push(Rule {
+            pattern: Pattern::Containing(token.to_owned()),
+            action,
+        });
+        self
+    }
+
+    /// Also logs every call to `log`, which several stand-ins may share, as
+    /// `<the executable's path>|<its arguments>`: which binary a workflow
+    /// reached, not only what it was asked.
+    pub fn shared_log(mut self, log: impl Into<PathBuf>) -> Self {
+        self.shared_log = Some(log.into());
+        self
+    }
+
     /// Overrides the `--version` answer (default: the harness name).
     pub fn version_line(mut self, line: impl Into<String>) -> Self {
         self.version_line = line.into();
@@ -191,6 +242,7 @@ impl FakeHarnessBuilder {
             &self.name,
             &Role::Rules {
                 log,
+                shared_log: self.shared_log,
                 version_line: self.version_line,
                 rules: self.rules,
             },
@@ -276,20 +328,21 @@ impl FakeHarness {
             name: name.to_owned(),
             bin_dir: bin_dir.to_path_buf(),
             invocations_dir: bin_dir.join(".invocations"),
+            shared_log: None,
             rules: Vec::new(),
             version_line: format!("{name} fake 0.0.0"),
         }
     }
 
-    /// A long-lived, interactive fake agent: started in a checkout, it runs
-    /// the `start` step written for that checkout when present, touches
+    /// A long-lived, interactive fake agent: started in a checkout, it does
+    /// the `start` [`Steps`] written for that checkout when present, touches
     /// `<checkout name>.started`, then reads its pane line by line — a line
-    /// mentioning `rebase --continue` runs the `conflict` step and touches
-    /// `.resolved`; one asking it to open a pull request runs `request` and
-    /// touches `.opened`; one mentioning `checks failed` runs `gate` and
+    /// mentioning `rebase --continue` does the `conflict` steps and touches
+    /// `.resolved`; one asking it to open a pull request does `request` and
+    /// touches `.opened`; one mentioning `checks failed` does `gate` and
     /// touches `.fixed`; `quit` exits. Every line lands in `.inbox`.
     /// `AGENT_SCRIPTS` must name the scripts directory in the agent's
-    /// environment, and a step is the file [`step_file`] names there.
+    /// environment.
     ///
     /// What a model would do, made deterministic: an engine test scripts
     /// the commits an agent makes and how it answers a message, and asserts
@@ -514,10 +567,99 @@ impl Standard<'_> {
     }
 }
 
-/// The file a scripted agent runs as `step` (`start`, `conflict`, `gate`,
-/// `request`) for the checkout called `slot`, in the shell this platform
-/// runs a script with: `<slot>.<step>.sh`, or `.ps1` on Windows.
-pub fn step_file(scripts: &Path, slot: &str, step: &str) -> PathBuf {
-    let extension = uze_platform::shell::spelling("sh", "ps1");
-    scripts.join(format!("{slot}.{step}.{extension}"))
+/// What a scripted agent does at one of its steps (`start`, `conflict`,
+/// `gate`, `request`), in the checkout it was started in: written by a test
+/// with [`Steps::write_for`], done by the stand-in itself, so no shell is
+/// involved on any platform.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Steps(Vec<Step>);
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) enum Step {
+    /// Writes `content` to `path`, relative to where the agent stands.
+    Write { path: PathBuf, content: String },
+    /// Runs `program` with `args` and `env` where the agent stands, its
+    /// stdout written to `capture` when there is one.
+    Run {
+        program: PathBuf,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+        capture: Option<PathBuf>,
+    },
+    /// The steps inside, done in the directory `named_in` names.
+    Within { named_in: PathBuf, steps: Vec<Step> },
+}
+
+impl Steps {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn write(mut self, path: impl Into<PathBuf>, content: impl Into<String>) -> Self {
+        self.0.push(Step::Write {
+            path: path.into(),
+            content: content.into(),
+        });
+        self
+    }
+
+    pub fn git(self, args: &[&str]) -> Self {
+        self.git_with(args, &[])
+    }
+
+    /// `git` with variables set for this one command.
+    pub fn git_with(mut self, args: &[&str], env: &[(&str, &str)]) -> Self {
+        self.0.push(Step::Run {
+            program: PathBuf::from("git"),
+            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            env: env
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect(),
+            capture: None,
+        });
+        self
+    }
+
+    /// Runs `program`, writing what it prints to `capture`.
+    pub fn run_capturing(
+        mut self,
+        program: impl Into<PathBuf>,
+        args: &[&str],
+        capture: impl Into<PathBuf>,
+    ) -> Self {
+        self.0.push(Step::Run {
+            program: program.into(),
+            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            env: Vec::new(),
+            capture: Some(capture.into()),
+        });
+        self
+    }
+
+    /// These, then `more`.
+    pub fn and(mut self, more: Steps) -> Self {
+        self.0.extend(more.0);
+        self
+    }
+
+    /// `inner`, done in the directory whose path the file `named_in` holds.
+    pub fn within(mut self, named_in: impl Into<PathBuf>, inner: Steps) -> Self {
+        self.0.push(Step::Within {
+            named_in: named_in.into(),
+            steps: inner.0,
+        });
+        self
+    }
+
+    /// Writes these as `step` for the checkout called `slot`, in the
+    /// scripts directory the agent was told about.
+    pub fn write_for(&self, scripts: &Path, slot: &str, step: &str) {
+        let path = scripts.join(format!("{slot}.{step}.json"));
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&self.0).expect("steps serialize"),
+        )
+        .unwrap_or_else(|error| panic!("Steps: {}: {error}", path.display()));
+    }
 }

@@ -21,6 +21,7 @@ use uze_core::{
 };
 use uze_integrations::{codex::CodexIntegration, opencode::OpenCodeIntegration};
 
+use uze_testkit::fake_harness::{Action, FakeHarness};
 use uze_testkit::temp::scratch;
 
 fn temp(label: &str) -> PathBuf {
@@ -129,14 +130,8 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
 
 /// A fake `codex` that answers every plugin CLI call successfully.
 fn fake_codex_bin_dir(root: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let dir = root.join("fake-bin");
-    fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("codex");
-    fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).unwrap();
+    FakeHarness::new(&dir, "codex").build();
     dir
 }
 
@@ -157,22 +152,16 @@ fn with_truthful_fake_codex(
     plugins_json: &str,
     f: impl FnOnce(),
 ) {
-    use std::os::unix::fs::PermissionsExt;
     let dir = root.join("fake-bin");
-    fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("codex");
-    fs::write(
-        &path,
-        "#!/bin/sh\ncase \"$1 $2 $3\" in\n  \"plugin marketplace list\") echo \"$FAKE_CODEX_MARKETPLACES\" ;;\n  \"plugin list --json\") echo \"$FAKE_CODEX_PLUGINS\" ;;\n  *) exit 0 ;;\nesac\n",
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).unwrap();
+    FakeHarness::new(&dir, "codex")
+        .on_prefix(
+            ["plugin", "marketplace", "list"],
+            Action::stdout(marketplace_json),
+        )
+        .on_prefix(["plugin", "list", "--json"], Action::stdout(plugins_json))
+        .build();
     let mut scope = uze_testkit::env::scope();
     scope.set("PATH", uze_testkit::temp::path_prefixed(&dir));
-    scope.set("FAKE_CODEX_MARKETPLACES", marketplace_json);
-    scope.set("FAKE_CODEX_PLUGINS", plugins_json);
     f();
 }
 
@@ -208,7 +197,6 @@ fn codex_and_opencode(root: &Path) -> (UzeApplication, PathBuf, PathBuf, UzeHome
 /// A `flow` package whose `review` skill is user-only and ships a script
 /// and a reference beside its `SKILL.md`.
 fn review_fixture(root: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let fixture_root = root.join("fixture");
     let skill = fixture_root.join("skills/review");
     fs::create_dir_all(skill.join("scripts")).unwrap();
@@ -217,7 +205,7 @@ fn review_fixture(root: &Path) -> PathBuf {
     fs::write(skill.join("references/guide.md"), "Guide.\n").unwrap();
     let script = skill.join("scripts/check.sh");
     fs::write(&script, "#!/bin/sh\necho ok\n").unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    uze_platform::executable::make_runnable(&script).unwrap();
     fs::write(
         fixture_root.join("plugin.json"),
         r#"{"name":"flow","version":"1.0.0","description":"review fixture"}"#,
@@ -247,7 +235,6 @@ fn links_under(dir: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
-    use std::os::unix::fs::PermissionsExt;
     let root = temp("skill-root-opencode");
     with_fake_codex(&root, || {
         let (application, agents_home, opencode_skills, _) = codex_and_opencode(&root);
@@ -273,10 +260,12 @@ fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
         );
         let script = entry.join("scripts/check.sh");
         assert!(script.is_file() && !script.is_symlink());
-        assert_ne!(
-            fs::metadata(&script).unwrap().permissions().mode() & 0o111,
-            0,
-            "a copied script stays executable"
+        assert_eq!(
+            uze_platform::executable::is_executable(&script),
+            uze_platform::executable::is_executable(
+                &root.join("fixture/skills/review/scripts/check.sh")
+            ),
+            "a copied script runs exactly as its source does"
         );
         assert!(links_under(&opencode_skills).is_empty());
         assert!(
@@ -453,7 +442,7 @@ fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
             .join("skills")
             .join(uze_core::path::file_name_for("flow:review"));
         fs::create_dir_all(link.parent().unwrap()).unwrap();
-        std::os::unix::fs::symlink(&wrapper, &link).unwrap();
+        uze_platform::fs::symlink(&wrapper, &link).unwrap();
         uze_core::state::forget_receipt(&uze_home, &current).unwrap();
         for integration in ["opencode", "codex"] {
             let mut old = current.clone();

@@ -25,11 +25,6 @@
 //! internal call site can possibly re-enter the shim," and it fails loudly
 //! and specifically (file + line) the moment someone reintroduces one.
 
-// The cases that drive shebang stand-ins are Unix-only until the stand-ins
-// dispatch through `uze-fake-harness` (windows-support task 9.2); what only
-// they use is unused elsewhere.
-#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
-
 use std::{fs, path::Path};
 
 use uze_core::UzeHome;
@@ -126,18 +121,16 @@ fn no_internal_integration_call_site_spawns_a_bare_vendor_executable() {
 // parallel; the crate-wide process-env lock in `uze-testkit` also
 // serializes this against every other PATH-mutating test in this binary.
 
-#[cfg(unix)]
 fn write_fake_executable(dir: &Path, name: &str, version_line: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    fs::create_dir_all(dir).unwrap();
-    let path = dir.join(name);
-    fs::write(&path, format!("#!/bin/sh\necho '{version_line}'\n")).unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).unwrap();
+    uze_testkit::fake_harness::FakeHarness::new(dir, name)
+        .version_line(version_line)
+        .on_prefix(
+            [""],
+            uze_testkit::fake_harness::Action::stdout(version_line),
+        )
+        .build();
 }
 
-#[cfg(unix)]
 #[test]
 fn upstream_executable_resolution_never_recurses_through_the_runtime_shim() {
     let root = uze_testkit::temp::scratch("shim-boundary-behavioral");
@@ -209,10 +202,15 @@ fn upstream_executable_resolution_never_recurses_through_the_runtime_shim() {
         (&codex, "codex"),
         (&antigravity, "agy"),
     ] {
-        let expected = uze_platform::path::canonical(&real_dir.join(name)).unwrap();
+        let expected = uze_platform::path::canonical(
+            &real_dir.join(uze_platform::executable::file_name(name)),
+        )
+        .unwrap();
         let expected = expected.to_string_lossy();
         for spec in provisioning_commands(integration) {
-            if spec.program != "sh" {
+            // An installer runs through the shell; everything else is the
+            // harness's own binary.
+            if spec.program != uze_platform::shell::ARGV[0] {
                 assert_eq!(
                     spec.program, expected,
                     "{name} provisioning must run the real binary, never a bare name PATH resolves to the shim"
@@ -225,7 +223,6 @@ fn upstream_executable_resolution_never_recurses_through_the_runtime_shim() {
 }
 
 /// Every command one `provision` call asks to run, recorded rather than run.
-#[cfg(unix)]
 fn provisioning_commands(
     integration: &dyn IntegrationPort,
 ) -> Vec<uze_core::provisioning::ProcessSpec> {

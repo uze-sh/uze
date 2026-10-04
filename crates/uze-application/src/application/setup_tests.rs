@@ -189,10 +189,9 @@ impl IntegrationPort for RoutedHarness {
         let path = self
             .skills_dir
             .join(resource.identity().replace([':', '/'], "-"));
-        #[cfg(unix)]
         if fs::read_link(&path).ok().as_ref() != Some(&resource.capability.path) {
-            let _ = fs::remove_file(&path);
-            std::os::unix::fs::symlink(&resource.capability.path, &path).map_err(|source| {
+            let _ = uze_platform::fs::remove_link(&path);
+            uze_platform::fs::symlink(&resource.capability.path, &path).map_err(|source| {
                 UzeError::Write {
                     path: path.clone(),
                     source,
@@ -519,13 +518,9 @@ fn add_never_provisions_even_when_every_harness_is_absent() {
 fn with_the_executable_on_path(world: &World) -> uze_testkit::env::ProcessEnvGuard<'static> {
     let bin = world.root.join("bin");
     fs::create_dir_all(&bin).unwrap();
-    let executable = bin.join("routed");
+    let executable = bin.join(uze_platform::executable::file_name("routed"));
     fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    uze_platform::executable::make_runnable(&executable).unwrap();
     let mut environment = uze_testkit::env::scope();
     environment.set("PATH", &bin);
     environment
@@ -581,7 +576,13 @@ fn the_workspace_sets_up_what_is_installed_without_updating_it() {
     );
     assert_eq!(world.provisioned.load(Ordering::SeqCst), 0);
     assert_eq!(result.provisioning.action, ProvisionAction::None);
-    assert!(world.home.shims_dir().join("routed").is_symlink());
+    assert!(
+        world
+            .home
+            .shims_dir()
+            .join(uze_platform::executable::file_name("routed"))
+            .is_symlink()
+    );
     assert_eq!(world.app.workspace().entry(), WorkspaceEntry::Ready);
     assert!(world.app.workspace().agent_identities()[0].configured);
     assert_eq!(world.app.workspace().launcher_names(), ["routed"]);
@@ -597,7 +598,13 @@ fn a_launcher_gone_since_setup_is_set_up_again() {
         .setup_through(Some("routed"), ProvisionRoute::Existing)
         .unwrap();
 
-    fs::remove_file(world.home.shims_dir().join("routed")).unwrap();
+    fs::remove_file(
+        world
+            .home
+            .shims_dir()
+            .join(uze_platform::executable::file_name("routed")),
+    )
+    .unwrap();
 
     assert_eq!(
         world.app.workspace().entry(),

@@ -12,7 +12,7 @@ use std::process::ExitCode;
 
 use serde_json::{Value, json};
 
-use super::{Action, MarketplaceVendor, Pattern, Role, Rule};
+use super::{Action, MarketplaceVendor, McpNames, Pattern, Role, Rule, Step};
 
 /// The directory beside the stand-ins that holds one table per name.
 pub(crate) const TABLES: &str = ".fake";
@@ -41,17 +41,20 @@ pub fn run(executable: &Path, arguments: &[String]) -> ExitCode {
     match role {
         Role::Rules {
             log,
+            shared_log,
             version_line,
             rules,
         } => {
             append_line(&log, &joined);
+            if let Some(shared) = shared_log {
+                append_line(&shared, &format!("{}|{joined}", executable.display()));
+            }
             let version = Rule {
                 pattern: Pattern::Exact("--version".to_owned()),
                 action: Action::Stdout(version_line),
             };
-            match rules
-                .iter()
-                .chain(std::iter::once(&version))
+            match std::iter::once(&version)
+                .chain(&rules)
                 .find(|rule| matches(&rule.pattern, &joined))
             {
                 Some(rule) => perform(&rule.action, arguments),
@@ -65,12 +68,13 @@ pub fn run(executable: &Path, arguments: &[String]) -> ExitCode {
     }
 }
 
-/// The rules a test wrote come first, so one of them may claim
-/// `--version` before the stand-in's own answer does.
+/// `--version` is answered first, as a vendor CLI answers it whatever else
+/// it does; then the rules a test wrote, in order.
 fn matches(pattern: &Pattern, joined: &str) -> bool {
     match pattern {
         Pattern::Exact(expected) => joined == expected,
         Pattern::Prefix(prefix) => joined.starts_with(prefix.as_str()),
+        Pattern::Containing(token) => joined.contains(token.as_str()),
     }
 }
 
@@ -84,6 +88,39 @@ fn perform(action: &Action, arguments: &[String]) -> ExitCode {
         Action::TouchFile(path) => {
             touch(path);
             ExitCode::SUCCESS
+        }
+        Action::RecordLaunch { into } => {
+            let mut record = format!("PID={}\n", std::process::id());
+            for (name, value) in std::env::vars_os() {
+                record.push_str(&format!(
+                    "{}={}\n",
+                    name.to_string_lossy(),
+                    value.to_string_lossy()
+                ));
+            }
+            let partial = into.with_extension("part");
+            write(&partial, &record);
+            let _ = fs::rename(&partial, into);
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            ExitCode::SUCCESS
+        }
+        Action::PrintEnvironment => {
+            for (name, value) in std::env::vars_os() {
+                println!("{}={}", name.to_string_lossy(), value.to_string_lossy());
+            }
+            ExitCode::SUCCESS
+        }
+        Action::McpRegistry { state_dir, names } => mcp_registry(state_dir, *names, arguments),
+        Action::StagePlugin { under_home } => {
+            if let (Some(source), Some(home)) = (arguments.get(2), uze_platform::home::user_home())
+            {
+                stage_plugin(Path::new(source), &home.join(under_home));
+            }
+            ExitCode::SUCCESS
+        }
+        Action::Refuse { reason } => {
+            eprintln!("{reason}");
+            ExitCode::from(1)
         }
         Action::McpEntryMark(state_dir) => {
             if let Some(name) = mcp_entry_name(arguments) {
@@ -126,6 +163,61 @@ fn perform(action: &Action, arguments: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
     }
+}
+
+fn mcp_registry(state_dir: &Path, names: McpNames, arguments: &[String]) -> ExitCode {
+    let entry = |name: &str| state_dir.join(name);
+    match arguments.get(1).map(String::as_str) {
+        Some("get") => match arguments.get(2) {
+            Some(name) if entry(name).exists() => ExitCode::SUCCESS,
+            _ => ExitCode::from(1),
+        },
+        Some("remove") => {
+            if let Some(name) = arguments.get(2) {
+                let _ = fs::remove_file(entry(name));
+            }
+            ExitCode::SUCCESS
+        }
+        Some("add") => {
+            let Some(name) = mcp_entry_name(arguments) else {
+                return ExitCode::SUCCESS;
+            };
+            let refused = matches!(names, McpNames::Claude)
+                && !name
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || "-_".contains(character));
+            if refused {
+                eprintln!(
+                    "Invalid name {name}. Names can only contain letters, numbers, hyphens, and \
+                     underscores."
+                );
+                return ExitCode::from(1);
+            }
+            touch(&entry(name));
+            ExitCode::SUCCESS
+        }
+        _ => ExitCode::SUCCESS,
+    }
+}
+
+/// A plugin directory staged under `plugins`, named by its manifest's
+/// declared `name` where it has one — not its source directory's, which for
+/// a generated envelope is the qualified package id.
+fn stage_plugin(source: &Path, plugins: &Path) -> String {
+    let id = fs::read(source.join("plugin.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|manifest| manifest["name"].as_str().map(str::to_owned))
+        .or_else(|| {
+            source
+                .file_name()
+                .map(|base| base.to_string_lossy().into_owned())
+        })
+        .unwrap_or_default();
+    let staged = plugins.join(&id);
+    let _ = fs::remove_dir_all(&staged);
+    let _ = copy_tree(source, &staged);
+    id
 }
 
 /// `mcp add [--scope x] [--transport y] <name> -- <command>…`: the entry's
@@ -332,18 +424,7 @@ fn vendor_agy(state_dir: &Path, dest: &Path, arguments: &[String]) -> ExitCode {
         let Some(root) = arguments.get(2).map(PathBuf::from) else {
             return ExitCode::SUCCESS;
         };
-        // The real `agy` stages a plugin under its manifest's `name`, not
-        // its directory's: a generated plugin lives in `<name>--<market>/`.
-        let id = fs::read(root.join("plugin.json"))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-            .and_then(|manifest| manifest["name"].as_str().map(str::to_owned))
-            .or_else(|| {
-                root.file_name()
-                    .map(|base| base.to_string_lossy().into_owned())
-            })
-            .unwrap_or_default();
-        let _ = copy_tree(&root, &dest.join(&id));
+        let id = stage_plugin(&root, dest);
         append_line(&installed, &id);
     } else if joined.starts_with("plugin list") {
         let imports: Vec<Value> = lines(&installed)
@@ -371,9 +452,13 @@ fn scripted_agent() -> ExitCode {
         .unwrap_or_default();
     let log = scripts.join(format!("{slot}.log"));
     let step = |name: &str| {
-        let file = super::step_file(&scripts, &slot, name);
-        if file.is_file() {
-            run_step(&file, &log);
+        let file = scripts.join(format!("{slot}.{name}.json"));
+        if let Some(steps) = fs::read(&file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Vec<Step>>(&bytes).ok())
+        {
+            let here = std::env::current_dir().unwrap_or_default();
+            perform_steps(&steps, &here, &log);
         }
     };
     step("start");
@@ -401,16 +486,39 @@ fn scripted_agent() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// A step, read by this platform's shell, its output appended to `log`.
-fn run_step(file: &Path, log: &Path) {
-    let output = || OpenOptions::new().create(true).append(true).open(log);
-    let (Ok(stdout), Ok(stderr)) = (output(), output()) else {
-        return;
-    };
-    let _ = uze_platform::shell::read_script(file)
-        .stdout(stdout)
-        .stderr(stderr)
-        .status();
+/// `steps`, done in `here`, what each run says appended to `log`.
+fn perform_steps(steps: &[Step], here: &Path, log: &Path) {
+    for step in steps {
+        match step {
+            Step::Write { path, content } => write(&here.join(path), content),
+            Step::Run {
+                program,
+                args,
+                env,
+                capture,
+            } => {
+                let output = std::process::Command::new(program)
+                    .args(args)
+                    .envs(env.iter().map(|(name, value)| (name, value)))
+                    .current_dir(here)
+                    .stdin(std::process::Stdio::null())
+                    .output();
+                let Ok(output) = output else { continue };
+                match capture {
+                    Some(capture) => write(
+                        &here.join(capture),
+                        &String::from_utf8_lossy(&output.stdout),
+                    ),
+                    None => append_line(log, String::from_utf8_lossy(&output.stdout).trim_end()),
+                }
+                append_line(log, String::from_utf8_lossy(&output.stderr).trim_end());
+            }
+            Step::Within { named_in, steps } => {
+                let named = read(&here.join(named_in)).unwrap_or_default();
+                perform_steps(steps, &here.join(named.trim()), log);
+            }
+        }
+    }
 }
 
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {

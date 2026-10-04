@@ -768,7 +768,7 @@ mod generated_native_tests {
         );
         assert_eq!(
             server["env"]["DATA"],
-            pkg.root.join("data").to_string_lossy().as_ref()
+            format!("{}/data", pkg.root.display())
         );
         let _ = fs::remove_dir_all(_root);
     }

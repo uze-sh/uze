@@ -280,8 +280,8 @@ fn codex_prefers_managed_attachment_once_setup_state_is_recorded() {
             .starts_with("---\nname: uze-agent-skill-conformance:uze-e2e\n")
     );
     assert_eq!(
-        attached.file_name().unwrap(),
-        "uze-agent-skill-conformance:uze-e2e"
+        attached.file_name().unwrap().to_string_lossy(),
+        uze_core::path::file_name_for("uze-agent-skill-conformance:uze-e2e")
     );
 
     // Idempotent, and independent of Claude's own attachment state.
@@ -384,38 +384,35 @@ fn mcp_resource_routes_to_managed_vendor_config_once_setup_state_is_recorded() {
 /// minimal fake `claude`/`codex` on `PATH` that tracks one marker file per
 /// registered entry name.
 #[test]
-#[cfg(unix)]
 fn detach_mcp_entry_removes_a_registered_entry_idempotently() {
-    use std::os::unix::fs::PermissionsExt;
+    use uze_testkit::fake_harness::{Action, FakeHarness, McpNames};
 
     let dir = temporary_home("detach-mcp-entry");
-    fs::create_dir_all(&dir).unwrap();
-    let marker = dir.join("registered");
-    fs::write(&marker, "").unwrap();
-    for name in ["claude", "codex"] {
-        let path = dir.join(name);
-        fs::write(
-            &path,
-            format!(
-                "#!/bin/sh\ncase \"$2\" in\n  remove) rm -f '{marker}' ;;\nesac\nexit 0\n",
-                marker = marker.display()
-            ),
-        )
-        .unwrap();
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
-    }
+    let registry = dir.join("mcp-state");
+    fs::create_dir_all(&registry).unwrap();
+    let registered = registry.join("uze-example");
+    fs::write(&registered, "").unwrap();
+    let [claude, codex] = ["claude", "codex"].map(|name| {
+        FakeHarness::new(&dir, name)
+            .on_prefix(
+                ["mcp"],
+                Action::McpRegistry {
+                    state_dir: registry.clone(),
+                    names: McpNames::Any,
+                },
+            )
+            .build()
+    });
     let mut scope = uze_testkit::env::scope();
     scope.set("PATH", uze_testkit::temp::path_prefixed(&dir));
 
-    assert!(marker.exists());
-    claude::detach_mcp_entry(&dir.join("claude"), &dir, "uze-example").unwrap();
-    assert!(!marker.exists(), "claude mcp remove should have run");
+    assert!(registered.exists());
+    claude::detach_mcp_entry(&claude.path(), &dir, "uze-example").unwrap();
+    assert!(!registered.exists(), "claude mcp remove should have run");
 
     // Idempotent: removing an already-absent entry is not an error.
-    claude::detach_mcp_entry(&dir.join("claude"), &dir, "uze-example").unwrap();
-    codex::detach_mcp_entry(&dir.join("codex"), &dir, "uze-example").unwrap();
+    claude::detach_mcp_entry(&claude.path(), &dir, "uze-example").unwrap();
+    codex::detach_mcp_entry(&codex.path(), &dir, "uze-example").unwrap();
 
     fs::remove_dir_all(dir).unwrap();
 }

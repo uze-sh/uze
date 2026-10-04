@@ -9,7 +9,6 @@
 
 use std::{
     fs,
-    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::{Child, Stdio},
     time::{Duration, Instant},
@@ -19,10 +18,14 @@ use uze_application::{
     DeliveryOutcome, Placement, PlacementKind, UzeApplication, UzeHome, WorkStateView,
 };
 use uze_terminal::{
-    ClientEvent, ClientRequest, PROTOCOL_VERSION, PaneId, Session, open_space, read_event,
+    ClientEvent, ClientRequest, PROTOCOL_VERSION, PaneId, Session, Stream, open_space, read_event,
     send_request, socket_path,
 };
-use uze_testkit::{env::ProcessEnvGuard, fake_harness::FakeHarness, temp::TestEnvironment};
+use uze_testkit::{
+    env::ProcessEnvGuard,
+    fake_harness::{Action, FakeHarness, Steps},
+    temp::TestEnvironment,
+};
 
 use super::util::uze_bin;
 
@@ -34,8 +37,8 @@ struct Engine {
     env: TestEnvironment,
     scripts: PathBuf,
     server: Child,
-    stream: UnixStream,
-    reader: UnixStream,
+    stream: Stream,
+    reader: Stream,
     session: Option<Session>,
     _guard: ProcessEnvGuard<'static>,
 }
@@ -91,7 +94,7 @@ impl Engine {
             .spawn()
             .expect("the real uze binary serves a terminal");
         let socket = socket_path().unwrap();
-        wait_until("the server's socket appears", || socket.exists());
+        wait_until("the server answers at its endpoint", || listening(&socket));
         let (stream, reader) = connect(&project);
         let mut engine = Self {
             env,
@@ -151,7 +154,7 @@ impl Engine {
     /// Launches an agent the way the TUI does: placement first, then a tab
     /// whose first process is the scripted agent, started in the slot.
     /// `start` is what the agent does before it goes quiet.
-    fn launch(&mut self, start: &str) -> (String, PathBuf) {
+    fn launch(&mut self, start: Steps) -> (String, PathBuf) {
         let placement = self
             .app()
             .workspace()
@@ -167,7 +170,7 @@ impl Engine {
         };
         let slot = placement.cwd.clone();
         let name = slot.file_name().unwrap().to_string_lossy().into_owned();
-        fs::write(self.scripts.join(format!("{name}.start.sh")), start).unwrap();
+        start.write_for(&self.scripts, &name, "start");
         // A reused slot keeps its name, and with it the marker the previous
         // agent left: clearing it is what makes the wait below prove that
         // *this* agent ran.
@@ -310,8 +313,8 @@ impl Engine {
         let _ = self.server.wait();
         let project = self.project().to_path_buf();
         let socket = socket_path().unwrap();
-        wait_until("the dead server's socket is gone or stale", || {
-            UnixStream::connect(&socket).is_err()
+        wait_until("the dead server's endpoint answers nobody", || {
+            !listening(&socket)
         });
         let _ = fs::remove_file(&socket);
         self.server = self
@@ -325,7 +328,9 @@ impl Engine {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        wait_until("the new server's socket appears", || socket.exists());
+        wait_until("the new server answers at its endpoint", || {
+            listening(&socket)
+        });
         let (stream, reader) = connect(&project);
         self.stream = stream;
         self.reader = reader;
@@ -341,11 +346,17 @@ impl Drop for Engine {
     }
 }
 
-fn connect(project: &Path) -> (UnixStream, UnixStream) {
-    // Straight to the socket: `attach` would replace a server that is not
+/// Whether a server answers at `endpoint`: a socket file can outlive its
+/// server, and a pipe is no file at all.
+fn listening(endpoint: &Path) -> bool {
+    uze_terminal::connect(endpoint).is_ok()
+}
+
+fn connect(project: &Path) -> (Stream, Stream) {
+    // Straight to the endpoint: `attach` would replace a server that is not
     // this executable, and the one started above is the real binary.
-    let mut stream =
-        UnixStream::connect(socket_path().unwrap()).expect("connects to the server started above");
+    let mut stream = uze_terminal::connect(&socket_path().unwrap())
+        .expect("connects to the server started above");
     let reader = stream.try_clone().unwrap();
     send_request(
         &mut stream,
@@ -380,21 +391,28 @@ fn wait_for_states(engine: &Engine, ids: &[&str], wanted: &WorkStateView) {
     });
 }
 
-fn commit_script(file: &str, contents: &str) -> String {
-    format!("printf '{contents}' > {file}\ngit add {file}\ngit commit --quiet -m '{file}'\n")
+/// An agent writing `file` and committing it, named after the file.
+fn commit(file: &str, contents: &str) -> Steps {
+    Steps::new()
+        .write(file, contents)
+        .git(&["add", file])
+        .git(&["commit", "--quiet", "-m", file])
 }
 
 #[test]
 fn three_agents_deliver_into_a_linear_target_around_the_operators_edits() {
-    let mut engine = Engine::start("  completion: merge\n  gate: test -f README.md\n");
+    let mut engine = Engine::start(
+        "  completion: merge\n  gate:\n    posix: test -f README.md\n    \
+         windows: \"if (-not (Test-Path README.md)) { exit 1 }\"\n",
+    );
     let project = engine.project().to_path_buf();
     // The operator is mid-edit in the primary the whole time.
     fs::write(project.join("README.md"), "# engine, edited\n").unwrap();
     fs::write(project.join("scratch.txt"), "untracked\n").unwrap();
 
-    let a = engine.launch(&commit_script("a.rs", "fn a() {}\\n"));
-    let b = engine.launch(&commit_script("b.rs", "fn b() {}\\n"));
-    let c = engine.launch(&commit_script("c.rs", "fn c() {}\\n"));
+    let a = engine.launch(commit("a.rs", "fn a() {}\n"));
+    let b = engine.launch(commit("b.rs", "fn b() {}\n"));
+    let c = engine.launch(commit("c.rs", "fn c() {}\n"));
     let slots = [&a.1, &b.1, &c.1];
     assert!(
         slots
@@ -452,7 +470,7 @@ fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
     let mut engine = Engine::start("  completion: merge\n");
     let project = engine.project().to_path_buf();
 
-    let (empty, slot) = engine.launch("true\n");
+    let (empty, slot) = engine.launch(Steps::new());
     engine.close_tab_in(&slot);
     let occupied = engine.occupied();
     let released = engine
@@ -467,7 +485,7 @@ fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
         "it ended holding nothing, which is not the same as delivered"
     );
 
-    let (_, reused) = engine.launch("true\n");
+    let (_, reused) = engine.launch(Steps::new());
     assert_eq!(
         reused, slot,
         "the freed slot is taken instead of a new working tree"
@@ -482,7 +500,7 @@ fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
         "an agent sitting in its slot is not abandoned"
     );
 
-    let (unsaved, kept) = engine.launch("printf 'draft\\n' > draft.rs\n");
+    let (unsaved, kept) = engine.launch(Steps::new().write("draft.rs", "draft\n"));
     engine.close_tab_in(&kept);
     let occupied = engine.occupied();
     let released = engine
@@ -494,7 +512,7 @@ fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
     assert_eq!(engine.state_of(&unsaved), WorkStateView::Parked);
     assert!(kept.join("draft.rs").is_file(), "every file is preserved");
 
-    let (_, fresh) = engine.launch("true\n");
+    let (_, fresh) = engine.launch(Steps::new());
     assert_ne!(fresh, kept, "a parked slot is never handed to a new agent");
 }
 
@@ -522,21 +540,19 @@ fn a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand() {
     let by_hand = project.join(".worktrees/by-hand");
     let split_path = engine.scripts.join("parser.path");
     let uze = uze_bin();
-    let (agent, slot) = engine.launch(&format!(
-        "{uze} agent work split parser > {split}\n\
-         cd \"$(cat {split})\"\n{child}cd - >/dev/null\n{own}",
-        uze = uze.display(),
-        split = split_path.display(),
-        child = commit_script("parser.rs", "fn parse() {}\\n"),
-        own = commit_script("own.rs", "fn own() {}\\n"),
-    ));
+    let (agent, slot) = engine.launch(
+        Steps::new()
+            .run_capturing(uze, &["agent", "work", "split", "parser"], &split_path)
+            .within(&split_path, commit("parser.rs", "fn parse() {}\n"))
+            .and(commit("own.rs", "fn own() {}\n")),
+    );
     let child = PathBuf::from(fs::read_to_string(&split_path).unwrap().trim());
     assert!(
         child.join("parser.rs").is_file(),
         "the subagent worked in its own checkout"
     );
 
-    let (_, beside) = engine.launch("true\n");
+    let (_, beside) = engine.launch(Steps::new());
     assert_ne!(beside, by_hand, "a checkout made by hand is never taken");
     assert_ne!(beside, child, "a subagent's checkout is held for its agent");
     assert_eq!(
@@ -573,7 +589,7 @@ fn a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand() {
             .is_empty()
     );
 
-    let (_, next) = engine.launch("true\n");
+    let (_, next) = engine.launch(Steps::new());
     assert_eq!(
         next, child,
         "the joined subagent's checkout went back to the pool"
@@ -593,9 +609,9 @@ fn one_reconciliation_pass_answers_a_repository_once_however_it_is_named() {
     let mut engine = Engine::start("  completion: merge\n");
     let project = engine.project().to_path_buf();
 
-    let (empty, slot) = engine.launch("true\n");
+    let (empty, slot) = engine.launch(Steps::new());
     // A second agent that stays open: the pass must leave it alone.
-    let (live, occupied_slot) = engine.launch("true\n");
+    let (live, occupied_slot) = engine.launch(Steps::new());
     engine.close_tab_in(&slot);
 
     // The checkout that just emptied, the repository root, and the slot's
@@ -651,7 +667,7 @@ fn a_slots_status_follows_the_agent_through_a_delivery_and_past_it() {
     let mut engine = Engine::start("  completion: merge\n");
     let project = engine.project().to_path_buf();
 
-    let (id, slot) = engine.launch("printf 'draft\\n' > draft.rs\n");
+    let (id, slot) = engine.launch(Steps::new().write("draft.rs", "draft\n"));
     wait_for_states(&engine, &[&id], &WorkStateView::Uncommitted);
 
     engine.git(&slot, &["add", "draft.rs"]);
@@ -694,7 +710,7 @@ fn a_slots_status_follows_the_agent_through_a_delivery_and_past_it() {
 fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
     let mut engine = Engine::start("  completion: merge\n");
     let project = engine.project().to_path_buf();
-    let (id, slot) = engine.launch(&commit_script("shared.rs", "agent\\n"));
+    let (id, slot) = engine.launch(commit("shared.rs", "agent\n"));
     wait_for_states(&engine, &[&id], &WorkStateView::Ready);
     // The target moves under the task, on the same file.
     fs::write(project.join("shared.rs"), "operator\n").unwrap();
@@ -714,11 +730,11 @@ fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
 
     // What the agent does with the message: resolve, continue, end the turn.
     let name = slot.file_name().unwrap().to_string_lossy().into_owned();
-    fs::write(
-        engine.scripts.join(format!("{name}.conflict.sh")),
-        "printf 'both\\n' > shared.rs\ngit add shared.rs\nGIT_EDITOR=true git rebase --continue\n",
-    )
-    .unwrap();
+    Steps::new()
+        .write("shared.rs", "both\n")
+        .git(&["add", "shared.rs"])
+        .git_with(&["rebase", "--continue"], &[("GIT_EDITOR", "true")])
+        .write_for(&engine.scripts, &name, "conflict");
     let pane = engine.pane_in(&slot);
     engine.tell(pane, &notice.message);
     let resolved = engine.scripts.join(format!("{name}.resolved"));
@@ -741,7 +757,7 @@ fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
 fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_parked() {
     let mut engine = Engine::start("  completion: handoff\n");
     let project = engine.project().to_path_buf();
-    let (id, slot) = engine.launch(&commit_script("kept.rs", "kept\\n"));
+    let (id, slot) = engine.launch(commit("kept.rs", "kept\n"));
     wait_for_states(&engine, &[&id], &WorkStateView::Ready);
     // A checkout from before task state existed, with work in it.
     engine.git(
@@ -804,7 +820,7 @@ fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
     let project = engine.project().to_path_buf();
     uze_testkit::git::publish_to_origin(&project, "main");
 
-    let (id, slot) = engine.launch(&commit_script("feature.rs", "feature\\n"));
+    let (id, slot) = engine.launch(commit("feature.rs", "feature\n"));
     wait_for_states(&engine, &[&id], &WorkStateView::Ready);
     let local_target = engine.git(&project, &["rev-parse", "main"]);
 
@@ -831,11 +847,14 @@ fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
     // publishes its head, which is all UZE reads to learn the number.
     let name = slot.file_name().unwrap().to_string_lossy().into_owned();
     let tip = engine.git(&project, &["rev-parse", &format!("agent/{id}")]);
-    fs::write(
-        engine.scripts.join(format!("{name}.request.sh")),
-        format!("git push --quiet origin {tip}:refs/pull/7/head\n"),
-    )
-    .unwrap();
+    Steps::new()
+        .git(&[
+            "push",
+            "--quiet",
+            "origin",
+            &format!("{tip}:refs/pull/7/head"),
+        ])
+        .write_for(&engine.scripts, &name, "request");
     let pane = engine.pane_in(&slot);
     engine.tell(pane, &notice.message);
     let opened = engine.scripts.join(format!("{name}.opened"));
@@ -962,20 +981,17 @@ fn a_harness_typed_into_a_pane_goes_through_its_launcher() {
     let launched = std::cell::OnceCell::new();
     let mut engine = Engine::start_with("  completion: merge\n", |env| {
         let marker = env.root().join("claude.env");
-        let claude = env.fake_bin.join("claude");
-        fs::write(
-            &claude,
-            format!(
-                "#!/bin/sh\n\
-                 case \"$1\" in --version) echo '9.9.9 (Claude Code)'; exit 0;; update|plugin) exit 0;; esac\n\
-                 {{ echo \"PID=$$\"; env; }} > '{marker}.part' && mv '{marker}.part' '{marker}'\n\
-                 exec sleep 60\n",
-                marker = marker.display()
-            ),
-        )
-        .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
+        FakeHarness::new(&env.fake_bin, "claude")
+            .version_line("9.9.9 (Claude Code)")
+            .on_prefix(["update"], Action::Exit(0))
+            .on_prefix(["plugin"], Action::Exit(0))
+            .on_prefix(
+                [""],
+                Action::RecordLaunch {
+                    into: marker.clone(),
+                },
+            )
+            .build();
         env.run_ok(uze_bin(), &["setup", "claude-code"]);
         launched.set(marker).unwrap();
     });

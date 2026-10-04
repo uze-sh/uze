@@ -47,7 +47,7 @@ use pane::*;
 use persist::*;
 use process::*;
 use server::*;
-pub use transport::{Stream, pair as stream_pair};
+pub use transport::{Stream, connect, pair as stream_pair};
 
 /// ADR-038: the endpoint is local and user-private; no network transport is
 /// exposed by this runtime.

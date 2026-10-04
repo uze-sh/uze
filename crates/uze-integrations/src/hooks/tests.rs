@@ -170,7 +170,8 @@ fn a_platform_without_a_wrapper_template_delivers_no_hook() {
     };
     assert_eq!(wrapper, crate::claude::HOOKS.wrapper_path(&home));
     let entry: serde_json::Value = serde_json::from_str(&expected).unwrap();
-    assert_eq!(entry["hooks"][0]["command"], wrapper.display().to_string());
+    let (program, _) = uze_platform::shell::script(&wrapper.display().to_string());
+    assert_eq!(entry["hooks"][0]["command"], program);
 
     assert!(
         wrapper_source(crate::opencode::HOOKS).is_none(),

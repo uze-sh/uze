@@ -296,10 +296,10 @@ fn package_uze_plus_skill_uze_naturally_gets_the_stable_label_no_special_case() 
     assert_eq!(
         names,
         vec![
-            "uze:architect".to_owned(),
-            "uze:author".to_owned(),
-            "uze:init".to_owned(),
-            "uze:worktree".to_owned(),
+            uze_core::path::file_name_for("uze:architect"),
+            uze_core::path::file_name_for("uze:author"),
+            uze_core::path::file_name_for("uze:init"),
+            uze_core::path::file_name_for("uze:worktree"),
         ],
         "the official package gets the same stable namespaced label as any other plugin (ADR-026)"
     );
@@ -394,8 +394,8 @@ fn two_packages_with_the_same_agent_name_are_both_delivered_under_their_own_labe
     assert_eq!(
         names,
         vec![
-            "flow:architect.md".to_owned(),
-            "forge:architect.md".to_owned()
+            uze_core::path::file_name_for("flow:architect.md"),
+            uze_core::path::file_name_for("forge:architect.md")
         ],
         "neither agent is refused or renamed for the other's name"
     );
