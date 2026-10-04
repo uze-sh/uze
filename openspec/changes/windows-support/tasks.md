@@ -406,7 +406,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - `-Uninstall`.
 
       Add the job to `gate`.
-- [ ] 11.3 `.cargo/config.toml`: `+crt-static` for windows-msvc. Remove the
+- [x] 11.3 `.cargo/config.toml`: `+crt-static` for windows-msvc. Remove the
       stale `onig_sys` musl `[env]`, and the `musl-tools` step at
       `release.yml:312-327`.
 - [ ] 11.4 `release.yml`:
@@ -423,7 +423,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 12. Install, uninstall, say so (D22)
 
-- [ ] 12.1 `install.ps1` per D22:
+- [x] 12.1 `install.ps1` per D22:
       - a scriptblock body, errors thrown;
       - native architecture read from the registry;
       - the build ≥ 19045 check and the `git.exe` check;

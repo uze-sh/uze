@@ -69,14 +69,22 @@ pub(crate) fn end_enhanced_input(support: KeyboardSupport) {
     }
 }
 
-/// The chord a key event stands for, or `None` for an event that is not a
-/// keystroke uze binds against — a release or repeat under the enhancement
-/// protocol, or a key outside the vocabulary.
+/// Whether `event` is a keystroke: a key going down. A Windows console
+/// reports every key coming up as well, as the enhancement protocol does
+/// elsewhere, and a surface that acted on that second event would close the
+/// moment the press that opened it was let go.
 ///
-/// Repeats are dropped rather than treated as presses: a held key that
-/// closed a tab once must not close nine more.
+/// Repeats are not keystrokes either: a held key that closed a tab once
+/// must not close nine more.
+pub(crate) fn is_keystroke(event: &KeyEvent) -> bool {
+    event.kind == KeyEventKind::Press
+}
+
+/// The chord a key event stands for, or `None` for an event that is not a
+/// keystroke uze binds against (see [`is_keystroke`]) or a key outside the
+/// vocabulary.
 pub(crate) fn chord_of(event: KeyEvent) -> Option<Chord> {
-    if event.kind != KeyEventKind::Press {
+    if !is_keystroke(&event) {
         return None;
     }
     let key = match event.code {
@@ -129,6 +137,24 @@ pub(crate) fn text_of(event: KeyEvent) -> Option<char> {
         KeyCode::Char(character)
             if !event.modifiers.contains(KeyModifiers::CONTROL)
                 && !event.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            Some(character)
+        }
+        _ => alt_graph_text(&event),
+    }
+}
+
+/// The character AltGr typed, where the terminal reports AltGr as Ctrl+Alt
+/// (a Windows console does): `@`, `{`, `/` on the layouts that put them
+/// there. A letter or a digit under Ctrl+Alt is a chord, which no layout
+/// types that way.
+pub(crate) fn alt_graph_text(event: &KeyEvent) -> Option<char> {
+    match event.code {
+        KeyCode::Char(character)
+            if event
+                .modifiers
+                .contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                && !character.is_ascii_alphanumeric() =>
         {
             Some(character)
         }

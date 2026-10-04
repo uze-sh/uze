@@ -57,6 +57,9 @@ impl TuiModel {
     }
 
     pub(crate) fn apply_key(&mut self, key: KeyEvent) -> Intent {
+        if !keys::is_keystroke(&key) {
+            return Intent::None;
+        }
         // A glossary has nothing to answer — it is read, and then gone —
         // so any keystroke closes it. That is a property of the surface,
         // not a binding, and so not the keymap's to hold.
@@ -703,6 +706,22 @@ mod tests {
         );
 
         assert_eq!(model.remembered.harness_screen.drawer_width, Some(40));
+    }
+
+    /// A Windows console reports the key coming up after the one going down;
+    /// the glossary a press opened is not closed by its own release.
+    #[test]
+    fn a_key_coming_up_dismisses_nothing() {
+        let mut model = TuiModel {
+            overlay: Overlay::HarnessHelp,
+            ..TuiModel::default()
+        };
+        let mut release = press(KeyCode::Char('?'), KeyModifiers::NONE);
+        release.kind = crossterm::event::KeyEventKind::Release;
+        model.apply_key(release);
+        assert_eq!(model.overlay, Overlay::HarnessHelp);
+        model.apply_key(press(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert_eq!(model.overlay, Overlay::None, "a keystroke still does");
     }
 
     #[test]

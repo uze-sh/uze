@@ -84,6 +84,9 @@ impl Attach<'_> {
     /// Keyboard input: say what is open, then act on what the keystroke
     /// means. Which key that was is `crate::ui::keys`'s business.
     pub(super) fn key(&mut self, key: KeyEvent, viewport: &Viewport) -> Flow {
+        if !crate::ui::keys::is_keystroke(&key) {
+            return Flow::Continue;
+        }
         self.drop_selection();
         // Two surfaces are notices rather than questions — read, then
         // gone — so any keystroke dismisses one. That is a property of a

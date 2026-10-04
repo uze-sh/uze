@@ -203,6 +203,9 @@ pub(super) fn encode_mouse(
 /// Shift 1, Alt 2, Ctrl 4), since a plain arrow in its place would read
 /// as a different keystroke rather than a lost modifier.
 pub(super) fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
+    if let Some(character) = crate::ui::keys::alt_graph_text(&key) {
+        return Some(character.to_string().into_bytes());
+    }
     let control = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     let parameter = modifier_parameter(key.modifiers);
