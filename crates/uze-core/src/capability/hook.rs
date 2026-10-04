@@ -352,6 +352,16 @@ pub struct HookCompatibility {
     pub reason: Option<String>,
 }
 
+/// A tool a target never fires an event for, where its integration has
+/// measured that it does not, with why.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnfiredTool {
+    pub event: HookEvent,
+    /// The portable tool alias (`shell`).
+    pub tool: String,
+    pub why: String,
+}
+
 /// An integration's declaration of the hook semantics it can preserve. This
 /// lives in Core because it is vocabulary, not vendor knowledge; each vendor
 /// integration supplies concrete values.
@@ -362,6 +372,9 @@ pub struct HookCapabilities {
     pub supports_native_matchers: bool,
     pub supports_input_transform: bool,
     pub executes_handlers_in_order: bool,
+    /// The tools an event is never fired for here: a group that depends
+    /// on one would be delivered and never run.
+    pub unfired: Vec<UnfiredTool>,
 }
 
 /// Calculates compatibility over the actual semantic axes. `Native` is
@@ -389,6 +402,19 @@ pub fn assess(
         && !capabilities.supports_native_matchers
     {
         Some("the target cannot safely apply an explicit native tool matcher".to_owned())
+    } else if let Some(gap) = capabilities.unfired.iter().find(|gap| {
+        gap.event == hook.event
+            && (hook.matchers.is_empty()
+                || hook.matchers.iter().any(
+                    |matcher| matches!(matcher, HookMatcher::Portable(tool) if *tool == gap.tool),
+                ))
+    }) {
+        Some(format!(
+            "the target never fires `{}` for `{}` here: {}",
+            hook.event.abi_name(),
+            gap.tool,
+            gap.why
+        ))
     } else if hook.effect == HookEffect::Transform && !capabilities.supports_input_transform {
         Some("the target cannot safely transform pre-tool input".to_owned())
     } else if !capabilities.executes_handlers_in_order && hook.handlers.len() > 1 {
@@ -728,5 +754,47 @@ mod tests {
         };
         let compatibility = assess(&hook, &HookCapabilities::default(), false);
         assert_eq!(compatibility.route, CompatibilityRoute::Unsupported);
+    }
+
+    /// A guard on a tool the target never fires its event for would be
+    /// delivered and never run, so it is not delivered: a group on that
+    /// tool, or on every tool, which would let exactly that one through.
+    #[test]
+    fn a_group_on_a_tool_the_target_never_fires_for_is_unsupported() {
+        let group = |matchers: Vec<HookMatcher>| PortableHook {
+            id: "protect".into(),
+            event: HookEvent::PreToolUse,
+            matchers,
+            handlers: vec![CommandHook {
+                handler_type: CommandHandlerType::Command,
+                command: "check".into(),
+                timeout: 1,
+            }],
+            effect: HookEffect::Deny,
+            order: 0,
+        };
+        let capabilities = HookCapabilities {
+            events: [HookEvent::PreToolUse].into(),
+            effects: [HookEffect::Deny].into(),
+            supports_native_matchers: true,
+            executes_handlers_in_order: true,
+            unfired: vec![UnfiredTool {
+                event: HookEvent::PreToolUse,
+                tool: "shell".into(),
+                why: "measured".into(),
+            }],
+            ..HookCapabilities::default()
+        };
+        for matchers in [vec![HookMatcher::Portable("shell".into())], Vec::new()] {
+            let compatibility = assess(&group(matchers), &capabilities, false);
+            assert_eq!(compatibility.route, CompatibilityRoute::Unsupported);
+            assert!(compatibility.reason.unwrap().contains("never fires"));
+        }
+        let edits = assess(
+            &group(vec![HookMatcher::Portable("edit".into())]),
+            &capabilities,
+            false,
+        );
+        assert_eq!(edits.route, CompatibilityRoute::Native);
     }
 }

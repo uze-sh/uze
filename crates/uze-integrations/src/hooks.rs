@@ -155,6 +155,14 @@ impl HookTarget {
             effects: self.effects.iter().copied().collect(),
             supports_native_matchers: true,
             executes_handlers_in_order: true,
+            unfired: wrapper::unfired_here(self)
+                .iter()
+                .map(|(event, tool, why)| uze_core::hook::UnfiredTool {
+                    event: *event,
+                    tool: (*tool).to_owned(),
+                    why: (*why).to_owned(),
+                })
+                .collect(),
             ..HookCapabilities::default()
         }
     }

@@ -44,6 +44,9 @@ pub(crate) struct PayloadPaths {
 pub(crate) struct Decisions {
     pub(crate) deny: &'static str,
     pub(crate) allow: &'static str,
+    /// What the harness never fires an event for under this template's
+    /// platform: `(event, portable tool, why)`.
+    pub(crate) unfired: &'static [(HookEvent, &'static str, &'static str)],
 }
 
 /// The `case` arm list translating this harness's native tool names into
@@ -94,6 +97,9 @@ pub(crate) trait WrapperTemplate {
     /// The wrapper for `target`, or `None` where this template has no
     /// dialect for it: then its hooks are not delivered, and say so.
     fn source(target: HookTarget) -> Option<String>;
+    /// What `target` never fires an event for under this template's
+    /// platform (see [`Decisions::unfired`]).
+    fn unfired(target: HookTarget) -> &'static [(HookEvent, &'static str, &'static str)];
 }
 
 // Every template is compiled on every platform, so the one a platform does
@@ -116,6 +122,13 @@ pub(crate) type HostWrapper = PowerShellWrapper;
 /// The wrapper this platform's harness runs (see [`WrapperTemplate`]).
 pub(crate) fn wrapper_source(target: HookTarget) -> Option<String> {
     HostWrapper::source(target)
+}
+
+/// What this platform's harness never fires an event for.
+pub(crate) fn unfired_here(
+    target: HookTarget,
+) -> &'static [(HookEvent, &'static str, &'static str)] {
+    HostWrapper::unfired(target)
 }
 
 pub(super) const WRAPPER_HEADER: &str = HostWrapper::HEADER;

@@ -26,6 +26,12 @@ impl WrapperTemplate for PosixWrapper {
     /// The ABI's "bounded output" lives here too: the wrapper is the only route
     /// left, so the bound the removed in-binary runtime carried has to be the
     /// one [`HANDLER_REASON_LIMIT`] states.
+    fn unfired(target: HookTarget) -> &'static [(HookEvent, &'static str, &'static str)] {
+        target
+            .dialect()
+            .map_or(&[], |dialect| dialect.posix.unfired)
+    }
+
     fn source(target: HookTarget) -> Option<String> {
         let dialect = target.dialect()?;
         let harness = target.key();
@@ -50,6 +56,7 @@ impl WrapperTemplate for PosixWrapper {
                 Decisions {
                     deny: deny_document,
                     allow: allow_document,
+                    ..
                 },
             deny_exit,
             ..

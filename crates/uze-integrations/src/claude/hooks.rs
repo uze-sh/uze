@@ -41,6 +41,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                     "  printf '{\"hookSpecificOutput\":{\"hookEventName\":\"%s\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$name\" \"$reason_json\"",
                 ),
                 allow: ":",
+                unfired: &[],
             },
             powershell: Some(Decisions {
                 deny: concat!(
@@ -48,6 +49,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                     "  [Console]::Out.Write('{\"hookSpecificOutput\":{\"hookEventName\":\"' + $name + '\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":' + $reasonJson + '}}')",
                 ),
                 allow: "",
+                unfired: &[],
             }),
             deny_exit: "2",
         },

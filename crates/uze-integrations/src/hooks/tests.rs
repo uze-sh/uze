@@ -1087,3 +1087,20 @@ fn a_harness_without_a_windows_dialect_has_no_windows_wrapper() {
     assert!(PowerShellWrapper::source(crate::antigravity::HOOKS).is_none());
     assert!(PowerShellWrapper::source(crate::claude::HOOKS).is_some());
 }
+
+/// Codex on Windows runs a shell command without firing PreToolUse, which
+/// only the Windows template declares, so a shell guard is reported there
+/// and delivered everywhere else.
+#[test]
+fn codex_s_windows_shell_gap_is_declared_by_the_windows_template_alone() {
+    let gap = PowerShellWrapper::unfired(crate::codex::HOOKS);
+    assert!(
+        gap.iter()
+            .any(|(event, tool, why)| *event == HookEvent::PreToolUse
+                && *tool == "shell"
+                && why.contains("openai/codex/issues/24453")),
+        "{gap:?}"
+    );
+    assert!(PosixWrapper::unfired(crate::codex::HOOKS).is_empty());
+    assert!(PowerShellWrapper::unfired(crate::claude::HOOKS).is_empty());
+}

@@ -33,10 +33,19 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             posix: Decisions {
                 deny: "printf '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$reason_json\"",
                 allow: "[ \"$HOOK_EVENT\" = stop ] && printf '{}'",
+                unfired: &[],
             },
             powershell: Some(Decisions {
                 deny: "[Console]::Out.Write('{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":' + $reasonJson + '}}')",
                 allow: "if ($hookEvent -eq 'stop') { [Console]::Out.Write('{}') }",
+                // Measured and reported upstream: a Windows shell command runs
+                // as `command_execution`, which fires no PreToolUse hook.
+                unfired: &[(
+                    HookEvent::PreToolUse,
+                    "shell",
+                    "Codex runs a Windows shell command without firing it \
+                     (https://github.com/openai/codex/issues/24453)",
+                )],
             }),
             deny_exit: "2",
         },

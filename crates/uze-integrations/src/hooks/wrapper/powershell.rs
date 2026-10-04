@@ -15,11 +15,19 @@ impl WrapperTemplate for PowerShellWrapper {
     /// `ConvertFrom-Json`'s size limit); each handler runs as its own
     /// PowerShell process under its deadline, and what it started is ended
     /// with it.
+    fn unfired(target: HookTarget) -> &'static [(HookEvent, &'static str, &'static str)] {
+        target
+            .dialect()
+            .and_then(|dialect| dialect.powershell)
+            .map_or(&[], |decisions| decisions.unfired)
+    }
+
     fn source(target: HookTarget) -> Option<String> {
         let dialect = target.dialect()?;
         let Decisions {
             deny: deny_document,
             allow: allow_document,
+            ..
         } = dialect.powershell?;
         let deny_exit = dialect.deny_exit;
         let harness = target.key();

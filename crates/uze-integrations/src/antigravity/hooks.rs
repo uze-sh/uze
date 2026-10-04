@@ -38,6 +38,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             posix: Decisions {
                 deny: "printf '{\"decision\":\"deny\",\"reason\":%s}' \"$reason_json\"",
                 allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
+                unfired: &[],
             },
             // Antigravity starts a hook through `cmd /C` and escapes the
             // quotes a path or a handler line needs in a way cmd does not
