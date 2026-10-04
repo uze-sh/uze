@@ -191,7 +191,7 @@ pub(super) fn materialize_generated_plugin(
         let skills_source = package.root.join("skills");
         if skills_source.is_dir() {
             let package_root =
-                fs::canonicalize(&package.root).map_err(UzeError::read(&package.root))?;
+                uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
             mirror_tree(&skills_source, &staging.join("skills"), &package_root, &[])?;
             for resource in uze_core::engine::package_resources_at(&package.id, &package.root)? {
                 if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {

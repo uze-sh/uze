@@ -323,7 +323,7 @@ fn copy_supporting_files(
         return Ok(());
     }
     let package_root =
-        fs::canonicalize(package_root).unwrap_or_else(|_| package_root.to_path_buf());
+        uze_core::path::canonical(package_root).unwrap_or_else(|_| package_root.to_path_buf());
     let mut excluded = vec!["SKILL.md"];
     excluded.extend_from_slice(skip);
     crate::shared::tree::mirror_tree(canonical_dir, destination, &package_root, &excluded)

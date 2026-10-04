@@ -63,11 +63,11 @@ fn add_by_hand(repository: &Repository, path: &Path, branch: &str) -> PathBuf {
         &path.to_string_lossy(),
         "HEAD",
     ]);
-    path.canonicalize().unwrap()
+    path.canonical().unwrap()
 }
 
 fn primary(repository: &Repository) -> PathBuf {
-    repository.root().canonicalize().unwrap()
+    repository.root().canonical().unwrap()
 }
 
 fn row<'a>(view: &'a CheckoutsView, path: &Path) -> &'a CheckoutView {
@@ -278,7 +278,7 @@ fn an_adopted_clean_checkout_is_the_next_agents_slot() {
         .workspace()
         .place_new_agent(&root, Some(PlacementKind::Isolated), "keeper", &[])
         .unwrap();
-    assert_eq!(placed.cwd.canonicalize().unwrap(), path);
+    assert_eq!(placed.cwd.canonical().unwrap(), path);
 }
 
 #[test]

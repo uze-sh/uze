@@ -14,6 +14,7 @@
 //!                              provenance             provenance
 //! ```
 
+use crate::path::Canonical as _;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -436,6 +437,7 @@ pub fn scratch_directory() -> Result<PathBuf> {
         "uze-acquire-{}-{nonce}-{sequence}",
         std::process::id()
     ));
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
     {
@@ -453,7 +455,7 @@ fn checked_directory(root: &Path) -> Result<PathBuf> {
     if !root.is_dir() {
         return Err(UzeError::NotDirectory(root.to_path_buf()));
     }
-    root.canonicalize().map_err(UzeError::read(root))
+    root.canonical().map_err(UzeError::read(root))
 }
 
 /// What a materialized package declares, read **before** the Store has
@@ -529,15 +531,12 @@ mod tests {
 
         let materialized = acquire(&source).unwrap();
 
-        assert_eq!(
-            materialized.root(),
-            root.join("inner").canonicalize().unwrap()
-        );
+        assert_eq!(materialized.root(), root.join("inner").canonical().unwrap());
         assert_eq!(&materialized.provenance().requested, &source);
         assert_eq!(
             materialized.provenance().resolved,
             ResolvedSource::Local {
-                path: root.join("inner").canonicalize().unwrap()
+                path: root.join("inner").canonical().unwrap()
             }
         );
         let _ = fs::remove_dir_all(root);

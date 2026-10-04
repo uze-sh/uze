@@ -21,7 +21,10 @@ pub struct UzeHome {
 
 impl UzeHome {
     pub fn from_env() -> Result<Self> {
-        Self::from_values(env::var_os("UZE_HOME"), env::var_os("HOME"))
+        Self::from_values(
+            env::var_os("UZE_HOME"),
+            user_home().map(std::path::PathBuf::into_os_string),
+        )
     }
 
     pub fn at(root: impl Into<PathBuf>) -> Self {
@@ -441,6 +444,25 @@ impl UzeHome {
             .filter(|value| !value.is_empty())
             .ok_or(UzeError::MissingHomeDirectory)?;
         Ok(Self::at(absolute_or_refuse("HOME", home)?.join(".uze")))
+    }
+}
+
+/// The user's home directory, the one place every part of UZE asks for it.
+///
+/// `$HOME` on Unix, where tests and wrappers point it elsewhere on purpose.
+/// On Windows the profile directory (`USERPROFILE`): that is where every
+/// harness keeps its configuration, and a `HOME` some shells export (Git
+/// Bash, MSYS) names a directory none of them read.
+pub fn user_home() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        env::home_dir().filter(|home| !home.as_os_str().is_empty())
+    }
+    #[cfg(not(windows))]
+    {
+        env::var_os("HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
     }
 }
 

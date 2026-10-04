@@ -3,6 +3,7 @@
 //! both.
 
 use std::{collections::BTreeSet, path::Path};
+use uze_core::path::Canonical as _;
 
 use serde::Serialize;
 
@@ -58,7 +59,7 @@ fn declared_marketplace_for(
 }
 
 fn declared_path(linked_source: std::path::PathBuf, project_root: &Path) -> std::path::PathBuf {
-    let linked_source = linked_source.canonicalize().unwrap_or(linked_source);
+    let linked_source = linked_source.canonical().unwrap_or(linked_source);
     match linked_source.strip_prefix(project_root) {
         Ok(inside) if inside.as_os_str().is_empty() => std::path::PathBuf::from("."),
         Ok(inside) => inside.to_path_buf(),
@@ -282,7 +283,7 @@ impl Project<'_> {
     /// when it names a project, as opposed to one somewhere inside it.
     #[tracing::instrument(name = "project.is_root", skip_all, fields(dir = %dir.display()))]
     pub fn is_root(&self, dir: &Path) -> bool {
-        let Ok(canonical) = dir.canonicalize() else {
+        let Ok(canonical) = dir.canonical() else {
             return false;
         };
         project_root::resolve_project_root(&canonical)
@@ -1205,7 +1206,7 @@ impl Project<'_> {
         })?;
         let joined = root.join(declared_path);
         let path = joined
-            .canonicalize()
+            .canonical()
             .map_err(|_| UzeError::MissingPath(joined.clone()))?;
         Ok(PackageSource::Local { path })
     }

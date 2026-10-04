@@ -248,6 +248,7 @@ impl DetectionCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::path::Canonical as _;
 
     fn temp_cache_path(label: &str) -> PathBuf {
         uze_testkit::temp::scratch(label).join("detection-cache.json")
@@ -377,7 +378,7 @@ mod tests {
 
         assert_eq!(
             fingerprint.resolved_path,
-            Some(real.canonicalize().unwrap()),
+            Some(real.canonical().unwrap()),
             "the shim sits first on PATH but the fingerprint must track the real binary"
         );
         assert_ne!(fingerprint.resolved_path, Some(shim));

@@ -11,6 +11,7 @@
 //! This is also where the forges UZE knows by name live, because an alias
 //! is the only thing here that names a host: `git.rs` beside it names none.
 
+use crate::path::Canonical as _;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Result, UzeError};
@@ -80,7 +81,7 @@ pub fn same_repository(left: &str, right: &str) -> bool {
     }
     let as_local = |identity: &str| {
         let path = identity.strip_prefix("file://").unwrap_or(identity);
-        Path::new(path).canonicalize().ok()
+        Path::new(path).canonical().ok()
     };
     match (as_local(left), as_local(right)) {
         (Some(left), Some(right)) => left == right,
@@ -432,12 +433,10 @@ fn looks_like_path(input: &str) -> bool {
 
 fn expand_home(input: &str) -> PathBuf {
     match input.strip_prefix('~') {
-        Some(rest) if rest.is_empty() || rest.starts_with('/') => {
-            std::env::var_os("HOME").map(PathBuf::from).map_or_else(
-                || PathBuf::from(input),
-                |home| home.join(rest.trim_start_matches('/')),
-            )
-        }
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => crate::user_home().map_or_else(
+            || PathBuf::from(input),
+            |home| home.join(rest.trim_start_matches('/')),
+        ),
         _ => PathBuf::from(input),
     }
 }

@@ -65,7 +65,7 @@ pub use delivery::{
     session, state,
 };
 pub use machine::{
-    detection_cache, features, harness_runtime, home, process_cwd, provisioning, subprocess,
+    detection_cache, features, harness_runtime, home, path, process_cwd, provisioning, subprocess,
 };
 pub use package::{acquisition, authoring, hosts, naming, store, trust};
 pub use project::{
@@ -81,6 +81,6 @@ pub use acquisition::{MaterializedPackage, PackageSource, Provenance, ResolvedSo
 pub use capability::Resource;
 pub use error::{Result, UzeError};
 pub use exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan};
-pub use home::UzeHome;
+pub use home::{UzeHome, user_home};
 pub use skill::SkillInvocationPolicy;
 pub use store::{PackageId, StoredPackage, UzeStore};

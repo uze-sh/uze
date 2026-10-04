@@ -124,11 +124,8 @@ impl ClaudeIntegration {
 
     /// Env-based constructor for the CLI composition root (`registry.rs`).
     pub fn from_env(uze_home: UzeHome) -> Result<Self> {
-        let home = std::env::var_os("HOME").ok_or(UzeError::MissingHomeDirectory)?;
-        Ok(Self::new(
-            std::path::PathBuf::from(home).join(".claude"),
-            uze_home,
-        ))
+        let home = uze_core::user_home().ok_or(UzeError::MissingHomeDirectory)?;
+        Ok(Self::new(home.join(".claude"), uze_home))
     }
 
     fn provisioning_executable(&self) -> String {

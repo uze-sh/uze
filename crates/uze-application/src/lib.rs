@@ -37,6 +37,9 @@ pub use uze_core::{
         FixedResolution, NameCollisionAuthority, NameCollisionRequest, NameCollisionResolution,
         NoNameCollisionAuthority,
     }, // The one writer for anything UZE owns. The binary writes its own
+    // Paths as the platform compares them: what a root shown or compared
+    // in the TUI must agree with, since the domain hands it roots this way.
+    path,
     // update ledger, and doing that with a second atomic-rename of its own
     // is how two conventions for one thing start.
     persistence::write_atomic,

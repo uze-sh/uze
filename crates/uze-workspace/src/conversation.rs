@@ -35,6 +35,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+use uze_core::path::Canonical as _;
 
 use serde::{Deserialize, Serialize};
 
@@ -156,7 +157,7 @@ impl ConversationRecord {
 /// The document for one agent of `project_root`.
 pub fn store_path(home: &UzeHome, project_root: &Path, agent: &AgentId) -> PathBuf {
     let canonical = project_root
-        .canonicalize()
+        .canonical()
         .unwrap_or_else(|_| project_root.to_path_buf());
     home.conversation_path(&project_id_for(&canonical), agent.as_str())
 }
@@ -272,7 +273,7 @@ pub struct Claim<'a> {
 /// ancestor one is kept for. The same walk [`owner_of`] makes, for a claim
 /// it did not recognize.
 pub fn project_of(home: &UzeHome, cwd: &Path) -> Option<PathBuf> {
-    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let cwd = cwd.canonical().unwrap_or_else(|_| cwd.to_path_buf());
     cwd.ancestors()
         .find(|root| task::store_path(home, root).exists())
         .map(Path::to_path_buf)
@@ -281,7 +282,7 @@ pub fn project_of(home: &UzeHome, cwd: &Path) -> Option<PathBuf> {
 pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
     let cwd = claim
         .cwd
-        .canonicalize()
+        .canonical()
         .unwrap_or_else(|_| claim.cwd.to_path_buf());
     cwd.ancestors().find_map(|root| {
         if !task::store_path(home, root).exists() {
@@ -290,7 +291,7 @@ pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
         let store = task::load(home, root).ok()?;
         let record = store.agent(claim.id)?;
         let own = record.own_directory(root)?;
-        let own = own.canonicalize().unwrap_or(own);
+        let own = own.canonical().unwrap_or(own);
         cwd.starts_with(&own).then(|| Owner {
             project_root: root.to_path_buf(),
             agent: record.id.clone(),
@@ -508,7 +509,7 @@ mod tests {
         .expect("the claim is backed by its record");
         assert_eq!(owner.agent, current_id);
         assert!(owner.isolated);
-        assert_eq!(owner.project_root, primary.canonicalize().unwrap());
+        assert_eq!(owner.project_root, primary.canonical().unwrap());
         // Two records over one slot are told apart by the identifier alone.
         let previous_owner = owner_of(
             &home,
@@ -525,7 +526,7 @@ mod tests {
     fn a_claim_in_the_root_resolves_there_and_says_it_is_not_isolated() {
         let home = home("conversation-in-the-root-owner");
         let root = project("conversation-in-the-root-owner-project")
-            .canonicalize()
+            .canonical()
             .unwrap();
         let nested = root.join("src");
         fs::create_dir_all(&nested).unwrap();

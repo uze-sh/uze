@@ -6,6 +6,7 @@
 //! independently at that root. Neither gates the other: a project with only
 //! `.agents/skills/` still has context to deliver.
 
+use crate::path::Canonical as _;
 use std::{
     fs::{self, File, OpenOptions},
     path::{Path, PathBuf},
@@ -84,7 +85,7 @@ pub fn resolve(cwd: &Path) -> ProjectContext {
     let root = crate::project_root::resolve_project_root(cwd)
         .ok()
         .flatten()
-        .unwrap_or_else(|| cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf()));
+        .unwrap_or_else(|| cwd.canonical().unwrap_or_else(|_| cwd.to_path_buf()));
     let agents_md = root.join(AGENTS_MD_FILE_NAME);
     let agents_directory = root.join(AGENTS_DIRECTORY_NAME);
     ProjectContext {
@@ -191,7 +192,7 @@ mod tests {
         let nested = root.join("crates/deep");
         fs::create_dir_all(&nested).unwrap();
         let context = resolve(&nested);
-        assert_eq!(context.root, root.canonicalize().unwrap());
+        assert_eq!(context.root, root.canonical().unwrap());
         assert!(context.agents_md.is_some());
         let _ = fs::remove_dir_all(&root);
     }
@@ -201,7 +202,7 @@ mod tests {
         let root = uze_testkit::temp::scratch("bare-git");
         fs::create_dir_all(root.join(".git")).unwrap();
         let context = resolve(&root);
-        assert_eq!(context.root, root.canonicalize().unwrap());
+        assert_eq!(context.root, root.canonical().unwrap());
         assert!(!context.has_any());
         let _ = fs::remove_dir_all(&root);
     }
@@ -225,7 +226,7 @@ mod tests {
         let nested = root.join("crates/deep/src");
         fs::create_dir_all(&nested).unwrap();
         let context = resolve(&nested);
-        assert_eq!(context.root, root.canonicalize().unwrap());
+        assert_eq!(context.root, root.canonical().unwrap());
         assert!(context.agents_md.is_some());
         assert!(context.agents_directory.is_some());
         let _ = fs::remove_dir_all(&root);
@@ -243,7 +244,7 @@ mod tests {
         let inner = outer.join("vendor");
         fs::create_dir_all(inner.join(".git")).unwrap();
         let context = resolve(&inner);
-        assert_eq!(context.root, inner.canonicalize().unwrap());
+        assert_eq!(context.root, inner.canonical().unwrap());
         assert!(context.agents_md.is_none());
         assert!(!context.has_any());
         let _ = fs::remove_dir_all(&outer);

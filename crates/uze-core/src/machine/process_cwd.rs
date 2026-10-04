@@ -7,6 +7,7 @@
 //! table, once per decision, and fails closed: when the table cannot be
 //! read at all, every directory is taken to be in use.
 
+use crate::path::Canonical as _;
 use std::path::{Path, PathBuf};
 
 /// The directories this user's processes were working in when observed.
@@ -47,7 +48,7 @@ impl Presence {
             return true;
         };
         let canonical = directory
-            .canonicalize()
+            .canonical()
             .unwrap_or_else(|_| directory.to_path_buf());
         directories
             .iter()

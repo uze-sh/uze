@@ -9,6 +9,7 @@
 //! a clone can carry hooks and submodule declarations, and Git will honour
 //! configuration it finds unless told not to.
 
+use crate::path::Canonical as _;
 use std::{
     fs,
     ops::ControlFlow,
@@ -824,7 +825,7 @@ fn read_operator_config(pattern: &str) -> Vec<(String, String)> {
     else {
         return Vec::new();
     };
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = crate::user_home();
     String::from_utf8_lossy(&output.stdout)
         .split('\0')
         .filter(|entry| !entry.is_empty())
@@ -944,8 +945,7 @@ fn holds_https_credentials() -> bool {
     let helper = operator_config(CREDENTIAL_KEYS)
         .iter()
         .any(|(key, value)| key.ends_with(".helper") && !value.is_empty());
-    let netrc = std::env::var_os("HOME")
-        .map(PathBuf::from)
+    let netrc = crate::user_home()
         .is_some_and(|home| home.join(".netrc").is_file() || home.join("_netrc").is_file());
     helper || netrc
 }
@@ -1102,10 +1102,8 @@ pub fn resolve_subdirectory(root: &Path, subdirectory: &Path) -> Result<PathBuf>
     if !candidate.is_dir() {
         return Err(UzeError::MissingPath(candidate));
     }
-    let resolved = candidate
-        .canonicalize()
-        .map_err(UzeError::read(&candidate))?;
-    let root = root.canonicalize().map_err(UzeError::read(root))?;
+    let resolved = candidate.canonical().map_err(UzeError::read(&candidate))?;
+    let root = root.canonical().map_err(UzeError::read(root))?;
     if !resolved.starts_with(&root) {
         return Err(UzeError::PackageEscapesRoot {
             link: candidate,

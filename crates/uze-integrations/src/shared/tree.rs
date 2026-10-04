@@ -67,7 +67,7 @@ fn mirror_dir(
 }
 
 fn mirror_link(link: &Path, destination: &Path, package_root: &Path) -> Result<()> {
-    let resolved = fs::canonicalize(link).map_err(|error| UzeError::Read {
+    let resolved = uze_core::path::canonical(link).map_err(|error| UzeError::Read {
         path: link.to_path_buf(),
         source: error,
     })?;
@@ -139,7 +139,7 @@ mod tests {
             )
             .unwrap();
         }
-        let package_root = fs::canonicalize(&source).unwrap();
+        let package_root = uze_core::path::canonical(&source).unwrap();
 
         let target = root.join("envelope");
         mirror_tree(

@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::UzeApplication;
+use uze_core::path::Canonical as _;
 
 mod placement_tests {
     use super::*;
@@ -72,7 +73,7 @@ mod placement_tests {
             .unwrap();
         assert_eq!(
             placed.cwd,
-            root.canonicalize().unwrap(),
+            root.canonical().unwrap(),
             "undeclared, an agent starts where the operator is"
         );
         assert!(matches!(placed.placement, Placement::InPlace { .. }));
@@ -89,7 +90,7 @@ mod placement_tests {
         assert!(
             placed
                 .cwd
-                .starts_with(root.canonicalize().unwrap().join(".worktrees")),
+                .starts_with(root.canonical().unwrap().join(".worktrees")),
             "declared `isolated`, it starts in a checkout of its own: {:?}",
             placed.cwd
         );
@@ -105,7 +106,7 @@ mod placement_tests {
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
-        let primary = root.canonicalize().unwrap();
+        let primary = root.canonical().unwrap();
         assert_ne!(
             placement.cwd, primary,
             "the primary belongs to the operator"
@@ -260,7 +261,7 @@ mod placement_tests {
         let repository = repository("place-three");
         let root = repository.root().to_path_buf();
         let app = application("place-three-home");
-        let primary = root.canonicalize().unwrap();
+        let primary = root.canonical().unwrap();
         let placements: Vec<AgentPlacement> = (0..3)
             .map(|_| {
                 app.workspace()
@@ -346,7 +347,7 @@ mod placement_tests {
             .workspace()
             .place_new_agent(&outside, Some(PlacementKind::InPlace), "claude-code", &[])
             .unwrap();
-        assert_eq!(placed.cwd, outside.canonicalize().unwrap());
+        assert_eq!(placed.cwd, outside.canonical().unwrap());
         let Placement::InPlace { id } = &placed.placement else {
             panic!("{placed:?}");
         };
@@ -373,7 +374,7 @@ mod placement_tests {
             .place_new_agent(&root, Some(PlacementKind::InPlace), "codex", &[])
             .unwrap();
         assert_eq!(first.cwd, second.cwd);
-        assert_eq!(first.cwd, root.canonicalize().unwrap());
+        assert_eq!(first.cwd, root.canonical().unwrap());
         assert_ne!(first.placement.agent(), second.placement.agent());
         assert!(!root.join(".worktrees").exists(), "no slot was created");
         assert_eq!(
@@ -392,9 +393,9 @@ mod placement_tests {
             "neither was cut by UZE, so neither is UZE's to deliver"
         );
         assert!(
-            listed.iter().all(
-                |view| view.checkout.as_deref() == Some(root.canonicalize().unwrap().as_path())
-            ),
+            listed
+                .iter()
+                .all(|view| view.checkout.as_deref() == Some(root.canonical().unwrap().as_path())),
             "the checkout they work in is the project itself"
         );
         assert_eq!(
@@ -476,7 +477,7 @@ mod placement_tests {
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
-        let primary = root.canonicalize().unwrap();
+        let primary = root.canonical().unwrap();
         let mut store = task::load(&app.home, &primary).unwrap();
         store.get_mut(slot(&first)).unwrap().state = uze_workspace::task::WorkState::Integrated;
         task::save(&app.home, &primary, &store).unwrap();
@@ -507,7 +508,7 @@ mod placement_tests {
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
         let before = slot(&first).clone();
-        let primary = root.canonicalize().unwrap();
+        let primary = root.canonical().unwrap();
         let mut store = task::load(&app.home, &primary).unwrap();
         store.get_mut(&before).unwrap().state = uze_workspace::task::WorkState::Closed;
         task::save(&app.home, &primary, &store).unwrap();
@@ -588,7 +589,7 @@ mod placement_tests {
 
     /// Records `state` for `task` the way an earlier session left it.
     fn recorded(app: &UzeApplication, root: &Path, task: &AgentId, state: WorkState) {
-        let primary = root.canonicalize().unwrap();
+        let primary = root.canonical().unwrap();
         let mut store = task::load(&app.home, &primary).unwrap();
         store.get_mut(task).unwrap().state = state;
         task::save(&app.home, &primary, &store).unwrap();
@@ -730,7 +731,7 @@ mod placement_tests {
             .unwrap();
         let id = slot(&placed).clone();
         squash_merged(&repository, &placed.cwd);
-        let primary = root.canonicalize().unwrap();
+        let primary = root.canonical().unwrap();
         let mut store = task::load(&app.home, &primary).unwrap();
         let recorded = store.get_mut(&id).unwrap();
         let isolation = recorded.isolation_mut().expect("the agent is isolated");
@@ -783,7 +784,7 @@ mod placement_tests {
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
-        let primary = root.canonicalize().unwrap();
+        let primary = root.canonical().unwrap();
         let mut store = task::load(&app.home, &primary).unwrap();
         store.get_mut(slot(&first)).unwrap().state = uze_workspace::task::WorkState::Integrated;
         task::save(&app.home, &primary, &store).unwrap();
@@ -1044,7 +1045,7 @@ mod task_service_tests {
         assert_eq!(preserved.len(), 1, "the work is listed: {preserved:?}");
         assert_eq!(
             preserved[0].project,
-            project.canonicalize().unwrap(),
+            project.canonical().unwrap(),
             "and the row names the repository it belongs to, which is what \
              makes its checkout locatable at all"
         );
@@ -1817,7 +1818,7 @@ mod task_service_tests {
         assert!(evaluation.tasks.iter().any(|task| task.id == id));
 
         std::fs::write(
-            task::store_path(&app.home, &root.canonicalize().unwrap()),
+            task::store_path(&app.home, &root.canonical().unwrap()),
             "{ this is not the document",
         )
         .unwrap();
@@ -1855,7 +1856,7 @@ mod task_service_tests {
         // Shape 1: what every UZE before this one wrote, and a shape the
         // ladder has no rung for — so it reaches the floor rather than
         // being carried across, which is the case being proven.
-        let canonical = root.canonicalize().unwrap();
+        let canonical = root.canonical().unwrap();
         uze_core::record::ensure(&app.home, &canonical).unwrap();
         std::fs::write(
             task::store_path(&app.home, &canonical),
@@ -1985,7 +1986,7 @@ mod task_service_tests {
     #[cfg(unix)]
     fn refuse_writes(app: &UzeApplication, root: &Path) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
-        let directory = task::store_path(&app.home, &root.canonicalize().unwrap())
+        let directory = task::store_path(&app.home, &root.canonical().unwrap())
             .parent()
             .expect("the document has a directory")
             .to_path_buf();
@@ -2056,7 +2057,7 @@ mod task_service_tests {
         let repository = repository("svc-unrecorded-delivery");
         let root = repository.root().to_path_buf();
         let app = application("svc-unrecorded-delivery-home");
-        let directory = task::store_path(&app.home, &root.canonicalize().unwrap())
+        let directory = task::store_path(&app.home, &root.canonical().unwrap())
             .parent()
             .expect("the document has a directory")
             .to_path_buf();

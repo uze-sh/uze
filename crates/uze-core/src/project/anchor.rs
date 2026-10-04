@@ -120,6 +120,7 @@ fn anchor_kind(dir: &Path) -> Option<AnchorKind> {
 #[cfg(test)]
 mod workspace_root_tests {
     use super::*;
+    use crate::path::Canonical as _;
 
     #[test]
     fn a_subdirectory_and_its_workspace_root_resolve_to_one_answer() {
@@ -142,7 +143,7 @@ mod workspace_root_tests {
 
         assert_eq!(
             anchor_root_or_self(&nested),
-            repository.canonicalize().unwrap()
+            repository.canonical().unwrap()
         );
         assert_eq!(
             anchor_root_or_self(&nested),
@@ -153,16 +154,14 @@ mod workspace_root_tests {
     #[test]
     fn a_directory_marking_no_workspace_answers_itself() {
         let root = uze_testkit::temp::scratch("workspace-none");
-        assert_eq!(
-            anchor_root_or_self(&root),
-            root.canonicalize().unwrap_or(root)
-        );
+        assert_eq!(anchor_root_or_self(&root), root.canonical().unwrap_or(root));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::path::Canonical as _;
     use std::fs;
 
     fn mkdir(path: &Path) {
@@ -175,7 +174,7 @@ mod tests {
         mkdir(&root);
         let resolved = resolve_anchor(&root).unwrap();
         assert_eq!(resolved.kind, AnchorKind::NoWorkspace);
-        assert_eq!(resolved.root, root.canonicalize().unwrap());
+        assert_eq!(resolved.root, root.canonical().unwrap());
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -186,7 +185,7 @@ mod tests {
         fs::write(root.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
         let resolved = resolve_anchor(&root).unwrap();
         assert_eq!(resolved.kind, AnchorKind::Consumer);
-        assert_eq!(resolved.root, root.canonicalize().unwrap());
+        assert_eq!(resolved.root, root.canonical().unwrap());
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -199,7 +198,7 @@ mod tests {
         mkdir(&sub);
         let resolved = resolve_anchor(&sub).unwrap();
         assert_eq!(resolved.kind, AnchorKind::Consumer);
-        assert_eq!(resolved.root, root.canonicalize().unwrap());
+        assert_eq!(resolved.root, root.canonical().unwrap());
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -214,7 +213,7 @@ mod tests {
         .unwrap();
         let resolved = resolve_anchor(&root).unwrap();
         assert_eq!(resolved.kind, AnchorKind::Marketplace);
-        assert_eq!(resolved.root, root.canonicalize().unwrap());
+        assert_eq!(resolved.root, root.canonical().unwrap());
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -254,7 +253,7 @@ mod tests {
         mkdir(&deep);
         let resolved = resolve_anchor(&deep).unwrap();
         assert_eq!(resolved.kind, AnchorKind::Consumer);
-        assert_eq!(resolved.root, inner.canonicalize().unwrap());
+        assert_eq!(resolved.root, inner.canonical().unwrap());
         fs::remove_dir_all(&outer).unwrap();
     }
 
@@ -277,7 +276,7 @@ mod tests {
             AnchorKind::Consumer,
             "the nearest anchor (the nested agents.yaml) must win"
         );
-        assert_eq!(resolved.root, inner.canonicalize().unwrap());
+        assert_eq!(resolved.root, inner.canonical().unwrap());
         fs::remove_dir_all(&outer).unwrap();
     }
 

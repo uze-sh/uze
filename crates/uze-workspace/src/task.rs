@@ -34,6 +34,7 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use uze_core::path::Canonical as _;
 
 use serde::{Deserialize, Serialize};
 
@@ -489,7 +490,7 @@ impl AgentStore {
 /// The document for `project_root`, keyed on the canonical root.
 pub fn store_path(home: &UzeHome, project_root: &Path) -> PathBuf {
     let canonical = project_root
-        .canonicalize()
+        .canonical()
         .unwrap_or_else(|_| project_root.to_path_buf());
     home.tasks_path(&project_id_for(&canonical))
 }

@@ -131,6 +131,18 @@ impl Output {
     }
 }
 
+/// A path as Git printed it, in the spelling this platform uses. Git for
+/// Windows prints `C:/x/y`; joined with anything else that becomes
+/// `C:/x/y\z`, which compares equal as a `Path` and differently as text —
+/// the form ids are hashed from and people read.
+pub fn native_path(printed: &str) -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::path::PathBuf::from(printed.replace('/', "\\"))
+    } else {
+        std::path::PathBuf::from(printed)
+    }
+}
+
 /// Runs a Git command that only observes. Never takes the repository write
 /// lock, and asks Git not to take its own optional index lock either, so a
 /// status view cannot block behind — or interfere with — a write in

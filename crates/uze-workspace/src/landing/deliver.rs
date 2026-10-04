@@ -228,7 +228,7 @@ pub fn paused_rebase(slot: &Path) -> Option<Vec<PathBuf>> {
     let git_dir = uze_git::read(slot, &["rev-parse", "--git-dir"])
         .ok()
         .and_then(|output| output.successful().ok())?;
-    let git_dir = Path::new(git_dir.trim());
+    let git_dir = uze_git::native_path(git_dir.trim());
     let git_dir = if git_dir.is_absolute() {
         git_dir.to_path_buf()
     } else {

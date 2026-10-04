@@ -2,6 +2,7 @@
 //! from it.
 
 use std::path::PathBuf;
+use uze_core::path::Canonical as _;
 
 use uze_core::{
     PackageSource, Result, UzeError,
@@ -377,7 +378,7 @@ impl Marketplace<'_> {
         match locator {
             acquisition::forge::Locator::Path(typed) => {
                 let path = typed
-                    .canonicalize()
+                    .canonical()
                     .map_err(|_| UzeError::MissingPath(typed.clone()))?;
                 let manifest_path = path.join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME);
                 if !manifest_path.is_file() {
@@ -494,7 +495,7 @@ impl Marketplace<'_> {
         self.link_existing(
             name,
             &checkout
-                .canonicalize()
+                .canonical()
                 .map_err(|_| UzeError::MissingPath(checkout.clone()))?,
         )?;
         Ok(cloned)

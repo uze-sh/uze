@@ -17,6 +17,7 @@
 //! (`uze agent context reconcile`'s persistent instruction bridge) — that remains
 //! a separate, later decision pending empirical comparison.
 
+use crate::path::Canonical as _;
 use std::{
     ffi::OsString,
     fs,
@@ -92,9 +93,9 @@ impl HarnessRuntimeContribution {
 /// `None`: that would re-enter PATH search and could resolve straight back
 /// to the shim.
 pub fn resolve_real_executable(names: &[&str], shims_dir: &Path) -> Option<PathBuf> {
-    let canonical_shims_dir = shims_dir.canonicalize().ok();
+    let canonical_shims_dir = shims_dir.canonical().ok();
     let running = std::env::current_exe()
-        .and_then(|executable| executable.canonicalize())
+        .and_then(|executable| executable.canonical())
         .ok();
     for dir in harness_search_path() {
         // Canonicalizing is a filesystem round trip per `PATH` entry, and
@@ -105,19 +106,21 @@ pub fn resolve_real_executable(names: &[&str], shims_dir: &Path) -> Option<PathB
         let could_be_shims = dir == shims_dir
             || (dir.file_name().is_some() && dir.file_name() == shims_dir.file_name());
         let is_shims_dir = could_be_shims
-            && match (dir.canonicalize().ok(), &canonical_shims_dir) {
+            && match (dir.canonical().ok(), &canonical_shims_dir) {
                 (Some(a), Some(b)) => &a == b,
                 _ => dir == shims_dir,
             };
         if is_shims_dir {
             continue;
         }
-        for name in names {
-            let candidate = dir.join(name);
+        for candidate in names
+            .iter()
+            .flat_map(|name| executable_candidates(&dir, name))
+        {
             if !is_executable_file(&candidate) {
                 continue;
             }
-            let resolved = candidate.canonicalize().unwrap_or(candidate);
+            let resolved = candidate.canonical().unwrap_or(candidate);
             // The directory test above sees only the entry as spelled: a
             // `~/.local/bin/claude` linking into the shims, or an entry
             // that is the shims directory under another name, resolves back
@@ -218,6 +221,26 @@ pub(crate) fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
+/// The files a program named `name` could be in `dir`: the name itself on
+/// Unix; on Windows every extension `PATHEXT` lists, in its order, since a
+/// harness installed by npm is `codex.cmd` and one installed natively is
+/// `claude.exe`, and the name typed is neither.
+pub fn executable_candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
+    if cfg!(windows) && Path::new(name).extension().is_none() {
+        let extensions = std::env::var("PATHEXT")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_owned());
+        extensions
+            .split(';')
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| dir.join(format!("{name}{}", extension.to_ascii_lowercase())))
+            .collect()
+    } else {
+        vec![dir.join(name)]
+    }
+}
+
 /// Deterministic, filesystem-safe id for a project root. A project's
 /// canonical path used directly as a directory name risks length limits,
 /// `/`, spaces, and non-UTF-8 segments, so the id is a short hash instead.
@@ -226,7 +249,7 @@ pub(crate) fn is_executable_file(path: &Path) -> bool {
 /// (`crate::digest`): this identifies a project for cache-directory naming
 /// and authenticates nothing.
 pub fn project_id_for(canonical_project_root: &Path) -> String {
-    crate::digest::short_hex(canonical_project_root.to_string_lossy().as_bytes())
+    crate::digest::short_hex(crate::path::identity(canonical_project_root).as_bytes())
 }
 
 /// Names the canonical project root every projection under a project's
@@ -412,10 +435,7 @@ mod tests {
         );
 
         let resolved = resolve_real_executable(&["claude"], &shims_dir).expect("resolved");
-        assert_eq!(
-            resolved,
-            real_bin_dir.join("claude").canonicalize().unwrap()
-        );
+        assert_eq!(resolved, real_bin_dir.join("claude").canonical().unwrap());
     }
 
     #[test]
@@ -443,7 +463,7 @@ mod tests {
 
         assert_eq!(
             resolve_real_executable(&["claude"], &shims_dir),
-            Some(real_bin_dir.join("claude").canonicalize().unwrap())
+            Some(real_bin_dir.join("claude").canonical().unwrap())
         );
     }
 

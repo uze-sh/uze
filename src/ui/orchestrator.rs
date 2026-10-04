@@ -32,6 +32,7 @@ use std::{
     time::{Duration, Instant},
 };
 use uze_application::AgentIdentity;
+use uze_application::path::Canonical as _;
 use uze_application::{
     AgentView, CompletionBehavior, DeliveryOutcome, DeliveryReport, Evaluation, UpstreamSync,
     WorkStateView,
@@ -1963,7 +1964,7 @@ impl WorkspaceModel {
     /// the first round of `add-space-kinds` allowed on purpose — because
     /// the one the operator is looking at is the one they meant.
     fn space_rooted_at(&self, project: &Path) -> Option<SpaceId> {
-        let canonical = |root: &Path| root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let canonical = |root: &Path| root.canonical().unwrap_or_else(|_| root.to_path_buf());
         let wanted = canonical(project);
         let session = self.session.as_ref()?;
         let matching: Vec<&Space> = session

@@ -12,6 +12,7 @@
 //! older build reused a slot without rewriting this one.
 
 use std::path::{Path, PathBuf};
+use uze_core::path::Canonical as _;
 
 use serde::{Deserialize, Serialize};
 
@@ -103,6 +104,6 @@ fn record_file(checkout: &Path) -> Option<PathBuf> {
 }
 
 fn same_place(recorded: &Path, checkout: &Path) -> bool {
-    let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let canonical = |path: &Path| path.canonical().unwrap_or_else(|_| path.to_path_buf());
     canonical(recorded) == canonical(checkout)
 }

@@ -83,7 +83,8 @@ pub(super) fn withheld_paths(package: &StoredPackage) -> Vec<String> {
 /// portable files, then the generated manifest, then the rewritten skill
 /// and agent definitions.
 pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Result<()> {
-    let package_root = fs::canonicalize(&package.root).map_err(UzeError::read(&package.root))?;
+    let package_root =
+        uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
     mirror_tree(&package.root, dir, &package_root, NOT_PORTABLE)?;
     write_manifest(package, dir)?;
     let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;

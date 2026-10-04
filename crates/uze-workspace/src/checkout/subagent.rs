@@ -32,7 +32,7 @@ pub fn operation_in_progress(root: &Path) -> bool {
     else {
         return true;
     };
-    let git_dir = PathBuf::from(git_dir.trim());
+    let git_dir = uze_git::native_path(git_dir.trim());
     ["rebase-merge", "rebase-apply", "MERGE_HEAD"]
         .iter()
         .any(|state| git_dir.join(state).exists())

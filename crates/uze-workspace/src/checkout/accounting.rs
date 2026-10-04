@@ -18,7 +18,7 @@ pub fn linked_worktrees(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
     let mut main = true;
     for line in listing.lines().chain(std::iter::once("")) {
         if let Some(path) = line.strip_prefix("worktree ") {
-            current = Some((PathBuf::from(path), None));
+            current = Some((uze_git::native_path(path), None));
         } else if let Some(reference) = line.strip_prefix("branch ")
             && let Some(entry) = current.as_mut()
         {

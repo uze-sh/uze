@@ -1,6 +1,7 @@
 //! What happens to a checkout over its life: carried changes, collection, pruning, release, discard, removal and adoption.
 
 use super::*;
+use uze_core::path::Canonical as _;
 
 /// Copies the changes `primary`'s working tree holds over its `HEAD`
 /// into `slot`, leaving `primary` exactly as it was.
@@ -386,7 +387,7 @@ pub fn adopt(primary: &Path, path: &Path) -> Result<(), Refusal> {
 }
 
 pub(super) fn same_directory(left: &Path, right: &Path) -> bool {
-    let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let canonical = |path: &Path| path.canonical().unwrap_or_else(|_| path.to_path_buf());
     canonical(left) == canonical(right)
 }
 

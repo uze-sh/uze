@@ -62,7 +62,8 @@ pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Resul
         &plugin_dir.join("plugin.json"),
         &serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
     )?;
-    let package_root = fs::canonicalize(&package.root).map_err(UzeError::read(&package.root))?;
+    let package_root =
+        uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
     materialize_generated_skills(package, &package_root, dir)?;
     if let Some(servers) = delivered_mcp_servers(package) {
         write_file(

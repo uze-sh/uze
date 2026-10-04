@@ -1,6 +1,7 @@
 //! `uze market`: registering, listing and linking marketplaces.
 
 use crate::*;
+use uze_application::path::Canonical as _;
 
 pub(crate) fn run_market(app: &UzeApplication, action: MarketAction) -> Result<()> {
     match action {
@@ -89,7 +90,7 @@ pub(crate) fn run_market(app: &UzeApplication, action: MarketAction) -> Result<(
         }
         MarketAction::Link { name, checkout } => {
             let cloned = app.marketplace().link(&name, &checkout)?;
-            let checkout = checkout.canonicalize().unwrap_or(checkout);
+            let checkout = checkout.canonical().unwrap_or(checkout);
             let read = if cloned {
                 format!("cloned into {}", checkout.display())
             } else {

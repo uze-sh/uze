@@ -34,6 +34,12 @@ pub fn with_process_group(mut command: Command) -> Command {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    }
     command
 }
 
@@ -120,6 +126,14 @@ pub fn without_controlling_terminal(mut command: Command) -> Command {
                 Ok(())
             });
         }
+    }
+    // A hidden console of its own: nothing it asks can reach the person's
+    // terminal, and no window flashes up for it.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
     }
     command
 }
@@ -377,7 +391,11 @@ pub fn read_bounded<R: Read>(mut handle: R, cap: usize) -> (Vec<u8>, usize) {
 pub fn program_on_path(program: &str) -> bool {
     crate::harness_runtime::harness_search_path()
         .iter()
-        .any(|directory| crate::harness_runtime::is_executable_file(&directory.join(program)))
+        .any(|directory| {
+            crate::harness_runtime::executable_candidates(directory, program)
+                .iter()
+                .any(|candidate| crate::harness_runtime::is_executable_file(candidate))
+        })
 }
 
 /// Runs a shell command in `cwd`, bounded in time and output. Returns

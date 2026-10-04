@@ -110,7 +110,7 @@ impl OpenCodeIntegration {
 
     /// Env-based constructor for the CLI composition root (`registry.rs`).
     pub fn from_env(uze_home: UzeHome) -> Result<Self> {
-        let home = PathBuf::from(std::env::var_os("HOME").ok_or(UzeError::MissingHomeDirectory)?);
+        let home = uze_core::user_home().ok_or(UzeError::MissingHomeDirectory)?;
         let config_root = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".config"));

@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use uze_core::path::Canonical as _;
 
 use uze_workspace::{
     checkout::{self, AccountedCheckout, CheckoutId, Owner, Presence, Refusal},
@@ -306,7 +307,7 @@ fn display_name(primary: &Path, path: &Path) -> String {
 }
 
 fn same(left: &Path, right: &Path) -> bool {
-    let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let canonical = |path: &Path| path.canonical().unwrap_or_else(|_| path.to_path_buf());
     canonical(left) == canonical(right)
 }
 

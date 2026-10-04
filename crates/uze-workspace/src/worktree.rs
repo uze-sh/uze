@@ -640,6 +640,7 @@ pub fn isolated_checkout(path: &Path) -> Option<IsolatedCheckout<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uze_core::path::Canonical as _;
 
     #[test]
     fn the_projected_text_never_asks_for_a_top_level_worktree() {
@@ -775,7 +776,7 @@ mod tests {
         assert_eq!(from_root, from_isolated);
         assert_eq!(
             from_root,
-            root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
+            root.canonical().unwrap_or_else(|_| root.to_path_buf())
         );
     }
 

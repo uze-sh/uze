@@ -77,8 +77,12 @@ pub(crate) fn unsupported_platform(label: &str, manual_route: &str) -> Provision
 /// person's rc files, which no running shell has read again, so the binary
 /// is looked for here before the bare name a `PATH` search would miss.
 pub(crate) fn native_installer_destination(program: &str) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".local/bin").join(program))
+    let home = uze_core::user_home()?;
+    Some(
+        home.join(".local")
+            .join("bin")
+            .join(format!("{program}{}", std::env::consts::EXE_SUFFIX)),
+    )
 }
 
 /// The verified `executable` when a shell searching `PATH` for `programs`
