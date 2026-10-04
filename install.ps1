@@ -217,9 +217,20 @@ public static extern IntPtr SendMessageTimeout(
         Write-Host ''
         Note "$baseUrl/$releasePath/$archive"
 
+        # A release served from a directory (a mirror on a share, a local
+        # test) is copied: PowerShell 7's Invoke-WebRequest refuses `file:`.
+        function Get-ReleaseFile([string]$Uri, [string]$Destination) {
+            $parsed = [Uri]$Uri
+            if ($parsed.IsFile) {
+                Copy-Item -LiteralPath $parsed.LocalPath -Destination $Destination
+            } else {
+                Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Destination
+            }
+        }
+
         Step "Downloading $archive" "Downloaded $archive" {
-            Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/$releasePath/$archive" -OutFile (Join-Path $scratch $archive)
-            Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/$releasePath/SHASUMS256.txt" -OutFile (Join-Path $scratch 'SHASUMS256.txt')
+            Get-ReleaseFile "$baseUrl/$releasePath/$archive" (Join-Path $scratch $archive)
+            Get-ReleaseFile "$baseUrl/$releasePath/SHASUMS256.txt" (Join-Path $scratch 'SHASUMS256.txt')
         }
 
         Step 'Verifying checksum' 'Checksum verified' {
