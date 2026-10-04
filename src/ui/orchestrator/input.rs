@@ -279,6 +279,25 @@ mod tests {
     use super::*;
     use crossterm::event::{KeyEventKind, KeyEventState};
 
+    /// A Windows console reports AltGr as Ctrl+Alt: the character it typed
+    /// reaches the pane as itself, while Ctrl+Alt on a letter stays the Alt
+    /// sequence of its control code.
+    #[test]
+    fn altgr_types_its_character_into_a_pane() {
+        let alt_graph = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        for character in ['@', '{', '/', '€'] {
+            assert_eq!(
+                encode_key(KeyEvent::new(KeyCode::Char(character), alt_graph)),
+                Some(character.to_string().into_bytes()),
+                "{character}"
+            );
+        }
+        assert_eq!(
+            encode_key(KeyEvent::new(KeyCode::Char('c'), alt_graph)),
+            Some(vec![0x1b, 0x03])
+        );
+    }
+
     /// The enhancement protocol changes how a terminal *reports* a
     /// keystroke, and uze forwards keystrokes into panes. A pane's program
     /// must receive the same bytes either way, or turning the protocol on

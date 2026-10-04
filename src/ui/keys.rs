@@ -182,6 +182,16 @@ mod tests {
         Chord::parse(text).expect(text)
     }
 
+    /// AltGr reported as Ctrl+Alt types its character into a field; a
+    /// letter under Ctrl+Alt is a chord.
+    #[test]
+    fn altgr_is_text_and_ctrl_alt_on_a_letter_is_not() {
+        let alt_graph = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        assert_eq!(text_of(press(KeyCode::Char('@'), alt_graph)), Some('@'));
+        assert_eq!(text_of(press(KeyCode::Char('k'), alt_graph)), None);
+        assert_eq!(text_of(press(KeyCode::Char('7'), alt_graph)), None);
+    }
+
     #[test]
     fn a_keystroke_becomes_the_chord_someone_would_write() {
         assert_eq!(
