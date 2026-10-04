@@ -752,10 +752,7 @@ impl UzeApplication {
         if !integration.supports_runtime_integration() {
             return true;
         }
-        self.home
-            .shims_dir()
-            .join(integration.shim_name())
-            .is_file()
+        self.home.shim_path(integration.shim_name()).is_file()
     }
 }
 

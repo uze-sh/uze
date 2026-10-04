@@ -43,6 +43,20 @@ pub fn replace_running(new: &Path, target: &Path) -> io::Result<()> {
     imp::replace_running(new, target)
 }
 
+/// Puts a launcher for `program` at `at`, in a directory this process owns:
+/// running `at` runs `program`, which sees `at`'s name as its own.
+///
+/// A symbolic link on Unix, repointed when it points elsewhere; anything at
+/// `at` that is no link is somebody else's, an error of kind
+/// `AlreadyExists`. On Windows, where a link to an executable needs a
+/// privilege most accounts lack, a copy: kept while it is still `program`
+/// (same length, same modification time — a copy keeps the latter),
+/// otherwise replaced through [`replace_running`], since a pane may be
+/// running it.
+pub fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
+    imp::place_launcher(program, at)
+}
+
 /// Removes what [`replace_running`] set aside beside `running`, once nothing
 /// runs it. A removal that fails is tried again at a later start.
 pub fn sweep_replaced(running: &Path) {
@@ -72,6 +86,26 @@ mod imp {
     }
 
     pub(super) fn sweep_replaced(_running: &Path) {}
+
+    pub(super) fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
+        match fs::symlink_metadata(at) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                if fs::read_link(at)? == program {
+                    return Ok(());
+                }
+                fs::remove_file(at)?;
+            }
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!("{} is not a launcher this process placed", at.display()),
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        std::os::unix::fs::symlink(program, at)
+    }
 
     pub(super) fn candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
         vec![dir.join(name)]
@@ -133,6 +167,25 @@ mod imp {
                 let _ = fs::remove_file(entry.path());
             }
         }
+    }
+
+    pub(super) fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
+        let source = fs::metadata(program)?;
+        if let Ok(placed) = fs::metadata(at)
+            && placed.len() == source.len()
+            && placed.modified().ok() == source.modified().ok()
+        {
+            return Ok(());
+        }
+        let mut staged = at.as_os_str().to_owned();
+        staged.push(format!(".new-{}", std::process::id()));
+        let staged = PathBuf::from(staged);
+        fs::copy(program, &staged)?;
+        replace_running(&staged, at).inspect_err(|_| {
+            let _ = fs::remove_file(&staged);
+        })?;
+        sweep_replaced(at);
+        Ok(())
     }
 
     fn set_aside_prefix(name: &str) -> String {

@@ -376,6 +376,13 @@ impl UzeHome {
         self.root.join("shims")
     }
 
+    /// The launcher a harness called `name` is started through, as this
+    /// platform names an executable (`claude`, `claude.exe`).
+    pub fn shim_path(&self, name: &str) -> PathBuf {
+        self.shims_dir()
+            .join(uze_platform::executable::file_name(name))
+    }
+
     /// One project's own corner of the runtime tree, keyed by
     /// `harness_runtime::project_id_for` — the parent of every integration's
     /// projection for it, and of the marker naming the root they were all
