@@ -14,6 +14,16 @@ pub fn candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
     imp::candidates(dir, name)
 }
 
+/// `command` and `arguments` as a program that starts another directly,
+/// with no shell in between, has to name it: a harness launching an MCP
+/// server, say. Unchanged on Unix. On Windows a batch launcher (`npx` is
+/// `npx.cmd`) is no executable image to start, only something `cmd`
+/// runs, so one is named through `cmd /c`. `command` is looked for in its
+/// own directory when it names one, else on `PATH`.
+pub fn direct_launch(command: &str, arguments: Vec<String>) -> (String, Vec<String>) {
+    imp::direct_launch(command, arguments)
+}
+
 /// Whether `path` is a file this platform would run.
 pub fn is_executable(path: &Path) -> bool {
     imp::is_executable(path)
@@ -109,6 +119,10 @@ mod imp {
 
     pub(super) fn candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
         vec![dir.join(name)]
+    }
+
+    pub(super) fn direct_launch(command: &str, arguments: Vec<String>) -> (String, Vec<String>) {
+        (command.to_owned(), arguments)
     }
 
     pub(super) fn is_executable(path: &Path) -> bool {
@@ -220,11 +234,71 @@ mod imp {
             .collect()
     }
 
+    pub(super) fn direct_launch(command: &str, arguments: Vec<String>) -> (String, Vec<String>) {
+        let path = Path::new(command);
+        let directories: Vec<PathBuf> = match path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            Some(parent) => vec![parent.to_path_buf()],
+            None => std::env::var_os("PATH")
+                .map(|path| std::env::split_paths(&path).collect())
+                .unwrap_or_default(),
+        };
+        let name = path
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or(command);
+        let batch = directories
+            .iter()
+            .flat_map(|directory| candidates(directory, name))
+            .find(|candidate| candidate.is_file())
+            .and_then(|found| {
+                found
+                    .extension()
+                    .map(|extension| extension.to_ascii_lowercase())
+            })
+            .is_some_and(|extension| extension == "cmd" || extension == "bat");
+        if !batch {
+            return (command.to_owned(), arguments);
+        }
+        let mut through_cmd = vec!["/c".to_owned(), command.to_owned()];
+        through_cmd.extend(arguments);
+        ("cmd".to_owned(), through_cmd)
+    }
+
     pub(super) fn is_executable(path: &Path) -> bool {
         let runnable = path
             .extension()
             .map(|extension| format!(".{}", extension.to_string_lossy().to_ascii_lowercase()))
             .is_some_and(|extension| extensions().contains(&extension));
         runnable && path.is_file()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A launcher written as a batch file on Windows and a script on Unix
+    /// runs when started the way a harness starts an MCP server: directly,
+    /// by the name `direct_launch` gives it.
+    #[test]
+    fn a_launcher_started_directly_runs() {
+        let directory = uze_testkit::temp::scratch("direct-launch");
+        std::fs::create_dir_all(&directory).unwrap();
+        uze_testkit::process::install_executable(
+            &directory.join("tool"),
+            b"#!/bin/sh\nexit \"$1\"\n",
+        );
+        std::fs::write(directory.join("tool.cmd"), "@exit /b %1\r\n").unwrap();
+        let command = directory.join("tool").to_string_lossy().into_owned();
+        let (program, arguments) = direct_launch(&command, vec!["5".to_owned()]);
+        let status = std::process::Command::new(program)
+            .args(arguments)
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(5));
+        let _ = std::fs::remove_dir_all(directory);
     }
 }

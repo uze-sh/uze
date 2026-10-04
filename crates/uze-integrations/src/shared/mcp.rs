@@ -39,7 +39,9 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
 /// One server with the package root resolved: `${PLUGIN_ROOT}` wherever it
 /// is written, and the `./` form Agent Plugins 1.0 gives `command` and
 /// `cwd`, which a harness would otherwise resolve against a directory of
-/// its own choosing.
+/// its own choosing. Its command is then named as a harness starting it
+/// directly reaches it (`npx` through `cmd /c` on Windows, where it is a
+/// batch launcher).
 fn resolve_server(server: &serde_json::Value, package_root: &Path) -> serde_json::Value {
     let package_root = &crate::shared::package_root::delivered(package_root);
     let mut server = resolve_json(server, package_root);
@@ -51,8 +53,36 @@ fn resolve_server(server: &serde_json::Value, package_root: &Path) -> serde_json
                 *value = package_root.join(relative).to_string_lossy().into_owned();
             }
         }
+        launched_directly(entries);
     }
     server
+}
+
+/// Rewrites a server's `command` and `args` into the form
+/// [`uze_platform::executable::direct_launch`] gives them. A server whose
+/// arguments are not all strings is left as written: it is refused as
+/// undeliverable before it would run.
+fn launched_directly(server: &mut serde_json::Map<String, serde_json::Value>) {
+    let Some(command) = server.get("command").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let arguments = match server.get("args") {
+        None | Some(serde_json::Value::Null) => Some(Vec::new()),
+        Some(serde_json::Value::Array(arguments)) => arguments
+            .iter()
+            .map(|argument| argument.as_str().map(str::to_owned))
+            .collect(),
+        Some(_) => None,
+    };
+    let Some(arguments) = arguments else {
+        return;
+    };
+    let had_arguments = server.contains_key("args");
+    let (command, arguments) = uze_platform::executable::direct_launch(command, arguments);
+    server.insert("command".to_owned(), serde_json::json!(command));
+    if had_arguments || !arguments.is_empty() {
+        server.insert("args".to_owned(), serde_json::json!(arguments));
+    }
 }
 
 /// `{"command": "...", "args": [...]}` from one server's canonical config
@@ -399,5 +429,27 @@ mod tests {
         .unwrap();
         assert_eq!(command, PathBuf::from("python3"));
         assert_eq!(args, vec!["/store/pm/scripts/server.py".to_owned()]);
+    }
+
+    /// A server whose command is a launcher the package carries for both
+    /// platforms (a script, and a batch file on Windows) runs when started
+    /// the way a harness starts it: directly, by the entry's command.
+    #[test]
+    fn a_launcher_server_runs_when_started_directly() {
+        let root = uze_testkit::temp::scratch("mcp-launcher");
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        uze_testkit::process::install_executable(
+            &root.join("bin").join("serve"),
+            b"#!/bin/sh\nexit \"$1\"\n",
+        );
+        std::fs::write(root.join("bin").join("serve.cmd"), "@exit /b %1\r\n").unwrap();
+        let (command, args) =
+            stdio_command(br#"{"command":"./bin/serve","args":["6"]}"#, &root).unwrap();
+        let status = std::process::Command::new(command)
+            .args(args)
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(6));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

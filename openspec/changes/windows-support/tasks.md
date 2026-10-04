@@ -293,8 +293,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       `opencode/skills.rs:159`, `antigravity/skills.rs:126` and
       `shared/agent.rs:79`. A test checks that no write creates an alternate
       data stream. Native plugin delivery is preferred where it exists.
-- [ ] 6.7 MCP on Windows: a command that resolves to a `.cmd`/`.bat` is
-      projected as `cmd /c <command> <args>`.
+- [x] 6.7 MCP on Windows: a command that resolves to a `.cmd`/`.bat` is
+      projected as `cmd /c <command> <args>`
+      (`uze_platform::executable::direct_launch`, applied where a server is
+      resolved, so the envelope and the managed entry both carry it).
 - [ ] 6.8 Windows acquisition records Git link entries as links, by
       `digest.rs`'s rule, and materializes them as in-package copies for
       harnesses.
