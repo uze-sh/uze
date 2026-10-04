@@ -85,9 +85,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - Delete the `Ok(())` fallbacks.
       - Map `ERROR_LOCK_VIOLATION` where `WouldBlock` is matched
         (`CONTENTION_GRACE`).
-- [ ] 3.5 `persistence::process_is_alive` through `probe`. An *unknown*
+- [x] 3.5 `persistence::process_is_alive` through `probe`. An *unknown*
       answer is never treated as alive or dead, and
-      `remove_abandoned_swaps` skips an unknown pid.
+      `remove_abandoned_swaps` skips an unknown pid
+      (`uze_platform::process::alive` answers `Option<bool>`, and only a
+      `Some(false)` lets a swap be removed).
 - [x] 3.6 Home: `UzeHome::from_env` on `std::env::home_dir()`.
       - The integrations' `from_env` (claude.rs:127, codex.rs:124,
         opencode.rs:113, antigravity.rs:170) take home from `UzeHome`.
@@ -295,13 +297,17 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       platform it runs on, payload bytes on stdin, for allow, deny with the
       handler's reason, a failing guard and an unreadable payload denying,
       and a failing observer allowing.)
-- [ ] 6.6 On-disk names on Windows: `<plugin>-<capability>` with collision
+- [x] 6.6 On-disk names on Windows: `<plugin>-<capability>` with collision
       detection that fails, naming both packages. Refuse reserved device
       names, `< > " / \ | ? *`, control characters and a trailing dot or
       space. Applies to `claude/skills.rs:104`, `codex/skills.rs:145`,
       `opencode/skills.rs:159`, `antigravity/skills.rs:126` and
       `shared/agent.rs:79`. A test checks that no write creates an alternate
       data stream. Native plugin delivery is preferred where it exists.
+      (`uze_platform::fs_name::file_name_for` spells the label; a receipt
+      is matched to a label through `ManagedArtifact::is_named`, so two
+      labels the filesystem holds under one name contend and the second is
+      a `ProjectionConflict` naming both; the suites write no `:` name.)
 - [x] 6.7 MCP on Windows: a command that resolves to a `.cmd`/`.bat` is
       projected as `cmd /c <command> <args>`
       (`uze_platform::executable::direct_launch`, applied where a server is
