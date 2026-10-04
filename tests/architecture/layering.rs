@@ -1219,6 +1219,43 @@ fn repository_root() -> PathBuf {
 /// The test finds the writers rather than checking a list somebody
 /// maintains: a new `state_dir().join("…")` anywhere but the map fails it,
 /// so the next document is named where every other one is.
+/// `uze-platform` answers what the operating system can do, for a caller
+/// that says what it wants. A name of UZE's own — a directory under
+/// `$UZE_HOME`, a file or pipe called `uze-…` — composed in it is policy in
+/// the mechanism, and escapes `every_path_uze_owns_is_named_in_the_map`,
+/// which looks for the map's anchors and finds none here.
+#[test]
+fn uze_platform_names_no_path_of_uze_s_own() {
+    let root = repository_root();
+    let offenders: Vec<String> = production_sources(&root.join("crates/uze-platform/src"))
+        .into_iter()
+        .filter(|(_, source)| {
+            source
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .any(|line| {
+                    line.contains("\"uze")
+                        || line.contains("uze-{")
+                        || line.contains("\".uze")
+                        || line.contains("join(\"state\")")
+                })
+        })
+        .map(|(path, _)| {
+            path.strip_prefix(&root)
+                .unwrap_or(&path)
+                .display()
+                .to_string()
+        })
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "architecture rule violated: uze-platform names no path of UZE's own\n\n  \
+         these compose one: {offenders:?}\n\n  \
+         Fix: take the name or the directory from the caller, as \
+         `endpoint::Address` does."
+    );
+}
+
 #[test]
 fn every_path_uze_owns_is_named_in_the_map() {
     /// The map itself, which is the one place these may be composed.

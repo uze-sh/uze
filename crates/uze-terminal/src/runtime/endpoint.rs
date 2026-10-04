@@ -246,7 +246,11 @@ pub(super) fn identify(pid: u32) -> Listener {
 /// they land.
 pub fn socket_path() -> Result<PathBuf, RuntimeError> {
     let home = uze_home_dir();
-    Ok(transport::endpoint(&home, &identity_of(&home))?)
+    Ok(transport::endpoint(transport::Address {
+        directory: &home.join("state").join("terminal"),
+        namespace: "uze",
+        name: &format!("uze-{}", identity_of(&home)),
+    })?)
 }
 
 /// Asks the running server for a space at `seat` — created when

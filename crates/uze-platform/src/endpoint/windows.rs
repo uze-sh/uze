@@ -491,17 +491,19 @@ impl Drop for OwnerOnly {
     }
 }
 
-/// The pipe this home's server listens on. The pipe namespace is
-/// machine-wide, so the user is part of the name: two users with homes at
-/// one path are still two endpoints.
-pub fn endpoint(_home: &Path, identity: &str) -> io::Result<PathBuf> {
+/// The pipe named `address.name`. The pipe namespace is machine-wide, so
+/// the user is part of the name: two users asking for one name are still
+/// two endpoints. A pipe lives in no directory, so the rest of the address
+/// has nothing to say here.
+pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
     let user = current_user()?
         .bytes()
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
         });
     Ok(PathBuf::from(format!(
-        r"\\.\pipe\uze-{identity}-{user:016x}"
+        r"\\.\pipe\{}-{user:016x}",
+        address.name
     )))
 }
 

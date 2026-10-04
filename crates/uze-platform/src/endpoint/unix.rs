@@ -18,23 +18,24 @@ pub use std::os::unix::net::{UnixListener as Listener, UnixStream as Stream};
 /// directory is usable on either platform.
 pub const MAX_SOCKET_PATH: usize = 100;
 
-/// Beside the workspace, under `home`, unless that path is too long for a
-/// socket: then the session's runtime directory, the system temp dir and
-/// `/tmp` in turn. Falling back does not weaken isolation — the socket is
-/// named after `identity`, so two homes stay two endpoints wherever they
-/// land.
-pub fn endpoint(home: &Path, identity: &str) -> io::Result<PathBuf> {
-    let named = |root: &Path| root.join(format!("uze-{identity}.sock"));
+/// In `address.directory`, unless that path is too long for a socket: then
+/// a private directory in the session's runtime directory, the system temp
+/// dir and `/tmp` in turn. Falling back does not weaken isolation: the
+/// socket is named after `address.name`, so two endpoints stay two
+/// wherever they land.
+pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
+    let named = |root: &Path| root.join(format!("{}.sock", address.name));
     // SAFETY: `getuid` takes no arguments and cannot fail.
     let owner = unsafe { libc::getuid() };
+    let private = format!("{}-runtime-{owner}", address.namespace);
     let candidates = [
-        home.join("state").join("terminal"),
+        address.directory.to_path_buf(),
         env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(env::temp_dir)
-            .join(format!("uze-runtime-{owner}")),
-        env::temp_dir().join(format!("uze-runtime-{owner}")),
-        PathBuf::from("/tmp").join(format!("uze-runtime-{owner}")),
+            .join(&private),
+        env::temp_dir().join(&private),
+        PathBuf::from("/tmp").join(&private),
     ];
     let mut refused = None;
     candidates

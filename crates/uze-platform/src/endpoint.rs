@@ -28,6 +28,21 @@ pub use imp::connect;
 pub use imp::scratch_endpoint;
 pub use imp::{Listener, Stream, accept, bind, clear, endpoint, identity, pair, peer_pid, restore};
 
+/// Where an endpoint is to be found, as its caller names it: this crate
+/// knows how to make one only this user reaches, and nothing of whose it
+/// is or what it is called.
+#[derive(Clone, Copy, Debug)]
+pub struct Address<'a> {
+    /// Where it belongs, when the platform can put it there: a socket
+    /// path has a length limit a directory chosen by a person can pass.
+    pub directory: &'a std::path::Path,
+    /// What names the private directories it falls back to, one per user.
+    pub namespace: &'a str,
+    /// The endpoint's own name, which tells two of them apart wherever
+    /// they land.
+    pub name: &'a str,
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
