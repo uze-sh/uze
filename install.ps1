@@ -236,7 +236,11 @@ public static extern IntPtr SendMessageTimeout(
 
         Step "Installing into $binDir" "Installed $binary" {
             $unpacked = Join-Path $scratch 'unpacked'
-            Expand-Archive -LiteralPath (Join-Path $scratch $archive) -DestinationPath $unpacked
+            # .NET's own reader rather than Expand-Archive: that cmdlet's
+            # module fails to load in a Windows PowerShell started from
+            # PowerShell 7, whose module path it inherits.
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $scratch $archive), $unpacked)
             New-Item -ItemType Directory -Force -Path $binDir | Out-Null
             # A running uze.exe cannot be replaced, but it can be renamed: it
             # steps aside, and the next uze to start sweeps it away.
