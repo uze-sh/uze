@@ -529,15 +529,15 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [x] 10.4 `07-upgrade` is declared unsupported on Windows, with its reason,
       until a Windows release exists. `tap` and OSC 52 get a ConPTY answer,
       or the check stops the run.
-- [ ] 10.5 The whole suite passes on `windows-2025` and `windows-11-arm`.
+- [x] 10.5 The whole suite passes on `windows-2025` and `windows-11-arm`.
       Fix what it finds in product code. In `journeys.yml`, the slice map
       gains `windows: 4` and `windows-arm: 2`, and both are in the default
       `PLATFORMS`.
       (In Windows Sandbox, 42 of 46 hold and 4 are declared. Product fixes it
       found: a typed root spelled with mixed separators, and AltGr text
       dropped by the keymap in every text-taking scope. The slice map and
-      the default platforms are in `journeys.yml`; open until a run on the
-      two runners is green.)
+      the default platforms are in `journeys.yml`. Green on `windows-2025`
+      and `windows-11-arm` in run 37235899044, beside Linux and macOS.)
 
 ## 11. CI and release (D19)
 
