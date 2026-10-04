@@ -93,11 +93,16 @@ pub fn run(shim_name: &str) -> ! {
     // lets the shim dispatch to a differently-named real executable without
     // a physical alias file ever being created outside `$UZE_HOME`.
     let mut candidates = vec![shim_name];
+    let mut install_locations = Vec::new();
     if let Some(integration) = &integration {
         candidates.extend(integration.runtime_executable_aliases());
+        install_locations = integration.install_locations();
     }
-    let executable = match harness_runtime::resolve_real_executable(&candidates, &home.shims_dir())
-    {
+    let executable = match harness_runtime::resolve_harness_executable(
+        &candidates,
+        &home.shims_dir(),
+        &install_locations,
+    ) {
         Some(path) => path,
         None => die(&format!(
             "no real `{shim_name}` executable found on PATH outside {} — is it installed?",

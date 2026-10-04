@@ -105,6 +105,30 @@ pub fn resolve_for_a_new_shell(names: &[&str], shims_dir: &Path) -> Option<PathB
     resolve_real_executable_in(std::env::split_paths(&path), names, shims_dir)
 }
 
+/// The real executable of a harness named `names`, wherever it can be
+/// found without asking a person: on this process's `PATH`, on the one a
+/// new shell searches, and at `install_locations`, where its installer
+/// documents putting it. What setup verifies and what the shim launches,
+/// found the same way.
+pub fn resolve_harness_executable(
+    names: &[&str],
+    shims_dir: &Path,
+    install_locations: &[PathBuf],
+) -> Option<PathBuf> {
+    resolve_real_executable(names, shims_dir)
+        .or_else(|| resolve_for_a_new_shell(names, shims_dir))
+        .or_else(|| {
+            // Through the same walk, so a documented location that leads
+            // back to UZE (a link into the shims) is refused like a `PATH`
+            // entry that does.
+            install_locations.iter().find_map(|location| {
+                let directory = location.parent()?.to_path_buf();
+                let name = location.file_name()?.to_str()?;
+                resolve_real_executable_in([directory], &[name], shims_dir)
+            })
+        })
+}
+
 fn resolve_real_executable_in(
     search_path: impl IntoIterator<Item = PathBuf>,
     names: &[&str],
@@ -380,6 +404,35 @@ fn write_marker(project_dir: &Path, canonical_project_root: &Path) -> Result<()>
 
 #[cfg(test)]
 mod tests {
+    /// A harness its installer put where no search path reaches is found
+    /// at the location the integration documents, and a documented
+    /// location that is UZE's own shim is not.
+    #[test]
+    fn a_harness_off_every_path_is_found_where_its_installer_puts_it() {
+        let root = uze_testkit::temp::scratch("harness-install-location");
+        let shims = root.join("shims");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&shims).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        let name = "uze-test-harness-off-path";
+        let installed = bin.join(uze_platform::executable::file_name(name));
+        uze_testkit::process::install_executable(&installed, b"#!/bin/sh\n");
+        let shim = shims.join(uze_platform::executable::file_name(name));
+        uze_testkit::process::install_executable(&shim, b"#!/bin/sh\n");
+
+        let found =
+            super::resolve_harness_executable(&[name], &shims, std::slice::from_ref(&installed));
+        assert_eq!(
+            found.map(|path| path.canonical().unwrap()),
+            Some(installed.canonical().unwrap())
+        );
+        assert_eq!(
+            super::resolve_harness_executable(&[name], &shims, &[shim]),
+            None
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     /// The Conformance Lab reproduces this digest in Python to write a task
     /// document by hand (`conformance/contract/continuity.py::project_id`).
     /// A drift here makes that scene fail rather than pass wrongly, and this

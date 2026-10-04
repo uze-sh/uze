@@ -36,15 +36,19 @@ impl UzeApplication {
         // differently from `shim_name` is still found.
         let mut candidates = vec![shim_name];
         candidates.extend(integration.runtime_executable_aliases());
-        uze_core::harness_runtime::resolve_real_executable(&candidates, &shims_dir)
-            .or_else(|| installed_off_path.map(Path::to_path_buf))
-            .ok_or_else(|| {
-                UzeError::ExposureUnavailable(format!(
-                    "no real `{shim_name}` executable found on PATH outside {} — install it \
+        uze_core::harness_runtime::resolve_harness_executable(
+            &candidates,
+            &shims_dir,
+            &integration.install_locations(),
+        )
+        .or_else(|| installed_off_path.map(Path::to_path_buf))
+        .ok_or_else(|| {
+            UzeError::ExposureUnavailable(format!(
+                "no real `{shim_name}` executable found on PATH outside {} — install it \
                          first",
-                    shims_dir.display()
-                ))
-            })?;
+                shims_dir.display()
+            ))
+        })?;
 
         fs::create_dir_all(&shims_dir).map_err(UzeError::write(&shims_dir))?;
         let uze_binary = std::env::current_exe().map_err(|source| UzeError::Process {

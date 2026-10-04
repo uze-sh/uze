@@ -139,6 +139,10 @@ impl IntegrationPort for CodexIntegration {
         "codex"
     }
 
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        native_installer_destination("codex").into_iter().collect()
+    }
+
     /// `codex` is both the stable id and the name people type — the label
     /// capitalizes the product name so every harness reads as one.
     fn display_name(&self) -> &'static str {

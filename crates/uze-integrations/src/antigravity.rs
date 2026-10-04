@@ -222,6 +222,10 @@ impl IntegrationPort for AntigravityIntegration {
         ID
     }
 
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        native_installer_destination("agy").into_iter().collect()
+    }
+
     fn display_name(&self) -> &'static str {
         "Antigravity"
     }

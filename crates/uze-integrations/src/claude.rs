@@ -146,6 +146,10 @@ impl IntegrationPort for ClaudeIntegration {
         &["claude"]
     }
 
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        native_installer_destination("claude").into_iter().collect()
+    }
+
     fn display_name(&self) -> &'static str {
         "Claude Code"
     }

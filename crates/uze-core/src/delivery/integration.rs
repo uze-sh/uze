@@ -322,6 +322,15 @@ pub trait IntegrationPort: Send + Sync {
         &[]
     }
 
+    /// Where this harness's official installer documents putting its
+    /// executable, looked in after `PATH` and the path a new shell searches
+    /// (see [`crate::harness_runtime::resolve_harness_executable`]): an
+    /// installer that edits no search path at all (Claude Code's on
+    /// Windows) leaves its program reachable only here. Default: nowhere.
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
+
     /// The physical name this harness's PATH shim symlink is created under
     /// (`shims_dir/<shim_name>`) — the name a user actually types. Defaults
     /// to the first alias, else the id. Shared by `ensure_runtime_shim`
