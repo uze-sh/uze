@@ -31,6 +31,15 @@ impl InterruptWatch {
     }
 }
 
+/// Lets a Ctrl+C reach this process and what it starts with its default
+/// effect again. Whether it is ignored is inherited: a process started in
+/// a group of its own on Windows ignores it, and so would every program a
+/// person runs under it, which then nothing could interrupt. On Unix the
+/// same holds for an ignored `SIGINT`.
+pub fn restore_default() {
+    imp::restore_default()
+}
+
 #[cfg(unix)]
 mod imp {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -75,6 +84,11 @@ mod imp {
     pub(super) fn deliver() {
         // SAFETY: plain `raise(3)`.
         unsafe { libc::raise(libc::SIGINT) };
+    }
+
+    pub(super) fn restore_default() {
+        // SAFETY: installs the default disposition; no handler runs.
+        unsafe { libc::signal(libc::SIGINT, libc::SIG_DFL) };
     }
 }
 
@@ -124,5 +138,11 @@ mod imp {
     pub(super) fn deliver() {
         const STATUS_CONTROL_C_EXIT: i32 = 0xC000_013Au32 as i32;
         std::process::exit(STATUS_CONTROL_C_EXIT);
+    }
+
+    pub(super) fn restore_default() {
+        use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+        // SAFETY: clears the inherited ignore flag; no routine is named.
+        unsafe { SetConsoleCtrlHandler(None, 0) };
     }
 }

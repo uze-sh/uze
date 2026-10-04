@@ -3639,3 +3639,132 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
 // Unix only: Unix socket files and their directory; the named pipe has neither.
 #[cfg(unix)]
 mod socket_files;
+
+/// A Windows pane, driven as a person at the keyboard drives it: its
+/// text as one string, and a wait for some to appear.
+// Windows only: these drive Windows PowerShell and ConPTY, the console a
+// Windows pane is; the Unix panes are driven by the tests above.
+#[cfg(windows)]
+mod windows_panes {
+    use super::*;
+
+    fn shell_pane(columns: u16, rows: u16) -> (PaneRuntime, std::sync::mpsc::Receiver<PaneId>) {
+        // What `terminal host-pane` does for a pane in production: however
+        // this test binary was started, its programs can be interrupted.
+        uze_platform::interrupt::restore_default();
+        let (damage, damage_events) = std::sync::mpsc::channel();
+        let pane = PaneRuntime::spawn(
+            PaneId(91),
+            std::env::temp_dir(),
+            columns,
+            rows,
+            damage,
+            Launch::Shell,
+            Arc::new(Mutex::new(Palette::default())),
+        )
+        .unwrap();
+        (pane, damage_events)
+    }
+
+    fn text(pane: &PaneRuntime) -> String {
+        pane.snapshot()
+            .cells
+            .into_iter()
+            .map(|cell| cell.character)
+            .collect()
+    }
+
+    fn shows(
+        pane: &PaneRuntime,
+        damage: &std::sync::mpsc::Receiver<PaneId>,
+        wanted: impl Fn(&str) -> bool,
+    ) -> bool {
+        wanted(&text(pane))
+            || std::iter::from_fn(|| damage.recv_timeout(Duration::from_secs(20)).ok())
+                .any(|_| wanted(&text(pane)))
+    }
+
+    /// The console's startup question (the cursor position, `ESC[6n`) is
+    /// answered, or PowerShell would sit waiting for it and never prompt.
+    #[test]
+    fn the_shell_prompts_because_its_startup_question_is_answered() {
+        let (pane, damage) = shell_pane(80, 24);
+        let prompted = shows(&pane, &damage, |screen| screen.contains("PS "));
+        pane.stop();
+        assert!(prompted, "the prompt never came: {}", text(&pane).trim());
+    }
+
+    /// Ctrl+C reaches a program a pane runs, as at a console of one's own:
+    /// what is typed after it runs.
+    #[test]
+    fn ctrl_c_stops_a_program_running_in_a_pane() {
+        let (pane, damage) = shell_pane(100, 30);
+        assert!(shows(&pane, &damage, |screen| screen.contains("PS ")));
+        pane.write(b"ping -t 127.0.0.1\r");
+        assert!(
+            shows(&pane, &damage, |screen| screen.matches("127.0.0.1").count()
+                >= 4),
+            "ping answered"
+        );
+        pane.write(b"\x03");
+        // The interrupt also empties the console's input, so what comes
+        // next is typed once the prompt is back, as a person would.
+        assert!(
+            shows(&pane, &damage, |screen| screen.matches("PS ").count() >= 2),
+            "the prompt came back after Ctrl+C"
+        );
+        pane.write(b"Write-Output ('after' + '-interrupt')\r");
+        let resumed = shows(&pane, &damage, |screen| screen.contains("after-interrupt"));
+        let screen = text(&pane);
+        pane.stop();
+        assert!(
+            resumed,
+            "the shell never ran what came after Ctrl+C:\n{}",
+            screen
+                .as_bytes()
+                .chunks(100)
+                .map(String::from_utf8_lossy)
+                .map(|line| line.trim_end().to_owned())
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    /// A resized pane is the new size, and what it held is still on it.
+    #[test]
+    fn a_resized_pane_takes_the_new_size_and_keeps_its_text() {
+        let (pane, damage) = shell_pane(100, 30);
+        assert!(shows(&pane, &damage, |screen| screen.contains("PS ")));
+        pane.write(b"Write-Output ('before' + '-resize')\r");
+        assert!(shows(&pane, &damage, |screen| screen.contains("before-resize")));
+        pane.resize(60, 20);
+        let resized = shows(&pane, &damage, |_| {
+            let snapshot = pane.snapshot();
+            snapshot.columns == 60 && snapshot.rows == 20
+        });
+        let kept = text(&pane).contains("before-resize");
+        pane.stop();
+        assert!(resized, "the pane never took its new size");
+        assert!(kept, "the resize lost what the pane held");
+    }
+
+    /// Once a pane is closed its reader ends: nothing is left waiting on a
+    /// console nobody holds.
+    #[test]
+    fn a_closed_pane_s_reader_ends() {
+        let (pane, damage) = shell_pane(80, 24);
+        assert!(shows(&pane, &damage, |screen| screen.contains("PS ")));
+        pane.stop().join().unwrap();
+        drop(pane);
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        let ended = loop {
+            match damage.recv_timeout(Duration::from_millis(250)) {
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break true,
+                _ if std::time::Instant::now() > deadline => break false,
+                _ => {}
+            }
+        };
+        assert!(ended, "the reader outlived its pane");
+    }
+}

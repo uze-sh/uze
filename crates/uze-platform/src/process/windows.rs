@@ -550,7 +550,7 @@ pub(super) fn grouped(
 /// server started in a group of its own has it so, and the flag is
 /// inherited); it is restored first, so the program can be interrupted.
 pub(super) fn host_grouped(name: &str, argv: &[std::ffi::OsString]) -> io::Error {
-    use windows_sys::Win32::System::{Console::SetConsoleCtrlHandler, JobObjects::OpenJobObjectW};
+    use windows_sys::Win32::System::JobObjects::OpenJobObjectW;
     // winnt.h's right to assign a process to a job; windows-sys files it
     // under SystemServices, a whole API family for one constant.
     const JOB_OBJECT_ASSIGN_PROCESS: u32 = 0x0001;
@@ -568,8 +568,7 @@ pub(super) fn host_grouped(name: &str, argv: &[std::ffi::OsString]) -> io::Error
     if unsafe { AssignProcessToJobObject(job.0, GetCurrentProcess()) } == 0 {
         return io::Error::last_os_error();
     }
-    // SAFETY: restores the default handling of Ctrl+C; touches nothing else.
-    unsafe { SetConsoleCtrlHandler(None, 0) };
+    crate::interrupt::restore_default();
     run_in_place(Command::new(program).args(arguments))
 }
 

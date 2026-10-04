@@ -266,6 +266,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - the reader ends after a pane closes;
       - closing the launching console leaves panes alive;
       - a second local account is refused.
+      (Done but the launching console: a pane's prompt (its startup
+      question answered), Ctrl+C ending `ping -t`, a resize, and the reader
+      ending with its pane pass in Windows Sandbox; a pipe another account
+      made under the name is refused by `endpoint::connect`. Open: a test
+      that closes the console a server was started from.)
 
 ## 5. Commands per platform (D10, D11)
 
