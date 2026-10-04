@@ -395,10 +395,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - Ctrl+Alt plus a printable character is text when unbound
         (`orchestrator/input.rs:205-250`);
       - `TestBackend` tests for both.
-- [ ] 8.6 Display names split on both separators
+- [x] 8.6 Display names split on both separators
       (`uze-extensions/shared/checkout.rs:56`, `code.rs:920`). Verify
       `git diff --no-index /dev/null` (`code/changes.rs:211`) on Git for
-      Windows.
+      Windows (`/dev/null` is Git's own spelling of no file there too, the
+      same reason acquisition passes it as `GIT_CONFIG_GLOBAL`).
 
 ## 9. The suite on Windows (D18)
 
