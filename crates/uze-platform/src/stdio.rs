@@ -8,10 +8,18 @@ pub fn die_quietly_on_a_closed_pipe() {
     imp::die_quietly_on_a_closed_pipe()
 }
 
-/// The devices a program opens to talk to its terminal itself, whatever its
-/// standard streams are: what to read the person's answer from, and where
-/// to ask. Opening one fails when the process has no terminal.
-pub const TERMINAL: (&str, &str) = imp::TERMINAL;
+/// The terminal a program asks its person on, as one that asks would find
+/// it: what to read the answer from, and where to ask. `None` where there
+/// is none to ask on.
+///
+/// On Unix `/dev/tty`, whatever the standard streams are: the controlling
+/// terminal, which a process in a session of its own does not have. On
+/// Windows the console, but only while standard input is it: a Windows
+/// program reaches its person through the console its input comes from,
+/// and one whose input is redirected is not asked anything.
+pub fn terminal() -> Option<(std::fs::File, std::fs::File)> {
+    imp::terminal()
+}
 
 /// Sends everything later written to stdout nowhere, for this process and
 /// the children it starts, while stderr still reaches the person.
@@ -23,7 +31,16 @@ pub fn silence_stdout() {
 mod imp {
     use std::os::fd::AsRawFd;
 
-    pub(super) const TERMINAL: (&str, &str) = ("/dev/tty", "/dev/tty");
+    pub(super) fn terminal() -> Option<(std::fs::File, std::fs::File)> {
+        let open = |write: bool| {
+            std::fs::OpenOptions::new()
+                .read(!write)
+                .write(write)
+                .open("/dev/tty")
+                .ok()
+        };
+        Some((open(false)?, open(true)?))
+    }
 
     pub(super) fn die_quietly_on_a_closed_pipe() {
         // Safety: `SIG_DFL` is the disposition the process started life
@@ -45,7 +62,18 @@ mod imp {
     use windows_sys::Win32::System::Console::{STD_OUTPUT_HANDLE, SetStdHandle};
 
     /// The console's own input and screen buffers.
-    pub(super) const TERMINAL: (&str, &str) = ("CONIN$", "CONOUT$");
+    pub(super) fn terminal() -> Option<(std::fs::File, std::fs::File)> {
+        use std::io::IsTerminal as _;
+        if !std::io::stdin().is_terminal() {
+            return None;
+        }
+        let input = std::fs::OpenOptions::new().read(true).open("CONIN$").ok()?;
+        let output = std::fs::OpenOptions::new()
+            .write(true)
+            .open("CONOUT$")
+            .ok()?;
+        Some((input, output))
+    }
 
     /// Windows has no signal for it: a write to a closed pipe is an error,
     /// and `println!` answers an error by panicking. That one panic is what

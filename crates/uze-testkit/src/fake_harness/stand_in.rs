@@ -284,14 +284,10 @@ fn hold_the_terminal(banner: &str) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Asks on the terminal itself when there is one, whatever stdin is, and
-/// waits for an answer nobody gives when no one is watching.
+/// Asks on the terminal when it has one, as a program on this platform
+/// finds it, and waits for an answer nobody gives when no one is watching.
 fn ask_on_the_terminal() {
-    let (input, output) = uze_platform::stdio::TERMINAL;
-    let (Ok(input), Ok(mut output)) = (
-        OpenOptions::new().read(true).open(input),
-        OpenOptions::new().write(true).open(output),
-    ) else {
+    let Some((input, mut output)) = uze_platform::stdio::terminal() else {
         return;
     };
     let _ = write!(output, "Start now? [y/N] ");

@@ -45,8 +45,10 @@ pub enum Seat {
     OwnGroup,
     /// No terminal to ask anything on: a question it would put to a person
     /// gets no answer and takes its default instead of waiting for one
-    /// nobody is shown. A session of its own on Unix, no console at all on
-    /// Windows.
+    /// nobody is shown. A session of its own on Unix; on Windows a hidden
+    /// console of its own, which with its standard input redirected is no
+    /// terminal a program asks on (see [`crate::stdio::terminal`]). The
+    /// caller redirects standard input.
     NoTerminal,
 }
 
@@ -180,3 +182,19 @@ mod windows;
 use unix as imp;
 #[cfg(windows)]
 use windows as imp;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A line of this platform's shell runs, and says how it ended, with no
+    /// terminal to ask on: Windows PowerShell given no console at all ran
+    /// nothing and exited zero.
+    #[test]
+    fn a_shell_line_with_no_terminal_still_runs() {
+        let mut command = crate::shell::command("exit 7");
+        command.stdin(std::process::Stdio::null());
+        let (mut child, _tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
+        assert_eq!(child.wait().unwrap().code(), Some(7));
+    }
+}
