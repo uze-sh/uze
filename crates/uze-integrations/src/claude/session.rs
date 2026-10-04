@@ -41,8 +41,14 @@ pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {
 /// alphanumeric replaced by a hyphen (`/home/x/.worktrees/y` →
 /// `-home-x--worktrees-y`).
 fn transcripts_dir(projects_root: &Path, cwd: &Path) -> PathBuf {
-    let slug: String = cwd
-        .to_string_lossy()
+    projects_root.join(slug(cwd))
+}
+
+/// Claude Code's own name for `cwd`'s directory, as it was observed to
+/// write it: pinned by the same cases in `uze-testkit`'s stand-in, which
+/// emulates it, so the two cannot drift apart while both pass.
+fn slug(cwd: &Path) -> String {
+    cwd.to_string_lossy()
         .chars()
         .map(|character| {
             if character.is_ascii_alphanumeric() {
@@ -51,8 +57,7 @@ fn transcripts_dir(projects_root: &Path, cwd: &Path) -> PathBuf {
                 '-'
             }
         })
-        .collect();
-    projects_root.join(slug)
+        .collect()
 }
 
 /// Whether the transcript for `session` is still there. The identifier is
@@ -110,6 +115,23 @@ fn touch(path: &Path, at_unix: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The directory names Claude Code itself wrote, on Linux and on
+    /// Windows; the same cases pin `uze-testkit`'s stand-in.
+    #[test]
+    fn a_working_directory_is_named_as_claude_names_it() {
+        for (cwd, named) in CLAUDE_SLUGS {
+            assert_eq!(slug(Path::new(cwd)), *named);
+        }
+    }
+
+    const CLAUDE_SLUGS: &[(&str, &str)] = &[
+        ("/home/x/.worktrees/y", "-home-x--worktrees-y"),
+        (
+            r"C:\uze-journeys\04-an-agent\projects\demo-app",
+            "C--uze-journeys-04-an-agent-projects-demo-app",
+        ),
+    ];
 
     fn transcript(root: &Path, cwd: &Path, id: &str, at_unix: u64) {
         let directory = transcripts_dir(root, cwd);

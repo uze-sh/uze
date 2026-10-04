@@ -140,6 +140,15 @@ pub struct Mods {
 }
 
 impl Mods {
+    /// Whether `character` under these modifiers is a character AltGr
+    /// typed, where the terminal reports AltGr as Ctrl+Alt (a Windows
+    /// console does): `/`, `@`, `{` on the layouts that put them there,
+    /// ABNT2's among them. A letter or a digit under Ctrl+Alt is a chord,
+    /// which no layout types that way.
+    pub fn alt_graph_types(self, character: char) -> bool {
+        self.ctrl && self.alt && !character.is_ascii_alphanumeric()
+    }
+
     pub const NONE: Mods = Mods {
         ctrl: false,
         alt: false,

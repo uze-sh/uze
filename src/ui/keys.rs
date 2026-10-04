@@ -109,11 +109,7 @@ pub(crate) fn chord_of(event: KeyEvent) -> Option<Chord> {
         KeyCode::PageDown => Key::PageDown,
         _ => return None,
     };
-    let mut mods = Mods {
-        ctrl: event.modifiers.contains(KeyModifiers::CONTROL),
-        alt: event.modifiers.contains(KeyModifiers::ALT),
-        shift: event.modifiers.contains(KeyModifiers::SHIFT),
-    };
+    let mut mods = mods_of(&event);
     if event.code == KeyCode::BackTab {
         mods.shift = true;
     }
@@ -127,6 +123,15 @@ pub(crate) fn chord_of(event: KeyEvent) -> Option<Chord> {
         mods.shift = true;
     }
     Some(Chord::new(mods, key))
+}
+
+/// The modifiers a terminal reported, as the vocabulary names them.
+fn mods_of(event: &KeyEvent) -> Mods {
+    Mods {
+        ctrl: event.modifiers.contains(KeyModifiers::CONTROL),
+        alt: event.modifiers.contains(KeyModifiers::ALT),
+        shift: event.modifiers.contains(KeyModifiers::SHIFT),
+    }
 }
 
 /// The text a keystroke types, for a surface that is taking text (see
@@ -144,20 +149,10 @@ pub(crate) fn text_of(event: KeyEvent) -> Option<char> {
     }
 }
 
-/// The character AltGr typed, where the terminal reports AltGr as Ctrl+Alt
-/// (a Windows console does): `@`, `{`, `/` on the layouts that put them
-/// there. A letter or a digit under Ctrl+Alt is a chord, which no layout
-/// types that way.
+/// The character AltGr typed, by [`Mods::alt_graph_types`]'s rule.
 pub(crate) fn alt_graph_text(event: &KeyEvent) -> Option<char> {
     match event.code {
-        KeyCode::Char(character)
-            if event
-                .modifiers
-                .contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                && !character.is_ascii_alphanumeric() =>
-        {
-            Some(character)
-        }
+        KeyCode::Char(character) if mods_of(event).alt_graph_types(character) => Some(character),
         _ => None,
     }
 }

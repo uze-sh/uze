@@ -348,27 +348,21 @@ mod tests {
         assert_eq!(ending, Ending::Interrupted);
         assert!(started.elapsed() < Duration::from_secs(10));
         drop(watch);
-        assert!(group_members(group).is_empty(), "the whole tree is gone");
+        assert!(group_is_empty(group), "the whole tree is gone");
     }
 
-    /// Every pid `/proc` reports in group `pgid`; empty without `/proc`.
-    // Reads /proc, which only Linux has.
+    /// Whether no process is left in group `pgid`: signal 0 to the group
+    /// delivers nothing and answers `ESRCH` once it is empty, on every Unix
+    /// (a `/proc` scan here found nothing on macOS, which has none, and so
+    /// proved nothing there).
+    // Asks the kernel about a process group, as only Unix keeps them.
     #[cfg(unix)]
-    fn group_members(pgid: u32) -> Vec<u32> {
-        let Ok(entries) = std::fs::read_dir("/proc") else {
-            return Vec::new();
-        };
-        entries
-            .flatten()
-            .filter_map(|entry| {
-                let pid = entry.file_name().to_string_lossy().parse::<u32>().ok()?;
-                let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
-                let (_, after_comm) = stat.rsplit_once(')')?;
-                let group = after_comm.split_whitespace().nth(2)?.parse::<u32>().ok()?;
-                (group == pgid).then_some(pid)
-            })
-            .collect()
+    fn group_is_empty(pgid: u32) -> bool {
+        // SAFETY: signal 0 checks for existence and delivers nothing.
+        let answer = unsafe { libc::kill(-(pgid as libc::pid_t), 0) };
+        answer == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
     }
+
     #[test]
     fn a_program_is_found_only_where_path_actually_holds_an_executable() {
         assert!(

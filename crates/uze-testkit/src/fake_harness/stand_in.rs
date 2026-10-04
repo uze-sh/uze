@@ -277,8 +277,16 @@ fn mcp_entry_name(arguments: &[String]) -> Option<&str> {
 /// directory per working directory, every character that is not
 /// alphanumeric a hyphen — Claude Code's own naming.
 fn transcript(transcripts_root: &Path, id: &str) -> PathBuf {
-    let slug: String = working_directory()
-        .to_string_lossy()
+    transcripts_root
+        .join(slug(&working_directory()))
+        .join(format!("{id}.jsonl"))
+}
+
+/// Claude Code's name for a working directory's transcripts, as it was
+/// observed to write it; the integration that reads them is pinned by the
+/// same cases, so the stand-in and the product cannot drift apart.
+fn slug(cwd: &Path) -> String {
+    cwd.to_string_lossy()
         .chars()
         .map(|character| {
             if character.is_ascii_alphanumeric() {
@@ -287,8 +295,7 @@ fn transcript(transcripts_root: &Path, id: &str) -> PathBuf {
                 '-'
             }
         })
-        .collect();
-    transcripts_root.join(slug).join(format!("{id}.jsonl"))
+        .collect()
 }
 
 /// The directory as the process that started this one named it: `PWD`
@@ -620,4 +627,23 @@ fn drop_line(path: &Path, line: &str) {
 fn fail(reason: &str) -> ExitCode {
     eprintln!("uze-fake-harness: {reason}");
     ExitCode::from(97)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The same cases `uze-integrations`' Claude session reader is pinned to.
+    #[test]
+    fn a_working_directory_is_named_as_claude_names_it() {
+        for (cwd, named) in [
+            ("/home/x/.worktrees/y", "-home-x--worktrees-y"),
+            (
+                r"C:\uze-journeys\04-an-agent\projects\demo-app",
+                "C--uze-journeys-04-an-agent-projects-demo-app",
+            ),
+        ] {
+            assert_eq!(slug(Path::new(cwd)), named);
+        }
+    }
 }

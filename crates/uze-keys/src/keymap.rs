@@ -203,17 +203,9 @@ fn is_text(chord: Chord) -> bool {
     let plain = !chord.mods.ctrl && !chord.mods.alt;
     match chord.key {
         Key::Space => plain,
-        Key::Char(character) => plain || is_alt_graph(chord, character),
+        Key::Char(character) => plain || chord.mods.alt_graph_types(character),
         _ => false,
     }
-}
-
-/// A character AltGr typed, where the terminal reports AltGr as Ctrl+Alt
-/// (a Windows console does): `/`, `@`, `{` on the layouts that put them
-/// there, ABNT2's among them. A letter or a digit under Ctrl+Alt is a
-/// chord, which no layout types that way.
-fn is_alt_graph(chord: Chord, character: char) -> bool {
-    chord.mods.ctrl && chord.mods.alt && !character.is_ascii_alphanumeric()
 }
 
 /// Every pair of bindings that would make one mnemonic mean two things in
