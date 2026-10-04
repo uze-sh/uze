@@ -44,6 +44,15 @@ stage_release() {
   (cd "$dir" && sha256sum "$(basename "$archive")" > SHASUMS256.txt)
 }
 
+# The sessions signed in on this machine, lent to the world under
+# <stage>/sessions (see sessions.py), which the world deletes once it has
+# them. UZE_PLAYGROUND_SESSIONS=0 lends nothing.
+stage_sessions() {
+  [ "${UZE_PLAYGROUND_SESSIONS:-1}" = 1 ] || return 0
+  say "Lending this machine's harness sessions (UZE_PLAYGROUND_SESSIONS=0 lends none)"
+  python3 "${playground_root}/sessions.py" "$1/sessions"
+}
+
 # The playground plugin, laid out as a marketplace. The world makes it a Git
 # repository itself, with its own Git, since a marketplace is one.
 stage_market() {

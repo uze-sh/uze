@@ -35,8 +35,25 @@ uze install -m playground@playground
 uze workspace
 ```
 
-The worlds have network access, so a harness installed there can be signed
-into through the world's own browser.
+## Your sessions
+
+Each world borrows the harness sessions signed in on this machine, so a
+harness installed there starts signed in: Claude Code, Codex, OpenCode and
+Antigravity. [`sessions.py`](sessions.py) reads them from your home when the
+world is staged and lends only the access token, never the token that renews
+it: Claude and Codex rotate that one on use, and a world renewing with its
+copy would sign this machine out. A lent session therefore ends when its
+access token does, which outlasts a playground; API keys are lent as they
+are. The world copies them into its user's home and deletes them from the
+stage, and nothing is written to the repository.
+
+`up.sh` prints what it lent and why it lent nothing for a harness. A session
+whose access token has already expired here is not lent: run that harness on
+this machine once, which renews it, and open the world again.
+`UZE_PLAYGROUND_SESSIONS=0` lends none.
+
+The worlds have network access, so a harness can also be signed into through
+the world's own browser.
 
 ## Windows
 

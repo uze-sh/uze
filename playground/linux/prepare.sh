@@ -16,6 +16,13 @@ id "$user" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash --groups s
 echo "$user ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$user"
 printf '[user]\ndefault=%s\n' "$user" > /etc/wsl.conf
 
+if [ -d "$stage/sessions" ]; then
+  cp -R "$stage/sessions/." "/home/$user/"
+  chown -R "$user:$user" "/home/$user"
+  find "$stage/sessions" -type f -printf '%P\n' | while read -r file; do chmod 600 "/home/$user/$file"; done
+  rm -rf "$stage/sessions"
+fi
+
 su - "$user" -c "bash -s" <<SH
 set -euo pipefail
 git config --global user.name 'Playground Person'

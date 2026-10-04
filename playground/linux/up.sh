@@ -42,6 +42,7 @@ archive="uze-$(uname -m)-linux-gnu.tar.gz"
 tar -czf "$stage/$archive" -C "$built" uze
 stage_release "$stage" "$stage/$archive"
 stage_market "$stage"
+stage_sessions "$stage"
 cp "${repo_root}/install.sh" "${playground_root}/linux/prepare.sh" "$built/playground-mcp" "$stage/"
 printf '%s' "$(version)" > "$stage/version"
 
@@ -69,6 +70,8 @@ if ! imported="$(wsl --import "$distro" "$(wslpath -w "${world}/distro")" "$(wsl
 fi
 
 say "Preparing ${distro}"
+# The lent sessions leave the stage whatever happens to the preparation.
+trap 'rm -rf "${stage}/sessions"' EXIT
 wsl -d "$distro" --user root -- bash "${stage}/prepare.sh" "$stage"
 # The default user is read when the distribution starts.
 wsl --terminate "$distro" >/dev/null

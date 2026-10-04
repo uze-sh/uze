@@ -21,6 +21,12 @@ try {
     git config --global user.email 'person@example.invalid'
     git config --global init.defaultBranch main
 
+    $sessions = Join-Path $stage 'sessions'
+    if (Test-Path $sessions) {
+        Note 'sessions: lent from the host'
+        Copy-Item "$sessions\*" $env:USERPROFILE -Recurse -Force
+    }
+
     Note 'uze: install.ps1'
     $env:UZE_BASE_URL = 'file:///' + ("$stage\release" -replace '\\', '/')
     $env:UZE_VERSION = (Get-Content "$stage\version" -Raw).Trim()

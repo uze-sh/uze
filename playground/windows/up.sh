@@ -73,6 +73,7 @@ stage_market "$stage"
 cp "${repo_root}/install.ps1" "${playground_root}/windows/prepare.ps1" \
   "${playground_root}/windows/setup-user.ps1" "$built/playground-mcp.exe" "$stage/"
 printf '%s' "$(version)" > "$stage/version"
+stage_sessions "$stage"
 # Whose world it is: an ordinary account by default (see prepare.ps1).
 user="${UZE_PLAYGROUND_USER:-standard}"
 [ "$user" = standard ] || [ "$user" = admin ] || die "UZE_PLAYGROUND_USER is standard or admin"

@@ -77,6 +77,10 @@ try {
     $home_ = if ($asAdministrator) { $env:USERPROFILE } else { 'C:\Users\person' }
 }
 
+# Lent sessions leave the stage, which is the host's own folder, and the
+# copy every account could read, however the preparation went.
+Remove-Item "$stage\sessions", "$env:PUBLIC\uze-playground" -Recurse -Force -ErrorAction SilentlyContinue
+
 $project = "$home_\projects\demo"
 $who = if ($asAdministrator) { 'the Sandbox administrator' } else { 'person, an ordinary account' }
 $welcome = @"
