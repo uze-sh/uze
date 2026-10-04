@@ -184,7 +184,7 @@ impl HookTarget {
 
     /// Whether a wrapper can be written and run for this harness here.
     fn deliverable(self) -> bool {
-        cfg!(unix) && self.dialect().is_some()
+        wrapper_source(self).is_some()
     }
 
     /// Whether the shared config is a map of named hooks rather than an
@@ -297,10 +297,11 @@ impl HookTarget {
         wrapper: &Path,
     ) -> serde_json::Value {
         let invocation = if self.entry_shape() == Some(EntryShape::EventExec) {
-            HookInvocation::Exec {
-                command: wrapper.display().to_string(),
-                args: wrapper_arguments(hook, package_root, &hook.handlers),
-            }
+            // What this platform runs a script with: the script itself, or
+            // the shell told to run it.
+            let (command, mut args) = uze_platform::shell::script(&wrapper.display().to_string());
+            args.extend(wrapper_arguments(hook, package_root, &hook.handlers));
+            HookInvocation::Exec { command, args }
         } else {
             HookInvocation::Line(wrapper_command_line(wrapper, hook, package_root))
         };
@@ -369,6 +370,20 @@ pub(crate) fn hook_plan(
                 .as_deref()
                 .map_or_else(|| evidence.to_owned(), with_compatibility),
         };
+    }
+    // A handler is never run in a shell it was not written for, so a group
+    // with one that has no spelling here delivers nothing here.
+    if let Some(unspelled) = hook
+        .handlers
+        .iter()
+        .find(|handler| handler.command.here().is_none())
+    {
+        return unsupported(format!(
+            "hook `{}` has no {} spelling for `{}`, so it is not delivered on this platform",
+            hook.id,
+            uze_core::shell::ShellCommand::platform(),
+            unspelled.command
+        ));
     }
     match deliver(&hook) {
         Some(artifact) => ExposurePlan {

@@ -1028,18 +1028,6 @@ fn another_packages_entry_through_the_same_wrapper_is_not_drift() {
 }
 
 #[test]
-fn shell_words_reads_back_what_shell_quote_wrote() {
-    let fragments = ["/state/hooks/exec", "/tmp/plugin root", "it's", "a'b'c", ""];
-    let line = fragments
-        .iter()
-        .map(|fragment| shell_quote(fragment))
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert_eq!(shell_words(&line).unwrap(), fragments);
-    assert_eq!(shell_words("'unterminated"), None);
-}
-
-#[test]
 fn an_unreadable_ledger_refuses_to_merge_rather_than_duplicate() {
     let root = uze_testkit::temp::scratch("hooks-previous-ledger");
     let home = UzeHome::at(root.join("home"));
@@ -1047,4 +1035,49 @@ fn an_unreadable_ledger_refuses_to_merge_rather_than_duplicate() {
     fs::write(home.state_dir().join("attachments.json"), b"{ not json").unwrap();
     assert!(previous_hook_entry_content(&home, "claude", "pkg@market:protect-env").is_err());
     let _ = fs::remove_dir_all(root);
+}
+
+/// The Windows wrapper is generated and pinned on every platform, so a
+/// change to it is reviewed where the suite runs, not first seen on a
+/// Windows machine.
+#[test]
+fn the_powershell_wrapper_is_one_byte_identical_file_per_harness() {
+    for target in [
+        crate::claude::HOOKS,
+        crate::codex::HOOKS,
+        crate::antigravity::HOOKS,
+    ] {
+        let Some(source) = PowerShellWrapper::source(target) else {
+            continue;
+        };
+        let golden = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("goldens")
+            .join(format!("hooks-exec-{target}.ps1"));
+        if std::env::var_os("UZE_REGENERATE_GOLDENS").is_some() {
+            fs::write(&golden, &source).unwrap();
+        }
+        assert_eq!(
+            fs::read_to_string(&golden).unwrap_or_default(),
+            source,
+            "{} is out of date; regenerate it with UZE_REGENERATE_GOLDENS=1",
+            golden.display()
+        );
+        assert!(
+            source.starts_with('\u{feff}'),
+            "Windows PowerShell reads a script without a byte-order mark as ANSI"
+        );
+        assert!(
+            !source.to_lowercase().contains("uze"),
+            "nothing in a delivered artifact may name the packager"
+        );
+    }
+}
+
+/// A harness with no measured Windows entry form gets no Windows wrapper,
+/// so its hooks are reported rather than delivered there.
+#[test]
+fn a_harness_without_a_windows_dialect_has_no_windows_wrapper() {
+    assert!(PowerShellWrapper::source(crate::antigravity::HOOKS).is_none());
+    assert!(PowerShellWrapper::source(crate::claude::HOOKS).is_some());
 }

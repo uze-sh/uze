@@ -2,7 +2,9 @@
 
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
-use crate::hooks::{EntryShape, HookRunner, HookTarget, UNBOUND, WrapperDialect};
+use crate::hooks::{
+    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
+};
 
 /// Antigravity CLI's named hooks carry camelCase payloads and native
 /// `allow`/`ask`/`deny` decisions. It has no session-start event
@@ -26,13 +28,22 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
     tools: TOOLS,
     runner: HookRunner::Wrapper {
         dialect: WrapperDialect {
-            tool_filter: ".toolCall.name // empty",
-            input_filter: ".toolCall.args // {}",
-            cwd_filter: ".workspacePaths[0] // empty",
-            deny_document: "printf '{\"decision\":\"deny\",\"reason\":%s}' \"$reason_json\"",
+            payload: PayloadPaths {
+                tool: ".toolCall.name // empty",
+                input: ".toolCall.args // {}",
+                cwd: ".workspacePaths[0] // empty",
+            },
             // Only the pre-tool event carries a decision; the others answer
             // with the empty object the vendor's contract requires.
-            allow_document: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
+            posix: Decisions {
+                deny: "printf '{\"decision\":\"deny\",\"reason\":%s}' \"$reason_json\"",
+                allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
+            },
+            // Antigravity starts a hook through `cmd /C` and escapes the
+            // quotes a path or a handler line needs in a way cmd does not
+            // honour; until an entry form is measured to survive that, its
+            // hooks are not delivered on Windows.
+            powershell: None,
             // The decision is the stdout document; a non-zero exit is a
             // failed hook here, not a block.
             deny_exit: "0",

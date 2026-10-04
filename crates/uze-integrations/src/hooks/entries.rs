@@ -2,14 +2,6 @@
 
 use super::*;
 
-/// POSIX single-quote quoting for a fragment embedded in a command line the
-/// harness will run through its own shell. Spaces, quotes, and `$` all stay
-/// literal inside single quotes; a single quote becomes the canonical
-/// `'\''` splice.
-pub(crate) fn shell_quote(fragment: &str) -> String {
-    format!("'{}'", fragment.replace('\'', "'\\''"))
-}
-
 /// How a delivered hook is invoked by the harness: the generated wrapper,
 /// in the form that harness's own entry takes (see [`hook_delivery`]).
 #[derive(Clone, Debug, Eq, PartialEq)]

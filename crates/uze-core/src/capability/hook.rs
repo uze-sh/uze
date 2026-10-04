@@ -111,7 +111,9 @@ pub struct HookGroup {
 pub struct CommandHook {
     #[serde(rename = "type")]
     pub handler_type: CommandHandlerType,
-    pub command: String,
+    /// One POSIX line, or a `posix`/`windows` pair: each platform runs only
+    /// the spelling written for it.
+    pub command: crate::shell::ShellCommand,
     #[serde(default = "default_timeout")]
     pub timeout: u16,
 }
@@ -450,7 +452,7 @@ pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
                 None => Vec::new(),
             };
             for handler in &group.hooks {
-                if handler.command.trim().is_empty() {
+                if handler.command.is_empty() {
                     return invalid(path, &format!("hook `{id}` has an empty command"));
                 }
                 if !(1..=MAX_TIMEOUT_SECONDS).contains(&handler.timeout) {

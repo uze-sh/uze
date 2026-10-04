@@ -72,7 +72,7 @@ fn group_at(event: HookEvent, effect: HookEffect, handlers: &[&str], timeout: u1
             .iter()
             .map(|spec| CommandHook {
                 handler_type: CommandHandlerType::Command,
-                command: handler_command(spec),
+                command: handler_command(spec).into(),
                 timeout,
             })
             .collect(),
@@ -226,7 +226,7 @@ fn regenerate_goldens() {
         fs::create_dir_all(goldens_dir()).unwrap();
         fs::write(
             goldens_dir().join(format!("hooks-exec-{target}.sh")),
-            wrapper_source(target).unwrap(),
+            PosixWrapper::source(target).unwrap(),
         )
         .unwrap();
     }
@@ -293,17 +293,18 @@ fn a_terminated_wrapper_runs_no_further_handler() {
 #[test]
 fn the_wrapper_is_one_byte_identical_file_per_harness() {
     for target in TARGETS {
-        let source = wrapper_source(target).expect("every command-hook harness has a wrapper");
+        let source =
+            PosixWrapper::source(target).expect("every command-hook harness has a wrapper");
         assert_eq!(
             source,
-            wrapper_source(target).unwrap(),
+            PosixWrapper::source(target).unwrap(),
             "{target}'s wrapper must be deterministic"
         );
         let golden = goldens_dir().join(format!("hooks-exec-{target}.sh"));
         assert_eq!(
             fs::read_to_string(&golden).unwrap_or_default(),
             source,
-            "{} is out of date; regenerate it from wrapper_source",
+            "{} is out of date; regenerate it from PosixWrapper::source",
             golden.display()
         );
         assert!(
