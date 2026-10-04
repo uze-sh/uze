@@ -271,9 +271,23 @@ mod imp {
         )
     }
 
+    /// What PowerShell reads as a single quote: the ASCII one, and the
+    /// typographic ones a person types without meaning to (`don’t`).
+    /// Doubling only the first left `’` ending the string early.
+    const SINGLE_QUOTES: [char; 5] = ['\'', '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'];
+
     /// Single quotes expand nothing; a quote inside is written twice.
     pub(super) fn quote(fragment: &str) -> String {
-        format!("'{}'", fragment.replace('\'', "''"))
+        let mut quoted = String::with_capacity(fragment.len() + 2);
+        quoted.push('\'');
+        for character in fragment.chars() {
+            quoted.push(character);
+            if SINGLE_QUOTES.contains(&character) {
+                quoted.push(character);
+            }
+        }
+        quoted.push('\'');
+        quoted
     }
 
     /// The call operator, then bare words and single-quoted strings, in
@@ -284,17 +298,17 @@ mod imp {
         let mut words = Vec::new();
         let mut word: Option<String> = None;
         let mut characters = line.chars().peekable();
+        let is_quote = |character: &char| SINGLE_QUOTES.contains(character);
         while let Some(character) = characters.next() {
             match character {
-                '\'' => {
+                opening if is_quote(&opening) => {
                     let quoted = word.get_or_insert_with(String::new);
                     loop {
                         match characters.next()? {
-                            '\'' if characters.peek() == Some(&'\'') => {
-                                characters.next();
-                                quoted.push('\'');
-                            }
-                            '\'' => break,
+                            inside if is_quote(&inside) => match characters.next_if(is_quote) {
+                                Some(doubled) => quoted.push(doubled),
+                                None => break,
+                            },
                             inside => quoted.push(inside),
                         }
                     }
@@ -363,7 +377,7 @@ mod tests {
 
     #[test]
     fn a_line_reads_back_as_the_words_it_was_written_from() {
-        let arguments = ["/tmp/plugin root", "it's", "a'b'c", ""]
+        let arguments = ["/tmp/plugin root", "it's", "a'b'c", "", "don’t"]
             .map(str::to_owned)
             .to_vec();
         let line = command_line("/state/hooks/exec", &arguments);
@@ -376,6 +390,25 @@ mod tests {
     /// A native command's exit code is the line's, and in PowerShell a
     /// native command that fails before a cmdlet that succeeds still fails
     /// the line, as it would under `sh -e`.
+    /// What PowerShell itself reads back from a quoted fragment, typographic
+    /// quotes included: one of them unquoted ended the string early and ran
+    /// the rest as code. Windows only: the line runs in PowerShell.
+    #[cfg(windows)]
+    #[test]
+    fn powershell_reads_a_quoted_fragment_back_as_written() {
+        for fragment in ["don’t", "‘a’ ‚b‛", "it's", "C:\\Users\\D’Angelo"] {
+            let output = command(&format!("Write-Output {}", quote(fragment)))
+                .output()
+                .unwrap();
+            assert_eq!(
+                String::from_utf8_lossy(&output.stdout).trim_end(),
+                fragment,
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
     #[test]
     fn a_native_failure_is_the_line_s_exit_code() {
         let code = |line: &str| command(line).status().unwrap().code();
