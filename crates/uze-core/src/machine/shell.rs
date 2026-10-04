@@ -12,8 +12,9 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-const POSIX: &str = "posix";
-const WINDOWS: &str = "windows";
+/// Which shell a spelling is written for: `posix`, or `windows`'s
+/// PowerShell.
+pub use uze_platform::shell::Family;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -43,18 +44,17 @@ impl ShellCommand {
 
     /// The spelling this platform runs, if the author wrote one.
     pub fn here(&self) -> Option<&str> {
-        self.spelling(Self::platform())
+        self.spelling(uze_platform::shell::FAMILY)
     }
 
-    /// The spelling written for the platform `key` names (`posix`,
-    /// `windows`): a plain line is the POSIX one.
-    pub fn spelling(&self, key: &str) -> Option<&str> {
-        let written = match (self, key) {
-            (Self::Line(line), POSIX) => Some(line.as_str()),
-            (Self::Line(_), _) => None,
-            (Self::PerPlatform(spellings), POSIX) => spellings.posix.as_deref(),
-            (Self::PerPlatform(spellings), WINDOWS) => spellings.windows.as_deref(),
-            (Self::PerPlatform(_), _) => None,
+    /// The spelling written for `family`'s shell: a plain line is the
+    /// POSIX one.
+    pub fn spelling(&self, family: Family) -> Option<&str> {
+        let written = match (self, family) {
+            (Self::Line(line), Family::Posix) => Some(line.as_str()),
+            (Self::Line(_), Family::PowerShell) => None,
+            (Self::PerPlatform(spellings), Family::Posix) => spellings.posix.as_deref(),
+            (Self::PerPlatform(spellings), Family::PowerShell) => spellings.windows.as_deref(),
         };
         written.filter(|line| !line.trim().is_empty())
     }
@@ -66,8 +66,8 @@ impl ShellCommand {
             Self::Line(line) => line,
             Self::PerPlatform(_) => self
                 .here()
-                .or_else(|| self.spelling(POSIX))
-                .or_else(|| self.spelling(WINDOWS))
+                .or_else(|| self.spelling(Family::Posix))
+                .or_else(|| self.spelling(Family::PowerShell))
                 .unwrap_or_default(),
         }
     }
@@ -179,14 +179,17 @@ mod tests {
             serde_json::from_str(r#"{"posix": "./guard", "windows": "./guard.ps1"}"#).unwrap();
         let windows_only: ShellCommand =
             serde_json::from_str(r#"{"windows": "Copy-Item a b"}"#).unwrap();
-        assert_eq!(line.spelling(POSIX), Some("pnpm install"));
-        assert_eq!(line.spelling(WINDOWS), None);
-        assert_eq!(pair.spelling(POSIX), Some("./guard"));
-        assert_eq!(pair.spelling(WINDOWS), Some("./guard.ps1"));
-        assert_eq!(windows_only.spelling(POSIX), None);
-        assert_eq!(windows_only.spelling(WINDOWS), Some("Copy-Item a b"));
+        assert_eq!(line.spelling(Family::Posix), Some("pnpm install"));
+        assert_eq!(line.spelling(Family::PowerShell), None);
+        assert_eq!(pair.spelling(Family::Posix), Some("./guard"));
+        assert_eq!(pair.spelling(Family::PowerShell), Some("./guard.ps1"));
+        assert_eq!(windows_only.spelling(Family::Posix), None);
+        assert_eq!(
+            windows_only.spelling(Family::PowerShell),
+            Some("Copy-Item a b")
+        );
         assert_eq!(line.label(), "pnpm install");
-        assert_eq!(pair.here(), pair.spelling(ShellCommand::platform()));
+        assert_eq!(pair.here(), pair.spelling(uze_platform::shell::FAMILY));
     }
 
     #[test]

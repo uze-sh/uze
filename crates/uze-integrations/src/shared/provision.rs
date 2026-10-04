@@ -229,7 +229,7 @@ mod official_installer_tests {
                 Some(("https://example.invalid/install.sh", &interpreter)),
                 None,
             )
-            .spelling("posix")
+            .spelling(uze_core::shell::Family::Posix)
             .unwrap(),
         );
 

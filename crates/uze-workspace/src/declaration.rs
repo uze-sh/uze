@@ -195,9 +195,12 @@ mod tests {
             .worktrees
             .unwrap();
         assert_eq!(one.setup.len(), 1);
-        assert_eq!(one.setup[0].spelling("posix"), Some("pnpm i && cp a b"));
         assert_eq!(
-            one.setup[0].spelling("windows"),
+            one.setup[0].spelling(uze_core::shell::Family::Posix),
+            Some("pnpm i && cp a b")
+        );
+        assert_eq!(
+            one.setup[0].spelling(uze_core::shell::Family::PowerShell),
             Some("pnpm i; Copy-Item a b")
         );
 
@@ -206,8 +209,12 @@ mod tests {
             .worktrees
             .unwrap();
         assert_eq!(mixed.gate.len(), 2);
-        assert_eq!(mixed.gate[1].spelling("posix"), None);
-        assert!(mixed.gate[1].spelling("windows").is_some());
+        assert_eq!(mixed.gate[1].spelling(uze_core::shell::Family::Posix), None);
+        assert!(
+            mixed.gate[1]
+                .spelling(uze_core::shell::Family::PowerShell)
+                .is_some()
+        );
     }
 
     #[test]

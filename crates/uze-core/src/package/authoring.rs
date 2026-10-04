@@ -636,7 +636,7 @@ fn spelling_warnings(hook: &crate::hook::PortableHook) -> Vec<String> {
     let mut warnings = Vec::new();
     for handler in &hook.handlers {
         let command = &handler.command;
-        if command.spelling("windows").is_none() {
+        if command.spelling(crate::shell::Family::PowerShell).is_none() {
             let consequence = if hook.effect.fails_closed() {
                 "installing the package is refused there, since the guard could not run"
             } else {

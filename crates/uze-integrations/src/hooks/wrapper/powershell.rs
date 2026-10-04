@@ -32,9 +32,9 @@ impl WrapperTemplate for PowerShellWrapper {
         let harness = target.key();
         let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
         let reason_limit = HANDLER_REASON_LIMIT;
-        let tool = powershell_filter(dialect.payload.tool, "$payload");
-        let cwd = powershell_filter(dialect.payload.cwd, "$payload");
-        let input = powershell_filter(dialect.payload.input, "$payload");
+        let tool = powershell_filter(dialect.payload.tool, "$payload")?;
+        let cwd = powershell_filter(dialect.payload.cwd, "$payload")?;
+        let input = powershell_filter(dialect.payload.input, "$payload")?;
         let field_defaults: String = wrapper_field_variables(target)
             .iter()
             .map(|name| format!("$env:{name} = ''\n"))
@@ -218,29 +218,90 @@ const HEADER: &str = "\u{feff}# hooks/exec.ps1 — generated from hooks.json";
 /// A `jq` path filter of a dialect (`.a.b[0] // .c // empty`, `... // {}`)
 /// as the PowerShell expression the Windows wrapper evaluates: each
 /// alternative a [`Pick`] over the parsed payload, the first one present
-/// winning, `empty` nothing and `{}` an empty object.
-fn powershell_filter(filter: &str, subject: &str) -> String {
-    let alternatives: Vec<String> = filter
+/// winning, `empty` nothing and `{}` an empty object. `None` for anything
+/// outside that grammar, which would otherwise be translated into a
+/// PowerShell expression meaning something else.
+fn powershell_filter(filter: &str, subject: &str) -> Option<String> {
+    let alternatives = filter
         .split("//")
         .map(str::trim)
         .map(|alternative| match alternative {
-            "empty" => "$null".to_owned(),
-            "{}" => "@{}".to_owned(),
-            path => {
-                let steps: Vec<String> = path
-                    .trim_start_matches('.')
-                    .split('.')
-                    .flat_map(|segment| {
-                        let mut parts = segment.split('[');
-                        let name = parts.next().unwrap_or_default();
-                        std::iter::once(format!("'{name}'"))
-                            .chain(parts.map(|index| index.trim_end_matches(']').to_owned()))
-                    })
-                    .filter(|step| step != "''")
-                    .collect();
-                format!("(Pick {subject} @({}))", steps.join(", "))
-            }
+            "empty" => Some("$null".to_owned()),
+            "{}" => Some("@{}".to_owned()),
+            path => Some(format!(
+                "(Pick {subject} @({}))",
+                path_steps(path)?.join(", ")
+            )),
         })
-        .collect();
-    format!("(First @({}))", alternatives.join(", "))
+        .collect::<Option<Vec<String>>>()?;
+    Some(format!("(First @({}))", alternatives.join(", ")))
+}
+
+/// `.a.b[0]` as the steps `'a', 'b', 0`: names of word characters, indexes
+/// of digits.
+fn path_steps(path: &str) -> Option<Vec<String>> {
+    let is_name = |name: &str| {
+        !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    let mut steps = Vec::new();
+    for segment in path.strip_prefix('.')?.split('.') {
+        let mut parts = segment.split('[');
+        let name = parts.next()?;
+        if !is_name(name) {
+            return None;
+        }
+        steps.push(format!("'{name}'"));
+        for index in parts {
+            let index = index.strip_suffix(']')?;
+            if index.is_empty() || !index.chars().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            steps.push(index.to_owned());
+        }
+    }
+    Some(steps)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every dialect's paths are inside the grammar the translator reads:
+    /// one that was not would leave that harness with no Windows wrapper,
+    /// found here rather than on a machine.
+    #[test]
+    fn every_dialect_s_payload_paths_translate() {
+        for target in [
+            crate::claude::HOOKS,
+            crate::codex::HOOKS,
+            crate::antigravity::HOOKS,
+            crate::opencode::HOOKS,
+        ] {
+            let Some(dialect) = target.dialect() else {
+                continue;
+            };
+            for path in [
+                dialect.payload.tool,
+                dialect.payload.cwd,
+                dialect.payload.input,
+            ] {
+                assert!(
+                    powershell_filter(path, "$payload").is_some(),
+                    "{}: {path}",
+                    target.key()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_filter_outside_the_grammar_is_refused() {
+        assert_eq!(
+            powershell_filter(".a.b[0] // .c // empty", "$p").as_deref(),
+            Some("(First @((Pick $p @('a', 'b', 0)), (Pick $p @('c')), $null))")
+        );
+        for unread in [".a | length", ".a[]", "a.b", ".a.\"b c\"", ".a[-1]"] {
+            assert_eq!(powershell_filter(unread, "$p"), None, "{unread}");
+        }
+    }
 }
