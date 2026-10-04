@@ -226,10 +226,9 @@ fn backend(stream: &mut TcpStream, root: &Path, request: &Request) -> std::io::R
         .split_once('?')
         .unwrap_or((request.target.as_str(), ""));
     let mut command = Command::new("git");
+    uze_platform::process::clear_environment(&mut command);
     command
         .arg("http-backend")
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_PROJECT_ROOT", root)

@@ -5,8 +5,6 @@
 //! testing that provider's availability instead. A networked smoke test
 //! against a real remote belongs in a separate, non-gating tier.
 
-#![cfg(unix)]
-
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -330,7 +328,10 @@ fn the_materialized_checkout_is_removed_when_dropped() {
 }
 
 /// Git recreates the directory it clones into between attempts; the private
-/// scratch holding the checkout is never the one it recreates.
+/// scratch holding the checkout is never the one it recreates. Read as a
+/// mode, which Windows keeps none of; its owner-only ACL is
+/// `uze_platform::fs`'s to prove.
+#[cfg(unix)]
 #[test]
 fn the_scratch_holding_a_checkout_stays_private_to_this_user() {
     use std::os::unix::fs::PermissionsExt;
