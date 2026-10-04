@@ -514,10 +514,18 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [x] 10.2 `journeys/requirements-windows.txt`, pinned, installed with
       `--only-binary :all:` (check for `win_arm64` wheels). The composite
       action uses `actions/setup-python` on Windows.
-- [ ] 10.3 World setup: `shell:` steps run under the runner's Git Bash by
+- [x] 10.3 World setup: `shell:` steps run under the runner's Git Bash by
       absolute path, outside the environment of the `uze` under test. World
       stand-ins become `uze-fake-harness` copies. Provisioning checks gain
       their PowerShell-route counterpart.
+      (What a journey asked of POSIX tools is now the runner's: `launcher:`
+      for shims, `inherit:` for an agent's environment and `kill:` for a
+      reboot, each answered by the platform backend. The PowerShell route
+      cannot be sealed in a world: the vendors' installers are fetched by
+      Invoke-WebRequest inside the System32 `powershell.exe`, which no
+      stand-in on PATH answers, so `01-first-run/06` is declared on Windows
+      and the route is proven offline by
+      `every_registered_harness_installs_through_its_documented_windows_route`.)
 - [x] 10.4 `07-upgrade` is declared unsupported on Windows, with its reason,
       until a Windows release exists. `tap` and OSC 52 get a ConPTY answer,
       or the check stops the run.
@@ -525,6 +533,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       Fix what it finds in product code. In `journeys.yml`, the slice map
       gains `windows: 4` and `windows-arm: 2`, and both are in the default
       `PLATFORMS`.
+      (In Windows Sandbox, 42 of 46 hold and 4 are declared. Product fixes it
+      found: a typed root spelled with mixed separators, and AltGr text
+      dropped by the keymap in every text-taking scope. The slice map and
+      the default platforms are in `journeys.yml`; open until a run on the
+      two runners is green.)
 
 ## 11. CI and release (D19)
 
