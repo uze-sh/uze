@@ -72,5 +72,5 @@ scenes:
         at: harnesses.claude-code.action
         equals: INSTALL
         about: and it records an install, not the verification of something already there
-      - process: { matching: bash, cwd: "{project}", alive: true }
+      - process: { matching: "{shell}", cwd: "{project}", alive: true }
         about: the workspace opened on the project after the answer

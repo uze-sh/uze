@@ -39,7 +39,7 @@ scenes:
       - link: "{uze_home}/shims/*"
         resolves_to: uze
         about: and each has its launcher in UZE's own shims
-      - process: { matching: bash, cwd: "{project}", alive: true }
+      - process: { matching: "{shell}", cwd: "{project}", alive: true }
         about: the workspace opened on the project, with its shell running
 
   - scene: an agent picked in that workspace starts

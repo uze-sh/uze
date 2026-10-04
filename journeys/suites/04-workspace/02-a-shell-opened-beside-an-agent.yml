@@ -68,7 +68,7 @@ scenes:
       - capture: { name: occupied_slot, dirs: "{project}/.worktrees/*" }
       - process: { matching: claude, cwd: "/.worktrees/", alive: true }
         about: the agent's own process is running, in its own checkout
-      - process: { matching: bash, cwd: "/.worktrees/", alive: true, count: 1 }
+      - process: { matching: "{shell}", cwd: "/.worktrees/", alive: true, count: 1 }
         about: and a shell of the agent's is running inside the same checkout
 
   - scene: closing the agent takes its shell with it, and the task ends
@@ -88,7 +88,7 @@ scenes:
         expect_timeout: 25
         pause: 3.0
     then:
-      - process: { matching: bash, cwd: "/.worktrees/", alive: false }
+      - process: { matching: "{shell}", cwd: "/.worktrees/", alive: false }
         about: |
           nothing of the agent's is left standing in the checkout — the
           shell was the agent's context, not the space's, and a pane left

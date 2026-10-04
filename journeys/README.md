@@ -279,8 +279,9 @@ that opens the previous release first, gets the machine that left it.
 A journey addresses the world through `{world}`, `{home}`, `{uze_home}`,
 `{project}`, `{repo}`, `{uze}`, `{python}` (the interpreter running the
 suite, for a journey that stands a server up in its world or reads a
-document in a check) and `{fake_harness}` (the stand-in writer, for a
-journey that stages one of its own) — plus
+document in a check), `{fake_harness}` (the stand-in writer, for a
+journey that stages one of its own) and `{shell}` (the shell a pane opens,
+as the process table names it) — plus
 `{shell_rc}`, which is the file the
 world's shell actually reads its startup from. That one is a placeholder
 rather than a path because the answer differs by platform: bash reads
@@ -325,9 +326,17 @@ Placeholders spell paths with forward slashes, which Git Bash and every
 Windows program read, and the world's `PATH` is its own `bin`, the binary
 under test, Git and the system's directories: the shell a step runs in is
 runner tooling, never part of the machine the `uze` under test meets.
-Worlds live under `%TEMP%\uze-journeys`. The packages are pinned and
-installed from wheels only; each publishes `win_amd64` and `win_arm64`
-wheels for CPython 3.12 and 3.13.
+Worlds live under `C:\uze-journeys`, where the PowerShell prompt a pane
+shows is short enough to keep a typed command on one line.
+
+A check's path names what UZE was asked to write, and on Windows a colon
+in it is read as the `-` UZE names that file with, since NTFS reads a
+colon as a stream separator: `skills/flow:commit` is `skills/flow-commit`
+on disk. `{shell}` is the shell a pane opens, as the process table names
+it: `bash`, or `powershell`.
+
+The packages are pinned and installed from wheels only; each publishes
+`win_amd64` and `win_arm64` wheels for CPython 3.12 and 3.13.
 
 `tap:` reads what ConPTY emits, which carries a request the app makes of
 the terminal itself (an OSC 52 clipboard write) through unchanged.

@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PLATFORM = "macos" if sys.platform == "darwin" else "linux"
+# What the shell a pane opens is called in the process table.
+SHELL = "bash"
 EXECUTABLE_SUFFIX = ""
 REQUIRED_TOOLS = ("tmux", "git")
 DEFAULT_WORLDS = "/tmp/uze-journeys"
@@ -38,6 +40,11 @@ def missing_tools() -> list[str]:
 def spell(path: Path | str) -> str:
     """A path as a journey's placeholders spell it."""
     return str(path)
+
+
+def host_path(path: str) -> str:
+    """`path` as this filesystem holds it: as written, here."""
+    return path
 
 
 def shell_rc_name() -> str:

@@ -129,6 +129,7 @@ class World:
             "project": machine.spell(self.project),
             "repo": machine.spell(REPO),
             "shell_rc": machine.spell(self.home / machine.shell_rc_name()),
+            "shell": machine.SHELL,
             "fake_harness": machine.spell(standin_binary()),
         }
         # Only for a journey that asks for it: resolving it eagerly would
@@ -784,7 +785,7 @@ class Runner:
                     == 0
                 )
             elif kind == "file":
-                ok = bool(globlib.glob(until))
+                ok = bool(globlib.glob(machine.host_path(until)))
             elif kind == "screen":
                 ok = self.screen.shows(until, step.get("in", "screen"))
             else:
@@ -872,6 +873,44 @@ VERBS = (
 )
 
 
+# The checks whose subject is a path on disk, and where inside them it is.
+PATH_FIELDS = {
+    "dir": (),
+    "file": (),
+    "link": (),
+    "json": (),
+    "tree": (),
+    "capture": ("dirs", "tree"),
+}
+
+
+def on_disk(spec: dict) -> dict:
+    """A check with each path it reads spelled as this platform's filesystem
+    holds it. A journey names what UZE was asked to write — a skill called
+    `flow:commit` — and on Windows that is a directory UZE named `flow-commit`,
+    because NTFS reads a colon as a stream separator."""
+
+    def held(value):
+        if isinstance(value, str):
+            return machine.host_path(value)
+        if isinstance(value, list):
+            return [held(item) for item in value]
+        return value
+
+    spec = dict(spec)
+    for verb, inner in PATH_FIELDS.items():
+        if verb not in spec:
+            continue
+        if not inner:
+            spec[verb] = held(spec[verb])
+        elif isinstance(spec[verb], dict):
+            spec[verb] = {
+                key: held(value) if key in inner else value
+                for key, value in spec[verb].items()
+            }
+    return spec
+
+
 class Checker:
     def __init__(self, runner: Runner):
         self.runner = runner
@@ -919,7 +958,7 @@ class Checker:
         verb = next((name for name in VERBS if name in spec), None)
         if verb is None:
             return False, f"no check verb in {spec!r}"
-        return getattr(self, f"_{verb}")(self.runner.resolve(spec))
+        return getattr(self, f"_{verb}")(on_disk(self.runner.resolve(spec)))
 
     # verbs ---------------------------------------------------------------
 

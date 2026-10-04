@@ -33,9 +33,9 @@ scenes:
       - file: "{uze_home}/keys.json"
         exists: true
         about: the keyboard is a file the machine keeps, not a screen's memory
-      - process: { matching: bash, cwd: "{project}", alive: true }
+      - process: { matching: "{shell}", cwd: "{project}", alive: true }
         about: a real shell is running — the one the workspace opened with
-      - capture: { name: shells, processes: { matching: bash, cwd: "{project}" } }
+      - capture: { name: shells, processes: { matching: "{shell}", cwd: "{project}" } }
         about: what the machine holds before either key is pressed
 
   - scene: the key uze ships with no longer opens a shell
@@ -44,7 +44,7 @@ scenes:
         say: press the default, which this keyboard gave away
         pause: 2.5
     then:
-      - process: { matching: bash, cwd: "{project}", same_as: shells }
+      - process: { matching: "{shell}", cwd: "{project}", same_as: shells }
         about: nothing opened — declaring an action replaces its keys rather than adding to them
 
   - scene: the key the operator chose does
@@ -53,5 +53,5 @@ scenes:
         say: press the rebound key
         pause: 3.0
     then:
-      - process: { matching: bash, cwd: "{project}", more_than: shells }
+      - process: { matching: "{shell}", cwd: "{project}", more_than: shells }
         about: a shell exists that did not before, opened by a key nothing in the binary names

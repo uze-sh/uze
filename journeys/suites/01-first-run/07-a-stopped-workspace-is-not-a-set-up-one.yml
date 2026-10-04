@@ -61,5 +61,5 @@ scenes:
       - file: "{world}/bin/.invocations/curl.log"
         exists: false
         about: and fetches no vendor installer
-      - process: { matching: bash, cwd: "{project}", alive: true }
+      - process: { matching: "{shell}", cwd: "{project}", alive: true }
         about: the workspace opens on the project all the same

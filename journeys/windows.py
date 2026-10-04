@@ -32,9 +32,16 @@ except ImportError as missing:
     ) from None
 
 PLATFORM = "windows"
+# What the shell a pane opens is called in the process table: Windows
+# PowerShell, since the world's PATH reaches no PowerShell 7.
+SHELL = "powershell"
 EXECUTABLE_SUFFIX = ".exe"
 REQUIRED_TOOLS = ("git",)
-DEFAULT_WORLDS = str(Path(os.environ.get("TEMP", r"C:\Windows\Temp")) / "uze-journeys")
+# At the drive's root, not under %TEMP%: PowerShell's prompt is the whole
+# working directory, and under a profile's temporary directory it fills a
+# pane's width, so the command a journey types wraps and no pattern meets
+# it whole. Any account may create a directory there.
+DEFAULT_WORLDS = os.environ.get("SystemDrive", "C:") + "\\uze-journeys"
 
 # Git for Windows' own bash, where every hosted runner has it. Runner tooling,
 # not the world's: a `shell:` step is what an agent would type, and it is
@@ -90,6 +97,14 @@ def spell(path: Path | str) -> str:
     both Git Bash and every Windows program read, where a backslash would be
     an escape to the shell a `shell:` step runs in."""
     return Path(path).as_posix()
+
+
+def host_path(path: str) -> str:
+    """`path` as NTFS holds it: each colon after the drive is the `-` UZE
+    names the file with (`uze_platform::fs_name::file_name_for`), since a
+    colon there would address an alternate data stream instead."""
+    drive, rest = os.path.splitdrive(path)
+    return drive + rest.replace(":", "-")
 
 
 def shell_rc_name() -> str:
