@@ -138,9 +138,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         once);
       - `exposure::attach_symlink` makes only directory references, which
         are junctions.
-- [ ] 3.12 Private directories (`record.rs:164`, `acquisition.rs:442`,
+- [x] 3.12 Private directories (`record.rs:164`, `acquisition.rs:442`,
       `telemetry.rs:286`, prompt history) get an owner-only DACL on
       Windows. Prompt history's local day uses `GetTimeZoneInformation`.
+      (`uze_platform::fs` sets a protected owner-only ACL, inherited
+      inside; `uze_platform::clock` answers the local day.)
 - [ ] 3.13 The root `build.rs` embeds an application manifest
       (`longPathAware`, UTF-8 `activeCodePage`) through
       `cargo:rustc-link-arg-bins`. The client sets the console code pages

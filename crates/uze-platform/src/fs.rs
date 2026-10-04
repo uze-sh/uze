@@ -15,8 +15,8 @@ pub const NULL_DEVICE: &str = "/dev/null";
 pub const NULL_DEVICE: &str = "NUL";
 
 /// Creates `directory` (and its parents) so that only this user can enter
-/// it: mode `0700` on Unix. On Windows a directory inherits its parent's
-/// ACL, which under the user's profile is already the user's alone.
+/// it: mode `0700` on Unix; on Windows a protected ACL granting this user
+/// alone, which what is created inside inherits.
 pub fn create_private_dir_all(directory: &Path) -> io::Result<()> {
     imp::create_private_dir(directory, true)
 }
@@ -29,14 +29,15 @@ pub fn create_private_dir(directory: &Path) -> io::Result<()> {
 }
 
 /// Makes a file `options` creates readable by this user alone: mode `0600`
-/// on Unix; on Windows it inherits its directory's ACL.
+/// on Unix; on Windows it inherits its directory's ACL, which
+/// [`create_private_dir_all`] made this user's alone.
 pub fn private_file(options: &mut OpenOptions) -> &mut OpenOptions {
     imp::private_file(options)
 }
 
-/// Narrows an existing file to this user alone where the platform keeps a
-/// mode for it (`0600`): a file renamed into place does not keep the mode
-/// the one it replaced had.
+/// Narrows an existing file to this user alone (`0600`; a protected ACL on
+/// Windows): a file renamed into place does not keep what the one it
+/// replaced had.
 pub fn restrict_to_owner(path: &Path) {
     imp::restrict_to_owner(path)
 }
@@ -260,17 +261,62 @@ mod imp {
 
     pub(super) fn create_private_dir(directory: &Path, recursive: bool) -> io::Result<()> {
         if recursive {
-            fs::create_dir_all(directory)
+            fs::create_dir_all(directory)?;
         } else {
-            fs::create_dir(directory)
+            fs::create_dir(directory)?;
         }
+        owner_only(directory, "OICI")
     }
 
     pub(super) fn private_file(options: &mut OpenOptions) -> &mut OpenOptions {
         options
     }
 
-    pub(super) fn restrict_to_owner(_path: &Path) {}
+    pub(super) fn restrict_to_owner(path: &Path) {
+        let _ = owner_only(path, "");
+    }
+
+    /// Replaces `path`'s ACL with one granting the current token's user,
+    /// and no one else, full access; `inherited` is the SDDL inheritance
+    /// its children take (`OICI` for a directory). The user and not the
+    /// owner: an elevated token's owner is the Administrators group.
+    fn owner_only(path: &Path, inherited: &str) -> io::Result<()> {
+        use windows_sys::Win32::{
+            Foundation::LocalFree,
+            Security::{
+                Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW,
+                DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SetFileSecurityW,
+            },
+        };
+        let sid = crate::process::current_user()?;
+        let sddl = crate::win::wide(std::ffi::OsStr::new(&format!(
+            "D:P(A;{inherited};GA;;;{sid})"
+        )));
+        let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+        // SAFETY: `sddl` is NUL-terminated; the descriptor is freed below
+        // with LocalFree, as the API requires.
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                1,
+                &mut descriptor,
+                std::ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let target = crate::win::wide(path.as_os_str());
+        // SAFETY: both pointers are valid for the call.
+        let applied =
+            unsafe { SetFileSecurityW(target.as_ptr(), DACL_SECURITY_INFORMATION, descriptor) };
+        // SAFETY: allocated by the conversion above with LocalAlloc.
+        unsafe { LocalFree(descriptor) };
+        if applied == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
 
     pub(super) fn open_without_blocking(path: &Path) -> io::Result<File> {
         File::open(path)
@@ -521,6 +567,24 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A private directory is still this user's to use: what is created in
+    /// it, and a file narrowed to its owner, read back.
+    #[test]
+    fn a_private_directory_stays_usable_by_its_owner() {
+        let root = uze_testkit::temp::scratch("private-dir");
+        let directory = root.join("one").join("two");
+        create_private_dir_all(&directory).unwrap();
+        let file = directory.join("record.json");
+        private_file(OpenOptions::new().write(true).create_new(true))
+            .open(&file)
+            .unwrap();
+        std::fs::write(&file, "{}").unwrap();
+        restrict_to_owner(&file);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{}");
+        assert!(create_private_dir(&directory).is_err(), "never adopted");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// A link to a directory is read through, reads back as a link to it,
     /// and goes without what it pointed at: what every caller relies on,
