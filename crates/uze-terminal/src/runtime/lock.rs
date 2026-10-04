@@ -156,52 +156,14 @@ pub(super) fn open_workspace_lock() -> io::Result<fs::File> {
         .open(&path)
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum LockMode {
-    Exclusive,
-    Shared,
-}
+pub(super) use uze_process::lock::Mode as LockMode;
 
-#[cfg(unix)]
 pub(super) fn try_lock(file: &fs::File, mode: LockMode) -> Result<(), LockRefusal> {
-    use std::os::unix::io::AsRawFd;
-
-    let operation = match mode {
-        LockMode::Exclusive => libc::LOCK_EX,
-        LockMode::Shared => libc::LOCK_SH,
-    } | libc::LOCK_NB;
-    // SAFETY: `file` owns the descriptor for the whole call, and a lock it
-    // takes is released by the kernel when the descriptor closes.
-    if unsafe { libc::flock(file.as_raw_fd(), operation) } == 0 {
-        return Ok(());
-    }
-    let error = io::Error::last_os_error();
-    Err(classify_lock_refusal(error))
+    uze_process::lock::try_lock(file, mode).map_err(classify_lock_refusal)
 }
 
-#[cfg(unix)]
 pub(super) fn unlock(file: &fs::File) {
-    use std::os::unix::io::AsRawFd;
-
-    // SAFETY: as in `try_lock`.
-    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
-}
-
-/// `LockFileEx` on one byte far past the pid the file holds, so the holder
-/// stays readable (see `windows::lock`). Released by Windows when the
-/// handle closes, however the holder ends — the property `flock` gives.
-#[cfg(windows)]
-pub(super) fn try_lock(file: &fs::File, mode: LockMode) -> Result<(), LockRefusal> {
-    match windows::lock(file, matches!(mode, LockMode::Exclusive)) {
-        windows::LockAnswer::Taken => Ok(()),
-        windows::LockAnswer::Contended => Err(LockRefusal::Contended),
-        windows::LockAnswer::Failed(error) => Err(LockRefusal::Unsupported(error)),
-    }
-}
-
-#[cfg(windows)]
-pub(super) fn unlock(file: &fs::File) {
-    windows::unlock(file);
+    uze_process::lock::unlock(file);
 }
 
 /// Why `flock` said no.
@@ -220,8 +182,13 @@ pub(super) enum LockRefusal {
     Unsupported(io::Error),
 }
 
-#[cfg(unix)]
 pub(super) fn classify_lock_refusal(error: io::Error) -> LockRefusal {
+    if error.kind() == io::ErrorKind::WouldBlock {
+        return LockRefusal::Contended;
+    }
+    #[cfg(windows)]
+    return LockRefusal::Unsupported(error);
+    #[cfg(unix)]
     match error.raw_os_error() {
         Some(libc::EINTR) => LockRefusal::Interrupted,
         // The same number on Linux, two names elsewhere; both mean held.

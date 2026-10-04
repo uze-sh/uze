@@ -222,9 +222,11 @@ fn process_is_alive(pid: u32) -> bool {
     signalled || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
-#[cfg(not(unix))]
-fn process_is_alive(_pid: u32) -> bool {
-    true
+/// Alive unless Windows says plainly that nothing runs at `pid`: a pid it
+/// will not answer for may be somebody's live staging, and is left alone.
+#[cfg(windows)]
+fn process_is_alive(pid: u32) -> bool {
+    uze_process::windows::is_alive(pid) != Some(false)
 }
 
 /// Where `path` ends up once every symbolic link on the way is followed,
@@ -416,25 +418,8 @@ fn try_lock_exclusive_briefly(file: &File) -> std::io::Result<()> {
 
 /// Takes an exclusive advisory lock on `file` without waiting: a held lock
 /// is `WouldBlock`, and the lock lasts as long as the file stays open.
-#[cfg(unix)]
 pub fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
-    use std::os::fd::AsRawFd;
-    // SAFETY: `flock` is called on a file descriptor this process owns and
-    // keeps open for as long as the lock is held.
-    let outcome = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if outcome == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-/// Without an OS-level advisory lock there is nothing to serialize two
-/// processes with; a cross-process guarantee is a Unix property here,
-/// matching the runtime's supported platforms.
-#[cfg(not(unix))]
-pub fn try_lock_exclusive(_file: &File) -> std::io::Result<()> {
-    Ok(())
+    uze_process::lock::try_lock(file, uze_process::lock::Mode::Exclusive)
 }
 
 #[cfg(test)]

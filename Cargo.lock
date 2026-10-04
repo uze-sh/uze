@@ -3218,6 +3218,7 @@ dependencies = [
  "tracing",
  "uze-document",
  "uze-git",
+ "uze-process",
  "uze-testkit",
 ]
 
@@ -3250,6 +3251,7 @@ dependencies = [
  "libc",
  "tracing",
  "tracing-subscriber",
+ "uze-process",
  "uze-testkit",
 ]
 
@@ -3273,6 +3275,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "uze-process"
+version = "1.0.0-beta.10"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "uze-terminal"
 version = "1.0.0-beta.10"
 dependencies = [
@@ -3285,6 +3295,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "uze-document",
+ "uze-process",
  "uze-testkit",
  "windows-sys 0.61.2",
 ]

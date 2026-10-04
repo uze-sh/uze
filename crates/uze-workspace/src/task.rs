@@ -705,9 +705,12 @@ impl MutationGuard {
         }
         let parent = path.parent().expect("UZE state paths have a parent");
         fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
+        // Readable or writable, not append-only: Windows refuses to lock a
+        // handle that may only append.
         let file = OpenOptions::new()
             .create(true)
-            .append(true)
+            .truncate(false)
+            .write(true)
             .open(&path)
             .map_err(UzeError::write(&path))?;
         let started = Instant::now();

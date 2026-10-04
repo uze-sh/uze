@@ -254,11 +254,19 @@ need to).
   makes this the opposite of scattered compatibility, which this project
   refuses — the current struct stays clean *because* the old shapes live
   in the ladder.
+- `crates/uze-process` — what UZE asks the operating system about
+  processes and files, answered once per platform: a lock that holds across
+  processes (`flock`; `LockFileEx` on a byte range that keeps the holder's
+  pid readable), and on Windows a process's image, liveness and SID, ending
+  a process with its whole tree, and Job Objects. A leaf crate naming no
+  domain, no path and no harness, because `uze-core`, `uze-git` and the
+  terminal runtime all need it and none may depend on another for it.
 - `crates/uze-terminal` — the local terminal runtime: a server owning the
   pseudoterminals and a versioned client protocol, so a pane survives a
-  client leaving. Depends on nothing in the workspace but `uze-document`,
-  whose rule it obeys like everything else that persists — the path to its
-  own workspace is the only thing it computes for itself.
+  client leaving. Depends on nothing in the workspace but `uze-process`
+  and `uze-document`, whose rule it obeys like everything else that
+  persists — the path to its own workspace is the only thing it computes
+  for itself.
 - `crates/uze-theme` — the design vocabulary: colour `Token`s, named
   `Symbol`s, the theme file schema, and the resolver that completes a
   partial theme from the built-in default. A leaf crate — it resolves no

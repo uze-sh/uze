@@ -131,6 +131,19 @@ impl Output {
     }
 }
 
+/// `root` as Git can open it. Git for Windows does not understand the
+/// verbatim `\\?\C:\…` spelling `canonicalize` produces, and answers a
+/// `-C` given one with a file it cannot find.
+fn spelled_for_git(root: &Path) -> std::borrow::Cow<'_, Path> {
+    #[cfg(windows)]
+    if let Some(rest) = root.to_str().and_then(|text| text.strip_prefix(r"\\?\"))
+        && !rest.starts_with("UNC\\")
+    {
+        return std::borrow::Cow::Owned(std::path::PathBuf::from(rest));
+    }
+    std::borrow::Cow::Borrowed(root)
+}
+
 /// A path as Git printed it, in the spelling this platform uses. Git for
 /// Windows prints `C:/x/y`; joined with anything else that becomes
 /// `C:/x/y\z`, which compares equal as a `Path` and differently as text —
@@ -232,7 +245,10 @@ pub fn locked<R>(
 
 fn base_command(root: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
-    command.arg("-C").arg(root).args(args);
+    command
+        .arg("-C")
+        .arg(spelled_for_git(root).as_os_str())
+        .args(args);
     // A subprocess that stops to ask for a credential never gets an
     // answer: nothing here is attached to a terminal the operator can see.
     command.env("GIT_TERMINAL_PROMPT", "0");
@@ -365,7 +381,7 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
 
 /// Reads a child's pipe to its end on a thread of its own, so neither
 /// pipe can fill while the other is being read.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
     std::thread::spawn(move || {
         let mut bytes = Vec::new();
@@ -376,7 +392,52 @@ fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandl
     })
 }
 
-#[cfg(not(unix))]
+/// [`run_to_completion`] for a command that may never end on its own: past
+/// `limit` Git and everything it started (the SSH it runs) are ended, while
+/// the `Child` still holds Git's handle so no pid in the tree can have been
+/// reused, and the wait is reported rather than continued.
+#[cfg(windows)]
+fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnError> {
+    use std::time::Instant;
+
+    let span =
+        tracing::debug_span!("git", args = %arguments_of(&command), exit = tracing::field::Empty);
+    let _entered = span.enter();
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(describe_spawn_failure)?;
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+    let deadline = Instant::now() + limit;
+    let mut pause = Duration::from_millis(5);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(pause);
+                pause = (pause * 2).min(Duration::from_millis(100));
+            }
+            outcome => {
+                uze_process::windows::kill_tree(child.id());
+                let _ = child.wait();
+                return Err(match outcome {
+                    Err(error) => describe_spawn_failure(error),
+                    Ok(_) => SpawnError(format!(
+                        "git did not finish within {}s and was stopped",
+                        limit.as_secs()
+                    )),
+                });
+            }
+        }
+    };
+    span.record("exit", status.code().unwrap_or(-1));
+    Ok(Output {
+        code: status.code(),
+        stdout: String::from_utf8_lossy(&stdout.join().unwrap_or_default()).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr.join().unwrap_or_default()).into_owned(),
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
 fn run_within(command: Command, _limit: Duration) -> Result<Output, SpawnError> {
     run_to_completion(command)
 }

@@ -25,6 +25,7 @@ members = [
   "crates/uze-terminal",
   "crates/uze-theme",
   "crates/uze-document",
+  "crates/uze-process",
   "crates/uze-keys",
 ]
 default-members = ["."]

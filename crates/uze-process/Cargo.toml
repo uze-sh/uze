@@ -1,0 +1,26 @@
+[package]
+name = "uze-process"
+version.workspace = true
+edition = "2024"
+rust-version = "1.97"
+description = "The operating system's answers about processes and files that UZE builds on: cross-process locks, process trees, and the facts only the kernel holds"
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Published by Microsoft and already in the tree; only the API families
+# named here are compiled.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Threading",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+] }

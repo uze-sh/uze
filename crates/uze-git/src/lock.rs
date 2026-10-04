@@ -43,7 +43,8 @@ pub(crate) fn acquire(root: &Path, timeout: Duration) -> Result<Held, SpawnError
     }
     let file = OpenOptions::new()
         .create(true)
-        .append(true)
+        .truncate(false)
+        .write(true)
         .open(&path)
         .map_err(|error| SpawnError(format!("could not open {}: {error}", path.display())))?;
     let started = Instant::now();
@@ -86,24 +87,6 @@ fn lock_path(root: &Path) -> Option<PathBuf> {
     )
 }
 
-#[cfg(unix)]
 fn try_lock(file: &File) -> std::io::Result<()> {
-    use std::os::fd::AsRawFd;
-    // SAFETY: `flock` is called on a file descriptor this process owns and
-    // keeps open for as long as the lock is held.
-    let outcome = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if outcome == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-/// Without an OS-level advisory lock the write lock serializes only the
-/// writes of this process, which is what the thread-local register above
-/// already guarantees for re-entry; cross-process safety is a Unix
-/// property here, matching the runtime's supported platforms.
-#[cfg(not(unix))]
-fn try_lock(_file: &File) -> std::io::Result<()> {
-    Ok(())
+    uze_process::lock::try_lock(file, uze_process::lock::Mode::Exclusive)
 }
