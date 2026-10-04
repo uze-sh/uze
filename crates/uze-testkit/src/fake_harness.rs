@@ -252,9 +252,9 @@ impl FakeHarnessBuilder {
 }
 
 /// Writes `role` as the table the stand-in called `name` reads, and puts the
-/// dispatcher in `bin_dir` under that name: a hard link where the two share
-/// a filesystem, a copy where they do not. Never a symbolic link, which
-/// would leave the stand-in reading its own name off the dispatcher's path.
+/// dispatcher in `bin_dir` under that name (see [`stand_in_file`]). Never a
+/// symbolic link, which would leave the stand-in reading its own name off
+/// the dispatcher's path.
 fn place(bin_dir: &Path, name: &str, role: &Role) {
     let tables = bin_dir.join(stand_in::TABLES);
     std::fs::create_dir_all(&tables)
@@ -269,17 +269,39 @@ fn place(bin_dir: &Path, name: &str, role: &Role) {
     let executable = bin_dir.join(uze_platform::executable::file_name(name));
     let _ = std::fs::remove_file(&executable);
     let dispatcher = dispatcher();
-    if std::fs::hard_link(&dispatcher, &executable).is_err() {
-        std::fs::copy(&dispatcher, &executable).unwrap_or_else(|error| {
-            panic!(
-                "FakeHarness: cannot place {} as {}: {error}",
-                dispatcher.display(),
-                executable.display()
-            )
-        });
-    }
+    stand_in_file::place(&dispatcher, &executable).unwrap_or_else(|error| {
+        panic!(
+            "FakeHarness: cannot place {} as {}: {error}",
+            dispatcher.display(),
+            executable.display()
+        )
+    });
     uze_platform::executable::make_runnable(&executable)
         .unwrap_or_else(|error| panic!("FakeHarness: {}: {error}", executable.display()));
+}
+
+/// Each stand-in is a file of its own, as each real harness is, wherever
+/// what runs one file is seen on another: on Windows a running image locks
+/// its file, which every hard link to it is, so one stand-in running would
+/// read as every other one being in use. On Unix a hard link costs nothing
+/// and nothing is locked; a copy where the two filesystems differ.
+#[cfg(unix)]
+mod stand_in_file {
+    use std::path::Path;
+
+    pub(super) fn place(dispatcher: &Path, executable: &Path) -> std::io::Result<()> {
+        std::fs::hard_link(dispatcher, executable)
+            .or_else(|_| std::fs::copy(dispatcher, executable).map(|_| ()))
+    }
+}
+
+#[cfg(windows)]
+mod stand_in_file {
+    use std::path::Path;
+
+    pub(super) fn place(dispatcher: &Path, executable: &Path) -> std::io::Result<()> {
+        std::fs::copy(dispatcher, executable).map(|_| ())
+    }
 }
 
 /// The `uze-fake-harness` binary: `UZE_FAKE_HARNESS` when set, otherwise
