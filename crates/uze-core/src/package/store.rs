@@ -116,7 +116,7 @@ fn validate_references(value: &serde_json::Value, manifest: &Path) -> Result<()>
 
 fn validate_reference(reference: &str, manifest: &Path) -> Result<()> {
     let path = Path::new(reference);
-    if path.is_absolute()
+    if crate::path::is_anchored(path)
         || path
             .components()
             .any(|component| matches!(component, std::path::Component::ParentDir))
@@ -850,7 +850,7 @@ pub(crate) fn assert_self_contained(root: &Path) -> Result<()> {
                 // inside the package once copied, while an absolute one keeps
                 // pointing at the source — a store entry aimed at a directory
                 // UZE does not own and the user may repoint afterwards.
-                if target.is_absolute() {
+                if crate::path::is_anchored(&target) {
                     return Err(UzeError::PackageEscapesRoot { link: path, target });
                 }
                 let Some(resolved) = resolve_lexically(&path, &target) else {

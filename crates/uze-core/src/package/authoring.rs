@@ -806,7 +806,7 @@ fn reaches_outside_the_plugin(token: &str) -> bool {
         None => (false, token),
     };
     let path = Path::new(path);
-    (!inside_the_plugin && path.is_absolute())
+    (!inside_the_plugin && crate::path::is_anchored(path))
         || path
             .components()
             .any(|component| component == Component::ParentDir)

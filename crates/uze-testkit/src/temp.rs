@@ -142,7 +142,7 @@ impl TempDir {
         // `/var` is a symlink to `/private/var`, so every such assertion
         // fails on the prefix while pointing at identical-looking paths.
         // Resolved once, here, rather than in each test that noticed.
-        let path = path.canonicalize().unwrap_or(path);
+        let path = canonical(&path).unwrap_or(path);
         assert_not_real_home(&path);
         TempDir { path, keep }
     }
@@ -264,7 +264,7 @@ pub fn socket_scratch(label: &str) -> PathBuf {
     // Canonicalized for the same reason `TempDir` is: `/tmp` is a symlink to
     // `/private/tmp` on macOS, and the kernel answers every question about a
     // path with the real one.
-    let path = path.canonicalize().unwrap_or(path);
+    let path = canonical(&path).unwrap_or(path);
     assert_not_real_home(&path);
     path
 }
@@ -439,4 +439,20 @@ impl TestEnvironment {
         }
         scope
     }
+}
+
+/// `canonicalize`, without the `\\?\` prefix Windows adds: production code
+/// canonicalizes through `uze_core::path::canonical`, which drops it, and a
+/// scratch path must compare equal to what that hands back.
+fn canonical(path: &Path) -> std::io::Result<PathBuf> {
+    let resolved = path.canonicalize()?;
+    #[cfg(windows)]
+    if let Some(rest) = resolved
+        .to_str()
+        .and_then(|text| text.strip_prefix(r"\\?\"))
+        && !rest.starts_with("UNC\\")
+    {
+        return Ok(PathBuf::from(rest));
+    }
+    Ok(resolved)
 }

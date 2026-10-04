@@ -1088,7 +1088,7 @@ pub fn redact(message: &str) -> String {
 /// traversal before touching the filesystem, and the physical check catches a
 /// path that only escapes once symlinks are followed.
 pub fn resolve_subdirectory(root: &Path, subdirectory: &Path) -> Result<PathBuf> {
-    if subdirectory.is_absolute()
+    if crate::path::is_anchored(subdirectory)
         || subdirectory
             .components()
             .any(|component| matches!(component, std::path::Component::ParentDir))

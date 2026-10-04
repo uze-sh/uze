@@ -83,7 +83,103 @@ pub fn identity(path: &Path) -> String {
     }
 }
 
+/// Whether `path` is anchored anywhere but where it is joined: an absolute
+/// path, and on Windows also `\\etc` (rooted on the current drive) and
+/// `C:etc` (relative to that drive's own directory). `is_absolute` says no
+/// to both, and either one joined onto a root escapes it.
+pub fn is_anchored(path: &Path) -> bool {
+    path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::RootDir | std::path::Component::Prefix(_)
+            )
+        })
+}
+
+/// `label` as a name the host filesystem holds as an ordinary file or
+/// directory name.
+///
+/// The identity on Unix. On Windows the characters NTFS refuses or reads as
+/// syntax (`<>:"/\|?*`, and controls) become `-`, a trailing dot or space is
+/// dropped, and a reserved device name gains a `_`: `flow:review` written
+/// as-is would not fail, it would create an alternate data stream `review`
+/// on a file named `flow`, which no harness reads.
+pub fn file_name_for(label: &str) -> String {
+    if !cfg!(windows) {
+        return label.to_owned();
+    }
+    let mut name: String = label
+        .chars()
+        .map(|character| match character {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '-',
+            control if control.is_control() => '-',
+            other => other,
+        })
+        .collect();
+    while name.ends_with(['.', ' ']) {
+        name.pop();
+    }
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit());
+    if reserved {
+        // After the stem, not at the end: `COM1.md_` is still `COM1`.
+        let at = name.find('.').unwrap_or(name.len());
+        name.insert(at, '_');
+    }
+    name
+}
+
 /// Whether two spellings name the same path, by the platform's rules.
 pub fn same_path(a: &Path, b: &Path) -> bool {
     identity(a) == identity(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_label_becomes_a_name_the_host_filesystem_holds() {
+        if cfg!(windows) {
+            assert_eq!(file_name_for("flow:review"), "flow-review");
+            assert_eq!(file_name_for("con"), "con_");
+            assert_eq!(file_name_for("COM1.md"), "COM1_.md");
+            assert_eq!(file_name_for("trailing. "), "trailing");
+        } else {
+            assert_eq!(file_name_for("flow:review"), "flow:review");
+        }
+    }
+
+    #[test]
+    fn a_rooted_path_is_anchored_on_every_platform() {
+        assert!(is_anchored(Path::new("/etc")));
+        assert!(!is_anchored(Path::new("packages/inner")));
+        assert!(!is_anchored(Path::new("../escape")));
+        if cfg!(windows) {
+            assert!(is_anchored(Path::new(r"\etc")));
+            assert!(is_anchored(Path::new("C:etc")));
+            assert!(is_anchored(Path::new(r"C:\etc")));
+        }
+    }
+
+    #[test]
+    fn spellings_of_one_path_share_an_identity() {
+        if cfg!(windows) {
+            assert!(same_path(
+                Path::new(r"\\?\C:\Users\A\proj"),
+                Path::new("c:/users/a/proj")
+            ));
+        } else {
+            assert!(same_path(Path::new("/a/b"), Path::new("/a/b")));
+            assert!(!same_path(Path::new("/a/B"), Path::new("/a/b")));
+        }
+    }
 }

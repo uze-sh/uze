@@ -74,7 +74,7 @@ impl MarketplaceSubpath {
         let escapes = || UzeError::MarketplaceSubpathEscapes {
             subpath: subpath.display().to_string(),
         };
-        if subpath.is_absolute() {
+        if crate::path::is_anchored(subpath) {
             return Err(escapes());
         }
         let mut parts = Vec::new();
