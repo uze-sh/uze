@@ -32,7 +32,7 @@ pub fn read_plugin_manifest(root: &Path) -> Result<PluginManifest> {
     }
     let bytes = read_package_file(&path)?;
     let value: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|source| UzeError::Json {
+        crate::authored::json(&bytes).map_err(|source| UzeError::Json {
             path: path.clone(),
             source,
         })?;

@@ -39,6 +39,10 @@ pub mod project;
 pub mod digest;
 pub mod error;
 
+/// What a person wrote, read as they wrote it: the authored tier's one
+/// reading rule, used wherever a manifest or declaration is parsed.
+pub mod authored;
+
 /// Universal user preferences and their per-harness translation. A product
 /// feature (Profiles) rather than part of the portable model — kept at the
 /// root, visibly, rather than filed under a concern it does not belong to.

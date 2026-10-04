@@ -50,7 +50,7 @@ pub(super) fn valid_plugin_name(name: &str) -> bool {
 /// back to capability-level delivery; no generated name is ever invented).
 pub(super) fn plugin_manifest_name(package: &StoredPackage) -> Option<String> {
     let bytes = fs::read(&package.manifest).ok()?;
-    let manifest: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let manifest: serde_json::Value = uze_core::authored::json(&bytes).ok()?;
     let name = manifest.get("name")?.as_str()?;
     valid_plugin_name(name).then(|| name.to_owned())
 }
@@ -65,7 +65,7 @@ pub(super) fn author_mcp_config_servers(package: &StoredPackage) -> BTreeSet<Str
 pub(super) fn declared_servers(path: &Path) -> BTreeSet<String> {
     fs::read(path)
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|bytes| uze_core::authored::json::<serde_json::Value>(&bytes).ok())
         .and_then(|value| {
             value
                 .get("mcpServers")

@@ -112,7 +112,7 @@ pub fn executable_capabilities(resources: &[&Resource]) -> Vec<ExecutableCapabil
 }
 
 fn mcp_execution(resource: &Resource) -> Option<ExecutableCapability> {
-    let config: serde_json::Value = serde_json::from_slice(&resource.capability.payload).ok()?;
+    let config: serde_json::Value = crate::authored::json(&resource.capability.payload).ok()?;
     let command = config.get("command")?.as_str()?.to_owned();
     let arguments = config
         .get("args")

@@ -464,7 +464,7 @@ fn is_plain_directory_name(value: &str) -> bool {
 
 fn read_json(path: &Path) -> Result<serde_json::Value> {
     let bytes = fs::read(path).map_err(UzeError::read(path))?;
-    serde_json::from_slice(&bytes).map_err(|source| UzeError::Json {
+    crate::authored::json(&bytes).map_err(|source| UzeError::Json {
         path: path.to_path_buf(),
         source,
     })
@@ -925,7 +925,7 @@ fn describing_fields_on_entries(
     manifest: &marketplace::MarketplaceManifest,
     root: &Path,
 ) -> Vec<String> {
-    let Ok(raw) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+    let Ok(raw) = crate::authored::json::<serde_json::Value>(bytes) else {
         return Vec::new();
     };
     let entries = raw
@@ -944,7 +944,7 @@ fn describing_fields_on_entries(
         let declared = plugin_manifest
             .as_deref()
             .and_then(|path| fs::read(path).ok())
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+            .and_then(|bytes| crate::authored::json::<serde_json::Value>(&bytes).ok());
         let shown = plugin_manifest.as_deref().map_or_else(
             || "its `plugin.json`".to_owned(),
             |path| format!("`{}`", path.display()),

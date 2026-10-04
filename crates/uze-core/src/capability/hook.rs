@@ -455,11 +455,10 @@ pub fn group_timeout_bound(handlers: &[CommandHook]) -> u32 {
 /// Parses and validates one package/project `hooks.json`. The returned order
 /// is deterministic: semantic event order then source group order.
 pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
-    let manifest: HookManifest =
-        serde_json::from_slice(bytes).map_err(|source| UzeError::Json {
-            path: path.to_path_buf(),
-            source,
-        })?;
+    let manifest: HookManifest = crate::authored::json(bytes).map_err(|source| UzeError::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let mut seen = std::collections::BTreeSet::new();
     let mut hooks = Vec::new();
     for (event, groups) in manifest.hooks {
@@ -594,6 +593,18 @@ mod tests {
                 HookMatcher::Portable("file.write".into()),
                 HookMatcher::Native("Write".into())
             ]
+        );
+    }
+
+    /// What Windows PowerShell 5.1 writes with `-Encoding UTF8`, read as
+    /// the same manifest.
+    #[test]
+    fn a_manifest_saved_with_a_byte_order_mark_parses() {
+        let manifest = br#"{"hooks":{"PreToolUse":[{"id":"guard","matcher":"shell","hooks":[{"type":"command","command":"check"}]}]}}"#;
+        let marked = [b"\xEF\xBB\xBF".as_slice(), manifest].concat();
+        assert_eq!(
+            parse_manifest(Path::new("hooks.json"), &marked).unwrap(),
+            parse_manifest(Path::new("hooks.json"), manifest).unwrap()
         );
     }
 

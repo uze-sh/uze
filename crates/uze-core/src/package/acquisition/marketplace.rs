@@ -340,7 +340,7 @@ impl PluginListing {
     /// `agent plugin check` is where it is reported.
     pub fn read(bytes: Option<&[u8]>) -> Self {
         let Some(manifest) =
-            bytes.and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+            bytes.and_then(|bytes| crate::authored::json::<serde_json::Value>(bytes).ok())
         else {
             return Self::default();
         };
@@ -374,7 +374,7 @@ impl PluginListing {
 /// [`resolve_plugin_source`], scoped to the one entry actually requested.
 pub fn parse_manifest(bytes: &[u8]) -> Result<MarketplaceManifest> {
     let manifest: MarketplaceManifest =
-        serde_json::from_slice(bytes).map_err(|source| UzeError::Json {
+        crate::authored::json(bytes).map_err(|source| UzeError::Json {
             path: PathBuf::from("marketplace.json"),
             source,
         })?;

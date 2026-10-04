@@ -297,7 +297,7 @@ pub(super) fn codex_exact_coverage(
         Ok(bytes) => bytes,
         Err(_) => return std::collections::BTreeSet::new(),
     };
-    let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+    let value: serde_json::Value = match uze_core::authored::json(&bytes) {
         Ok(value) => value,
         Err(_) => return std::collections::BTreeSet::new(),
     };
@@ -312,7 +312,7 @@ pub(super) fn codex_exact_coverage(
         .and_then(serde_json::Value::as_str)
         .and_then(normalize_declared_relative_path)
         .and_then(|relative| fs::read(package.root.join(relative)).ok())
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|bytes| uze_core::authored::json::<serde_json::Value>(&bytes).ok())
         .and_then(|document| {
             document
                 .get("mcpServers")

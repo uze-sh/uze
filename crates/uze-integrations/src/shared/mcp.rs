@@ -23,7 +23,7 @@ use crate::shared::process::{capture, failed_message, is_cli_safe_token, succeed
 pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_json::Value> {
     fs::read(package.root.join("mcp.json"))
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|bytes| uze_core::authored::json::<serde_json::Value>(&bytes).ok())
         .and_then(|value| value.get("mcpServers").cloned())
         .map(|servers| match servers {
             serde_json::Value::Object(servers) => serde_json::Value::Object(
@@ -91,7 +91,7 @@ fn launched_directly(server: &mut serde_json::Map<String, serde_json::Value>) {
 /// argument that is not a string: an entry that runs something other than
 /// what the author declared is not a delivery of it.
 pub(crate) fn stdio_command(payload: &[u8], package_root: &Path) -> Option<(PathBuf, Vec<String>)> {
-    let value = resolve_server(&serde_json::from_slice(payload).ok()?, package_root);
+    let value = resolve_server(&uze_core::authored::json(payload).ok()?, package_root);
     let command = value.get("command")?.as_str()?;
     let args = match value.get("args") {
         None | Some(serde_json::Value::Null) => Vec::new(),
@@ -108,7 +108,7 @@ pub(crate) fn stdio_command(payload: &[u8], package_root: &Path) -> Option<(Path
 /// The entry carries a command and its arguments; a server that also needs
 /// an environment or a working directory would start without them.
 fn undeliverable(payload: &[u8]) -> Option<&'static str> {
-    let value = serde_json::from_slice::<serde_json::Value>(payload).ok()?;
+    let value = uze_core::authored::json::<serde_json::Value>(payload).ok()?;
     let present = |key: &str| {
         value.get(key).is_some_and(|declared| match declared {
             serde_json::Value::Null => false,
