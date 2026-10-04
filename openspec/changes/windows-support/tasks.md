@@ -257,14 +257,17 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 6. Hooks and delivery on Windows (D12, D16, D17)
 
-- [ ] 6.1 `exec.ps1` template (UTF-8 BOM):
-      - handlers run in runspaces with a timeout, then `Stop()`, then a tree
-        kill of live child pids;
-      - an `.exe` spelling is started directly;
-      - field extraction from stdin, with no whole-payload
-        `ConvertFrom-Json`;
-      - `ConvertTo-Json -Depth 20 -Compress`;
-      - UTF-8 console encoding.
+- [x] 6.1 `exec.ps1` template (UTF-8 BOM):
+      - each handler runs as a `powershell.exe -File` process of its own,
+        from a script file holding the author's line as written, under its
+        deadline; past it the process and everything it started end
+        (`taskkill /T /F`);
+      - the payload is read whole by `JavaScriptSerializer` with no length
+        limit (what `ConvertFrom-Json` lacks), and fields are looked up
+        with `ContainsKey`;
+      - any fault of the wrapper itself goes to `Fail`, which follows the
+        group's effect;
+      - UTF-8 console encoding in and out.
 
       `deliverable()` means "a template exists, and every handler is spelled
       for this platform".
