@@ -46,7 +46,7 @@ runs:
       shell: bash
       run: |
         cargo build --locked --bin uze
-        cargo build --locked -p uze-testkit --bin uze-fake-harness
+        cargo build --locked --features dev-servers --bin uze-fake-harness
 
     # Cheap, and it fails on the two things a run would not reach: a gesture
     # with no `expect`, and a `proves:` pointing at a page that moved.

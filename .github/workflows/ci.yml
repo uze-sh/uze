@@ -276,7 +276,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $found = Get-Command sh, bash, jq -ErrorAction SilentlyContinue
+          # System32's bash.exe is Windows' own WSL launcher, there on every
+          # machine with the feature; with no distribution installed it runs
+          # nothing, so a test leaning on it still fails here.
+          $found = Get-Command sh, bash, jq -ErrorAction SilentlyContinue |
+            Where-Object { $_.Source -notlike "$env:SystemRoot\*" }
           if ($found) { $found | Format-Table Name, Source; throw 'a POSIX tool is reachable' }
           $tar = (Get-Command tar).Source
           if ($tar -notlike "$env:SystemRoot\*") { throw "tar is not the system's: $tar" }
