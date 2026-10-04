@@ -23,9 +23,19 @@ inputs:
 runs:
   using: composite
   steps:
+    # Windows has no system Python, and the runner's packages there have
+    # wheels for a known interpreter only (`journeys/requirements-windows.txt`).
+    - name: Set up Python
+      if: runner.os == 'Windows'
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.13"
+
     # `tmux` because a journey drives a real terminal; `pyyaml` because the
     # suites are YAML; `procps` for `pgrep`, which is how a `process:` check
-    # finds what it is asking about. macOS ships the last one.
+    # finds what it is asking about. macOS ships the last one. Windows has
+    # none of the three, and holds the app in a ConPTY read through `pyte`,
+    # with `psutil` for the process table — pinned, and never built here.
     - name: Install the journey runtime
       shell: bash
       run: |
@@ -33,6 +43,8 @@ runs:
         if [ "$RUNNER_OS" = "macOS" ]; then
           brew install tmux
           python3 -m pip install --break-system-packages pyyaml
+        elif [ "$RUNNER_OS" = "Windows" ]; then
+          python -m pip install --only-binary :all: -r journeys/requirements-windows.txt
         else
           sudo apt-get update -qq
           sudo apt-get install -y -qq tmux python3-yaml procps
@@ -52,8 +64,8 @@ runs:
     # with no `expect`, and a `proves:` pointing at a page that moved.
     - name: Validate the journeys
       shell: bash
-      run: python3 journeys/journey.py validate journeys/suites
+      run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} journeys/journey.py validate journeys/suites
 
     - name: Run the journeys
       shell: bash
-      run: python3 journeys/journey.py run journeys/suites ${{ inputs.args }}
+      run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} journeys/journey.py run journeys/suites ${{ inputs.args }}

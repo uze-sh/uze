@@ -285,3 +285,32 @@ asks a question on `/dev/tty` the way the Codex installer does. `shell` and
 terminal while stdin and the captured streams stay off it, so `uze setup` is
 always met by a vendor that asks: one that lets its child reach the terminal
 hangs, and the 120s deadline fails it.
+
+## On Windows
+
+The runner asks every platform question of one module, chosen once at
+import: `unix.py` (tmux, `/proc` or `ps`/`lsof`, a controlling terminal
+nobody answers) or `windows.py`. A journey is the same file on both.
+
+```powershell
+python -m pip install --only-binary :all: -r journeys/requirements-windows.txt
+python journeys/journey.py run journeys/suites --tag gate
+```
+
+| question | Unix | Windows |
+|---|---|---|
+| the screen | a tmux session | a ConPTY (`pywinpty`) read into a `pyte` screen, which answers the cursor-position query ConPTY asks at startup |
+| keys and clicks | `tmux send-keys` | the same tmux key names, written as the sequences a terminal sends; clicks as SGR reports, which ConPTY turns into the app's mouse events |
+| the process table | `/proc`, `ps`, `lsof` | `psutil` |
+| a `shell:` step | `/bin/sh` with a terminal nobody answers | Git Bash by absolute path (`C:\Program Files\Git\bin\bash.exe`, or `JOURNEY_BASH`), stdin closed, the tree ended at the deadline |
+
+Placeholders spell paths with forward slashes, which Git Bash and every
+Windows program read, and the world's `PATH` is its own `bin`, the binary
+under test, Git and the system's directories: the shell a step runs in is
+runner tooling, never part of the machine the `uze` under test meets.
+Worlds live under `%TEMP%\uze-journeys`. The packages are pinned and
+installed from wheels only; each publishes `win_amd64` and `win_arm64`
+wheels for CPython 3.12 and 3.13.
+
+`tap:` reads what ConPTY emits, which carries a request the app makes of
+the terminal itself (an OSC 52 clipboard write) through unchanged.
