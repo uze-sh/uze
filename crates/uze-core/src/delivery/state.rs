@@ -353,7 +353,7 @@ pub fn record_provisioning(
             action: result.action,
             status: result.status,
             method: result.method.clone(),
-            platform: Some(std::env::consts::OS.to_owned()),
+            platform: Some(uze_platform::target::OS.to_owned()),
             version: result.detection.version.clone(),
             recorded_at_unix_secs,
         },
@@ -761,7 +761,7 @@ mod tests {
         assert_eq!(record.action, ProvisionAction::Install);
         assert_eq!(record.version.as_deref(), Some("1.2.3"));
         assert_eq!(record.method, "official-install-script");
-        assert_eq!(record.platform.as_deref(), Some(std::env::consts::OS));
+        assert_eq!(record.platform.as_deref(), Some(uze_platform::target::OS));
         assert!(!home.state_dir().join("attachments.json").exists());
         let raw = fs::read_to_string(home.provisioning_state_path()).unwrap();
         for leaked in ["command", "curl", "http", "install.sh", "stdout", "stderr"] {

@@ -24,6 +24,7 @@ pub mod probe;
 pub mod process;
 pub mod shell;
 pub mod stdio;
+pub mod target;
 pub mod tools;
 #[cfg(windows)]
 pub mod win;

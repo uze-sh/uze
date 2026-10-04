@@ -1041,7 +1041,7 @@ fn test_module_declarations(path: &std::path::Path) -> Vec<PathBuf> {
 /// (`all(test, unix)`).
 fn is_test_gate(line: &str) -> bool {
     let line = line.trim();
-    line.starts_with("#[cfg(") && contains_word(line, "test")
+    line.starts_with("#[cfg(") && contains_word(line, "test") && !line.contains("not(test")
 }
 
 fn contains_word(text: &str, word: &str) -> bool {
@@ -1059,9 +1059,32 @@ fn names_a_platform(code: &str) -> bool {
     let trimmed = code.trim_start();
     let gate = trimmed.starts_with("#[") || trimmed.starts_with("#![") || code.contains("cfg!(");
     gate && code.contains("cfg")
-        && ["unix", "windows", "target_os", "target_family"]
-            .iter()
-            .any(|platform| contains_word(code, platform))
+        && [
+            "unix",
+            "windows",
+            "target_os",
+            "target_family",
+            "target_env",
+            "target_arch",
+        ]
+        .iter()
+        .any(|platform| contains_word(code, platform))
+}
+
+/// Whether `code` reads the build target at run time, where an attribute
+/// would have been caught: a branch written as `consts::OS == "windows"` is
+/// the same fork as a `cfg`. `uze_platform::target` is where a table that
+/// picks an archive or a package reads it, as data.
+fn reads_the_build_target(code: &str) -> bool {
+    [
+        "consts::OS",
+        "consts::ARCH",
+        "consts::FAMILY",
+        "EXE_SUFFIX",
+        "EXE_EXTENSION",
+    ]
+    .iter()
+    .any(|constant| code.contains(constant))
 }
 
 /// Production code outside `uze-platform` names no platform: a crate that
@@ -1084,7 +1107,7 @@ fn only_uze_platform_names_a_platform() {
             }
             for line in contents.lines() {
                 let code = line.split("//").next().unwrap_or_default();
-                if names_a_platform(code) && !is_test_gate(line) {
+                if (names_a_platform(code) || reads_the_build_target(code)) && !is_test_gate(line) {
                     found.push(format!("  {relative}: {}", line.trim()));
                 }
             }

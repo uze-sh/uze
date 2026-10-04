@@ -88,7 +88,7 @@ pub(crate) fn unsupported_platform(label: &str, manual_route: &str) -> Provision
     ProvisioningResult::blocked(format!(
         "UZE has no official automated {label} install route for {os}; install it by \
          following {manual_route}, then run `uze setup` again",
-        os = std::env::consts::OS
+        os = uze_platform::target::OS
     ))
 }
 
@@ -101,7 +101,7 @@ pub(crate) fn native_installer_destination(program: &str) -> Option<PathBuf> {
     Some(
         home.join(".local")
             .join("bin")
-            .join(format!("{program}{}", std::env::consts::EXE_SUFFIX)),
+            .join(uze_platform::executable::file_name(program)),
     )
 }
 
@@ -296,7 +296,7 @@ mod provision_cli_tests {
             reason.contains("https://example.invalid/install"),
             "{reason}"
         );
-        assert!(reason.contains(std::env::consts::OS), "{reason}");
+        assert!(reason.contains(uze_platform::target::OS), "{reason}");
         assert!(reason.contains("uze setup"), "{reason}");
     }
 

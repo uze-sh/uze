@@ -47,7 +47,7 @@ const MODEL: &[&str] = &["model"];
 const UNRESOLVABLE_MODELS: &[Value] = &[Value::Text("default")];
 
 /// What Claude's sandbox needs installed, per operating system Claude
-/// ships one on (`std::env::consts::OS`), as `(package, program)`: Linux
+/// ships one on (`uze_platform::target::OS`), as `(package, program)`: Linux
 /// and WSL2 need bubblewrap and socat on `PATH`; macOS's Seatbelt needs
 /// nothing. An operating system not listed — native Windows — has none.
 const SANDBOX_REQUIREMENTS: &[(&str, &[(&str, &str)])] = &[
@@ -68,7 +68,10 @@ pub(crate) enum SandboxHost {
 
 impl SandboxHost {
     pub(crate) fn detect() -> Self {
-        Self::on(std::env::consts::OS, uze_core::subprocess::program_on_path)
+        Self::on(
+            uze_platform::target::OS,
+            uze_core::subprocess::program_on_path,
+        )
     }
 
     fn on(os: &str, installed: impl Fn(&str) -> bool) -> Self {

@@ -651,11 +651,10 @@ fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
     // Beside the target, so the rename below never crosses a filesystem —
     // which is the only way it stays a rename rather than a copy that a
     // pane's shim could catch half-written.
-    let beside = target.with_file_name(format!(
-        ".uze-update-{}{}",
-        std::process::id(),
-        env::consts::EXE_SUFFIX
-    ));
+    let beside = target.with_file_name(uze_platform::executable::file_name(&format!(
+        ".uze-update-{}",
+        std::process::id()
+    )));
     let placed = (|| {
         fs::copy(staged, &beside)?;
         make_runnable(&beside)?;
@@ -682,11 +681,8 @@ pub fn sweep_set_aside() {
 /// has to ask `ldd` which C library the system uses, a running binary
 /// already knows which one it was built against.
 fn asset() -> Option<String> {
-    asset_for(
-        env::consts::OS,
-        env::consts::ARCH,
-        cfg!(target_env = "musl"),
-    )
+    use uze_platform::target;
+    asset_for(target::OS, target::ARCH, target::MUSL)
 }
 
 /// The release archive built for `os` on `arch`: the table `release.yml`

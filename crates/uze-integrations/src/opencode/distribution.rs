@@ -18,8 +18,8 @@ const REGISTRY: &str = "https://registry.npmjs.org";
 /// processor without AVX2.
 pub(super) fn target() -> Option<String> {
     target_for(
-        std::env::consts::OS,
-        std::env::consts::ARCH,
+        uze_platform::target::OS,
+        uze_platform::target::ARCH,
         uze_platform::cpu::lacks_avx2(),
     )
 }
