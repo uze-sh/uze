@@ -40,8 +40,11 @@ scenes:
         pause: 1.0
       - click: "Profiles"
         say: open the Profiles screen from its tab, the first match from the top
-        expect: "Harnesses"
-        expect_timeout: 20
+        # The drawer's own button, not the screen's header: the header is
+        # drawn while the environment is still being read, and a runner
+        # slow enough to still be reading it had no profile to preview.
+        expect: "  Preview  "
+        expect_timeout: 60
         pause: 1.0
       - click: "  Preview  "
         say: preview the profile from its drawer

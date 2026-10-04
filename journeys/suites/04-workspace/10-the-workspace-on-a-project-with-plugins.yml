@@ -78,7 +78,9 @@ scenes:
       - type: >-
           {python} -c "__import__('pathlib').Path(r'{world}/which-claude').write_text(__import__('pathlib').Path(__import__('shutil').which('claude')).as_posix())"
         say: ask the pane which claude it would run
-        expect: which-claude
+        # No `expect`: the line is long enough to wrap wherever the
+        # interpreter's path puts it, and the answer landing on disk below
+        # is the proof the line ran.
       - wait: shell
         until: test -s {world}/which-claude
         timeout: 20
