@@ -60,7 +60,13 @@ fi
 rm -rf "${world}/distro"
 mkdir -p "${world}/distro"
 say "Importing ${distro}"
-wsl --import "$distro" "$(wslpath -w "${world}/distro")" "$(wslpath -w "$rootfs")" --version 2 >/dev/null
+# What wsl.exe says on success is about your own .wslconfig (it warns there
+# that a sparse disk was not used, for one); only a failure is shown, in the
+# UTF-16 it writes, made readable.
+if ! imported="$(wsl --import "$distro" "$(wslpath -w "${world}/distro")" "$(wslpath -w "$rootfs")" --version 2 2>&1)"; then
+  printf '%s\n' "$imported" | tr -d '\0\r' >&2
+  die "could not import ${distro}"
+fi
 
 say "Preparing ${distro}"
 wsl -d "$distro" --user root -- bash "${stage}/prepare.sh" "$stage"
