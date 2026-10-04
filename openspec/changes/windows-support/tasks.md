@@ -64,20 +64,21 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         process if the assignment fails;
       - `which` (`PATH` × `PATHEXT`);
       - `interrupt` (`SetConsoleCtrlHandler`).
-- [ ] 3.2 `uze-platform::probe` on Windows:
+- [x] 3.2 `uze-platform::probe` on Windows:
       - the pipe peer pid;
       - `QueryFullProcessImageNameW`;
       - the image stem;
       - cwd and environment from the PEB, both native and WOW64 layouts;
       - liveness that answers *unknown*;
       - a Toolhelp table walk filtered by SID.
+      (Done, with each fact read from a child process by a Windows test, and the walk filtered by the token user. Decided: a 32-bit process answers no cwd or environment, since no harness ships one and its PEB is a second layout to keep.)
 
       Add one Windows test per fact.
 - [x] 3.3 Delete `kill_reaped_process_group`'s `taskkill`. Back
       `with_process_group`, `uze-git` `run_within`/`run_bounded` (whose
       deadline now holds on Windows), the provisioning runner and
       `run_shell_bounded` with `ProcessTree`.
-- [ ] 3.4 Locks: on Windows, `LockFileEx` on a sentinel byte range for
+- [x] 3.4 Locks: on Windows, `LockFileEx` on a sentinel byte range for
       `persistence::try_lock_exclusive` (`MutationLock`, `AgentsMdGuard`
       `project_context.rs:123`, task store `task.rs:713`), `uze-git`
       `lock.rs:89-109` and `uze-terminal` `runtime/lock.rs`.
@@ -85,6 +86,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - Delete the `Ok(())` fallbacks.
       - Map `ERROR_LOCK_VIOLATION` where `WouldBlock` is matched
         (`CONTENTION_GRACE`).
+      (Done; the cross-process contention test is 3.14's.)
 - [x] 3.5 `persistence::process_is_alive` through `probe`. An *unknown*
       answer is never treated as alive or dead, and
       `remove_abandoned_swaps` skips an unknown pid
@@ -113,7 +115,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       `uze-terminal/src/runtime/persist.rs`, `src/ui/extension_host.rs`
       saves and `executable::replace_running` (self-update). `uze-document`
       names no platform and keeps a plain rename for its rare set-aside.
-- [ ] 3.10 Git acquisition (`acquisition/git.rs`):
+- [x] 3.10 Git acquisition (`acquisition/git.rs`):
       - keep the Windows system variables through `env_clear()`;
       - `pushed_config` adds `core.autocrlf=false`, `core.eol=lf`,
         `core.fileMode=false`, `core.symlinks=false` and
@@ -125,8 +127,8 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       (Done: the Windows variables, `GIT_FAITHFUL_CHECKOUT` with
       `core.fileMode=false`, `.netrc`/`_netrc`, and `GIT_ADDED_CHECKOUT` on
       `worktree add`. The null paths stay `/dev/null`, which Git for
-      Windows reads and `NUL` it cannot open as a config file. Open: the
-      Windows test of a clone.)
+      Windows reads and `NUL` it cannot open as a config file. The
+      acquisition and access suites clone on Windows.)
 - [x] 3.11 `create_symlink` callers each get a Windows answer, none needing
       a privilege an ordinary session lacks:
       - a link to a directory is a junction (`uze_platform::fs::symlink`),
@@ -143,7 +145,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       Windows. Prompt history's local day uses `GetTimeZoneInformation`.
       (`uze_platform::fs` sets a protected owner-only ACL, inherited
       inside; `uze_platform::clock` answers the local day.)
-- [ ] 3.13 The root `build.rs` embeds an application manifest
+- [x] 3.13 The root `build.rs` embeds an application manifest
       (`longPathAware`, UTF-8 `activeCodePage`) through
       `cargo:rustc-link-arg-bins`. The client sets the console code pages
       to 65001.
@@ -377,9 +379,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       `run_replacing_process` runs the harness in a `ProcessTree`, swallows
       Ctrl+C for itself and forwards the exit code. The workspace identifies
       the harness through `UZE_SHIM_PID` and the foreground walk.
-- [ ] 7.3 `.cmd`/`.bat` launchers spawn correctly from the shim,
+- [x] 7.3 `.cmd`/`.bat` launchers spawn correctly from the shim,
       `run_captured` and `CapturingRunner` (`src/cli/setup.rs:431`).
       Surface `std`'s `InvalidInput` for arguments it cannot escape.
+      (Done: the three spawn through `spawn_tree`, whose Windows test starts a batch file and names the program when an argument cannot be passed to it unaltered.)
 - [x] 7.4 Windows provisioning routes, kept in each integration and run in
       Windows PowerShell, the script downloaded as text (`irm` hands a
       script served as `application/octet-stream` back as bytes) and run
@@ -409,7 +412,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 8. CLI, TUI and upgrade (D14, D21)
 
-- [ ] 8.1 Self-update:
+- [x] 8.1 Self-update:
       - `asset()` for Windows;
       - System32 `tar.exe`/`curl.exe` by absolute path, `NUL`, `uze.exe`;
       - `replace()` renames aside, then in, with an undo and the retry
@@ -418,6 +421,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - D6 flags in `hand_off_check`;
       - a shim refresh (`executable::refresh_launchers` after the binary
         is replaced: done).
+      (Done: `spawn_detached` adds `CREATE_NEW_PROCESS_GROUP`, and a refused breakaway is said once by the server start.)
 
       Update `the_asset_is_the_one_the_installer_picks`.
 - [x] 8.2 `src/main.rs`: `--quiet` through `SetStdHandle(NUL)`, and a
@@ -445,13 +449,14 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 9. The suite on Windows (D18)
 
-- [ ] 9.1 `uze-testkit`: `FakeHarness`, `scripted_agent` and `FakeSsh`
+- [x] 9.1 `uze-testkit`: `FakeHarness`, `scripted_agent` and `FakeSsh`
       dispatch through `uze-fake-harness` (a `.exe` copy on Windows, a
-      symlink on Unix).
-- [ ] 9.2 Port the inline shebang fakes in the 32 test files, and replace
+      hard link on Unix: a symlink would run under the dispatcher's name).
+- [x] 9.2 Port the inline shebang fakes in the 32 test files, and replace
       `/tmp` and `/bin/sh` literals with testkit helpers. Gate the genuinely
       Unix tests `#[cfg(unix)]` with a reason, each with a Windows
       counterpart where the behaviour exists.
+      (Done: no inline fake runs where a stand-in can; the remaining `#!/bin/sh` bytes are package data or the POSIX installer route, and `/tmp` literals are path data. Every gate says why, enforced by 3.16, and the platform-neutral tests run everywhere.)
 - [ ] 9.3 `cargo test --workspace --no-fail-fast` passes under `pwsh` on
       `windows-2025` and `windows-11-arm`. The x64 row becomes gating.
 
