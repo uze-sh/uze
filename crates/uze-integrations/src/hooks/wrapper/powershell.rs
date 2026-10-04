@@ -154,7 +154,9 @@ foreach ($entry in $handlers) {{
   # The line runs from a script file of its own, never re-quoted onto a
   # command line: what the author wrote is what runs.
   $script = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "hooks-exec-$PID-$([guid]::NewGuid().ToString('N')).ps1")
-  [System.IO.File]::WriteAllText($script, "`$ErrorActionPreference = 'Stop'`n$handler`nif (`$LASTEXITCODE) {{ exit `$LASTEXITCODE }}`n", (New-Object System.Text.UTF8Encoding $true))
+  # It writes UTF-8, as this wrapper reads it: a console's own code page
+  # would garble anything past ASCII in the reason it hands back.
+  [System.IO.File]::WriteAllText($script, "`$ErrorActionPreference = 'Stop'`n[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding `$false`n$handler`nif (`$LASTEXITCODE) {{ exit `$LASTEXITCODE }}`n", (New-Object System.Text.UTF8Encoding $true))
   $start = New-Object System.Diagnostics.ProcessStartInfo
   $start.FileName = 'powershell.exe'
   $start.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$script`""
@@ -163,6 +165,8 @@ foreach ($entry in $handlers) {{
   $start.RedirectStandardInput = $true
   $start.RedirectStandardOutput = $true
   $start.RedirectStandardError = $true
+  $start.StandardOutputEncoding = $utf8
+  $start.StandardErrorEncoding = $utf8
   $start.WorkingDirectory = $pluginRoot
   try {{
     $process = [System.Diagnostics.Process]::Start($start)

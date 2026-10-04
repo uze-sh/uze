@@ -296,10 +296,15 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       `exec.ps1` answers every fixture identically. The latency budget
       (≤ 400 ms p50 per `PreToolUse`) is measured and recorded.
-      (First cut: `hooks/host_wrapper_tests.rs` runs the wrapper of the
-      platform it runs on, payload bytes on stdin, for allow, deny with the
-      handler's reason, a failing guard and an unreadable payload denying,
-      and a failing observer allowing.)
+      Done: `hooks/fixture_set.rs` holds the fixtures (now with non-ASCII
+      text and a 2.1 MB payload) and the recorded answers;
+      `hooks/wrapper_parity_tests.rs` holds the wrapper of the platform it
+      runs on to every one of them, by decision, and `exec.ps1` answers them
+      all on Windows. Measured on a Windows 11 host: `exec.ps1` with one
+      handler, p50 658 ms (375 ms of it the wrapper's own PowerShell, the
+      rest the handler's). Open: the 400 ms budget, which needs the handler
+      run in the wrapper's process (D12's runspace) rather than a second
+      `powershell.exe`.
 - [x] 6.6 On-disk names on Windows: `<plugin>-<capability>` with collision
       detection that fails, naming both packages. Refuse reserved device
       names, `< > " / \ | ? *`, control characters and a trailing dot or

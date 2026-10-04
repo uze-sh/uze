@@ -1,21 +1,10 @@
+use super::fixture_set::*;
 use super::*;
 use std::{
     os::unix::fs::PermissionsExt,
     process::{Command, Stdio},
 };
 use uze_core::hook::{CommandHandlerType, HookEvent};
-
-const TARGETS: [HookTarget; 3] = [
-    crate::claude::HOOKS,
-    crate::codex::HOOKS,
-    crate::antigravity::HOOKS,
-];
-
-fn goldens_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("goldens")
-}
 
 /// A package whose handlers speak the portable contract: `guard` denies
 /// a command touching a secret, `audit` records what got through.
@@ -164,47 +153,6 @@ fn run(execution: Run<'_>) -> Answer {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     }
-}
-
-/// A `stop` payload as each harness sends it: no tool at all, which is
-/// what the wrapper has to leave the handler seeing.
-fn stop_payload(target: HookTarget) -> String {
-    if target == crate::antigravity::HOOKS {
-        serde_json::json!({"workspacePaths": ["/repo"]}).to_string()
-    } else {
-        serde_json::json!({"cwd": "/repo"}).to_string()
-    }
-}
-
-/// What Claude Code and Codex hand a `SessionStart` hook: the session's
-/// source beside the workspace, and no tool.
-fn session_payload() -> String {
-    serde_json::json!({
-        "hook_event_name": "SessionStart",
-        "source": "startup",
-        "cwd": "/repo",
-    })
-    .to_string()
-}
-
-fn payload(target: HookTarget, command: &str) -> String {
-    if target == crate::antigravity::HOOKS {
-        return serde_json::json!({
-            "toolCall": {"name": "run_command", "args": {"CommandLine": command, "Cwd": "/repo"}},
-            "workspacePaths": ["/repo"],
-        })
-        .to_string();
-    }
-    serde_json::json!({
-            "tool_name": if target == crate::codex::HOOKS { "exec_command" } else { "Bash" },
-            "tool_input": if target == crate::codex::HOOKS {
-                serde_json::json!({"cmd": command})
-            } else {
-                serde_json::json!({"command": command})
-            },
-            "cwd": "/repo",
-    })
-    .to_string()
 }
 
 /// What a denial exits with, per harness. Claude and Codex document
@@ -746,145 +694,6 @@ fn a_denial_on_session_start_is_only_reported() {
 // The recorded answers
 // ========================================================================
 
-/// One fixture the wrapper is run against: a group, the payload it is
-/// fired with, and what the handlers do.
-struct Fixture {
-    event: HookEvent,
-    effect: HookEffect,
-    handlers: &'static [&'static str],
-    timeout: u16,
-    /// The shell command the payload carries. `None` is a `stop`
-    /// payload, which carries no tool.
-    command: Option<&'static str>,
-    /// Whether the payload is one the wrapper cannot read. The context
-    /// is the whole basis of a decision, so what happens to a payload
-    /// that does not parse is part of the contract.
-    malformed_payload: bool,
-    /// Whether the group's entry names a package root that is gone — a
-    /// stale entry for a package removed, renamed, or a moved `~/.uze`.
-    missing_root: bool,
-    /// Whether the recorded stderr is the wrapper's own words all the
-    /// way. A handler that never started is reported with the system
-    /// shell's diagnostic appended, and that wording is the platform's,
-    /// so only the head of the line is recorded.
-    wrapper_owns_the_whole_reason: bool,
-}
-
-/// A payload no harness would send — truncated mid-object, the shape a
-/// crashed writer or a wrong-dialect entry produces.
-const MALFORMED_PAYLOAD: &str = r#"{"tool_name":"Bash","tool_input":{"command":"cat .env""#;
-
-/// Every fixture, in the order the recorded table holds them.
-fn fixtures() -> Vec<Fixture> {
-    let case = |event, effect, handlers, command| Fixture {
-        event,
-        effect,
-        handlers,
-        timeout: 10,
-        command,
-        malformed_payload: false,
-        missing_root: false,
-        wrapper_owns_the_whole_reason: true,
-    };
-    let pre = HookEvent::PreToolUse;
-    vec![
-        case(pre, HookEffect::Deny, &["guard", "audit"], Some("cat .env")),
-        case(pre, HookEffect::Deny, &["guard", "audit"], Some("ls -la")),
-        Fixture {
-            wrapper_owns_the_whole_reason: false,
-            ..case(pre, HookEffect::Deny, &["absent"], Some("ls"))
-        },
-        Fixture {
-            wrapper_owns_the_whole_reason: false,
-            ..case(pre, HookEffect::Observe, &["absent"], Some("ls"))
-        },
-        // A command line, not an executable path: the shapes the
-        // manifest documents and a bare-argv runner cannot start.
-        case(
-            pre,
-            HookEffect::Deny,
-            &["sh ${PLUGIN_ROOT}/scripts/guard --strict", "audit"],
-            Some("cat .env"),
-        ),
-        case(
-            pre,
-            HookEffect::Deny,
-            &["sh ${PLUGIN_ROOT}/scripts/guard --strict", "audit"],
-            Some("ls -la"),
-        ),
-        case(pre, HookEffect::Deny, &["scripts/guard"], Some("cat .env")),
-        case(
-            pre,
-            HookEffect::Deny,
-            &["scripts/guard", "audit"],
-            Some("ls -la"),
-        ),
-        case(
-            HookEvent::PostToolUse,
-            HookEffect::Observe,
-            &["audit"],
-            Some("ls"),
-        ),
-        case(HookEvent::Stop, HookEffect::Observe, &["audit"], None),
-        // A session start decides nothing, whatever its handler answers.
-        case(
-            HookEvent::SessionStart,
-            HookEffect::Observe,
-            &["refuse"],
-            None,
-        ),
-        Fixture {
-            wrapper_owns_the_whole_reason: false,
-            ..case(
-                HookEvent::SessionStart,
-                HookEffect::Observe,
-                &["absent"],
-                None,
-            )
-        },
-        // A handler that never answers is a handler failure like any
-        // other: the deadline is its author's, and the group's effect
-        // decides what that means.
-        Fixture {
-            timeout: 1,
-            ..case(pre, HookEffect::Deny, &["stall"], Some("ls"))
-        },
-        Fixture {
-            timeout: 1,
-            ..case(pre, HookEffect::Observe, &["stall"], Some("ls"))
-        },
-        // The three shapes the wrapper has to answer for without ever
-        // reaching the author's handlers: a payload it cannot read, a
-        // package root that is gone, and an effect whose rewrite never
-        // happened. Each follows the group's effect, so each is
-        // recorded both ways round.
-        Fixture {
-            malformed_payload: true,
-            ..case(pre, HookEffect::Deny, &["guard"], Some("cat .env"))
-        },
-        Fixture {
-            malformed_payload: true,
-            ..case(pre, HookEffect::Observe, &["guard"], Some("cat .env"))
-        },
-        Fixture {
-            missing_root: true,
-            ..case(pre, HookEffect::Deny, &["scripts/guard"], Some("ls"))
-        },
-        Fixture {
-            missing_root: true,
-            ..case(pre, HookEffect::Observe, &["scripts/guard"], Some("ls"))
-        },
-        Fixture {
-            wrapper_owns_the_whole_reason: false,
-            ..case(pre, HookEffect::Transform, &["absent"], Some("ls"))
-        },
-    ]
-}
-
-fn answers_path() -> PathBuf {
-    goldens_dir().join("hooks").join("wrapper-answers.json")
-}
-
 /// Runs one fixture through one harness's wrapper and records the
 /// answer, with the throwaway package root written back as the
 /// placeholder an author would have typed.
@@ -896,15 +705,7 @@ fn recorded_answer(target: HookTarget, index: usize, fixture: &Fixture) -> serde
         fixture.handlers,
         fixture.timeout,
     );
-    let raw = if fixture.malformed_payload {
-        MALFORMED_PAYLOAD.to_owned()
-    } else {
-        match fixture.command {
-            Some(command) => payload(target, command),
-            None if fixture.event == HookEvent::SessionStart => session_payload(),
-            None => stop_payload(target),
-        }
-    };
+    let raw = fixture_payload(target, fixture);
     let package_root = if fixture.missing_root {
         root.join("gone")
     } else {
@@ -942,6 +743,9 @@ fn recorded_answer(target: HookTarget, index: usize, fixture: &Fixture) -> serde
     if fixture.malformed_payload {
         case.insert("payload".to_owned(), serde_json::json!("malformed"));
     }
+    if fixture.large_payload {
+        case.insert("payload".to_owned(), serde_json::json!("large"));
+    }
     if fixture.missing_root {
         case.insert("package_root".to_owned(), serde_json::json!("missing"));
     }
@@ -970,27 +774,6 @@ fn recorded_answer(target: HookTarget, index: usize, fixture: &Fixture) -> serde
     }
     let _ = fs::remove_dir_all(root);
     serde_json::Value::Object(case)
-}
-
-/// A reason the system shell contributed the tail of, cut back to the
-/// wrapper's own words: `sh` says "not found" on one platform and "No
-/// such file or directory" on another, and neither is a contract.
-fn without_the_shells_own_words(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::String(text) => serde_json::Value::String(
-            text.split(" \u{2014} ")
-                .next()
-                .unwrap_or_default()
-                .to_owned(),
-        ),
-        serde_json::Value::Object(fields) => serde_json::Value::Object(
-            fields
-                .into_iter()
-                .map(|(key, value)| (key, without_the_shells_own_words(value)))
-                .collect(),
-        ),
-        other => other,
-    }
 }
 
 fn recorded_answers() -> Vec<serde_json::Value> {

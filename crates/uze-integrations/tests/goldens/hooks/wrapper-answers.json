@@ -287,6 +287,43 @@
       "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
     },
     {
+      "harness": "claude",
+      "event": "pre_tool_use",
+      "effect": "deny",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat café/.env",
+      "exit": 2,
+      "stdout": {
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "blocked: cat café/.env (tool=shell cwd=/repo)"
+        }
+      },
+      "stderr": "blocked: cat café/.env (tool=shell cwd=/repo)"
+    },
+    {
+      "harness": "claude",
+      "event": "pre_tool_use",
+      "effect": "deny",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat .env",
+      "payload": "large",
+      "exit": 2,
+      "stdout": {
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "blocked: cat .env (tool=shell cwd=/repo)"
+        }
+      },
+      "stderr": "blocked: cat .env (tool=shell cwd=/repo)"
+    },
+    {
       "harness": "codex",
       "event": "pre_tool_use",
       "effect": "deny",
@@ -564,6 +601,41 @@
       "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
     },
     {
+      "harness": "codex",
+      "event": "pre_tool_use",
+      "effect": "deny",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat café/.env",
+      "exit": 2,
+      "stdout": {
+        "hookSpecificOutput": {
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "blocked: cat café/.env (tool=shell cwd=/repo)"
+        }
+      },
+      "stderr": "blocked: cat café/.env (tool=shell cwd=/repo)"
+    },
+    {
+      "harness": "codex",
+      "event": "pre_tool_use",
+      "effect": "deny",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat .env",
+      "payload": "large",
+      "exit": 2,
+      "stdout": {
+        "hookSpecificOutput": {
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "blocked: cat .env (tool=shell cwd=/repo)"
+        }
+      },
+      "stderr": "blocked: cat .env (tool=shell cwd=/repo)"
+    },
+    {
       "harness": "antigravity",
       "event": "pre_tool_use",
       "effect": "deny",
@@ -799,6 +871,37 @@
         "reason": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
       },
       "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
+    },
+    {
+      "harness": "antigravity",
+      "event": "pre_tool_use",
+      "effect": "deny",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat café/.env",
+      "exit": 0,
+      "stdout": {
+        "decision": "deny",
+        "reason": "blocked: cat café/.env (tool=shell cwd=/repo)"
+      },
+      "stderr": "blocked: cat café/.env (tool=shell cwd=/repo)"
+    },
+    {
+      "harness": "antigravity",
+      "event": "pre_tool_use",
+      "effect": "deny",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat .env",
+      "payload": "large",
+      "exit": 0,
+      "stdout": {
+        "decision": "deny",
+        "reason": "blocked: cat .env (tool=shell cwd=/repo)"
+      },
+      "stderr": "blocked: cat .env (tool=shell cwd=/repo)"
     }
   ]
 }

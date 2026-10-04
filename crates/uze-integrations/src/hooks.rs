@@ -417,6 +417,14 @@ mod tests;
 #[cfg(test)]
 mod host_wrapper_tests;
 
+/// The fixtures every wrapper answers, and the answers recorded for them.
+#[cfg(test)]
+mod fixture_set;
+
+/// The recorded answers, held to by the wrapper of the platform it runs on.
+#[cfg(test)]
+mod wrapper_parity_tests;
+
 /// The generated wrapper against real `sh`: the same cases the reference
 /// runtime answers, run through the file a harness would actually execute.
 #[cfg(all(test, unix))]
