@@ -116,6 +116,13 @@ pub enum Action {
     /// watching. Every stand-in's update verb asks it, so a provisioning
     /// step that leaves its child a terminal hangs.
     AsksOnTheTerminal,
+    /// An `ssh` to a forge: serves `git-upload-pack` for the bare
+    /// repositories under `root`, whatever host it is asked for. `-G` (the
+    /// configuration query) succeeds; a host under `.invalid` does not
+    /// resolve; and with no `SSH_AUTH_SOCK` the forge refuses the key, which
+    /// is how a test proves the operator's agent socket crossed UZE's
+    /// stripped environment.
+    ForgeSsh { root: PathBuf },
 }
 
 /// The question [`Action::AsksOnTheTerminal`] asks, as the POSIX installer
@@ -404,6 +411,11 @@ impl FakeHarness {
     pub fn command(&self) -> Command {
         Command::new(&self.executable)
     }
+    /// The file every call is logged to, one argument line per call.
+    pub fn invocations_log(&self) -> PathBuf {
+        self.invocations_dir.join(format!("{}.log", self.name))
+    }
+
     /// Parsed invocation log: one entry per call, tokens split on
     /// whitespace. Empty when nothing was invoked.
     pub fn invocations(&self) -> Vec<Vec<String>> {

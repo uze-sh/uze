@@ -162,6 +162,47 @@ fn perform(action: &Action, arguments: &[String]) -> ExitCode {
             ask_on_the_terminal();
             ExitCode::SUCCESS
         }
+        Action::ForgeSsh { root } => forge_ssh(root, arguments),
+    }
+}
+
+fn forge_ssh(root: &Path, arguments: &[String]) -> ExitCode {
+    const REFUSED: u8 = 255;
+    if arguments.first().is_some_and(|first| first == "-G") {
+        return ExitCode::SUCCESS;
+    }
+    if let Some(host) = arguments
+        .iter()
+        .find(|argument| argument.ends_with(".invalid"))
+    {
+        let host = host.rsplit('@').next().unwrap_or(host);
+        eprintln!("ssh: Could not resolve hostname {host}: Name or service not known");
+        return ExitCode::from(REFUSED);
+    }
+    if std::env::var_os("SSH_AUTH_SOCK").is_none_or(|socket| socket.is_empty()) {
+        eprintln!("git@forge: Permission denied (publickey).");
+        return ExitCode::from(REFUSED);
+    }
+    // The remote command, last: `git-upload-pack '/<path>'`.
+    let Some(command) = arguments.last() else {
+        return ExitCode::from(REFUSED);
+    };
+    let path = command
+        .split_once(' ')
+        .map_or(command.as_str(), |(_, path)| path);
+    let path = path.replace('\'', "");
+    let path = path.trim_start_matches('/');
+    let repository = Some(root.join(path))
+        .filter(|repository| repository.is_dir())
+        .unwrap_or_else(|| root.join(path.strip_suffix(".git").unwrap_or(path)));
+    let served = std::process::Command::new("git")
+        .args(["-c", "uploadpack.allowFilter=true"])
+        .args(["-c", "uploadpack.allowAnySHA1InWant=true", "upload-pack"])
+        .arg(&repository)
+        .status();
+    match served.map(|status| status.code()) {
+        Ok(Some(code)) => ExitCode::from(code as u8),
+        _ => ExitCode::from(REFUSED),
     }
 }
 

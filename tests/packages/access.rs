@@ -7,8 +7,6 @@
 //! that is what the operator's credentials *are*; they run under the
 //! testkit's environment lock, one at a time.
 
-#![cfg(unix)]
-
 use std::{
     fs,
     net::TcpListener,

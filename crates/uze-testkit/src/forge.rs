@@ -337,42 +337,18 @@ pub struct FakeSsh {
 impl FakeSsh {
     pub fn install(directory: &Path, root: &Path) -> Self {
         let bin = directory.join("fake-ssh-bin");
-        std::fs::create_dir_all(&bin).expect("bin directory");
-        let log = directory.join("fake-ssh.log");
-        let script = format!(
-            r#"#!/bin/sh
-printf '%s\n' "$*" >> '{log}'
-[ "$1" = "-G" ] && exit 0
-for argument; do
-  case "$argument" in
-    *.invalid)
-      echo "ssh: Could not resolve hostname ${{argument#*@}}: Name or service not known" >&2
-      exit 255 ;;
-  esac
-done
-if [ -z "$SSH_AUTH_SOCK" ]; then
-  echo "git@forge: Permission denied (publickey)." >&2
-  exit 255
-fi
-for last; do :; done
-path=${{last#* }}
-path=$(printf '%s' "$path" | tr -d "'")
-path=${{path#/}}
-[ -d '{root}'/"$path" ] || path=${{path%.git}}
-exec git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack '{root}'/"$path"
-"#,
-            log = log.display(),
-            root = root.display(),
-        );
-        let path = bin.join("ssh");
-        std::fs::write(&path, script).expect("fake ssh");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("executable");
+        let ssh = crate::fake_harness::FakeHarness::new(&bin, "ssh")
+            .on_containing(
+                "",
+                crate::fake_harness::Action::ForgeSsh {
+                    root: root.to_path_buf(),
+                },
+            )
+            .build();
+        Self {
+            bin,
+            log: ssh.invocations_log(),
         }
-        Self { bin, log }
     }
 
     /// `PATH` with this `ssh` first.
