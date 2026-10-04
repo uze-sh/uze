@@ -91,8 +91,32 @@ fn merge(gate: &[uze_core::shell::ShellCommand]) -> Policy<'_> {
     }
 }
 
-fn steps(commands: &[&str]) -> Vec<uze_core::shell::ShellCommand> {
-    commands.iter().map(|step| (*step).into()).collect()
+fn steps(commands: &[uze_core::shell::ShellCommand]) -> Vec<uze_core::shell::ShellCommand> {
+    commands.to_vec()
+}
+
+/// A gate step that passes when `path` exists in the checkout.
+fn exists(path: &str) -> uze_core::shell::ShellCommand {
+    uze_core::shell::ShellCommand::spelled(
+        format!("test -f {path}"),
+        format!("if (-not (Test-Path {path})) {{ exit 1 }}"),
+    )
+}
+
+/// A gate step that creates `path`, as a step with an effect.
+fn creates(path: &str) -> uze_core::shell::ShellCommand {
+    uze_core::shell::ShellCommand::spelled(
+        format!("touch {path}"),
+        format!("New-Item {path} -ItemType File | Out-Null"),
+    )
+}
+
+/// A gate step that says `line` on stderr and fails.
+fn fails_saying(line: &str) -> uze_core::shell::ShellCommand {
+    uze_core::shell::ShellCommand::spelled(
+        format!("echo '{line}' >&2; exit 1"),
+        format!("[Console]::Error.WriteLine('{line}'); exit 1"),
+    )
 }
 
 #[test]
@@ -146,7 +170,7 @@ fn merge_advances_the_target_linearly_after_the_gate() {
     let delivered = deliver(
         primary,
         &mut isolation,
-        &merge(&steps(&["test -f a.rs && test -f b.rs"])),
+        &merge(&steps(&[exists("a.rs"), exists("b.rs")])),
     )
     .unwrap();
     assert!(matches!(delivered, Delivered::Merged { .. }));
@@ -239,7 +263,7 @@ fn the_gate_runs_after_the_rebase_not_before() {
     let outcome = deliver(
         primary,
         &mut isolation,
-        &merge(&steps(&["test -f from-target.txt"])),
+        &merge(&steps(&[exists("from-target.txt")])),
     );
     assert!(
         outcome.is_ok(),
@@ -259,7 +283,7 @@ fn a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner() {
     let failure = deliver(
         primary,
         &mut isolation,
-        &merge(&steps(&["echo 'assertion failed: x'; exit 1"])),
+        &merge(&steps(&[fails_saying("assertion failed: x")])),
     )
     .unwrap_err();
     assert!(
@@ -289,9 +313,9 @@ fn a_multi_step_gate_stops_at_the_first_failure_and_names_it() {
         primary,
         &mut isolation,
         &merge(&steps(&[
-            "touch ran-first",
-            "echo 'lint: 3 problems' >&2; exit 1",
-            "touch never-ran",
+            creates("ran-first"),
+            fails_saying("lint: 3 problems"),
+            creates("never-ran"),
         ])),
     )
     .unwrap_err();
@@ -301,7 +325,10 @@ fn a_multi_step_gate_stops_at_the_first_failure_and_names_it() {
     };
     assert!(command.contains("lint"), "{command}");
     assert!(output.contains("3 problems"), "{output}");
-    assert!(failure.to_string().contains("`echo 'lint"), "{failure}");
+    assert!(
+        failure.to_string().contains(&format!("`{command}")),
+        "the failure names the step: {failure}"
+    );
     assert!(slot.join("ran-first").exists(), "the first step ran");
     assert!(
         !slot.join("never-ran").exists(),
@@ -406,7 +433,7 @@ fn the_second_task_sees_the_first() {
     agent_commits(&repository, work(&second), "second.rs", "");
 
     deliver(primary, &mut first, &merge(&[])).unwrap();
-    deliver(primary, &mut second, &merge(&steps(&["test -f first.rs"]))).unwrap();
+    deliver(primary, &mut second, &merge(&steps(&[exists("first.rs")]))).unwrap();
     assert!(primary.join("first.rs").is_file() && primary.join("second.rs").is_file());
     assert_eq!(
         work(&second).base_commit,
@@ -697,7 +724,7 @@ fn pr_publishes_and_leaves_the_request_to_the_agent() {
 
     let policy = Policy {
         completion: CompletionBehavior::Pr,
-        gate: &steps(&["test -f remote-only.txt"]),
+        gate: &steps(&[exists("remote-only.txt")]),
     };
     let Delivered::AwaitingRequest {
         branch,

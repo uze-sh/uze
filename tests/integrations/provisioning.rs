@@ -44,7 +44,7 @@ fn every_registered_harness_installs_through_its_documented_official_route() {
     let mut scope = uze_testkit::env::scope();
     scope
         .set("PATH", &empty)
-        .set("HOME", root.join("home"))
+        .home(root.join("home"))
         .remove("OPENCODE_INSTALL_DIR")
         .remove("XDG_BIN_DIR");
     let uze_home = UzeHome::at(root.join("uze"));

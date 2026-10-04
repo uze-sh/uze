@@ -366,7 +366,9 @@ mod tests {
     /// The Conformance Lab reproduces this digest in Python to write a task
     /// document by hand (`conformance/contract/continuity.py::project_id`).
     /// A drift here makes that scene fail rather than pass wrongly, and this
-    /// is where the two are pinned to one another.
+    /// is where the two are pinned to one another. The Lab runs on Linux, and
+    /// a Windows path's identity folds its case, so the pin is a Unix one.
+    #[cfg(unix)]
     #[test]
     fn the_lab_reproduces_this_digest() {
         assert_eq!(

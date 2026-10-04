@@ -209,7 +209,7 @@ fn upstream_executable_resolution_never_recurses_through_the_runtime_shim() {
         (&codex, "codex"),
         (&antigravity, "agy"),
     ] {
-        let expected = real_dir.join(name).canonicalize().unwrap();
+        let expected = uze_platform::path::canonical(&real_dir.join(name)).unwrap();
         let expected = expected.to_string_lossy();
         for spec in provisioning_commands(integration) {
             if spec.program != "sh" {

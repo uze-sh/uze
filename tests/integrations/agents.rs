@@ -77,7 +77,11 @@ fn codex_generates_the_documented_custom_agent_toml_before_exposure() {
     // Codex offers a role to the model by its TOML `name`, which is the
     // agent's plugin-qualified label, and runs only a regular file: a
     // linked one is listed and refused.
-    assert_eq!(path, root.join("home/.codex/agents/flow:reviewer.toml"));
+    assert_eq!(
+        path,
+        root.join("home/.codex/agents")
+            .join(uze_core::path::file_name_for("flow:reviewer.toml"))
+    );
     assert!(path.is_file() && !path.is_symlink());
     let toml = std::fs::read_to_string(&path).expect("native TOML exists");
     assert_eq!(toml, content);
@@ -103,7 +107,11 @@ fn claude_attaches_an_agent_without_treating_its_markdown_as_a_skill_plugin() {
     };
     // Outside a plugin Claude names a user agent after its frontmatter
     // `name`, so the definition carries the label there.
-    assert_eq!(path, root.join("home/.claude/agents/flow:reviewer.md"));
+    assert_eq!(
+        path,
+        root.join("home/.claude/agents")
+            .join(uze_core::path::file_name_for("flow:reviewer.md"))
+    );
     assert!(path.is_file() && !path.is_symlink());
     let definition = std::fs::read_to_string(&path).expect("definition exists");
     assert!(definition.starts_with("---\nname: flow:reviewer\n"));
@@ -143,7 +151,10 @@ fn opencode_receives_only_the_fields_it_reads_and_says_what_it_left() {
     else {
         panic!("OpenCode agent is a receipt-owned file");
     };
-    assert_eq!(path.file_name().unwrap(), "flow:review:security.md");
+    assert_eq!(
+        path.file_name().unwrap().to_string_lossy(),
+        uze_core::path::file_name_for("flow:review:security.md")
+    );
     let definition = std::fs::read_to_string(&path).expect("definition exists");
     assert!(!definition.contains("model:"), "{definition}");
     assert!(!definition.contains("tools:"), "{definition}");

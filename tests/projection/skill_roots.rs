@@ -259,7 +259,7 @@ fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
             )
             .expect("the skill installs for both harnesses");
 
-        let entry = opencode_skills.join("flow:review");
+        let entry = opencode_skills.join(uze_core::path::file_name_for("flow:review"));
         assert!(entry.is_dir() && !entry.is_symlink(), "a real directory");
         let skill = fs::read_to_string(entry.join("SKILL.md")).unwrap();
         assert!(skill.contains("opencode/autoinvoke: false"), "{skill}");
@@ -280,7 +280,10 @@ fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
         );
         assert!(links_under(&opencode_skills).is_empty());
         assert!(
-            !agents_home.join("skills/flow:review").exists(),
+            !agents_home
+                .join("skills")
+                .join(uze_core::path::file_name_for("flow:review"))
+                .exists(),
             "Codex's plugin covers the skill: nothing is written to its loose root"
         );
     });
@@ -348,13 +351,23 @@ fn an_update_rebuilds_the_directory_and_the_receipt_still_matches() {
                 &uze_core::trust::AlwaysTrust,
             )
             .expect("initial install");
-        let before = fs::read(opencode_skills.join("flow:review/SKILL.md")).unwrap();
+        let before = fs::read(
+            opencode_skills
+                .join(uze_core::path::file_name_for("flow:review"))
+                .join("SKILL.md"),
+        )
+        .unwrap();
         application
             .plugins()
             .update("flow", &uze_core::trust::AlwaysTrust)
             .expect("update succeeds");
         assert_eq!(
-            fs::read(opencode_skills.join("flow:review/SKILL.md")).unwrap(),
+            fs::read(
+                opencode_skills
+                    .join(uze_core::path::file_name_for("flow:review"))
+                    .join("SKILL.md")
+            )
+            .unwrap(),
             before
         );
         let receipt = uze_core::state::receipts(&uze_home, Some("flow@local"))
@@ -383,7 +396,9 @@ fn an_edited_skill_is_drift_and_is_left_as_the_operator_left_it() {
                 &uze_core::trust::AlwaysTrust,
             )
             .expect("initial install");
-        let skill = opencode_skills.join("flow:review/SKILL.md");
+        let skill = opencode_skills
+            .join(uze_core::path::file_name_for("flow:review"))
+            .join("SKILL.md");
         fs::write(&skill, "edited by hand\n").unwrap();
 
         let receipt = uze_core::state::receipts(&uze_home, Some("flow@local"))
@@ -427,13 +442,16 @@ fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
             .into_iter()
             .find(|r| r.integration == "opencode")
             .unwrap();
-        fs::remove_dir_all(opencode_skills.join("flow:review")).unwrap();
+        fs::remove_dir_all(opencode_skills.join(uze_core::path::file_name_for("flow:review")))
+            .unwrap();
         let wrapper = uze_home
             .runtime_dir()
             .join("attachments/opencode/skills/flow/review");
         fs::create_dir_all(&wrapper).unwrap();
         fs::write(wrapper.join("SKILL.md"), "old wrapper\n").unwrap();
-        let link = agents_home.join("skills/flow:review");
+        let link = agents_home
+            .join("skills")
+            .join(uze_core::path::file_name_for("flow:review"));
         fs::create_dir_all(link.parent().unwrap()).unwrap();
         std::os::unix::fs::symlink(&wrapper, &link).unwrap();
         uze_core::state::forget_receipt(&uze_home, &current).unwrap();
@@ -456,7 +474,12 @@ fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
             .expect("the install after an upgrade succeeds");
 
         assert!(!link.exists() && !link.is_symlink(), "the old link is gone");
-        assert!(opencode_skills.join("flow:review/SKILL.md").is_file());
+        assert!(
+            opencode_skills
+                .join(uze_core::path::file_name_for("flow:review"))
+                .join("SKILL.md")
+                .is_file()
+        );
         let receipts = uze_core::state::receipts(&uze_home, Some("flow@local")).unwrap();
         assert!(
             receipts.iter().all(|r| !matches!(
@@ -490,7 +513,7 @@ fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
         .unwrap();
 
         // Somebody else's directory at the name `review` needs.
-        let theirs = opencode_skills.join("flow:review");
+        let theirs = opencode_skills.join(uze_core::path::file_name_for("flow:review"));
         fs::create_dir_all(&theirs).unwrap();
         fs::write(theirs.join("SKILL.md"), "theirs\n").unwrap();
 
@@ -508,7 +531,10 @@ fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
             "the entry UZE does not own is untouched"
         );
         assert!(
-            opencode_skills.join("flow:commit/SKILL.md").is_file(),
+            opencode_skills
+                .join(uze_core::path::file_name_for("flow:commit"))
+                .join("SKILL.md")
+                .is_file(),
             "the capability whose name was free is delivered"
         );
         assert!(
@@ -552,7 +578,12 @@ fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
             .add(PackageSource::local(fixture), &uze_core::trust::AlwaysTrust)
             .expect("installs");
 
-        let skill = fs::read_to_string(opencode_skills.join("flow:run/SKILL.md")).unwrap();
+        let skill = fs::read_to_string(
+            opencode_skills
+                .join(uze_core::path::file_name_for("flow:run"))
+                .join("SKILL.md"),
+        )
+        .unwrap();
         let named = skill
             .lines()
             .find_map(|line| line.strip_prefix("Read "))

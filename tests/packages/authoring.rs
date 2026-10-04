@@ -30,7 +30,7 @@ fn uze(root: &std::path::Path) -> Command {
     command
         .env("UZE_HOME", root.join("uze"))
         .isolated_home(root)
-        .env("PATH", "/usr/bin:/bin");
+        .env("PATH", uze_testkit::process::system_path());
     command
 }
 
@@ -487,11 +487,13 @@ fn a_relative_at_is_registered_absolute() {
     collect_strings(&registry, &mut recorded);
     let paths: Vec<_> = recorded
         .iter()
-        .filter(|value| value.ends_with("rel/mk"))
+        .filter(|value| value.ends_with(&uze_testkit::process::native("rel/mk")))
         .collect();
     assert!(!paths.is_empty(), "the marketplace is recorded: {registry}");
     assert!(
-        paths.iter().all(|path| path.starts_with('/')),
+        paths
+            .iter()
+            .all(|path| std::path::Path::new(path).is_absolute()),
         "every recorded path is absolute: {registry}"
     );
 

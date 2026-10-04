@@ -606,10 +606,7 @@ mod generated_native_tests {
             serde_json::from_slice(&fs::read(dir.join("mcp_config.json")).unwrap()).unwrap();
         assert_eq!(
             delivered["mcpServers"]["srv"]["args"][0],
-            pkg.root
-                .join("scripts/server.py")
-                .to_string_lossy()
-                .as_ref()
+            format!("{}/scripts/server.py", pkg.root.display())
         );
         let _ = fs::remove_dir_all(root);
     }

@@ -275,7 +275,7 @@ fn installing_another_plugin_never_renames_an_existing_one() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    let alpha_before = skills_dir.join("alpha:review");
+    let alpha_before = skills_dir.join(uze_core::path::file_name_for("alpha:review"));
     assert!(alpha_before.is_dir());
 
     // Installing a second plugin with the SAME logical name must not rename
@@ -288,7 +288,11 @@ fn installing_another_plugin_never_renames_an_existing_one() {
         )
         .unwrap();
     assert!(alpha_before.is_dir(), "alpha:review is untouched");
-    assert!(skills_dir.join("beta:review").is_dir());
+    assert!(
+        skills_dir
+            .join(uze_core::path::file_name_for("beta:review"))
+            .is_dir()
+    );
 
     // Reverse order yields the exact same labels per plugin.
     let root2 = temp("order-reverse");
@@ -307,8 +311,16 @@ fn installing_another_plugin_never_renames_an_existing_one() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    assert!(skills2.join("alpha:review").is_dir());
-    assert!(skills2.join("beta:review").is_dir());
+    assert!(
+        skills2
+            .join(uze_core::path::file_name_for("alpha:review"))
+            .is_dir()
+    );
+    assert!(
+        skills2
+            .join(uze_core::path::file_name_for("beta:review"))
+            .is_dir()
+    );
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(root2).unwrap();
 }
@@ -331,8 +343,16 @@ fn same_named_skills_from_two_packages_are_independently_addressable() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    assert!(skills_dir.join("alpha:review").is_dir());
-    assert!(skills_dir.join("beta:review").is_dir());
+    assert!(
+        skills_dir
+            .join(uze_core::path::file_name_for("alpha:review"))
+            .is_dir()
+    );
+    assert!(
+        skills_dir
+            .join(uze_core::path::file_name_for("beta:review"))
+            .is_dir()
+    );
     assert!(
         !skills_dir.join("review").exists(),
         "no bare alias is created"

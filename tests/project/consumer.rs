@@ -1151,7 +1151,10 @@ fn project_root_resolution_is_deterministic_from_a_subdirectory() {
     let nested = fx.project_root.join("a/b/c");
     fs::create_dir_all(&nested).unwrap();
     let resolved = project_root::resolve_project_root(&nested).unwrap();
-    assert_eq!(resolved, Some(fx.project_root.canonicalize().unwrap()));
+    assert_eq!(
+        resolved,
+        Some(uze_platform::path::canonical(&fx.project_root).unwrap())
+    );
 }
 
 /// Drift along the chain a project's environment passes through, and what

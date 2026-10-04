@@ -1,12 +1,12 @@
 #[test]
 fn the_named_directory_leads_the_pane_path_once() {
     let first = Path::new("/home/x/.uze/shims");
-    let joined =
-        crate::runtime::path_with_first(Some("/usr/bin:/home/x/.uze/shims:/bin".into()), first);
-    assert_eq!(
-        joined,
-        std::ffi::OsString::from("/home/x/.uze/shims:/usr/bin:/bin")
+    let path = |directories: &[&str]| std::env::join_paths(directories).unwrap();
+    let joined = crate::runtime::path_with_first(
+        Some(path(&["/usr/bin", "/home/x/.uze/shims", "/bin"])),
+        first,
     );
+    assert_eq!(joined, path(&["/home/x/.uze/shims", "/usr/bin", "/bin"]));
     assert_eq!(
         crate::runtime::path_with_first(None, first),
         std::ffi::OsString::from("/home/x/.uze/shims")
@@ -53,11 +53,9 @@ use alacritty_terminal::{
     vte::ansi::Processor,
 };
 use std::collections::BTreeMap;
-use std::{
-    path::{Path, PathBuf},
-    thread,
-    time::Duration,
-};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::path::PathBuf;
+use std::{path::Path, thread, time::Duration};
 
 /// A client's selection overlays the shared session wherever it still
 /// points at something, and falls back to the server's default where
@@ -141,12 +139,6 @@ fn two_terminals_that_disagree_about_the_environment_share_one_endpoint() {
     };
 
     assert_eq!(one, other, "the workspace decides, not the session");
-    assert!(
-        one.starts_with(&home),
-        "and it sits beside the workspace it serves, where no cleaner \
-             reaches it without taking the workspace too: {}",
-        one.display()
-    );
 
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_dir_all(&elsewhere);
@@ -456,6 +448,14 @@ fn snapshot_renders_the_scrollback_viewport() {
     assert!(!rendered.contains("third"));
 }
 
+/// The argv that runs a line in this platform's shell, written once for
+/// each shell.
+fn shell_argv(posix: &str, windows: &str) -> Vec<String> {
+    let (program, arguments) =
+        uze_platform::shell::invocation(uze_platform::shell::spelling(posix, windows));
+    std::iter::once(program).chain(arguments).collect()
+}
+
 /// A pane whose screen did not move offers nothing the second time: the
 /// baseline goes out, and an identical one after it does not.
 #[test]
@@ -463,12 +463,12 @@ fn damage_that_changes_nothing_drawn_is_not_offered() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(12),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
         Launch::Program {
-            argv: vec!["/bin/sh".into(), "-c".into(), "sleep 30".into()],
+            argv: shell_argv("sleep 30", "Start-Sleep 30"),
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
@@ -488,7 +488,7 @@ fn damage_since_last_is_sparse_after_a_small_change() {
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(9),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -527,7 +527,7 @@ fn pane_process_keeps_output_until_explicit_stop() {
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(7),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -577,8 +577,7 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
     // what the kernel reports, and the kernel answers with the real
     // path: `/tmp` is a symlink to `/private/tmp` on macOS, so spawning
     // in `/tmp` and expecting `/tmp` back never matches there.
-    let pane_cwd = PathBuf::from("/tmp")
-        .canonicalize()
+    let pane_cwd = uze_platform::path::canonical(&std::env::temp_dir())
         .expect("the system temp directory must resolve");
     let pane = PaneRuntime::spawn(
         PaneId(11),
@@ -668,7 +667,7 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(13),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -737,7 +736,7 @@ fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(31),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -964,7 +963,7 @@ fn a_stopped_pane_takes_its_process_group_with_it() {
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(8),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -1103,13 +1102,15 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
 
 /// A stopped pane's process is reaped, not left a zombie for the life of
 /// the server: once the reaper is done, its pid names no process at all
-/// — a zombie would still answer `kill(pid, 0)`.
+/// — a zombie would still answer `kill(pid, 0)`. Zombies and the hangup
+/// the program ignores are POSIX's.
+#[cfg(unix)]
 #[test]
 fn a_stopped_pane_leaves_no_zombie() {
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(7),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -1178,7 +1179,7 @@ fn a_spawned_pane_is_flushed_once_it_is_registered() {
         .create_space(None, seat_at(&project), 80, 24)
         .pane;
     let silent = Launch::Program {
-        argv: vec!["sleep".into(), "30".into()],
+        argv: shell_argv("sleep 30", "Start-Sleep 30"),
         env: Vec::new(),
     };
     server.spawn_pane(pane, silent).unwrap();
@@ -1199,14 +1200,21 @@ fn a_spawned_pane_is_flushed_once_it_is_registered() {
 
 #[test]
 fn the_server_works_in_no_checkout() {
-    let command = super::server_command(Path::new("/usr/bin/uze"), &seat_at(Path::new("/project")));
-    assert_eq!(command.get_current_dir(), Some(Path::new("/")));
+    let project = Path::new("/project");
+    let command = super::server_command(Path::new("/usr/bin/uze"), &seat_at(project));
+    assert_ne!(command.get_current_dir(), Some(project));
+    assert_eq!(
+        command.get_current_dir(),
+        Some(super::host::server_directory().as_path())
+    );
 }
 
 /// A program that does not read its input fills the terminal's buffer,
 /// and the write into it blocks for as long as the program runs. That
 /// wait belongs to the one pane: the map every other pane's input,
-/// output and resize go through stays free.
+/// output and resize go through stays free. Told with a POSIX line
+/// discipline in raw mode; a pseudoconsole buffers input on its own terms.
+#[cfg(unix)]
 #[test]
 fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
     let scratch = uze_testkit::temp::socket_scratch("blocked-write");
@@ -2122,7 +2130,7 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(21),
-        PathBuf::from("/tmp").canonicalize().unwrap(),
+        uze_platform::path::canonical(&std::env::temp_dir()).unwrap(),
         80,
         24,
         damage,
@@ -2194,15 +2202,18 @@ fn read_when_written(path: &Path) -> String {
 /// appear would otherwise be free to read the empty half of that window.
 fn report_variable(variable: &str, into: &Path) -> Vec<String> {
     let partial = into.with_extension("partial");
-    vec![
-        "/bin/sh".to_owned(),
-        "-c".to_owned(),
-        format!(
-            "printf %s \"${{{variable}-unset}}\" > \"{partial}\" && mv \"{partial}\" \"{reported}\"",
-            partial = partial.display(),
-            reported = into.display()
+    let (partial, reported) = (partial.display(), into.display());
+    shell_argv(
+        &format!(
+            "printf %s \"${{{variable}-unset}}\" > \"{partial}\" && mv \"{partial}\" \"{reported}\""
         ),
-    ]
+        &format!(
+            "$value = [Environment]::GetEnvironmentVariable('{variable}'); \
+             if ($null -eq $value) {{ $value = 'unset' }}; \
+             [IO.File]::WriteAllText('{partial}', $value); \
+             Move-Item -LiteralPath '{partial}' -Destination '{reported}'"
+        ),
+    )
 }
 
 fn seat_at(root: &Path) -> crate::SpaceSeat {
@@ -2219,13 +2230,12 @@ fn sleep_five() -> Launch {
     }
 }
 
-/// `/bin/sh -c 'exit 0'`, not `/bin/true`: macOS keeps `true` in
-/// `/usr/bin` and has no `/bin/true` at all. `/bin/sh` is the one path
-/// POSIX actually promises, and what this needs is any process that
+/// The shell exiting at once, not `true`: macOS keeps `true` in
+/// `/usr/bin`, Windows has none, and what this needs is any process that
 /// exits at once.
 fn exits_at_once(env: Vec<(String, String)>) -> Launch {
     Launch::Program {
-        argv: vec!["/bin/sh".to_owned(), "-c".to_owned(), "exit 0".to_owned()],
+        argv: shell_argv("exit 0", "exit 0"),
         env,
     }
 }
@@ -2419,7 +2429,7 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(23),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,

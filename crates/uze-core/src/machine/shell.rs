@@ -33,6 +33,14 @@ pub struct Spellings {
 }
 
 impl ShellCommand {
+    /// A command spelled for both shells.
+    pub fn spelled(posix: impl Into<String>, windows: impl Into<String>) -> Self {
+        Self::PerPlatform(Spellings {
+            posix: Some(posix.into()),
+            windows: Some(windows.into()),
+        })
+    }
+
     /// The spelling this platform runs, if the author wrote one.
     pub fn here(&self) -> Option<&str> {
         self.spelling(Self::platform())

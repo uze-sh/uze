@@ -66,13 +66,9 @@ fn harness_recording_its_conversations(env: &TestEnvironment) -> FakeHarness {
     FakeHarness::new(&env.fake_bin, HARNESS)
         .on_prefix(
             ["--session-id"],
-            Action::Script(format!(
-                "slug=$(printf '%s' \"$PWD\" | sed 's/[^a-zA-Z0-9]/-/g')\n\
-                 mkdir -p '{root}'/\"$slug\"\n\
-                 printf '{{}}\\n' > '{root}'/\"$slug\"/\"$2\".jsonl\n\
-                 exit 0",
-                root = transcripts.display()
-            )),
+            Action::RecordConversation {
+                transcripts_root: transcripts,
+            },
         )
         .build()
 }
@@ -108,11 +104,7 @@ fn launch(env: &TestEnvironment, shim: &Path, cwd: &Path, args: &[&str], launch:
         .env("UZE_HOME", &env.uze_home)
         .env(
             "PATH",
-            format!(
-                "{}:{}:/usr/bin:/bin",
-                shims.display(),
-                env.fake_bin.display()
-            ),
+            uze_testkit::process::path_with(&[&shims, &env.fake_bin]),
         );
     // What the server does for every pane it spawns: nothing of the launch
     // this test suite itself runs under reaches the shim — on a dogfooding
@@ -297,11 +289,7 @@ fn the_bypass_escape_hatch_still_carries_nothing() {
         .env("UZE_BYPASS", "1")
         .env(
             "PATH",
-            format!(
-                "{}:{}:/usr/bin:/bin",
-                shims.display(),
-                env.fake_bin.display()
-            ),
+            uze_testkit::process::path_with(&[&shims, &env.fake_bin]),
         )
         .status()
         .expect("the shim runs");

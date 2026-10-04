@@ -412,8 +412,14 @@ fn a_foreign_artifact_occupying_the_short_name_is_never_overwritten() {
 
     // A foreign, non-UZE directory already occupies the exact namespaced
     // label UZE would claim.
-    fs::create_dir_all(skills_dir.join("security:review")).unwrap();
-    fs::write(skills_dir.join("security:review/SKILL.md"), "not ours").unwrap();
+    fs::create_dir_all(skills_dir.join(uze_core::path::file_name_for("security:review"))).unwrap();
+    fs::write(
+        skills_dir
+            .join(uze_core::path::file_name_for("security:review"))
+            .join("SKILL.md"),
+        "not ours",
+    )
+    .unwrap();
 
     let report = application
         .plugins()
@@ -432,7 +438,12 @@ fn a_foreign_artifact_occupying_the_short_name_is_never_overwritten() {
         report.blocked
     );
     assert_eq!(
-        fs::read_to_string(skills_dir.join("security:review/SKILL.md")).unwrap(),
+        fs::read_to_string(
+            skills_dir
+                .join(uze_core::path::file_name_for("security:review"))
+                .join("SKILL.md")
+        )
+        .unwrap(),
         "not ours",
         "the foreign artifact must be completely untouched"
     );
@@ -454,19 +465,25 @@ fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() 
     assert_eq!(inspection.managed_state.matched, 1);
 
     // MISSING: remove the physical artifact by hand.
-    fs::remove_dir_all(skills_dir.join("acme:review")).unwrap();
+    fs::remove_dir_all(skills_dir.join(uze_core::path::file_name_for("acme:review"))).unwrap();
     let inspection = application.plugins().inspect("acme").unwrap();
     assert_eq!(inspection.managed_state.missing, 1);
 
     // Re-add is idempotent: recreates exactly the same (existing-receipt)
     // artifact name.
     application.setup(None).unwrap();
-    assert!(skills_dir.join("acme:review").is_dir());
+    assert!(
+        skills_dir
+            .join(uze_core::path::file_name_for("acme:review"))
+            .is_dir()
+    );
     let inspection = application.plugins().inspect("acme").unwrap();
     assert_eq!(inspection.managed_state.matched, 1);
 
     // DRIFTED: edit the delivered SKILL.md by hand.
-    let skill = skills_dir.join("acme:review/SKILL.md");
+    let skill = skills_dir
+        .join(uze_core::path::file_name_for("acme:review"))
+        .join("SKILL.md");
     fs::write(&skill, "edited by hand").unwrap();
     let inspection = application.plugins().inspect("acme").unwrap();
     assert_eq!(inspection.managed_state.drifted, 1);
@@ -479,7 +496,7 @@ fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() 
     assert_eq!(fs::read_to_string(&skill).unwrap(), "edited by hand");
 
     // Fix it back, then remove cleanly; remove twice is a safe no-op.
-    fs::remove_dir_all(skills_dir.join("acme:review")).unwrap();
+    fs::remove_dir_all(skills_dir.join(uze_core::path::file_name_for("acme:review"))).unwrap();
     application.setup(None).unwrap();
     assert!(matches!(
         application.plugins().remove("acme").unwrap(),

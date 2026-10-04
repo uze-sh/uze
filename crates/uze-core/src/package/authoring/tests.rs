@@ -20,6 +20,8 @@ fn git_identity() -> uze_testkit::env::ProcessEnvGuard<'static> {
     environment
 }
 
+use uze_testkit::process::native;
+
 fn scratch(label: &str) -> PathBuf {
     uze_testkit::temp::scratch(label)
 }
@@ -711,13 +713,13 @@ fn check_names_an_agent_a_harness_would_drop_or_rename() -> Result<()> {
     let bare = report
         .findings
         .iter()
-        .find(|finding| finding.contains("agents/bare.md"))
+        .find(|finding| finding.contains(&native("agents/bare.md")))
         .expect("an agent without frontmatter is reported");
     assert!(bare.contains("no frontmatter"), "{bare}");
     let nested: Vec<_> = report
         .findings
         .iter()
-        .filter(|finding| finding.contains("agents/Review/audit.md"))
+        .filter(|finding| finding.contains(&native("agents/Review/audit.md")))
         .collect();
     assert!(
         nested
@@ -767,11 +769,15 @@ fn check_names_what_keeps_a_package_from_agent_plugins_without_refusing_it() -> 
     assert!(report.is_clean(), "{:?}", report.findings);
     let standard = report.agent_plugins.expect("judged");
     assert!(!standard.conformant);
+    let nested = format!(
+        "{}: the standard discovers only `skills/<name>/SKILL.md`",
+        native("deep/nested/SKILL.md")
+    );
     for expected in [
         "plugin.json: no `$schema`",
         "plugin.json: `author` must be an object",
         "plugin.json: `skills` is not a manifest field",
-        "deep/nested/SKILL.md: the standard discovers only `skills/<name>/SKILL.md`",
+        nested.as_str(),
         "mcp.json: no `$schema`",
         "mcp.json: `//` is not allowed",
         "server `s` has no `type`",

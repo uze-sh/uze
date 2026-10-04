@@ -11,7 +11,10 @@ fn hook() -> PortableHook {
         ],
         handlers: vec![CommandHook {
             handler_type: CommandHandlerType::Command,
-            command: "${PLUGIN_ROOT}/check".into(),
+            command: uze_core::shell::ShellCommand::spelled(
+                "${PLUGIN_ROOT}/check",
+                "& \"${PLUGIN_ROOT}/check.ps1\"",
+            ),
             timeout: 10,
         }],
         effect: HookEffect::Deny,
@@ -620,9 +623,10 @@ fn the_opencode_plugin_is_the_wrapper_with_the_packages_groups_as_data() {
         plugin.contains("code === 3"),
         "the decision channel is the exit code"
     );
-    assert!(
-        !plugin.contains("Stop"),
-        "no stop surface is ever claimed for OpenCode"
+    assert_eq!(
+        plugin.matches("ctx.tool.hook(").count(),
+        2,
+        "no stop surface is ever claimed for OpenCode: the two tool hooks are all it registers"
     );
     assert!(
         !plugin.to_lowercase().contains("uze"),
@@ -778,7 +782,9 @@ fn hook_receipt(
 /// The shared wrapper outlives every entry but the last one. The prune
 /// runs inside a detach, while the ledger still lists the receipt being
 /// detached — so "still used" has to be read from the harness's config,
-/// not from the ledger, or the wrapper is never removed at all.
+/// not from the ledger, or the wrapper is never removed at all. Told on
+/// Antigravity's named entries, which only the POSIX wrapper serves.
+#[cfg(unix)]
 #[test]
 fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
     let root = uze_testkit::temp::scratch("hooks-prune");
@@ -825,7 +831,9 @@ fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
 /// A ledger that cannot be read has not answered "nothing uses it"; it
 /// has not answered at all. Deleting a wrapper live entries still run
 /// leaves every one of them exiting 127 — which every harness reads as
-/// non-blocking.
+/// non-blocking. Told on Antigravity's named entries, which only the POSIX
+/// wrapper serves.
+#[cfg(unix)]
 #[test]
 fn an_unreadable_ledger_keeps_the_shared_wrapper() {
     let root = uze_testkit::temp::scratch("hooks-prune-ledger");
@@ -881,10 +889,7 @@ fn an_entry_that_drifted_still_counts_as_using_the_wrapper() {
     let entry = group_entry(
         crate::claude::HOOKS,
         &hook(),
-        &HookInvocation::Exec {
-            command: wrapper.display().to_string(),
-            args: wrapper_arguments(&hook(), Path::new("/pkg"), &hook().handlers),
-        },
+        &wrapper_exec(&wrapper, &hook(), Path::new("/pkg")),
     );
     let expected = serde_json::to_string(&entry).unwrap();
     merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();

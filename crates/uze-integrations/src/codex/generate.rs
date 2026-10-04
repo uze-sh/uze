@@ -764,10 +764,7 @@ mod generated_native_tests {
         let server = &delivered["mcpServers"]["srv"];
         assert_eq!(
             server["args"][0],
-            pkg.root
-                .join("scripts/server.py")
-                .to_string_lossy()
-                .as_ref()
+            format!("{}/scripts/server.py", pkg.root.display())
         );
         assert_eq!(
             server["env"]["DATA"],

@@ -274,6 +274,18 @@ pub(crate) fn wrapper_arguments(
     arguments
 }
 
+/// The wrapper's invocation as a program and its arguments, for the
+/// harnesses whose entry carries both: the script itself, or the shell told
+/// to run it, as this platform runs a script.
+pub(crate) fn wrapper_exec(
+    wrapper: &Path,
+    hook: &PortableHook,
+    package_root: &Path,
+) -> HookInvocation {
+    let (command, args) = wrapper_words(wrapper, hook, package_root);
+    HookInvocation::Exec { command, args }
+}
+
 /// The same invocation as one line in this platform's shell, for the
 /// harnesses whose hook entry carries a command string rather than a
 /// command plus arguments.
@@ -282,9 +294,18 @@ pub(crate) fn wrapper_command_line(
     hook: &PortableHook,
     package_root: &Path,
 ) -> String {
+    let (program, arguments) = wrapper_words(wrapper, hook, package_root);
+    uze_platform::shell::command_line(&program, &arguments)
+}
+
+fn wrapper_words(
+    wrapper: &Path,
+    hook: &PortableHook,
+    package_root: &Path,
+) -> (String, Vec<String>) {
     let (program, mut arguments) = uze_platform::shell::script(&wrapper.display().to_string());
     arguments.extend(wrapper_arguments(hook, package_root, &hook.handlers));
-    uze_platform::shell::command_line(&program, &arguments)
+    (program, arguments)
 }
 
 // ============================================================================

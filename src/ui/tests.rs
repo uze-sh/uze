@@ -3110,7 +3110,7 @@ fn which_git() -> std::path::PathBuf {
         .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
         .unwrap_or_default()
         .into_iter()
-        .map(|directory| directory.join("git"))
+        .flat_map(|directory| uze_platform::executable::candidates(&directory, "git"))
         .find(|candidate| candidate.is_file())
         .expect("git must be on PATH for this test")
 }
@@ -3163,7 +3163,7 @@ fn overview_install_intent_reaches_install_project_environment() {
     };
     uze_core::project_lock::save_lock(&project, &lock).unwrap();
 
-    environment.set("HOME", &base);
+    environment.home(&base);
     environment.set("UZE_HOME", &home);
     // Isolate PATH to a directory with nothing on it: on a machine
     // where `uze setup claude` has ever actually run, the real

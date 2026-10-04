@@ -17,7 +17,7 @@ fn uze(home: &PathBuf) -> Command {
     command
         .env("UZE_HOME", home)
         .isolated_home(home)
-        .env("PATH", "/usr/bin:/bin")
+        .env("PATH", uze_testkit::process::system_path())
         // Isolates project-root resolution from this repo's own real
         // `agents.lock` — see `root_remove_no_longer_falls_back_to_global_removal`
         // in tests/cli.rs for why this matters.
@@ -901,7 +901,12 @@ fn market_add_of_a_subdirectory_says_what_it_reads() {
     assert!(output.status.success(), "{said}");
     assert!(said.contains("gitlab.com/team/monorepo"), "{said}");
     assert!(
-        said.contains(&marketplace.canonicalize().unwrap().display().to_string()),
+        said.contains(
+            &uze_platform::path::canonical(&marketplace)
+                .unwrap()
+                .display()
+                .to_string()
+        ),
         "{said}"
     );
     assert!(said.contains("mirrored"), "{said}");

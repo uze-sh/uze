@@ -677,7 +677,7 @@ fn a_machine_update_of_a_linked_edit_reports_the_package_updated() {
         matches!(
             edited.outcomes.as_slice(),
             [UpdateOutcome::FollowedLink { linked_source: checkout, .. }]
-                if checkout.canonicalize().ok() == market.canonicalize().ok()
+                if uze_platform::path::canonical(checkout).ok() == uze_platform::path::canonical(&market).ok()
         ),
         "the Store took the edit in from the working tree, and says so: {edited:?}"
     );

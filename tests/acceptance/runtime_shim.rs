@@ -63,11 +63,7 @@ fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion(
     // shim scripts must stay ahead of everything else (the real hazard),
     // but `/bin/sh` must remain reachable for the fake executables.
     let shims = UzeHome::at(&env.uze_home).shims_dir();
-    let path = format!(
-        "{}:{}:/usr/bin:/bin",
-        shims.display(),
-        env.fake_bin.display()
-    );
+    let path = uze_testkit::process::path_with(&[&shims, &env.fake_bin]);
     let output = env
         .command(uze_bin())
         .env("PATH", &path)
@@ -137,7 +133,7 @@ fn shim_dispatch_stamps_its_own_invoked_name_into_the_real_binarys_environment()
     let real_dir = env.root().join("real-bin");
     create_executable(&real_dir.join("claude"), "#!/bin/sh\nenv\n");
 
-    let path = format!("{}:{}:/usr/bin:/bin", shims.display(), real_dir.display());
+    let path = uze_testkit::process::path_with(&[&shims, &real_dir]);
     let output = env
         .command(&shim_entry)
         .env("PATH", &path)

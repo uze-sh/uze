@@ -52,10 +52,7 @@ fn record_file(slot: &Path) -> PathBuf {
 }
 
 fn age(directory: &Path, by: Duration) {
-    fs::File::open(directory)
-        .unwrap()
-        .set_modified(SystemTime::now() - by)
-        .unwrap();
+    uze_platform::fs::set_modified(directory, SystemTime::now() - by).unwrap();
 }
 
 #[test]

@@ -10276,8 +10276,8 @@ mod workspace_tests {
         };
         assert_eq!(closed, space);
         assert_eq!(
-            Some(replacement.root.as_os_str()),
-            std::env::var_os("HOME").as_deref(),
+            Some(replacement.root.as_path()),
+            uze_platform::home::user_home().as_deref(),
             "the workspace lands at home"
         );
     }
@@ -10291,7 +10291,7 @@ mod workspace_tests {
     fn starting_at_home_lands_in_the_workspace_rather_than_adding_to_it() {
         use uze_terminal::{Seating, SpaceSeat};
 
-        let home = PathBuf::from(std::env::var_os("HOME").expect("a home directory"));
+        let home = uze_platform::home::user_home().expect("a home directory");
         let seat = |root: &Path| SpaceSeat {
             root: root.to_path_buf(),
         };
@@ -10755,7 +10755,7 @@ mod workspace_tests {
         std::fs::remove_dir_all(&placement.cwd).unwrap();
         app.workspace().release_abandoned_tasks(&root, &[], &[]);
 
-        let primary = root.canonicalize().unwrap();
+        let primary = uze_platform::path::canonical(&root).unwrap();
         let task = app
             .workspace()
             .tasks(&primary)
@@ -10914,7 +10914,7 @@ mod workspace_tests {
             uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
             task_id,
         );
-        let project = root.canonicalize().unwrap();
+        let project = uze_platform::path::canonical(&root).unwrap();
         let sent = driven.sent();
         assert!(
             sent.iter().any(|request| matches!(

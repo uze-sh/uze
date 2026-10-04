@@ -209,7 +209,7 @@ impl Engine {
     }
 
     fn find_pane_in(&self, slot: &Path) -> Option<PaneId> {
-        let slot = slot.canonicalize().unwrap_or_else(|_| slot.to_path_buf());
+        let slot = uze_platform::path::canonical(slot).unwrap_or_else(|_| slot.to_path_buf());
         self.session
             .as_ref()?
             .workspace
@@ -217,7 +217,10 @@ impl Engine {
             .iter()
             .flat_map(|space| &space.tabs)
             .map(|tab| &tab.pane)
-            .find(|pane| pane.cwd.canonicalize().unwrap_or_else(|_| pane.cwd.clone()) == slot)
+            .find(|pane| {
+                uze_platform::path::canonical(&pane.cwd).unwrap_or_else(|_| pane.cwd.clone())
+                    == slot
+            })
             .map(|pane| pane.id)
     }
 
@@ -870,7 +873,7 @@ fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
     let first_space = engine.session.as_ref().unwrap().workspace.selected_space;
     assert_eq!(
         engine.session.as_ref().unwrap().selected_space().root,
-        project.canonicalize().unwrap_or(project.clone()),
+        uze_platform::path::canonical(&project).unwrap_or(project.clone()),
         "the launch directory is the first space's root"
     );
 
@@ -890,7 +893,7 @@ fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
     assert_ne!(second_view.workspace.selected_space, first_space);
     assert_eq!(
         second_view.selected_space().root,
-        other.canonicalize().unwrap_or(other.clone())
+        uze_platform::path::canonical(&other).unwrap_or(other.clone())
     );
     assert_eq!(second_view.workspace.spaces.len(), 2);
 

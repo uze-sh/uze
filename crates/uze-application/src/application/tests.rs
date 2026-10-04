@@ -2114,14 +2114,9 @@ fn runtime_shim_writes_no_shell_file() {
     let real_bin_dir = root.join(".local/bin");
     fs::create_dir_all(&shims_dir).unwrap();
     fs::create_dir_all(&real_bin_dir).unwrap();
-    let real_executable = real_bin_dir.join("shim-test");
+    let real_executable = real_bin_dir.join(uze_platform::executable::file_name("shim-test"));
     fs::write(&real_executable, "#!/bin/sh\nexit 0\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        fs::set_permissions(&real_executable, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    uze_platform::executable::make_runnable(&real_executable).unwrap();
 
     let rc_file = root.join(".zshrc");
     let rc_content = format!("export PATH=\"{}:$PATH\"\n", real_bin_dir.display());
@@ -2129,7 +2124,7 @@ fn runtime_shim_writes_no_shell_file() {
     let path = std::env::join_paths([real_bin_dir.as_path(), shims_dir.as_path()]).unwrap();
     let mut environment = uze_testkit::env::scope();
     environment
-        .set("HOME", &root)
+        .home(&root)
         .set("SHELL", "/bin/zsh")
         .set("PATH", path);
 

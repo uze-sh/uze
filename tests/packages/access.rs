@@ -46,7 +46,7 @@ impl World {
         let ssh = FakeSsh::install(&root, &forge);
         let mut environment = uze_testkit::env::scope();
         environment
-            .set("HOME", &operator)
+            .home(&operator)
             .set("XDG_CONFIG_HOME", operator.join("xdg"))
             .set("PATH", ssh.path())
             .remove("SSH_AUTH_SOCK")

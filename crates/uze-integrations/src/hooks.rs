@@ -297,11 +297,7 @@ impl HookTarget {
         wrapper: &Path,
     ) -> serde_json::Value {
         let invocation = if self.entry_shape() == Some(EntryShape::EventExec) {
-            // What this platform runs a script with: the script itself, or
-            // the shell told to run it.
-            let (command, mut args) = uze_platform::shell::script(&wrapper.display().to_string());
-            args.extend(wrapper_arguments(hook, package_root, &hook.handlers));
-            HookInvocation::Exec { command, args }
+            wrapper_exec(wrapper, hook, package_root)
         } else {
             HookInvocation::Line(wrapper_command_line(wrapper, hook, package_root))
         };

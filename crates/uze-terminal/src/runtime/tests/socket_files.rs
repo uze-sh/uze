@@ -172,3 +172,18 @@ fn a_socket_nobody_listens_on_names_nobody() {
 
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+/// The socket sits beside the workspace it serves, where no cleaner reaches
+/// it without taking the workspace too.
+#[test]
+fn the_socket_sits_beside_the_workspace_it_serves() {
+    let home = uze_testkit::temp::socket_scratch("endpoint-beside");
+    let socket = {
+        let mut env = uze_testkit::env::scope();
+        env.set("UZE_HOME", &home);
+        env.remove("XDG_RUNTIME_DIR");
+        socket_path().expect("an endpoint can always be named")
+    };
+    assert!(socket.starts_with(&home), "{}", socket.display());
+    let _ = std::fs::remove_dir_all(&home);
+}

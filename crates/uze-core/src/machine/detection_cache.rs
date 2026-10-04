@@ -261,15 +261,13 @@ mod tests {
         uze_testkit::temp::scratch(label)
     }
 
+    /// A file this platform would run as `name`. Never run: only found and
+    /// fingerprinted.
     fn fake_executable(dir: &Path, name: &str) -> PathBuf {
         fs::create_dir_all(dir).unwrap();
-        let path = dir.join(name);
+        let path = dir.join(uze_platform::executable::file_name(name));
         fs::write(&path, "#!/bin/sh\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        uze_platform::executable::make_runnable(&path).unwrap();
         path
     }
 
@@ -345,11 +343,7 @@ mod tests {
             .unwrap()
             .set_modified(before + Duration::from_secs(5))
             .unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        uze_platform::executable::make_runnable(&bin).unwrap();
         let next_invocation = DetectionCache::at(cache_path);
         assert!(next_invocation.get("codex", &[path_str]).is_none());
         let _ = fs::remove_dir_all(&dir);

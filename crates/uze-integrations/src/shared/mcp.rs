@@ -310,12 +310,17 @@ mod tests {
             "args": ["--data", "${PLUGIN_ROOT}/data", 3],
             "env": { "HOME_OF": "${PLUGIN_ROOT}" },
         });
+        // The placeholder becomes the delivered copy's path, spelled as this
+        // platform spells it; the rest of each string is the author's.
+        let delivered = crate::shared::package_root::delivered(root);
+        assert_eq!(delivered, Path::new("/runtime/packages/pm@mk"));
+        let delivered = delivered.display();
         assert_eq!(
             resolve_json(&declared, root),
             serde_json::json!({
-                "command": "/runtime/packages/pm@mk/bin/server",
-                "args": ["--data", "/runtime/packages/pm@mk/data", 3],
-                "env": { "HOME_OF": "/runtime/packages/pm@mk" },
+                "command": format!("{delivered}/bin/server"),
+                "args": ["--data", format!("{delivered}/data"), 3],
+                "env": { "HOME_OF": delivered.to_string() },
             })
         );
     }
@@ -337,8 +342,8 @@ mod tests {
                 root
             ),
             serde_json::json!({
-                "command": "/runtime/packages/pm@mk/bin/s",
-                "cwd": "/runtime/packages/pm@mk/data",
+                "command": crate::shared::package_root::delivered(root).join("bin/s"),
+                "cwd": crate::shared::package_root::delivered(root).join("data"),
             })
         );
     }

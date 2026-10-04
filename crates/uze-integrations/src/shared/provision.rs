@@ -245,10 +245,7 @@ mod provision_cli_tests {
         OfficialRoute {
             label: "Test Harness",
             program: "does-not-exist-on-this-machine",
-            install: ShellCommand::PerPlatform(Spellings {
-                posix: Some("install".to_owned()),
-                windows: Some("install".to_owned()),
-            }),
+            install: ShellCommand::spelled("install", "install"),
             update: ProcessSpec::new("sh", ["-c", "update"]),
             environment: &[],
             method: "official-test-installer",

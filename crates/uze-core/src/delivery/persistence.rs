@@ -439,7 +439,9 @@ mod tests {
     #[test]
     fn a_directory_is_created_when_nothing_was_there() {
         let root = uze_testkit::temp::scratch("replace-dir-fresh");
-        let destination = root.join("skills/flow:review");
+        let destination = root
+            .join("skills")
+            .join(crate::path::file_name_for("flow:review"));
         replace_dir(&destination, |staging| {
             fs::write(staging.join("SKILL.md"), "body").unwrap();
             Ok(())

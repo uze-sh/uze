@@ -1587,7 +1587,8 @@ mod task_service_tests {
         let repository = repository("svc-gate");
         declare(
             &repository,
-            "  completion: merge\n  gate: test -f must-exist\n",
+            "  completion: merge\n  gate:\n    posix: test -f must-exist\n    \
+             windows: \"if (-not (Test-Path must-exist)) { exit 1 }\"\n",
         );
         let root = repository.root().to_path_buf();
         let app = application("svc-gate-home");
@@ -1886,7 +1887,8 @@ mod task_service_tests {
         std::fs::write(repository.root().join(".env"), "KEY=1\n").unwrap();
         declare(
             &repository,
-            "  target: develop\n  slots: 1\n  link: [.env]\n  setup: touch prepared\n",
+            "  target: develop\n  slots: 1\n  link: [.env]\n  setup:\n    posix: touch prepared\n    \
+             windows: New-Item prepared -ItemType File\n",
         );
         let root = repository.root().to_path_buf();
         let app = application("svc-lock-launch-home");
@@ -2112,8 +2114,9 @@ mod task_service_tests {
         declare(
             &repository,
             &format!(
-                "  completion: merge\n  gate: 'while [ ! -e {} ]; do sleep 0.05; done'\n",
-                release.display()
+                "  completion: merge\n  gate:\n    posix: 'while [ ! -e {release} ]; do sleep 0.05; done'\n    \
+                 windows: 'while (-not (Test-Path \"{release}\")) {{ Start-Sleep -Milliseconds 50 }}'\n",
+                release = release.display()
             ),
         );
         let root = repository.root().to_path_buf();

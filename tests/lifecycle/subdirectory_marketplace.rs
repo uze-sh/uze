@@ -83,7 +83,7 @@ fn a_marketplace_in_a_local_subdirectory_is_installed_from_its_commits_and_locke
     );
     assert_eq!(
         registration.checkout.as_deref(),
-        Some(market.canonicalize().unwrap().as_path()),
+        Some(uze_platform::path::canonical(&market).unwrap().as_path()),
         "what is read is named, not only the identity: {registration:?}"
     );
     assert!(!registration.linked);

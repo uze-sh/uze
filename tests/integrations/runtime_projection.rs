@@ -26,7 +26,7 @@ fn project_at(root: &Path) -> PathBuf {
     fs::create_dir_all(root.join(".agents/skills/demo")).unwrap();
     fs::write(root.join(".agents/skills/demo/SKILL.md"), "canary\n").unwrap();
     fs::write(root.join("AGENTS.md"), "project instructions\n").unwrap();
-    root.canonicalize().unwrap()
+    uze_platform::path::canonical(root).unwrap()
 }
 
 /// Drives the real vendor integration through the shim's own entry point,
