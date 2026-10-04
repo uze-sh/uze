@@ -103,14 +103,18 @@ pub(super) fn write_message<W: Write, T: Serialize>(
     writer: &mut W,
     value: &T,
 ) -> Result<(), RuntimeError> {
-    let bytes =
-        bincode::serialize(value).map_err(|error| RuntimeError::Protocol(error.to_string()))?;
-    let len = u32::try_from(bytes.len())
+    // The length and the body as one write: two cost a second write, and a
+    // pipe's a second overlapped operation, on every frame.
+    let mut frame = vec![0u8; 4];
+    bincode::serialize_into(&mut frame, value)
+        .map_err(|error| RuntimeError::Protocol(error.to_string()))?;
+    let body = frame.len() - 4;
+    let len = u32::try_from(body)
         .ok()
         .filter(|len| *len <= MAX_FRAME)
-        .ok_or_else(|| oversized_frame(bytes.len() as u64, MAX_FRAME))?;
-    writer.write_all(&len.to_le_bytes())?;
-    writer.write_all(&bytes)?;
+        .ok_or_else(|| oversized_frame(body as u64, MAX_FRAME))?;
+    frame[..4].copy_from_slice(&len.to_le_bytes());
+    writer.write_all(&frame)?;
     writer.flush()?;
     Ok(())
 }

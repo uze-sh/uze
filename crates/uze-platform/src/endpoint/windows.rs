@@ -211,10 +211,20 @@ impl Stream {
             let timeouts = self.shared.timeouts.lock().expect("pipe timeouts poisoned");
             if write { timeouts.1 } else { timeouts.0 }
         };
-        let event = Event::new()?;
+        // This thread's own event when it has one, so a frame's transfer is
+        // not also a kernel object made and closed: every transfer is
+        // finished before this returns, and starting one resets it.
+        let fallback;
+        let event = match THIS_THREAD_S_EVENT.with(|event| event.as_ref().map(|event| event.0)) {
+            Some(event) => event,
+            None => {
+                fallback = Event::new()?;
+                fallback.0
+            }
+        };
         // SAFETY: zeroed OVERLAPPED is the documented initial state.
         let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
-        overlapped.hEvent = event.0;
+        overlapped.hEvent = event;
         let mut done = 0u32;
         // SAFETY: `buffer` is valid for `len` bytes for the whole
         // operation, which is completed below before this returns.
@@ -248,7 +258,7 @@ impl Stream {
                 u32::try_from(timeout.as_millis()).unwrap_or(INFINITE - 1)
             });
             // SAFETY: the event belongs to this operation.
-            let waited = unsafe { WaitForSingleObject(event.0, millis) };
+            let waited = unsafe { WaitForSingleObject(event, millis) };
             if waited == WAIT_TIMEOUT {
                 timed_out = true;
                 // SAFETY: cancels this operation only.
@@ -310,6 +320,12 @@ impl Write for Stream {
 }
 
 struct Event(HANDLE);
+
+thread_local! {
+    /// The event a transfer on this thread waits on, made once per thread;
+    /// `None` when it could not be made, and a transfer makes its own.
+    static THIS_THREAD_S_EVENT: Option<Event> = Event::new().ok();
+}
 
 impl Event {
     fn new() -> io::Result<Self> {
