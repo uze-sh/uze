@@ -225,6 +225,20 @@ impl ManagedArtifact {
         }
     }
 
+    /// Whether this is the artifact `label` names. A label is what a harness
+    /// shows; the physical name is what holds it, which for a file or a
+    /// directory is the name this filesystem can hold (`flow:review` is
+    /// `flow-review` on Windows), and for an entry in a shared file the key
+    /// itself. So a label is never recovered from a physical name, only
+    /// matched against one.
+    pub fn is_named(&self, label: &str) -> bool {
+        let spelled = match self {
+            Self::VendorConfigEntry { .. } | Self::HookConfigEntry { .. } => label.to_owned(),
+            _ => crate::path::file_name_for(label),
+        };
+        self.exposure_name().is_some_and(|name| name == spelled)
+    }
+
     /// A human-readable locator. Display-only: the artifact itself remains
     /// the source of truth.
     pub fn location(&self) -> PathBuf {
@@ -615,7 +629,9 @@ mod tests {
     #[test]
     fn a_tree_is_written_replaced_while_owned_and_its_digest_proves_it() {
         let root = uze_testkit::temp::scratch("generated-tree");
-        let path = root.join("skills/flow:review");
+        let path = root
+            .join("skills")
+            .join(crate::path::file_name_for("flow:review"));
         let first = attach_generated_tree(&path, None, write_skill("one")).unwrap();
         let artifact = ManagedArtifact::GeneratedTree {
             path: path.clone(),
@@ -632,7 +648,7 @@ mod tests {
     #[test]
     fn an_edited_tree_is_drift_and_is_not_replaced() {
         let root = uze_testkit::temp::scratch("generated-tree-drift");
-        let path = root.join("flow:review");
+        let path = root.join(crate::path::file_name_for("flow:review"));
         let digest = attach_generated_tree(&path, None, write_skill("one")).unwrap();
         fs::write(path.join("SKILL.md"), "edited").unwrap();
         let outcome = attach_generated_tree(&path, Some(&digest), write_skill("two"));
@@ -643,7 +659,7 @@ mod tests {
     #[test]
     fn an_unowned_directory_is_adopted_only_when_it_already_holds_the_same_tree() {
         let root = uze_testkit::temp::scratch("generated-tree-foreign");
-        let path = root.join("flow:review");
+        let path = root.join(crate::path::file_name_for("flow:review"));
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("SKILL.md"), "theirs").unwrap();
         let outcome = attach_generated_tree(&path, None, write_skill("ours"));
@@ -662,7 +678,7 @@ mod tests {
     #[test]
     fn a_matched_tree_is_detached_and_a_drifted_one_is_kept() {
         let root = uze_testkit::temp::scratch("generated-tree-detach");
-        let path = root.join("flow:review");
+        let path = root.join(crate::path::file_name_for("flow:review"));
         let digest = attach_generated_tree(&path, None, write_skill("one")).unwrap();
         let artifact = ManagedArtifact::GeneratedTree {
             path: path.clone(),
@@ -809,7 +825,10 @@ mod generated_file_tests {
     #[test]
     fn a_generated_file_is_written_recognised_and_never_taken_from_someone_else() {
         let root = uze_testkit::temp::scratch("generated-file");
-        let path = root.join("agents/flow:reviewer.md");
+        let path = root.join("agents").join(format!(
+            "{}.md",
+            crate::path::file_name_for("flow:reviewer")
+        ));
         let artifact = ManagedArtifact::GeneratedFile {
             path: path.clone(),
             content: "---\nname: flow:reviewer\n---\nReview.\n".to_owned(),
@@ -818,7 +837,7 @@ mod generated_file_tests {
         artifact.attach_standard().unwrap();
         assert!(!path.is_symlink());
         assert_eq!(artifact.inspect_standard().state, AttachmentState::Matched);
-        assert_eq!(artifact.exposure_name().as_deref(), Some("flow:reviewer"));
+        assert!(artifact.is_named("flow:reviewer"));
         artifact.attach_standard().unwrap();
 
         fs::write(&path, "edited by hand").unwrap();
@@ -840,5 +859,30 @@ mod generated_file_tests {
             AttachmentState::Missing
         );
         assert!(!path.exists());
+    }
+
+    /// A label is matched against the name that holds it, never read back
+    /// out of one: a file holds it as this filesystem can, an entry in a
+    /// shared file under the label itself.
+    #[test]
+    fn a_label_names_the_artifact_that_holds_it() {
+        let file = ManagedArtifact::GeneratedFile {
+            path: PathBuf::from("agents").join(format!(
+                "{}.md",
+                crate::path::file_name_for("flow:reviewer")
+            )),
+            content: String::new(),
+        };
+        assert!(file.is_named("flow:reviewer"));
+        assert!(!file.is_named("flow:writer"));
+
+        let entry = ManagedArtifact::HookConfigEntry {
+            config_file: PathBuf::from("hooks.json"),
+            entry_name: "flow@local:watch".to_owned(),
+            event: HookEvent::PreToolUse,
+            expected: String::new(),
+            wrapper: PathBuf::from("hooks/exec"),
+        };
+        assert!(entry.is_named("flow@local:watch"));
     }
 }

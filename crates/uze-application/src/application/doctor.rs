@@ -974,7 +974,7 @@ fn check_delivery(
         if let (Some(wanted), Some(found)) = (
             capability.exposed_name.as_deref(),
             entry.receipt.artifact.exposure_name(),
-        ) && wanted != found
+        ) && !entry.receipt.artifact.is_named(wanted)
         {
             failing.insert(capability.identity.clone());
             findings.push(DeliveryFinding {

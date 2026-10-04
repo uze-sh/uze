@@ -387,10 +387,7 @@ impl UzeApplication {
         if !named_by_candidates || integration.exposure_name_candidates(resource).is_empty() {
             return Ok(None);
         }
-        let current: BTreeSet<String> = integration
-            .exposure_name_candidates(resource)
-            .into_iter()
-            .collect();
+        let current = integration.exposure_name_candidates(resource);
         let planned_artifact = planned_artifact(integration, resource);
         let planned = planned_artifact.as_ref().map(std::mem::discriminant);
         let identity = resource.identity();
@@ -401,10 +398,8 @@ impl UzeApplication {
             {
                 continue;
             }
-            let renamed = receipt
-                .artifact
-                .exposure_name()
-                .is_some_and(|name| !current.contains(&name));
+            let renamed = receipt.artifact.exposure_name().is_some()
+                && !current.iter().any(|label| receipt.artifact.is_named(label));
             let reshaped =
                 planned.is_some_and(|kind| std::mem::discriminant(&receipt.artifact) != kind);
             let restated = planned_artifact
@@ -499,7 +494,11 @@ impl UzeApplication {
             receipt.resource_identity.as_deref() == Some(resource_id.as_str())
                 && receipt.integration == integration.id()
         }) {
-            resolved.resolved_exposure_name = existing.artifact.exposure_name();
+            resolved.resolved_exposure_name = integration
+                .exposure_name_candidates(resource)
+                .into_iter()
+                .find(|label| existing.artifact.is_named(label))
+                .or_else(|| existing.artifact.exposure_name());
             return Ok(resolved);
         }
         // A name is taken only where this resource would be written: a skill
@@ -514,16 +513,18 @@ impl UzeApplication {
                 .as_ref()
                 .is_none_or(|planned| same_name_space(planned, &receipt.artifact))
         };
-        let claimed: BTreeSet<String> = all_receipts
-            .iter()
-            .filter(|receipt| receipt.integration == integration.id())
-            .filter(|receipt| contends(receipt))
-            .filter_map(|receipt| receipt.artifact.exposure_name())
-            .collect();
+        // Two labels the filesystem holds under one name contend for it as
+        // surely as two equal labels do.
+        let claimants = || {
+            all_receipts
+                .iter()
+                .filter(|receipt| receipt.integration == integration.id())
+                .filter(|receipt| contends(receipt))
+        };
         let candidates = integration.exposure_name_candidates(resource);
         if let Some(free) = candidates
             .iter()
-            .find(|candidate| !claimed.contains(*candidate))
+            .find(|candidate| !claimants().any(|receipt| receipt.artifact.is_named(candidate)))
             .cloned()
         {
             resolved.resolved_exposure_name = Some(free);
@@ -548,11 +549,7 @@ impl UzeApplication {
                 resource.name()
             )));
         };
-        let claimant = all_receipts
-            .iter()
-            .filter(|receipt| receipt.integration == integration.id())
-            .filter(|receipt| contends(receipt))
-            .find(|receipt| receipt.artifact.exposure_name().as_deref() == Some(entry.as_str()));
+        let claimant = claimants().find(|receipt| receipt.artifact.is_named(&entry));
         let Some(claimant) = claimant else {
             // Defensive fallback (should be unreachable): retain the
             // previous behavior rather than panicking on ledger drift.
@@ -565,7 +562,12 @@ impl UzeApplication {
         };
         let entry_path = planned
             .as_ref()
-            .and_then(|artifact| artifact.location().parent().map(|dir| dir.join(&entry)))
+            .and_then(|artifact| {
+                artifact
+                    .location()
+                    .parent()
+                    .map(|dir| dir.join(uze_core::path::file_name_for(&entry)))
+            })
             .unwrap_or_else(|| PathBuf::from(&entry));
         Err(UzeError::ProjectionConflict(Box::new(
             uze_core::error::ProjectionConflictDetails {
