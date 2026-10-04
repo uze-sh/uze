@@ -3262,6 +3262,7 @@ name = "uze-integrations"
 version = "1.0.0-beta.10"
 dependencies = [
  "serde_json",
+ "sha2 0.11.0",
  "toml_edit",
  "tracing",
  "uze-core",

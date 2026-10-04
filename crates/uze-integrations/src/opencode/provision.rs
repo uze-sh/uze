@@ -18,6 +18,7 @@ use uze_core::{
     provisioning::{ProcessRunner, ProcessSpec, ProvisionAction, ProvisioningResult},
 };
 
+use super::distribution;
 use crate::shared::process::{VersionToken, detect_version};
 use crate::shared::provision::{
     found_outside_path, installer_process, official_installer, unsupported_platform,
@@ -62,6 +63,18 @@ fn documented_install_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBu
     dirs
 }
 
+/// Every file OpenCode's installers document putting its executable at.
+pub(super) fn install_locations() -> Vec<PathBuf> {
+    documented_install_dirs(|key| std::env::var_os(key))
+        .iter()
+        .flat_map(|dir| {
+            PROGRAMS
+                .iter()
+                .flat_map(move |program| uze_platform::executable::candidates(dir, program))
+        })
+        .collect()
+}
+
 fn installed_outside_path(dirs: &[PathBuf]) -> Option<PathBuf> {
     dirs.iter()
         .flat_map(|dir| {
@@ -83,7 +96,6 @@ pub(super) fn provision_opencode(
     detect: impl Fn() -> HarnessDetection,
     shims_dir: &Path,
 ) -> Result<ProvisioningResult> {
-    let method = "official-install-script";
     let resolved = resolve_opencode_binary(shims_dir);
     let before = resolved
         .as_ref()
@@ -94,25 +106,26 @@ pub(super) fn provision_opencode(
     } else {
         ProvisionAction::Install
     };
-    let command = match &resolved {
+    let route = match &resolved {
         Some((which, _))
             if Path::new(which)
                 .file_stem()
                 .is_some_and(|name| name == "opencode") =>
         {
-            ProcessSpec::new(which.clone(), ["upgrade"]).with_inherited_output()
+            Route::Installer(ProcessSpec::new(which.clone(), ["upgrade"]).with_inherited_output())
         }
         // `opencode2` is the legacy V2 beta binary. It accepts a positional
         // project path rather than the stable CLI's `upgrade` command, so
         // passing `upgrade` makes it try to `chdir` into that name. The V2
         // installer is its documented install/update route.
-        // OpenCode publishes no Windows installer, only its package-manager
-        // routes, which are the person's to choose: one already installed
-        // is adopted as it is, and kept current by whichever they chose.
+        // OpenCode publishes no installer for Windows, so UZE distributes
+        // the build its installer would fetch (see `distribution`); one
+        // already installed by a package manager is adopted as it is, and
+        // kept current by whichever the person chose.
         _ => {
             match official_installer(Some(("https://opencode.ai/v2/install", "bash")), None).here()
             {
-                Some(line) => installer_process(line),
+                Some(line) => Route::Installer(installer_process(line)),
                 None if before.present => {
                     return Ok(ProvisioningResult::verified(
                         ProvisionAction::None,
@@ -120,14 +133,27 @@ pub(super) fn provision_opencode(
                         before,
                     ));
                 }
-                None => {
-                    return Ok(unsupported_platform(
-                        "OpenCode",
-                        "`scoop install opencode`, `choco install opencode` or \
-                     `npm i -g opencode-ai` (https://opencode.ai/docs)",
-                    ));
-                }
+                None => match distribution::target() {
+                    Some(target) => Route::Distribution(target),
+                    None => {
+                        return Ok(unsupported_platform(
+                            "OpenCode",
+                            "`scoop install opencode`, `choco install opencode` or \
+                             `npm i -g opencode-ai` (https://opencode.ai/docs)",
+                        ));
+                    }
+                },
             }
+        }
+    };
+    let method = route.method();
+    let command = match route {
+        Route::Installer(command) => command,
+        Route::Distribution(target) => {
+            if let Err(reason) = distribution::install(runner, &target) {
+                return Ok(ProvisioningResult::failed(action, method, reason));
+            }
+            return Ok(verified_after(action, method, &detect, shims_dir));
         }
     };
     let outcome = match runner.run(&command) {
@@ -148,17 +174,43 @@ pub(super) fn provision_opencode(
         };
         return Ok(ProvisioningResult::failed(action, method, reason));
     }
+    Ok(verified_after(action, method, &detect, shims_dir))
+}
+
+/// How OpenCode is put on this machine: its own installer, or the build
+/// that installer would fetch, distributed by UZE where it publishes none.
+enum Route {
+    Installer(ProcessSpec),
+    Distribution(String),
+}
+
+impl Route {
+    fn method(&self) -> &'static str {
+        match self {
+            Self::Installer(_) => "official-install-script",
+            Self::Distribution(_) => "official-npm-package",
+        }
+    }
+}
+
+/// What a route left on the machine, looked for where OpenCode is found.
+fn verified_after(
+    action: ProvisionAction,
+    method: &str,
+    detect: &impl Fn() -> HarnessDetection,
+    shims_dir: &Path,
+) -> ProvisioningResult {
     let verified = detect();
     if !verified.present {
-        return Ok(ProvisioningResult::failed(
+        return ProvisioningResult::failed(
             action,
             method,
             "installer finished but `opencode` could not be verified",
-        ));
+        );
     }
     let off_path = installed_outside_path(&documented_install_dirs(|key| std::env::var_os(key)))
         .and_then(|executable| found_outside_path(&PROGRAMS, shims_dir, &executable));
-    Ok(ProvisioningResult::verified(action, method, verified).found_outside_path(off_path))
+    ProvisioningResult::verified(action, method, verified).found_outside_path(off_path)
 }
 
 #[cfg(test)]

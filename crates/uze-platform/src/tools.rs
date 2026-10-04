@@ -6,7 +6,13 @@ use std::process::Command;
 /// `name` as the operating system ships it, never another program of the
 /// same name earlier on `PATH`.
 pub fn system(name: &str) -> Command {
-    imp::system(name)
+    Command::new(system_program(name))
+}
+
+/// The program [`system`] runs for `name`, for a caller that describes a
+/// process rather than spawning it.
+pub fn system_program(name: &str) -> std::path::PathBuf {
+    imp::system_program(name)
 }
 
 /// How a person installs Git here, as a command they can type.
@@ -22,11 +28,11 @@ pub const GIT_FAITHFUL_CHECKOUT: &[(&str, &str)] = imp::GIT_FAITHFUL_CHECKOUT;
 
 #[cfg(unix)]
 mod imp {
-    use std::process::Command;
+    use std::path::PathBuf;
 
     /// `curl` and `tar` are the system's own wherever they are found.
-    pub(super) fn system(name: &str) -> Command {
-        Command::new(name)
+    pub(super) fn system_program(name: &str) -> PathBuf {
+        PathBuf::from(name)
     }
 
     pub(super) const GIT_INSTALL_HINT: &str = "install it with your package manager";
@@ -37,15 +43,15 @@ mod imp {
 
 #[cfg(windows)]
 mod imp {
-    use std::{path::PathBuf, process::Command};
+    use std::path::PathBuf;
 
     /// System32, by path: under Windows PowerShell `curl` is an alias for
     /// something else, and a `tar` earlier on `PATH` (Git's GNU tar) cannot
     /// read a zip.
-    pub(super) fn system(name: &str) -> Command {
+    pub(super) fn system_program(name: &str) -> PathBuf {
         let root = std::env::var_os("SystemRoot")
             .map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
-        Command::new(root.join("System32").join(format!("{name}.exe")))
+        root.join("System32").join(format!("{name}.exe"))
     }
 
     pub(super) const GIT_INSTALL_HINT: &str = "winget install Git.Git";

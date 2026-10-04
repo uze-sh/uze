@@ -12,6 +12,7 @@ publish = false
 uze-platform = { path = "../uze-platform" }
 # Spans on every process this crate runs; a no-op until the binary
 # subscribes (see `src/telemetry.rs`).
+sha2 = "0.11"
 tracing = "0.1"
 uze-core = { path = "../uze-core" }
 # `preserve_order` backs `Value`'s maps with an IndexMap instead of a

@@ -42,6 +42,7 @@ use uze_core::{
     store::PackageId,
 };
 
+mod distribution;
 mod hooks;
 mod mcp;
 mod preferences;
@@ -250,6 +251,10 @@ impl IntegrationPort for OpenCodeIntegration {
     /// alias is still resolved generically without mutating vendor paths.
     fn runtime_executable_aliases(&self) -> &'static [&'static str] {
         &["opencode2"]
+    }
+
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        provision::install_locations()
     }
 
     /// OpenCode derives a skill's ID from its path (verified in the V2
