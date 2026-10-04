@@ -33,8 +33,10 @@ except ImportError as missing:
 
 PLATFORM = "windows"
 # What the shell a pane opens is called in the process table: Windows
-# PowerShell, since the world's PATH reaches no PowerShell 7.
-SHELL = "powershell"
+# PowerShell, since the world's PATH reaches no PowerShell 7. Anchored to
+# the program, because the process that hosts a pane names the shell it
+# starts on its own command line (`uze terminal host-pane … -- powershell.exe`).
+SHELL = r"^(\S*/)?powershell\.exe\b"
 EXECUTABLE_SUFFIX = ".exe"
 REQUIRED_TOOLS = ("git",)
 # At the drive's root, not under %TEMP%: PowerShell's prompt is the whole
@@ -46,8 +48,12 @@ DEFAULT_WORLDS = os.environ.get("SystemDrive", "C:") + "\\uze-journeys"
 # Git for Windows' own bash, where every hosted runner has it. Runner tooling,
 # not the world's: a `shell:` step is what an agent would type, and it is
 # written in POSIX sh, but the `uze` under test must meet the machine a
-# Windows user has, whose `PATH` reaches no `/usr/bin`.
-GIT_BASH = Path(os.environ.get("JOURNEY_BASH", r"C:\Program Files\Git\bin\bash.exe"))
+# Windows user has, whose `PATH` reaches no `/usr/bin`. The MSYS bash itself
+# rather than the `bin\bash.exe` launcher, which puts Git's own `curl` and
+# `ssh` ahead of the world's `PATH` and so ahead of the stand-ins.
+GIT_BASH = Path(
+    os.environ.get("JOURNEY_BASH", r"C:\Program Files\Git\usr\bin\bash.exe")
+)
 
 # What a Windows process cannot start without, or reads to find the
 # machine's own directories. Passed through by name, never the rest.
@@ -270,7 +276,9 @@ def list_tree(roots: list[Path], depth: int) -> str:
 
 
 def shell_argv(command: str) -> list[str]:
-    return [str(GIT_BASH), "-c", command]
+    """Git Bash running one line, with the world's `PATH` first and the
+    POSIX tools a step is written with after it."""
+    return [str(GIT_BASH), "-c", f'PATH="$PATH:/usr/bin"\n{command}']
 
 
 def run_with_a_terminal(

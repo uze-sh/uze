@@ -320,7 +320,7 @@ python journeys/journey.py run journeys/suites --tag gate
 | the screen | a tmux session | a ConPTY (`pywinpty`) read into a `pyte` screen, which answers the cursor-position query ConPTY asks at startup |
 | keys and clicks | `tmux send-keys` | the same tmux key names, written as the sequences a terminal sends; clicks as SGR reports, which ConPTY turns into the app's mouse events |
 | the process table | `/proc`, `ps`, `lsof` | `psutil` |
-| a `shell:` step | `/bin/sh` with a terminal nobody answers | Git Bash by absolute path (`C:\Program Files\Git\bin\bash.exe`, or `JOURNEY_BASH`), stdin closed, the tree ended at the deadline |
+| a `shell:` step | `/bin/sh` with a terminal nobody answers | Git's MSYS bash by absolute path (`C:\Program Files\Git\usr\bin\bash.exe`, or `JOURNEY_BASH`), the world's `PATH` first and Git's POSIX tools after it, stdin closed, the tree ended at the deadline |
 
 Placeholders spell paths with forward slashes, which Git Bash and every
 Windows program read, and the world's `PATH` is its own `bin`, the binary
@@ -333,7 +333,8 @@ A check's path names what UZE was asked to write, and on Windows a colon
 in it is read as the `-` UZE names that file with, since NTFS reads a
 colon as a stream separator: `skills/flow:commit` is `skills/flow-commit`
 on disk. `{shell}` is the shell a pane opens, as the process table names
-it: `bash`, or `powershell`.
+it: `bash`, or a command line that starts with `powershell.exe`, which
+leaves out the process hosting the pane that names it as an argument.
 
 The packages are pinned and installed from wheels only; each publishes
 `win_amd64` and `win_arm64` wheels for CPython 3.12 and 3.13.
