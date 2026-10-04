@@ -125,7 +125,7 @@ fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Res
     };
     match fs::symlink_metadata(destination) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::rename(staging, destination).map_err(write_error)?;
+            uze_platform::fs::rename(staging, destination).map_err(write_error)?;
         }
         Err(error) => return Err(write_error(error)),
         Ok(metadata) if !metadata.is_dir() => {
@@ -137,9 +137,9 @@ fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Res
                 let _ = fs::remove_dir_all(staging);
             } else {
                 let retired = swap_path(parent, name, "retired");
-                fs::rename(destination, &retired).map_err(write_error)?;
-                if let Err(error) = fs::rename(staging, destination) {
-                    let _ = fs::rename(&retired, destination);
+                uze_platform::fs::rename(destination, &retired).map_err(write_error)?;
+                if let Err(error) = uze_platform::fs::rename(staging, destination) {
+                    let _ = uze_platform::fs::rename(&retired, destination);
                     return Err(write_error(error));
                 }
                 let _ = fs::remove_dir_all(&retired);
@@ -245,7 +245,7 @@ fn replace_atomically(
         file.write_all(payload)
             .map_err(UzeError::write(&temporary))?;
         file.sync_all().map_err(UzeError::write(&temporary))?;
-        fs::rename(&temporary, path).map_err(UzeError::write(path))?;
+        uze_platform::fs::rename(&temporary, path).map_err(UzeError::write(path))?;
         sync_directory(parent);
         Ok(())
     })();

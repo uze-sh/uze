@@ -325,7 +325,7 @@ fn replace_contents(target: &Path, contents: &[u8]) -> std::io::Result<()> {
         file.write_all(contents)?;
         file.set_permissions(permissions)?;
         file.sync_all()?;
-        std::fs::rename(&temporary, target)
+        uze_platform::fs::rename(&temporary, target)
     })();
     if replaced.is_err() {
         let _ = std::fs::remove_file(&temporary);

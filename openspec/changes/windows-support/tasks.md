@@ -104,11 +104,13 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - `project_id_for` normalizes once, internally.
 - [x] 3.8 Locators: `forge.rs:378-443` accepts `C:\`, `.\`, `..\` and `~\`;
       in `acquisition.rs:232-241` a drive letter is never `host:`.
-- [ ] 3.9 One sharing-violation retry helper, also clearing read-only
-      attributes and tolerating a leftover retired directory. Used by
+- [x] 3.9 One sharing-violation wait, `uze_platform::fs::rename`: on
+      Windows a rename failing with a sharing violation, a lock violation
+      or access denied is tried again for about two seconds. Used by
       `persistence::replace_atomically`/`swap_in`,
-      `uze-terminal/src/runtime/persist.rs:124-131`, `uze-document`'s
-      set-aside, `src/ui/extension_host.rs` saves and `self_update`.
+      `uze-terminal/src/runtime/persist.rs`, `src/ui/extension_host.rs`
+      saves and `executable::replace_running` (self-update). `uze-document`
+      names no platform and keeps a plain rename for its rare set-aside.
 - [ ] 3.10 Git acquisition (`acquisition/git.rs`):
       - keep the Windows system variables through `env_clear()`;
       - `pushed_config` adds `core.autocrlf=false`, `core.eol=lf`,

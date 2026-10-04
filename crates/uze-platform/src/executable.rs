@@ -154,11 +154,11 @@ mod imp {
         let aside = set_aside_name(target);
         let had_target = target.exists();
         if had_target {
-            fs::rename(target, &aside)?;
+            crate::fs::rename(target, &aside)?;
         }
-        fs::rename(new, target).inspect_err(|_| {
+        crate::fs::rename(new, target).inspect_err(|_| {
             if had_target {
-                let _ = fs::rename(&aside, target);
+                let _ = crate::fs::rename(&aside, target);
             }
         })
     }

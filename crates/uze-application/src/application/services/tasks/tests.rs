@@ -1905,11 +1905,10 @@ mod task_service_tests {
             placement.cwd.join("prepared").is_file(),
             "setup ran in the slot"
         );
-        assert!(
-            std::fs::symlink_metadata(placement.cwd.join(".env"))
-                .unwrap()
-                .file_type()
-                .is_symlink()
+        assert_eq!(
+            std::fs::read_to_string(placement.cwd.join(".env")).unwrap(),
+            "KEY=1\n",
+            "the primary's .env is linked into the slot"
         );
         assert_eq!(
             app.workspace().tasks(&root)[0].target,

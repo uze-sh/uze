@@ -58,6 +58,16 @@ pub fn symlink(target: &Path, link: &Path) -> io::Result<()> {
     imp::symlink(target, link)
 }
 
+/// Renames `from` to `to`, replacing a file there. On Windows another
+/// program holding either file a moment (an antivirus scanning what was
+/// just written, the search indexer, an editor saving) makes a rename fail
+/// with a sharing violation or access denied until it lets go; that brief
+/// hold is waited out, for a bounded time, the way Git for Windows does.
+/// Any other failure, and one that outlasts the wait, is returned.
+pub fn rename(from: &Path, to: &Path) -> io::Result<()> {
+    imp::rename(from, to)
+}
+
 /// Makes `link` reach `target`, a file or a directory, with what every
 /// user may make here: a symbolic link on Unix; on Windows a junction for a
 /// directory and, for a file, a hard link (the same file under a second
@@ -163,6 +173,10 @@ mod imp {
 
     pub(super) fn link_entry(target: &Path, link: &Path) -> io::Result<()> {
         symlink(target, link)
+    }
+
+    pub(super) fn rename(from: &Path, to: &Path) -> io::Result<()> {
+        std::fs::rename(from, to)
     }
 
     pub(super) fn open_for_times(path: &Path) -> io::Result<File> {
@@ -277,6 +291,59 @@ mod imp {
                 error
             }
         })
+    }
+
+    pub(super) fn rename(from: &Path, to: &Path) -> io::Result<()> {
+        const ERROR_ACCESS_DENIED: i32 = 5;
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        const ERROR_LOCK_VIOLATION: i32 = 33;
+        // About two seconds in all: a scan of a file just written ends in
+        // milliseconds, and a hold that lasts longer is not a brief one.
+        const WAITS_MS: [u64; 8] = [10, 20, 40, 80, 160, 320, 500, 800];
+        let mut waits = WAITS_MS.iter();
+        loop {
+            match std::fs::rename(from, to) {
+                Err(error)
+                    if matches!(
+                        error.raw_os_error(),
+                        Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION)
+                    ) =>
+                {
+                    let Some(wait) = waits.next() else {
+                        return Err(error);
+                    };
+                    std::thread::sleep(std::time::Duration::from_millis(*wait));
+                }
+                outcome => return outcome,
+            }
+        }
+    }
+
+    /// A file held a moment with no sharing, the way a scanner opens
+    /// what was just written, is replaced once it is let go.
+    #[cfg(test)]
+    #[test]
+    fn a_rename_waits_out_a_brief_hold() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = uze_testkit::temp::scratch("rename-held");
+        std::fs::create_dir_all(&root).unwrap();
+        let target = root.join("record.json");
+        let staged = root.join("record.json.tmp");
+        std::fs::write(&target, "old").unwrap();
+        std::fs::write(&staged, "new").unwrap();
+        let held = File::options()
+            .read(true)
+            .share_mode(0)
+            .open(&target)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            drop(held);
+        });
+        rename(&staged, &target).unwrap();
+        release.join().unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     pub(super) fn link_entry(target: &Path, link: &Path) -> io::Result<()> {
