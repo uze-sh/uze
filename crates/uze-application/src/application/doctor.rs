@@ -237,6 +237,7 @@ impl Health<'_> {
             provisioning_state_error,
             leftovers,
             maintenance: MaintenanceReport::default(),
+            git_found: uze_core::subprocess::program_on_path("git"),
         }
     }
 

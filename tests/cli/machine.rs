@@ -397,12 +397,22 @@ fn doctor_reports_package_bytes_no_install_records_and_keeps_them() {
 }
 
 #[test]
+#[cfg(unix)]
 fn doctor_reports_not_configured_before_any_setup() {
     let home = temporary_home("cli-doctor-before-setup");
+    // Git and nothing else: no harness can be found, and the machine still
+    // has what doctor requires of it.
+    let only_git = home.join("only-git");
+    std::fs::create_dir_all(&only_git).unwrap();
+    let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|directory| directory.join("git"))
+        .find(|candidate| candidate.is_file())
+        .expect("git on PATH");
+    std::os::unix::fs::symlink(git, only_git.join("git")).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
         .isolated_home(&home)
-        .env("PATH", "")
+        .env("PATH", &only_git)
         .arg("doctor")
         .output()
         .unwrap();

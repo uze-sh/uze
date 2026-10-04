@@ -93,6 +93,16 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
             ));
         }
     }
+    if !report.git_found {
+        problems.push(format!(
+            "git  not found; marketplaces and agent checkouts need it ({})",
+            if cfg!(windows) {
+                "winget install Git.Git"
+            } else {
+                "install it with your package manager"
+            }
+        ));
+    }
     if let Some(error) = &report.ledger_error {
         problems.push(format!("ledger  {error}"));
     }

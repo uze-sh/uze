@@ -1457,6 +1457,7 @@ mod tests {
                         receipt: "fixture:skill".to_owned(),
                     }],
                 },
+                git_found: true,
             }),
             ..RefreshData::default()
         }

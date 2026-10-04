@@ -1221,6 +1221,10 @@ pub struct DoctorReport {
     /// What a previous version left behind that this one did not adopt.
     pub leftovers: UpgradeLeftovers,
     pub maintenance: MaintenanceReport,
+    /// Whether `git` resolves on this machine. Marketplaces are Git
+    /// repositories and agents work in Git checkouts, so without it nothing
+    /// but the built-in plugins can be installed.
+    pub git_found: bool,
 }
 
 /// The friendliest name available for a resource in a `PluginCapability`
