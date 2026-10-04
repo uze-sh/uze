@@ -35,7 +35,7 @@ scenes:
       - file: "{uze_home}/state/provisioning.json"
         exists: false
         about: but no harness is recorded as provisioned by a stop
-      - link: "{uze_home}/shims/*"
+      - launcher: "{uze_home}/shims/*"
         exists: false
         about: and no launcher is placed by one
 
@@ -55,7 +55,7 @@ scenes:
       - file: "{uze_home}/state/provisioning.json"
         exists: false
         about: a declined question provisions nothing
-      - link: "{uze_home}/shims/*"
+      - launcher: "{uze_home}/shims/*"
         exists: false
         about: and places no launcher
       - file: "{world}/bin/.invocations/curl.log"

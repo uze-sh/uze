@@ -11,6 +11,8 @@ What the packages are, and how they are installed, is
 
 from __future__ import annotations
 
+import filecmp
+import glob
 import msvcrt
 import os
 import re
@@ -111,6 +113,17 @@ def host_path(path: str) -> str:
     colon there would address an alternate data stream instead."""
     drive, rest = os.path.splitdrive(path)
     return drive + rest.replace(":", "-")
+
+
+def launchers(pattern: str) -> list[str]:
+    """The launchers matching `pattern`: executables, since an ordinary
+    account makes no link to one and UZE places a copy instead."""
+    return sorted(path for path in glob.glob(pattern + ".exe") if os.path.isfile(path))
+
+
+def launches(launcher: str, binary: Path) -> bool:
+    """Whether running `launcher` runs `binary`: it is a copy of it."""
+    return filecmp.cmp(launcher, binary, shallow=False)
 
 
 def shell_rc_name() -> str:

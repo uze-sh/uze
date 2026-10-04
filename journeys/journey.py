@@ -758,16 +758,36 @@ class Runner:
 
     def _shell(self, step: dict) -> None:
         command = self.resolve(step["shell"])
-        result = machine.run_with_a_terminal(
-            command,
-            cwd=self.world.project,
-            env=self.world.shell_env(),
-        )
+        env = self.world.shell_env()
+        if inherit := step.get("inherit"):
+            env.update(self.inherited(self.resolve(inherit)))
+        result = machine.run_with_a_terminal(command, cwd=self.world.project, env=env)
         if result.returncode != 0 and step.get("check", True):
             raise Failed(
                 f"{self.label(step)}: shell failed ({result.returncode})\n"
                 f"{result.stdout}{result.stderr}"
             )
+
+    def inherited(self, inherit: dict) -> dict:
+        """The variables `inherit["names"]` holds in the environment of the
+        newest process matching `inherit["from"]`: a step run as that
+        process, with the identity its launch carried rather than any record
+        of it. Read from the process table, which every platform answers."""
+        pids = sorted(int(pid) for pid in machine.pids_matching(inherit["from"]))
+        if not pids:
+            raise Failed(f"no process matches {inherit['from']!r} to inherit from")
+        environ = machine.process_environ(pids[-1]) or b""
+        entries = re.split(rb"[\0\s]", environ)
+        found = {}
+        for name in inherit["names"]:
+            prefix = f"{name}=".encode()
+            value = next(
+                (e[len(prefix) :] for e in entries if e.startswith(prefix)), None
+            )
+            if value is None:
+                raise Failed(f"{name} is not in the environment of {inherit['from']!r}")
+            found[name] = value.decode()
+        return found
 
     def _wait(self, step: dict) -> None:
         until = self.resolve(step.get("until", ""))
@@ -861,7 +881,7 @@ def resolve_json(document, path: str) -> list:
 VERBS = (
     "dir",
     "file",
-    "link",
+    "launcher",
     "tree",
     "json",
     "git",
@@ -877,7 +897,7 @@ VERBS = (
 PATH_FIELDS = {
     "dir": (),
     "file": (),
-    "link": (),
+    "launcher": (),
     "json": (),
     "tree": (),
     "capture": ("dirs", "tree"),
@@ -1165,33 +1185,20 @@ class Checker:
                 )
         return True, f"{shape}"
 
-    def _link(self, spec: dict) -> tuple[bool, str]:
-        pattern = spec["link"]
-        found = sorted(
-            path for path in globlib.glob(pattern) if Path(path).is_symlink()
-        )
+    def _launcher(self, spec: dict) -> tuple[bool, str]:
+        pattern = spec["launcher"]
+        found = machine.launchers(pattern)
         if spec.get("exists") is False:
             return (not found), (
-                f"{pattern}: still a link" if found else f"{pattern}: absent"
+                f"{pattern}: {found} still placed" if found else f"{pattern}: absent"
             )
         if not found:
-            return False, f"{pattern}: no symlink there"
-        if "count" in spec and len(found) != spec["count"]:
-            return (
-                False,
-                f"{pattern}: expected {spec['count']} links, found {len(found)}",
-            )
-        targets = {path: os.readlink(path) for path in found}
-        if wanted := spec.get("resolves_to"):
-            wrong = {
-                path: target for path, target in targets.items() if wanted not in target
-            }
-            if wrong:
-                return (
-                    False,
-                    f"{pattern}: {wanted!r} is not what these point at: {wrong}",
-                )
-        return True, f"{[f'{Path(k).name} -> {v}' for k, v in targets.items()]}"
+            return False, f"{pattern}: no launcher there"
+        binary = Path(self.runner.binary)
+        strays = [path for path in found if not machine.launches(path, binary)]
+        if strays:
+            return False, f"{pattern}: {strays} do not run {binary}"
+        return True, f"{[Path(path).name for path in found]} run {binary.name}"
 
     def _tree(self, spec: dict) -> tuple[bool, str]:
         roots = spec["tree"] if isinstance(spec["tree"], list) else [spec["tree"]]

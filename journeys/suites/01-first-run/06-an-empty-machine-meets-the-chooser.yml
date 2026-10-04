@@ -1,6 +1,14 @@
 journey: an empty machine is asked which harnesses to install before the workspace opens
 tags: [gate, tui, first-run]
 proves: web/content/docs/installation.mdx
+unsupported:
+  windows: |
+    The vendors' Windows installers are fetched by Invoke-WebRequest inside
+    the System32 powershell.exe, which no stand-in on the world's PATH can
+    answer, so a Windows world cannot keep this journey off the Internet.
+    That each harness hands its vendor's install.ps1 to PowerShell is
+    proven offline by every_registered_harness_installs_through_its_documented_windows_route
+    (tests/integrations/provisioning.rs).
 about: |
   Somebody who installs uze on a machine with no coding agent at all, and
   runs the workspace straight away, is asked which harnesses to install:
@@ -33,7 +41,7 @@ scenes:
       - file: "{uze_home}/state/provisioning.json"
         exists: false
         about: no harness is recorded as provisioned while the question is open
-      - link: "{uze_home}/shims/*"
+      - launcher: "{uze_home}/shims/*"
         exists: false
         about: and no launcher is placed for one
       - file: "{world}/bin/.invocations/curl.log"

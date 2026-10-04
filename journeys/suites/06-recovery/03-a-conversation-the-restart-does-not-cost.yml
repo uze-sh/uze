@@ -53,11 +53,10 @@ scenes:
         expect_timeout: 45
         pause: 2.0
     then:
-      - link: "{uze_home}/shims/claude"
-        resolves_to: uze
+      - launcher: "{uze_home}/shims/claude"
         about: |
           the launcher exists because provisioning created it, and it is
-          UZE's own binary — the presence of this one symlink is the whole
+          UZE's own binary — the presence of this one launcher is the whole
           opt-in, and nothing places an agent through it without it
       - tasks: { count: 1, states: [running] }
       - dir: "{project}/.worktrees/*"

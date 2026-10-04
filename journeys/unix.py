@@ -12,6 +12,7 @@ The screen is a tmux session holding the app's pty; the process table is
 from __future__ import annotations
 
 import fcntl
+import glob
 import os
 import shlex
 import signal
@@ -45,6 +46,17 @@ def spell(path: Path | str) -> str:
 def host_path(path: str) -> str:
     """`path` as this filesystem holds it: as written, here."""
     return path
+
+
+def launchers(pattern: str) -> list[str]:
+    """The launchers matching `pattern`: symbolic links, as UZE places
+    them here."""
+    return sorted(path for path in glob.glob(pattern) if os.path.islink(path))
+
+
+def launches(launcher: str, binary: Path) -> bool:
+    """Whether running `launcher` runs `binary`: the link resolves to it."""
+    return os.path.samefile(os.path.realpath(launcher), binary)
 
 
 def shell_rc_name() -> str:

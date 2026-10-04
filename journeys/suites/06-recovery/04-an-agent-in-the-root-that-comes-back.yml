@@ -44,8 +44,7 @@ scenes:
         expect_timeout: 45
         pause: 2.0
     then:
-      - link: "{uze_home}/shims/claude"
-        resolves_to: uze
+      - launcher: "{uze_home}/shims/claude"
         about: the launcher exists and is UZE's own binary
       - agents: { count: 1, live: 1, isolated: 0 }
         about: one agent, recorded for the project directory

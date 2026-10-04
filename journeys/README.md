@@ -184,7 +184,7 @@ scenes:
 | `drag` | the left button pressed on the target, moved across `span:` cells (default the target's width) and released; `shift: true` holds Shift throughout |
 | `type` | one character at a time; `submit: false` to leave Enter out, `clear: all` to empty a field |
 | `key` | one key or a list (`Escape`, `C-g`, `BSpace`) |
-| `shell` | a command in the world (what an agent would do to its own checkout), with a controlling terminal nobody answers and 120s to finish (see stand-ins) |
+| `shell` | a command in the world (what an agent would do to its own checkout), with a controlling terminal nobody answers and 120s to finish (see stand-ins); `inherit: { from: <pattern>, names: [...] }` runs it with those variables from the newest matching process's environment, as that process |
 | `wait` | `screen` / `file` / `shell` with `until:` and a `timeout:` |
 
 Aiming a click: `in:` bands the search (`strip`, `sidebar`, `pane`),
@@ -206,6 +206,7 @@ this, and the linter refuses it rather than the reviewer. Synchronization is
 |---|---|
 | `dir` | directories matching a glob: `count`, `exists`, `same_as: <capture>` |
 | `file` | files matching a glob: `count`, `exists`, `contains` |
+| `launcher` | launchers matching a glob, each of which must run the `uze` under test (a link on Unix, a copy named `<name>.exe` on Windows): `exists: false` for none |
 | `git` | `worktrees:` count, `branches:` pattern + `count:`, `dirty:`, `in:` |
 | `tasks` | the task store UZE writes: `count`, `states`, `checkouts`, `newest_state`, `any_state`, `newest_checkout_in: <capture>`, `one_task_per_checkout` |
 | `process` | `matching:` + `alive:`, scoped to this world's processes; `count:` where one thing is one process, `same_as:`/`more_than: <capture>` where it is not — a login shell forks a child on some hosts |

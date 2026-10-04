@@ -105,9 +105,8 @@ scenes:
 
   - scene: UZE keeps a shim for the workspace, and leaves the shell alone
     then:
-      - link: "{uze_home}/shims/*"
-        resolves_to: uze
-        about: each shim is a symlink to UZE's own binary, not a copy of a vendor's
+      - launcher: "{uze_home}/shims/*"
+        about: each shim runs UZE's own binary, not a vendor's
       - file: "{shell_rc}"
         exists: false
         about: |
