@@ -107,11 +107,19 @@ pub(super) fn provision_opencode(
         // passing `upgrade` makes it try to `chdir` into that name. The V2
         // installer is its documented install/update route.
         // OpenCode publishes no Windows installer, only its package-manager
-        // routes, which are the person's to choose.
+        // routes, which are the person's to choose: one already installed
+        // is adopted as it is, and kept current by whichever they chose.
         _ => {
             match official_installer(Some(("https://opencode.ai/v2/install", "bash")), None).here()
             {
                 Some(line) => installer_process(line),
+                None if before.present => {
+                    return Ok(ProvisioningResult::verified(
+                        ProvisionAction::None,
+                        "existing-executable",
+                        before,
+                    ));
+                }
                 None => {
                     return Ok(unsupported_platform(
                         "OpenCode",
