@@ -14,6 +14,14 @@ pub fn candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
     imp::candidates(dir, name)
 }
 
+/// The file `PATH` resolves `name` to, as a person typing it would get:
+/// the first directory holding one of its [`candidates`] that runs.
+pub fn on_path(name: &str) -> Option<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .flat_map(|directory| candidates(&directory, name))
+        .find(|candidate| is_executable(candidate))
+}
+
 /// `command` and `arguments` as a program that starts another directly,
 /// with no shell in between, has to name it: a harness launching an MCP
 /// server, say. Unchanged on Unix. On Windows a batch launcher (`npx` is

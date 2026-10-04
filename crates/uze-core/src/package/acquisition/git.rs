@@ -31,7 +31,7 @@ use crate::{
 /// the process on the terminal it shares with UZE, and an unknown host
 /// collecting the operator's public keys could identify them from a host
 /// named in somebody else's `agents.yaml`.
-const SSH_COMMAND: &str = "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15";
+const SSH_OPTIONS: &str = "-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15";
 
 /// How this machine reaches the network, which a repository cannot
 /// influence. libcurl reads `http_proxy` only in lowercase, the others in
@@ -699,12 +699,25 @@ fn run_records<T: Send + 'static>(
 /// temporary one that this user owns with no access for anybody else — and
 /// when neither can be had, every operation opens its own.
 fn ssh_command() -> String {
+    let command = format!("{} {SSH_OPTIONS}", ssh_program());
     match multiplexing_directory() {
         Some(directory) => format!(
-            "{SSH_COMMAND} -o ControlMaster=auto -o ControlPersist=60 -o \"ControlPath={}/%C\"",
+            "{command} -o ControlMaster=auto -o ControlPersist=60 -o \"ControlPath={}/%C\"",
             directory.display()
         ),
-        None => SSH_COMMAND.to_owned(),
+        None => command,
+    }
+}
+
+/// The `ssh` the operator's `PATH` names, by its full path. Left as a bare
+/// name, Git looks it up on a `PATH` of its own, and Git for Windows puts
+/// the SSH it bundles first: one that never asks the Windows OpenSSH agent,
+/// where a person's keys are loaded, so a key with a passphrase failed.
+/// Forward slashes and quotes, as the shell Git runs the command in reads.
+fn ssh_program() -> String {
+    match uze_platform::executable::on_path("ssh") {
+        Some(program) => format!("\"{}\"", program.display().to_string().replace('\\', "/")),
+        None => "ssh".to_owned(),
     }
 }
 
