@@ -49,6 +49,13 @@ use process::*;
 use server::*;
 pub use transport::{Stream, connect, pair as stream_pair};
 
+/// A pane's program run inside the group named `group`: what the server
+/// starts in its place where a program joins its group only from inside
+/// (see `host::pane_host`). Returns only when it could not run `argv`.
+pub fn host_pane(group: &str, argv: &[std::ffi::OsString]) -> std::io::Error {
+    uze_platform::process::host_grouped(group, argv)
+}
+
 /// ADR-038: the endpoint is local and user-private; no network transport is
 /// exposed by this runtime.
 #[derive(Debug, Error)]

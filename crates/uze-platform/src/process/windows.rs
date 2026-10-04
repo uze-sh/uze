@@ -297,7 +297,60 @@ fn job(kill_on_close: bool) -> io::Result<Owned> {
     if job.is_null() {
         return Err(io::Error::last_os_error());
     }
+    limited(Owned(job), kill_on_close)
+}
+
+/// A new Job Object others reach by `name`, open to this user alone and
+/// ending every member once its last handle closes.
+fn named_job(name: &str) -> io::Result<Owned> {
+    use windows_sys::Win32::{
+        Foundation::{ERROR_ALREADY_EXISTS, LocalFree},
+        Security::{
+            Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW,
+            PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES,
+        },
+    };
+    let sddl = wide(OsStr::new(&format!("D:P(A;;GA;;;{})", current_user()?)));
+    let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    // SAFETY: `sddl` is NUL-terminated; the descriptor is freed below.
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            1,
+            &mut descriptor,
+            ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let attributes = SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor,
+        bInheritHandle: 0,
+    };
+    let wide_name = wide(OsStr::new(name));
+    // SAFETY: both pointers outlive the call.
+    let job = unsafe { CreateJobObjectW(&attributes, wide_name.as_ptr()) };
+    // SAFETY: read before anything else can set it.
+    let existed = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+    // SAFETY: allocated by the conversion above.
+    unsafe { LocalFree(descriptor) };
+    if job.is_null() {
+        return Err(io::Error::last_os_error());
+    }
     let job = Owned(job);
+    if existed {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("a job named {name} already exists"),
+        ));
+    }
+    limited(job, true)
+}
+
+/// `job`, its members ended with its last handle when `kill_on_close`.
+fn limited(job: Owned, kill_on_close: bool) -> io::Result<Owned> {
     if kill_on_close {
         // SAFETY: zeroed is the documented empty limit structure.
         let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
@@ -469,6 +522,55 @@ fn in_front(
         holder = child;
     }
     Some(holder.pid)
+}
+
+pub(super) fn grouped(
+    argv: Vec<std::ffi::OsString>,
+    host: Option<&[std::ffi::OsString]>,
+) -> io::Result<(Vec<std::ffi::OsString>, Option<Group>)> {
+    let Some(host) = host else {
+        return Ok((argv, None));
+    };
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let name = format!(
+        r"Local\uze-pane-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let job = named_job(&name)?;
+    let mut hosted = host.to_vec();
+    hosted.push(name.into());
+    hosted.push("--".into());
+    hosted.extend(argv);
+    Ok((hosted, Some(Group(job))))
+}
+
+/// Joins the job, then runs `argv` in this process's place. The process
+/// that started this one may have left the console's Ctrl+C ignored (a
+/// server started in a group of its own has it so, and the flag is
+/// inherited); it is restored first, so the program can be interrupted.
+pub(super) fn host_grouped(name: &str, argv: &[std::ffi::OsString]) -> io::Error {
+    use windows_sys::Win32::System::{Console::SetConsoleCtrlHandler, JobObjects::OpenJobObjectW};
+    // winnt.h's right to assign a process to a job; windows-sys files it
+    // under SystemServices, a whole API family for one constant.
+    const JOB_OBJECT_ASSIGN_PROCESS: u32 = 0x0001;
+    let Some((program, arguments)) = argv.split_first() else {
+        return io::Error::new(io::ErrorKind::InvalidInput, "nothing to run");
+    };
+    let wide_name = wide(OsStr::new(name));
+    // SAFETY: a NUL-terminated name; null on failure.
+    let job = unsafe { OpenJobObjectW(JOB_OBJECT_ASSIGN_PROCESS, 0, wide_name.as_ptr()) };
+    if job.is_null() {
+        return io::Error::last_os_error();
+    }
+    let job = Owned(job);
+    // SAFETY: valid job handle and the pseudo-handle of this process.
+    if unsafe { AssignProcessToJobObject(job.0, GetCurrentProcess()) } == 0 {
+        return io::Error::last_os_error();
+    }
+    // SAFETY: restores the default handling of Ctrl+C; touches nothing else.
+    unsafe { SetConsoleCtrlHandler(None, 0) };
+    run_in_place(Command::new(program).args(arguments))
 }
 
 pub(super) fn finding_command(program: &str, _arguments: &str) -> String {

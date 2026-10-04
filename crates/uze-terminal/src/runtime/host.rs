@@ -38,7 +38,21 @@ fn passes_on(holder: &Member, child: &Member) -> bool {
     super::process::PLAIN_SHELL_PROCESS_NAMES
         .iter()
         .any(|shell| holder.name.eq_ignore_ascii_case(shell))
+        || holder.name.eq_ignore_ascii_case("uze")
         || super::pane::shim_launched_name(child.pid).is_some()
+}
+
+/// What a pane's program is started through where it can only join its
+/// group from inside ([`uze_platform::process::grouped`]): the serving
+/// binary's `terminal host-pane`, once one was named
+/// ([`super::endpoint::host_panes_with`]).
+pub(super) fn pane_host() -> Option<Vec<std::ffi::OsString>> {
+    let executable = super::endpoint::PANE_HOST.get()?;
+    Some(vec![
+        executable.into(),
+        "terminal".into(),
+        "host-pane".into(),
+    ])
 }
 
 /// Where the server stands. Every pane starts in a directory of its own,

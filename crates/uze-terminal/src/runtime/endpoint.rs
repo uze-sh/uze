@@ -342,6 +342,17 @@ pub fn put_first_on_pane_path(directory: PathBuf) {
     let _ = PANE_PATH_FIRST.set(directory);
 }
 
+/// The program a pane's program is started through where it can join its
+/// group only from inside (see [`uze_platform::process::grouped`]): the
+/// `uze` binary serving, whose `terminal host-pane` answers it. Unset, a
+/// pane's program is started as it is.
+pub(super) static PANE_HOST: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Names the binary that hosts a pane's program. Set before [`serve`].
+pub fn host_panes_with(executable: PathBuf) {
+    let _ = PANE_HOST.set(executable);
+}
+
 /// `inherited`, with `first` moved to its front.
 pub(super) fn path_with_first(
     inherited: Option<std::ffi::OsString>,

@@ -368,6 +368,13 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         };
     }
     if let Command::Terminal {
+        action: TerminalAction::HostPane { group, program },
+    } = command
+    {
+        let refused: uze_terminal::RuntimeError = uze_terminal::host_pane(&group, &program).into();
+        return Err(terminal_error(refused));
+    }
+    if let Command::Terminal {
         action: TerminalAction::Serve { root },
     } = command
     {
@@ -377,6 +384,11 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         // another program there, going through it too. Nothing outside the
         // workspace is told.
         uze_terminal::put_first_on_pane_path(home.shims_dir());
+        // This binary is the server, and the one a pane's program joins its
+        // group through (`terminal host-pane`).
+        if let Ok(executable) = std::env::current_exe() {
+            uze_terminal::host_panes_with(executable);
+        }
         return uze_terminal::serve(uze_terminal::SpaceSeat { root }).map_err(terminal_error);
     }
     // Ahead of the application: a check running detached from the command

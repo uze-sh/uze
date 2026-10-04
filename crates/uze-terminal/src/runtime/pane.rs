@@ -120,14 +120,14 @@ impl PaneRuntime {
                 pixel_height: 0,
             })
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let mut command = match launch.argv().split_first() {
-            Some((program, args)) => {
-                let mut builder = CommandBuilder::new(program);
-                builder.args(args);
-                builder
-            }
-            None => CommandBuilder::new(host::default_shell()),
+        let argv: Vec<std::ffi::OsString> = if launch.argv().is_empty() {
+            vec![host::default_shell().into()]
+        } else {
+            launch.argv().iter().map(Into::into).collect()
         };
+        let grouped = uze_platform::process::grouped(argv, host::pane_host().as_deref())
+            .map_err(|error| RuntimeError::Pty(error.to_string()))?;
+        let mut command = CommandBuilder::from_argv(grouped.argv);
         command.cwd(cwd);
         // `CommandBuilder` seeds a pane from *this* process's environment,
         // and this process is the server — started by whatever `uze`
@@ -155,8 +155,9 @@ impl PaneRuntime {
             .spawn_command(command)
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
         let leader = child.process_id();
-        let group = leader
-            .and_then(uze_platform::process::Group::adopt)
+        let group = grouped
+            .group
+            .or_else(|| leader.and_then(uze_platform::process::Group::adopt))
             .map(Arc::new);
         let endpoints = pair.master.try_clone_reader().and_then(|reader| {
             pair.master

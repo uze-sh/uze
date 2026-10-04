@@ -211,6 +211,20 @@ pub(super) fn finding_command(program: &str, arguments: &str) -> String {
     format!("`pgrep -fa '{program} {arguments}'`")
 }
 
+pub(super) fn grouped(
+    argv: Vec<std::ffi::OsString>,
+    _host: Option<&[std::ffi::OsString]>,
+) -> io::Result<(Vec<std::ffi::OsString>, Option<Group>)> {
+    Ok((argv, None))
+}
+
+pub(super) fn host_grouped(_name: &str, argv: &[std::ffi::OsString]) -> io::Error {
+    let Some((program, arguments)) = argv.split_first() else {
+        return io::Error::new(io::ErrorKind::InvalidInput, "nothing to run");
+    };
+    run_in_place(Command::new(program).args(arguments))
+}
+
 #[cfg(test)]
 mod tests {
     /// `kill(2)` reads `0` as the caller's own process group and a negative

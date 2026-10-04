@@ -230,7 +230,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       on it. `retire()` signals it, then uses `TerminateProcess` only on a
       confirmed `uze` image. Test: an upgrade, then attaching to and
       retiring the old server.
-- [ ] 4.5 `uze __pane-host <job> -- <argv>`:
+- [x] 4.5 `uze __pane-host <job> -- <argv>`:
       - creates the named job (owner DACL, `KILL_ON_JOB_CLOSE`) and joins it;
       - `SetConsoleCtrlHandler(NULL, FALSE)`;
       - spawns the program.
@@ -239,6 +239,14 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       server opens the job by name. `stop`, `end_leftovers` and shutdown
       become `TerminateJobObject`. The process-group code in
       `server.rs:1068-1088` is Unix-only.
+      (Done as `uze terminal host-pane <group> -- <argv>`, beside
+      `terminal serve`, through `uze_platform::process::grouped` and
+      `host_grouped`: the server makes the named job (owner-only, ended
+      with its last handle) and the host opens it, joins, restores Ctrl+C
+      and runs the program in its place. Proven in Windows Sandbox: the
+      host and a grandchild the program started at once are in the job.
+      Where no host is named (the runtime's own tests), a pane is adopted
+      after it starts, as before.)
 - [x] 4.6 `ClosePseudoConsole` is called off the reader thread, with output
       drained until it returns. (`PaneRuntime`'s `Drop` closes the master
       on a thread of its own while the reader drains.)

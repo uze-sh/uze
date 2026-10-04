@@ -7,6 +7,7 @@
 //! Job Object, for a pane).
 
 use std::{
+    ffi::OsString,
     io,
     process::{Child, Command},
 };
@@ -170,6 +171,39 @@ pub fn current_user() -> io::Result<String> {
 /// A pane's processes as one unit: the program a pane runs and everything
 /// it starts, ended together when the pane closes.
 pub struct Group(imp::Group);
+
+/// A program to start so that it belongs to its [`Group`] from its first
+/// instant.
+pub struct Grouped {
+    /// What to start in its place.
+    pub argv: Vec<OsString>,
+    /// The group, made before the program starts; `None` where it is taken
+    /// once the program runs ([`Group::adopt`]).
+    pub group: Option<Group>,
+}
+
+/// How to start `argv` inside a group of its own. On Unix as it is: the
+/// program leads a process group from its first instant, and
+/// [`Group::adopt`] takes it after. Windows puts a process in a Job Object
+/// only once it has started, and whatever it started in between would be
+/// outside; so `host` (a program that answers with [`host_grouped`]) is
+/// started in its place, given the group's name and `argv`, and joins the
+/// group before it starts `argv`. With no `host`, `argv` is started as it
+/// is and adopted after, there too.
+pub fn grouped(argv: Vec<OsString>, host: Option<&[OsString]>) -> io::Result<Grouped> {
+    let (argv, group) = imp::grouped(argv, host)?;
+    Ok(Grouped {
+        argv,
+        group: group.map(Group),
+    })
+}
+
+/// The other half of [`grouped`]: joins the group named `name`, then runs
+/// `argv` on this process's console and standard streams and ends with its
+/// exit code, as if it had been started in this one's place.
+pub fn host_grouped(name: &str, argv: &[OsString]) -> io::Error {
+    imp::host_grouped(name, argv)
+}
 
 /// One live process of a [`Group`], as [`foreground`] reads it.
 #[derive(Clone, Debug)]
