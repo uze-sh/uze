@@ -433,28 +433,38 @@ fn set_up(harness: String, home: &UzeHome, sender: &Sender<WorkerResult>, model:
         sender.clone(),
         model.context_root.clone(),
         move |app| {
-            app.setup(Some(&harness)).map(|results| {
-                results
-                    .into_iter()
-                    .find(|r| r.integration == harness)
-                    .map(|r| setup_outcome(&harness, &r))
-                    .unwrap_or_else(|| format!("{harness} setup attempted"))
-            })
+            app.setup(Some(&harness))
+                .map(|results| {
+                    results
+                        .into_iter()
+                        .find(|r| r.integration == harness)
+                        .map_or_else(
+                            || Ok(format!("{harness} setup attempted")),
+                            |r| setup_outcome(&harness, &r),
+                        )
+                })
+                .and_then(|outcome| outcome)
         },
     );
 }
 
 /// What one `uze setup` did, in the words the CLI reports it with: the
 /// action taken, the version verified, where an executable off `PATH` was
-/// found, and why a harness that is not ready is not.
-fn setup_outcome(harness: &str, result: &uze_application::application::SetupResult) -> String {
+/// found, and why a harness that is not ready is not: a failure, as the CLI
+/// reports it, so it is never shown in an outcome's colour.
+fn setup_outcome(
+    harness: &str,
+    result: &uze_application::application::SetupResult,
+) -> uze_application::Result<String> {
     if !result.configured {
         let reason = result
             .provisioning
             .reason
             .as_deref()
             .unwrap_or("executable was not verified");
-        return format!("{harness} setup {:?}: {reason}", result.provisioning.status);
+        return Err(uze_application::UzeError::ProvisioningIncomplete(format!(
+            "{harness}: {reason}"
+        )));
     }
     let action = format!("{:?}", result.provisioning.action).to_lowercase();
     let version = result.detection.version.as_deref().unwrap_or("unknown");
@@ -465,7 +475,7 @@ fn setup_outcome(harness: &str, result: &uze_application::application::SetupResu
             found.display()
         ));
     }
-    outcome
+    Ok(outcome)
 }
 
 fn add_marketplace(
@@ -1755,7 +1765,7 @@ mod tests {
         )
         .found_outside_path(Some(PathBuf::from("/home/u/.example/bin/example")));
         assert_eq!(
-            setup_outcome("example", &setup_result(verified)),
+            setup_outcome("example", &setup_result(verified)).unwrap(),
             "example ready (install; version v1.2.3); found at \
              /home/u/.example/bin/example, open a new shell to run it by name"
         );
@@ -1764,8 +1774,10 @@ mod tests {
             "install it by following https://example.invalid/install",
         );
         assert_eq!(
-            setup_outcome("example", &setup_result(blocked)),
-            "example setup Blocked: install it by following https://example.invalid/install"
+            setup_outcome("example", &setup_result(blocked))
+                .unwrap_err()
+                .to_string(),
+            "setup incomplete: example: install it by following https://example.invalid/install"
         );
     }
 }
