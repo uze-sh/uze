@@ -77,8 +77,26 @@ impl Tree {
 /// the child starts suspended and runs only once it is in the job, so
 /// nothing it starts can be outside it.
 pub fn spawn_tree(command: &mut Command, seat: Seat) -> io::Result<(Child, Tree)> {
-    let (child, tree) = imp::spawn_tree(command, seat)?;
+    let (child, tree) =
+        imp::spawn_tree(command, seat).map_err(|error| unpassable(error, command))?;
     Ok((child, Tree(tree)))
+}
+
+/// An argument the platform refuses to hand `command`'s program as it is,
+/// named as such: Windows passes a `.cmd` or `.bat` its arguments through
+/// `cmd.exe`, and refuses one that cannot get there unaltered rather than
+/// let it change the command.
+fn unpassable(error: io::Error, command: &Command) -> io::Error {
+    if error.kind() != io::ErrorKind::InvalidInput {
+        return error;
+    }
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!(
+            "an argument cannot be passed to `{}` unaltered: {error}",
+            std::path::Path::new(command.get_program()).display()
+        ),
+    )
 }
 
 /// Blocks until `pid` has exited, leaving it for `Child::wait` to reap, so
@@ -182,6 +200,10 @@ mod windows;
 use unix as imp;
 #[cfg(windows)]
 use windows as imp;
+/// What the probe asks of a process here and nowhere else: whose it is,
+/// which on Unix the walk already reads beside each pid.
+#[cfg(windows)]
+pub(crate) use windows::user_of;
 
 #[cfg(test)]
 mod tests {
@@ -190,6 +212,37 @@ mod tests {
     /// A line of this platform's shell runs, and says how it ended, with no
     /// terminal to ask on: Windows PowerShell given no console at all ran
     /// nothing and exited zero.
+    /// A batch file is started like any program, its arguments reaching it
+    /// whole; one Windows cannot pass it unaltered is refused, by name.
+    #[cfg(windows)]
+    #[test]
+    fn a_batch_file_runs_and_an_unpassable_argument_is_named() {
+        let root = uze_testkit::temp::scratch("batch-file");
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("echo-first.cmd");
+        std::fs::write(&script, "@echo off\r\necho [%~1]\r\n").unwrap();
+
+        let mut command = Command::new(&script);
+        command
+            .arg("two words")
+            .stdout(std::process::Stdio::piped());
+        let (child, _tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "[two words]"
+        );
+
+        let mut refused = Command::new(&script);
+        refused.arg("line\nbreak");
+        let Err(error) = spawn_tree(&mut refused, Seat::NoTerminal) else {
+            panic!("an argument cmd.exe cannot carry was passed");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("echo-first.cmd"), "{error}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn a_shell_line_with_no_terminal_still_runs() {
         let mut command = crate::shell::command("exit 7");

@@ -229,9 +229,27 @@ pub(super) fn spawn_detached(command: &mut Command) -> io::Result<super::Detache
 }
 
 pub(super) fn current_user() -> io::Result<String> {
+    // SAFETY: the pseudo-handle of this process needs no closing.
+    user_of_process(unsafe { GetCurrentProcess() })
+}
+
+/// The SID `pid` runs as, or `None` when it cannot be asked: gone, or
+/// another user's process this token may not query.
+pub(crate) fn user_of(pid: u32) -> Option<String> {
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    // SAFETY: null on failure, otherwise owned by `Owned`.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return None;
+    }
+    let process = Owned(process);
+    user_of_process(process.0).ok()
+}
+
+fn user_of_process(process: HANDLE) -> io::Result<String> {
     let mut token: HANDLE = ptr::null_mut();
-    // SAFETY: the pseudo-handle of this process; `token` is closed by `Owned`.
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+    // SAFETY: a process handle the caller holds; `token` is closed by `Owned`.
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
         return Err(io::Error::last_os_error());
     }
     let token = Owned(token);

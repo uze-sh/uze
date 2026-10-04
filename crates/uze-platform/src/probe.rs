@@ -704,9 +704,10 @@ mod platform {
         }
     }
 
-    /// Every process in one snapshot, its cwd read from its PEB. Another
-    /// user's processes cannot be opened for reading, so they are left out
-    /// by the same rule that keeps their directories private.
+    /// Every process of this user in one snapshot, its cwd read from its
+    /// PEB. Whose a process is is asked of its token: an administrator can
+    /// open another user's processes, so that this one could not be opened
+    /// was never the answer.
     pub(super) fn working_directories() -> Option<Vec<PathBuf>> {
         use windows_sys::Win32::{
             Foundation::INVALID_HANDLE_VALUE,
@@ -723,6 +724,7 @@ mod platform {
         }
         let snapshot = Process(snapshot);
         let own = std::process::id();
+        let user = crate::process::current_user().ok()?;
         // SAFETY: zeroed is valid once dwSize is set.
         let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
@@ -733,6 +735,7 @@ mod platform {
             let (pid, parent) = (entry.th32ProcessID, entry.th32ParentProcessID);
             if pid != own
                 && parent != own
+                && crate::process::user_of(pid).as_deref() == Some(user.as_str())
                 && let Some(directory) = current_directory_of(pid)
             {
                 directories.push(directory);
@@ -869,6 +872,44 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
         last_seen
+    }
+
+    /// Each fact, asked of another process this test started: where it
+    /// stands, what it was handed, what it runs, who started it, and that
+    /// its directory is among this user's.
+    #[cfg(windows)]
+    #[test]
+    fn each_fact_is_read_from_another_process() {
+        let root = uze_testkit::temp::scratch("probe-child");
+        std::fs::create_dir_all(&root).unwrap();
+        let mut child = std::process::Command::new("ping")
+            .args(["-n", "30", "127.0.0.1"])
+            .current_dir(&root)
+            .env("UZE_PROBE_CHILD", "handed")
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let (directory, value, name, image, parent) = (
+            current_directory_of(pid),
+            environment_value_of(pid, "UZE_PROBE_CHILD"),
+            command_name_of(pid),
+            super::executable_of(pid),
+            parent_of(pid),
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(
+            directory.and_then(|path| path.canonicalize().ok()),
+            root.canonicalize().ok()
+        );
+        assert_eq!(value.as_deref(), Some("handed"));
+        assert!(name.is_some_and(|name| name.eq_ignore_ascii_case("ping")));
+        assert!(
+            image.is_some_and(|image| image.ends_with("PING.EXE") || image.ends_with("ping.exe"))
+        );
+        assert_eq!(parent, Some(std::process::id()));
     }
 
     /// The process questions, asked about this very process (and its parent
