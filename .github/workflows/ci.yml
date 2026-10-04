@@ -22,6 +22,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # A runner builds each tree once: incremental state is only written, never
+  # read back, and on Windows it is the largest part of a cache entry.
+  CARGO_INCREMENTAL: "0"
 
 # Every runner in this repository names its image, and none says
 # `ubuntu-latest` or `macos-latest`. Those labels move — GitHub repoints them

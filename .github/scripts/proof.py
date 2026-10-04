@@ -238,7 +238,10 @@ def main(argv=None):
     name = f"{args.platform}-{args.shard.replace('/', 'of')}"
     leg_key = key("journeys", name, args.runner, tree_digest(journey_pathspecs()))
     print(f"key={leg_key}")
-    print(f"proven={'' if args.fresh else proven_by(leg_key)}")
+    # A runner that did not say which image it is could be any image, so
+    # nothing proven on another one counts for it.
+    unknown_runner = not args.runner.strip()
+    print(f"proven={'' if args.fresh or unknown_runner else proven_by(leg_key)}")
     return 0
 
 

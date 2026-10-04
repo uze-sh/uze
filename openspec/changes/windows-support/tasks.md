@@ -521,9 +521,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 11. CI and release (D19)
 
-- [ ] 11.1 `ci.yml`: Windows rows triggered per D19. Caches save from the
+- [x] 11.1 `ci.yml`: Windows rows triggered per D19. Caches save from the
       nightly only, with `CARGO_INCREMENTAL=0`. Defender excludes the target
       directory. The proof key treats an empty image id as unknown.
+      (Caches save from `main` only, which the nightly runs on; a runner
+      that names no image is never counted as proven.)
 - [ ] 11.2 `installer-windows` job: PSScriptAnalyzer and Pester 5 (pinned)
       on 5.1 and pwsh 7, against a fake release over `python -m
       http.server`, with a mockable refusal gate. It covers:
