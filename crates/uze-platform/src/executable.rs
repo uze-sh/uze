@@ -346,15 +346,34 @@ mod imp {
 
     const DEFAULT_EXTENSIONS: &str = ".COM;.EXE;.BAT;.CMD";
 
-    fn extensions() -> Vec<String> {
-        std::env::var("PATHEXT")
+    /// `PATHEXT`, lowercased, as this thread last parsed it: a `PATH` walk
+    /// asks once per candidate, and the value changes only when somebody
+    /// sets it (a test does), which the key notices.
+    fn extensions() -> std::rc::Rc<Vec<String>> {
+        thread_local! {
+            static PARSED: std::cell::RefCell<Option<(String, std::rc::Rc<Vec<String>>)>> =
+                const { std::cell::RefCell::new(None) };
+        }
+        let raw = std::env::var("PATHEXT")
             .ok()
             .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| DEFAULT_EXTENSIONS.to_owned())
-            .split(';')
-            .filter(|extension| !extension.is_empty())
-            .map(str::to_ascii_lowercase)
-            .collect()
+            .unwrap_or_else(|| DEFAULT_EXTENSIONS.to_owned());
+        PARSED.with(|parsed| {
+            let mut parsed = parsed.borrow_mut();
+            if let Some((key, extensions)) = parsed.as_ref()
+                && *key == raw
+            {
+                return std::rc::Rc::clone(extensions);
+            }
+            let extensions = std::rc::Rc::new(
+                raw.split(';')
+                    .filter(|extension| !extension.is_empty())
+                    .map(str::to_ascii_lowercase)
+                    .collect::<Vec<_>>(),
+            );
+            *parsed = Some((raw, std::rc::Rc::clone(&extensions)));
+            extensions
+        })
     }
 
     pub(super) fn candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
@@ -362,7 +381,7 @@ mod imp {
             return vec![dir.join(name)];
         }
         extensions()
-            .into_iter()
+            .iter()
             .map(|extension| dir.join(format!("{name}{extension}")))
             .collect()
     }

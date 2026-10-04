@@ -201,8 +201,13 @@ mod imp {
     pub(super) const KEY: &str = "windows";
     pub(super) const FAMILY: super::Family = super::Family::PowerShell;
 
+    /// Asked once per process: a pane is opened far more often than
+    /// PowerShell 7 is installed, and a `PATH` walk over `PATHEXT` per pane
+    /// is the cost of asking again. One installed while a server runs is
+    /// what that server's panes open once it is restarted.
     pub(super) fn interactive() -> String {
-        let installed = crate::executable::on_path("pwsh").is_some();
+        static INSTALLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let installed = *INSTALLED.get_or_init(|| crate::executable::on_path("pwsh").is_some());
         if installed {
             "pwsh.exe"
         } else {

@@ -56,14 +56,18 @@ fn main() {
     if let Some(name) = shim::detect() {
         shim::run(&name);
     }
-    uze::self_update::sweep_set_aside();
-
-    // Help is presentation-only, but every public command routes through the
-    // same renderer before Clap can emit its unstyled generated help.
     // Read lossily rather than through `args()`, which panics on an
     // argument that is not UTF-8: what to do about one is clap's answer to
     // give, and a replacement character matches none of the words below.
     let args: Vec<String> = argv_lossy();
+    // Not for a pane's trampoline, which starts with every pane and has
+    // nothing of an update's to tidy: the next `uze` a person runs does.
+    if args.get(1..3) != Some(&["terminal".to_owned(), "host-pane".to_owned()][..]) {
+        uze::self_update::sweep_set_aside();
+    }
+
+    // Help is presentation-only, but every public command routes through the
+    // same renderer before Clap can emit its unstyled generated help.
     if is_framed(args.get(1..).unwrap_or_default()) {
         progress::open_frame();
     }

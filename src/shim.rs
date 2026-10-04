@@ -41,6 +41,11 @@ use uze_workspace::{continuity, conversation::Claim};
 pub fn detect() -> Option<String> {
     let argv0 = env::args_os().next()?;
     let name = uze_platform::executable::invoked_name(&argv0)?;
+    // Asked by every `uze` there is, and answered without building the
+    // registry when the name is UZE's own, which no harness is.
+    if name == "uze" {
+        return None;
+    }
     let home = UzeHome::from_env().ok()?;
     let registry = IntegrationRegistry::builtin(&home).ok()?;
     registry
