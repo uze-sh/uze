@@ -2145,7 +2145,7 @@ there is a network round trip, a `PATH` inherited from Windows carries a
 dozen of them, and a harness UZE integrates keeps its state under `$HOME`
 on this side.
 
-> `crates/uze-core/src/machine/harness_runtime.rs::tests::a_windows_drive_mounted_into_wsl_is_not_where_a_harness_is_looked_for`
+> `crates/uze-platform/src/mounts.rs::tests::a_windows_drive_mounted_into_wsl_is_a_network_mount`
 
 ## Harness conformance (`assert-one-capability-contract`)
 
