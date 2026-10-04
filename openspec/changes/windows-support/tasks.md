@@ -507,18 +507,18 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 10. Journeys on Windows (D20)
 
-- [ ] 10.1 `journey.py`: `Screen` (tmux, or pywinpty + pyte with DSR
+- [x] 10.1 `journey.py`: `Screen` (tmux, or pywinpty + pyte with DSR
       answered and clicks mapped) and `Machine` (`/proc`/`ps`, or psutil)
       backends. `fcntl` and `termios` move into the Unix backend. Linux and
       macOS runs are unchanged.
-- [ ] 10.2 `journeys/requirements-windows.txt`, pinned, installed with
+- [x] 10.2 `journeys/requirements-windows.txt`, pinned, installed with
       `--only-binary :all:` (check for `win_arm64` wheels). The composite
       action uses `actions/setup-python` on Windows.
 - [ ] 10.3 World setup: `shell:` steps run under the runner's Git Bash by
       absolute path, outside the environment of the `uze` under test. World
       stand-ins become `uze-fake-harness` copies. Provisioning checks gain
       their PowerShell-route counterpart.
-- [ ] 10.4 `07-upgrade` is declared unsupported on Windows, with its reason,
+- [x] 10.4 `07-upgrade` is declared unsupported on Windows, with its reason,
       until a Windows release exists. `tap` and OSC 52 get a ConPTY answer,
       or the check stops the run.
 - [ ] 10.5 The whole suite passes on `windows-2025` and `windows-11-arm`.
