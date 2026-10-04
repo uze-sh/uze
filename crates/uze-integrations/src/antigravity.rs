@@ -123,6 +123,8 @@ pub const ID: &str = "antigravity";
 /// surfaced in its own output, unavoidable in this version. Documented
 /// destination: `~/.local/bin/agy`.
 const INSTALLER_URL: &str = "https://antigravity.google/cli/install.sh";
+/// The PowerShell installer the vendor documents for Windows.
+const WINDOWS_INSTALLER_URL: &str = "https://antigravity.google/cli/install.ps1";
 
 #[derive(Clone)]
 pub struct AntigravityIntegration {
@@ -349,8 +351,9 @@ impl IntegrationPort for AntigravityIntegration {
         let route = OfficialRoute {
             label: "Antigravity CLI",
             program: "agy",
-            install: official_installer(INSTALLER_URL, "bash"),
+            install: official_installer(Some((INSTALLER_URL, "bash")), Some(WINDOWS_INSTALLER_URL)),
             update: ProcessSpec::new(&executable, ["update"]).with_inherited_output(),
+            environment: &[],
             method: "official-native-installer",
             manual_route: "https://antigravity.google/docs/cli/install/",
         };

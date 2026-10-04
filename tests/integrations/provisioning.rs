@@ -1,4 +1,4 @@
-//! Each registered harness's official Linux/macOS/WSL install route, asked
+//! Each registered harness's official install route on this platform, asked
 //! for with nothing installed: recorded by a fake runner, never run, so no
 //! vendor installer and no network is reached. The update routes are the
 //! CLI's registry-complete setup matrix (`tests/cli/machine.rs`).
@@ -72,8 +72,8 @@ fn every_registered_harness_installs_through_its_documented_official_route() {
         let commands = runner.0.into_inner().unwrap();
         assert_eq!(commands.len(), 1, "{id}: {commands:?}");
         let install = &commands[0];
-        assert_eq!(install.program, "sh", "{id}");
-        assert_eq!(install.arguments[0], "-c", "{id}");
+        assert_eq!(install.program, uze_platform::shell::ARGV[0], "{id}");
+        assert_eq!(install.arguments[0], uze_platform::shell::ARGV[1], "{id}");
         let script = &install.arguments[1];
         assert!(
             script.contains(&format!("curl -fsSL {url}"))
@@ -87,6 +87,82 @@ fn every_registered_harness_installs_through_its_documented_official_route() {
         );
         assert_eq!(result.action, ProvisionAction::Install, "{id}");
         assert_eq!(result.status, ProvisionStatus::Failed, "{id}");
+    }
+
+    drop(scope);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The PowerShell routes the vendors publish for Windows, and OpenCode's
+/// absence of one: a harness with no official automated route there is
+/// blocked with its manual routes named, and nothing is run.
+#[cfg(windows)]
+#[test]
+fn every_registered_harness_installs_through_its_documented_windows_route() {
+    use std::sync::Mutex;
+
+    use uze_core::UzeHome;
+    use uze_core::provisioning::{
+        ProcessResult, ProcessRunner, ProcessSpec, ProvisionAction, ProvisionStatus,
+    };
+    use uze_integrations::registry::IntegrationRegistry;
+
+    struct Refusing(Mutex<Vec<ProcessSpec>>);
+    impl ProcessRunner for Refusing {
+        fn run(&self, spec: &ProcessSpec) -> uze_core::Result<ProcessResult> {
+            self.0.lock().unwrap().push(spec.clone());
+            Ok(ProcessResult {
+                success: false,
+                timed_out: false,
+            })
+        }
+    }
+
+    const ROUTES: [(&str, Option<&str>); 4] = [
+        ("claude-code", Some("https://claude.ai/install.ps1")),
+        ("codex", Some("https://chatgpt.com/codex/install.ps1")),
+        ("opencode", None),
+        (
+            "antigravity",
+            Some("https://antigravity.google/cli/install.ps1"),
+        ),
+    ];
+
+    let root = uze_testkit::temp::scratch("official-windows-routes");
+    let empty = root.join("empty-bin");
+    std::fs::create_dir_all(&empty).unwrap();
+    let mut scope = uze_testkit::env::scope();
+    scope
+        .set("PATH", &empty)
+        .set("USERPROFILE", root.join("home"))
+        .set("LOCALAPPDATA", root.join("local"))
+        .remove("OPENCODE_INSTALL_DIR");
+    let uze_home = UzeHome::at(root.join("uze"));
+    let registry = IntegrationRegistry::isolated(&root, &uze_home);
+
+    for (id, url) in ROUTES {
+        let integration = registry.get(id).unwrap();
+        let runner = Refusing(Mutex::new(Vec::new()));
+        let result = integration.provision(&runner).unwrap();
+        let commands = runner.0.into_inner().unwrap();
+        match url {
+            Some(url) => {
+                assert_eq!(commands.len(), 1, "{id}: {commands:?}");
+                let install = &commands[0];
+                assert_eq!(install.program, uze_platform::shell::ARGV[0], "{id}");
+                let script = install.arguments.last().unwrap();
+                assert!(
+                    script.contains(&format!("irm {url} | iex")),
+                    "{id} must hand {url} to PowerShell: {script}"
+                );
+                assert_eq!(result.action, ProvisionAction::Install, "{id}");
+                assert_eq!(result.status, ProvisionStatus::Failed, "{id}");
+            }
+            None => {
+                assert!(commands.is_empty(), "{id} runs nothing: {commands:?}");
+                assert_eq!(result.status, ProvisionStatus::Blocked, "{id}");
+            }
+        }
     }
 
     drop(scope);

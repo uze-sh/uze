@@ -17,24 +17,36 @@ use uze_core::{
     Result,
     integration::HarnessDetection,
     provisioning::{ProcessRunner, ProcessSpec, ProvisionAction, ProvisioningResult},
+    shell::{ShellCommand, Spellings},
 };
 
-/// A vendor's documented `curl -fsSL <url> | <interpreter>` installer,
-/// fetched in full before it runs. In the pipe the interpreter's status is
-/// the pipeline's, so a download that failed reported success, and one cut
-/// off midway ran whatever part of the script had arrived. POSIX `sh` has
-/// no `pipefail` to rely on.
-pub(crate) fn official_installer(url: &str, interpreter: &str) -> ProcessSpec {
-    ProcessSpec::new(
-        "sh",
-        [
-            "-c".to_owned(),
+/// A vendor's documented installer, spelled for each platform it publishes
+/// one for: `curl -fsSL <url> | <interpreter>` and `irm <url> | iex`. A
+/// platform with no spelling has no automated route, and setup names the
+/// vendor's own page instead of guessing.
+///
+/// The POSIX script is fetched in full before it runs. In the pipe the
+/// interpreter's status is the pipeline's, so a download that failed
+/// reported success, and one cut off midway ran whatever part of the
+/// script had arrived; POSIX `sh` has no `pipefail` to rely on.
+pub(crate) fn official_installer(
+    posix: Option<(&str, &str)>,
+    windows: Option<&str>,
+) -> ShellCommand {
+    ShellCommand::PerPlatform(Spellings {
+        posix: posix.map(|(url, interpreter)| {
             format!(
                 "installer=$(curl -fsSL {url}) && printf '%s\\n' \"$installer\" | {interpreter}"
-            ),
-        ],
-    )
-    .with_inherited_output()
+            )
+        }),
+        windows: windows.map(|url| format!("irm {url} | iex")),
+    })
+}
+
+/// The process that runs an installer `line` in this platform's shell.
+pub(crate) fn installer_process(line: &str) -> ProcessSpec {
+    let (program, arguments) = uze_platform::shell::invocation(line);
+    ProcessSpec::new(program, arguments).with_inherited_output()
 }
 
 /// One harness's documented provisioning route, as its integration knows
@@ -44,22 +56,16 @@ pub(crate) struct OfficialRoute<'a> {
     pub label: &'a str,
     /// The name a shell resolves the executable by.
     pub program: &'a str,
-    pub install: ProcessSpec,
+    /// The vendor's installer, per platform (see [`official_installer`]).
+    pub install: ShellCommand,
     pub update: ProcessSpec,
+    /// Set on top of the inherited environment, for both.
+    pub environment: &'a [(&'a str, &'a str)],
     /// The secret-free label recorded as the provisioning method.
     pub method: &'a str,
     /// The vendor's own installation page, named whenever UZE has no
     /// official automated route to run on this platform.
     pub manual_route: &'a str,
-}
-
-/// Whether this platform has an automated route UZE runs. The vendors'
-/// Unix installers cover Linux, macOS and WSL; the Windows routes they
-/// document are PowerShell scripts whose command contract has never been
-/// exercised by a Windows runner here, so Windows is reported rather than
-/// guessed at (see the change's `research.md`).
-pub(crate) fn platform_has_automated_route() -> bool {
-    cfg!(unix)
 }
 
 /// The actionable answer for a platform with no automated route: it names
@@ -109,9 +115,6 @@ pub(crate) fn provision_cli(
     before: HarnessDetection,
     detect: impl Fn(&str) -> HarnessDetection,
 ) -> Result<ProvisioningResult> {
-    if !platform_has_automated_route() {
-        return Ok(unsupported_platform(route.label, route.manual_route));
-    }
     let method = route.method;
     let action = if before.present {
         ProvisionAction::Update
@@ -121,8 +124,17 @@ pub(crate) fn provision_cli(
     let command = if before.present {
         route.update
     } else {
-        route.install
+        let Some(line) = route.install.here() else {
+            return Ok(unsupported_platform(route.label, route.manual_route));
+        };
+        installer_process(line)
     };
+    let command = route
+        .environment
+        .iter()
+        .fold(command, |command, (name, value)| {
+            command.with_env(*name, *value)
+        });
     let outcome = match runner.run(&command) {
         Ok(outcome) => outcome,
         Err(_) => {
@@ -160,7 +172,7 @@ pub(crate) fn provision_cli(
 mod official_installer_tests {
     use std::process::Command;
 
-    use super::official_installer;
+    use super::{installer_process, official_installer};
 
     fn run(spec: &uze_core::provisioning::ProcessSpec, path: &std::path::Path) -> bool {
         Command::new(&spec.program)
@@ -181,9 +193,14 @@ mod official_installer_tests {
         let curl = bin.join("curl");
         let marker = bin.join("ran");
         // The interpreter stands in for the vendor's: it records that it ran.
-        let spec = official_installer(
-            "https://example.invalid/install.sh",
-            &format!("cat > '{}'", marker.display()),
+        let interpreter = format!("cat > '{}'", marker.display());
+        let spec = installer_process(
+            official_installer(
+                Some(("https://example.invalid/install.sh", &interpreter)),
+                None,
+            )
+            .spelling("posix")
+            .unwrap(),
         );
 
         std::fs::write(&curl, "#!/bin/sh\necho 'partial'\nexit 22\n").unwrap();
@@ -228,8 +245,12 @@ mod provision_cli_tests {
         OfficialRoute {
             label: "Test Harness",
             program: "does-not-exist-on-this-machine",
-            install: ProcessSpec::new("sh", ["-c", "install"]),
+            install: ShellCommand::PerPlatform(Spellings {
+                posix: Some("install".to_owned()),
+                windows: Some("install".to_owned()),
+            }),
             update: ProcessSpec::new("sh", ["-c", "update"]),
+            environment: &[],
             method: "official-test-installer",
             manual_route: "https://example.invalid/install",
         }
@@ -294,12 +315,13 @@ mod provision_cli_tests {
             |_| HarnessDetection::default(),
         )
         .unwrap();
-        if cfg!(unix) {
-            assert_eq!(result.action, ProvisionAction::Install);
-            let commands = runner.commands.lock().unwrap();
-            assert_eq!(commands[0].arguments, ["-c", "install"]);
-            assert_eq!(commands[1].program, "does-not-exist-on-this-machine");
-        }
+        assert_eq!(result.action, ProvisionAction::Install);
+        let commands = runner.commands.lock().unwrap();
+        assert_eq!(
+            commands[0].arguments,
+            installer_process("install").arguments
+        );
+        assert_eq!(commands[1].program, "does-not-exist-on-this-machine");
     }
 
     #[test]
@@ -320,11 +342,9 @@ mod provision_cli_tests {
             |_| HarnessDetection::default(),
         )
         .unwrap();
-        if cfg!(unix) {
-            assert_eq!(result.action, ProvisionAction::Update);
-            let commands = runner.commands.lock().unwrap();
-            assert_eq!(commands[0].arguments, ["-c", "update"]);
-        }
+        assert_eq!(result.action, ProvisionAction::Update);
+        let commands = runner.commands.lock().unwrap();
+        assert_eq!(commands[0].arguments, ["-c", "update"]);
     }
 
     #[test]
@@ -342,16 +362,14 @@ mod provision_cli_tests {
             |_| HarnessDetection::default(),
         )
         .unwrap();
-        if cfg!(unix) {
-            assert_eq!(
-                result.status,
-                uze_core::provisioning::ProvisionStatus::Failed
-            );
-            assert_eq!(
-                runner.commands.lock().unwrap().len(),
-                1,
-                "must not attempt --version verification after the installer itself failed"
-            );
-        }
+        assert_eq!(
+            result.status,
+            uze_core::provisioning::ProvisionStatus::Failed
+        );
+        assert_eq!(
+            runner.commands.lock().unwrap().len(),
+            1,
+            "must not attempt --version verification after the installer itself failed"
+        );
     }
 }

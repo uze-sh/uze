@@ -20,7 +20,7 @@ use uze_core::{
 
 use crate::shared::process::{VersionToken, detect_version};
 use crate::shared::provision::{
-    found_outside_path, official_installer, platform_has_automated_route, unsupported_platform,
+    found_outside_path, installer_process, official_installer, unsupported_platform,
 };
 
 /// Resolves the OpenCode V2 executable. V2 is the standard channel
@@ -64,7 +64,11 @@ fn documented_install_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBu
 
 fn installed_outside_path(dirs: &[PathBuf]) -> Option<PathBuf> {
     dirs.iter()
-        .flat_map(|dir| PROGRAMS.iter().map(move |program| dir.join(program)))
+        .flat_map(|dir| {
+            PROGRAMS
+                .iter()
+                .flat_map(move |program| uze_platform::executable::candidates(dir, program))
+        })
         .find(|candidate| candidate.is_file())
 }
 
@@ -79,9 +83,6 @@ pub(super) fn provision_opencode(
     detect: impl Fn() -> HarnessDetection,
     shims_dir: &Path,
 ) -> Result<ProvisioningResult> {
-    if !platform_has_automated_route() {
-        return Ok(unsupported_platform("OpenCode", "https://opencode.ai/docs"));
-    }
     let method = "official-install-script";
     let resolved = resolve_opencode_binary(shims_dir);
     let before = resolved
@@ -96,7 +97,7 @@ pub(super) fn provision_opencode(
     let command = match &resolved {
         Some((which, _))
             if Path::new(which)
-                .file_name()
+                .file_stem()
                 .is_some_and(|name| name == "opencode") =>
         {
             ProcessSpec::new(which.clone(), ["upgrade"]).with_inherited_output()
@@ -105,7 +106,21 @@ pub(super) fn provision_opencode(
         // project path rather than the stable CLI's `upgrade` command, so
         // passing `upgrade` makes it try to `chdir` into that name. The V2
         // installer is its documented install/update route.
-        _ => official_installer("https://opencode.ai/v2/install", "bash"),
+        // OpenCode publishes no Windows installer, only its package-manager
+        // routes, which are the person's to choose.
+        _ => {
+            match official_installer(Some(("https://opencode.ai/v2/install", "bash")), None).here()
+            {
+                Some(line) => installer_process(line),
+                None => {
+                    return Ok(unsupported_platform(
+                        "OpenCode",
+                        "`scoop install opencode`, `choco install opencode` or \
+                     `npm i -g opencode-ai` (https://opencode.ai/docs)",
+                    ));
+                }
+            }
+        }
     };
     let outcome = match runner.run(&command) {
         Ok(o) => o,
@@ -174,9 +189,6 @@ mod provision_tests {
     /// state.
     #[test]
     fn provision_dispatches_install_or_update_consistently_with_detected_state() {
-        if !cfg!(unix) {
-            return;
-        }
         // `provision`'s install/upgrade command is mocked below, so nothing
         // is genuinely installed — the final `detect()` verification still
         // resolves `opencode`/`opencode2` for real. On a machine with
@@ -223,7 +235,7 @@ mod provision_tests {
         {
             assert_eq!(commands[0].arguments, ["upgrade"]);
         } else {
-            assert_eq!(commands[0].program, "sh");
+            assert_eq!(commands[0].program, uze_platform::shell::ARGV[0]);
             assert!(commands[0].arguments[1].contains("opencode.ai/v2/install"));
         }
         assert_eq!(commands.len(), 1);
