@@ -98,4 +98,20 @@ cat > "$stage/uze-playground.wsb" <<WSB
 WSB
 
 say "Opening Windows Sandbox (preparing takes a minute; progress in ${stage}/prepare.log)"
-(cd /mnt/c && cmd.exe /C start "" "$(wslpath -w "$stage/uze-playground.wsb")")
+if ! (cd /mnt/c && cmd.exe /C start "" "$(wslpath -w "$stage/uze-playground.wsb")"); then
+  rm -rf "${stage}/sessions"
+  die "Windows Sandbox did not start"
+fi
+# The Sandbox takes the lent sessions out of the stage once it has read
+# them. One that never gets that far must not leave them on this machine,
+# so they go after ten minutes whatever happened.
+if [ -d "${stage}/sessions" ]; then
+  (
+    for _ in $(seq 600); do
+      [ -d "${stage}/sessions" ] || exit 0
+      sleep 1
+    done
+    rm -rf "${stage}/sessions"
+  ) >/dev/null 2>&1 &
+  disown
+fi

@@ -17,6 +17,7 @@ Usage: sessions.py <out>. Prints one line per harness.
 
 import base64
 import json
+import os
 import re
 import sys
 import time
@@ -149,8 +150,10 @@ def main():
         for relative, content in files.items():
             path = out / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(content))
-            path.chmod(0o600)
+            # Owner-only from the moment it exists, not after it is written.
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, "w") as file:
+                file.write(json.dumps(content))
         print(f"  {name:<9} lent ({said})")
 
 
