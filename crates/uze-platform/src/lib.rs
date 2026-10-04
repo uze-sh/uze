@@ -20,6 +20,7 @@ pub mod home;
 pub mod interrupt;
 pub mod lock;
 pub mod machine;
+pub mod mounts;
 pub mod path;
 pub mod probe;
 pub mod process;

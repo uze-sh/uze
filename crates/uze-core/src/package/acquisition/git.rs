@@ -837,6 +837,12 @@ fn ssh_command() -> String {
 /// the SSH it bundles first: one that never asks the Windows OpenSSH agent,
 /// where a person's keys are loaded, so a key with a passphrase failed.
 /// Forward slashes and quotes, as the shell Git runs the command in reads.
+/// Whether the SSH program acquisition hands Git is there at all: what a
+/// diagnostic asks, so that it asks the same lookup Git is then given.
+pub fn ssh_available() -> bool {
+    uze_platform::executable::on_path("ssh").is_some()
+}
+
 fn ssh_program() -> String {
     match uze_platform::executable::on_path("ssh") {
         Some(program) => format!("\"{}\"", program.display().to_string().replace('\\', "/")),

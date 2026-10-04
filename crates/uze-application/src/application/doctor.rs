@@ -246,7 +246,7 @@ impl Health<'_> {
                     matches!(&record.source, uze_core::PackageSource::Git { url, .. }
                         if uze_core::acquisition::forge::reached_over_ssh(url))
                 })
-                && !uze_core::subprocess::program_on_path("ssh"),
+                && !uze_core::acquisition::git::ssh_available(),
             machine_concerns: uze_platform::machine::concerns()
                 .into_iter()
                 .map(|concern| MachineConcern {
