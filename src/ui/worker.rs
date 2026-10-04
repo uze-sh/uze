@@ -448,10 +448,9 @@ fn set_up(harness: String, home: &UzeHome, sender: &Sender<WorkerResult>, model:
     );
 }
 
-/// What one `uze setup` did, in the words the CLI reports it with: the
-/// action taken, the version verified, where an executable off `PATH` was
-/// found, and why a harness that is not ready is not: a failure, as the CLI
-/// reports it, so it is never shown in an outcome's colour.
+/// What one `uze setup` did, in one line: the version verified and the
+/// action taken, or why a harness that is not ready is not, a failure as
+/// the CLI reports it, so it is never shown in an outcome's colour.
 fn setup_outcome(
     harness: &str,
     result: &uze_application::application::SetupResult,
@@ -466,16 +465,19 @@ fn setup_outcome(
             "{harness}: {reason}"
         )));
     }
-    let action = format!("{:?}", result.provisioning.action).to_lowercase();
-    let version = result.detection.version.as_deref().unwrap_or("unknown");
-    let mut outcome = format!("{harness} ready ({action}; version {version})");
-    if let Some(found) = &result.provisioning.located_outside_path {
-        outcome.push_str(&format!(
-            "; found at {}, open a new shell to run it by name",
-            found.display()
-        ));
-    }
-    Ok(outcome)
+    // Where the executable sits off `PATH` is a terminal's concern: the
+    // workspace launches a harness wherever setup found it.
+    let action = match result.provisioning.action {
+        uze_application::ProvisionAction::Install => "installed",
+        uze_application::ProvisionAction::Update => "up to date",
+        uze_application::ProvisionAction::None => "already set up",
+    };
+    let version = result.detection.version.as_deref().unwrap_or_default();
+    Ok([harness, version, action]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" "))
 }
 
 fn add_marketplace(
@@ -1754,7 +1756,7 @@ mod tests {
     }
 
     #[test]
-    fn a_setup_outcome_says_what_was_done_and_where_the_executable_is() {
+    fn a_setup_outcome_says_what_was_done_in_one_short_line() {
         let verified = uze_application::ProvisioningResult::verified(
             uze_application::ProvisionAction::Install,
             "official-test-route",
@@ -1766,8 +1768,7 @@ mod tests {
         .found_outside_path(Some(PathBuf::from("/home/u/.example/bin/example")));
         assert_eq!(
             setup_outcome("example", &setup_result(verified)).unwrap(),
-            "example ready (install; version v1.2.3); found at \
-             /home/u/.example/bin/example, open a new shell to run it by name"
+            "example v1.2.3 installed"
         );
 
         let blocked = uze_application::ProvisioningResult::blocked(
