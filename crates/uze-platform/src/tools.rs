@@ -12,6 +12,14 @@ pub fn system(name: &str) -> Command {
 /// How a person installs Git here, as a command they can type.
 pub const GIT_INSTALL_HINT: &str = imp::GIT_INSTALL_HINT;
 
+/// The Git settings under which a checkout holds a repository's files as
+/// they were committed, on this platform: no line-ending conversion
+/// anywhere; on Windows also no links Git cannot make without a privilege
+/// (each becomes a file holding its target), and paths longer than the
+/// Win32 limit. Pushed rather than left to a Git build's defaults, which
+/// differ between builds.
+pub const GIT_FAITHFUL_CHECKOUT: &[(&str, &str)] = imp::GIT_FAITHFUL_CHECKOUT;
+
 #[cfg(unix)]
 mod imp {
     use std::process::Command;
@@ -22,6 +30,9 @@ mod imp {
     }
 
     pub(super) const GIT_INSTALL_HINT: &str = "install it with your package manager";
+
+    pub(super) const GIT_FAITHFUL_CHECKOUT: &[(&str, &str)] =
+        &[("core.autocrlf", "false"), ("core.eol", "lf")];
 }
 
 #[cfg(windows)]
@@ -38,4 +49,11 @@ mod imp {
     }
 
     pub(super) const GIT_INSTALL_HINT: &str = "winget install Git.Git";
+
+    pub(super) const GIT_FAITHFUL_CHECKOUT: &[(&str, &str)] = &[
+        ("core.autocrlf", "false"),
+        ("core.eol", "lf"),
+        ("core.symlinks", "false"),
+        ("core.longpaths", "true"),
+    ];
 }

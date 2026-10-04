@@ -717,6 +717,13 @@ fn multiplexing_directory() -> Option<PathBuf> {
 /// The configuration an attempt carries, beyond the stripped environment's.
 fn pushed_config(reach: Reach) -> Vec<(String, String)> {
     let mut config = vec![("core.sshCommand".to_owned(), ssh_command())];
+    // A package's bytes are what its commit holds on every machine, or the
+    // digest a lock records on one is never reproduced on another.
+    config.extend(
+        uze_platform::tools::GIT_FAITHFUL_CHECKOUT
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+    );
     if reach.access != Access::Local {
         config.extend(operator_config(NETWORK_KEYS));
     }
