@@ -24,6 +24,14 @@ pub fn direct_launch(command: &str, arguments: Vec<String>) -> (String, Vec<Stri
     imp::direct_launch(command, arguments)
 }
 
+/// Whether replacing the program at `path` would fail because something is
+/// running it. Never on Unix, where a running image keeps the file it
+/// started from. On Windows a running image cannot be replaced, and a file
+/// another process holds cannot be opened for this process alone.
+pub fn in_use(path: &Path) -> bool {
+    imp::in_use(path)
+}
+
 /// Whether `path` is a file this platform would run.
 pub fn is_executable(path: &Path) -> bool {
     imp::is_executable(path)
@@ -149,6 +157,10 @@ mod imp {
         (command.to_owned(), arguments)
     }
 
+    pub(super) fn in_use(_path: &Path) -> bool {
+        false
+    }
+
     pub(super) fn is_executable(path: &Path) -> bool {
         std::fs::metadata(path)
             .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
@@ -258,6 +270,40 @@ mod imp {
             .collect()
     }
 
+    /// A program is in use while it runs, and free once it has ended.
+    #[cfg(test)]
+    #[test]
+    fn a_running_program_is_in_use_until_it_ends() {
+        let root = uze_testkit::temp::scratch("in-use");
+        fs::create_dir_all(&root).unwrap();
+        let system = std::env::var_os("SystemRoot")
+            .map(std::path::PathBuf::from)
+            .unwrap();
+        let program = root.join("waiter.exe");
+        fs::copy(system.join("System32").join("ping.exe"), &program).unwrap();
+        let mut running = std::process::Command::new(&program)
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        assert!(in_use(&program));
+        running.kill().unwrap();
+        running.wait().unwrap();
+        assert!(!in_use(&program));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A running image is mapped, and a mapped file refuses to be opened
+    /// for writing as being used by another process: what replacing it
+    /// would meet.
+    pub(super) fn in_use(path: &Path) -> bool {
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .is_err_and(|error| error.raw_os_error() == Some(ERROR_SHARING_VIOLATION))
+    }
+
     pub(super) fn direct_launch(command: &str, arguments: Vec<String>) -> (String, Vec<String>) {
         let path = Path::new(command);
         let directories: Vec<PathBuf> = match path
@@ -348,6 +394,17 @@ mod tests {
             "second, longer"
         );
         refresh_launchers(&program, &root.join("absent")).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A program nobody runs can be replaced.
+    #[test]
+    fn a_program_nobody_runs_is_not_in_use() {
+        let root = uze_testkit::temp::scratch("not-in-use");
+        std::fs::create_dir_all(&root).unwrap();
+        let program = root.join(file_name("idle"));
+        std::fs::write(&program, "idle").unwrap();
+        assert!(!in_use(&program));
         let _ = std::fs::remove_dir_all(root);
     }
 }

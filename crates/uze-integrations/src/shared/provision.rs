@@ -135,6 +135,16 @@ pub(crate) fn provision_cli(
     } else {
         ProvisionAction::Install
     };
+    // Replacing a program a running session holds fails on Windows, and an
+    // update would end in the middle of that session's work: the harness
+    // is left as it is, updated by the next setup nobody is running it in.
+    if before.present && uze_platform::executable::in_use(Path::new(executable)) {
+        return Ok(ProvisioningResult::verified(
+            ProvisionAction::None,
+            "in-use",
+            before,
+        ));
+    }
     let command = if before.present {
         route.update
     } else {

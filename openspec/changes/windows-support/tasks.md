@@ -341,7 +341,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [ ] 7.3 `.cmd`/`.bat` launchers spawn correctly from the shim,
       `run_captured` and `CapturingRunner` (`src/cli/setup.rs:431`).
       Surface `std`'s `InvalidInput` for arguments it cannot escape.
-- [ ] 7.4 Windows provisioning routes, kept in each integration and run in
+- [x] 7.4 Windows provisioning routes, kept in each integration and run in
       Windows PowerShell, the script downloaded as text (`irm` hands a
       script served as `application/octet-stream` back as bytes) and run
       with `Invoke-Expression`, in a hidden console of its own (with no
@@ -362,7 +362,8 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       `platform_has_automated_route` becomes per integration and per
       platform. `uze setup` does not update a harness whose executable a
-      pane holds.
+      pane holds (`executable::in_use`: a running image refuses to be
+      opened for writing).
 - [x] 7.5 Claude's sandbox preference is reported Unsupported on native
       Windows (`claude/preferences.rs:61`).
 - [ ] 7.6 Update ADR-010's Windows paragraph to the routes now automated.
