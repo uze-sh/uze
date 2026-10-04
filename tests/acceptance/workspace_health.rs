@@ -108,3 +108,38 @@ fn workspace_overview_tracks_environment_readiness() {
         assert_eq!(attachment["state"]["drifted"], 0, "{attachment}");
     }
 }
+
+/// A gate written only for the other platform's shell cannot run on this
+/// machine, and `uze status` is where the person hears it before a
+/// delivery is refused for it.
+#[test]
+fn status_names_a_gate_this_machine_cannot_run() {
+    let env = TestEnvironment::isolated();
+    let other = uze_platform::shell::spelling("windows", "posix");
+    std::fs::write(env.project.join("AGENTS.md"), "# Workspace\n").unwrap();
+    std::fs::write(
+        env.project.join("agents.yaml"),
+        format!("worktrees:\n  gate:\n    {other}: make check\n"),
+    )
+    .unwrap();
+    let init = env
+        .command("git")
+        .args(["init", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(init.status.success());
+
+    let report = env.run_ok(uze_bin(), &["status", "--format", "json"]);
+    let report: serde_json::Value = serde_json::from_slice(&report.stdout).unwrap();
+    let steps = report["steps_not_spelled_here"].as_array().unwrap();
+    assert_eq!(steps.len(), 1, "{report}");
+    assert_eq!(steps[0]["step"], "gate");
+    assert_eq!(steps[0]["platform"], uze_platform::shell::KEY);
+
+    let text = env.run_ok(uze_bin(), &["status"]);
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        text.contains("not spelled for this machine") && text.contains("gate"),
+        "{text}"
+    );
+}

@@ -3,6 +3,8 @@
 use super::*;
 use uze_core::shell::ShellCommand;
 
+use crate::worktree::PolicyStep;
+
 /// How many free slots are kept, and for how long. Decided from the slots
 /// as they stand, never from a history of how many were used: a rule with
 /// no memory has nothing to get wrong about the past.
@@ -338,17 +340,13 @@ pub(super) fn create(
 /// A checkout's preparation, in order: links from the primary, then the
 /// declared setup command. Every problem is a warning — a checkout without
 /// its `.env` or its dependencies is still better than no agent — and the
-/// warnings are what the tab shows.
+/// warnings are what the tab shows. A gate this machine cannot run is said
+/// here too, when the work starts, rather than first at its delivery.
 pub const SETUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
-pub fn materialize(
-    primary: &Path,
-    slot: &Path,
-    links: &[PathBuf],
-    setup: &[ShellCommand],
-) -> Vec<String> {
+pub fn materialize(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<String> {
     let mut warnings = Vec::new();
-    for link in links {
+    for link in &policy.link {
         let source = primary.join(link);
         let destination = slot.join(link);
         if !source.exists() {
@@ -374,7 +372,7 @@ pub fn materialize(
     // In order, and stopping at the first failure: a later step almost
     // always assumes the earlier one ran, so continuing would produce a
     // second, more confusing warning about the same cause.
-    for step in setup {
+    for step in &policy.setup {
         // Never run in a shell it was not written for: the checkout is
         // still placed, and says which step it went without.
         let Some(line) = step.here() else {
@@ -391,6 +389,18 @@ pub fn materialize(
             break;
         }
     }
+    warnings.extend(
+        policy
+            .steps_not_spelled_here()
+            .into_iter()
+            .filter(|(step, _)| *step == PolicyStep::Gate)
+            .map(|(_, gate)| {
+                format!(
+                    "gate `{gate}` has no {} spelling; this work cannot be delivered from here",
+                    ShellCommand::platform()
+                )
+            }),
+    );
     warnings
 }
 

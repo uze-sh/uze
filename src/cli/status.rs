@@ -461,13 +461,24 @@ pub(crate) fn render_machine_status(report: &MachineStatusReport, asked: Machine
     text
 }
 
-pub(crate) fn render_status(report: &StatusReport) -> String {
+/// What `uze status` answers inside a project: the package manager's
+/// report, and what the workspace adds about the commands its policy runs.
+#[derive(serde::Serialize)]
+pub(crate) struct ProjectStatus {
+    #[serde(flatten)]
+    pub(crate) report: StatusReport,
+    pub(crate) steps_not_spelled_here:
+        Vec<uze_application::application::services::StepNotSpelledHere>,
+}
+
+pub(crate) fn render_status(status: &ProjectStatus) -> String {
+    let report = &status.report;
     let name = report.root.file_name().map_or_else(
         || "project".to_owned(),
         |name| name.to_string_lossy().into_owned(),
     );
     let mut text = progress::report_title(&name, Some(&progress::path(&report.root)));
-    text.push_str(&format!("{}\n\n", status_headline(report)));
+    text.push_str(&format!("{}\n\n", status_headline(status)));
 
     text.push_str(&progress::report_section("Context"));
     let mut instructions = render_status_instructions(&report.instructions);
@@ -515,7 +526,21 @@ pub(crate) fn render_status(report: &StatusReport) -> String {
     for issue in &report.issues {
         text.push_str(&format!("{} {issue}\n", progress::warning_icon()));
     }
-    if let Some(step) = status_next_step(report) {
+    for unspelled in &status.steps_not_spelled_here {
+        let (step, consequence) = match unspelled.step {
+            uze_application::PolicyStep::Setup => {
+                ("setup", "skipped when a checkout is placed here")
+            }
+            uze_application::PolicyStep::Gate => ("gate", "every delivery from here is refused"),
+        };
+        text.push_str(&format!(
+            "{} {step} `{}` has no `{}` spelling in agents.yaml: {consequence}\n",
+            progress::warning_icon(),
+            unspelled.command,
+            unspelled.platform,
+        ));
+    }
+    if let Some(step) = status_next_step(status) {
         text.push('\n');
         if step.starts_with("uze ") {
             text.push_str(&progress::next_step(step));
@@ -527,7 +552,8 @@ pub(crate) fn render_status(report: &StatusReport) -> String {
     text
 }
 
-pub(crate) fn status_headline(report: &StatusReport) -> String {
+pub(crate) fn status_headline(status: &ProjectStatus) -> String {
+    let report = &status.report;
     let missing = locked_plugin_count(&report.project_lock);
     let attention = |what: String| {
         format!(
@@ -545,6 +571,12 @@ pub(crate) fn status_headline(report: &StatusReport) -> String {
     let drift = &report.drift;
     if !drift.unresolved.is_empty() || !drift.surplus.is_empty() || !drift.missing.is_empty() {
         return attention("declared, not yet applied".to_owned());
+    }
+    if !status.steps_not_spelled_here.is_empty() {
+        return attention(format!(
+            "{} not spelled for this machine",
+            count(status.steps_not_spelled_here.len(), "command")
+        ));
     }
     match &report.portability {
         Portability::Portable => format!(
@@ -676,9 +708,13 @@ pub(crate) fn locked_plugin_count(
 /// command *can* answer — but a project with no `AGENTS.md` is owed a
 /// decision about what goes in one, and naming a command there would
 /// promise a repair that running it does not perform.
-pub(crate) fn status_next_step(report: &StatusReport) -> Option<&'static str> {
+pub(crate) fn status_next_step(status: &ProjectStatus) -> Option<&'static str> {
+    let report = &status.report;
     if locked_plugin_count(&report.project_lock) > 0 || !report.drift.is_clear() {
         return Some("uze install");
+    }
+    if !status.steps_not_spelled_here.is_empty() {
+        return Some("spell those commands for this machine's shell in agents.yaml");
     }
     match &report.portability {
         Portability::NoContext | Portability::VendorLocked { .. } => {

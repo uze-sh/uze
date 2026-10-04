@@ -454,6 +454,29 @@ impl WorktreePolicy {
             })
             .collect()
     }
+
+    /// The commands this platform's shell has no spelling for, each with
+    /// the step it belongs to: a setup step that is skipped here, a gate
+    /// that refuses every delivery here.
+    pub fn steps_not_spelled_here(&self) -> Vec<(PolicyStep, &ShellCommand)> {
+        let setup = self
+            .setup
+            .iter()
+            .map(|command| (PolicyStep::Setup, command));
+        let gate = self.gate.iter().map(|command| (PolicyStep::Gate, command));
+        setup
+            .chain(gate)
+            .filter(|(_, command)| command.here().is_none())
+            .collect()
+    }
+}
+
+/// Which of a policy's command lists a command is in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PolicyStep {
+    Setup,
+    Gate,
 }
 
 impl WorktreePolicy {
@@ -651,6 +674,25 @@ pub fn isolated_checkout(path: &Path) -> Option<IsolatedCheckout<'_>> {
 mod tests {
     use super::*;
     use uze_core::path::Canonical as _;
+
+    /// A step written only for the other platform's shell is named, with
+    /// the list it is in; one spelled for both is not.
+    #[test]
+    fn a_step_spelled_only_for_the_other_shell_is_named_here() {
+        let elsewhere = ShellCommand::spelled(
+            uze_platform::shell::spelling("", "make"),
+            uze_platform::shell::spelling("make", ""),
+        );
+        let policy = WorktreePolicy {
+            setup: vec![ShellCommand::spelled("make", "make")],
+            gate: vec![elsewhere.clone()],
+            ..WorktreePolicy::default()
+        };
+        assert_eq!(
+            policy.steps_not_spelled_here(),
+            [(PolicyStep::Gate, &elsewhere)]
+        );
+    }
 
     #[test]
     fn the_projected_text_never_asks_for_a_top_level_worktree() {

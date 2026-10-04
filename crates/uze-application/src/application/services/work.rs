@@ -126,8 +126,7 @@ impl Workspace<'_> {
             store.upsert(child);
             Ok(acquired)
         })?;
-        let warnings =
-            checkout::materialize(&caller.primary, &acquired.path, &policy.link, &policy.setup);
+        let warnings = checkout::materialize(&caller.primary, &acquired.path, &policy);
         Ok(SplitWork {
             path: acquired.path,
             warnings,

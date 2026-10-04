@@ -64,10 +64,10 @@ impl ShellCommand {
     pub fn label(&self) -> &str {
         match self {
             Self::Line(line) => line,
-            Self::PerPlatform(spellings) => self
+            Self::PerPlatform(_) => self
                 .here()
-                .or(spellings.posix.as_deref())
-                .or(spellings.windows.as_deref())
+                .or_else(|| self.spelling(POSIX))
+                .or_else(|| self.spelling(WINDOWS))
                 .unwrap_or_default(),
         }
     }

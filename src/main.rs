@@ -546,7 +546,11 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
             if !machine {
                 match app.health().status(&root) {
                     Ok(report) => {
-                        emit(format, &report, render_status);
+                        let status = ProjectStatus {
+                            steps_not_spelled_here: app.workspace().steps_not_spelled_here(&root),
+                            report,
+                        };
+                        emit(format, &status, render_status);
                         return Ok(());
                     }
                     Err(uze_application::UzeError::NoProject { .. }) => {}
@@ -804,10 +808,10 @@ mod status_output_tests {
         EnvironmentDrift, InstructionsFile, Portability, ProjectLockStatus, StatusReport,
     };
 
-    use super::{render_status, status_next_step};
+    use super::{ProjectStatus, render_status, status_next_step};
 
-    fn report(instructions: InstructionsFile, portability: Portability) -> StatusReport {
-        StatusReport {
+    fn report(instructions: InstructionsFile, portability: Portability) -> ProjectStatus {
+        let report = StatusReport {
             root: std::path::PathBuf::from("/project"),
             instructions,
             portability,
@@ -817,6 +821,10 @@ mod status_output_tests {
             project_lock: ProjectLockStatus::Absent,
             drift: EnvironmentDrift::default(),
             issues: Vec::new(),
+        };
+        ProjectStatus {
+            report,
+            steps_not_spelled_here: Vec::new(),
         }
     }
 

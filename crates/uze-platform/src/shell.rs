@@ -241,4 +241,21 @@ mod tests {
         assert_eq!(words(&line).unwrap(), expected);
         assert_eq!(words("'unterminated"), None);
     }
+
+    /// A native command's exit code is the line's, and in PowerShell a
+    /// native command that fails before a cmdlet that succeeds still fails
+    /// the line, as it would under `sh -e`.
+    #[test]
+    fn a_native_failure_is_the_line_s_exit_code() {
+        let code = |line: &str| command(line).status().unwrap().code();
+        assert_eq!(code(spelling("exit 3", "cmd /c exit 3")), Some(3));
+        assert_eq!(
+            code(spelling(
+                "sh -c 'exit 4' || exit $?; echo after",
+                "cmd /c exit 4; Write-Output after"
+            )),
+            Some(4)
+        );
+        assert_eq!(code(spelling("true", "cmd /c exit 0")), Some(0));
+    }
 }

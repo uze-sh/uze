@@ -197,15 +197,16 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
 ## 5. Commands per platform (D10, D11)
 
-- [ ] 5.1 A `Command` value in `uze-core`: a string, or a map
+- [x] 5.1 A `Command` value in `uze-core`: a string, or a map
       `{posix?, windows?}`, with `resolve(platform)`.
       - `CommandHook.command: Command` (`hook.rs:110`).
       - `WorktreePolicy.setup`/`gate: Vec<Command>`; `one_or_many` gains
         `visit_map` (`worktree.rs:332,395`).
       - The views carry it: `DeliveryPolicyView.gate` (`views.rs:430`),
         `landing/readiness.rs:24`, `checkout::materialize`.
-      - Importers map Codex's `commandWindows` to `windows`.
-- [ ] 5.2 `run_shell_bounded` runs the resolved spelling:
+      - No importer reads a vendor's hook file today, so Codex's
+        `commandWindows` has nothing to map it.
+- [x] 5.2 `run_shell_bounded` runs the resolved spelling:
       - `sh -c` on Unix;
       - on Windows, `powershell.exe -NoProfile -NonInteractive
         -ExecutionPolicy Bypass -Command
@@ -214,10 +215,10 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       Test that a native exit 3 stays 3, and that a failing first command
       fails the line.
-- [ ] 5.3 A command with no spelling for the platform is never run:
-      - a setup step is skipped, and the checkout is not ready, naming it;
-      - a gate is reported at placement and at workspace open, and delivery
-        fails closed.
+- [x] 5.3 A command with no spelling for the platform is never run:
+      - a setup step is skipped with a warning naming it (a setup failure
+        never blocks a launch, so neither does this);
+      - a gate is reported at placement, and delivery fails closed.
 
       `uze status` lists every project command missing a spelling for this
       platform.
@@ -230,11 +231,18 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       re-prompts. A `hooks.json` parse failure fails trust closed
       (`trust.rs:157`).
 - [x] 5.6 `uze agent plugin check` warns about a handler with no `windows`
-      spelling, and notes the minimum uze version the map form requires.
-- [ ] 5.7 The scaffold (`authoring.rs:348` + `guard.sh`) writes
+      spelling. The minimum uze version the map form requires is stated
+      in the `uze:author` skill, not warned on: every plugin written the
+      recommended way would carry the warning.
+- [x] 5.7 The scaffold (`authoring.rs:348` + `guard.sh`) writes
       `scripts/guard` and `scripts/guard.ps1` and declares both spellings.
       Update the `uze:author` and `uze:worktree` skills, and the region
-      UZE projects into `AGENTS.md`.
+      UZE projects into `AGENTS.md`. (Neither the worktree skill nor the
+      region spells a command; the per-platform form is documented in
+      `reference/project-files`.)
+- [ ] 5.8 The workspace client says, when it opens on a project, which
+      gates this machine cannot run (the read model is `uze status`'s
+      `steps_not_spelled_here`).
 
 ## 6. Hooks and delivery on Windows (D12, D16, D17)
 

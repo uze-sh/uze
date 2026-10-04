@@ -66,7 +66,7 @@ pub use uze_workspace::{
     landing::Forge,
     notifications::{Chime, WrittenChime},
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
-    worktree::{CompletionBehavior, isolated_checkout},
+    worktree::{CompletionBehavior, PolicyStep, isolated_checkout},
 };
 
 /// Whether this build offers an unfinished surface — see
