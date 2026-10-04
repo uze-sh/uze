@@ -2408,6 +2408,74 @@ for what can be done now and for nothing else.
 
 ---
 
+## Platforms (windows-support)
+
+### A guard that cannot run on this platform is never installed
+
+A `deny`, `ask` or `transform` group with a handler that has no spelling
+for this platform's shell refuses the whole package before the Store holds
+any of it: delivered without its guard, the package would let through what
+the guard checks.
+
+> `crates/uze-application/src/application/tests.rs::a_package_whose_guard_cannot_run_here_is_not_installed`
+
+### Every platform's hook wrapper answers as the contract records
+
+The generated wrapper of the platform the suite runs on (`exec` on Unix,
+`exec.ps1` on Windows) answers every recorded fixture with the recorded
+exit, decision and reason; a guard that cannot decide denies.
+
+> `crates/uze-integrations/src/hooks/wrapper_parity_tests.rs::every_fixture_is_answered_as_recorded_on_this_platform`
+> `crates/uze-integrations/src/hooks/host_wrapper_tests.rs::a_guard_that_cannot_decide_denies`
+
+### A project command never runs in a shell it was not written for
+
+A setup step or gate with no spelling for this platform is not run, and is
+said at placement and in `uze status`; a gate without one refuses delivery.
+
+> `crates/uze-workspace/src/checkout/tests.rs::a_checkout_placed_where_its_gate_cannot_run_says_so`
+> `tests/acceptance/workspace_health.rs::status_names_a_gate_this_machine_cannot_run`
+
+### A label is held under a name every filesystem takes
+
+A delivered skill or agent is written under `file_name_for` its label
+(`flow:review` is `flow-review` on Windows), and a receipt is matched to a
+label through what it holds, never by reading a label back out of a name.
+
+> `crates/uze-platform/src/fs_name.rs::a_label_becomes_a_name_ntfs_holds`
+> `crates/uze-core/src/delivery/exposure.rs::a_label_names_the_artifact_that_holds_it`
+
+### Nothing UZE links needs a privilege
+
+A link to a directory reads through, reads back as a link and is removed
+alone on every platform (a junction on Windows, which any user may make).
+
+> `crates/uze-platform/src/fs.rs::a_directory_link_reads_through_and_goes_alone`
+
+### A child with no terminal still runs, and asks nobody
+
+A tree started with no terminal runs a line of this platform's shell and
+reports its exit: Windows PowerShell given no console at all ran nothing.
+
+> `crates/uze-platform/src/process.rs::a_shell_line_with_no_terminal_still_runs`
+
+### A cross-process lock leaves its holder readable
+
+An exclusive holder refuses another holder, and what it wrote in the lock
+file (its pid) stays readable to whoever needs to name it.
+
+> `crates/uze-platform/src/lock.rs::an_exclusive_holder_refuses_another_and_keeps_its_contents_readable`
+
+### A harness is found wherever its installer put it
+
+The shim and setup find a harness through one lookup: this process's
+`PATH`, the one a new shell searches, then where its installer documents
+putting it, never anything that leads back to UZE.
+
+> `crates/uze-core/src/machine/harness_runtime.rs::a_harness_off_every_path_is_found_where_its_installer_puts_it`
+
+---
+
 ## This page
 
 ### Every citation on this page names a test that exists

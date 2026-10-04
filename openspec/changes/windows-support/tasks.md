@@ -491,7 +491,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         App Control, uninstall, and the note that `/i.ps1` serves `main`;
       - `README.md:21,50`, `roadmap.mdx`, `development.mdx:119-129` and
         `docs/versioning.md`.
-- [ ] 12.4 `docs/architecture/invariants.md`: add each property with the test
+- [x] 12.4 `docs/architecture/invariants.md`: add each property with the test
       that proves it:
       - a cross-process lock with a readable holder;
       - a pipe private to its user;
@@ -499,6 +499,13 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - filesystem-valid names;
       - identical digests across platforms;
       - no POSIX tool on a Windows path UZE runs.
+
+      (Added under "Platforms": the guard refusal, wrapper parity,
+      unspelled commands, filesystem-held labels, links without privilege,
+      terminal-less children, the readable lock and the harness lookup.
+      The pipe's privacy, a pane ending with its tree and the POSIX-free
+      path join when their tests do: the last is a CI step today, which is
+      no test.)
 
 ## 13. Proof before offering it
 
