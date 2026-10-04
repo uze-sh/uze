@@ -348,6 +348,14 @@ fn install_over(
 ) -> Result<(), String> {
     let _span = tracing::info_span!("self_update.install", version = %latest).entered();
     releases.install(latest, &owned.binary, &home.cache_dir())?;
+    // The harness launchers run this binary too; where they are copies of
+    // it they would go on running the one just replaced. One that cannot be
+    // placed now is placed again by the next setup.
+    if let Err(error) =
+        uze_platform::executable::refresh_launchers(&owned.binary, &home.shims_dir())
+    {
+        tracing::warn!(%error, "the harness launchers were not refreshed");
+    }
     owned.version = latest.to_owned();
     let _ = write_json(&receipt_path(home), owned);
     amend_ledger(home, |stored| stored.installed = Some(latest.to_owned()));

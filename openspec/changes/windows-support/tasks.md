@@ -356,7 +356,8 @@ offered only at 13.3, and until then `install.ps1` refuses it.
         helper;
       - the startup `.old-*` sweep;
       - D6 flags in `hand_off_check`;
-      - a shim refresh.
+      - a shim refresh (`executable::refresh_launchers` after the binary
+        is replaced: done).
 
       Update `the_asset_is_the_one_the_installer_picks`.
 - [x] 8.2 `src/main.rs`: `--quiet` through `SetStdHandle(NUL)`, and a

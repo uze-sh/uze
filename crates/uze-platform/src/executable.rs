@@ -67,6 +67,30 @@ pub fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
     imp::place_launcher(program, at)
 }
 
+/// Places `program` again at every launcher in `directory` (see
+/// [`place_launcher`]) once `program` has been replaced: a launcher that
+/// is a copy (Windows) would otherwise go on running the program it was
+/// copied from, while one that is a link already reaches the new one. What
+/// an earlier replacement set aside there is left to [`sweep_replaced`].
+pub fn refresh_launchers(program: &Path, directory: &Path) -> io::Result<()> {
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for entry in entries {
+        let launcher = entry?.path();
+        let set_aside = launcher
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_some_and(|name| name.contains(".old-"));
+        if !set_aside {
+            place_launcher(program, &launcher)?;
+        }
+    }
+    Ok(())
+}
+
 /// Removes what [`replace_running`] set aside beside `running`, once nothing
 /// runs it. A removal that fails is tried again at a later start.
 pub fn sweep_replaced(running: &Path) {
@@ -300,5 +324,30 @@ mod tests {
             .unwrap();
         assert_eq!(status.code(), Some(5));
         let _ = std::fs::remove_dir_all(directory);
+    }
+
+    /// A launcher refreshed after its program was replaced runs the new
+    /// program, whether it is a link to it or a copy of it.
+    #[test]
+    fn a_refreshed_launcher_runs_the_replacement() {
+        let root = uze_testkit::temp::scratch("refresh-launchers");
+        let launchers = root.join("shims");
+        std::fs::create_dir_all(&launchers).unwrap();
+        let program = root.join(file_name("tool"));
+        std::fs::write(&program, "first").unwrap();
+        let launcher = launchers.join(file_name("harness"));
+        place_launcher(&program, &launcher).unwrap();
+
+        let staged = root.join("staged");
+        std::fs::write(&staged, "second, longer").unwrap();
+        replace_running(&staged, &program).unwrap();
+        refresh_launchers(&program, &launchers).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&launcher).unwrap(),
+            "second, longer"
+        );
+        refresh_launchers(&program, &root.join("absent")).unwrap();
+        let _ = std::fs::remove_dir_all(root);
     }
 }
