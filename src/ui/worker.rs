@@ -276,23 +276,15 @@ pub(crate) fn dispatch(
             });
         }
         Intent::Remove(id) => {
-            let ticket = model.mutation_asked(format!("Removing {id}…"));
             spawn_mutation(
-                ticket,
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
+                Mutation::asked(model, format!("Removing {id}…"), home, sender),
                 move |app| app.plugins().remove(&id).map(remove_message),
             );
         }
         Intent::Update(id, grant) => {
-            let ticket = model.mutation_asked(format!("Updating {id}…"));
             let retry_id = id.clone();
             spawn_trust_sensitive(
-                ticket,
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
+                Mutation::asked(model, format!("Updating {id}…"), home, sender),
                 grant,
                 id.clone(),
                 move |app, authority| app.plugins().update(&id, authority).map(update_message),
@@ -307,12 +299,8 @@ pub(crate) fn dispatch(
         Intent::Setup(harness) => set_up(harness, home, sender, model),
         Intent::AddMarketplace(source) => add_marketplace(source, home, sender, model),
         Intent::RemoveMarketplace(name) => {
-            let ticket = model.mutation_asked(format!("Removing marketplace {name}…"));
             spawn_mutation(
-                ticket,
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
+                Mutation::asked(model, format!("Removing marketplace {name}…"), home, sender),
                 move |app| {
                     app.marketplace()
                         .remove(&name)
@@ -326,12 +314,8 @@ pub(crate) fn dispatch(
         }
         Intent::ContextApply(root) => apply_context(root, home, sender, model),
         Intent::CreateProfile(id) => {
-            let ticket = model.mutation_asked(format!("Creating profile \"{id}\"…"));
             spawn_mutation(
-                ticket,
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
+                Mutation::asked(model, format!("Creating profile \"{id}\"…"), home, sender),
                 move |app| {
                     app.profiles()
                         .create(&id, None, Preferences::default())
@@ -340,12 +324,8 @@ pub(crate) fn dispatch(
             );
         }
         Intent::DeleteProfile(id) => {
-            let ticket = model.mutation_asked(format!("Deleting profile \"{id}\"…"));
             spawn_mutation(
-                ticket,
-                home.clone(),
-                sender.clone(),
-                model.context_root.clone(),
+                Mutation::asked(model, format!("Deleting profile \"{id}\"…"), home, sender),
                 move |app| {
                     app.profiles()
                         .delete(&id)
@@ -444,12 +424,8 @@ fn read_release_notes(version: String, home: &UzeHome, sender: &Sender<WorkerRes
 }
 
 fn set_up(harness: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
-    let ticket = model.mutation_asked(format!("Setting up {harness}…"));
     spawn_mutation(
-        ticket,
-        home.clone(),
-        sender.clone(),
-        model.context_root.clone(),
+        Mutation::asked(model, format!("Setting up {harness}…"), home, sender),
         move |app| {
             app.setup(Some(&harness))
                 .map(|results| {
@@ -504,12 +480,13 @@ fn add_marketplace(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    let ticket = model.mutation_asked(format!("Adding marketplace from {source}…"));
     spawn_mutation(
-        ticket,
-        home.clone(),
-        sender.clone(),
-        model.context_root.clone(),
+        Mutation::asked(
+            model,
+            format!("Adding marketplace from {source}…"),
+            home,
+            sender,
+        ),
         move |app| {
             app.marketplace().register(&source).map(|registration| {
                 let identity = &registration.identity;
@@ -558,12 +535,13 @@ fn install_project_environment(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    let ticket = model.mutation_asked("Installing project environment…".to_owned());
     spawn_mutation(
-        ticket,
-        home.clone(),
-        sender.clone(),
-        model.context_root.clone(),
+        Mutation::asked(
+            model,
+            "Installing project environment…".to_owned(),
+            home,
+            sender,
+        ),
         move |app| {
             // Same use case and same default (no trust flag) as the
             // CLI's `uze install`; the TUI adds no install logic.
@@ -684,15 +662,11 @@ fn install(
     sender: &Sender<WorkerResult>,
     model: &mut TuiModel,
 ) {
-    let ticket = model.mutation_asked(format!("Installing {name}…"));
     let retry_name = name.clone();
     let retry_marketplace = marketplace.clone();
     let spec = format!("{name}@{marketplace}");
     spawn_trust_sensitive(
-        ticket,
-        home.clone(),
-        sender.clone(),
-        model.context_root.clone(),
+        Mutation::asked(model, format!("Installing {name}…"), home, sender),
         grant,
         name,
         move |app, authority| {
@@ -888,11 +862,40 @@ fn in_mutation_lane(job: impl FnOnce() + Send + 'static) {
     let _ = lane.send(Box::new(job));
 }
 
-fn spawn_mutation(
+/// A mutation asked for and the reach its work needs: what it answers
+/// with goes back on `sender`, under its `ticket`.
+struct Mutation {
     ticket: MutationTicket,
     home: UzeHome,
     sender: Sender<WorkerResult>,
     context_root: PathBuf,
+}
+
+impl Mutation {
+    /// Asks for a mutation doing `doing`: the line says so at once, and
+    /// the ticket it is answered under is made here, with it.
+    fn asked(
+        model: &mut TuiModel,
+        doing: String,
+        home: &UzeHome,
+        sender: &Sender<WorkerResult>,
+    ) -> Self {
+        Self {
+            ticket: model.mutation_asked(doing),
+            home: home.clone(),
+            sender: sender.clone(),
+            context_root: model.context_root.clone(),
+        }
+    }
+}
+
+fn spawn_mutation(
+    Mutation {
+        ticket,
+        home,
+        sender,
+        context_root,
+    }: Mutation,
     operation: impl FnOnce(&UzeApplication) -> Result<String> + Send + 'static,
 ) {
     let parent = tracing::Span::current();
@@ -922,10 +925,12 @@ fn spawn_mutation(
 /// `TrustGrant::Granted` is only ever reached by that dialog's own explicit
 /// confirmation re-dispatching the same action.
 fn spawn_trust_sensitive(
-    ticket: MutationTicket,
-    home: UzeHome,
-    sender: Sender<WorkerResult>,
-    context_root: PathBuf,
+    Mutation {
+        ticket,
+        home,
+        sender,
+        context_root,
+    }: Mutation,
     grant: TrustGrant,
     package_hint: String,
     operation: impl FnOnce(&UzeApplication, &dyn uze_application::TrustAuthority) -> Result<String>
@@ -1486,10 +1491,14 @@ mod tests {
         let home = UzeHome::at(uze_testkit::temp::scratch("worker-panic"));
         let (sender, receiver) = mpsc::channel();
 
-        let ticket = TuiModel::default().mutation_asked("Failing…".to_owned());
-        spawn_mutation(ticket, home, sender, PathBuf::from("/"), |_| {
-            panic!("the operation panicked")
-        });
+        let mutation = Mutation::asked(
+            &mut TuiModel::default(),
+            "Failing…".to_owned(),
+            &home,
+            &sender,
+        );
+        let ticket = mutation.ticket;
+        spawn_mutation(mutation, |_| panic!("the operation panicked"));
 
         let answer = receiver
             .recv_timeout(std::time::Duration::from_secs(30))
@@ -1527,17 +1536,11 @@ mod tests {
 
         let mut model = TuiModel::default();
         spawn_mutation(
-            model.mutation_asked("First…".to_owned()),
-            home.clone(),
-            sender.clone(),
-            PathBuf::from("/"),
+            Mutation::asked(&mut model, "First…".to_owned(), &home, &sender),
             operation(Some(first_waits)),
         );
         spawn_mutation(
-            model.mutation_asked("Second…".to_owned()),
-            home,
-            sender,
-            PathBuf::from("/"),
+            Mutation::asked(&mut model, "Second…".to_owned(), &home, &sender),
             operation(None),
         );
         first_may_end.send(()).unwrap();
