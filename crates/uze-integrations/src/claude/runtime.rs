@@ -170,7 +170,13 @@ fn project_resource_projection(
     })?;
     if let Err(error) = uze_platform::fs::rename_link_over(&temporary, &projected) {
         let _ = uze_platform::fs::remove_link(&temporary);
-        return Err(error.to_string());
+        // Where the move is not atomic (Windows) a concurrent projection
+        // can win it; every writer links the same source, so its link
+        // standing there is this one's outcome too.
+        let converged = fs::read_link(&projected).is_ok_and(|target| target == project_source);
+        if !converged {
+            return Err(error.to_string());
+        }
     }
     Ok(())
 }

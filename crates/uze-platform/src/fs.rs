@@ -62,9 +62,10 @@ pub fn remove_link(link: &Path) -> io::Result<()> {
 }
 
 /// Moves the link at `from` over `to`, which may itself be a link. One
-/// rename on Unix; on Windows, where a rename cannot replace a link to a
-/// directory, the old one steps aside first and is put back if the move
-/// fails.
+/// atomic rename on Unix. On Windows, where a rename cannot replace a link
+/// to a directory, the old one steps aside under a name of this attempt's
+/// own and is put back if the move fails: not atomic, so a writer racing
+/// another can lose with an error while the other's link stands at `to`.
 pub fn rename_link_over(from: &Path, to: &Path) -> io::Result<()> {
     imp::rename_link_over(from, to)
 }
@@ -284,17 +285,33 @@ mod imp {
         if std::fs::symlink_metadata(to).is_err() {
             return std::fs::rename(from, to);
         }
+        static ATTEMPT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let mut aside = to.as_os_str().to_owned();
-        aside.push(format!(".old-{}", std::process::id()));
+        aside.push(format!(
+            ".old-{}-{}",
+            std::process::id(),
+            ATTEMPT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         let aside = std::path::PathBuf::from(aside);
-        std::fs::rename(to, &aside)?;
+        // Gone already means another writer stepped it aside first: there
+        // is nothing in the way.
+        let stepped_aside = match std::fs::rename(to, &aside) {
+            Ok(()) => true,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error),
+        };
         match std::fs::rename(from, to) {
             Ok(()) => {
-                let _ = remove_link(&aside);
+                if stepped_aside {
+                    let _ = remove_link(&aside);
+                }
                 Ok(())
             }
             Err(error) => {
-                let _ = std::fs::rename(&aside, to);
+                // Put back unless another writer's link took the place.
+                if stepped_aside && std::fs::rename(&aside, to).is_err() {
+                    let _ = remove_link(&aside);
+                }
                 Err(error)
             }
         }

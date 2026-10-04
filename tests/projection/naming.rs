@@ -350,7 +350,10 @@ fn two_packages_with_the_same_skill_name_coexist_deterministically() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_owned())
         .collect();
-    assert_eq!(remaining, vec!["security:review".to_owned()]);
+    assert_eq!(
+        remaining,
+        vec![uze_core::path::file_name_for("security:review")]
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
