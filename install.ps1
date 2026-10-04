@@ -1,4 +1,4 @@
-# uze — official installer for Windows.
+# uze: the official installer for Windows.
 #
 #   irm https://uze.sh/i.ps1 | iex
 #
@@ -27,7 +27,7 @@ param(
 
 # The whole installer is one scriptblock, run on the last line: a download
 # cut off midway is a scriptblock that never closes, which PowerShell
-# refuses to parse — so nothing of a truncated installer runs at all.
+# refuses to parse, so nothing of a truncated installer runs at all.
 & {
     param([bool]$Uninstall, [bool]$Purge)
 
@@ -107,7 +107,7 @@ param(
         }
     }
 
-    function Set-UserPath([string]$Value) {
+    function Save-UserPath([string]$Value) {
         $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
         try {
             $key.SetValue('Path', $Value, [Microsoft.Win32.RegistryValueKind]::ExpandString)
@@ -130,12 +130,12 @@ public static extern IntPtr SendMessageTimeout(
 
     # Path entries compare as Windows compares directories: without regard
     # to case or a trailing separator.
-    function Same-Directory([string]$A, [string]$B) {
+    function Test-SameDirectory([string]$A, [string]$B) {
         $A.TrimEnd('\') -ieq $B.TrimEnd('\')
     }
 
-    function Without-Entry([string]$Path, [string]$Directory) {
-        ($Path -split ';' | Where-Object { $_ -and -not (Same-Directory $_ $Directory) }) -join ';'
+    function Get-PathWithout([string]$Path, [string]$Directory) {
+        ($Path -split ';' | Where-Object { $_ -and -not (Test-SameDirectory $_ $Directory) }) -join ';'
     }
 
     if ($Uninstall) {
@@ -156,11 +156,11 @@ public static extern IntPtr SendMessageTimeout(
             }
         }
         $userPath = Get-UserPath
-        $kept = Without-Entry $userPath $binDir
+        $kept = Get-PathWithout $userPath $binDir
         if ($kept -ne $userPath) {
-            Step 'Removing it from Path' "Removed $binDir from Path" { Set-UserPath $kept }
+            Step 'Removing it from Path' "Removed $binDir from Path" { Save-UserPath $kept }
         }
-        $env:Path = Without-Entry $env:Path $binDir
+        $env:Path = Get-PathWithout $env:Path $binDir
         $shims = Join-Path $uzeHome 'shims'
         if (Test-Path -LiteralPath $shims) {
             Step 'Removing the harness launchers' "Removed $shims" {
@@ -272,13 +272,13 @@ public static extern IntPtr SendMessageTimeout(
         }
 
         $userPath = Get-UserPath
-        $onPath = $userPath -split ';' | Where-Object { $_ -and (Same-Directory ([Environment]::ExpandEnvironmentVariables($_)) $binDir) }
+        $onPath = $userPath -split ';' | Where-Object { $_ -and (Test-SameDirectory ([Environment]::ExpandEnvironmentVariables($_)) $binDir) }
         if (-not $onPath) {
             Step 'Adding it to Path' "Added $binDir to Path" {
-                Set-UserPath ((@($binDir) + ($userPath -split ';' | Where-Object { $_ })) -join ';')
+                Save-UserPath ((@($binDir) + ($userPath -split ';' | Where-Object { $_ })) -join ';')
             }
         }
-        if (-not ($env:Path -split ';' | Where-Object { $_ -and (Same-Directory $_ $binDir) })) {
+        if (-not ($env:Path -split ';' | Where-Object { $_ -and (Test-SameDirectory $_ $binDir) })) {
             $env:Path = "$binDir;$env:Path"
         }
 

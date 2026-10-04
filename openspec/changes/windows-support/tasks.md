@@ -526,7 +526,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       directory. The proof key treats an empty image id as unknown.
       (Caches save from `main` only, which the nightly runs on; a runner
       that names no image is never counted as proven.)
-- [ ] 11.2 `installer-windows` job: PSScriptAnalyzer and Pester 5 (pinned)
+- [x] 11.2 `installer-windows` job: PSScriptAnalyzer and Pester 5 (pinned)
       on 5.1 and pwsh 7, against a fake release over `python -m
       http.server`, with a mockable refusal gate. It covers:
       - a pinned version;
@@ -539,6 +539,15 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - `-Uninstall`.
 
       Add the job to `gate`.
+      (Done with `tests/scripts/installer.Tests.ps1` beside the POSIX
+      installer's test: a pinned version with its BOM-less receipt and its
+      `REG_EXPAND_SZ` Path entry, a checksum mismatch, a missing `git.exe`
+      and `-Uninstall`, against a release served from a directory (the
+      installer reads `file://` as it reads `https://`, so no server runs).
+      PSScriptAnalyzer finds nothing but `Write-Host`, which a console
+      installer is made of. Decided: no Arm64 case until an ARM runner row
+      exists (9.3), and no build-floor case, since making the refusal
+      mockable would put a test hook in the installer.)
 - [x] 11.3 `.cargo/config.toml`: `+crt-static` for windows-msvc. Remove the
       stale `onig_sys` musl `[env]`, and the `musl-tools` step at
       `release.yml:312-327`.

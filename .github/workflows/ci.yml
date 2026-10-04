@@ -81,6 +81,7 @@ jobs:
       journeys: ${{ steps.filter.outputs.journeys }}
       platforms: ${{ steps.filter.outputs.platforms }}
       journey_platforms: ${{ steps.filter.outputs.journey_platforms }}
+      installer_windows: ${{ steps.filter.outputs.installer_windows }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -111,6 +112,7 @@ jobs:
               echo "journeys=true"
               echo "platforms=[${linux},${macos},${windows}]"
               echo "journey_platforms=[${linux},${macos}]"
+              echo "installer_windows=true"
             } >> "${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -136,6 +138,8 @@ jobs:
           journey_platform_surface='^(crates/uze-core/src/machine/|crates/uze-terminal/|crates/uze-git/|journeys/|src/ui/|src/ui\.rs$|src/shim\.rs$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/))'
           # What is baked into the Lab image, or read by a vertical.
           lab_surface='^(src/|crates/|tests/_fixtures/|plugins/|conformance/|marketplace\.json$|Cargo\.lock$|\.github/(workflows/(ci|conformance)\.yml$|scripts/))|(^|/)Cargo\.toml$'
+          # The Windows installer and what holds it to account.
+          installer_windows_surface='^(install\.ps1|tests/scripts/(installer\.Tests\.ps1|PSScriptAnalyzerSettings\.psd1)|\.github/workflows/ci\.yml)$'
           # What a journey drives, or what it drives it with.
           journeys_surface='^(src/|crates/|journeys/|Cargo\.lock$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/|scripts/))|(^|/)Cargo\.toml$'
 
@@ -151,6 +155,7 @@ jobs:
             echo "journeys=$(reaches "${journeys_surface}" && echo true || echo false)"
             echo "platforms=${platforms}"
             echo "journey_platforms=${journey_platforms}"
+            echo "installer_windows=$(reaches "${installer_windows_surface}" && echo true || echo false)"
           } >> "${GITHUB_OUTPUT}"
 
           echo "---"
@@ -488,6 +493,53 @@ jobs:
       - name: Exercise the installer offline
         run: sh tests/scripts/installer-test.sh
 
+  # install.ps1 under both PowerShells a person may run it in, against a
+  # release served from a directory (tests/scripts/installer.Tests.ps1).
+  installer-windows:
+    name: Installer (Windows)
+    needs: changes
+    if: needs.changes.outputs.installer_windows == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Pinned: a new analyzer rule or a Pester change is a change to this
+      # job, made on purpose. Each PowerShell keeps its own module path.
+      - name: Install the pinned modules (PowerShell 7)
+        shell: pwsh
+        run: |
+          Install-Module Pester -RequiredVersion 5.6.1 -Force -SkipPublisherCheck -Scope CurrentUser
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.23.0 -Force -Scope CurrentUser
+      - name: Install the pinned modules (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+          Install-Module Pester -RequiredVersion 5.6.1 -Force -SkipPublisherCheck -Scope CurrentUser
+      - name: Lint the installer
+        shell: pwsh
+        run: |
+          $found = Invoke-ScriptAnalyzer -Path install.ps1 -Settings tests/scripts/PSScriptAnalyzerSettings.psd1
+          $found | Format-Table -Wrap | Out-String -Width 200
+          if ($found) { throw "PSScriptAnalyzer: $(@($found).Count) finding(s)" }
+      - name: Exercise the installer (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Import-Module Pester -RequiredVersion 5.6.1
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests/scripts/installer.Tests.ps1'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+      - name: Exercise the installer (PowerShell 7)
+        shell: pwsh
+        run: |
+          Import-Module Pester -RequiredVersion 5.6.1
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests/scripts/installer.Tests.ps1'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+
   web:
     name: Web
     runs-on: ubuntu-24.04
@@ -595,6 +647,7 @@ jobs:
       - licences
       - secrets
       - installer
+      - installer-windows
       - web
       - python
       - journeys
