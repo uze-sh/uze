@@ -450,8 +450,23 @@ mod imp {
     }
 
     pub(super) fn rename_link_over(from: &Path, to: &Path) -> io::Result<()> {
+        // A link already reaching what `from` reaches is left standing: its
+        // writer and this one agree, and stepping it aside would leave the
+        // path empty for a moment to everyone reading it.
+        let agrees = || {
+            std::fs::read_link(from)
+                .is_ok_and(|target| std::fs::read_link(to).is_ok_and(|standing| standing == target))
+        };
+        if agrees() {
+            return remove_link(from);
+        }
         if std::fs::symlink_metadata(to).is_err() {
-            return std::fs::rename(from, to);
+            return match std::fs::rename(from, to) {
+                // Placed by another writer in between: a directory link
+                // cannot be renamed over another one.
+                Err(_) if agrees() => remove_link(from),
+                placed => placed,
+            };
         }
         static ATTEMPT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let mut aside = to.as_os_str().to_owned();
@@ -479,6 +494,9 @@ mod imp {
                 // Put back unless another writer's link took the place.
                 if stepped_aside && std::fs::rename(&aside, to).is_err() {
                     let _ = remove_link(&aside);
+                }
+                if agrees() {
+                    return remove_link(from);
                 }
                 Err(error)
             }
