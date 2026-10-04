@@ -1,0 +1,71 @@
+# The Windows archives, built natively per architecture and smoke-run
+# before they are packed: called by `release.yml` to publish them and by
+# `release-candidate.yml` to hand them to a person to install by hand.
+name: Package Windows
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit or tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package-windows:
+    name: Package ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both native, so the archive's own binary is what the smoke step
+        # runs. `<arch>-windows` is the name install.ps1 asks for.
+        include:
+          - target: x86_64-pc-windows-msvc
+            platform: x86_64-windows
+            runner: windows-2025
+          - target: aarch64-pc-windows-msvc
+            platform: aarch64-windows
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: release-${{ matrix.target }}
+      # `+crt-static` comes from `.cargo/config.toml`: the binary needs no
+      # Visual C++ redistributable on the machine it lands on.
+      - run: cargo build --locked --release --bin uze --target ${{ matrix.target }}
+      - name: Run the binary that ships
+        run: |
+          & "target/${{ matrix.target }}/release/uze.exe" --version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      # The licence, the NOTICE and CREDITS.md travel with the binary, as in
+      # the tarballs. Windows' own bsdtar, by path: a GNU tar earlier on PATH
+      # (Git's) cannot write a zip.
+      - name: Package release archive
+        run: |
+          New-Item -ItemType Directory -Force dist, staging | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/uze.exe", LICENSE, NOTICE, CREDITS.md staging/
+          & "$env:SystemRoot\System32\tar.exe" -a -cf "dist/uze-${{ matrix.platform }}.zip" -C staging uze.exe LICENSE NOTICE CREDITS.md
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: uze-${{ matrix.platform }}
+          path: dist/uze-${{ matrix.platform }}.zip
+          retention-days: 1
+

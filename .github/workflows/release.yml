@@ -116,6 +116,7 @@ jobs:
       - name: Preview the release notes
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          UZE_RELEASE_WINDOWS: ${{ vars.UZE_RELEASE_WINDOWS }}
         run: |
           set -euo pipefail
           git-cliff --config cliff.release.toml --unreleased \
@@ -330,61 +331,16 @@ jobs:
           retention-days: 1
 
   package-windows:
-    name: Package ${{ matrix.platform }}
+    name: Package Windows
     needs: tag
     # Windows is offered once a release candidate has been installed by hand
     # on both architectures (windows-support task 13.3). Until the
     # repository variable says so, its archives are not built and a release
     # carries the six tarballs alone.
     if: needs.tag.outputs.release == 'true' && vars.UZE_RELEASE_WINDOWS == 'true'
-    runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        shell: pwsh
-    strategy:
-      fail-fast: false
-      matrix:
-        # Both native, so the archive's own binary is what the smoke step
-        # runs. `<arch>-windows` is the name install.ps1 asks for.
-        include:
-          - target: x86_64-pc-windows-msvc
-            platform: x86_64-windows
-            runner: windows-2025
-          - target: aarch64-pc-windows-msvc
-            platform: aarch64-windows
-            runner: windows-11-arm
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
-        with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          key: release-${{ matrix.target }}
-      # `+crt-static` comes from `.cargo/config.toml`: the binary needs no
-      # Visual C++ redistributable on the machine it lands on.
-      - run: cargo build --locked --release --bin uze --target ${{ matrix.target }}
-      - name: Run the binary that ships
-        run: |
-          & "target/${{ matrix.target }}/release/uze.exe" --version
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      # The licence, the NOTICE and CREDITS.md travel with the binary, as in
-      # the tarballs. Windows' own bsdtar, by path: a GNU tar earlier on PATH
-      # (Git's) cannot write a zip.
-      - name: Package release archive
-        run: |
-          New-Item -ItemType Directory -Force dist, staging | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/uze.exe", LICENSE, NOTICE, CREDITS.md staging/
-          & "$env:SystemRoot\System32\tar.exe" -a -cf "dist/uze-${{ matrix.platform }}.zip" -C staging uze.exe LICENSE NOTICE CREDITS.md
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: uze-${{ matrix.platform }}
-          path: dist/uze-${{ matrix.platform }}.zip
-          retention-days: 1
+    uses: ./.github/workflows/package-windows.yml
+    with:
+      ref: ${{ needs.tag.outputs.tag }}
 
   publish:
     name: Publish release
@@ -462,6 +418,9 @@ jobs:
       - name: Write the release notes
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Whether this release carries the Windows archives, which decides
+          # whether its notes say how to install them.
+          UZE_RELEASE_WINDOWS: ${{ vars.UZE_RELEASE_WINDOWS }}
         run: |
           set -euo pipefail
           git-cliff --config cliff.release.toml --latest -o "${RUNNER_TEMP}/notes.md"

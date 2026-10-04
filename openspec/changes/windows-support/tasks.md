@@ -553,7 +553,7 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [x] 11.3 `.cargo/config.toml`: `+crt-static` for windows-msvc. Remove the
       stale `onig_sys` musl `[env]`, and the `musl-tools` step at
       `release.yml:312-327`.
-- [ ] 11.4 `release.yml`:
+- [x] 11.4 `release.yml`:
       - Windows targets: `windows-2025` and native `windows-11-arm`;
       - a `tar.exe -a -cf` zip and a `uze.exe --version` smoke step;
       - SBOM with `--target all`;
@@ -562,8 +562,14 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 
       Keep the Windows rows behind a repository variable. Add a
       `workflow_dispatch` package-only release-candidate run.
-- [ ] 11.5 `cliff.release.toml`: the PowerShell install and verify lines,
+      (Done: the Windows packaging is the reusable `package-windows.yml`,
+      called by `release.yml` behind `UZE_RELEASE_WINDOWS` and by
+      `release-candidate.yml`, which lays the archives out as install.ps1
+      reads a release and uploads them, published nowhere.)
+- [x] 11.5 `cliff.release.toml`: the PowerShell install and verify lines,
       and the SmartScreen and Smart App Control notes.
+      (Rendered only when the release carries the Windows archives: the
+      workflow hands `UZE_RELEASE_WINDOWS` to git-cliff.)
 
 ## 12. Install, uninstall, say so (D22)
 
