@@ -21,18 +21,16 @@ use super::{
     relaunch_command_for_process, send_request, serves_this_build, snapshot, socket_path, view_for,
     workspace_is_claimed, write_atomically, write_message,
 };
+// Only the Unix tests below tell a listener apart by what it runs.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use super::{identify, listener_at, retire, workspace_lock_path};
+use super::identify;
+use super::{listener_at, retire, workspace_lock_path};
 use std::sync::{Arc, Mutex};
 
-// Several tests below, and the helpers only they use, carry
-// `#[cfg(any(target_os = "linux", target_os = "macos"))]`. They start a
-// real server, read a real pane's foreground status, or relaunch a
-// persisted one — which needs the probe to say where a process is
-// standing and what it runs — and they drive POSIX programs (`sh`,
-// `sleep`, FIFOs, process groups) to get there. Windows answers the
-// probe; its panes are proven by tests written for its own programs, not
-// by widening this gate.
+// The tests below run on every platform, a real server and real panes
+// included. The few gated to Unix drive POSIX programs (`sh`, `sleep`, a
+// FIFO, a process group, a zombie) to reach what they prove, and each says
+// so where it is gated.
 
 use crate::Palette;
 
@@ -41,7 +39,6 @@ use crate::Palette;
 fn reply_sink(sender: std::sync::mpsc::Sender<Vec<u8>>) -> ReplySink {
     ReplySink::new(sender, Arc::new(Mutex::new(Palette::default())))
 }
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::state::PLACEHOLDER_PANE_SIZE;
 use crate::state::{SpaceSeed, TabSeed};
 use crate::{MouseMode, PaneId, TerminalColor};
@@ -53,7 +50,6 @@ use alacritty_terminal::{
     vte::ansi::Processor,
 };
 use std::collections::BTreeMap;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::path::PathBuf;
 use std::{path::Path, thread, time::Duration};
 
@@ -173,6 +169,7 @@ fn stopping_a_runtime_that_is_not_running_is_not_a_failure() {
 /// The kernel names whoever listens on a socket, and the process table
 /// says what that process runs: this very executable, a `uze` of
 /// another build, or something nobody can vouch for as `uze` at all.
+// Unix only: A process that is not `uze`, run as a POSIX shell (`ReadyProcess`).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn the_listener_is_told_apart_by_what_it_runs() {
@@ -204,7 +201,6 @@ fn the_listener_is_told_apart_by_what_it_runs() {
 /// A server of another build — a `make install` over a running one — is
 /// ended, and not merely abandoned: it holds the workspace claim, and a
 /// fresh server cannot restore the workspace until it lets go.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_server_of_another_build_is_retired_and_lets_go_of_the_workspace() {
     let scratch = uze_testkit::temp::socket_scratch("retire");
@@ -236,7 +232,6 @@ fn a_server_of_another_build_is_retired_and_lets_go_of_the_workspace() {
 /// find nothing, and report success while the workspace stayed shut:
 /// the operator was told there was nothing to stop, could not open
 /// uze, and restarting the machine was the only way out.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_server_answering_at_no_endpoint_this_build_names_is_still_stopped() {
     let scratch = uze_testkit::temp::socket_scratch("stop-claimed");
@@ -272,7 +267,6 @@ fn a_server_answering_at_no_endpoint_this_build_names_is_still_stopped() {
 /// endpoint this build does not compute and names nobody, so nothing
 /// here can end it — and saying "nothing to stop" is what sent an
 /// operator to restart their machine. It is said instead.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_claim_this_build_cannot_name_is_reported_rather_than_called_stopped() {
     let scratch = uze_testkit::temp::socket_scratch("stop-unnamed");
@@ -549,6 +543,7 @@ fn pane_process_keeps_output_until_explicit_stop() {
     assert!(rendered, "the printed line never reached the grid");
 }
 
+// Unix only: Reads the foreground of a pane running `/bin/sh` against the terminal's own process group leader.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
@@ -653,6 +648,7 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
 /// `UZE_SHIM_NAME`, set by `src/shim.rs` right before it `exec`s into
 /// the real binary, must survive that and still be what
 /// `foreground_status` reports.
+// Unix only: A POSIX shell `exec`s into a program named like a version, as a Unix harness binary is.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
@@ -723,6 +719,7 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
 /// never read as a harness that went around it. Linux already calls it
 /// `claude` (the link's name); macOS calls it `uze` (the file the link
 /// resolves to), so either name is the shim in the foreground.
+// Unix only: Catches the shim between its start and its `exec`, which Windows, with no `exec`, has no moment for.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
@@ -946,6 +943,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
     );
 }
 
+// Unix only: Proves a process group and a FIFO end with the pane; Windows ends a Job Object, proven in uze-platform.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 /// Stopping a pane ends what its program left behind in its process
 /// group, not only the program: a worker deaf to the hangup would
@@ -1104,6 +1102,7 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
 /// the server: once the reaper is done, its pid names no process at all
 /// — a zombie would still answer `kill(pid, 0)`. Zombies and the hangup
 /// the program ignores are POSIX's.
+// Unix only: A zombie and a SIGHUP are Unix things.
 #[cfg(unix)]
 #[test]
 fn a_stopped_pane_leaves_no_zombie() {
@@ -1214,6 +1213,7 @@ fn the_server_works_in_no_checkout() {
 /// wait belongs to the one pane: the map every other pane's input,
 /// output and resize go through stays free. Told with a POSIX line
 /// discipline in raw mode; a pseudoconsole buffers input on its own terms.
+// Unix only: Drives `/bin/sh` panes that `exec` into `cat`-like writers.
 #[cfg(unix)]
 #[test]
 fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
@@ -1402,6 +1402,7 @@ fn attaching_without_a_root_neither_creates_nor_reopens_a_space() {
 /// spaces and tabs a previous instance for this same `root` had, each
 /// tab's pane relaunched with whatever it was last spawned with —
 /// `None` for a plain shell, the recorded `argv` for an agent.
+// Unix only: Relaunches `sleep`, a program Windows does not ship.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands() {
@@ -1473,7 +1474,6 @@ fn a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_finished_direct_agent_is_replaced_by_a_shell_in_its_pane() {
     let scratch = uze_testkit::temp::socket_scratch("agentexit");
@@ -1546,6 +1546,7 @@ fn relaunch_command_for_process_recognizes_a_named_process_but_not_a_plain_shell
 /// launch of its own), where someone then typed an agent
 /// straight into it — `update_pane_status` here stands in for the
 /// status ticker's own probe reporting that live.
+// Unix only: Relaunches `sleep`, a program Windows does not ship.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_plain_shell_tab_running_a_recognized_process_relaunches_as_that_process() {
@@ -1606,7 +1607,6 @@ fn a_plain_shell_tab_running_a_recognized_process_relaunches_as_that_process() {
 /// over a difference of one field. The guard now climbs the rung
 /// instead: the kind is dropped deliberately, every other field is
 /// carried, and the spaces open.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside() {
     let scratch = uze_testkit::temp::socket_scratch("persprev");
@@ -1628,9 +1628,9 @@ fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside
     std::fs::write(
         &path,
         format!(
-            r#"{{"spaces":[{{"label":"demo","root":"{root}","kind":"worktree","tabs":[
-                     {{"label":"shell","cwd":"{root}","agent":null,"launch":"Shell"}}]}}]}}"#,
-            root = kept.display()
+            r#"{{"spaces":[{{"label":"demo","root":{root},"kind":"worktree","tabs":[
+                     {{"label":"shell","cwd":{root},"agent":null,"launch":"Shell"}}]}}]}}"#,
+            root = serde_json::to_string(&kept).unwrap()
         )
         .as_bytes(),
     )
@@ -1676,7 +1676,6 @@ fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside
 /// Which tab belongs with which has to survive the process, and a
 /// `TabId` does not — the snapshot names the agent by its position in
 /// the very list `Session::restore` rebuilds.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn the_snapshot_names_a_tabs_agent_by_position() {
     let scratch = uze_testkit::temp::socket_scratch("persagent");
@@ -1712,7 +1711,6 @@ fn the_snapshot_names_a_tabs_agent_by_position() {
 /// Selecting a tab broadcasts the session and persists it, but nothing
 /// selection-shaped is persisted: the same bytes are not written (and
 /// fsynced) again, and a real change still is.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn persisting_an_unchanged_workspace_writes_nothing() {
     let scratch = uze_testkit::temp::socket_scratch("persame");
@@ -1756,7 +1754,6 @@ fn persisting_an_unchanged_workspace_writes_nothing() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_persisted_command_that_no_longer_resolves_falls_back_to_a_plain_shell() {
     let scratch = uze_testkit::temp::socket_scratch("perstale");
@@ -1919,7 +1916,6 @@ fn a_full_repaint_of_the_largest_pane_fits_in_one_frame() {
 /// is ~137 GB, and a failed allocation aborts the process that owns
 /// every live agent pane. One malformed frame must not be able to do
 /// that, from a buggy client as easily as a hostile one.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
     let scratch = uze_testkit::temp::socket_scratch("resizemax");
@@ -2008,7 +2004,6 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
 /// A selection is drawn for every client, so the server puts it away
 /// itself when nobody will: when the drag covered only blanks, and when
 /// the client that made it leaves without saying so.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
     let scratch = uze_testkit::temp::socket_scratch("selectleave");
@@ -2112,6 +2107,7 @@ fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
 /// project, routinely a `uze` run from inside a shimmed agent. A plain
 /// shell that inherited that stamp reports as the agent, persists as
 /// one, and is relaunched as one on the next restart.
+// Unix only: Reads a `/bin/sh` pane's environment through its process group leader.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_pane_does_not_inherit_the_servers_shim_identity() {
@@ -2215,6 +2211,7 @@ fn seat_at(root: &Path) -> crate::SpaceSeat {
     }
 }
 
+// Unix only: `sleep`, a program Windows does not ship.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn sleep_five() -> Launch {
     Launch::Program {
@@ -2416,6 +2413,7 @@ fn a_shell_respawn_carries_no_launch_environment() {
 /// The other half of the identity rule: an *inherited* stamp names an
 /// ancestor, not the process it is read from, so it must be ignored.
 /// Every child of a shimmed agent carries `UZE_SHIM_NAME`.
+// Unix only: A POSIX shell `exec`s into the stamped program.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
@@ -2479,6 +2477,7 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
 /// the time it would be signalled, and pids are recycled: a process that
 /// is not running `uze` is never signalled — an editor, a build, another
 /// agent of the person's own.
+// Unix only: A process that is not `uze`, run as a POSIX shell (`ReadyProcess`).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_process_that_is_not_uze_is_never_signalled() {
@@ -2504,6 +2503,7 @@ fn a_process_that_is_not_uze_is_never_signalled() {
 /// addressable by `kill(pid, 0)`, which once left the endpoint held
 /// hostage for the whole remaining life of that client. A zombie holds
 /// no descriptor, so it holds no claim.
+// Unix only: A zombie, left unreaped with `waitid`, is a Linux thing.
 #[cfg(target_os = "linux")]
 #[test]
 fn a_crashed_server_nobody_reaped_holds_no_claim() {
@@ -2531,7 +2531,6 @@ fn a_crashed_server_nobody_reaped_holds_no_claim() {
 /// servers persisting over each other.
 /// The claim lives beside the workspace, under `$UZE_HOME`, so a
 /// cleaner that can reach it has taken the workspace too.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_second_server_refuses_to_restore_a_workspace_another_one_holds() {
     let scratch = uze_testkit::temp::socket_scratch("wslock");
@@ -2719,7 +2718,6 @@ impl ClaimHolder {
         Self::spawn_with(executable, uze_home, None)
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     /// A holder that is a whole server: it binds this `UZE_HOME`'s
     /// endpoint over `project` and answers handshakes, which is what an
     /// attach asks of a server before it decides anything about it.
@@ -2762,7 +2760,6 @@ impl ClaimHolder {
         }
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn pid(&self) -> u32 {
         self.process.id()
     }
@@ -2777,6 +2774,7 @@ impl ClaimHolder {
 
     /// Kills the holder and leaves it unreaped — what a client that
     /// started a server and never waited on it is left with.
+    // Unix only: A zombie, left unreaped with `waitid`, is a Linux thing.
     #[cfg(target_os = "linux")]
     fn crash(mut self) -> Zombie {
         self.process.kill().expect("the holder is killed");
@@ -2796,9 +2794,11 @@ impl ClaimHolder {
     }
 }
 
+// Unix only: A zombie, left unreaped with `waitid`, is a Linux thing.
 #[cfg(target_os = "linux")]
 struct Zombie(ClaimHolder);
 
+// Unix only: A zombie, left unreaped with `waitid`, is a Linux thing.
 #[cfg(target_os = "linux")]
 impl Zombie {
     fn reap(mut self) {
@@ -2806,33 +2806,28 @@ impl Zombie {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 /// This test binary under the name `uze` at another path: to the
 /// process table, a `uze` that is not this build.
 fn another_build_of_this_binary(scratch: &Path) -> PathBuf {
     let directory = scratch.join("another-build");
     std::fs::create_dir_all(&directory).unwrap();
-    let copy = directory.join("uze");
-    // Copied by a child that has exited before the copy runs, so no
-    // descriptor open for writing on it lingers in a process a sibling
-    // test forked — the kernel's `ETXTBSY`.
-    let copied = std::process::Command::new("cp")
-        .arg(std::env::current_exe().unwrap())
-        .arg(&copy)
-        .status()
-        .expect("cp runs");
-    assert!(copied.success());
+    let copy = directory.join(uze_platform::executable::file_name("uze"));
+    let image = std::fs::read(std::env::current_exe().unwrap()).unwrap();
+    uze_platform::executable::install(&copy, &image).unwrap();
     copy
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 /// A shell that has certainly `exec`ed — it said so — and waits to be
 /// told to finish.
+// A POSIX shell's `-c`, for the Unix tests that need a process that is not
+// `uze` and is certainly running.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 struct ReadyProcess {
     process: std::process::Child,
     output: std::io::BufReader<std::process::ChildStdout>,
 }
 
+// See `ReadyProcess`.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 impl ReadyProcess {
     fn spawn(shell: &Path) -> Self {
@@ -2910,7 +2905,6 @@ fn a_workspace_that_gave_every_space_a_kind_opens_on_this_build() {
 }
 
 /// Nothing persisted at all is a first run, not a loss.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_first_run_reports_nothing() {
     let scratch = uze_testkit::temp::socket_scratch("setaside-first");
@@ -2939,7 +2933,6 @@ fn a_first_run_reports_nothing() {
 /// process from the screen. So what it could not carry waits for the
 /// first client and is said there — not in a log that is off unless
 /// `UZE_LOG` is set, which is where the one that mattered went.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_client_is_told_what_the_runtime_could_not_carry() {
     let scratch = uze_testkit::temp::socket_scratch("setaside-told");
@@ -3075,7 +3068,6 @@ fn the_persisted_workspace_is_replaced_in_one_step() {
 /// panes at a size `within_pane_bounds` permits — and that a restart
 /// restores — made the frame unsendable, and every attached client sat
 /// frozen on chrome that still looked live.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() {
     let scratch = uze_testkit::temp::socket_scratch("bigsnap");
@@ -3236,6 +3228,7 @@ fn a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen() {
 /// heard by a server no client has ever attached to, which is where it
 /// was being dropped: `Stop` as a first frame fell through to "not an
 /// `Attach`" and the connection was closed without an answer.
+// Unix only: Runs `sleep`, a program Windows does not ship.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to() {
@@ -3520,7 +3513,6 @@ fn a_server_that_cannot_answer_is_never_taken_for_one_that_can() {
 /// "another build" in the meantime. It used to be retired on sight —
 /// every pane it held killed with it, mid-conversation, because a
 /// binary had been replaced on disk.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_second_client_attaches_to_a_live_server_of_another_build() {
     let scratch = uze_testkit::temp::socket_scratch("attach-another-build");
@@ -3644,5 +3636,6 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
 
 /// The endpoint as a file in a directory: what a Unix-domain socket is and a
 /// named pipe is not.
+// Unix only: Unix socket files and their directory; the named pipe has neither.
 #[cfg(unix)]
 mod socket_files;

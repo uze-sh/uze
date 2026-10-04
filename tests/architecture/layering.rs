@@ -1143,7 +1143,6 @@ const UNEXPLAINED_TEST_GATES: &[(&str, usize)] = &[
     ("crates/uze-integrations/src/shared/process.rs", 4),
     ("crates/uze-integrations/src/shared/provision.rs", 1),
     ("crates/uze-integrations/src/shared/tree.rs", 2),
-    ("crates/uze-terminal/src/runtime/tests.rs", 42),
     ("crates/uze-workspace/src/prompt_history.rs", 1),
     ("src/cli/setup.rs", 1),
     ("src/self_update.rs", 2),
