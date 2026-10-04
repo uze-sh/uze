@@ -129,6 +129,7 @@ class World:
             "project": machine.spell(self.project),
             "repo": machine.spell(REPO),
             "shell_rc": machine.spell(self.home / machine.shell_rc_name()),
+            "fake_harness": machine.spell(standin_binary()),
         }
         # Only for a journey that asks for it: resolving it eagerly would
         # put a build in front of every run of every chapter.

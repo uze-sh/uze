@@ -262,8 +262,10 @@ whose world says `first_run: true`. A journey that only runs commands, or
 that opens the previous release first, gets the machine that left it.
 
 A journey addresses the world through `{world}`, `{home}`, `{uze_home}`,
-`{project}`, `{repo}`, `{uze}` and `{python}` (the interpreter running the
-suite, for a journey that stands a server up in its world) — plus
+`{project}`, `{repo}`, `{uze}`, `{python}` (the interpreter running the
+suite, for a journey that stands a server up in its world or reads a
+document in a check) and `{fake_harness}` (the stand-in writer, for a
+journey that stages one of its own) — plus
 `{shell_rc}`, which is the file the
 world's shell actually reads its startup from. That one is a placeholder
 rather than a path because the answer differs by platform: bash reads

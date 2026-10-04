@@ -15,6 +15,7 @@
 //! ```text
 //! uze-fake-harness --bin-dir <dir> --home <dir> --state-dir <dir>
 //!                  [--opencode-binary <name>] [--scripted-agent <name>]
+//! uze-fake-harness --bin-dir <dir> --forge-ssh <root>
 //! ```
 //!
 //! Argument parsing is hand-rolled on purpose: this is fixture tooling, and
@@ -22,7 +23,7 @@
 
 use std::{path::PathBuf, process::ExitCode};
 
-use uze_testkit::fake_harness::{FakeHarness, Standard};
+use uze_testkit::fake_harness::{Action, FakeHarness, Standard};
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -43,6 +44,7 @@ fn write_the_standard_set() -> ExitCode {
     let mut opencode_binary = "opencode".to_owned();
     let mut interactive = false;
     let mut scripted_agents: Vec<String> = Vec::new();
+    let mut forge_ssh: Option<PathBuf> = None;
 
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -54,6 +56,7 @@ fn write_the_standard_set() -> ExitCode {
             "--opencode-binary" => opencode_binary = value(),
             "--interactive" => interactive = true,
             "--scripted-agent" => scripted_agents.push(value()),
+            "--forge-ssh" => forge_ssh = Some(PathBuf::from(value())),
             "-h" | "--help" => {
                 println!("{}", HELP);
                 return ExitCode::SUCCESS;
@@ -65,6 +68,15 @@ fn write_the_standard_set() -> ExitCode {
         }
     }
 
+    // A world's forge is staged after the world is built, beside the
+    // stand-ins already there, so this writes the one executable alone.
+    if let (Some(bin_dir), Some(root)) = (&bin_dir, forge_ssh) {
+        let ssh = FakeHarness::new(bin_dir, "ssh")
+            .on_containing("", Action::ForgeSsh { root })
+            .build();
+        println!("{}", ssh.path().display());
+        return ExitCode::SUCCESS;
+    }
     let (Some(bin_dir), Some(home), Some(state_dir)) = (bin_dir, home, state_dir) else {
         eprintln!("uze-fake-harness: --bin-dir, --home and --state-dir are all required\n\n{HELP}");
         return ExitCode::FAILURE;
@@ -104,4 +116,6 @@ uze-fake-harness — write the standard harness stand-ins into a directory
                              agent session does, instead of exiting
   --opencode-binary <name>   default `opencode`; `opencode2` is the legacy
                              v2 name UZE still probes
-  --scripted-agent <name>    also write a scripted agent under this name";
+  --scripted-agent <name>    also write a scripted agent under this name
+  --forge-ssh <root>         write only an `ssh` that serves the bare
+                             repositories under <root> (with --bin-dir)";
