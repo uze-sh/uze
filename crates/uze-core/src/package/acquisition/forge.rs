@@ -336,8 +336,10 @@ pub trait HostAliases {
 
 /// Reads what the operator typed.
 ///
-/// A path must look like one (`/`, `./`, `../`, `~`, `.`, `..`); a URL has a
-/// scheme or is `user@host:path`; `alias:owner/repo` names a host; a bare
+/// A path must look like one: rooted as this platform roots a path (`/`, and
+/// `C:\` or `\\server\share` on Windows), or `.`, `..`, `~` and those
+/// followed by a separator (`./`, and `.\` on Windows); a URL has a scheme
+/// or is `user@host:path`; `alias:owner/repo` names a host; a bare
 /// `owner/repo` names the default host; one bare word is refused, because
 /// every package tool reads it as a name and so will a person.
 pub fn parse_locator(
@@ -424,19 +426,25 @@ pub fn parse_locator(
     ))
 }
 
+/// `std::path` knows how this platform roots a path and which characters
+/// separate its components, so nothing here names a platform.
 fn looks_like_path(input: &str) -> bool {
-    matches!(input, "." | ".." | "~")
-        || ["/", "./", "../", "~/"]
-            .iter()
-            .any(|prefix| input.starts_with(prefix))
+    let relative_lead = [".", "..", "~"].iter().any(|lead| {
+        input
+            .strip_prefix(lead)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(std::path::is_separator))
+    });
+    relative_lead || Path::new(input).has_root()
 }
 
 fn expand_home(input: &str) -> PathBuf {
     match input.strip_prefix('~') {
-        Some(rest) if rest.is_empty() || rest.starts_with('/') => crate::user_home().map_or_else(
-            || PathBuf::from(input),
-            |home| home.join(rest.trim_start_matches('/')),
-        ),
+        Some(rest) if rest.is_empty() || rest.starts_with(std::path::is_separator) => {
+            crate::user_home().map_or_else(
+                || PathBuf::from(input),
+                |home| home.join(rest.trim_start_matches(std::path::is_separator)),
+            )
+        }
         _ => PathBuf::from(input),
     }
 }
@@ -704,6 +712,22 @@ mod tests {
     #[test]
     fn a_path_looks_like_one() {
         for input in ["/srv/market", "./ai", "../ai", ".", ".."] {
+            assert_eq!(parse(input).unwrap(), Locator::Path(PathBuf::from(input)));
+        }
+    }
+
+    /// Windows roots a path at a drive or a share, and separates with `\`
+    /// as well as `/`: a drive letter is never a host alias there.
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_path_looks_like_one() {
+        for input in [
+            r"C:\market",
+            "c:/market",
+            r"\\server\share\market",
+            r".\market",
+            r"..\market",
+        ] {
             assert_eq!(parse(input).unwrap(), Locator::Path(PathBuf::from(input)));
         }
     }

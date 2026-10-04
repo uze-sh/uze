@@ -218,7 +218,7 @@ pub fn remove_dangling(home: &UzeHome, reference: &DanglingReference) -> crate::
     {
         return Ok(false);
     }
-    fs::remove_file(&reference.path).map_err(|source| crate::UzeError::Write {
+    uze_platform::fs::remove_link(&reference.path).map_err(|source| crate::UzeError::Write {
         path: reference.path.clone(),
         source,
     })?;

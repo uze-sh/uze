@@ -55,7 +55,7 @@ fn documented_install_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBu
         .into_iter()
         .filter_map(|key| var(key).map(PathBuf::from))
         .collect();
-    if let Some(home) = var("HOME").map(PathBuf::from) {
+    if let Some(home) = var(uze_platform::home::VARIABLE).map(PathBuf::from) {
         dirs.push(home.join("bin"));
         dirs.push(home.join(".opencode/bin"));
     }
@@ -245,7 +245,7 @@ mod provision_tests {
     fn the_installer_destinations_are_searched_in_its_own_order() {
         let dirs = documented_install_dirs(|key| match key {
             "XDG_BIN_DIR" => Some("/xdg/bin".into()),
-            "HOME" => Some("/home/a".into()),
+            key if key == uze_platform::home::VARIABLE => Some("/home/a".into()),
             _ => None,
         });
         assert_eq!(
@@ -261,9 +261,11 @@ mod provision_tests {
         let root = uze_testkit::temp::scratch("opencode-off-path");
         let bin = root.join(".opencode/bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("opencode"), "#!/bin/sh\n").unwrap();
+        let installed = bin.join(uze_platform::executable::file_name("opencode"));
+        std::fs::write(&installed, "#!/bin/sh\n").unwrap();
+        uze_platform::executable::make_runnable(&installed).unwrap();
         let found = installed_outside_path(&[root.join("bin"), bin.clone()]);
-        assert_eq!(found, Some(bin.join("opencode")));
+        assert_eq!(found, Some(installed));
         let _ = std::fs::remove_dir_all(root);
     }
 }

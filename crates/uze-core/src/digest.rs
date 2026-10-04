@@ -32,7 +32,9 @@ pub fn short_hex(bytes: &[u8]) -> String {
     format!("{:016x}", fnv1a64(bytes))
 }
 
-/// The authenticating digest of a directory tree, as `sha256:<hex>`.
+/// The authenticating digest of a directory tree, as `sha256:<hex>`. Paths
+/// take part [`portable`](crate::path::portable)-spelled: a digest is a
+/// package's identity across machines.
 ///
 /// Every file's path takes part, not only its bytes: moving a skill from
 /// `skills/a/SKILL.md` to `skills/b/SKILL.md` changes what the package
@@ -49,16 +51,6 @@ pub fn short_hex(bytes: &[u8]) -> String {
 /// what a package does — `assert_self_contained` admits a relative,
 /// contained one — so a marketplace adding, removing or repointing one has
 /// to move the digest.
-/// A path inside a tree as every platform spells it: components joined by
-/// `/`. A digest is a package's identity across machines, so it cannot
-/// depend on which separator the host that measured it uses.
-fn portable(path: &std::path::Path) -> String {
-    path.components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
-}
-
 pub fn tree_sha256(root: &std::path::Path) -> std::io::Result<String> {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
@@ -68,7 +60,7 @@ pub fn tree_sha256(root: &std::path::Path) -> std::io::Result<String> {
 
     let mut hasher = Sha256::new();
     for entry in &entries {
-        let spelled = portable(entry.path());
+        let spelled = crate::path::portable(entry.path());
         hasher.update(
             u64::try_from(spelled.len())
                 .unwrap_or(u64::MAX)
@@ -85,7 +77,7 @@ pub fn tree_sha256(root: &std::path::Path) -> std::io::Result<String> {
                 // exactly what it always did, so no `integrity` already
                 // pinned over such a tree is invalidated by reading links.
                 hasher.update(u64::MAX.to_be_bytes());
-                portable(target).into_bytes()
+                crate::path::portable(target).into_bytes()
             }
         };
         hasher.update(u64::try_from(body.len()).unwrap_or(u64::MAX).to_be_bytes());

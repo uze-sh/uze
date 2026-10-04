@@ -187,13 +187,10 @@ impl Resource {
             .path
             .strip_prefix(&self.package_root)
             .unwrap_or(&self.capability.path);
+        let path = crate::path::portable(path);
         match &self.resource_name {
-            Some(name) => format!(
-                "package:{}:{}:{name}",
-                self.package_id.as_str(),
-                path.display()
-            ),
-            None => format!("package:{}:{}", self.package_id.as_str(), path.display()),
+            Some(name) => format!("package:{}:{path}:{name}", self.package_id.as_str()),
+            None => format!("package:{}:{path}", self.package_id.as_str()),
         }
     }
 }

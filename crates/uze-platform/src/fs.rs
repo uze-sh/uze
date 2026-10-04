@@ -54,6 +54,28 @@ pub fn symlink(target: &Path, link: &Path) -> io::Result<()> {
     imp::symlink(target, link)
 }
 
+/// Removes the link at `link`, never what it points at, whichever kind of
+/// target it was made for: Windows keeps a link to a directory as a
+/// directory entry, which only `remove_dir` takes.
+pub fn remove_link(link: &Path) -> io::Result<()> {
+    imp::remove_link(link)
+}
+
+/// Moves the link at `from` over `to`, which may itself be a link. One
+/// rename on Unix; on Windows, where a rename cannot replace a link to a
+/// directory, the old one steps aside first and is put back if the move
+/// fails.
+pub fn rename_link_over(from: &Path, to: &Path) -> io::Result<()> {
+    imp::rename_link_over(from, to)
+}
+
+/// Sets when `path`, a file or a directory, was last modified. Windows
+/// opens a directory only when asked for one, and changes its time only
+/// through a handle opened to write.
+pub fn set_modified(path: &Path, time: std::time::SystemTime) -> io::Result<()> {
+    imp::open_for_times(path)?.set_modified(time)
+}
+
 /// Swaps two directories in one step where the kernel offers it (Linux);
 /// elsewhere an error of kind [`io::ErrorKind::Unsupported`], and the
 /// caller swaps them in two renames.
@@ -118,6 +140,18 @@ mod imp {
 
     pub(super) fn symlink(target: &Path, link: &Path) -> io::Result<()> {
         std::os::unix::fs::symlink(target, link)
+    }
+
+    pub(super) fn remove_link(link: &Path) -> io::Result<()> {
+        std::fs::remove_file(link)
+    }
+
+    pub(super) fn open_for_times(path: &Path) -> io::Result<File> {
+        File::open(path)
+    }
+
+    pub(super) fn rename_link_over(from: &Path, to: &Path) -> io::Result<()> {
+        std::fs::rename(from, to)
     }
 
     #[cfg(target_os = "linux")]
@@ -223,6 +257,47 @@ mod imp {
                 error
             }
         })
+    }
+
+    pub(super) fn open_for_times(path: &Path) -> io::Result<File> {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        File::options()
+            .write(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+    }
+
+    pub(super) fn remove_link(link: &Path) -> io::Result<()> {
+        use std::os::windows::fs::FileTypeExt;
+        if std::fs::symlink_metadata(link)?
+            .file_type()
+            .is_symlink_dir()
+        {
+            std::fs::remove_dir(link)
+        } else {
+            std::fs::remove_file(link)
+        }
+    }
+
+    pub(super) fn rename_link_over(from: &Path, to: &Path) -> io::Result<()> {
+        if std::fs::symlink_metadata(to).is_err() {
+            return std::fs::rename(from, to);
+        }
+        let mut aside = to.as_os_str().to_owned();
+        aside.push(format!(".old-{}", std::process::id()));
+        let aside = std::path::PathBuf::from(aside);
+        std::fs::rename(to, &aside)?;
+        match std::fs::rename(from, to) {
+            Ok(()) => {
+                let _ = remove_link(&aside);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = std::fs::rename(&aside, to);
+                Err(error)
+            }
+        }
     }
 
     pub(super) fn exchange(_a: &Path, _b: &Path) -> io::Result<()> {

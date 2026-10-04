@@ -119,8 +119,10 @@ mod imp {
         })
     }
 
+    /// Windows has no directory every user may stand in that is nobody's
+    /// checkout the way `/` is; the person's home is theirs alone.
     pub(super) fn server_directory() -> PathBuf {
-        env::home_dir().unwrap_or_else(env::temp_dir)
+        uze_platform::home::user_home().unwrap_or_else(env::temp_dir)
     }
 
     /// `uze.exe` in any case; an upgrade leaves the running image renamed

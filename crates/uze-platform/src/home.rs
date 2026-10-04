@@ -10,6 +10,15 @@ pub fn user_home() -> Option<PathBuf> {
     imp::user_home().filter(|home| !home.as_os_str().is_empty())
 }
 
+/// The variable this platform's home is read from, which a test or a
+/// wrapper sets to move it.
+pub const VARIABLE: &str = imp::VARIABLE;
+
+/// Every variable a program here may read its home from: [`VARIABLE`], and
+/// `HOME` on Windows too, which Git for Windows honours when it is set. A
+/// child given a home of its own is given it in all of them.
+pub const VARIABLES: &[&str] = imp::VARIABLES;
+
 /// `path` as a person reads it, the way a shell prompt shows it: under the
 /// home directory it starts with `~`, in this platform's separator.
 pub fn shorten(path: &Path) -> String {
@@ -26,13 +35,13 @@ pub fn shorten(path: &Path) -> String {
 }
 
 /// What a person typed, resolved against the home directory: a leading `~`
-/// (followed by either separator) and a bare relative path both name
-/// something inside it.
+/// and a bare relative path both name something inside it. A rooted path is never bare, drive or not: `/srv` stays on
+/// the current drive on Windows.
 pub fn expand(typed: &str) -> PathBuf {
     let path = PathBuf::from(typed);
     match (typed.strip_prefix('~'), user_home()) {
         (Some(rest), Some(home)) => home.join(rest.trim_start_matches(['/', MAIN_SEPARATOR])),
-        (None, Some(home)) if path.is_relative() => home.join(path),
+        (None, Some(home)) if !path.has_root() => home.join(path),
         _ => path,
     }
 }
@@ -41,8 +50,11 @@ pub fn expand(typed: &str) -> PathBuf {
 mod imp {
     use std::path::PathBuf;
 
+    pub(super) const VARIABLE: &str = "HOME";
+    pub(super) const VARIABLES: &[&str] = &["HOME"];
+
     pub(super) fn user_home() -> Option<PathBuf> {
-        std::env::var_os("HOME").map(PathBuf::from)
+        std::env::var_os(VARIABLE).map(PathBuf::from)
     }
 }
 
@@ -50,6 +62,11 @@ mod imp {
 mod imp {
     use std::path::PathBuf;
 
+    pub(super) const VARIABLE: &str = "USERPROFILE";
+    pub(super) const VARIABLES: &[&str] = &["USERPROFILE", "HOME"];
+
+    /// `USERPROFILE`, then the profile the token names: what
+    /// `std::env::home_dir` answers.
     pub(super) fn user_home() -> Option<PathBuf> {
         std::env::home_dir()
     }

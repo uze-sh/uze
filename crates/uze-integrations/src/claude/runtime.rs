@@ -135,7 +135,7 @@ fn project_resource_projection(
         // is tolerated: a concurrent projection may have already removed
         // it between the `is_symlink` check and this call.
         if projected.is_symlink() {
-            match fs::remove_file(&projected) {
+            match uze_platform::fs::remove_link(&projected) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error.to_string()),
@@ -165,11 +165,11 @@ fn project_resource_projection(
     // target either way. Same nonce pattern `write_atomic` uses.
     let temporary = temporary_projection_path(parent, resource);
     uze_core::persistence::create_symlink(&project_source, &temporary).map_err(|error| {
-        let _ = fs::remove_file(&temporary);
+        let _ = uze_platform::fs::remove_link(&temporary);
         error.to_string()
     })?;
-    if let Err(error) = fs::rename(&temporary, &projected) {
-        let _ = fs::remove_file(&temporary);
+    if let Err(error) = uze_platform::fs::rename_link_over(&temporary, &projected) {
+        let _ = uze_platform::fs::remove_link(&temporary);
         return Err(error.to_string());
     }
     Ok(())

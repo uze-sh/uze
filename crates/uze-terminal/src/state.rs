@@ -52,7 +52,7 @@ pub struct Space {
 /// The label a space gets from its root when nobody names it: the root's
 /// last component, or `home` for the home directory itself.
 pub fn space_label(root: &Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = uze_platform::home::user_home();
     if home.as_deref().is_some_and(|home| home == root) {
         return "home".to_owned();
     }

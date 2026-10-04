@@ -229,17 +229,11 @@ impl ResolvedSource {
 /// than over a transport. Everything with a scheme is not — `file://`
 /// included, which Git itself routes through the transport layer and which
 /// is the spelling that means "treat this as a remote". `scp`-style
-/// `host:path` is remote too.
+/// `host:path` is remote too: it never has a root, while a path rooted as
+/// this platform roots one does — `/srv/ai`, and on Windows `C:\repo`,
+/// `c:/repo` and `/srv/ai` on the current drive, as Git reads them there.
 fn names_a_local_path(url: &str) -> bool {
-    if url.contains("://") {
-        return false;
-    }
-    // A colon before the first slash is a host (`git@example.com:org/repo`);
-    // one after it is just a directory with a colon in its name.
-    if url.split('/').next().unwrap_or_default().contains(':') {
-        return false;
-    }
-    Path::new(url).is_absolute()
+    !url.contains("://") && Path::new(url).has_root()
 }
 
 /// Everything the Store persists about a package's origin, and nothing it

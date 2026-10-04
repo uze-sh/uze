@@ -8,6 +8,11 @@ pub fn die_quietly_on_a_closed_pipe() {
     imp::die_quietly_on_a_closed_pipe()
 }
 
+/// The devices a program opens to talk to its terminal itself, whatever its
+/// standard streams are: what to read the person's answer from, and where
+/// to ask. Opening one fails when the process has no terminal.
+pub const TERMINAL: (&str, &str) = imp::TERMINAL;
+
 /// Sends everything later written to stdout nowhere, for this process and
 /// the children it starts, while stderr still reaches the person.
 pub fn silence_stdout() {
@@ -17,6 +22,8 @@ pub fn silence_stdout() {
 #[cfg(unix)]
 mod imp {
     use std::os::fd::AsRawFd;
+
+    pub(super) const TERMINAL: (&str, &str) = ("/dev/tty", "/dev/tty");
 
     pub(super) fn die_quietly_on_a_closed_pipe() {
         // Safety: `SIG_DFL` is the disposition the process started life
@@ -37,9 +44,39 @@ mod imp {
     use std::os::windows::io::IntoRawHandle;
     use windows_sys::Win32::System::Console::{STD_OUTPUT_HANDLE, SetStdHandle};
 
-    /// Windows has no signal for it: a write to a closed pipe is an error
-    /// like any other, which the report's own writer answers.
-    pub(super) fn die_quietly_on_a_closed_pipe() {}
+    /// The console's own input and screen buffers.
+    pub(super) const TERMINAL: (&str, &str) = ("CONIN$", "CONOUT$");
+
+    /// Windows has no signal for it: a write to a closed pipe is an error,
+    /// and `println!` answers an error by panicking. That one panic is what
+    /// SIGPIPE's default disposition is on Unix — the process ends, quietly,
+    /// because its reader went away — and every other panic is reported as
+    /// it was.
+    pub(super) fn die_quietly_on_a_closed_pipe() {
+        let report = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic| {
+            if reader_went_away(panic) {
+                std::process::exit(0);
+            }
+            report(panic);
+        }));
+    }
+
+    /// `println!` panics with "failed printing to stdout: <error>", and a
+    /// reader that closed its end is `ERROR_NO_DATA` (232) or
+    /// `ERROR_BROKEN_PIPE` (109).
+    fn reader_went_away(panic: &std::panic::PanicHookInfo<'_>) -> bool {
+        let message = panic
+            .payload()
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.payload().downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        message.starts_with("failed printing to stdout")
+            && ["(os error 232)", "(os error 109)"]
+                .iter()
+                .any(|code| message.ends_with(code))
+    }
 
     /// The standard library asks for the stdout handle on every write, and
     /// a child inherits the one set here.

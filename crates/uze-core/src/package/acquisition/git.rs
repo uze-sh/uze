@@ -23,7 +23,7 @@ use std::{
 use super::forge::{self, Access, Transport};
 use crate::{
     error::{Result, UzeError},
-    subprocess::{kill_reaped_process_group, read_bounded, wait_with_timeout, with_process_group},
+    subprocess::{Seat, read_bounded, spawn_tree, wait_with_timeout},
 };
 
 /// SSH that neither waits on a prompt nor offers a key to a host the
@@ -394,8 +394,10 @@ impl Reach {
 /// Every flag here closes a way the repository or the ambient machine could
 /// influence the run:
 ///
-/// - `env_clear` plus an explicit `PATH`: no inherited Git configuration, no
-///   proxy or credential helper picked up from the operator's shell.
+/// - a cleared environment keeping only `PATH` and what the platform cannot
+///   run without (`uze_platform::process::clear_environment`): no inherited
+///   Git configuration, no proxy or credential helper picked up from the
+///   operator's shell.
 /// - `GIT_CONFIG_NOSYSTEM` / `GIT_CONFIG_GLOBAL=/dev/null`: system and user
 ///   config cannot introduce a helper, alias or `filter` that runs a command.
 /// - `core.hooksPath=/dev/null`: a repository's own hooks are never run.
@@ -433,9 +435,8 @@ pub(super) fn run_as(
         exit = tracing::field::Empty
     );
     let _entered = span.enter();
-    let command = git_command(reach, arguments, working_directory);
-    let mut child = with_process_group(command)
-        .spawn()
+    let mut command = git_command(reach, arguments, working_directory);
+    let (mut child, tree) = spawn_tree(&mut command, Seat::OwnGroup)
         .map_err(|error| UzeError::AcquisitionFailed(format!("could not run `git`: {error}")))?;
     let Some(mut stdout) = child.stdout.take() else {
         return Err(UzeError::AcquisitionFailed(
@@ -469,9 +470,10 @@ pub(super) fn run_as(
     thread::spawn(move || {
         let _ = stderr_tx.send(read_bounded(&mut stderr, GIT_OUTPUT_CAP));
     });
-    let (status, timed_out) = wait_with_timeout(&mut child, COMMAND_TIMEOUT).map_err(|error| {
-        UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
-    })?;
+    let (status, timed_out) =
+        wait_with_timeout(&mut child, &tree, COMMAND_TIMEOUT).map_err(|error| {
+            UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
+        })?;
     span.record("exit", status.code().unwrap_or(-1));
     if timed_out {
         tracing::warn!("git timed out");
@@ -486,14 +488,14 @@ pub(super) fn run_as(
     let (stdout_bytes, stdout_dropped) = match stdout_rx.recv_timeout(remaining()) {
         Ok(result) => result,
         Err(_) => {
-            kill_reaped_process_group(child.id());
+            tree.end_survivors();
             return Err(timed_out_error());
         }
     };
     let (stderr_bytes, _) = match stderr_rx.recv_timeout(remaining()) {
         Ok(result) => result,
         Err(_) => {
-            kill_reaped_process_group(child.id());
+            tree.end_survivors();
             return Err(timed_out_error());
         }
     };
@@ -518,9 +520,7 @@ fn git_command(reach: Reach, arguments: &[&str], working_directory: Option<&Path
     let mut command = Command::new("git");
     match reach.access {
         Access::Local | Access::Anonymous => {
-            command
-                .env_clear()
-                .env("PATH", std::env::var("PATH").unwrap_or_default());
+            uze_platform::process::clear_environment(&mut command);
         }
         Access::Credentialed => {
             without_git_environment(&mut command, &[]);
@@ -536,6 +536,9 @@ fn git_command(reach: Reach, arguments: &[&str], working_directory: Option<&Path
     };
     command
         .env("GIT_CONFIG_NOSYSTEM", "1")
+        // Git's own spelling of "no file", on every platform it runs on:
+        // Git for Windows reads `/dev/null` as the null device and cannot
+        // open `NUL` as a configuration file.
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
@@ -612,9 +615,8 @@ fn run_records<T: Send + 'static>(
         exit = tracing::field::Empty
     );
     let _entered = span.enter();
-    let command = git_command(reach, arguments, working_directory);
-    let mut child = with_process_group(command)
-        .spawn()
+    let mut command = git_command(reach, arguments, working_directory);
+    let (mut child, tree) = spawn_tree(&mut command, Seat::OwnGroup)
         .map_err(|error| UzeError::AcquisitionFailed(format!("could not run `git`: {error}")))?;
     let (Some(mut stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
         return Err(UzeError::AcquisitionFailed(
@@ -658,9 +660,10 @@ fn run_records<T: Send + 'static>(
     thread::spawn(move || {
         let _ = stderr_tx.send(read_bounded(&mut stderr, GIT_OUTPUT_CAP));
     });
-    let (status, timed_out) = wait_with_timeout(&mut child, COMMAND_TIMEOUT).map_err(|error| {
-        UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
-    })?;
+    let (status, timed_out) =
+        wait_with_timeout(&mut child, &tree, COMMAND_TIMEOUT).map_err(|error| {
+            UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
+        })?;
     span.record("exit", status.code().unwrap_or(-1));
     if timed_out {
         tracing::warn!("git timed out");
@@ -668,14 +671,14 @@ fn run_records<T: Send + 'static>(
     }
     let remaining = || deadline.saturating_duration_since(Instant::now());
     let Ok((state, stopped)) = stdout_rx.recv_timeout(remaining()) else {
-        kill_reaped_process_group(child.id());
+        tree.end_survivors();
         return Err(timed_out_error());
     };
     if stopped {
         return Ok(state);
     }
     let Ok((stderr_bytes, _)) = stderr_rx.recv_timeout(remaining()) else {
-        kill_reaped_process_group(child.id());
+        tree.end_survivors();
         return Err(timed_out_error());
     };
     if !status.success() {
@@ -758,16 +761,16 @@ fn operator_config(pattern: &str) -> Vec<(String, String)> {
     static READ: std::sync::Mutex<Vec<(Asked, Settings)>> = std::sync::Mutex::new(Vec::new());
     let key = (
         pattern.to_owned(),
-        [
-            "HOME",
-            "XDG_CONFIG_HOME",
-            "GIT_CONFIG_NOSYSTEM",
-            "GIT_CONFIG_GLOBAL",
-            "GIT_CONFIG_SYSTEM",
-        ]
-        .iter()
-        .map(std::env::var_os)
-        .collect(),
+        uze_platform::home::VARIABLES
+            .iter()
+            .chain(&[
+                "XDG_CONFIG_HOME",
+                "GIT_CONFIG_NOSYSTEM",
+                "GIT_CONFIG_GLOBAL",
+                "GIT_CONFIG_SYSTEM",
+            ])
+            .map(std::env::var_os)
+            .collect(),
     );
     if let Some((_, settings)) = READ
         .lock()
@@ -1143,7 +1146,7 @@ mod tests {
         .unwrap();
         let mut environment = uze_testkit::env::scope();
         environment
-            .set("HOME", &home)
+            .home(&home)
             .set("XDG_CONFIG_HOME", home.join("xdg"))
             .set("GIT_CONFIG_NOSYSTEM", "1")
             .remove("GIT_CONFIG_GLOBAL")
@@ -1188,7 +1191,7 @@ mod tests {
         .unwrap();
         let mut environment = uze_testkit::env::scope();
         environment
-            .set("HOME", &home)
+            .home(&home)
             .set("XDG_CONFIG_HOME", home.join("xdg"))
             .set("GIT_CONFIG_NOSYSTEM", "1")
             .remove("GIT_CONFIG_GLOBAL");
@@ -1320,7 +1323,9 @@ mod tests {
 
     /// What the size budget is judged on, read off the tree before a
     /// checkout writes it — and a directory named `a*b` is that directory,
-    /// never a pattern that also takes `ab` with it.
+    /// never a pattern that also takes `ab` with it. NTFS holds no `*` in a
+    /// name, so the fixture is a Unix one.
+    #[cfg(unix)]
     #[test]
     fn a_tree_is_measured_literally_before_it_is_checked_out() {
         let _env = uze_testkit::env::scope();

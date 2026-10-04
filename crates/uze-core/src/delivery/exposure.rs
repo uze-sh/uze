@@ -175,7 +175,7 @@ impl ManagedArtifact {
                 if inspection.state != AttachmentState::Matched {
                     return Ok(inspection);
                 }
-                fs::remove_file(path).map_err(UzeError::write(&path))?;
+                uze_platform::fs::remove_link(path).map_err(UzeError::write(&path))?;
                 Ok(AttachmentInspection {
                     state: AttachmentState::Missing,
                     reason: "managed artifact detached".to_owned(),
@@ -513,7 +513,7 @@ fn attach_symlink(path: &Path, target: &Path) -> Result<()> {
             // it does not touch.
             match fs::metadata(path) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    fs::remove_file(path).map_err(UzeError::write(path))?;
+                    uze_platform::fs::remove_link(path).map_err(UzeError::write(path))?;
                     crate::persistence::create_symlink(target, path)
                 }
                 // Resolves, or cannot be told apart from one that does: a

@@ -19,6 +19,16 @@ pub use uze_platform::{
     path::{canonical, identity, is_anchored, same_path, strip_verbatim},
 };
 
+/// A relative path as every platform spells it: components joined by `/`.
+/// What names a file inside a package — a digest, a resource's identity —
+/// is the same on every machine, whichever separator measured it.
+pub fn portable(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// [`canonical`] as a method, so a call site reads as the `canonicalize`
 /// it replaces.
 pub trait Canonical {

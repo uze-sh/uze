@@ -443,7 +443,9 @@ impl UzeHome {
         let home = home
             .filter(|value| !value.is_empty())
             .ok_or(UzeError::MissingHomeDirectory)?;
-        Ok(Self::at(absolute_or_refuse("HOME", home)?.join(".uze")))
+        Ok(Self::at(
+            absolute_or_refuse(uze_platform::home::VARIABLE, home)?.join(".uze"),
+        ))
     }
 }
 
@@ -465,20 +467,25 @@ fn absolute_or_refuse(variable: &'static str, value: std::ffi::OsString) -> Resu
 mod tests {
     use super::*;
 
+    /// A directory every platform reads as absolute.
+    fn absolute(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(name)
+    }
+
     #[test]
     fn explicit_uze_home_wins_over_default_home() {
         let home = UzeHome::from_values(
-            Some("/tmp/explicit-uze".into()),
-            Some("/tmp/user-home".into()),
+            Some(absolute("explicit-uze").into()),
+            Some(absolute("user-home").into()),
         )
         .unwrap();
-        assert_eq!(home.root(), Path::new("/tmp/explicit-uze"));
+        assert_eq!(home.root(), absolute("explicit-uze"));
     }
 
     #[test]
     fn default_home_is_derived_only_when_uze_home_is_missing() {
-        let home = UzeHome::from_values(None, Some("/tmp/user-home".into())).unwrap();
-        assert_eq!(home.root(), Path::new("/tmp/user-home/.uze"));
+        let home = UzeHome::from_values(None, Some(absolute("user-home").into())).unwrap();
+        assert_eq!(home.root(), absolute("user-home").join(".uze"));
     }
 
     /// `export UZE_HOME="$SOMETHING_UNSET"` is how a wrapper script sets a
@@ -486,8 +493,9 @@ mod tests {
     /// happen to be standing in".
     #[test]
     fn an_empty_uze_home_is_read_as_unset() {
-        let home = UzeHome::from_values(Some("".into()), Some("/tmp/user-home".into())).unwrap();
-        assert_eq!(home.root(), Path::new("/tmp/user-home/.uze"));
+        let home =
+            UzeHome::from_values(Some("".into()), Some(absolute("user-home").into())).unwrap();
+        assert_eq!(home.root(), absolute("user-home").join(".uze"));
     }
 
     #[test]
@@ -574,7 +582,7 @@ mod tests {
         assert!(matches!(
             UzeHome::from_values(None, Some("user-home".into())),
             Err(UzeError::RelativeHomeDirectory {
-                variable: "HOME",
+                variable: uze_platform::home::VARIABLE,
                 ..
             })
         ));
