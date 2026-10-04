@@ -84,15 +84,15 @@ fn handoff() -> Policy<'static> {
     }
 }
 
-fn merge(gate: &[String]) -> Policy<'_> {
+fn merge(gate: &[uze_core::shell::ShellCommand]) -> Policy<'_> {
     Policy {
         completion: CompletionBehavior::Merge,
         gate,
     }
 }
 
-fn steps(commands: &[&str]) -> Vec<String> {
-    commands.iter().map(|step| (*step).to_owned()).collect()
+fn steps(commands: &[&str]) -> Vec<uze_core::shell::ShellCommand> {
+    commands.iter().map(|step| (*step).into()).collect()
 }
 
 #[test]

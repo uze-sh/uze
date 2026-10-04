@@ -21,7 +21,7 @@ pub struct Policy<'a> {
     pub completion: CompletionBehavior,
     /// What runs in the task's checkout on the rebased commits, in order;
     /// the first non-zero exit refuses delivery.
-    pub gate: &'a [String],
+    pub gate: &'a [uze_core::shell::ShellCommand],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

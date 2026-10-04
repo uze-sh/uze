@@ -1,6 +1,7 @@
 //! The pool of slots under `.worktrees/`, and acquiring, resuming and materializing one.
 
 use super::*;
+use uze_core::shell::ShellCommand;
 
 /// How many free slots are kept, and for how long. Decided from the slots
 /// as they stand, never from a history of how many were used: a rule with
@@ -344,7 +345,7 @@ pub fn materialize(
     primary: &Path,
     slot: &Path,
     links: &[PathBuf],
-    setup: &[String],
+    setup: &[ShellCommand],
 ) -> Vec<String> {
     let mut warnings = Vec::new();
     for link in links {
@@ -374,7 +375,16 @@ pub fn materialize(
     // always assumes the earlier one ran, so continuing would produce a
     // second, more confusing warning about the same cause.
     for step in setup {
-        let (passed, output) = crate::subprocess::run_shell_bounded(slot, step, SETUP_TIMEOUT);
+        // Never run in a shell it was not written for: the checkout is
+        // still placed, and says which step it went without.
+        let Some(line) = step.here() else {
+            warnings.push(format!(
+                "setup `{step}` has no {} spelling; not run",
+                ShellCommand::platform()
+            ));
+            break;
+        };
+        let (passed, output) = crate::subprocess::run_shell_bounded(slot, line, SETUP_TIMEOUT);
         if !passed {
             let tail = output.lines().last().unwrap_or("").to_owned();
             warnings.push(format!("setup `{step}` failed: {tail}"));

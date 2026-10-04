@@ -287,17 +287,19 @@ fn signal_group(pid: u32, leader_unreaped: bool) {
     }
 }
 
-#[cfg(not(unix))]
+/// Ends `pid` and everything it started. Called while the `Child` behind
+/// `pid` is unreaped, so its handle keeps the pid from being reused.
+#[cfg(windows)]
 pub fn kill_process_group(pid: u32) {
-    let _ = Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .status();
+    uze_process::windows::kill_tree(pid);
 }
 
-#[cfg(not(unix))]
-pub fn kill_reaped_process_group(pid: u32) {
-    kill_process_group(pid);
-}
+/// Nothing: once its leader is reaped, a Windows pid may already name
+/// somebody else's process, and there is no group id that outlives it the
+/// way a Unix one does. What the leader left running was ended with it by
+/// [`kill_process_group`] while it could still be named safely.
+#[cfg(windows)]
+pub fn kill_reaped_process_group(_pid: u32) {}
 
 /// Reads `/proc` directly (rather than shelling out to `ps --pgid`) to list
 /// every PID currently reporting `pgid` as its process group.
@@ -398,18 +400,52 @@ pub fn program_on_path(program: &str) -> bool {
         })
 }
 
+/// `command` handed to the shell this platform runs authored lines in: the
+/// POSIX shell, or Windows PowerShell 5.1, the one every supported Windows
+/// carries.
+///
+/// PowerShell does not stop a line at a native command that fails, and its
+/// own exit status is not that command's. So the line runs with cmdlet
+/// errors terminating, and ends by exiting with the last native command's
+/// code when that code is not zero: `pnpm install; Copy-Item a b` fails when
+/// `pnpm install` does, unless a later native command succeeds after it.
+pub fn shell_invocation(command: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut invocation = Command::new("powershell.exe");
+        invocation.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+        ]);
+        invocation.arg(format!(
+            "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = \
+             [Text.UTF8Encoding]::new($false); {command}\n\
+             if ($LASTEXITCODE) {{ exit $LASTEXITCODE }}"
+        ));
+        invocation
+    }
+    #[cfg(not(windows))]
+    {
+        let shell = if Path::new("/bin/sh").exists() {
+            "/bin/sh"
+        } else {
+            "sh"
+        };
+        let mut invocation = Command::new(shell);
+        invocation.arg("-c").arg(command);
+        invocation
+    }
+}
+
 /// Runs a shell command in `cwd`, bounded in time and output. Returns
 /// whether it exited zero, and its combined stdout and stderr — for the
 /// project-declared commands (a checkout's setup, a delivery's gate, a
 /// forge CLI) whose output is what the operator or the agent is told.
 pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool, String) {
-    let shell = if Path::new("/bin/sh").exists() {
-        "/bin/sh"
-    } else {
-        "sh"
-    };
-    let mut invocation = Command::new(shell);
-    invocation.arg("-c").arg(command);
+    let invocation = shell_invocation(command);
     let child = with_process_group(invocation)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

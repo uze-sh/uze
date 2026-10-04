@@ -189,9 +189,31 @@ mod tests {
     }
 
     #[test]
+    fn a_command_may_be_spelled_per_platform() {
+        let one = parsed("worktrees:\n  setup:\n    posix: pnpm i && cp a b\n    windows: pnpm i; Copy-Item a b\n")
+            .unwrap()
+            .worktrees
+            .unwrap();
+        assert_eq!(one.setup.len(), 1);
+        let expected = if cfg!(windows) {
+            "pnpm i; Copy-Item a b"
+        } else {
+            "pnpm i && cp a b"
+        };
+        assert_eq!(one.setup[0].here(), Some(expected));
+
+        let mixed = parsed("worktrees:\n  gate:\n    - cargo test\n    - windows: cargo test --target x86_64-pc-windows-msvc\n")
+            .unwrap()
+            .worktrees
+            .unwrap();
+        assert_eq!(mixed.gate.len(), 2);
+        assert_eq!(mixed.gate[1].here().is_some(), cfg!(windows));
+    }
+
+    #[test]
     fn a_command_and_a_list_of_commands_are_both_accepted() {
         let one = parsed("worktrees:\n  gate: cargo test\n").unwrap();
-        assert_eq!(one.worktrees.unwrap().gate, vec!["cargo test".to_owned()]);
+        assert_eq!(one.worktrees.unwrap().gate, vec!["cargo test".into()]);
         let many = parsed("worktrees:\n  gate:\n    - cargo test\n    - cargo clippy\n").unwrap();
         assert_eq!(many.worktrees.unwrap().gate.len(), 2);
     }
@@ -311,10 +333,10 @@ mod tests {
         assert_eq!(policy.target.as_deref(), Some("develop"));
         assert_eq!(policy.completion, CompletionBehavior::Pr);
         assert_eq!(policy.link.len(), 2);
-        assert_eq!(policy.setup, vec!["pnpm install".to_owned()]);
+        assert_eq!(policy.setup, vec!["pnpm install".into()]);
         assert_eq!(
             policy.gate,
-            vec!["cargo test".to_owned(), "cargo clippy".to_owned()],
+            vec!["cargo test".into(), "cargo clippy".into()],
             "a list is what makes a failure say which step failed"
         );
         assert_eq!(policy.slots, Some(3));
@@ -407,8 +429,8 @@ mod tests {
             target: Some("main".to_owned()),
             completion: CompletionBehavior::Handoff,
             link: vec![PathBuf::from(".env")],
-            setup: vec!["pnpm install".to_owned()],
-            gate: vec!["pnpm test".to_owned()],
+            setup: vec!["pnpm install".into()],
+            gate: vec!["pnpm test".into()],
             slots: Some(3),
             spare: Some(2),
             idle_days: Some(3),

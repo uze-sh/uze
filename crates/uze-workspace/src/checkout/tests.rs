@@ -986,11 +986,11 @@ fn a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent() {
         primary,
         &slot.path,
         &[],
-        &["echo preparing; echo 'no such tool: pnpm' >&2; exit 3".to_owned()],
+        &["echo preparing; echo 'no such tool: pnpm' >&2; exit 3".into()],
     );
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].contains("no such tool: pnpm"), "{warnings:?}");
-    assert!(materialize(primary, &slot.path, &[], &["touch prepared".to_owned()]).is_empty());
+    assert!(materialize(primary, &slot.path, &[], &["touch prepared".into()]).is_empty());
     assert!(
         slot.path.join("prepared").exists(),
         "setup runs in the checkout"

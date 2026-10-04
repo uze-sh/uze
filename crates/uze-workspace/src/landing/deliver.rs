@@ -48,11 +48,22 @@ pub(super) fn deliver_locked(
     }
     rebase_in_slot(primary, &slot, state, isolation, &tip)?;
     for step in policy.gate {
-        let (passed, output) = run_shell_bounded(&slot, step, GATE_TIMEOUT);
+        // A gate with no spelling for this platform refuses delivery: it
+        // cannot be run, and work it never checked must not land.
+        let (passed, output) = match step.here() {
+            Some(line) => run_shell_bounded(&slot, line, GATE_TIMEOUT),
+            None => (
+                false,
+                format!(
+                    "this gate has no {} spelling in agents.yaml",
+                    uze_core::shell::ShellCommand::platform()
+                ),
+            ),
+        };
         if !passed {
             *state = WorkState::GateFailed;
             return Err(DeliveryFailure::GateFailed {
-                command: step.clone(),
+                command: step.to_string(),
                 output,
             });
         }

@@ -203,7 +203,12 @@ impl Workspace<'_> {
                 .target
                 .clone()
                 .or_else(|| checkout::current_branch(&repository.primary)),
-            gate: repository.policy.gate.clone(),
+            gate: repository
+                .policy
+                .gate
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
         })
     }
 }

@@ -17,4 +17,5 @@ pub mod home;
 pub mod path;
 pub mod process_cwd;
 pub mod provisioning;
+pub mod shell;
 pub mod subprocess;

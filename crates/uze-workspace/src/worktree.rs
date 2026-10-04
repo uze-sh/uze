@@ -21,6 +21,7 @@
 //! UZE already placed it in.
 
 use std::path::{Path, PathBuf};
+use uze_core::shell::ShellCommand;
 
 use serde::{Deserialize, Serialize};
 
@@ -365,7 +366,7 @@ pub struct WorktreePolicy {
         deserialize_with = "one_or_many",
         skip_serializing_if = "Vec::is_empty"
     )]
-    pub setup: Vec<String>,
+    pub setup: Vec<ShellCommand>,
     /// What runs in the task's checkout on the rebased commits; a non-zero
     /// exit refuses delivery.
     #[serde(
@@ -373,7 +374,7 @@ pub struct WorktreePolicy {
         deserialize_with = "one_or_many",
         skip_serializing_if = "Vec::is_empty"
     )]
-    pub gate: Vec<String>,
+    pub gate: Vec<ShellCommand>,
     /// The most checkouts that may exist at once. Undeclared, peak
     /// concurrency is the only bound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -391,14 +392,15 @@ pub struct WorktreePolicy {
 /// One command, or an ordered list of them. A single command is the
 /// common case and reads better on one line; a list is what makes a
 /// failure say *which* step failed instead of handing back the output of a
-/// chain the shell assembled.
+/// chain the shell assembled. A command is a line, or a `posix`/`windows`
+/// pair (see [`ShellCommand`]); a bare pair is one command.
 fn one_or_many<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> std::result::Result<Vec<String>, D::Error> {
+) -> std::result::Result<Vec<ShellCommand>, D::Error> {
     struct OneOrMany;
 
     impl<'de> serde::de::Visitor<'de> for OneOrMany {
-        type Value = Vec<String>;
+        type Value = Vec<ShellCommand>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
             formatter.write_str("a command, or a list of commands run in order")
@@ -408,7 +410,15 @@ fn one_or_many<'de, D: serde::Deserializer<'de>>(
             self,
             command: &str,
         ) -> std::result::Result<Self::Value, E> {
-            Ok(vec![command.to_owned()])
+            Ok(vec![ShellCommand::from(command)])
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            map: A,
+        ) -> std::result::Result<Self::Value, A::Error> {
+            Deserialize::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                .map(|command| vec![command])
         }
 
         fn visit_seq<A: serde::de::SeqAccess<'de>>(
