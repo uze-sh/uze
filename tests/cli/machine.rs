@@ -100,10 +100,10 @@ fn mcp_package_fixture_with_resolved_binary(dest_dir: &std::path::Path) -> PathB
     std::fs::create_dir_all(dest_dir).unwrap();
     std::fs::copy(source.join("plugin.json"), dest_dir.join("plugin.json")).unwrap();
     let manifest = std::fs::read_to_string(source.join("mcp.json")).unwrap();
-    let resolved = manifest.replace(
-        "__UZE_MCP_FIXTURE_BINARY__",
-        env!("CARGO_BIN_EXE_uze-mcp-conformance-fixture"),
-    );
+    // Inside a JSON string, so spelled as one: a Windows path's separators
+    // are escapes there.
+    let binary = serde_json::to_string(env!("CARGO_BIN_EXE_uze-mcp-conformance-fixture")).unwrap();
+    let resolved = manifest.replace("__UZE_MCP_FIXTURE_BINARY__", binary.trim_matches('"'));
     std::fs::write(dest_dir.join("mcp.json"), resolved).unwrap();
     dest_dir.to_path_buf()
 }
