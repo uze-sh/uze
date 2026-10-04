@@ -101,7 +101,7 @@ scenes:
         about: the harness is running again, in the checkout it was moved to
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import glob, json
             [record] = glob.glob('{uze_home}/state/projects/*/conversations/*.json')
             print(json.load(open(record))['agent'])

@@ -102,7 +102,7 @@ scenes:
         about: its branch is still in the repository
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import glob, json
             markers = glob.glob('{uze_home}/state/projects/*/project.json')
             print('\n'.join(json.load(open(m))['root'] for m in markers))
@@ -120,7 +120,7 @@ scenes:
           the release's too.
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import glob, json
             agents = [a for s in glob.glob('{uze_home}/state/projects/*/agents.json')
                       for a in json.load(open(s))['agents'] if a.get('isolation')]

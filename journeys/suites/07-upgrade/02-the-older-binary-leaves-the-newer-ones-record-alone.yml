@@ -65,7 +65,7 @@ scenes:
     then:
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import glob
             [store] = glob.glob('{uze_home}/state/projects/*/agents.json')
             before = open('{world}/recorded-before').read()

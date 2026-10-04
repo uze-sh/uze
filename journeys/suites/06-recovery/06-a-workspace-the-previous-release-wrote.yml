@@ -72,7 +72,7 @@ scenes:
         about: nothing was set aside — a shape this build knows is carried, not discarded
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import json
             document = json.load(open('{uze_home}/state/terminal/workspace.json'))
             print('schema %d' % document['schema_version'])
@@ -82,7 +82,7 @@ scenes:
         about: and the document on that name is now this build's own shape
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import json
             document = json.load(open('{uze_home}/state/terminal/workspace.json'))
             print('kind ' + str(any('kind' in space for space in document['spaces'])))
@@ -91,7 +91,7 @@ scenes:
         about: with the one field the shapes disagreed about dropped, deliberately
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import json
             document = json.load(open('{uze_home}/state/terminal/workspace.json'))
             print('\n'.join(space['label'] for space in document['spaces']))
