@@ -50,9 +50,9 @@ offered only at 13.3, and until then `install.ps1` refuses it.
 - [x] 2.4 Add Windows stubs that answer *unknown* or return an error (never
       success) wherever a Windows implementation lands later in this list,
       so that the workspace type-checks.
-- [ ] 2.5 Add the Windows `check` and the `x86_64`/`aarch64` msvc `clippy`
+- [x] 2.5 Add the Windows `check` and the `x86_64`/`aarch64` msvc `clippy`
       to the Linux `lint` job, gating from here on.
-- [ ] 2.6 Add the Windows x64 test row to `ci.yml`, non-gating, running
+- [x] 2.6 Add the Windows x64 test row to `ci.yml`, non-gating, running
       under `pwsh` with `HOME` unset, a minimal `PATH`, and an assertion
       that `sh`/`bash`/`jq`/GNU `tar` do not resolve (D19).
 

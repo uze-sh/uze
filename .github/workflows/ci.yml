@@ -95,6 +95,9 @@ jobs:
           # actually has. An `x86_64-apple-darwin` entry belongs here as a
           # third row once this one has a history of being green.
           macos='{"platform":"macos","runner":"macos-15","clippy":true}'
+          # Native Windows, x64. Not gating yet: the row has to build a
+          # history of being green first (windows-support task 9.3).
+          windows='{"platform":"windows","runner":"windows-2025","clippy":true}'
 
           # Anything that is not a pull request answers "everything". A push
           # to `main` and the nightly are the record of whether that commit
@@ -103,7 +106,7 @@ jobs:
             {
               echo "lab=true"
               echo "journeys=true"
-              echo "platforms=[${linux},${macos}]"
+              echo "platforms=[${linux},${macos},${windows}]"
               echo "journey_platforms=[${linux},${macos}]"
             } >> "${GITHUB_OUTPUT}"
             exit 0
@@ -118,7 +121,10 @@ jobs:
           # Anything reaching for `/proc`, a signal, a pty or a peer
           # credential, plus whatever decides what gets linked in. A macOS
           # runner is the most expensive minute this repository can spend.
-          platform_surface='^(crates/uze-core/src/machine/|crates/uze-terminal/|crates/uze-git/|journeys/|src/shim\.rs$|Cargo\.lock$|\.cargo/config\.toml$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/))|(^|/)Cargo\.toml$'
+          platform_surface='^(crates/uze-core/src/machine/|crates/uze-terminal/|crates/uze-git/|crates/uze-platform/|journeys/|src/shim\.rs$|Cargo\.lock$|\.cargo/config\.toml$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/))|(^|/)Cargo\.toml$'
+          # What reaches Windows beyond that: every place a path, a process
+          # or a shell is spelled, and the installer.
+          windows_surface='^(src/|crates/|tests/|install\.ps1$)'
           # The part of that a journey on macOS can tell apart from one on
           # Linux: the terminal, the processes and the screen it drives. A
           # dependency bump is not in it — linking is what a bump threatens,
@@ -130,8 +136,10 @@ jobs:
           # What a journey drives, or what it drives it with.
           journeys_surface='^(src/|crates/|journeys/|Cargo\.lock$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/|scripts/))|(^|/)Cargo\.toml$'
 
-          platforms="[${linux}]"
-          if reaches "${platform_surface}"; then platforms="[${linux},${macos}]"; fi
+          platforms="${linux}"
+          if reaches "${platform_surface}"; then platforms="${platforms},${macos}"; fi
+          if reaches "${windows_surface}"; then platforms="${platforms},${windows}"; fi
+          platforms="[${platforms}]"
           journey_platforms="[${linux}]"
           if reaches "${journey_platform_surface}"; then journey_platforms="[${linux},${macos}]"; fi
 
@@ -179,11 +187,18 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+          targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           # Restore everywhere, save only from `main` — see `test` below.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --all-targets -- -D warnings
+      # Windows, checked from here: clippy links nothing, so the msvc targets
+      # need their standard library and no Windows toolchain. Both
+      # architectures, every run — `cfg(windows)` code is invisible to the
+      # Linux clippy above and is exactly where a platform port goes wrong.
+      - run: cargo clippy --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+      - run: cargo clippy --all-targets --target aarch64-pc-windows-msvc -- -D warnings
       # `make install` — the documented way to put `uze` on a developer's
       # machine — builds with `--features telemetry`, and nothing else here
       # ever compiles it. A grouped Dependabot bump of the four
@@ -197,7 +212,9 @@ jobs:
     name: Test (${{ matrix.platform }})
     needs: changes
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 60
+    # Windows reports until it has a history of being green (task 9.3).
+    continue-on-error: ${{ matrix.platform == 'windows' }}
     strategy:
       # The first run on a new platform is worth the complete list of what
       # does not hold there, not the name of the first leg that stopped.
@@ -238,6 +255,31 @@ jobs:
       - name: Use the whole runner
         if: runner.os == 'macOS'
         run: echo "CARGO_BUILD_JOBS=$(sysctl -n hw.logicalcpu)" >> "$GITHUB_ENV"
+      # What a person's Windows machine has: the system, Git and the Rust
+      # toolchain, and no POSIX tool for uze to lean on by accident. Defender
+      # scanning every object a build writes doubles the build.
+      - name: Reduce the machine to what a user has
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE
+          $kept = @(
+              "$env:SystemRoot\System32",
+              "$env:SystemRoot",
+              "$env:SystemRoot\System32\WindowsPowerShell\v1.0",
+              "$env:ProgramFiles\Git\cmd",
+              "$env:USERPROFILE\.cargo\bin"
+          ) -join ';'
+          "PATH=$kept" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CARGO_BUILD_JOBS=$env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Prove no POSIX tool is reachable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $found = Get-Command sh, bash, jq -ErrorAction SilentlyContinue
+          if ($found) { $found | Format-Table Name, Source; throw 'a POSIX tool is reachable' }
+          $tar = (Get-Command tar).Source
+          if ($tar -notlike "$env:SystemRoot\*") { throw "tar is not the system's: $tar" }
       - name: Build the binary
         run: cargo build --locked --bin uze
       # Linking is not running. The smallest proof that the produced
