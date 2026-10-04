@@ -3286,6 +3286,7 @@ dependencies = [
  "tracing",
  "uze-document",
  "uze-testkit",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

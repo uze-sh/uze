@@ -170,7 +170,7 @@ impl Server {
         }
     }
 
-    pub(super) fn handle_client(self: Arc<Self>, stream: UnixStream) {
+    pub(super) fn handle_client(self: Arc<Self>, stream: Stream) {
         let _span = tracing::info_span!("terminal.client").entered();
         let reader_stream = match stream.try_clone() {
             Ok(value) => value,
@@ -966,7 +966,7 @@ impl Server {
         *self.stopped.lock().expect("stop state poisoned") = true;
         self.stop_requested.notify_all();
         self.stop_panes();
-        let _ = UnixStream::connect(&self.socket);
+        let _ = transport::connect(&self.socket);
     }
 
     /// Blocks until [`Server::shut_down`] runs, and returns holding the
@@ -1053,6 +1053,7 @@ pub(super) fn spawn_status_ticker(server: Arc<Server>) {
 /// Puts back the directory the endpoint lives in, held to the same
 /// ownership and mode [`socket_path`] demanded of it in the first place — a
 /// cleaner that took the socket usually took the directory too.
+#[cfg(unix)]
 pub(super) fn restore_endpoint_directory(socket: &Path) -> io::Result<()> {
     let Some(directory) = socket.parent() else {
         return Ok(());
@@ -1065,6 +1066,7 @@ pub(super) fn restore_endpoint_directory(socket: &Path) -> io::Result<()> {
 /// program is started in a session of its own, so its group is its pid.
 /// `None` for anything else — above all this process's own group, which a
 /// group signal must never reach.
+#[cfg(unix)]
 pub(super) fn own_process_group(pid: u32) -> Option<libc::pid_t> {
     let pid = libc::pid_t::try_from(pid).ok().filter(|pid| *pid > 1)?;
     // SAFETY: `getpgid` reads the group of a positive pid and touches no
@@ -1074,6 +1076,7 @@ pub(super) fn own_process_group(pid: u32) -> Option<libc::pid_t> {
 }
 
 /// The real user id of this process.
+#[cfg(unix)]
 pub(super) fn current_uid() -> libc::uid_t {
     // SAFETY: `getuid` takes no arguments, cannot fail, and touches no
     // memory of ours.
@@ -1082,7 +1085,10 @@ pub(super) fn current_uid() -> libc::uid_t {
 
 /// What identifies the socket a server bound, so a later look at the same
 /// path can tell "still the one I am listening on" from "gone".
+#[cfg(unix)]
 pub(super) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+
     let metadata = fs::metadata(path).ok()?;
     Some((metadata.dev(), metadata.ino()))
 }
@@ -1109,6 +1115,7 @@ pub(super) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
 /// endpoint nobody serves. `serve` takes the same lock before it
 /// clears the endpoint, which makes "rebound, then cleared" and "stopped,
 /// so never rebound" the only two orderings there are.
+#[cfg(unix)]
 pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
     thread::spawn(move || {
         let mut bound = socket_identity(&server.socket);
@@ -1141,6 +1148,21 @@ pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
                     tracing::warn!(%error, "could not rebind the terminal endpoint")
                 }
             }
+        }
+    });
+}
+
+/// Stops the server when an `uze` of any build asks it to through the
+/// named stop event — the cooperative half of retiring a server, which on
+/// Unix is `SIGTERM`. The event's name is derived from the endpoint, and
+/// its shape is a thing no build changes.
+#[cfg(windows)]
+pub(super) fn spawn_stop_event(server: Arc<Server>) {
+    let name = windows::stop_event_name(&server.socket);
+    thread::spawn(move || {
+        if windows::wait_for_stop(&name).is_ok() {
+            server.persist();
+            server.shut_down();
         }
     });
 }

@@ -48,19 +48,19 @@ pub(super) const MAX_HANDSHAKE_FRAME: u32 = 64 * 1024;
 /// whole exchange is what that actually takes. [`Handshake::attached`]
 /// disarms it once the peer has said who it is.
 pub(super) struct Handshake {
-    pub(super) socket: UnixStream,
+    pub(super) socket: Stream,
     pub(super) deadline: Option<Instant>,
 }
 
 impl Handshake {
-    pub(super) fn new(socket: UnixStream, within: Duration) -> Self {
+    pub(super) fn new(socket: Stream, within: Duration) -> Self {
         Self {
             socket,
             deadline: Some(Instant::now() + within),
         }
     }
 
-    pub(super) fn socket(&mut self) -> &mut UnixStream {
+    pub(super) fn socket(&mut self) -> &mut Stream {
         &mut self.socket
     }
 

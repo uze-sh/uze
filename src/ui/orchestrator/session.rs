@@ -66,7 +66,7 @@ pub(super) struct Viewport {
 /// Everything one attach holds while its loop runs.
 pub(super) struct Attach<'a> {
     pub(super) model: WorkspaceModel,
-    pub(super) stream: std::os::unix::net::UnixStream,
+    pub(super) stream: uze_terminal::Stream,
     pub(super) home: &'a UzeHome,
     /// The registered harness set, resolved once per attach — it cannot
     /// change mid-session.

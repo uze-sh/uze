@@ -6,7 +6,7 @@ use super::*;
 /// with its first space at `seat`, which only matters for a server that has
 /// nothing persisted yet. The caller then sends `Attach` naming the seat it
 /// wants a space for.
-pub fn attach(seat: &SpaceSeat) -> Result<UnixStream, RuntimeError> {
+pub fn attach(seat: &SpaceSeat) -> Result<Stream, RuntimeError> {
     let _span = tracing::info_span!("terminal.attach", root = %seat.root.display()).entered();
     let socket = socket_path()?;
     // Settled before connecting, and by who is behind the socket rather than
@@ -92,7 +92,7 @@ pub(super) const ANSWERS_WITHIN: Duration = Duration::from_secs(2);
 /// size, so no pane anybody is looking at is resized, and `Detach` before
 /// the caller's own connection is made.
 pub(super) fn serves_this_build(socket: &Path) -> bool {
-    let Ok(mut stream) = UnixStream::connect(socket) else {
+    let Ok(mut stream) = transport::connect(socket) else {
         return false;
     };
     // Both directions: an attach must not be able to hang on a server that
@@ -142,11 +142,15 @@ pub(super) fn serves_this_build(socket: &Path) -> bool {
 /// or directory` about a path the operator never typed.
 pub(super) fn unreachable(socket: &Path, cause: Option<RuntimeError>) -> RuntimeError {
     let because = cause.map_or_else(String::new, |cause| format!(" ({cause})"));
+    let find = if cfg!(windows) {
+        "`Get-Process uze`"
+    } else {
+        "`pgrep -fa 'uze terminal serve'`"
+    };
     RuntimeError::Protocol(format!(
         "a uze is serving this workspace and answers nowhere this build looks — not at \
          {}{because} — and the claim does not name it, so it is older than this build's \
-         record of who serves. Find it with `pgrep -fa \'uze terminal serve\'`, end it, and \
-         open uze again.",
+         record of who serves. Find it with {find}, end it, and open uze again.",
         socket.display()
     ))
 }
@@ -244,6 +248,21 @@ pub(super) fn identify(pid: u32) -> Listener {
 /// turn. Falling back does not weaken isolation: the socket is named
 /// after a hash of `UZE_HOME`, so two homes stay two endpoints wherever
 /// they land.
+#[cfg(windows)]
+pub fn socket_path() -> Result<PathBuf, RuntimeError> {
+    // The pipe namespace is machine-wide, so the user's SID is part of the
+    // name: two users with homes at one path are still two endpoints.
+    let identity = identity_of(&uze_home_dir());
+    let user = windows::current_user_sid()?;
+    let user = user.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    });
+    Ok(PathBuf::from(format!(
+        r"\\.\pipe\uze-{identity}-{user:016x}"
+    )))
+}
+
+#[cfg(unix)]
 pub fn socket_path() -> Result<PathBuf, RuntimeError> {
     let identity = identity_of(&uze_home_dir());
     let named = |root: &Path| root.join(format!("uze-{identity}.sock"));
@@ -296,7 +315,7 @@ pub fn socket_path() -> Result<PathBuf, RuntimeError> {
 /// no server is running.
 pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
     let _span = tracing::info_span!("terminal.open_space", root = %seat.root.display()).entered();
-    let mut stream = UnixStream::connect(socket_path()?)
+    let mut stream = transport::connect(&socket_path()?)
         .map_err(|_| RuntimeError::Protocol("no running uze to open a space in".into()))?;
     send_request(
         &mut stream,
@@ -332,7 +351,7 @@ pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
 pub fn stop() -> Result<bool, RuntimeError> {
     let _span = tracing::info_span!("terminal.stop").entered();
     let socket = socket_path()?;
-    let mut stream = match UnixStream::connect(&socket) {
+    let mut stream = match transport::connect(&socket) {
         Ok(stream) => stream,
         Err(error)
             if matches!(
@@ -413,7 +432,10 @@ pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
     let listener = bind_endpoint(&socket)?;
     spawn_damage_broadcaster(Arc::clone(&state), damage);
     spawn_status_ticker(Arc::clone(&state));
+    #[cfg(unix)]
     spawn_endpoint_watch(Arc::clone(&state));
+    #[cfg(windows)]
+    spawn_stop_event(Arc::clone(&state));
 
     let accepting = Arc::clone(&state);
     thread::spawn(move || accept_connections(listener, accepting));
@@ -425,6 +447,7 @@ pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
     // whether to rebind, so the watch cannot put it back, and a rebind in
     // progress finishes before the clearing.
     let _stopped = state.await_stop();
+    #[cfg(unix)]
     let _ = fs::remove_file(&socket);
     Ok(())
 }
@@ -435,21 +458,32 @@ pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
 /// already proven to be this user's and unreachable by anyone else, so the
 /// moment between `bind` and the mode below is not a window anything can
 /// walk through.
-pub(super) fn bind_endpoint(socket: &Path) -> Result<UnixListener, RuntimeError> {
+#[cfg(unix)]
+pub(super) fn bind_endpoint(socket: &Path) -> Result<transport::Listener, RuntimeError> {
+    use std::os::unix::fs::PermissionsExt;
+
     match fs::remove_file(socket) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error.into()),
         _ => {}
     }
-    let listener = UnixListener::bind(socket)?;
+    let listener = transport::bind(socket)?;
     fs::set_permissions(socket, fs::Permissions::from_mode(0o600))?;
     Ok(listener)
+}
+
+/// A pipe has no file to clear and no mode to set: its security descriptor
+/// is created with it, granting this user alone (see `transport`).
+#[cfg(windows)]
+pub(super) fn bind_endpoint(socket: &Path) -> Result<transport::Listener, RuntimeError> {
+    Ok(transport::bind(socket)?)
 }
 
 /// Accepts until the server stops. A failed `accept` is logged and
 /// survived: returning would take every live pane down with it, for a
 /// condition (a descriptor limit, an aborted handshake) that passes.
-pub(super) fn accept_connections(listener: UnixListener, server: Arc<Server>) {
-    for stream in listener.incoming() {
+pub(super) fn accept_connections(listener: transport::Listener, server: Arc<Server>) {
+    loop {
+        let stream = transport::accept(&listener);
         if *server.stopped.lock().expect("stop state poisoned") {
             break;
         }
@@ -477,6 +511,7 @@ pub(super) const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(50);
 /// limit and nothing about which directory exhausted it. The smaller of the
 /// two, less a little, is what [`socket_path`] holds itself to, so the
 /// same directory is usable on either platform.
+#[cfg(unix)]
 pub(super) const MAX_SOCKET_PATH: usize = 100;
 
 /// Proves `candidate` is a directory `owner` owns and nobody else can reach
@@ -490,7 +525,10 @@ pub(super) const MAX_SOCKET_PATH: usize = 100;
 /// lands in a world-writable temp dir under a name any local user can
 /// predict and create first. `symlink_metadata` is what asks about the
 /// entry itself rather than about whatever it points at.
+#[cfg(unix)]
 pub(super) fn private_directory(candidate: &Path, owner: libc::uid_t) -> io::Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
     let metadata = fs::symlink_metadata(candidate)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err(io::Error::other(format!(

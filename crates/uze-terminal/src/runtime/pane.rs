@@ -11,7 +11,12 @@ pub(super) struct PaneRuntime {
     /// Read while the leader is alive: once a finished leader is reaped,
     /// its group can no longer be asked for, though what it left running
     /// is still in it. See [`PaneRuntime::end_leftovers`].
+    #[cfg(unix)]
     pub(super) process_group: Option<libc::pid_t>,
+    /// Windows has no process groups: the pane's program and everything it
+    /// starts are kept in one Job Object, which is what ends them together.
+    #[cfg(windows)]
+    pub(super) job: Option<Arc<windows::PaneJob>>,
     pub(super) terminal: Arc<Mutex<Term<ReplySink>>>,
     /// What this pane was spawned as — kept so a workspace restart can
     /// respawn the same launch in the same tab (see [`Server::persist`]),
@@ -105,7 +110,7 @@ impl PaneRuntime {
                 builder.args(args);
                 builder
             }
-            None => CommandBuilder::new(env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())),
+            None => CommandBuilder::new(default_shell()),
         };
         command.cwd(cwd);
         // `CommandBuilder` seeds a pane from *this* process's environment,
@@ -128,14 +133,31 @@ impl PaneRuntime {
         // What tells a `uze` started inside this pane that it is inside one,
         // so it opens a space here instead of a client within a client.
         command.env(crate::launch::PANE_VARIABLE, id.0.to_string());
+        // Windows programs do not read `TERM`, and a few change behaviour
+        // when it is set to something they take for a Unix terminal.
+        #[cfg(unix)]
         if env::var_os("TERM").is_none() {
             command.env("TERM", "xterm-256color");
         }
+        #[cfg(windows)]
+        command.env("COLORTERM", "truecolor");
         let mut child = pair
             .slave
             .spawn_command(command)
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
+        #[cfg(unix)]
         let process_group = child.process_id().and_then(own_process_group);
+        #[cfg(windows)]
+        let job = child.process_id().and_then(|pid| {
+            let job = windows::PaneJob::new().ok()?;
+            match job.assign(pid) {
+                Ok(()) => Some(Arc::new(job)),
+                Err(error) => {
+                    tracing::warn!(%error, pid, "could not put a pane's program in its job");
+                    None
+                }
+            }
+        });
         let endpoints = pair.master.try_clone_reader().and_then(|reader| {
             pair.master
                 .take_writer()
@@ -192,7 +214,10 @@ impl PaneRuntime {
             master: Mutex::new(pair.master),
             writer,
             child: Arc::new(Mutex::new(child)),
+            #[cfg(unix)]
             process_group,
+            #[cfg(windows)]
+            job,
             terminal,
             launch,
             last_sent: Mutex::new(None),
@@ -252,6 +277,21 @@ impl PaneRuntime {
     /// and then a SIGKILL nobody waits on: done inline it held the request
     /// that closed the tab for that long, and left every pane whose program
     /// outlived the grace period a zombie for the life of the server.
+    #[cfg(windows)]
+    pub(super) fn stop(&self) -> thread::JoinHandle<()> {
+        let child = Arc::clone(&self.child);
+        let job = self.job.clone();
+        thread::spawn(move || {
+            let mut child = child.lock().expect("child poisoned");
+            let _ = child.kill();
+            if let Some(job) = job {
+                job.terminate();
+            }
+            let _ = child.wait();
+        })
+    }
+
+    #[cfg(unix)]
     pub(super) fn stop(&self) -> thread::JoinHandle<()> {
         let child = Arc::clone(&self.child);
         thread::spawn(move || {
@@ -279,6 +319,14 @@ impl PaneRuntime {
     /// leader. A group id outlives its leader only while members remain,
     /// so the longer the gap, the likelier an empty group's id has gone to
     /// a newer process that leads a group of its own.
+    #[cfg(windows)]
+    pub(super) fn end_leftovers(&self) {
+        if let Some(job) = &self.job {
+            job.terminate();
+        }
+    }
+
+    #[cfg(unix)]
     pub(super) fn end_leftovers(&self) {
         if let Some(group) = self.process_group {
             // SAFETY: `group` is a positive process-group id that was the
@@ -306,11 +354,7 @@ impl PaneRuntime {
     /// through [`process_probe`]. `None` when the platform cannot answer, or
     /// when the process exited between the group-leader lookup and the read.
     pub(super) fn foreground_status(&self) -> Option<(PathBuf, String)> {
-        let pgid = self
-            .master
-            .lock()
-            .expect("master poisoned")
-            .process_group_leader()?;
+        let pgid = self.foreground_process()?;
         let cwd = process_probe::current_directory_of(pgid)?;
         let process = shim_launched_name(pgid).or_else(|| process_probe::command_name_of(pgid))?;
         Some((cwd, process))
@@ -328,12 +372,29 @@ impl PaneRuntime {
     /// a spawn lands in exactly that window, so reading it as a bypass
     /// warned about every agent the workspace launched.
     pub(super) fn foreground_through_launcher(&self) -> Option<bool> {
-        let pgid = self
-            .master
+        let pgid = self.foreground_process()?;
+        Some(shim_launched_name(pgid).is_some() || runs_uze(pgid))
+    }
+
+    /// The process in the foreground of this pane: the terminal's
+    /// foreground process group on Unix. ConPTY keeps no such thing, so on
+    /// Windows it is the newest process in the pane's job — what a person
+    /// typed last, the shell when they typed nothing.
+    #[cfg(unix)]
+    fn foreground_process(&self) -> Option<Pid> {
+        self.master
             .lock()
             .expect("master poisoned")
-            .process_group_leader()?;
-        Some(shim_launched_name(pgid).is_some() || runs_uze(pgid))
+            .process_group_leader()
+    }
+
+    #[cfg(windows)]
+    fn foreground_process(&self) -> Option<Pid> {
+        let job = self.job.as_ref()?;
+        job.pids()
+            .into_iter()
+            .rev()
+            .find(|pid| !process_probe::command_name_of(*pid).is_some_and(|name| name == "conhost"))
     }
 
     pub(super) fn snapshot(&self) -> PaneSnapshot {
@@ -443,12 +504,11 @@ impl PaneRuntime {
 /// the pid the stamp was made for — the shim `exec`s, so that pid is the
 /// agent's own — and an inherited pair no longer names the process it is
 /// read from.
-pub(super) fn shim_launched_name(pgid: libc::pid_t) -> Option<String> {
-    let stamped: libc::pid_t =
-        process_probe::environment_value_of(pgid, crate::launch::SHIM_PID_VARIABLE)?
-            .trim()
-            .parse()
-            .ok()?;
+pub(super) fn shim_launched_name(pgid: Pid) -> Option<String> {
+    let stamped: Pid = process_probe::environment_value_of(pgid, crate::launch::SHIM_PID_VARIABLE)?
+        .trim()
+        .parse()
+        .ok()?;
     if stamped != pgid {
         return None;
     }
@@ -481,7 +541,7 @@ pub(super) fn cell_coordinates(
 /// [`Server::clients`]. That is why this is handed a [`Backlog`] and not
 /// the outbox itself: see the note on `Backlog`.
 pub(super) fn forward_events(
-    mut socket: UnixStream,
+    mut socket: Stream,
     events: &mpsc::Receiver<ClientEvent>,
     backlog: &Backlog,
 ) {
@@ -624,4 +684,32 @@ fn drawn_state(snapshot: &PaneSnapshot) -> (u16, u16, Cursor, bool, MouseMode, b
         snapshot.mouse,
         snapshot.bracketed_paste,
     )
+}
+
+/// What a pane runs when it is given nothing to run: the person's shell.
+#[cfg(unix)]
+fn default_shell() -> String {
+    env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())
+}
+
+/// `UZE_SHELL` when set, else PowerShell 7 when it is installed, else the
+/// Windows PowerShell every supported Windows carries. A person's
+/// interactive shell is a preference, so the newer one is preferred here;
+/// commands a project declares always run in the one shell that is always
+/// there.
+#[cfg(windows)]
+fn default_shell() -> String {
+    if let Some(shell) = env::var_os("UZE_SHELL") {
+        return shell.to_string_lossy().into_owned();
+    }
+    let on_path = |name: &str| {
+        env::var_os("PATH").is_some_and(|path| {
+            env::split_paths(&path).any(|directory| directory.join(name).is_file())
+        })
+    };
+    if on_path("pwsh.exe") {
+        "pwsh.exe".into()
+    } else {
+        "powershell.exe".into()
+    }
 }

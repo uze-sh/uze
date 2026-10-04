@@ -16,8 +16,8 @@ pub use protocol::{
     PaneDamage, PaneSnapshot, RenderCell, Seating, SelectionGesture, TerminalColor,
 };
 pub use runtime::{
-    RuntimeError, attach, open_space, put_first_on_pane_path, read_event, send_request, serve,
-    socket_path, stop,
+    RuntimeError, Stream, attach, open_space, put_first_on_pane_path, read_event, send_request,
+    serve, socket_path, stop,
 };
 pub use state::{
     NewSpace, Pane, PaneId, Session, Space, SpaceId, SpaceSeat, Tab, TabId, Workspace,

@@ -2,9 +2,6 @@ use std::{
     collections::BTreeMap,
     env, fs,
     io::{self, BufReader, Read, Write},
-    os::unix::fs::{MetadataExt, PermissionsExt},
-    os::unix::io::AsRawFd,
-    os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, mpsc},
     thread,
@@ -40,6 +37,9 @@ mod pane;
 mod persist;
 mod process;
 mod server;
+mod transport;
+#[cfg(windows)]
+pub(crate) mod windows;
 
 pub use endpoint::*;
 pub use framing::*;
@@ -49,6 +49,7 @@ use pane::*;
 use persist::*;
 use process::*;
 use server::*;
+pub use transport::Stream;
 
 /// ADR-038: the endpoint is local and user-private; no network transport is
 /// exposed by this runtime.

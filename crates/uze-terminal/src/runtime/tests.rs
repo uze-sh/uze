@@ -2711,12 +2711,12 @@ fn an_asker_is_never_mistaken_for_a_server() {
     let starting = open();
 
     let asker = open();
-    super::flock(&asker, libc::LOCK_SH | libc::LOCK_NB).expect("an asker takes it shared");
+    super::try_lock(&asker, super::LockMode::Shared).expect("an asker takes it shared");
     assert!(!held_by_a_server(&starting).unwrap());
     drop(asker);
 
     let server = open();
-    super::flock(&server, libc::LOCK_EX | libc::LOCK_NB).expect("a server takes it exclusively");
+    super::try_lock(&server, super::LockMode::Exclusive).expect("a server takes it exclusively");
     assert!(held_by_a_server(&starting).unwrap());
     drop(server);
 

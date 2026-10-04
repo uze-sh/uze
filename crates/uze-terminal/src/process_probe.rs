@@ -17,13 +17,20 @@
 //! never as *no* — the difference matters most to `peer_pid`, where the
 //! wrong reading of it would tear down a healthy server.
 
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+
+use crate::runtime::Stream;
+
+/// A process id as the platform's own process calls take it.
+#[cfg(unix)]
+pub type Pid = libc::pid_t;
+#[cfg(windows)]
+pub type Pid = u32;
 
 /// The pid of the process on the other end of `stream`, as the kernel
 /// stamped it onto the connection — never something the peer could claim
 /// for itself.
-pub fn peer_pid(stream: &UnixStream) -> Option<u32> {
+pub fn peer_pid(stream: &Stream) -> Option<u32> {
     platform::peer_pid(stream)
 }
 
@@ -36,13 +43,13 @@ pub fn executable_of(pid: u32) -> Option<PathBuf> {
 }
 
 /// The directory `pid` is standing in.
-pub fn current_directory_of(pid: libc::pid_t) -> Option<PathBuf> {
+pub fn current_directory_of(pid: Pid) -> Option<PathBuf> {
     platform::current_directory_of(pid)
 }
 
 /// The short command name of `pid` — what `ps` prints, and what a harness is
 /// free to overwrite with a title of its own.
-pub fn command_name_of(pid: libc::pid_t) -> Option<String> {
+pub fn command_name_of(pid: Pid) -> Option<String> {
     platform::command_name_of(pid)
 }
 
@@ -52,11 +59,12 @@ pub fn command_name_of(pid: libc::pid_t) -> Option<String> {
 /// readable only for the same user, and only up to whatever bound the
 /// platform puts on it. `None` covers all of "no such variable", "not
 /// permitted" and "did not fit".
-pub fn environment_value_of(pid: libc::pid_t, key: &str) -> Option<String> {
+pub fn environment_value_of(pid: Pid, key: &str) -> Option<String> {
     platform::environment_value_of(pid, key)
 }
 
 /// Splits a NUL-separated environment block and returns `key`'s value.
+#[cfg(unix)]
 ///
 /// Shared by both platforms: Linux reads this block out of `/proc`, macOS
 /// out of `sysctl`, and the shape they hand back is the same one.
@@ -317,7 +325,7 @@ mod platform {
 /// Neither `/proc` nor `libproc`. The endpoint keeps whatever answer it had
 /// before it could be asked at all, and a pane reports no foreground status
 /// rather than a made-up one.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
 mod platform {
     use std::os::unix::net::UnixStream;
     use std::path::PathBuf;
@@ -340,6 +348,165 @@ mod platform {
 
     pub(super) fn environment_value_of(_pid: libc::pid_t, _key: &str) -> Option<String> {
         None
+    }
+}
+
+/// Windows answers all four through its own process API: the pipe records
+/// both ends' pids, `QueryFullProcessImageNameW` names the image, and the
+/// working directory and environment are read out of the target's process
+/// parameters (its PEB), the only place Windows keeps them. Those reads are
+/// of fields Microsoft documents as reserved; every failure — another
+/// user's process, a protected one, a 32-bit one, a layout that moved — is
+/// `None`, which every caller already reads as *unknown*.
+#[cfg(windows)]
+mod platform {
+    use std::path::PathBuf;
+
+    use windows_sys::{
+        Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation},
+        Win32::{
+            Foundation::{CloseHandle, HANDLE},
+            System::{
+                Diagnostics::Debug::ReadProcessMemory,
+                Threading::{
+                    IsWow64Process, OpenProcess, PROCESS_BASIC_INFORMATION,
+                    PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+                },
+            },
+        },
+    };
+
+    use crate::runtime::Stream;
+
+    pub(super) fn peer_pid(stream: &Stream) -> Option<u32> {
+        stream.peer_pid()
+    }
+
+    pub(super) fn executable_of(pid: u32) -> Option<PathBuf> {
+        crate::runtime::windows::image_of(pid)
+    }
+
+    pub(super) fn command_name_of(pid: u32) -> Option<String> {
+        let image = executable_of(pid)?;
+        Some(image.file_stem()?.to_string_lossy().into_owned())
+    }
+
+    pub(super) fn current_directory_of(pid: u32) -> Option<PathBuf> {
+        let process = Process::open(pid)?;
+        let parameters = process.parameters()?;
+        // RTL_USER_PROCESS_PARAMETERS.CurrentDirectory.DosPath, x64 layout.
+        let text = process.unicode_string(parameters + 0x38)?;
+        let trimmed = text.strip_suffix('\\').filter(|rest| !rest.ends_with(':'));
+        Some(PathBuf::from(trimmed.unwrap_or(&text)))
+    }
+
+    pub(super) fn environment_value_of(pid: u32, key: &str) -> Option<String> {
+        let process = Process::open(pid)?;
+        let parameters = process.parameters()?;
+        // Environment (0x80) and EnvironmentSize (0x3F0), x64 layout.
+        let block = process.pointer(parameters + 0x80)?;
+        let size = process.pointer(parameters + 0x3F0)?.min(1 << 20);
+        let bytes = process.read(block, size)?;
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        let prefix = format!("{key}=");
+        units
+            .split(|&unit| unit == 0)
+            .map(String::from_utf16_lossy)
+            .find_map(|entry| {
+                let (name, value) = entry.split_at_checked(prefix.len())?;
+                name.eq_ignore_ascii_case(&prefix).then(|| value.to_owned())
+            })
+            .filter(|value| !value.is_empty())
+    }
+
+    struct Process(HANDLE);
+
+    impl Drop for Process {
+        fn drop(&mut self) {
+            // SAFETY: owned, closed once.
+            unsafe { CloseHandle(self.0) };
+        }
+    }
+
+    impl Process {
+        fn open(pid: u32) -> Option<Self> {
+            // SAFETY: null on failure, otherwise owned by the value.
+            let handle =
+                unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
+            if handle.is_null() {
+                return None;
+            }
+            let process = Self(handle);
+            let mut wow64 = 0;
+            // SAFETY: valid handle; a 32-bit target keeps a 32-bit PEB this
+            // reader does not lay out.
+            if unsafe { IsWow64Process(process.0, &mut wow64) } == 0 || wow64 != 0 {
+                return None;
+            }
+            Some(process)
+        }
+
+        /// The address of the target's RTL_USER_PROCESS_PARAMETERS.
+        fn parameters(&self) -> Option<usize> {
+            // SAFETY: zeroed is a valid empty structure.
+            let mut basic: PROCESS_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+            // SAFETY: `basic` is the structure the class names, by size.
+            let status = unsafe {
+                NtQueryInformationProcess(
+                    self.0,
+                    ProcessBasicInformation,
+                    (&mut basic as *mut PROCESS_BASIC_INFORMATION).cast(),
+                    std::mem::size_of::<PROCESS_BASIC_INFORMATION>() as u32,
+                    std::ptr::null_mut(),
+                )
+            };
+            if status < 0 || basic.PebBaseAddress.is_null() {
+                return None;
+            }
+            // PEB.ProcessParameters, x64 layout.
+            self.pointer(basic.PebBaseAddress as usize + 0x20)
+        }
+
+        fn read(&self, address: usize, len: usize) -> Option<Vec<u8>> {
+            let mut buffer = vec![0u8; len];
+            let mut done = 0usize;
+            // SAFETY: `buffer` is `len` bytes; the read is of the target's
+            // memory, which cannot affect ours.
+            let ok = unsafe {
+                ReadProcessMemory(
+                    self.0,
+                    address as *const _,
+                    buffer.as_mut_ptr().cast(),
+                    len,
+                    &mut done,
+                )
+            };
+            (ok != 0 && done == len).then_some(buffer)
+        }
+
+        fn pointer(&self, address: usize) -> Option<usize> {
+            let bytes = self.read(address, 8)?;
+            Some(usize::from_le_bytes(bytes.try_into().ok()?))
+        }
+
+        /// A UNICODE_STRING at `address`: Length (u16) then Buffer at +8.
+        fn unicode_string(&self, address: usize) -> Option<String> {
+            let header = self.read(address, 16)?;
+            let len = usize::from(u16::from_le_bytes([header[0], header[1]]));
+            let buffer = usize::from_le_bytes(header[8..16].try_into().ok()?);
+            if len == 0 || buffer == 0 {
+                return None;
+            }
+            let bytes = self.read(buffer, len)?;
+            let units: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect();
+            Some(String::from_utf16_lossy(&units))
+        }
     }
 }
 

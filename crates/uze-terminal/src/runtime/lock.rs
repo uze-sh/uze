@@ -9,7 +9,7 @@ use super::*;
 pub(super) fn uze_home_dir() -> PathBuf {
     env::var_os("UZE_HOME")
         .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".uze")))
+        .or_else(|| env::home_dir().map(|home| home.join(".uze")))
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -59,7 +59,7 @@ impl WorkspaceLock {
     pub(super) fn acquire() -> Result<Self, RuntimeError> {
         let mut file = open_workspace_lock()?;
         loop {
-            match flock(&file, libc::LOCK_EX | libc::LOCK_NB) {
+            match try_lock(&file, LockMode::Exclusive) {
                 Ok(()) => {
                     record_claimant(&mut file);
                     return Ok(Self { _file: file });
@@ -132,9 +132,9 @@ pub(super) fn workspace_is_claimed() -> bool {
 /// tells the two apart.
 pub(super) fn held_by_a_server(file: &fs::File) -> io::Result<bool> {
     loop {
-        match flock(file, libc::LOCK_SH | libc::LOCK_NB) {
+        match try_lock(file, LockMode::Shared) {
             Ok(()) => {
-                let _ = flock(file, libc::LOCK_UN);
+                unlock(file);
                 return Ok(false);
             }
             Err(LockRefusal::Interrupted) => {}
@@ -156,7 +156,20 @@ pub(super) fn open_workspace_lock() -> io::Result<fs::File> {
         .open(&path)
 }
 
-pub(super) fn flock(file: &fs::File, operation: libc::c_int) -> Result<(), LockRefusal> {
+#[derive(Clone, Copy)]
+pub(super) enum LockMode {
+    Exclusive,
+    Shared,
+}
+
+#[cfg(unix)]
+pub(super) fn try_lock(file: &fs::File, mode: LockMode) -> Result<(), LockRefusal> {
+    use std::os::unix::io::AsRawFd;
+
+    let operation = match mode {
+        LockMode::Exclusive => libc::LOCK_EX,
+        LockMode::Shared => libc::LOCK_SH,
+    } | libc::LOCK_NB;
     // SAFETY: `file` owns the descriptor for the whole call, and a lock it
     // takes is released by the kernel when the descriptor closes.
     if unsafe { libc::flock(file.as_raw_fd(), operation) } == 0 {
@@ -164,6 +177,31 @@ pub(super) fn flock(file: &fs::File, operation: libc::c_int) -> Result<(), LockR
     }
     let error = io::Error::last_os_error();
     Err(classify_lock_refusal(error))
+}
+
+#[cfg(unix)]
+pub(super) fn unlock(file: &fs::File) {
+    use std::os::unix::io::AsRawFd;
+
+    // SAFETY: as in `try_lock`.
+    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+}
+
+/// `LockFileEx` on one byte far past the pid the file holds, so the holder
+/// stays readable (see `windows::lock`). Released by Windows when the
+/// handle closes, however the holder ends — the property `flock` gives.
+#[cfg(windows)]
+pub(super) fn try_lock(file: &fs::File, mode: LockMode) -> Result<(), LockRefusal> {
+    match windows::lock(file, matches!(mode, LockMode::Exclusive)) {
+        windows::LockAnswer::Taken => Ok(()),
+        windows::LockAnswer::Contended => Err(LockRefusal::Contended),
+        windows::LockAnswer::Failed(error) => Err(LockRefusal::Unsupported(error)),
+    }
+}
+
+#[cfg(windows)]
+pub(super) fn unlock(file: &fs::File) {
+    windows::unlock(file);
 }
 
 /// Why `flock` said no.
@@ -175,12 +213,14 @@ pub(super) fn flock(file: &fs::File, operation: libc::c_int) -> Result<(), LockR
 /// to go and stop a server that does not exist, permanently, with no
 /// command that could clear it.
 #[derive(Debug)]
+#[cfg_attr(windows, allow(dead_code))]
 pub(super) enum LockRefusal {
     Interrupted,
     Contended,
     Unsupported(io::Error),
 }
 
+#[cfg(unix)]
 pub(super) fn classify_lock_refusal(error: io::Error) -> LockRefusal {
     match error.raw_os_error() {
         Some(libc::EINTR) => LockRefusal::Interrupted,
