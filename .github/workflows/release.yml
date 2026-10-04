@@ -140,7 +140,7 @@ jobs:
           fi
           {
             printf '%s\n\n' "Version bump across every workspace crate, with the changelog for \`${tag}\` folded into the same commit."
-            printf '%s\n\n' "Merging this tags the merge commit \`${tag}\` and publishes the release: six tarballs (Linux gnu/musl, macOS), the SBOM, signed provenance and SHASUMS256.txt."
+            printf '%s\n\n' "Merging this tags the merge commit \`${tag}\` and publishes the release: six tarballs (Linux gnu/musl, macOS), the two Windows zips once Windows is enabled, the SBOM, signed provenance and SHASUMS256.txt."
             printf '%s\n' "---"
             printf '%s\n\n' "Below is the release page this will publish, exactly as generated:"
             cat "$notes"
@@ -309,22 +309,6 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-${{ matrix.target }}
-      # Only Linux gets here: `endsWith(target, '-musl')` is false for both
-      # Apple targets, and macOS has no musl.
-      #
-      # syntect pulls `onig_sys`, which compiles Oniguruma from C, so a musl
-      # target needs a musl C toolchain — the gnu ones use the runner's own
-      # gcc and were the two that passed. Only the compiler is installed
-      # here: which one cc-rs asks for is `.cargo/config.toml`'s `[env]`, so
-      # a musl build fails the same way, and works the same way, on a laptop
-      # as it does here. Each musl target builds on a runner of its own
-      # architecture, which is why plain `musl-gcc` is right for both.
-      - name: Install the musl C toolchain
-        if: endsWith(matrix.target, '-musl')
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq musl-tools
       - run: cargo build --locked --release --bin uze --target ${{ matrix.target }}
       # Apache-2.0 4(a) and 4(d): whoever receives the binary has to receive
       # the licence and the NOTICE with it. Staging them beside the binary is
@@ -345,9 +329,71 @@ jobs:
           path: dist/uze-${{ matrix.platform }}.tar.gz
           retention-days: 1
 
+  package-windows:
+    name: Package ${{ matrix.platform }}
+    needs: tag
+    # Windows is offered once a release candidate has been installed by hand
+    # on both architectures (windows-support task 13.3). Until the
+    # repository variable says so, its archives are not built and a release
+    # carries the six tarballs alone.
+    if: needs.tag.outputs.release == 'true' && vars.UZE_RELEASE_WINDOWS == 'true'
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both native, so the archive's own binary is what the smoke step
+        # runs. `<arch>-windows` is the name install.ps1 asks for.
+        include:
+          - target: x86_64-pc-windows-msvc
+            platform: x86_64-windows
+            runner: windows-2025
+          - target: aarch64-pc-windows-msvc
+            platform: aarch64-windows
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: release-${{ matrix.target }}
+      # `+crt-static` comes from `.cargo/config.toml`: the binary needs no
+      # Visual C++ redistributable on the machine it lands on.
+      - run: cargo build --locked --release --bin uze --target ${{ matrix.target }}
+      - name: Run the binary that ships
+        run: |
+          & "target/${{ matrix.target }}/release/uze.exe" --version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      # The licence, the NOTICE and CREDITS.md travel with the binary, as in
+      # the tarballs. Windows' own bsdtar, by path: a GNU tar earlier on PATH
+      # (Git's) cannot write a zip.
+      - name: Package release archive
+        run: |
+          New-Item -ItemType Directory -Force dist, staging | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/uze.exe", LICENSE, NOTICE, CREDITS.md staging/
+          & "$env:SystemRoot\System32\tar.exe" -a -cf "dist/uze-${{ matrix.platform }}.zip" -C staging uze.exe LICENSE NOTICE CREDITS.md
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: uze-${{ matrix.platform }}
+          path: dist/uze-${{ matrix.platform }}.zip
+          retention-days: 1
+
   publish:
     name: Publish release
-    needs: [tag, package]
+    needs: [tag, package, package-windows]
+    # The Windows archives are optional until they are offered: a skipped
+    # Windows job publishes the rest, a failed one publishes nothing.
+    if: >-
+      always() && needs.tag.outputs.release == 'true' && needs.package.result == 'success'
+      && contains(fromJSON('["success", "skipped"]'), needs.package-windows.result)
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -384,14 +430,15 @@ jobs:
       # One document for the binary crate, without build-time dependencies:
       # what ships is what a scanner should be asked about.
       - name: Generate the SBOM
-        run: cargo cyclonedx --format json --spec-version 1.5 --no-build-deps
+        run: cargo cyclonedx --format json --spec-version 1.5 --no-build-deps --target all
       - name: Collect assets and checksums
         run: |
           set -euo pipefail
+          shopt -s nullglob
           mkdir -p assets
-          mv dist/uze-*.tar.gz assets/
+          mv dist/uze-*.tar.gz dist/uze-*.zip assets/
           cp uze.cdx.json assets/uze-sbom.cdx.json
-          (cd assets && sha256sum *.tar.gz *.cdx.json > SHASUMS256.txt)
+          (cd assets && sha256sum *.tar.gz *.zip *.cdx.json > SHASUMS256.txt)
           ls -l assets/
           cat assets/SHASUMS256.txt
       # Signed provenance for each asset: which workflow, which commit, which
@@ -401,6 +448,10 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "assets/uze-*.tar.gz, assets/uze-sbom.cdx.json"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: needs.package-windows.result == 'success'
+        with:
+          subject-path: "assets/uze-*.zip"
       # What a stranger who followed an install link actually reads: the
       # changes grouped by kind, breaking ones called out first, every entry
       # linked to its pull request and credited to the person who wrote it,
