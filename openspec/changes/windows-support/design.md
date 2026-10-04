@@ -426,20 +426,25 @@ UTF-8 with BOM, because 5.1 reads a BOM-less file as ANSI.
 
 **Running handlers:**
 
-- Each handler runs in a runspace of the wrapper's own process
-  (`[powershell]::Create()`, `BeginInvoke`, a timeout wait, then `Stop()`).
-  This avoids a second PowerShell cold start per handler. A Windows spelling
-  that names an `.exe` is started directly.
-- **Timeout:** the runspace is stopped, and the native processes it started
-  that are still live are ended with `taskkill /T /F` against live pids.
-- **Known Windows limitation:** a descendant whose parent already exited
-  survives a timeout. The spec states it.
+- Each handler runs as a `powershell.exe -File` process of its own, from a
+  script file holding the author's line as written, under its deadline;
+  past it, the process and everything it started end (`taskkill /T /F`).
+  A runspace in the wrapper's own process would save the second
+  PowerShell start, but the reason a guard denies with is its stderr, and
+  a native program a handler starts writes to the process's stderr handle,
+  which a runspace cannot capture: the reason would be lost. Correctness of
+  the reason is kept over the latency.
+- The handler writes UTF-8 and the wrapper reads it as such; a console's
+  code page would garble any reason past ASCII.
+- A fault of the wrapper itself goes to `Fail`, which follows the group's
+  effect: any other exit reads to Claude Code and Codex as a non-blocking
+  error, which would let a guard's tool through.
 
 **The payload:**
 
-- Only the fields handlers need are extracted from stdin. The whole payload
-  is not run through `ConvertFrom-Json`, which fails above about 2 MB in 5.1.
-- Decisions are written with `ConvertTo-Json -Depth 20 -Compress`.
+- Read whole by `JavaScriptSerializer` with no length limit, which
+  `ConvertFrom-Json` lacks above about 2 MB in 5.1; fields are looked up
+  with `ContainsKey`, the method its dictionary exposes.
 
 **The entry each harness gets** is a fact of its dialect, per platform. It is
 measured on Windows and recorded with the harness version (task 6.2):
@@ -457,12 +462,17 @@ Paths in entries use forward slashes, which every Windows shell accepts.
 commands on Windows, so a group matching shell on Codex/Windows is reported
 **Unsupported** with the issue link until a measured version fires it.
 
-**Cost.** A `PreToolUse` costs one PowerShell cold start. The budget is
-≤ 400 ms p50 on the CI runner, measured in the wrapper's own test and recorded.
+**Cost.** A `PreToolUse` costs two PowerShell starts, the wrapper's and the
+handler's. Measured on a Windows 11 host: p50 658 ms with one handler, 375 ms
+of it the wrapper alone, against a budget of 400 ms. The budget stays the
+target; meeting it without losing the reason is open (a handler started
+directly when its spelling names an executable is the next step).
 
 **Shared fixtures.** The `sh` goldens become a shared fixture set, gaining a
 Windows spelling per fixture, a large-payload fixture and a non-ASCII fixture.
-`exec.ps1` must answer every fixture identically on the Windows row.
+`exec.ps1` must answer every fixture identically on the Windows row: it does,
+held by decision (`hooks/wrapper_parity_tests.rs`), the shell's own words
+aside.
 
 ### D13 — Shims: copies of `uze.exe`, swapped like the binary
 
