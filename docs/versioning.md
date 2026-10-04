@@ -75,6 +75,14 @@ it stops there. When it does not:
      and a person choosing a download should not have to know that. The
      workflow's matrix and `install.sh` derive that name separately, so the
      two must be changed together;
+   - when the repository variable `UZE_RELEASE_WINDOWS` is `true`, the two
+     Windows archives (`x86_64` and `aarch64`) are built natively by the
+     reusable `package-windows.yml` and published as
+     `uze-<arch>-windows.zip`, the name `install.ps1` asks for, with a Scoop
+     manifest, `uze.json`, written from their own bytes. Until then a
+     release carries the six tarballs alone, and `release-candidate.yml`,
+     run by hand, packs the same archives for a by-hand install without
+     publishing them;
    - a CycloneDX SBOM is generated from the tag's own lockfile, provenance
      is signed for every asset (`gh attestation verify <file> --repo
      uze-sh/uze`), and the GitHub Release — named `v<v>`, the same

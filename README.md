@@ -47,7 +47,7 @@ yourself, the workspace to run them, or both.
 - [x] Reproducible project environments · Theming · Linux releases · macOS releases
 - [x] Spec, Architect & Code extensions · Plugin freshness · Records that survive an upgrade
 - [ ] Requirements & dependencies · Plugin versioning · Security & trust
-- [ ] Windows releases · Runtime context projection · Migration tooling · Ecosystem expansion
+- [ ] Windows releases (in preview) · Runtime context projection · Migration tooling · Ecosystem expansion
 
 ---
 

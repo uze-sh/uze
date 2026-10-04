@@ -591,13 +591,17 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       (`.github/scripts/scoop_manifest.py` writes `uze.json` from the
       archives' own bytes when a release carries them; it is checksummed
       with the rest. A bucket to publish it in is not part of this change.)
-- [ ] 12.3 Docs:
+- [x] 12.3 Docs:
       - `web/content/docs/installation.mdx`: the Windows tab gets the
         PowerShell line, the prerequisites (Windows 10 22H2+ or 11, Git, a
         VT terminal), per-platform command spellings, SmartScreen and Smart
         App Control, uninstall, and the note that `/i.ps1` serves `main`;
       - `README.md:21,50`, `roadmap.mdx`, `development.mdx:119-129` and
         `docs/versioning.md`.
+      (Written for the preview this change ships: the Windows tab says how
+      to try it with `UZE_WINDOWS_PREVIEW` and what it needs, and the uninstall
+      says how on Windows. Task 13.3 turns the preview into the offer, in
+      the same pull request that stops the installer refusing.)
 - [x] 12.4 `docs/architecture/invariants.md`: add each property with the test
       that proves it:
       - a cross-process lock with a readable holder;
