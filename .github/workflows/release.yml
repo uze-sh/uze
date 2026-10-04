@@ -394,7 +394,18 @@ jobs:
           mkdir -p assets
           mv dist/uze-*.tar.gz dist/uze-*.zip assets/
           cp uze.cdx.json assets/uze-sbom.cdx.json
-          (cd assets && sha256sum *.tar.gz *.zip *.cdx.json > SHASUMS256.txt)
+          # Scoop's manifest, from the archives' own bytes, when there are
+          # Windows archives to name.
+          zips=(assets/uze-*-windows.zip)
+          if [ "${#zips[@]}" -gt 0 ]; then
+            python3 .github/scripts/scoop_manifest.py assets "${{ needs.tag.outputs.tag }}"
+          fi
+          (
+            cd assets
+            listed=(*.tar.gz *.zip *.cdx.json)
+            if [ -f uze.json ]; then listed+=(uze.json); fi
+            sha256sum "${listed[@]}" > SHASUMS256.txt
+          )
           ls -l assets/
           cat assets/SHASUMS256.txt
       # Signed provenance for each asset: which workflow, which commit, which
