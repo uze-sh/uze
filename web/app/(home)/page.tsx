@@ -9,20 +9,24 @@ import { SessionSummary } from '@/components/home/session-summary';
 
 export default function HomePage() {
   return (
-    <main className="flex flex-1 flex-col items-center px-4 font-sans sm:px-6">
+    <main className="flex flex-1 flex-col items-center px-4 font-sans">
+      {/* One grid with the header: fumadocs sizes its home layout by
+          `--fd-layout-width` and insets the header by `px-4`, so every section
+          takes that width less the same inset, and its edges meet the logo and
+          the header's last control at every screen size. */}
       {/* Two columns: what uze is and how to get it on the left, the session
           that shows it on the right, so the claim and the proof are read
           side by side. The stream is the page's own terminal, with no window
           drawn around it. */}
-      <section className="w-full max-w-[96rem] lg:pt-20">
-        <div className="grid gap-x-14 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,36rem)_minmax(0,1fr)] xl:gap-x-20">
+      <section className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] lg:pt-20">
+        <div className="grid gap-x-14 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-center">
           {/* Below the two-column width the hero is a screen of its own:
               the claim and the way to install it, with nothing competing
               for the first view. */}
           <div className="flex min-h-[calc(100svh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-16 lg:min-h-0 lg:py-0">
             {/* Each sentence on a line of its own, so a break never lands
                 mid-thought. */}
-            <h1 className="text-[2.3rem] font-semibold leading-[0.98] tracking-[-0.045em] text-ink sm:text-[4rem] lg:text-[3.1rem] xl:text-[3.75rem]">
+            <h1 className="text-[2.3rem] font-semibold leading-[0.98] tracking-[-0.045em] text-ink sm:text-[4rem] lg:text-[3.1rem]">
               <span className="block text-balance">Agents come and go.</span>
               <span className="block text-balance">Your work stays.</span>
             </h1>
@@ -76,7 +80,7 @@ export default function HomePage() {
         {/* Under the session it describes, not under the whole hero. */}
         {/* Only beside the full session: the stacked summary names the
             agents in its own second step and links the matrix itself. */}
-        <div className="mt-8 hidden flex-wrap items-start justify-between gap-x-8 gap-y-6 md:flex lg:mt-5 lg:ml-[calc(30rem+3.5rem)] xl:ml-[calc(36rem+5rem)]">
+        <div className="mt-8 hidden flex-wrap items-start justify-between gap-x-8 gap-y-6 md:flex lg:mt-5 lg:ml-[calc(30rem+3.5rem)]">
           <p className="max-w-[60ch] text-sm leading-relaxed text-muted">
             Every route the agents report above is read from the integration that implements it.{' '}
             <Link
@@ -109,7 +113,7 @@ export default function HomePage() {
 
       {/* One column: a question is read top to bottom. The answer that undoes
           the misreading starts open, so a reader who only skims sees it. */}
-      <section id="faq" className="w-full max-w-[84rem] border-t border-line py-20 sm:py-24 lg:mt-16">
+      <section id="faq" className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-20 sm:py-24 lg:mt-16">
         <div className="grid gap-x-16 gap-y-8 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           <header>
             <h2 className="text-[1.75rem] font-semibold tracking-tight text-ink">
@@ -157,7 +161,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="w-full max-w-[84rem] border-t border-line py-20">
+      <section className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-20">
         <div className="grid gap-x-16 gap-y-6 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-end">
           <div className="max-w-[40rem]">
             <h2 className="text-[1.75rem] font-semibold tracking-tight text-ink">
@@ -189,7 +193,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className="w-full max-w-[84rem] border-t border-line py-10">
+      <footer className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-10">
         <p className="font-mono text-[11px] text-muted">
           Built by{' '}
           <a href="https://hiukky.com" className="text-ink transition-colors hover:text-muted">
