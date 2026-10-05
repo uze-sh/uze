@@ -421,8 +421,8 @@ fn render_board(
 /// subjects, and on a board the selector and the descent it walks.
 ///
 /// Called after the surface is drawn, because a selector's list opens
-/// over it; its hits go first for the same reason, so a click on that list
-/// never reaches the surface lying under it.
+/// over it; the caller puts these hits ahead of the surface's for the same
+/// reason, so a click on that list never reaches the surface under it.
 pub(crate) fn render_navigation(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
@@ -430,8 +430,7 @@ pub(crate) fn render_navigation(
     surface: Rect,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
-    let mut navigation_hits = Vec::new();
-    render_subjects(frame, slot, &view.subjects, &mut navigation_hits);
+    render_subjects(frame, slot, &view.subjects, hits);
     if view.layout == ViewLayout::Board
         && let Some(navigator) = view.navigator.as_ref()
     {
@@ -451,10 +450,9 @@ pub(crate) fn render_navigation(
             board,
             navigator,
             &view.trail,
-            &mut navigation_hits,
+            hits,
         );
     }
-    hits.splice(0..0, navigation_hits);
 }
 
 #[cfg(test)]

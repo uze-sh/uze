@@ -374,7 +374,9 @@ fn framed(
                 None,
                 &mut hits,
             );
-            render_navigation(frame, view, slot, surface, &mut hits);
+            let mut navigation = Vec::new();
+            render_navigation(frame, view, slot, surface, &mut navigation);
+            hits.splice(0..0, navigation);
         })
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
