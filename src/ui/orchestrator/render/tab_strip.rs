@@ -145,9 +145,11 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // Outside every zone, on the strip's own edge: it is not about this
     // checkout the way the other three are, and the one thing at the end
     // of a row is the one thing nothing else can push around. No fill —
-    // it wears the plain backdrop, white at rest and the accent under the
-    // pointer, so a single glyph out here never reads as a fourth zone of
-    // one button.
+    // it wears the plain backdrop, white at rest, so a single glyph out
+    // here never reads as a fourth zone of one button. Under the pointer
+    // it takes the hue the sidebar marks the selected agent's caption
+    // with: what it opens is that agent's context, and the accent said
+    // nothing on a theme whose accent is the text's own white.
     //
     // Its rect is what the dropdown hangs off, so it is measured before
     // it is drawn and the hit carries the same rectangle the glyph is
@@ -164,7 +166,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         let hit = WorkspaceHit::OpenAgentSupport(rect);
         let hue = match chip_state(model, Some(hit)) {
             ChipState::Resting => theme::color(Token::TextBright),
-            _ => theme::color(Token::Accent),
+            _ => super::sidebar::caption_color(true),
         };
         frame.render_widget(
             Paragraph::new(Line::from(vec![
