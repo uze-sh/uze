@@ -268,63 +268,49 @@ pub(crate) enum ProfilePanel {
     Harnesses,
 }
 
-/// A content-level divider in the Manage UI. These are deliberately kept
-/// separate from the shared sidebar width: a resize only changes the panel
-/// relationship within its current route.
+/// A content-level divider in the Manage UI, kept separate from the
+/// sidebar width.
+///
+/// Every screen's detail drawer is one divider: the drawers are the same
+/// column to the person moving between screens, so a width dragged on one
+/// is the width every other one opens at.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ResizablePanel {
-    MarketplaceDrawer,
-    ExtensionDrawer,
-    HarnessDrawer,
+    Drawer,
     ProfileColumns,
-    KeysDrawer,
-    SettingsDrawer,
 }
 
 impl ResizablePanel {
     /// Where this divider was last dragged to, or `None` for its default.
     pub(crate) fn width(self, model: &TuiModel) -> Option<u16> {
         match self {
-            Self::MarketplaceDrawer => model.remembered.plugin_screen.drawer_width,
-            Self::ExtensionDrawer => model.remembered.extension_screen.drawer_width,
-            Self::HarnessDrawer => model.remembered.harness_screen.drawer_width,
-            Self::KeysDrawer => model.key_screen.drawer_width,
-            Self::SettingsDrawer => model.settings_drawer_width,
+            Self::Drawer => model.drawer_width,
             Self::ProfileColumns => model.profile_columns_width,
         }
     }
 
     pub(crate) fn width_mut(self, model: &mut TuiModel) -> &mut Option<u16> {
         match self {
-            Self::MarketplaceDrawer => &mut model.remembered.plugin_screen.drawer_width,
-            Self::ExtensionDrawer => &mut model.remembered.extension_screen.drawer_width,
-            Self::HarnessDrawer => &mut model.remembered.harness_screen.drawer_width,
-            Self::KeysDrawer => &mut model.key_screen.drawer_width,
-            Self::SettingsDrawer => &mut model.settings_drawer_width,
+            Self::Drawer => &mut model.drawer_width,
             Self::ProfileColumns => &mut model.profile_columns_width,
         }
     }
 }
 
-/// One list screen's own state: its search, where its selection is, and
-/// its detail drawer.
+/// One list screen's own state: its search and where its selection is.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ListScreen {
     /// Live substring filter, typed while `TuiModel::filtering` is true.
     pub(crate) filter: String,
     /// A position in the list as it is filtered now.
     pub(crate) selected: usize,
-    /// Where the drawer's edge was dragged to; `None` for its default.
-    pub(crate) drawer_width: Option<u16>,
 }
 
 impl ListScreen {
-    /// The screen as a new visit finds it: its drawer at the width the
-    /// layout left it, and no search — leaving a search puts the list
-    /// back.
-    fn reopen(&mut self, drawer_width: Option<u16>) {
+    /// The screen as a new visit finds it: with no search — leaving a
+    /// search puts the list back.
+    fn reopen(&mut self) {
         self.filter.clear();
-        self.drawer_width = drawer_width;
     }
 }
 
@@ -583,13 +569,15 @@ pub(crate) struct TuiModel {
     pub(crate) remembered: Remembered,
     pub(crate) plugin_detail: Option<PluginInspection>,
 
-    /// The Keys list. Its drawer is always open, so only its width is read.
+    /// The Keys list.
     pub(crate) key_screen: ListScreen,
+    /// Where every screen's detail drawer edge was dragged to; `None` for
+    /// its default.
+    pub(crate) drawer_width: Option<u16>,
     /// The Settings screen's selected row, and the lists it is choosing
     /// from. Carried rather than read per frame: the themes are a
     /// directory listing, and a list that changed between two frames would
     /// move the selection out from under the operator.
-    pub(crate) settings_drawer_width: Option<u16>,
     pub(crate) settings_selected: usize,
     pub(crate) settings_themes: Vec<uze_application::application::ThemeSummary>,
     pub(crate) settings_glyph_sets: Vec<uze_application::application::GlyphSetSummary>,
@@ -857,7 +845,7 @@ impl TuiModel {
             focus: Focus::Sidebar,
             overlay: Overlay::None,
             key_screen: ListScreen::default(),
-            settings_drawer_width: None,
+            drawer_width: layout.drawer_width,
             settings_selected: 0,
             settings_themes: Vec::new(),
             settings_glyph_sets: Vec::new(),
@@ -918,27 +906,18 @@ impl TuiModel {
         };
         model.plugin_pane = model.remembered.plugin_pane;
         let remembered = &mut model.remembered;
-        remembered
-            .plugin_screen
-            .reopen(layout.marketplace_drawer_width);
-        remembered
-            .extension_screen
-            .reopen(layout.extension_drawer_width);
-        remembered
-            .harness_screen
-            .reopen(layout.harness_drawer_width);
+        remembered.plugin_screen.reopen();
+        remembered.extension_screen.reopen();
+        remembered.harness_screen.reopen();
         model
     }
 
     /// The shape this opening leaves the management modal in, for the
     /// next visit and the next run alike.
     pub(crate) fn management_layout(&self) -> ManagementLayout {
-        let remembered = &self.remembered;
         ManagementLayout {
             route: Some(self.route.id().to_owned()),
-            marketplace_drawer_width: remembered.plugin_screen.drawer_width,
-            extension_drawer_width: remembered.extension_screen.drawer_width,
-            harness_drawer_width: remembered.harness_screen.drawer_width,
+            drawer_width: self.drawer_width,
             profile_columns_width: self.profile_columns_width,
             plugin_market: self.plugin_market.clone(),
         }

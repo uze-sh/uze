@@ -128,7 +128,7 @@ pub(crate) fn render_harnesses(
     // screen's detail column, not something opened and closed.
     let drawer_shown = model.selected_harness().is_some();
     let drawer_width = if drawer_shown {
-        super::drawer_width(ResizablePanel::HarnessDrawer, model, area)
+        super::drawer_width(ResizablePanel::Drawer, model, area)
     } else {
         0
     };
@@ -266,7 +266,7 @@ fn render_harness_drawer(
     let status = HarnessStatus::from(harness);
     let offers = harness.offers();
     let (inner, footer) = super::drawer_body_and_footer(
-        super::drawer(frame, content, ResizablePanel::HarnessDrawer, model, hits),
+        super::drawer(frame, content, ResizablePanel::Drawer, model, hits),
         &offers,
     );
     render_drawer_footer(

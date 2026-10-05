@@ -297,7 +297,7 @@ mod drawer_tests {
     #[test]
     fn a_drawer_never_takes_more_than_half_the_content() {
         let model = TuiModel::default();
-        let panel = ResizablePanel::SettingsDrawer;
+        let panel = ResizablePanel::Drawer;
         for width in [60u16, 80, 100, 140, 200] {
             let content = Rect::new(0, 0, width, 40);
             let drawn = drawer_width(panel, &model, content);

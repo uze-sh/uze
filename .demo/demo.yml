@@ -169,8 +169,8 @@ sandbox:
       {
         "sidebar": { "width": null },
         "workspace": { "timeline_collapsed": false, "timeline_rows": null, "collapsed_space_roots": [] },
-        "management": { "route": "overview", "marketplace_drawer_width": null, "extension_drawer_width": null,
-                        "harness_drawer_width": null, "profile_columns_width": null, "collapsed_marketplaces": [] },
+        "management": { "route": "overview", "drawer_width": null,
+                        "profile_columns_width": null, "collapsed_marketplaces": [] },
         "first_steps": { "collapsed": true, "closed": false, "taken": [] }
       }
       LAYOUT

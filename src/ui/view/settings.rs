@@ -66,7 +66,7 @@ pub(crate) fn render_settings(
     let area = content_area(area);
     let content = render_screen_header(frame, area, Route::Settings, None);
 
-    let drawer_width = super::drawer_width(ResizablePanel::SettingsDrawer, model, area);
+    let drawer_width = super::drawer_width(ResizablePanel::Drawer, model, area);
     let list_width = content.width.saturating_sub(drawer_width);
     let list_area = Rect::new(content.x, content.y, list_width, content.height);
 
@@ -434,7 +434,7 @@ fn render_drawer(
     model: &TuiModel,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let inner = super::drawer(frame, content, ResizablePanel::SettingsDrawer, model, hits);
+    let inner = super::drawer(frame, content, ResizablePanel::Drawer, model, hits);
     let block = super::section_label;
     let title = |text: String| {
         Line::from(Span::styled(

@@ -44,7 +44,7 @@ pub(crate) fn render_keys(
         model.filtering,
     );
 
-    let drawer_width = super::drawer_width(ResizablePanel::KeysDrawer, model, area);
+    let drawer_width = super::drawer_width(ResizablePanel::Drawer, model, area);
     let list_width = content.width.saturating_sub(drawer_width);
     let list_area = Rect::new(
         content.x,
@@ -322,7 +322,7 @@ fn render_drawer(
 ) {
     let offers = uze_application::application::offers::key_offers(row.custom());
     let (inner, footer) = super::drawer_body_and_footer(
-        super::drawer(frame, content, ResizablePanel::KeysDrawer, model, hits),
+        super::drawer(frame, content, ResizablePanel::Drawer, model, hits),
         &offers,
     );
     let shipped = match row.default_chord {
