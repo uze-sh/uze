@@ -265,7 +265,9 @@ fn unadorned(line: &str) -> &str {
         .trim()
 }
 
-/// Every Markdown file the header links to, by a link or in code.
+/// Every record the header links to, by a link or in code. A link to any
+/// other file — an index, a guide — is not a decision and says nothing about
+/// one.
 fn links(header: &str) -> Vec<String> {
     let mut files: Vec<String> = Vec::new();
     for line in header.lines() {
@@ -275,7 +277,11 @@ fn links(header: &str) -> Vec<String> {
                 let after = &rest[start + open.len()..];
                 let Some(end) = after.find(close) else { break };
                 let candidate = after[..end].split('#').next().unwrap_or_default().trim();
-                if candidate.ends_with(".md") && !files.iter().any(|file| file == candidate) {
+                let names_a_record = Path::new(candidate)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| record_slug(name).is_some());
+                if names_a_record && !files.iter().any(|file| file == candidate) {
                     files.push(candidate.to_owned());
                 }
                 rest = &after[end + 1..];
@@ -560,8 +566,8 @@ mod tests {
     fn a_link_in_the_header_is_a_reference_whatever_the_sentence_says() {
         let record = recognise(
             "054-scope.md",
-            "# Scope\n\nStatus: Accepted\nSubstitui em parte: [019](019-boundary.md)\n\n\
-             ## Context\n\nSee also [020](020-other.md).\n",
+            "# Scope\n\nStatus: Accepted\nSubstitui em parte: [019](019-boundary.md)\n\
+             See the index in `README.md`.\n\n## Context\n\nSee also [020](020-other.md).\n",
         )
         .unwrap();
         assert_eq!(
@@ -570,7 +576,7 @@ mod tests {
                 kind: Kind::References,
                 target: "019-boundary.md".to_owned(),
             }],
-            "a link in the body is not part of the header"
+            "a link in the body is not part of the header, and an index is not a record"
         );
     }
 
