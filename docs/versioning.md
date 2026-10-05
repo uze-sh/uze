@@ -75,13 +75,10 @@ it stops there. When it does not:
      and a person choosing a download should not have to know that. The
      workflow's matrix and `install.sh` derive that name separately, so the
      two must be changed together;
-   - the two Windows archives (`x86_64` and `aarch64`) are built natively by the
-     reusable `package-windows.yml` and published as
-     `uze-<arch>-windows.zip`, the name `install.ps1` asks for, with a Scoop
-     manifest, `uze.json`, written from their own bytes. A pull request
-     that touches how they are built or installed builds them the same way
-     and installs each with `install.ps1`, and `release-candidate.yml`, run
-     by hand, packs them for a by-hand install without publishing them;
+   - the two Windows archives (`x86_64` and `aarch64`) are built natively in
+     the same matrix and published as `uze-<arch>-windows.zip`, the name
+     `install.ps1` asks for, with a Scoop manifest, `uze.json`, written from
+     their own bytes;
    - a CycloneDX SBOM is generated from the tag's own lockfile, provenance
      is signed for every asset (`gh attestation verify <file> --repo
      uze-sh/uze`), and the GitHub Release — named `v<v>`, the same

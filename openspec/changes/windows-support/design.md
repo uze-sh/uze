@@ -705,8 +705,6 @@ Other CI changes:
 - The SBOM uses `--target all`.
 - The `publish` globs, `SHASUMS256.txt` and attestation subjects take `*.zip`.
 - The Windows rows are gated by a repository variable until task 13.3.
-- A `workflow_dispatch` package-only run produces a release candidate,
-  consumed through `UZE_BASE_URL`.
 
 **Elsewhere:**
 

@@ -11,9 +11,9 @@ name: Release
 # Merging is what publishes. Every push to `main` asks whether the version in
 # the tree has a release yet; when it does not, this workflow waits for `CI`'s
 # `Gate` to pass on that exact commit, then tags the commit
-# if needed, builds the six artifacts on native runners, generates the
+# if needed, builds the eight archives on native runners, generates the
 # SBOM, signs the provenance, and creates the GitHub Release with the
-# tarballs and SHASUMS256.txt that install.sh consumes — under notes written
+# archives and SHASUMS256.txt that install.sh and install.ps1 consume — under notes written
 # by git-cliff from `cliff.release.toml`: what changed, who changed it, what
 # breaks, and how to install and verify this exact version. Asking about the
 # release rather than the tag is what lets a publish that failed halfway be
@@ -140,7 +140,7 @@ jobs:
           fi
           {
             printf '%s\n\n' "Version bump across every workspace crate, with the changelog for \`${tag}\` folded into the same commit."
-            printf '%s\n\n' "Merging this tags the merge commit \`${tag}\` and publishes the release: six tarballs (Linux gnu/musl, macOS), the two Windows zips once Windows is enabled, the SBOM, signed provenance and SHASUMS256.txt."
+            printf '%s\n\n' "Merging this tags the merge commit \`${tag}\` and publishes the release: six tarballs (Linux gnu/musl, macOS), the two Windows zips, the SBOM, signed provenance and SHASUMS256.txt."
             printf '%s\n' "---"
             printf '%s\n\n' "Below is the release page this will publish, exactly as generated:"
             cat "$notes"
@@ -297,6 +297,16 @@ jobs:
           - target: x86_64-apple-darwin
             platform: x86_64-macos
             runner: macos-15
+          # Both native. `<arch>-windows` is the name install.ps1 asks for,
+          # and a zip is what Windows opens without anything installed.
+          - target: x86_64-pc-windows-msvc
+            platform: x86_64-windows
+            runner: windows-2025
+            archive: zip
+          - target: aarch64-pc-windows-msvc
+            platform: aarch64-windows
+            runner: windows-11-arm
+            archive: zip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -309,6 +319,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-${{ matrix.target }}
+      # On Windows, `+crt-static` comes from `.cargo/config.toml`: the binary
+      # needs no Visual C++ redistributable on the machine it lands on.
       - run: cargo build --locked --release --bin uze --target ${{ matrix.target }}
       # Apache-2.0 4(a) and 4(d): whoever receives the binary has to receive
       # the licence and the NOTICE with it. Staging them beside the binary is
@@ -317,29 +329,32 @@ jobs:
       # points at it, and a pointer to a file the recipient does not have is
       # worse than no pointer.
       - name: Package release archive
+        if: matrix.archive != 'zip'
         run: |
           mkdir -p dist staging
           cp "target/${{ matrix.target }}/release/uze" staging/
           cp LICENSE NOTICE CREDITS.md staging/
           tar -C staging -czf "dist/uze-${{ matrix.platform }}.tar.gz" \
             uze LICENSE NOTICE CREDITS.md
+      # Windows' own bsdtar, by path: a GNU tar earlier on PATH (Git's)
+      # cannot write a zip.
+      - name: Package release archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist, staging | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/uze.exe", LICENSE, NOTICE, CREDITS.md staging/
+          & "$env:SystemRoot\System32\tar.exe" -a -cf "dist/uze-${{ matrix.platform }}.zip" -C staging uze.exe LICENSE NOTICE CREDITS.md
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: uze-${{ matrix.platform }}
-          path: dist/uze-${{ matrix.platform }}.tar.gz
+          path: dist/uze-${{ matrix.platform }}.${{ matrix.archive || 'tar.gz' }}
           retention-days: 1
-
-  package-windows:
-    name: Package Windows
-    needs: tag
-    if: needs.tag.outputs.release == 'true'
-    uses: ./.github/workflows/package-windows.yml
-    with:
-      ref: ${{ needs.tag.outputs.tag }}
 
   publish:
     name: Publish release
-    needs: [tag, package, package-windows]
+    needs: [tag, package]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

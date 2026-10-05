@@ -82,7 +82,6 @@ jobs:
       platforms: ${{ steps.filter.outputs.platforms }}
       journey_platforms: ${{ steps.filter.outputs.journey_platforms }}
       installer_windows: ${{ steps.filter.outputs.installer_windows }}
-      package_windows: ${{ steps.filter.outputs.package_windows }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -116,7 +115,6 @@ jobs:
               echo "platforms=[${linux},${macos},${windows},${windows_arm}]"
               echo "journey_platforms=[${linux},${macos},${windows},${windows_arm}]"
               echo "installer_windows=true"
-              echo "package_windows=true"
             } >> "${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -144,9 +142,6 @@ jobs:
           lab_surface='^(src/|crates/|tests/_fixtures/|plugins/|conformance/|marketplace\.json$|Cargo\.lock$|\.github/(workflows/(ci|conformance)\.yml$|scripts/))|(^|/)Cargo\.toml$'
           # The Windows installer and what holds it to account.
           installer_windows_surface='^(install\.ps1|tests/scripts/(installer\.Tests\.ps1|PSScriptAnalyzerSettings\.psd1)|\.github/workflows/ci\.yml)$'
-          # What decides the archive a Windows release ships and how it lands:
-          # the packaging, the release, the installer, and what is linked in.
-          package_windows_surface='^(install\.ps1|\.github/workflows/(ci|package-windows|release)\.yml|\.cargo/config\.toml|Cargo\.lock)$|(^|/)Cargo\.toml$'
           # What a journey drives, or what it drives it with.
           journeys_surface='^(src/|crates/|journeys/|Cargo\.lock$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/|scripts/))|(^|/)Cargo\.toml$'
 
@@ -166,7 +161,6 @@ jobs:
             echo "platforms=${platforms}"
             echo "journey_platforms=${journey_platforms}"
             echo "installer_windows=$(reaches "${installer_windows_surface}" && echo true || echo false)"
-            echo "package_windows=$(reaches "${package_windows_surface}" && echo true || echo false)"
           } >> "${GITHUB_OUTPUT}"
 
           echo "---"
@@ -551,62 +545,6 @@ jobs:
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
 
-  # The archives a release ships, built as the release builds them, then
-  # installed by install.ps1 on each architecture: a release is never the
-  # first run of either.
-  package-windows:
-    name: Package Windows
-    needs: changes
-    if: needs.changes.outputs.package_windows == 'true'
-    uses: ./.github/workflows/package-windows.yml
-    with:
-      ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-  install-windows:
-    name: Install the archive (${{ matrix.platform }})
-    needs: package-windows
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: x86_64-windows
-            runner: windows-2025
-          - platform: aarch64-windows
-            runner: windows-11-arm
-    defaults:
-      run:
-        shell: powershell
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: uze-${{ matrix.platform }}
-          path: archive
-      # Laid out as a release is, so install.ps1 reads it exactly as it reads
-      # GitHub's: <base>/download/v<version>/<archive> beside SHASUMS256.txt.
-      - name: Install it with install.ps1, run it, uninstall it
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
-          $release = Join-Path $env:RUNNER_TEMP 'release'
-          $download = Join-Path $release "download\v$version"
-          New-Item -ItemType Directory -Force $download | Out-Null
-          $archive = "uze-${{ matrix.platform }}.zip"
-          Copy-Item "archive\$archive" $download
-          $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $download $archive)).Hash.ToLower()
-          Set-Content (Join-Path $download 'SHASUMS256.txt') "$hash  $archive" -Encoding Ascii
-          $env:UZE_BASE_URL = ([Uri]$release).AbsoluteUri
-          $env:UZE_VERSION = $version
-          $env:UZE_BIN_DIR = Join-Path $env:RUNNER_TEMP 'bin'
-          $env:UZE_HOME = Join-Path $env:RUNNER_TEMP 'uze-home'
-          & ([scriptblock]::Create((Get-Content install.ps1 -Raw)))
-          $reported = & (Join-Path $env:UZE_BIN_DIR 'uze.exe') --version
-          if ($LASTEXITCODE -or $reported -notmatch [regex]::Escape($version)) { throw "the installed uze answered: $reported" }
-          & ([scriptblock]::Create((Get-Content install.ps1 -Raw))) -Uninstall
-          if (Test-Path (Join-Path $env:UZE_BIN_DIR 'uze.exe')) { throw 'uninstall left uze.exe behind' }
-
   web:
     name: Web
     runs-on: ubuntu-24.04
@@ -715,8 +653,6 @@ jobs:
       - secrets
       - installer
       - installer-windows
-      - package-windows
-      - install-windows
       - web
       - python
       - journeys

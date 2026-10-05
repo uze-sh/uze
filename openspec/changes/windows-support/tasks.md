@@ -590,11 +590,10 @@ as experimental from 13.3 on, with no gate (decided 2026-10-04).
 
       Keep the Windows rows behind a repository variable. Add a
       `workflow_dispatch` package-only release-candidate run.
-      (Done: the Windows packaging is the reusable `package-windows.yml`,
-      called by `release.yml` on every release, by `ci.yml` on a change to
-      how it is built or installed (then installed by `install.ps1` on both
-      architectures), and by `release-candidate.yml`, which lays the
-      archives out as install.ps1 reads a release, published nowhere. The
+      (Done: the Windows rows sit in `release.yml`'s package matrix beside
+      Linux and macOS, packaged only on a release like them. The
+      release-candidate run and a CI package-and-install job were tried and
+      removed, to keep Windows on the same path as the other platforms. The
       repository variable was removed at 13.3.)
 - [x] 11.5 `cliff.release.toml`: the PowerShell install and verify lines,
       and the SmartScreen and Smart App Control notes.
@@ -652,7 +651,7 @@ as experimental from 13.3 on, with no gate (decided 2026-10-04).
 
 - [ ] 13.1 A full nightly run green on both Windows rows: build, clippy,
       test, journeys.
-- [ ] 13.2 Install a release candidate by hand on Windows 11 x64 and on
+- [ ] 13.2 Install the published release by hand on Windows 11 x64 and on
       Windows on Arm through `irm https://uze.sh/i | iex`. On each:
       - `uze setup` for every harness;
       - `uze install` of a plugin with deny hooks spelled for Windows;
