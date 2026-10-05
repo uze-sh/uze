@@ -248,11 +248,12 @@ impl Toast {
                 format!("{} ", theme::glyph(self.kind.mark())),
                 on(theme::fg(self.kind.hue())),
             ),
-            Span::styled(
-                text::elide(&self.text, room.max(1) as usize),
-                on(theme::fg_bold(Token::TextBright)),
-            ),
         ];
+        title.extend(quoted(
+            &self.text,
+            room,
+            on(theme::fg_bold(Token::TextBright)),
+        ));
         let used: u16 = title.iter().map(|span| span.width() as u16).sum();
         let clocked = clock.chars().count() as u16;
         let tail_x = close
@@ -274,13 +275,8 @@ impl Toast {
         let room = area
             .width
             .saturating_sub(PAD + self.lead() + GAP + self.foot_tail() + PAD);
-        let mut under = vec![
-            pad(PAD + self.lead()),
-            Span::styled(
-                text::elide(&self.detail, room.max(1) as usize),
-                on(theme::fg(Token::TextMuted)),
-            ),
-        ];
+        let mut under = vec![pad(PAD + self.lead())];
+        under.extend(quoted(&self.detail, room, on(theme::fg(Token::TextMuted))));
         if let Some(label) = &self.action {
             let width = label.chars().count() as u16;
             let at = area.right().saturating_sub(PAD + width);
@@ -305,6 +301,40 @@ impl Toast {
             close,
         }
     }
+}
+
+/// `message` fitted to `room` columns in `prose`, with what it quotes in
+/// backticks drawn as code: the backticks dropped, the words on a recessed
+/// ground in the accent.
+///
+/// A ground and not only an ink, because the default theme is monochrome
+/// and its accent is the same ink as the title's — a branch name, a
+/// command, a path is the part of an outcome the reader acts on, and it
+/// has to stand apart on every palette. Unbalanced backticks are left as
+/// written: a message that quotes one stray tick is not code from there to
+/// its end.
+fn quoted(message: &str, room: u16, prose: Style) -> Vec<Span<'static>> {
+    let code = prose
+        .fg(theme::color(Token::Accent))
+        .bg(theme::color(Token::SurfaceRecessed));
+    let balanced = message.matches('`').count().is_multiple_of(2);
+    let mut line = if balanced {
+        Line::from(
+            message
+                .split('`')
+                .enumerate()
+                .filter(|(_, piece)| !piece.is_empty())
+                .map(|(index, piece)| {
+                    let style = if index % 2 == 1 { code } else { prose };
+                    Span::styled(piece.to_owned(), style)
+                })
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        Line::from(Span::styled(message.to_owned(), prose))
+    };
+    text::clip(&mut line, usize::from(room.max(1)));
+    line.spans
 }
 
 /// The targets one drawn toast offers.

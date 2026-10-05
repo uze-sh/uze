@@ -756,6 +756,36 @@ fn a_toast_says_how_long_it_has_left_or_draws_no_clock_at_all() {
     );
 }
 
+/// What a message quotes in backticks is drawn as code: the backticks are
+/// gone, and the quoted words stand on a ground of their own, so a branch
+/// name reads apart from the sentence around it on any palette.
+#[test]
+fn a_toast_draws_what_it_quotes_as_code_without_the_backticks() {
+    let area = Rect::new(0, 0, 60, 4);
+    let buffer = drawn(60, 4, |frame| {
+        toast::stack(
+            frame,
+            area,
+            &[Toast::new(
+                ToastKind::Warned,
+                "`main` is behind",
+                "agent `1`",
+            )],
+        );
+    });
+    let row = |y: u16| (0..60).map(|x| buffer[(x, y)].symbol()).collect::<String>();
+    assert!(!row(0).contains('`') && !row(1).contains('`'));
+
+    let title = row(0);
+    let code_at = title.find("main").expect("the quoted word is drawn") as u16;
+    let prose_at = title.find("is").expect("the prose is drawn") as u16;
+    assert_ne!(
+        buffer[(code_at, 0)].bg,
+        buffer[(prose_at, 0)].bg,
+        "the quoted word stands on a ground of its own"
+    );
+}
+
 /// The stack grows down from where it starts, so a toast arriving does not
 /// move the ones already being read.
 #[test]
