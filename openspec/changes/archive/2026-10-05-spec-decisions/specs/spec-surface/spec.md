@@ -108,6 +108,8 @@ surface opens on.
 - **THEN** every decision in the declared places SHALL be listed, in the
   order their file names give, each with its status
 
+## ADDED Requirements
+
 ### Requirement: A decision is read the way the published ADR templates write it
 The surface SHALL look for decisions in every place `workspace.artifacts`
 declares, as deep as each goes, and SHALL NOT require a tool's marker or a

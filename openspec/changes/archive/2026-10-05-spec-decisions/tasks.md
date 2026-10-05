@@ -15,7 +15,7 @@
 - [x] 3.2 Render a decision as Markdown with its supersession named above the body; activating opens it in the code surface
 - [x] 3.3 Add `Role::Decision`: a numbered record inside a unit is listed after the design
 - [x] 3.4 A checkout with decisions and no tool marker opens on the decisions subject instead of the empty state
-- [ ] 3.5 Add the subject to the selector in `src/ui/`, with `TestBackend` tests for the list and the empty state
+- [x] 3.5 The subject reaches the screen through the generic subject chips, now drawn in the tab strip's leading slot; covered by `the_navigation_is_the_bars_and_does_not_move_with_the_layout` and the spec surface's own `decisions_*` tests rather than a selector test of its own
 
 ## 4. Documentation
 
@@ -28,7 +28,7 @@
 
 - [x] 5.1 `cargo test -p uze-extensions`, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace --no-fail-fast`
 - [x] 5.2 `openspec validate --all --strict`
-- [ ] 5.3 Hand-validate on this repository: `docs/adr` listed with statuses, ADR-019 shown as superseded in part by ADR-054, the ADR inside `project-agent-environment` shown as that change's decision
+- [x] 5.3 Hand-validate on this repository: `docs/adr` listed with statuses, the records inside `project-agent-environment/adr/` shown as that change's decisions, and ADR-019 left unrelated to ADR-054 (its `Supersedes in part:` line is a field no published format defines)
 
 ## 6. Navigator follow-up
 

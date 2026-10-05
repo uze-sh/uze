@@ -86,8 +86,8 @@ the task.
   its own task's name once that task is read
 
 ### Requirement: The project declares the vocabulary and every name is validated against it
-A project SHALL declare which branch types its names may use, as a named
-preset or as its own list. A proposed name SHALL be accepted only when its
+A project SHALL declare which branch types its names may use, as
+`workspace.branch`: a named preset or its own list. A proposed name SHALL be accepted only when its
 type is in that vocabulary and its subject is a well-formed single path
 segment. A refusal SHALL say which half was wrong, so the next attempt is
 informed rather than guessed.
@@ -110,7 +110,7 @@ informed rather than guessed.
 - **WHEN** a project declares no branch vocabulary
 - **THEN** branches keep the generated identifier exactly as before, and
   a naming call is refused saying the project must declare
-  `worktrees.branch`
+  `workspace.branch`
 
 ### Requirement: An automatic name never overwrites a chosen one
 A task's branch and label SHALL be replaced automatically only while the
