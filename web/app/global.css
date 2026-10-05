@@ -58,6 +58,27 @@
   --color-accent: #8fd19e;
   --color-warn: #d4a72c;
   --color-danger: #d9776b;
+
+  /* fumadocs' default-colors sheet gives `.dark` its own neutral #121212
+     ground and greys, which outrank the @theme mapping above in dark mode:
+     the page body drew in fumadocs' black instead of ours. Pointing them
+     back at the site tokens here keeps one palette in both themes. */
+  --color-fd-background: var(--color-paper);
+  --color-fd-foreground: var(--color-ink);
+  --color-fd-muted: var(--color-surface);
+  --color-fd-muted-foreground: var(--color-muted);
+  --color-fd-popover: var(--color-paper);
+  --color-fd-popover-foreground: var(--color-ink);
+  --color-fd-card: var(--color-surface);
+  --color-fd-card-foreground: var(--color-ink);
+  --color-fd-border: var(--color-line);
+  --color-fd-primary: var(--color-accent);
+  --color-fd-primary-foreground: var(--color-paper);
+  --color-fd-secondary: var(--color-surface);
+  --color-fd-secondary-foreground: var(--color-ink);
+  --color-fd-accent: var(--color-surface);
+  --color-fd-accent-foreground: var(--color-ink);
+  --color-fd-ring: var(--color-accent);
 }
 
 /*
