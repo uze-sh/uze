@@ -5,21 +5,24 @@ import { HarnessMark, harnessMarks, homepageOf } from '@/components/harness-mark
 import { TrademarkNotice } from '@/components/trademark-notice';
 import { faq } from '@/lib/home-content';
 import { ConsoleSession } from '@/components/home/session';
+import { SessionSummary } from '@/components/home/session-summary';
 
 export default function HomePage() {
   return (
     <main className="flex flex-1 flex-col items-center px-4 font-sans sm:px-6">
-
       {/* Two columns: what uze is and how to get it on the left, the session
           that shows it on the right, so the claim and the proof are read
           side by side. The stream is the page's own terminal, with no window
           drawn around it. */}
-      <section className="w-full max-w-[84rem] pt-12 sm:pt-20">
-        <div className="grid gap-x-14 gap-y-10 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,36rem)_minmax(0,1fr)] xl:gap-x-20">
-          <div>
+      <section className="w-full max-w-[84rem] lg:pt-20">
+        <div className="grid gap-x-14 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,36rem)_minmax(0,1fr)] xl:gap-x-20">
+          {/* Below the two-column width the hero is a screen of its own:
+              the claim and the way to install it, with nothing competing
+              for the first view. */}
+          <div className="flex min-h-[calc(100svh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-16 lg:min-h-0 lg:py-0">
             {/* Each sentence on a line of its own, so a break never lands
                 mid-thought. */}
-            <h1 className="text-[2.75rem] font-semibold leading-[0.98] tracking-[-0.045em] text-ink sm:text-[4rem] lg:text-[3.1rem] xl:text-[3.75rem]">
+            <h1 className="text-[2.3rem] font-semibold leading-[0.98] tracking-[-0.045em] text-ink sm:text-[4rem] lg:text-[3.1rem] xl:text-[3.75rem]">
               <span className="block text-balance">Agents come and go.</span>
               <span className="block text-balance">Your work stays.</span>
             </h1>
@@ -38,13 +41,30 @@ export default function HomePage() {
               Not an agent. No model, no API key.
             </p>
           </div>
-          <div className="min-w-0">
-            <ConsoleSession />
+          {/* Stacked, the session is the next section rather than the
+              hero's tail: a rule and a heading of its own, so it reads as
+              "here is how it is used" and not as more of the same block. */}
+          <div className="min-w-0 border-t border-line py-20 lg:border-0 lg:py-0">
+            <h2 className="mb-10 text-[1.75rem] font-semibold tracking-tight text-ink lg:hidden">
+              Three commands.
+            </h2>
+            {/* Always the dark palette: uze's terminal has no light theme, so a
+                session drawn on the page's light ground showed a uze that
+                does not exist. `.dark` on the block re-points the tokens for
+                it alone. A plain panel, no window chrome. */}
+            <div className="dark hidden bg-paper px-5 py-1 text-ink md:block">
+              <ConsoleSession />
+            </div>
+            <div className="md:hidden">
+              <SessionSummary />
+            </div>
           </div>
         </div>
 
         {/* Under the session it describes, not under the whole hero. */}
-        <div className="mt-5 flex flex-wrap items-start justify-between gap-x-8 gap-y-4 lg:ml-[calc(30rem+3.5rem)] xl:ml-[calc(36rem+5rem)]">
+        {/* Only beside the full session: the stacked summary names the
+            agents in its own second step and links the matrix itself. */}
+        <div className="mt-8 hidden flex-wrap items-start justify-between gap-x-8 gap-y-6 md:flex lg:mt-5 lg:ml-[calc(30rem+3.5rem)] xl:ml-[calc(36rem+5rem)]">
           <p className="max-w-[60ch] text-sm leading-relaxed text-muted">
             Every route the agents report above is read from the integration that implements it.{' '}
             <Link
@@ -57,7 +77,7 @@ export default function HomePage() {
           </p>
           {/* "Works with", never "powered by": the marks are the agents uze
               serves, not anything it is made of. */}
-          <ul className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <ul className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:items-center">
             {harnessMarks.map((harness) => (
               <li key={harness.name}>
                 <a
@@ -77,10 +97,10 @@ export default function HomePage() {
 
       {/* One column: a question is read top to bottom. The answer that undoes
           the misreading starts open, so a reader who only skims sees it. */}
-      <section id="faq" className="w-full max-w-[84rem] py-20 sm:py-24">
+      <section id="faq" className="w-full max-w-[84rem] border-t border-line py-20 sm:py-24 lg:mt-16">
         <div className="grid gap-x-16 gap-y-8 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           <header>
-            <h2 className="text-2xl font-semibold tracking-tight text-ink sm:text-[1.75rem]">
+            <h2 className="text-[1.75rem] font-semibold tracking-tight text-ink">
               Questions people ask first
             </h2>
             <p className="mt-3 text-[15px] leading-relaxed text-muted">
@@ -104,9 +124,12 @@ export default function HomePage() {
               .
             </p>
           </header>
-          <div className="border-t border-line">
+          {/* Spaced, not ruled: the section's own divider already says where
+              the list starts, and a hairline under every question stacked
+              into a ladder of lines on a phone. */}
+          <div className="space-y-1">
             {faq.map((item, index) => (
-              <details key={item.q} open={index === 0} className="group border-b border-line">
+              <details key={item.q} open={index === 0} className="group">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-4 text-[15px] font-semibold text-ink transition-colors hover:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
                   {item.q}
                   <Plus
@@ -115,17 +138,17 @@ export default function HomePage() {
                     aria-hidden
                   />
                 </summary>
-                <p className="max-w-[65ch] pb-5 pe-10 text-[15px] leading-relaxed text-muted">{item.a}</p>
+                <p className="max-w-[65ch] pb-6 pe-10 text-[15px] leading-relaxed text-muted">{item.a}</p>
               </details>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="w-full max-w-[84rem] border-t border-line py-16 sm:py-20">
+      <section className="w-full max-w-[84rem] border-t border-line py-20">
         <div className="grid gap-x-16 gap-y-6 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-end">
           <div className="max-w-[40rem]">
-            <h2 className="text-2xl font-semibold tracking-tight text-ink sm:text-[1.75rem]">
+            <h2 className="text-[1.75rem] font-semibold tracking-tight text-ink">
               Set it up once, on this machine.
             </h2>
             <p className="mt-3 text-[15px] leading-relaxed text-muted">

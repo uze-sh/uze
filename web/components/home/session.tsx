@@ -12,7 +12,7 @@ import { WORKSPACE_LENGTH, Workspace } from '@/components/home/workspace';
 // are docs/reference/project-files.mdx's, and the workspace is drawn after
 // its recorded frame.
 
-type Tone = 'ink' | 'muted' | 'faint' | 'success' | 'warn' | 'title' | 'key';
+type Tone = 'ink' | 'muted' | 'success' | 'warn' | 'title' | 'key';
 type Span = { text: string; tone?: Tone };
 type Row = Span[];
 
@@ -77,14 +77,11 @@ const yaml = (key: string, value?: string, indent = 0): Row =>
   value === undefined
     ? [{ text: ' '.repeat(indent) + key + ':', tone: 'key' }]
     : [{ text: ' '.repeat(indent) + key + ': ', tone: 'key' }, { text: value, tone: 'ink' }];
-const comment = (text: string, indent = 0): Row => [{ text: ' '.repeat(indent) + '# ' + text, tone: 'faint' }];
 
 // This repository's own agents.yaml, trimmed to the keys the page talks about.
 const manifest: Row[] = [
   yaml('worktrees'),
-  comment('every agent starts in a checkout of its own', 2),
   yaml('default', 'isolated', 2),
-  comment('rebased, checked, pushed, and a PR opened', 2),
   yaml('completion', 'pr', 2),
   yaml('branch', 'conventional', 2),
   [],
@@ -95,7 +92,6 @@ const manifest: Row[] = [
   [
     { text: '      - ', tone: 'key' },
     { text: 'git', tone: 'ink' },
-    { text: '   # added by uze git@ai', tone: 'faint' },
   ],
 ];
 
@@ -186,8 +182,6 @@ function toneClass(tone: Tone | undefined) {
       return 'font-semibold text-ink';
     case 'ink':
       return 'text-ink';
-    case 'faint':
-      return 'text-muted/60';
     default:
       return 'text-muted';
   }
@@ -352,7 +346,7 @@ export function ConsoleSession() {
     <div className="border-y border-line">
       {/* The chapters, where a console keeps its tabs: the one playing is
           filled, and any of them can be picked. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-2 font-mono text-xs">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-2 font-mono text-xs sm:justify-between">
         {script.chapters.map((chapter, index) => {
           const active = index === current;
           return (
