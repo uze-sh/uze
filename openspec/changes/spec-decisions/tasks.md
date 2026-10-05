@@ -29,3 +29,7 @@
 - [x] 5.1 `cargo test -p uze-extensions`, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace --no-fail-fast`
 - [x] 5.2 `openspec validate --all --strict`
 - [ ] 5.3 Hand-validate on this repository: `docs/adr` listed with statuses, ADR-019 shown as superseded in part by ADR-054, the ADR inside `project-agent-environment` shown as that change's decision
+
+## 6. Navigator follow-up
+
+- [ ] 6.1 Slide a navigator row's name that is too long for the column — a decision's title, a change, a file or folder in the spec surface's list — while the pointer is on it, reusing `widget::row::push_trailing_marquee` (the sidebar sections' caption effect) and `FrameMetrics::marquee` to keep the clock turning only while something slides; cover it with a `TestBackend` test that a long name slides under the pointer and is clipped otherwise

@@ -46,11 +46,9 @@ workspace:
   artifacts: docs     # docs/adr/*.md is found inside it
 ```
 
-Records are read the way the published ADR formats write them
-([MADR](https://adr.github.io/madr/), [adr-tools](https://github.com/npryce/adr-tools),
-[log4brains](https://github.com/thomvaill/log4brains),
-[adrkit](https://github.com/mbeacom/adrkit) for Spec Kit, and OpenSpec's community
-`spec-driven-with-adr` schema), and nothing a team adds of its own is guessed at.
+Records are read the way the published ADR formats write them (see
+[Supported ADR formats](#supported-adr-formats)), and nothing a team adds of its
+own is guessed at.
 
 | | Read from |
 | --- | --- |
@@ -123,6 +121,23 @@ verification and UAT reports are listed after the plans, by name.
 A checkout that keeps more than one lists them together, each change named with its
 tool. Contracts written as YAML, JSON, GraphQL or protobuf are listed beside
 the documents and shown as source.
+
+## Supported ADR formats
+
+A format is recognised by what it writes, not by a marker: every one below is
+read wherever `workspace.artifacts` points, beside any spec tool or none.
+
+| Format | Status read from | Supersession read from |
+| --- | --- | --- |
+| [MADR](https://adr.github.io/madr/) 3 and 4 | front matter `status` | `status: "superseded by ADR-0005"`, or with a link |
+| [MADR](https://adr.github.io/madr/) 2 | `* Status:` in the header | `superseded by [ADR-0005](0005-….md)` |
+| [adr-tools](https://github.com/npryce/adr-tools) (Nygard) | first line of `## Status` | `Superceded by [5. …](0005-….md)` / `Supercedes`, as the tool writes them |
+| [log4brains](https://github.com/thomvaill/log4brains) | `- Status:` in the header | `superseded by [xxx](yyyymmdd-xxx.md)` |
+| [adrkit](https://github.com/mbeacom/adrkit) (Spec Kit) | front matter `status` | front matter `supersedes`, `supersededBy`; `relatesTo` as related |
+| OpenSpec [`spec-driven-with-adr`](https://github.com/intent-driven-dev/openspec-schemas) | `- Status:` in the header | `Supersedes: ADR-0001` on the new record, the old one untouched |
+
+A record in a shape of its own is still listed, by its title, with no status read
+into fields none of these formats define.
 
 <Cards>
   <Card title="Architect" href="/docs/workspace/architect" />
