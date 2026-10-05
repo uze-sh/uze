@@ -135,7 +135,7 @@ impl Attach<'_> {
         // places are the pane and one column more — the content's groove
         // hugs the frame's edge, in the margin the pane keeps from it —
         // and the bar's leading slot, wherever its navigation was drawn.
-        let in_pane = layout
+        let on_surface = layout
             .pane
             .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
             || self.on_content_scrollbar(mouse.column, mouse.row)
@@ -320,13 +320,13 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
-            _ if in_pane && self.presses_on_text(mouse.column, mouse.row) => {
+            _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
             }
-            _ if self.model.architect.is_some() && in_pane => {
+            _ if self.model.architect.is_some() && on_surface => {
                 self.architect_press(mouse.column, mouse.row);
             }
-            _ if self.model.spec.is_some() && in_pane => {
+            _ if self.model.spec.is_some() && on_surface => {
                 let view_hit = match self.model.hit_rect_at(mouse.column, mouse.row) {
                     Some((_, WorkspaceHit::Extension(ExtensionHit::Spec(hit)))) => Some(hit),
                     _ => None,
@@ -351,7 +351,7 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
-            _ if self.model.code.is_some() && in_pane => {
+            _ if self.model.code.is_some() && on_surface => {
                 let hit = self.model.hit_rect_at(mouse.column, mouse.row);
                 // Mirrors `WorkspaceHit::ResizeSidebar` below: arms
                 // dragging instead of reaching the extension, which only
