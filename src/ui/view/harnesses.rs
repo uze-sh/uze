@@ -385,15 +385,15 @@ fn context_row(mechanism: ContextMechanism) -> (String, Style) {
     match mechanism {
         ContextMechanism::Native => (
             format!("{} Native", theme::glyph(Symbol::MarkNative)),
-            theme::fg(Token::Accent),
+            theme::fg(Token::StateSuccess),
         ),
         ContextMechanism::RuntimeShim => (
             format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative)),
-            theme::fg(Token::Accent),
+            theme::fg(Token::StateSuccess),
         ),
         ContextMechanism::Bridge => (
             format!("{} Bridged", theme::glyph(Symbol::MarkNative)),
-            theme::fg(Token::Accent),
+            theme::fg(Token::StateSuccess),
         ),
         ContextMechanism::ShimMissing => (
             format!("{} Run uze setup", theme::glyph(Symbol::MarkAttention)),
@@ -410,7 +410,7 @@ fn capability_status(capabilities: &HarnessCapabilities, kind: CapabilityKind) -
     if capabilities.native.contains(&kind) {
         (
             format!("{} Native", theme::glyph(Symbol::MarkNative)),
-            theme::fg(Token::Accent),
+            theme::fg(Token::StateSuccess),
         )
     } else if capabilities.adaptable.contains(&kind) {
         (
@@ -530,7 +530,7 @@ mod tests {
             rows[0].1,
             format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative))
         );
-        assert_eq!(rows[0].2.fg, Some(theme::color(Token::Accent)));
+        assert_eq!(rows[0].2.fg, Some(theme::color(Token::StateSuccess)));
         assert_eq!(rows[1].0, ".agents/skills");
         assert_eq!(
             rows[1].1,

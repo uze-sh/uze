@@ -762,7 +762,7 @@ fn resource_lines(
                 Token::TextMuted
             };
             let status = if plugin.installed {
-                Span::styled("active", theme::fg(Token::AccentMuted))
+                Span::styled("active", theme::fg(Token::StateSuccessMuted))
             } else {
                 blank()
             };
@@ -804,7 +804,7 @@ fn plugin_status(model: &TuiModel, plugin: &MarketplacePluginSummary) -> (String
         return ("available".to_owned(), theme::fg(Token::TextMuted));
     }
     if model.was_just_updated(&model.marketplace_plugin_id(plugin)) {
-        return ("updated".to_owned(), theme::fg(Token::Accent));
+        return ("updated".to_owned(), theme::fg(Token::StateSuccess));
     }
     match &plugin.freshness.state {
         FreshnessState::Behind {
@@ -818,7 +818,7 @@ fn plugin_status(model: &TuiModel, plugin: &MarketplacePluginSummary) -> (String
             theme::fg(Token::StateWarning),
         ),
         FreshnessState::Linked { .. } => ("linked".to_owned(), theme::fg(Token::Accent)),
-        _ => ("installed".to_owned(), theme::fg(Token::Accent)),
+        _ => ("installed".to_owned(), theme::fg(Token::StateSuccess)),
     }
 }
 
@@ -1106,7 +1106,7 @@ fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
             theme::fg(Token::StateWarning),
         )
     } else {
-        ("up to date".to_owned(), theme::fg(Token::Accent))
+        ("up to date".to_owned(), theme::fg(Token::StateSuccess))
     };
     let mut fields = Vec::new();
     match summary {
@@ -1237,7 +1237,7 @@ fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail 
 
 fn resource_detail(plugin: &MarketplacePluginSummary, resource: &PluginCapability) -> Detail {
     let status = if plugin.installed {
-        ("active".to_owned(), theme::fg(Token::Accent))
+        ("active".to_owned(), theme::fg(Token::StateSuccess))
     } else {
         (
             format!("install {} to use", plugin.name),

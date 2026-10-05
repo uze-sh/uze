@@ -2298,17 +2298,17 @@ mod workspace_tests {
         assert_eq!(
             chip_colors(&model, rect),
             (
-                theme::color(Token::Accent),
+                theme::color(Token::StateSuccess),
                 theme::color(Token::SurfaceRaised)
             ),
-            "at rest: the hue, raised off the strip"
+            "at rest: the ready state's hue, raised off the strip"
         );
 
         model.hovered = Some(deliver);
         assert_eq!(
             chip_colors(&model, rect),
             (
-                theme::color(Token::Accent),
+                theme::color(Token::StateSuccess),
                 theme::color(Token::SurfaceHover)
             ),
             "under the pointer: one step brighter, and only this control"
@@ -2319,7 +2319,7 @@ mod workspace_tests {
             chip_colors(&model, rect),
             (
                 theme::color(Token::SurfaceBackground),
-                theme::color(Token::Accent)
+                theme::color(Token::StateSuccess)
             ),
             "pressed: the hue becomes the button"
         );
@@ -7199,7 +7199,7 @@ mod workspace_tests {
 
     #[test]
     fn each_sidebar_state_draws_its_own_glyph() {
-        // Four states, four distinct indicators: the hollow dot, the green
+        // Four states, four distinct indicators: the hollow dot, the filled
         // dot, the spinner and the check must never collide, or the column
         // stops answering the question it exists for.
         let glyphs = [
@@ -7215,6 +7215,12 @@ mod workspace_tests {
         assert_eq!(
             AgentTabStatus::Selected.color(),
             theme::color(Token::Accent)
+        );
+        // The check is the one that says something worked, so it alone
+        // keeps a hue in the monochrome default.
+        assert_eq!(
+            AgentTabStatus::Completed.color(),
+            theme::color(Token::StateSuccess)
         );
     }
 

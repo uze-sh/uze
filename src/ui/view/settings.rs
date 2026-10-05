@@ -324,7 +324,7 @@ fn render_card(
     if active {
         title.push(Span::styled(
             theme::glyph(Symbol::MarkOk),
-            theme::fg(Token::Accent),
+            theme::fg(Token::StateSuccess),
         ));
         title.push(Span::raw(" "));
     }

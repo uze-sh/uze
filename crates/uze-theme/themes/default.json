@@ -1,10 +1,10 @@
 {
   "version": 1,
   "name": "uze",
-  "description": "UZE's own look: a near-black backdrop, warm off-white text, and one signature sage accent doubling as the success hue. Structure comes from hairline dividers, never from filled slabs.",
+  "description": "UZE's own look: monochrome. A near-black backdrop, warm off-white text, and an accent that is the ink at full strength; hue is spent only where it means something (success, warning, danger, diffs, states). Structure comes from hairline dividers, never from filled slabs.",
   "colors": {
     "surface.background": "#0a0c0d",
-    "surface.selected": "@accent/17",
+    "surface.selected": "@accent/1c",
     "surface.raised": "~17",
     "surface.raised-subtle": "~12",
     "surface.raised-bright": "~24",
@@ -23,9 +23,9 @@
     "border.default": "~14",
     "border.faint": "~0d",
 
-    "accent": "#8fd19e",
+    "accent": "#ffffff",
     "accent-muted": "@accent/c0",
-    "state.success": "@accent",
+    "state.success": "#8fd19e",
     "state.success-muted": "@state.success/c0",
     "state.warning": "#e0b567",
     "state.warning-muted": "@state.warning/c0",

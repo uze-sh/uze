@@ -94,10 +94,9 @@ mod tests {
         // for what that costs and why it is worth it.
         let base = Rgb(10, 12, 13);
         let white = Rgb(255, 255, 255);
-        let accent = Rgb(143, 209, 158);
 
         assert_eq!(white.over(base, 13), Rgb(22, 24, 25)); // border.faint, a≈0.05
-        assert_eq!(accent.over(base, 23), Rgb(22, 30, 26)); // surface.selected, a≈0.09
+        assert_eq!(white.over(base, 28), Rgb(37, 39, 40)); // surface.selected, a≈0.11 of the monochrome accent
         assert_eq!(white.over(base, 23), Rgb(32, 34, 35)); // surface.raised, a≈0.09
         assert_eq!(white.over(base, 18), Rgb(27, 29, 30)); // surface.raised-subtle, a≈0.07
         assert_eq!(white.over(base, 6), Rgb(16, 18, 19)); // surface.recessed, a≈0.025

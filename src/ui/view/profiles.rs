@@ -292,7 +292,7 @@ fn render_profile_tree(
         if profile.active {
             spans.push(Span::styled(
                 format!(" ({} active)", theme::glyph(Symbol::MarkOk)),
-                theme::fg_bold(Token::Accent),
+                theme::fg_bold(Token::StateSuccess),
             ));
         }
         // The row names the profile and nothing else: what can be done to
@@ -394,7 +394,7 @@ fn outcome_badge(outcome: &PreferenceApplyOutcome) -> (&'static str, Color) {
     match outcome {
         PreferenceApplyOutcome::Applied { .. }
         | PreferenceApplyOutcome::AppliedWithApproximation { .. } => {
-            ("applied", theme::color(Token::Accent))
+            ("applied", theme::color(Token::StateSuccess))
         }
         PreferenceApplyOutcome::Unsupported { .. } => {
             ("unsupported", theme::color(Token::TextMuted))
@@ -585,7 +585,7 @@ fn drawer_status(
         _ => None,
     };
     let (color, headline) = match (active, pending) {
-        (true, Some(0)) | (true, None) => (theme::color(Token::Accent), "Active"),
+        (true, Some(0)) | (true, None) => (theme::color(Token::StateSuccess), "Active"),
         (true, Some(_)) => (theme::color(Token::StateWarning), "Active, not in effect"),
         (false, _) => (theme::color(Token::TextMuted), "Not active"),
     };
@@ -653,7 +653,9 @@ fn preview_summary(model: &TuiModel, id: &str) -> String {
 fn standing_badge(preview: &HarnessPreview) -> (String, Color) {
     match &preview.plan {
         Err(_) => ("cannot apply".to_owned(), theme::color(Token::StateDanger)),
-        Ok(plan) if plan.pending() == 0 => ("in effect".to_owned(), theme::color(Token::Accent)),
+        Ok(plan) if plan.pending() == 0 => {
+            ("in effect".to_owned(), theme::color(Token::StateSuccess))
+        }
         Ok(plan) => (
             format!("{} change{}", plan.pending(), plural(plan.pending())),
             theme::color(Token::StateWarning),
@@ -709,7 +711,7 @@ impl Verb {
 /// cell of the preview's table.
 fn fidelity(route: CompatibilityRoute) -> (&'static str, Color) {
     match route {
-        CompatibilityRoute::Native => ("as asked", theme::color(Token::Accent)),
+        CompatibilityRoute::Native => ("as asked", theme::color(Token::StateSuccess)),
         CompatibilityRoute::Adaptable => ("adapted", theme::color(Token::StateInfo)),
         CompatibilityRoute::Degraded => ("partial", theme::color(Token::StateWarning)),
         CompatibilityRoute::Unsupported => ("n/a", theme::color(Token::TextMuted)),
