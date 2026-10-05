@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { InstallCommand } from '@/components/install-command';
 
 type Platform = 'unix' | 'windows';
@@ -20,15 +20,11 @@ const platforms: { id: Platform; label: string; command: string; note: string }[
   },
 ];
 
-// The server renders the Unix tab, and a Windows visitor is switched to their
-// own after hydration: guessing on the server would mean reading the user
-// agent per request and give up the static page for one tab.
+// macOS and Linux is selected for everyone, Windows visitors included: the
+// tab a reader lands on is the same on every machine, and Windows is one
+// click away.
 export function InstallTabs() {
   const [active, setActive] = useState<Platform>('unix');
-
-  useEffect(() => {
-    if (/Windows/i.test(navigator.userAgent)) setActive('windows');
-  }, []);
 
   const current = platforms.find((platform) => platform.id === active) ?? platforms[0];
 
