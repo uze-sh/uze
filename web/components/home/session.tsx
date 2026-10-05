@@ -30,7 +30,10 @@ type Chapter = { label: string; at: number; end: number };
 const VERSION = process.env.NEXT_PUBLIC_UZE_VERSION ?? '1.0.0';
 const CHAR_MS = 42;
 const ENTER_MS = 320;
-const ROW_MS = 70;
+// Output arrives the way a terminal flushes it, all but at once: a row every
+// 70ms read as text being typed out. The time to read it is a pause after
+// the block, not a slow reveal of it.
+const ROW_MS = 12;
 const TICK_MS = 33;
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -146,17 +149,17 @@ function build() {
   prompt('uze git@ai');
   spin('Installing git@ai...', 900);
   rows([report('install'), blank, [{ text: '+ ', tone: 'success' }, { text: 'git@ai', tone: 'ink' }, { text: '   3f2a91c', tone: 'muted' }], blank]);
-  events.push({ kind: 'lanes', at: t, lanes: delivered, laneStagger: 260, rowStagger: 90 });
-  t += 260 * 3 + 90 * 5 + 200;
+  events.push({ kind: 'lanes', at: t, lanes: delivered, laneStagger: 30, rowStagger: 12 });
+  t += 30 * 3 + 12 * 5 + 1400;
   rows([blank, [{ text: '1 plugin added to this project', tone: 'ink' }, { text: ' [652ms]', tone: 'muted' }], blank]);
   t += 1000;
   closeChapter();
 
   chapter('the project file');
   prompt('cat agents.yaml');
-  rows(manifest, 45);
+  rows(manifest);
   rows([blank]);
-  t += 1600;
+  t += 2000;
   closeChapter();
 
   chapter('open the workspace');
