@@ -4,6 +4,16 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.11](https://github.com/uze-sh/uze/compare/v1.0.0-beta.10...v1.0.0-beta.11) - 2026-10-05
+
+### Features
+
+- Add native Windows x64 and Arm builds as an experimental platform ([#190](https://github.com/uze-sh/uze/pull/190)) ([384106e](https://github.com/uze-sh/uze/commit/384106eba3de4b9dbee35260f5c65b98f18d3326))
+
+### CI
+
+- **release:** Build Windows archives in the release package matrix ([#191](https://github.com/uze-sh/uze/pull/191)) ([0cd5328](https://github.com/uze-sh/uze/commit/0cd5328bc2b73d041f1e84762f5a723e04a7842f))
+
 ## [1.0.0-beta.10](https://github.com/uze-sh/uze/compare/v1.0.0-beta.9...v1.0.0-beta.10) - 2026-10-03
 
 ### Features
