@@ -647,13 +647,14 @@ jobs:
   # off an expensive tier without a documentation change sitting forever on a
   # check that will never report.
   #
-  # `needs.*.result` is not the whole answer. A job inside a called workflow
-  # that GitHub cancels — a runner that was never acquired — leaves the call
-  # itself reporting success: the run went red while this check stayed green,
-  # with `Journeys / Plan the slices` cancelled and no journey performed. So
-  # the run's own jobs are read as well, and one that never finished its work
-  # fails the gate. A plain failure is still judged by `needs` alone, which is
-  # what honours `continue-on-error` on a leg that only reports.
+  # `needs.*.result` is not the whole answer. A job GitHub cancels because no
+  # runner was ever acquired does not reach it as `cancelled`, whether the
+  # job is this file's own (`MSRV`, `Test (linux)`) or one inside a called
+  # workflow: during the 2026-10-05 Actions outage this check read eleven
+  # such jobs as nothing at all and stayed green. So the run's own jobs are
+  # read as well, and one that never finished its work fails the gate. A
+  # plain failure is still judged by `needs` alone, which is what honours
+  # `continue-on-error` on a leg that only reports.
   gate:
     name: Gate
     runs-on: ubuntu-24.04
