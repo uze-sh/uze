@@ -9,17 +9,19 @@ description: Where an agent works, how its work gets a name, and how finished wo
 
 By default an agent works in your project, on your branch, like you would.
 
-Or it gets **a checkout of its own**: a separate copy of the repository under
-`.worktrees/`, on a branch of its own. Two agents can then never touch each
-other's files, or yours.
+Or it gets **a worktree of its own**: a separate checkout of the repository
+under `.worktrees/`, on a branch of its own. Two agents can then never touch
+each other's files, or yours.
 
-- **One agent:** right-click it → **Isolate**. It moves to its own checkout and
-  takes your uncommitted changes with it, as a copy.
+- **One agent:** right-click it → **To worktree**. It moves to its own worktree
+  and takes your uncommitted changes with it, as a copy. When the tree holds
+  uncommitted work, **To worktree, no changes** cuts the worktree from the last
+  commit instead and leaves the changes where they are.
 - **Every agent in a project:** declare it once in `agents.yaml`:
 
   ```yaml
-  worktrees:
-    default: isolated
+  workspace:
+    worktree: always   # manual (default) | always
   ```
 
 Checkouts are reused, so a second agent does not pay for a fresh
@@ -28,7 +30,7 @@ next agents and gives the disk of any other one back, and a free checkout
 unused for three days goes too. Both numbers are yours to change:
 
 ```yaml
-worktrees:
+workspace:
   spare: 2       # free checkouts kept warm
   idle_days: 3   # after this long unused, even a spare goes
 ```
@@ -37,17 +39,17 @@ A checkout is only ever reused or removed when uze made it, and never while
 something is still working in it. A worktree you or a tool added by hand is
 shown, never touched.
 
-A project has no `worktrees:` policy until somebody chooses one: the
-`agents.yaml` uze creates carries the key empty, with every choice commented
-beneath it. Once one is chosen, the workspace keeps a "Concurrent work
+A project has no `workspace:` section until somebody chooses something: the
+`agents.yaml` uze creates says nothing about the workspace, and every key is in
+the [reference](/docs/reference/project-files#workspace). Once one is chosen, the workspace keeps a "Concurrent work
 isolation" section in `AGENTS.md` in step with it, in your checkout, for the
-agents it launches. To stop, comment the values out again; the workspace takes
+agents it launches. To stop, remove the values again; the workspace takes
 the section back the next time it runs. The agents themselves carry the part
 no harness does for them with the `uze:worktree` skill.
 
 ## Its work gets a name
 
-An isolated agent names its own branch as the first thing it does, like
+An agent in a worktree names its own branch as the first thing it does, like
 `fix/login-timeout`. That name is what you read in the sidebar and what a
 reviewer sees on the pull request. You never have to name anything.
 
@@ -65,13 +67,13 @@ says:
 
 ## Bringing the work home
 
-When an isolated agent is **Ready**, press `Alt+I` to deliver it. The branch is
+When an agent in a worktree is **Ready**, press `Alt+I` to deliver it. The branch is
 rebased onto your target branch, your checks run, and then comes what the
 project chose:
 
 ```yaml
-worktrees:
-  completion: pr     # handoff (default) | merge | pr
+workspace:
+  delivery: pr       # handoff (default) | merge | pr
   gate: npm test     # the checks that must pass first
 ```
 

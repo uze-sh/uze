@@ -58,19 +58,13 @@ fn install_sets_the_project_up_and_writes_no_lock_when_there_is_nothing_to_resol
 
     let written = fs::read_to_string(manifest::manifest_path_for(&root)).unwrap();
     assert!(
-        written.contains("completion: handoff"),
-        "the default must be written out, not implied: {written}"
+        written.contains("# marketplaces:"),
+        "the package manager's vocabulary is written out, commented: {written}"
     );
     assert!(
-        written.contains("handoff | merge | pr"),
-        "the choices must be discoverable by opening the file: {written}"
+        !written.contains("workspace"),
+        "and nothing of the workspace's: {written}"
     );
-    for offered in ["# target:", "# link:", "# setup:", "# gate:", "# slots:"] {
-        assert!(
-            written.contains(offered),
-            "setting a project up must show `{offered}` too, commented: {written}"
-        );
-    }
     assert_eq!(
         uze_workspace::declaration::policy(&root).unwrap(),
         uze_workspace::worktree::WorktreePolicy::default(),
@@ -144,7 +138,7 @@ fn declaring_the_policy_from_the_client_creates_the_manifest_and_states_it_first
 fn install_never_rewrites_a_manifest_somebody_authored() {
     let (application, repository) = project("manifest-install-preserves");
     let root = repository.root().to_path_buf();
-    let authored = "# ours\nworktrees:\n  completion: pr   # decided in the RFC\n";
+    let authored = "# ours\nworkspace:\n  delivery: pr   # decided in the RFC\n";
     fs::write(manifest::manifest_path_for(&root), authored).unwrap();
 
     application.project().install(&root, &AlwaysTrust).unwrap();
@@ -161,7 +155,7 @@ fn the_policy_in_force_is_what_the_manifest_says_and_it_reaches_the_projection()
     let root = repository.root().to_path_buf();
     fs::write(
         manifest::manifest_path_for(&root),
-        "worktrees:\n  completion: pr\n",
+        "workspace:\n  delivery: pr\n",
     )
     .unwrap();
     // The workspace keeps its section in an AGENTS.md the project has; it
@@ -183,7 +177,7 @@ fn a_typo_in_the_manifest_is_named_rather_than_ignored() {
     let root = repository.root().to_path_buf();
     fs::write(
         manifest::manifest_path_for(&root),
-        "worktrees:\n  completon: pr\n",
+        "workspace:\n  delivry: pr\n",
     )
     .unwrap();
 
@@ -191,7 +185,7 @@ fn a_typo_in_the_manifest_is_named_rather_than_ignored() {
     // package manager reads the file without failing over it.
     let error = uze_workspace::declaration::declared(&root)
         .expect_err("a misspelled field must not be silently dropped");
-    assert!(error.to_string().contains("completon"), "{error}");
+    assert!(error.to_string().contains("delivry"), "{error}");
     application
         .context()
         .inspect(&root)
@@ -361,7 +355,7 @@ mod policy_scope {
         let root = repository.root().to_path_buf();
         fs::write(
             manifest::manifest_path_for(&root),
-            "worktrees:\n  completion: pr\n",
+            "workspace:\n  delivery: pr\n",
         )
         .unwrap();
 
@@ -377,7 +371,7 @@ mod policy_scope {
         // A manifest inside the checkout must not be the one that counts.
         fs::write(
             manifest::manifest_path_for(&checkout),
-            "worktrees:\n  completion: merge\n",
+            "workspace:\n  delivery: merge\n",
         )
         .unwrap();
 
@@ -395,7 +389,7 @@ mod policy_scope {
         let repository = uze_testkit::git::Repository::new("policy-scope-machines");
         repository.commit_file("README.md", "# p\n");
         let root = repository.root().to_path_buf();
-        fs::write(manifest::manifest_path_for(&root), "worktrees: {}\n").unwrap();
+        fs::write(manifest::manifest_path_for(&root), "workspace: {}\n").unwrap();
 
         let policies: Vec<String> = ["home-a", "home-b"]
             .into_iter()

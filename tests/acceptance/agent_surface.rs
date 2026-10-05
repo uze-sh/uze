@@ -41,7 +41,7 @@ fn project_with_a_checkout(env: &TestEnvironment) -> std::path::PathBuf {
     git(root, &["config", "user.email", "test@uze.invalid"]);
     std::fs::write(
         root.join("agents.yaml"),
-        "worktrees:\n  branch: conventional\n",
+        "workspace:\n  branch: conventional\n",
     )
     .unwrap();
     git(root, &["add", "."]);
@@ -175,7 +175,11 @@ fn the_install_alias_is_the_same_command() {
 fn an_agent_is_told_whether_the_diagrams_it_wrote_draw() {
     let env = TestEnvironment::isolated();
     let root = &env.project;
-    std::fs::write(root.join("agents.yaml"), "artifacts:\n  path: diagrams\n").unwrap();
+    std::fs::write(
+        root.join("agents.yaml"),
+        "workspace:\n  artifacts: diagrams\n",
+    )
+    .unwrap();
     let diagrams = root.join("diagrams");
     std::fs::create_dir_all(&diagrams).unwrap();
     std::fs::write(

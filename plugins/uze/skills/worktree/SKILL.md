@@ -19,8 +19,9 @@ You do not decide where to work: UZE places every agent it launches before
 you start. Either you were **isolated** — a checkout of your own under
 `.worktrees/<id>`, on branch `agent/<id>`, with the primary checkout left
 to the operator — or you are in the operator's own checkout, on the branch
-they are on, beside them. The project's `worktrees.default` decides which
-you got, and the operator can isolate you afterwards, in which case you
+they are on, beside them. The project's `workspace.worktree` (`always` or
+`manual`) decides which you got, and the operator can move you to a
+worktree afterwards (**To worktree**), in which case you
 are relaunched in the new checkout — with whatever their tree had
 uncommitted, if they said to carry it, and possibly with a conversation
 that starts over, because a harness that files a conversation under the

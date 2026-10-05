@@ -8,10 +8,10 @@ pub mod bootstrap;
 pub use application::UzeApplication;
 pub use application::services::{
     AdoptedCheckout, AgentIdentity, AgentNotice, AgentPlacement, AgentView, Carry, CheckoutOwner,
-    CheckoutRefusal, CheckoutView, CheckoutsView, CleanUp, DeliveryOutcome, DeliveryPolicyView,
-    DeliveryReport, Evaluation, JoinedWork, KeptCheckout, NamedTask, Placement, PlacementKind,
-    PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, RemovedCheckout, SplitWork,
-    SubagentCheckout, UpstreamSync, WorkStateView, WorkspaceEntry, project_artifacts,
+    CheckoutRefusal, CheckoutView, CheckoutsView, CleanUp, DeclaredDirectory, DeliveryOutcome,
+    DeliveryPolicyView, DeliveryReport, Evaluation, JoinedWork, KeptCheckout, NamedTask, Placement,
+    PlacementKind, PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, RemovedCheckout,
+    SplitWork, SubagentCheckout, UpstreamSync, WorkStateView, WorkspaceEntry, project_artifacts,
 };
 
 /// Types the read models above are made of. Presentation consumes these

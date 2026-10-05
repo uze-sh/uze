@@ -626,7 +626,7 @@ pub(super) fn deliver_selected_tab(
         model.raise_toast(
             ToastKind::Told,
             "this branch is yours, not UZE's",
-            "isolate the agent to have UZE deliver its work",
+            "move the agent to a worktree to have UZE deliver its work",
             None,
         );
         return;

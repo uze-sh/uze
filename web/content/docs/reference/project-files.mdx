@@ -7,7 +7,7 @@ Two files at the project root, both committed, with one rule between them:
 
 | File | Written by | Holds |
 | --- | --- | --- |
-| **`agents.yaml`** | you | What the project *declares*: which marketplaces it draws from, which plugins it wants, what happens to an agent's finished work |
+| **`agents.yaml`** | you | What the project *declares*: which marketplaces it draws from, which plugins it wants, and, under `workspace:`, how its agents work |
 | **`agents.lock`** | uze | What resolving those declarations *produced*: the commit each marketplace was read at, and a digest of the bytes that landed |
 
 The lock carries no intent, so deleting it loses nothing: `uze install`
@@ -17,14 +17,11 @@ regenerates it. Deleting `agents.yaml` loses the project's decisions.
 
 ## `agents.yaml`
 
-Created by `uze install`, an explicit act of setting a project up, with every
-key it understands written out and commented, so the vocabulary is discoverable
-by opening the file. Nothing that merely *reads* a project creates it.
+Two kinds of key, one per module. The package manager's sit at the root; the
+workspace's live under one `workspace:` section, which a project that only
+installs plugins never writes:
 
 ```yaml
-worktrees:
-  completion: pr
-
 marketplaces:
   ai:
     git: https://github.com/you/plugins
@@ -32,96 +29,25 @@ marketplaces:
     plugins:
       - review
       - changelog
+
+workspace:
+  worktree: always
+  delivery: pr
 ```
 
-Every block is optional; a project declaring only an isolation policy is as
-valid as one declaring only plugins. Unknown keys are an **error**, not silence:
-a typo in a file a person wrote should not be read as a decision. Writing
+Created by `uze install` or `uze <plugin>@<market>`, explicit acts of setting a
+project up, with the package manager's vocabulary written out and commented.
+Nothing about the workspace is written, not even commented: the section appears
+when you choose something in the workspace or write it yourself. Nothing that
+merely *reads* a project creates the file.
+
+Every key is optional; a project declaring only a workspace policy is as valid
+as one declaring only plugins. Unknown keys are an **error**, not silence: a
+typo in a file a person wrote should not be read as a decision. Writing
 `revision:` here is refused by name: that belongs to the lock.
 
 This document is patched in place, so a comment you wrote beside an unrelated
 entry survives `uze <plugin>@<market>`.
-
-### `worktrees`
-
-What this project does with the work of an agent uze placed in an isolated
-checkout; see [Agents](/docs/workspace/agents). The layout of those
-checkouts (`.worktrees/<id>`, branch `agent/<id>`) is fixed infrastructure and
-is deliberately *not* declared here.
-
-The section is the workspace's. The package manager carries it without reading
-it, so a mistake in it never fails `uze install` or `uze status`; the workspace
-reports it. The `agents.yaml` uze creates declares none of it: the key is empty
-and every value is commented, and a value is in force only once you uncomment
-it or choose it in the workspace.
-
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `default` | `in-place` | Where an agent launched here starts: `in-place` in the space's own root, or `isolated` in a checkout of its own |
-| `target` | the branch the primary checkout is on when the task is created | The branch finished work targets |
-| `completion` | `handoff` | `handoff` (leave the branch), `merge` (fast-forward the target), `pr` (push and open a request) |
-| `branch` | `agent` | The vocabulary an agent's own name for its work is judged against: a preset (`conventional`, `gitflow`, `flat`, `agent`) or your own list of types. `agent` names no work |
-| `link` | none | Ignored files a fresh checkout links from the primary, like `.env` |
-| `setup` | none | Prepares a checkout, run in it after linking. A failure warns; it never blocks a launch |
-| `gate` | none | Run in the task's checkout on the rebased commits. A non-zero exit refuses delivery |
-| `slots` | peak concurrency | The most checkouts that may exist at once |
-| `spare` | `2` | Free checkouts kept warm for the next agents, the most recently used first. Every other free one is removed, its branch kept |
-| `idle_days` | `3` | Days a free checkout may sit unused before it is removed too |
-
-`setup` and `gate` each take one command or a list run in order. Use the list
-when a failure should say *which* step failed:
-
-```yaml
-worktrees:
-  default: isolated
-  target: main
-  completion: pr
-  branch: conventional
-  link: [.env, .env.local]
-  setup: pnpm install
-  gate:
-    - pnpm test
-    - pnpm lint
-  slots: 3
-  spare: 2
-  idle_days: 3
-```
-
-A command is a line for a POSIX shell, the `sh` Linux and macOS run it in.
-For a project worked on from Windows too, spell a step for each shell instead:
-Windows runs its `windows` spelling in Windows PowerShell. A command both
-shells read the same way is still written twice, because each shell is only
-ever handed the line written for it:
-
-```yaml
-worktrees:
-  setup:
-    posix: cp .env.example .env
-    windows: Copy-Item .env.example .env
-  gate:
-    - posix: pnpm test
-      windows: pnpm test
-    - posix: test -f dist/app.js
-      windows: if (-not (Test-Path dist/app.js)) { exit 1 }
-```
-
-A step with no spelling for the machine it runs on is not run there. A `setup`
-step is skipped with a warning naming it; a `gate` step refuses the delivery,
-because work nothing checked never lands. `uze status` lists every such step.
-
-<Callout type="warn">
-  A `link` entry must be relative, stay inside the repository, **and be ignored
-  by it**: a tracked file linked into a checkout would land in the agent's
-  commits as a symlink. All three are checked when the file is read, not
-  silently dropped. The agent writes *through* a link into your primary
-  checkout, so only what it reads belongs there.
-</Callout>
-
-The policy lives here rather than in machine state because
-`uze install` projects it into the tracked `AGENTS.md`: anything
-resolved outside the project would rewrite a shared file to whichever machine
-ran the command. A worktree's own manifest is ignored for the same reason:
-the primary checkout owns the policy.
 
 ### `marketplaces`
 
@@ -165,20 +91,125 @@ The official marketplace is not declared here. `uze-official` is built into the
 binary, its plugins are installed for every project, and an entry claiming that
 name is refused: the only thing it could express is shadowing the built-in one.
 
-### `artifacts`
+### `workspace`
 
-Where the project keeps the artifacts that describe it. Today that means
-architecture diagrams: Mermaid files the workspace's architect surface draws in
-the terminal.
+How [`uze workspace`](/docs/workspace/agents) runs the agents it launches, and
+where the project keeps the artifacts that describe it. One flat section. The
+layout of the worktrees themselves (`.worktrees/<id>`, branch `agent/<id>`) is
+fixed infrastructure and is deliberately *not* declared here.
+
+The section is the workspace's. The package manager carries it without reading
+it, so a mistake in it never fails `uze install` or `uze status`; the workspace
+reports it.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `worktree` | `manual` | When an agent launched here gets a worktree: `always`, at launch, or `manual`, only when you move it with **To worktree**. Until then it works in the primary checkout, on your branch |
+| `delivery` | `handoff` | What happens to finished work: `handoff` (leave the branch), `merge` (fast-forward the target), `pr` (push and open a request) |
+| `target` | the branch the primary checkout is on when the task is created | The branch finished work targets |
+| `branch` | `agent` | The vocabulary an agent's own name for its work is judged against: a preset (`conventional`, `gitflow`, `flat`, `agent`) or your own list of types. `agent` names no work |
+| `link` | none | Ignored files a fresh worktree links from the primary checkout, like `.env` |
+| `setup` | none | Prepares a worktree, run in it after linking. A failure warns; it never blocks a launch |
+| `gate` | none | Run in the task's worktree on the rebased commits. A non-zero exit refuses delivery |
+| `slots` | peak concurrency | The most worktrees that may exist at once |
+| `spare` | `2` | Free worktrees kept warm for the next agents, the most recently used first. Every other free one is removed, its branch kept |
+| `idle_days` | `3` | Days a free worktree may sit unused before it is removed too |
+| `artifacts` | none | Where the project keeps what describes it; see [below](#artifacts) |
+
+Every key but `artifacts` is about a worktree, so none of them does anything for
+an agent working in the primary checkout until it is moved into one.
+
+`setup` and `gate` each take one command or a list run in order. Use the list
+when a failure should say *which* step failed:
 
 ```yaml
-artifacts:
-  path: docs/architecture
+workspace:
+  worktree: always
+  delivery: pr
+  target: main
+  branch: conventional
+  link: [.env, .env.local]
+  setup: pnpm install
+  gate:
+    - pnpm test
+    - pnpm lint
+  slots: 3
+  spare: 2
+  idle_days: 3
+  artifacts: docs
 ```
 
-`path` is a directory inside the project, read as deep as it goes; a path that
-climbs out of it (`../`) or starts at the machine's root is refused, because
-this file is checked in and would point somewhere else on every machine.
+A command is a line for a POSIX shell, the `sh` Linux and macOS run it in.
+For a project worked on from Windows too, spell a step for each shell instead:
+Windows runs its `windows` spelling in Windows PowerShell. A command both
+shells read the same way is still written twice, because each shell is only
+ever handed the line written for it:
+
+```yaml
+workspace:
+  setup:
+    posix: cp .env.example .env
+    windows: Copy-Item .env.example .env
+  gate:
+    - posix: pnpm test
+      windows: pnpm test
+    - posix: test -f dist/app.js
+      windows: if (-not (Test-Path dist/app.js)) { exit 1 }
+```
+
+A step with no spelling for the machine it runs on is not run there. A `setup`
+step is skipped with a warning naming it; a `gate` step refuses the delivery,
+because work nothing checked never lands. `uze status` lists every such step.
+
+<Callout type="warn">
+  A `link` entry must be relative, stay inside the repository, **and be ignored
+  by it**: a tracked file linked into a worktree would land in the agent's
+  commits as a symlink. All three are checked when the file is read, not
+  silently dropped. The agent writes *through* a link into your primary
+  checkout, so only what it reads belongs there.
+</Callout>
+
+The policy lives here rather than in machine state because
+`uze install` projects it into the tracked `AGENTS.md`: anything
+resolved outside the project would rewrite a shared file to whichever machine
+ran the command. A worktree's own manifest is ignored for the same reason:
+the primary checkout owns the policy.
+
+#### A file in the earlier shape
+
+Before this section existed, the same settings sat at the root as `worktrees:`
+and `artifacts:`. uze does not read that shape. It refuses the file and prints
+one line per key, old path to new, so it can be fixed in one pass, by you or by
+the agent that ran the command:
+
+```text
+the workspace's settings moved under one `workspace:` section. Rewrite these and read the file again:
+  worktrees.default: isolated  ->  workspace.worktree: always
+  worktrees.completion  ->  workspace.delivery
+  worktrees.branch  ->  workspace.branch
+  artifacts.path  ->  workspace.artifacts
+```
+
+#### `artifacts`
+
+Where the project keeps the artifacts that describe it: one directory, or a
+list of them, each read as deep as it goes.
+
+```yaml
+workspace:
+  artifacts: docs
+  # or several:
+  # artifacts: [docs, design]
+```
+
+It names **places, never kinds**. What a file is, it says by its own content,
+and each surface takes the files it recognizes and ignores the rest: the
+architect surface draws the Mermaid files it finds there. A kind of artifact uze
+learns later needs no new key.
+
+An entry that climbs out of the project (`../`) or starts at the machine's root
+refuses the whole declaration, naming the entry, because this file is checked in
+and would point somewhere else on every machine.
 
 Nothing lists the files. Each one says what it is in its own first word, which
 is also the area it appears under, and names itself with Mermaid's own front

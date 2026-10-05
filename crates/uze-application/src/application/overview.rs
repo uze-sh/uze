@@ -388,7 +388,7 @@ mod tests {
     /// Writes the `agents.yaml` the lock's entries were resolved from — the
     /// declaration side of the same fixture.
     fn declare(root: &Path, lock: &uze_core::project_lock::ProjectLock) {
-        // Deliberately no `worktrees:` block: declaring one asks for the
+        // Deliberately no `workspace:` block: declaring one asks for the
         // policy to be projected into `AGENTS.md`, and these fixtures are
         // about the plugin half. A project that declares a policy and has
         // not projected it is drifted, which is a different fixture.
@@ -572,7 +572,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join(uze_core::manifest::MANIFEST_FILE_NAME),
-            "worktrees: {}\n",
+            "workspace: {}\n",
         )
         .unwrap();
         fs::write(root.join("agents.lock"), "version: 1\nplugins: [broken").unwrap();
@@ -589,7 +589,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join(uze_core::manifest::MANIFEST_FILE_NAME),
-            "worktrees: {}\n",
+            "workspace: {}\n",
         )
         .unwrap();
         fs::write(root.join("agents.lock"), "version: 99\n").unwrap();

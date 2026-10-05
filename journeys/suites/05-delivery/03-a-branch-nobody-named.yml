@@ -17,10 +17,10 @@ world:
   project: demo-app
   remote: bare
   manifest: |
-    worktrees:
-      default: isolated
+    workspace:
+      worktree: always
       target: main
-      completion: pr
+      delivery: pr
       branch: conventional
       slots: 2
 

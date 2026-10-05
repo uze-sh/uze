@@ -71,7 +71,7 @@ impl Engine {
         git(&["config", "user.email", "operator@uze.invalid"]);
         fs::write(project.join("README.md"), "# engine\n").unwrap();
         fs::write(project.join(".gitignore"), "target/\n").unwrap();
-        fs::write(project.join("agents.yaml"), format!("worktrees:\n{lock}")).unwrap();
+        fs::write(project.join("agents.yaml"), format!("workspace:\n{lock}")).unwrap();
         git(&["add", "."]);
         git(&["commit", "--quiet", "-m", "init"]);
 
@@ -402,7 +402,7 @@ fn commit(file: &str, contents: &str) -> Steps {
 #[test]
 fn three_agents_deliver_into_a_linear_target_around_the_operators_edits() {
     let mut engine = Engine::start(
-        "  completion: merge\n  gate:\n    posix: test -f README.md\n    \
+        "  delivery: merge\n  gate:\n    posix: test -f README.md\n    \
          windows: \"if (-not (Test-Path README.md)) { exit 1 }\"\n",
     );
     let project = engine.project().to_path_buf();
@@ -467,7 +467,7 @@ fn three_agents_deliver_into_a_linear_target_around_the_operators_edits() {
 /// gives its checkout back, and one that left work behind does not.
 #[test]
 fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
-    let mut engine = Engine::start("  completion: merge\n");
+    let mut engine = Engine::start("  delivery: merge\n");
     let project = engine.project().to_path_buf();
 
     let (empty, slot) = engine.launch(Steps::new());
@@ -523,7 +523,7 @@ fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
 /// commit; and the subagent's checkout is what the next agent gets.
 #[test]
 fn a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand() {
-    let mut engine = Engine::start("  completion: merge\n");
+    let mut engine = Engine::start("  delivery: merge\n");
     let project = engine.project().to_path_buf();
     engine.git(
         &project,
@@ -606,7 +606,7 @@ fn a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand() {
 /// already rewritten.
 #[test]
 fn one_reconciliation_pass_answers_a_repository_once_however_it_is_named() {
-    let mut engine = Engine::start("  completion: merge\n");
+    let mut engine = Engine::start("  delivery: merge\n");
     let project = engine.project().to_path_buf();
 
     let (empty, slot) = engine.launch(Steps::new());
@@ -664,7 +664,7 @@ fn one_reconciliation_pass_answers_a_repository_once_however_it_is_named() {
 /// full of work.
 #[test]
 fn a_slots_status_follows_the_agent_through_a_delivery_and_past_it() {
-    let mut engine = Engine::start("  completion: merge\n");
+    let mut engine = Engine::start("  delivery: merge\n");
     let project = engine.project().to_path_buf();
 
     let (id, slot) = engine.launch(Steps::new().write("draft.rs", "draft\n"));
@@ -708,7 +708,7 @@ fn a_slots_status_follows_the_agent_through_a_delivery_and_past_it() {
 
 #[test]
 fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
-    let mut engine = Engine::start("  completion: merge\n");
+    let mut engine = Engine::start("  delivery: merge\n");
     let project = engine.project().to_path_buf();
     let (id, slot) = engine.launch(commit("shared.rs", "agent\n"));
     wait_for_states(&engine, &[&id], &WorkStateView::Ready);
@@ -755,7 +755,7 @@ fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
 
 #[test]
 fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_parked() {
-    let mut engine = Engine::start("  completion: handoff\n");
+    let mut engine = Engine::start("  delivery: handoff\n");
     let project = engine.project().to_path_buf();
     let (id, slot) = engine.launch(commit("kept.rs", "kept\n"));
     wait_for_states(&engine, &[&id], &WorkStateView::Ready);
@@ -816,7 +816,7 @@ fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_parked() {
 /// delivery is a sync that names it.
 #[test]
 fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
-    let mut engine = Engine::start("  completion: pr\n");
+    let mut engine = Engine::start("  delivery: pr\n");
     let project = engine.project().to_path_buf();
     uze_testkit::git::publish_to_origin(&project, "main");
 
@@ -887,7 +887,7 @@ fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
 /// inside a client.
 #[test]
 fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
-    let mut engine = Engine::start("  completion: handoff\n");
+    let mut engine = Engine::start("  delivery: handoff\n");
     let project = engine.project().to_path_buf();
     let first_space = engine.session.as_ref().unwrap().workspace.selected_space;
     assert_eq!(
@@ -979,7 +979,7 @@ fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
 #[test]
 fn a_harness_typed_into_a_pane_goes_through_its_launcher() {
     let launched = std::cell::OnceCell::new();
-    let mut engine = Engine::start_with("  completion: merge\n", |env| {
+    let mut engine = Engine::start_with("  delivery: merge\n", |env| {
         let marker = env.root().join("claude.env");
         FakeHarness::new(&env.fake_bin, "claude")
             .version_line("9.9.9 (Claude Code)")

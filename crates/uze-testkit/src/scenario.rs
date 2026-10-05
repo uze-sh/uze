@@ -219,7 +219,7 @@ impl PackageAndWorkspace {
         let PackageOnly { shell, project } = PackageOnly::prepare(env);
         std::fs::write(
             project.join("agents.yaml"),
-            format!("worktrees:\n  completion: {completion}\n"),
+            format!("workspace:\n  delivery: {completion}\n"),
         )
         .expect("scenario: agents.yaml must be writable");
         crate::git::commit_everything_in(&project);

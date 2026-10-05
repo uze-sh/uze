@@ -38,7 +38,7 @@ fn project_with_policy(label: &str, manifest: &str) -> (Repository, PathBuf) {
 
 /// The policy declared with every field left to its default — the shape
 /// that proves projection does not depend on any of them being set.
-const POLICY_MANIFEST: &str = "worktrees: {}\n";
+const POLICY_MANIFEST: &str = "workspace: {}\n";
 
 fn agents_md(project: &Path) -> String {
     fs::read_to_string(project.join("AGENTS.md")).unwrap_or_default()
@@ -108,7 +108,7 @@ fn the_projection_never_triggers_a_harnesss_own_isolation() {
 fn an_agent_started_by_hand_is_told_first_that_the_region_is_not_for_it() {
     let (repository, project) = project_with_policy(
         "worktree-hand-started",
-        "worktrees:\n  branch: conventional\n",
+        "workspace:\n  branch: conventional\n",
     );
     let application = app(repository.root());
     application
@@ -148,7 +148,7 @@ fn a_project_declaring_nothing_gets_no_region() {
 #[test]
 fn the_declared_completion_behavior_is_what_reaches_the_baseline() {
     let (repository, project) =
-        project_with_policy("worktree-completion", "worktrees:\n  completion: merge\n");
+        project_with_policy("worktree-completion", "workspace:\n  delivery: merge\n");
     let application = app(repository.root());
 
     application
@@ -241,7 +241,7 @@ fn editing_the_declaration_replaces_its_region_rather_than_drifting() {
 
     fs::write(
         project.join("agents.yaml"),
-        "worktrees:\n  completion: merge\n",
+        "workspace:\n  delivery: merge\n",
     )
     .unwrap();
     assert!(
@@ -336,7 +336,7 @@ fn a_stale_workspace_region_leaves_the_package_environment_clear() {
         .unwrap();
     fs::write(
         project.join("agents.yaml"),
-        "worktrees:\n  completion: merge\n",
+        "workspace:\n  delivery: merge\n",
     )
     .unwrap();
 

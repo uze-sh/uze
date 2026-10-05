@@ -70,7 +70,7 @@ mod tests {
     fn cwd_with_a_manifest_is_root() {
         let root = uze_testkit::temp::scratch("manifest-root");
         fs::create_dir_all(&root).unwrap();
-        fs::write(root.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
+        fs::write(root.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
         let sub = root.join("sub");
         fs::create_dir_all(&sub).unwrap();
         // cwd is sub, which declares nothing; the walk finds the parent's
@@ -161,7 +161,7 @@ mod tests {
         let outer = uze_testkit::temp::scratch("git-boundary-manifest");
         let repo = outer.join("repo");
         fs::create_dir_all(repo.join(".git")).unwrap();
-        fs::write(outer.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
+        fs::write(outer.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
         let sub = repo.join("src");
         fs::create_dir_all(&sub).unwrap();
         let resolved = resolve_project_root(&sub).unwrap();

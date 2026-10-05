@@ -86,10 +86,14 @@ See [Workspace](/docs/workspace).
 **Terminal runtime.** A local server that owns the terminals, so an agent keeps
 running after you close the UI.
 
-**Isolated checkout.** A Git worktree of its own for one agent, at
-`.worktrees/<id>` on branch `agent/<id>`.
+**Primary checkout.** The project's own working tree, on the branch you have
+checked out. An agent works here until it is given a worktree.
 
-**Slot.** An isolated checkout uze made and reuses for the next agent instead of
+**Worktree.** A Git worktree of its own for one agent, at `.worktrees/<id>` on
+branch `agent/<id>`. An agent gets one at launch when `workspace.worktree` is
+`always`, or when you move it with **To worktree**.
+
+**Slot.** A worktree uze made and reuses for the next agent instead of
 creating a new one. Its making is recorded, and only a checkout uze made is
 ever reused or removed. See [Running agents](/docs/workspace/agents#where-an-agent-works).
 

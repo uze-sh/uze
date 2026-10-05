@@ -127,7 +127,7 @@ mod workspace_root_tests {
         let root = uze_testkit::temp::scratch("workspace-root");
         let nested = root.join("crates").join("inner");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(root.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
+        std::fs::write(root.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
 
         // The property the terminal server is keyed on: launching from the
         // root and from a subdirectory must not produce two identities.
@@ -182,7 +182,7 @@ mod tests {
     fn consumer_at_cwd() {
         let root = uze_testkit::temp::scratch("consumer-root");
         mkdir(&root);
-        fs::write(root.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
+        fs::write(root.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
         let resolved = resolve_anchor(&root).unwrap();
         assert_eq!(resolved.kind, AnchorKind::Consumer);
         assert_eq!(resolved.root, root.canonical().unwrap());
@@ -193,7 +193,7 @@ mod tests {
     fn consumer_from_subdir_finds_nearest_ancestor() {
         let root = uze_testkit::temp::scratch("consumer-subdir");
         mkdir(&root);
-        fs::write(root.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
+        fs::write(root.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
         let sub = root.join("src/foo");
         mkdir(&sub);
         let resolved = resolve_anchor(&sub).unwrap();
@@ -231,7 +231,7 @@ mod tests {
     fn both_anchors_are_hybrid() {
         let root = uze_testkit::temp::scratch("hybrid");
         mkdir(&root);
-        fs::write(root.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
+        fs::write(root.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
         fs::write(
             root.join("marketplace.json"),
             r#"{"name":"m","plugins":[]}"#,
@@ -247,8 +247,8 @@ mod tests {
         let outer = uze_testkit::temp::scratch("nested-outer");
         let inner = outer.join("packages/foo");
         mkdir(&inner);
-        fs::write(outer.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
-        fs::write(inner.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
+        fs::write(outer.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
+        fs::write(inner.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
         let deep = inner.join("src");
         mkdir(&deep);
         let resolved = resolve_anchor(&deep).unwrap();
@@ -269,7 +269,7 @@ mod tests {
             r#"{"name":"m","plugins":[]}"#,
         )
         .unwrap();
-        fs::write(inner.join(MANIFEST_FILE_NAME), "worktrees: {}\n").unwrap();
+        fs::write(inner.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
         let resolved = resolve_anchor(&inner).unwrap();
         assert_eq!(
             resolved.kind,

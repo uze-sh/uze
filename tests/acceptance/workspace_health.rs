@@ -119,7 +119,7 @@ fn status_names_a_gate_this_machine_cannot_run() {
     std::fs::write(env.project.join("AGENTS.md"), "# Workspace\n").unwrap();
     std::fs::write(
         env.project.join("agents.yaml"),
-        format!("worktrees:\n  gate:\n    {other}: make check\n"),
+        format!("workspace:\n  gate:\n    {other}: make check\n"),
     )
     .unwrap();
     let init = env

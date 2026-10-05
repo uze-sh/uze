@@ -22,10 +22,10 @@ about: |
 world:
   project: demo-app
   manifest: |
-    worktrees:
-      default: isolated
+    workspace:
+      worktree: always
       target: main
-      completion: handoff
+      delivery: handoff
       branch: conventional
       slots: 3
 

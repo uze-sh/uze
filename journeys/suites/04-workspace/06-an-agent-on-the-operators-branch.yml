@@ -15,9 +15,9 @@ about: |
 world:
   project: demo-app
   manifest: |
-    worktrees:
+    workspace:
       target: main
-      completion: handoff
+      delivery: handoff
       slots: 4
 
 scenes:

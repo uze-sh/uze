@@ -220,7 +220,7 @@ need to).
   each is in and carrying it across a launch (`conversation`,
   `continuity`), how finished work lands (`landing`), what a project
   declares about all of that (`declaration`, reading `agents.yaml`'s
-  `worktrees` and `artifacts` sections, which `uze-core` carries unread),
+  `workspace:` section, which `uze-core` carries unread),
   and the workspace client's own state (`client_layout`, `prompt_history`,
   `notifications`, `extensions`). Built on `uze-core`; unrelated to
   `uze-terminal`, which owns the panes and knows nothing of agents.
@@ -396,8 +396,8 @@ need to).
   a structural change; recent ones cover generated native-package
   projection, Skill invocation policy, and invocation labels).
 - `docs/architecture/*.mmd` — the architecture as Mermaid, drawn by the
-  workspace's own architect surface (`agents.yaml`'s `artifacts:` points at
-  the directory) and by `uze-extensions`'s tests, so a diagram that stops
+  workspace's own architect surface (`agents.yaml`'s `workspace.artifacts`
+  covers the directory) and by `uze-extensions`'s tests, so a diagram that stops
   routing is a red build. The one diagram source: there is no separate
   model to keep in sync. `uze agent artifacts check` (`make artifacts`,
   part of `make check`) draws every file in that directory the way the
@@ -612,7 +612,7 @@ properties):
   know about the context belongs in `status`, never in a fourth verb of
   their own. `uze agent work name <type>/<subject>` is how work
   acquires the branch a reviewer sees and the label an operator reads; the
-  vocabulary it is judged against is `worktrees.branch` in `agents.yaml`.
+  vocabulary it is judged against is `workspace.branch` in `agents.yaml`.
   Work that reaches its first commit still unnamed is named from that
   commit's subject, judged against the same vocabulary — a Git fact read on
   the evaluation pass, never a harness feature. That derivation fires once
@@ -622,7 +622,8 @@ properties):
   is a slot UZE recorded as that agent's child, never a worktree made with
   Git by hand, which UZE would neither see nor protect.
 - **`agents.yaml` is authored, `agents.lock` is derived**: the manifest holds
-  what the project declared (marketplaces, plugins, the `worktrees:` policy);
+  what the project declared (marketplaces and plugins at the root, the
+  workspace's policy under `workspace:`);
   the lock holds only what resolving it produced — a commit per marketplace and
   a digest per package — so it is regenerated, never repaired, and deleting it
   loses nothing. A marketplace is a Git repository whether it is spelled as a

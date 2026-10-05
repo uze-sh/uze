@@ -58,7 +58,7 @@ mod placement_tests {
     }
 
     /// Where a launch with no kind named lands is the project's answer,
-    /// read off `worktrees.default`. Undeclared it is the project's own
+    /// read off `workspace.worktree`. Undeclared it is the project's own
     /// root, which is what UZE has always done; declared `isolated`,
     /// every agent is placed in a checkout of its own and the operator
     /// never pays a gesture per agent for it.
@@ -78,11 +78,7 @@ mod placement_tests {
         );
         assert!(matches!(placed.placement, Placement::InPlace { .. }));
 
-        std::fs::write(
-            root.join("agents.yaml"),
-            "worktrees:\n  default: isolated\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("agents.yaml"), "workspace:\n  worktree: always\n").unwrap();
         let placed = app
             .workspace()
             .place_new_agent(&root, None, "claude-code", &[])
@@ -1144,7 +1140,7 @@ mod task_service_tests {
     fn declare(repository: &uze_testkit::git::Repository, policy: &str) {
         std::fs::write(
             repository.root().join("agents.yaml"),
-            format!("worktrees:\n{policy}"),
+            format!("workspace:\n{policy}"),
         )
         .unwrap();
     }
@@ -1247,7 +1243,7 @@ mod task_service_tests {
         let app = application("svc-isolate-region-home");
         repository.commit_file("AGENTS.md", "# Project\n\nWritten by a person.\n");
         repository.commit_file("README.md", "readme\n");
-        std::fs::write(root.join("agents.yaml"), "worktrees: {}\n").unwrap();
+        std::fs::write(root.join("agents.yaml"), "workspace: {}\n").unwrap();
         let id = launched_in_the_root(&app, &root);
         let synced = std::fs::read_to_string(root.join("AGENTS.md")).unwrap();
         assert!(
@@ -1286,7 +1282,7 @@ mod task_service_tests {
         let root = repository.root().to_path_buf();
         let app = application("svc-launch-sync-home");
         repository.commit_file("AGENTS.md", "# Project\n");
-        std::fs::write(root.join("agents.yaml"), "worktrees:\n  completion: pr\n").unwrap();
+        std::fs::write(root.join("agents.yaml"), "workspace:\n  delivery: pr\n").unwrap();
 
         app.workspace()
             .place_new_agent(&root, Some(PlacementKind::InPlace), "claude-code", &[])
@@ -1435,7 +1431,7 @@ mod task_service_tests {
     #[test]
     fn evaluation_reads_the_checkout_and_merge_delivers() {
         let repository = repository("svc-merge");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-merge-home");
         let (id, slot) = launched(&app, &root);
@@ -1464,7 +1460,7 @@ mod task_service_tests {
     #[test]
     fn a_delivered_task_still_in_its_slot_is_read_again() {
         let repository = repository("svc-redeliver");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-redeliver-home");
         let (id, slot) = launched(&app, &root);
@@ -1501,7 +1497,7 @@ mod task_service_tests {
     #[test]
     fn a_delivered_task_whose_slot_moved_on_is_left_alone() {
         let repository = repository("svc-handover");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-handover-home");
 
@@ -1531,7 +1527,7 @@ mod task_service_tests {
     #[test]
     fn a_conflict_returns_a_notice_addressed_to_the_slot() {
         let repository = repository("svc-conflict");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-conflict-home");
         let (id, slot) = launched(&app, &root);
@@ -1563,7 +1559,7 @@ mod task_service_tests {
     #[test]
     fn evaluation_lets_a_clean_task_follow_the_target() {
         let repository = repository("svc-follow");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-follow-home");
         let (_, slot) = launched(&app, &root);
@@ -1587,7 +1583,7 @@ mod task_service_tests {
         let repository = repository("svc-gate");
         declare(
             &repository,
-            "  completion: merge\n  gate:\n    posix: test -f must-exist\n    \
+            "  delivery: merge\n  gate:\n    posix: test -f must-exist\n    \
              windows: \"if (-not (Test-Path must-exist)) { exit 1 }\"\n",
         );
         let root = repository.root().to_path_buf();
@@ -1613,7 +1609,7 @@ mod task_service_tests {
     #[test]
     fn deliver_ready_takes_them_in_order_and_the_second_sees_the_first() {
         let repository = repository("svc-ready");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-ready-home");
         let (_, first) = launched(&app, &root);
@@ -1706,7 +1702,7 @@ mod task_service_tests {
         let repository = repository("svc-agent-publish");
         declare(
             &repository,
-            "  completion: pr
+            "  delivery: pr
 ",
         );
         let root = repository.root().to_path_buf();
@@ -1782,7 +1778,7 @@ mod task_service_tests {
     #[test]
     fn a_merge_project_never_measures_its_work_against_the_remote() {
         let repository = repository("svc-merge-remote");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         repository.with_origin(&repository.branch());
 
@@ -1935,7 +1931,7 @@ mod task_service_tests {
     #[test]
     fn an_evaluation_that_overlaps_a_delivery_does_not_erase_it() {
         let repository = repository("svc-race");
-        declare(&repository, "  completion: merge\n  slots: 4\n");
+        declare(&repository, "  delivery: merge\n  slots: 4\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-race-home");
         let home = app.home.clone();
@@ -2017,7 +2013,7 @@ mod task_service_tests {
     #[test]
     fn a_delivery_that_could_not_claim_its_task_says_why() {
         let repository = repository("svc-unclaimed-delivery");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-unclaimed-delivery-home");
         let (id, slot) = launched(&app, &root);
@@ -2069,7 +2065,7 @@ mod task_service_tests {
         declare(
             &repository,
             &format!(
-                "  completion: merge\n  gate: chmod 555 {}\n",
+                "  delivery: merge\n  gate: chmod 555 {}\n",
                 directory.display()
             ),
         );
@@ -2117,7 +2113,7 @@ mod task_service_tests {
         declare(
             &repository,
             &format!(
-                "  completion: merge\n  gate:\n    posix: 'while [ ! -e {release} ]; do sleep 0.05; done'\n    \
+                "  delivery: merge\n  gate:\n    posix: 'while [ ! -e {release} ]; do sleep 0.05; done'\n    \
                  windows: 'while (-not (Test-Path \"{release}\")) {{ Start-Sleep -Milliseconds 50 }}'\n",
                 release = release.display()
             ),
@@ -2173,7 +2169,7 @@ mod task_service_tests {
     #[test]
     fn a_task_a_delivery_claimed_and_never_answered_for_is_left_alone() {
         let repository = repository("svc-abandoned-claim");
-        declare(&repository, "  completion: merge\n");
+        declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let app = application("svc-abandoned-claim-home");
         let (id, slot) = launched(&app, &root);
@@ -2281,7 +2277,7 @@ mod naming_tests {
         let repository = repository(label);
         std::fs::write(
             repository.root().join("agents.yaml"),
-            "worktrees:\n  branch: conventional\n",
+            "workspace:\n  branch: conventional\n",
         )
         .unwrap();
         (application(label), repository)
@@ -2639,7 +2635,7 @@ mod derived_naming_tests {
         repository.commit_file(".gitignore", ".env\n");
         std::fs::write(
             repository.root().join("agents.yaml"),
-            format!("worktrees:\n{policy}"),
+            format!("workspace:\n{policy}"),
         )
         .unwrap();
         (
@@ -2736,7 +2732,7 @@ mod derived_naming_tests {
     /// had before any of this existed.
     #[test]
     fn a_project_that_names_nothing_is_left_alone() {
-        let (app, repository) = project("derive-undeclared", "  completion: handoff\n");
+        let (app, repository) = project("derive-undeclared", "  delivery: handoff\n");
         let root = repository.root().to_path_buf();
         let checkout = placed(&app, &root).checkout;
         commits(&repository, &checkout, "feat(api): answer ping with pong");

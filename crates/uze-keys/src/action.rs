@@ -209,13 +209,13 @@ actions! {
     NewAgent => "new-agent", false,
         "New agent", "Start an agent in this space";
     IsolateAgent => "isolate-agent", false,
-        "Isolate",
-        "Give this agent a checkout of its own, taking a copy of whatever this \
-         tree has uncommitted";
+        "To worktree",
+        "Move this agent into a worktree of its own, taking the uncommitted \
+         changes with it";
     IsolateAgentAtCommit => "isolate-agent-at-commit", false,
-        "Isolate clean",
-        "Cut the checkout from the last commit instead; the uncommitted work \
-         stays only here";
+        "To worktree, no changes",
+        "Move this agent into a worktree cut from the last commit; the \
+         uncommitted changes stay here";
     NewSpace => "new-space", false,
         "New space", "Open a space at a directory";
     RenameSelection => "rename-selection", false,

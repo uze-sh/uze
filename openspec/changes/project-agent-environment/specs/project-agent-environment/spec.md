@@ -111,7 +111,7 @@ on, which is what makes the manifest feel inert after an edit.
   a plugin that is merely missing
 
 #### Scenario: Status reports a projection the policy has outrun
-- **WHEN** the user runs `uze status` after `worktrees.completion` was
+- **WHEN** the user runs `uze status` after `workspace.delivery` was
   changed in `agents.yaml` and nothing has reconciled the context since
 - **THEN** the report names the projected `AGENTS.md` region as stale,
   because agents are still reading the previous instruction
@@ -221,7 +221,7 @@ rather than two commands. It SHALL also be reachable as `uze i`.
   are reconciled in the same run, and the report says so
 
 #### Scenario: Install reconciles a policy change
-- **WHEN** `uze install` runs after `worktrees.completion` changed and
+- **WHEN** `uze install` runs after `workspace.delivery` changed and
   nothing else did
 - **THEN** the projected region is rewritten to the new policy's text
 

@@ -81,7 +81,7 @@ fn removing_a_marketplace_takes_its_packages_with_it() {
 
     // The project declares itself, so resolving its root never walks past
     // the isolated environment into whatever an ancestor directory holds.
-    std::fs::write(env.project.join("agents.yaml"), "worktrees: {}\n").unwrap();
+    std::fs::write(env.project.join("agents.yaml"), "workspace: {}\n").unwrap();
 
     env.run_ok(uze_bin(), &["flow@stale-ledger-market"]);
 
@@ -138,7 +138,7 @@ fn marketplace_with_two_plugins() -> (TestEnvironment, std::path::PathBuf) {
         .materialize(&env);
     let market = scenario.marketplace.as_ref().unwrap();
     env.run_ok(uze_bin(), &["market", "add", market.to_str().unwrap()]);
-    std::fs::write(env.project.join("agents.yaml"), "worktrees: {}\n").unwrap();
+    std::fs::write(env.project.join("agents.yaml"), "workspace: {}\n").unwrap();
     env.run_ok(uze_bin(), &["flow@purge-market"]);
     env.run_ok(uze_bin(), &["uze-mcp-conformance@purge-market"]);
     (env, scenario.marketplace.unwrap())

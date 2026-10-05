@@ -190,7 +190,7 @@ pub fn upstream_divergence(root: &Path) -> Option<UpstreamDivergence> {
 
 /// How many commits `branch` has that `target` lacks, or `None` when Git
 /// could not answer — either ref missing, most commonly a declared
-/// `worktrees.target` this clone does not have.
+/// `workspace.target` this clone does not have.
 ///
 /// The distinction is the whole of it: an unanswerable question is not
 /// "nothing ahead". Every predicate that authorizes a removal asks this

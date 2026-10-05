@@ -51,7 +51,7 @@ scenes:
         contains: "flow"
         about: the project declares the plugin
       - file: "{project}/agents.yaml"
-        excludes: "\n  completion: "
+        excludes: "workspace:"
         about: and declares no workspace policy on the person's behalf
       - file: "{project}/AGENTS.md"
         contains: "uze:begin project:plugin-authoring"

@@ -24,9 +24,9 @@ about: |
 world:
   project: demo-app
   manifest: |
-    worktrees:
+    workspace:
       target: main
-      completion: handoff
+      delivery: handoff
       slots: 3
 
 scenes:
@@ -68,8 +68,8 @@ scenes:
         say: right-click the agent's row
         in: sidebar
         occurrence: last
-        expect: Isolate
-      - click: "Isolate"
+        expect: To worktree
+      - click: "To worktree"
         in: sidebar
         say: give it a tree of its own, carrying the operator's changes across
         expect: Claude Code v

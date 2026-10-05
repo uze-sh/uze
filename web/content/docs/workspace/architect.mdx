@@ -17,9 +17,12 @@ out.
 Tell uze where the diagrams live, in `agents.yaml`:
 
 ```yaml
-artifacts:
-  path: docs/architecture
+workspace:
+  artifacts: docs/architecture   # or a list: [docs, design]
 ```
+
+It names places, not kinds: the architect draws the Mermaid files it finds
+there and ignores the rest, so the same directory can hold your other docs.
 
 ## Ask an agent to draw them
 
@@ -34,7 +37,7 @@ You don't have to write Mermaid. Ask any agent, with the `uze:architect` skill:
 ```
 
 The skill picks the right kind of diagram, writes it where the architect finds
-it (setting up `artifacts:` if the project has none yet), and checks that it
+it (setting up `workspace.artifacts` if the project has none yet), and checks that it
 draws. C4 views, sequence diagrams and flowcharts are supported.
 
 <Cards>
