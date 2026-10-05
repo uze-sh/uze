@@ -1081,12 +1081,18 @@ fn the_powershell_wrapper_is_one_byte_identical_file_per_harness() {
     }
 }
 
-/// A harness with no measured Windows entry form gets no Windows wrapper,
-/// so its hooks are reported rather than delivered there.
+/// Every harness a wrapper delivers to has a measured Windows entry form,
+/// and so a Windows wrapper: Antigravity's arrived with the sealed line
+/// that survives its `cmd /c`.
 #[test]
-fn a_harness_without_a_windows_dialect_has_no_windows_wrapper() {
-    assert!(PowerShellWrapper::source(crate::antigravity::HOOKS).is_none());
-    assert!(PowerShellWrapper::source(crate::claude::HOOKS).is_some());
+fn every_wrapper_harness_has_a_windows_wrapper() {
+    for target in [
+        crate::claude::HOOKS,
+        crate::codex::HOOKS,
+        crate::antigravity::HOOKS,
+    ] {
+        assert!(PowerShellWrapper::source(target).is_some(), "{target}");
+    }
 }
 
 /// Codex on Windows runs a shell command without firing PreToolUse, which

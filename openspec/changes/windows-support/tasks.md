@@ -358,11 +358,18 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       - the MCP `.cmd` launcher form.
       (Measured in Windows Sandbox: Claude Code 2.1.289 fires the exec form
       and names its shell tool `PowerShell`, now matched, and a deny group
-      blocks it end to end; Codex 0.160.0 fires nothing for shell. Open:
-      Antigravity, the labels, and the MCP launcher form.)
-- [ ] 6.3 Generate those entries per harness. Paths use forward slashes.
+      blocks it end to end; Codex 0.160.0 fires nothing for shell.
+      Antigravity 1.2.16 runs an entry as `cmd /c "<command>"`, ignores
+      `args`, refuses a `hooks.json` with a BOM, reads `{}` from a pre-tool
+      hook as a denial, and mangles any quote: a sealed `-EncodedCommand`
+      line survives, and a deny group blocks it end to end. Open: the
+      labels, and the MCP launcher form.)
+- [x] 6.3 Generate those entries per harness. Paths use forward slashes.
       The OpenCode bridge (`hooks/bridge.rs:196`) spawns `powershell.exe`
       on Windows. `hooks/entries.rs` quoting becomes per dialect.
+      (Claude and Codex as measured; Antigravity through
+      `shell::sealed_script_line`, its PowerShell dialect writing nothing to
+      allow a pre-tool call.)
 - [x] 6.4 A group with a `deny` or `ask` effect and no Windows spelling
       makes the install fail non-zero, naming the group, with nothing of the
       package attached. Observational groups are reported Unsupported. A

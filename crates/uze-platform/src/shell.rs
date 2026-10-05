@@ -93,6 +93,17 @@ pub fn command_line(program: &str, arguments: &[String]) -> String {
     imp::command_line(program, arguments)
 }
 
+/// A line that runs the script at `path` with `arguments`, and reaches it
+/// with every word intact through a host that re-quotes the line on the way
+/// (Antigravity hands a hook's line to `cmd /c` on Windows, escaping its
+/// quotes in a way `cmd` does not read). On Unix the line [`script`] and
+/// [`command_line`] write. On Windows the call is handed to PowerShell
+/// encoded (`-EncodedCommand`), which carries no character `cmd` reads, and
+/// the script runs in that PowerShell rather than in another one it starts.
+pub fn sealed_script_line(path: &str, arguments: &[String]) -> String {
+    imp::sealed_script_line(path, arguments)
+}
+
 /// The words a line [`command_line`] wrote, read back: the program, then
 /// its arguments. `None` for a line this shell would refuse (an
 /// unterminated quote).
@@ -158,6 +169,10 @@ mod imp {
 
     pub(super) fn script(path: &str) -> (String, Vec<String>) {
         (path.to_owned(), Vec::new())
+    }
+
+    pub(super) fn sealed_script_line(path: &str, arguments: &[String]) -> String {
+        command_line(path, arguments)
     }
 
     /// Bare words, single-quoted runs and backslash-escaped characters.
@@ -374,6 +389,51 @@ mod imp {
             .to_vec(),
         )
     }
+
+    pub(super) fn sealed_script_line(path: &str, arguments: &[String]) -> String {
+        let call = std::iter::once(path)
+            .chain(arguments.iter().map(String::as_str))
+            .map(quote)
+            .collect::<Vec<_>>()
+            .join(" ");
+        // Progress records would otherwise reach stderr serialized as CLIXML.
+        let script =
+            format!("$ProgressPreference = 'SilentlyContinue'; & {call}; exit $LASTEXITCODE");
+        let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        format!(
+            "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {}",
+            base64(&utf16)
+        )
+    }
+
+    /// Standard base64, as `-EncodedCommand` reads it.
+    fn base64(bytes: &[u8]) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+        for chunk in bytes.chunks(3) {
+            let byte = |at: usize| u32::from(chunk.get(at).copied().unwrap_or(0));
+            let triple = (byte(0) << 16) | (byte(1) << 8) | byte(2);
+            for position in 0..4 {
+                if position <= chunk.len() {
+                    encoded.push(ALPHABET[(triple >> (18 - 6 * position)) as usize & 63] as char);
+                } else {
+                    encoded.push('=');
+                }
+            }
+        }
+        encoded
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn base64_reads_as_the_standard_alphabet_writes_it() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+    }
 }
 
 #[cfg(test)]
@@ -395,6 +455,44 @@ mod tests {
     /// A native command's exit code is the line's, and in PowerShell a
     /// native command that fails before a cmdlet that succeeds still fails
     /// the line, as it would under `sh -e`.
+    /// A sealed line survives `cmd /c`, as Antigravity hands a hook's line
+    /// to it: a path with a space, an argument with spaces and one with
+    /// quotes reach the script as written, and so does its standard input.
+    /// Windows only: `cmd` and the encoding exist only there.
+    #[cfg(windows)]
+    #[test]
+    fn a_sealed_line_reaches_its_script_intact_through_cmd() {
+        use std::io::Write as _;
+        let root = uze_testkit::temp::scratch("sealed line");
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("echo args.ps1");
+        std::fs::write(
+            &script,
+            "[Console]::Out.Write(($args -join '|') + '#' + [Console]::In.ReadToEnd())\r\nexit 7\r\n",
+        )
+        .unwrap();
+        let arguments = ["two words", "10:& 'C:/x y/z.ps1'", "don’t"].map(str::to_owned);
+        let line = sealed_script_line(&script.display().to_string(), &arguments);
+        let mut child = std::process::Command::new("cmd")
+            .args(["/c", &line])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"payload").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "two words|10:& 'C:/x y/z.ps1'|don’t#payload"
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(7),
+            "and its exit code is the line's"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     /// What PowerShell itself reads back from a quoted fragment, typographic
     /// quotes included: one of them unquoted ended the string early and ran
     /// the rest as code. Windows only: the line runs in PowerShell.

@@ -40,11 +40,16 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
                 unfired: &[],
             },
-            // Antigravity starts a hook through `cmd /C` and escapes the
-            // quotes a path or a handler line needs in a way cmd does not
-            // honour; until an entry form is measured to survive that, its
-            // hooks are not delivered on Windows.
-            powershell: None,
+            // Measured on 1.2.16 on Windows: the entry is run as
+            // `cmd /c "<command>"` (an `args` array is ignored), the payload
+            // arrives on stdin as on Linux, and a pre-tool hook allows by
+            // writing nothing, `{}` reading as a denial. The entry's line is
+            // sealed against `cmd`'s quoting (`sealed_wrapper_command_line`).
+            powershell: Some(Decisions {
+                deny: "[Console]::Out.Write('{\"decision\":\"deny\",\"reason\":' + $reasonJson + '}')",
+                allow: "if ($hookEvent -ne 'pre_tool_use') { [Console]::Out.Write('{}') }",
+                unfired: &[],
+            }),
             // The decision is the stdout document; a non-zero exit is a
             // failed hook here, not a block.
             deny_exit: "0",

@@ -470,7 +470,7 @@ measured on Windows and recorded with the harness version (task 6.2):
 |---|---|
 | Claude Code | exec form: `command: "powershell.exe"`, `args: [-NoProfile, -NonInteractive, -ExecutionPolicy, Bypass, -File, <path>, <group>]`, no shell. Measured on 2.1.289: the entry fires, and the shell tool is `PowerShell` (its `tool_input.command`), so `shell` matches `Bash|PowerShell`; a deny group blocks the command |
 | Codex | the `commandWindows` field, in PowerShell syntax: `& '<path>' <group>` via `powershell.exe -File` |
-| Antigravity | an unquoted command line through `cmd /C`. The wrapper lives under a path with no spaces, using the 8.3 short path when `%USERPROFILE%` has one. A test runs the entry through `cmd /C` the way agy does |
+| Antigravity | a command line sealed against `cmd /c`: `powershell.exe … -EncodedCommand <base64>`, the call to the wrapper encoded, since agy 1.2.16 runs an entry as `cmd /c "<command>"`, ignores `args`, and escapes quotes as `cmd` does not read. 8.3 short paths were dropped: a volume can have them off, as Windows Sandbox's does. A test runs a sealed line through `cmd /c` the way agy does |
 | OpenCode | the bridge spawns `powershell.exe` with the Windows spelling. The choice is made at generation time, never `/bin/sh` |
 
 Paths in entries use forward slashes, which every Windows shell accepts.

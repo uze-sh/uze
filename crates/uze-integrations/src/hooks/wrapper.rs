@@ -285,6 +285,23 @@ pub(crate) fn wrapper_command_line(
     uze_platform::shell::command_line(&program, &arguments)
 }
 
+/// [`wrapper_command_line`] for a harness that hands the line to a shell
+/// of its own choosing, re-quoting it on the way: Antigravity runs a hook as
+/// `cmd /c "<line>"` on Windows, escaping its quotes as `cmd` does not read,
+/// so a path with a space or a handler with a quote broke the line there
+/// (measured on 1.2.16). The words reach the wrapper intact (see
+/// [`uze_platform::shell::sealed_script_line`]).
+pub(crate) fn sealed_wrapper_command_line(
+    wrapper: &Path,
+    hook: &PortableHook,
+    package_root: &Path,
+) -> String {
+    uze_platform::shell::sealed_script_line(
+        &wrapper.display().to_string(),
+        &wrapper_arguments(hook, package_root, &hook.handlers),
+    )
+}
+
 fn wrapper_words(
     wrapper: &Path,
     hook: &PortableHook,
