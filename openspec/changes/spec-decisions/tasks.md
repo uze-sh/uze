@@ -32,4 +32,4 @@
 
 ## 6. Navigator follow-up
 
-- [ ] 6.1 Slide a navigator row's name that is too long for the column — a decision's title, a change, a file or folder in the spec surface's list — while the pointer is on it, reusing `widget::row::push_trailing_marquee` (the sidebar sections' caption effect) and `FrameMetrics::marquee` to keep the clock turning only while something slides; cover it with a `TestBackend` test that a long name slides under the pointer and is clipped otherwise
+- [x] 6.1 Slide a navigator row's name that is too long for the column — a decision's title, a change, a file or folder in the spec surface's list — while the pointer is on it, reusing `widget::row::push_trailing_marquee` (the sidebar sections' caption effect) and `FrameMetrics::marquee` to keep the clock turning only while something slides; cover it with a `TestBackend` test that a long name slides under the pointer and is clipped otherwise

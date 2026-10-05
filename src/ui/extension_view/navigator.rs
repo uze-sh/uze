@@ -427,10 +427,26 @@ pub(super) fn render_navigator(
     area: Rect,
     navigator: &Navigator,
     subjects: &[Mode],
-    scroll: NavigatorScroll,
-    resizing: bool,
+    held: NavigatorFrame,
     hits: &mut Vec<(Rect, ViewHit)>,
-) -> (NavigatorScroll, Option<Scrollbar>) {
+) -> (NavigatorScroll, Option<Scrollbar>, bool) {
+    let NavigatorFrame {
+        scroll,
+        resizing,
+        sliding,
+        ..
+    } = held;
+    // The name under the pointer, when it does not fit, passes through the
+    // column instead of stopping at an "…": a file is told from its
+    // neighbours by its end as often as by its start.
+    let mut slid = false;
+    let mut slide = |hit: ViewHit, name: &str, room: usize| {
+        let window = sliding
+            .filter(|(under, _)| *under == hit)
+            .and_then(|(_, tick)| row::marquee_window(name, room, tick));
+        slid |= window.is_some();
+        window
+    };
     // Padding on the divider's side only: a column indented from the
     // pane's own edge as well leaves its rows further in than the nav
     // above them, and there is nothing on that side for them to clear.
@@ -548,9 +564,10 @@ pub(super) fn render_navigator(
                 // row leads; a plain directory's is a name, read from the
                 // start.
                 let room = label_room(&spans, rect.width);
-                let name = match name.contains('/') {
-                    true => text::elide_head(name, room),
-                    false => text::elide(name, room),
+                let name = match slide(ViewHit::ToggleGroup(*id), name, room) {
+                    Some(window) => window,
+                    None if name.contains('/') => text::elide_head(name, room),
+                    None => text::elide(name, room),
                 };
                 spans.push(TextSpan::styled(name, theme::fg(Token::TextSecondary)));
                 frame.render_widget(Paragraph::new(Line::from(spans)), rect);
@@ -593,14 +610,22 @@ pub(super) fn render_navigator(
                         spans.push(leading_marker(marker));
                         spans.extend(row_icon(*icon));
                         let room = label_room(&spans, rect.width);
-                        spans.push(TextSpan::styled(
-                            text::elide_file_name(name, room),
-                            label_style,
-                        ));
+                        let name = slide(ViewHit::SelectItem(*id), name, room)
+                            .unwrap_or_else(|| text::elide_file_name(name, room));
+                        spans.push(TextSpan::styled(name, label_style));
                     }
                     MarkerSide::Trailing => {
                         spans.extend(row_icon(*icon));
-                        push_flat_label(&mut spans, rect.width, name, detail, label_style, marker);
+                        let room = flat_label_room(&spans, rect.width, marker);
+                        let window = slide(ViewHit::SelectItem(*id), name, room);
+                        push_flat_label(
+                            &mut spans,
+                            rect.width,
+                            window.as_deref().unwrap_or(name),
+                            detail,
+                            label_style,
+                            marker,
+                        );
                     }
                 }
                 if *selected {
@@ -614,7 +639,7 @@ pub(super) fn render_navigator(
     if let Some(bar) = bar {
         bar.render_on_draggable(frame, settled.first, resizing);
     }
-    (settled, bar)
+    (settled, bar, slid)
 }
 
 /// A tree row's marker: in the column a group's fold mark stands in, and
@@ -665,6 +690,16 @@ pub(super) fn label_room(spans: &[TextSpan<'_>], width: u16) -> usize {
         .max(1)
 }
 
+/// The columns a flat row leaves its name and detail, between what `spans`
+/// already holds and the marker pinned to the right edge.
+fn flat_label_room(spans: &[TextSpan<'_>], width: u16, marker: &Span) -> usize {
+    let leading: usize = spans.iter().map(TextSpan::width).sum();
+    let marker_width = TextSpan::raw(marker.text.as_str()).width();
+    usize::from(width)
+        .saturating_sub(leading + marker_width + usize::from(TRAILING_PAD) + 1)
+        .max(1)
+}
+
 pub(super) fn push_flat_label(
     spans: &mut Vec<TextSpan<'static>>,
     width: u16,
@@ -673,11 +708,7 @@ pub(super) fn push_flat_label(
     label_style: Style,
     marker: &Span,
 ) {
-    let leading: usize = spans.iter().map(TextSpan::width).sum();
-    let marker_width = TextSpan::raw(marker.text.as_str()).width();
-    let room = usize::from(width)
-        .saturating_sub(leading + marker_width + usize::from(TRAILING_PAD) + 1)
-        .max(1);
+    let room = flat_label_room(spans, width, marker);
     let name = text::elide(name, room);
     let left = room.saturating_sub(TextSpan::raw(name.as_str()).width());
     spans.push(TextSpan::styled(name, label_style));

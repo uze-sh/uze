@@ -369,6 +369,7 @@ fn framed(
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 scope,
                 None,
@@ -494,6 +495,7 @@ fn a_notice_is_said_at_the_end_of_the_footer() {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -882,6 +884,7 @@ fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, Vie
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -1028,6 +1031,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                         width: Some(24),
                         scroll: NavigatorScroll::default(),
                         resizing: false,
+                        sliding: None,
                     },
                     uze_keys::Scope::Architect,
                     None,
@@ -1713,6 +1717,7 @@ fn marked_text_is_inverted_where_it_was_drawn() {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 Some(&selection),
@@ -1751,6 +1756,7 @@ fn drawn_rows(view: &View) -> (ratatui::buffer::Buffer, Rendered) {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -1945,6 +1951,7 @@ fn the_caret_marks_the_character_it_sits_on_without_hiding_it() {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -2071,6 +2078,7 @@ fn chrome_uses_the_hosts_palette_and_content_keeps_its_own() {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -2195,6 +2203,7 @@ fn drawn_with(view: &View, scroll: NavigatorScroll) -> (Vec<String>, NavigatorSc
                     width: Some(24),
                     scroll,
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -2418,4 +2427,81 @@ fn an_item_without_a_marker_lines_up_with_the_groups_beside_it() {
     };
     assert_eq!(column("Cargo.toml"), column("src"), "{rows:#?}");
     assert_eq!(column("main.rs"), column("src"), "{rows:#?}");
+}
+
+/// A name too long for the list's column slides while the pointer is on
+/// its row, and stops at an "…" otherwise; only a frame that slid one asks
+/// the host for the next.
+#[test]
+fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
+    let long = "0042-adopt-a-much-longer-name-than-the-column-holds.md";
+    let view = View {
+        navigator: Some(Navigator {
+            heading: "DECISIONS".to_owned(),
+            badge: "1".to_owned(),
+            focused: true,
+            rows: vec![NavigatorRow::Item {
+                id: 0,
+                name: long.to_owned(),
+                depth: 0,
+                marker: Span::new("", Role::Muted),
+                marker_side: MarkerSide::Leading,
+                detail: String::new(),
+                selected: false,
+                icon: RowIcon::None,
+            }],
+            anchor: None,
+            choosing: None,
+            menu: None,
+        }),
+        ..sample()
+    };
+    let draw = |sliding: Option<(ViewHit, usize)>| {
+        let mut terminal = Terminal::new(TestBackend::new(90, 8)).unwrap();
+        let mut rendered = None;
+        terminal
+            .draw(|frame| {
+                rendered = Some(render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding,
+                    },
+                    uze_keys::Scope::Spec,
+                    None,
+                    &mut Vec::new(),
+                ));
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row: String = (0..24).map(|column| buffer[(column, 1)].symbol()).collect();
+        (row, rendered.unwrap().marquee)
+    };
+
+    let (resting, slid) = draw(None);
+    assert!(
+        resting.contains('…'),
+        "cut where nothing points: {resting:?}"
+    );
+    assert!(!slid, "and nothing asks for another frame");
+
+    let (first, slid) = draw(Some((ViewHit::SelectItem(0), 0)));
+    let (later, _) = draw(Some((ViewHit::SelectItem(0), 5)));
+    assert!(slid, "a sliding name keeps the clock turning");
+    assert!(
+        !first.contains('…'),
+        "under the pointer it passes through: {first:?}"
+    );
+    assert_ne!(first, later, "and moves with the clock");
+
+    let (elsewhere, slid) = draw(Some((ViewHit::SelectItem(7), 5)));
+    assert_eq!(
+        elsewhere, resting,
+        "another row under the pointer moves nothing here"
+    );
+    assert!(!slid);
 }

@@ -66,6 +66,9 @@ const FOOTER_GAP: u16 = 2;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Rendered {
     pub(crate) navigator_scroll: NavigatorScroll,
+    /// Whether a row's name was drawn sliding, which is what keeps the
+    /// host's clock turning for the next frame of it.
+    pub(crate) marquee: bool,
     pub(crate) navigator_bar: Option<Scrollbar>,
     pub(crate) content_bar: Option<Scrollbar>,
     /// How many columns of the content row the gutter took, so a click
@@ -113,6 +116,9 @@ pub(crate) struct NavigatorFrame {
     pub(crate) width: Option<u16>,
     pub(crate) scroll: NavigatorScroll,
     pub(crate) resizing: bool,
+    /// The row under the pointer and the clock its name slides by when it
+    /// is too long for the column.
+    pub(crate) sliding: Option<(ViewHit, usize)>,
 }
 
 pub(crate) fn render(
@@ -171,17 +177,11 @@ fn render_surface(
         ..Rendered::default()
     };
     if let Some(navigator) = view.navigator.as_ref() {
-        let (settled, bar) = render_navigator(
-            frame,
-            navigator_area,
-            navigator,
-            &view.subjects,
-            held.scroll,
-            held.resizing,
-            hits,
-        );
+        let (settled, bar, slid) =
+            render_navigator(frame, navigator_area, navigator, &view.subjects, held, hits);
         rendered.navigator_scroll = settled;
         rendered.navigator_bar = bar;
+        rendered.marquee = slid;
     }
     // One target for the whole edge, because the edge is one line doing
     // two jobs: the split moves sideways, the list scrolls down. Which a

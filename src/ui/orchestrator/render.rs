@@ -348,6 +348,14 @@ fn render_extension(
             resizing: model
                 .code_edge_drag
                 .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
+            sliding: match model.hovered {
+                Some(WorkspaceHit::Extension(
+                    ExtensionHit::Code(hit)
+                    | ExtensionHit::Spec(hit)
+                    | ExtensionHit::Architect(hit),
+                )) => Some((hit, model.tick)),
+                _ => None,
+            },
         },
         scope,
         match &model.selection {
@@ -356,6 +364,7 @@ fn render_extension(
         },
         &mut view_hits,
     ));
+    metrics.marquee |= metrics.code.as_ref().is_some_and(|drawn| drawn.marquee);
     crate::ui::extension_view::render_row_menu(
         frame,
         view,
