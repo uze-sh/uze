@@ -1203,7 +1203,7 @@ pub(super) fn render_timeline(
         &section,
         &mut column,
         model.dragging_timeline,
-        hovered.then_some(model.tick),
+        hovered.then_some(model.hovered_for()),
         hovered_row.as_slice(),
         &mut section_hits,
     );

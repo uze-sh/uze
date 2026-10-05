@@ -151,17 +151,21 @@ fn a_caption_too_long_for_its_room_passes_through_it() {
 
     let (slid, first) = header(long, Some(0));
     assert!(slid, "asked, it slides: {first:?}");
-    // Two ticks a column, so the clock the spinners turn on does not
+    // It holds its start for a rest of ten beats, so a pointer crossing
+    // the header on its way elsewhere sees nothing move.
+    let (_, resting) = header(long, Some(9));
+    assert_eq!(first, resting, "still resting: {resting:?}");
+    // Then two beats a column, so the clock the spinners turn on does not
     // read as a flicker here.
-    let (_, same) = header(long, Some(1));
-    assert_eq!(first, same, "a column every other tick: {first:?}");
-    let (_, moved) = header(long, Some(2));
+    let (_, same) = header(long, Some(11));
+    assert_eq!(first, same, "a column every other beat: {same:?}");
+    let (_, moved) = header(long, Some(12));
     assert_ne!(first, moved, "and then it has moved: {moved:?}");
 
     // It comes round rather than jumping back: one full cycle of the
-    // run lands on what it started from.
+    // run, its rest included, lands on what it started from.
     let cycle = long.chars().count() + 3;
-    let (_, round) = header(long, Some(cycle * 2));
+    let (_, round) = header(long, Some(10 + cycle * 2));
     assert_eq!(first, round, "one cycle returns it: {round:?}");
 }
 
@@ -2490,13 +2494,15 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
     assert!(!slid, "and nothing asks for another frame");
 
     let (first, slid) = draw(Some((ViewHit::SelectItem(0), 0)));
-    let (later, _) = draw(Some((ViewHit::SelectItem(0), 5)));
+    let (held, _) = draw(Some((ViewHit::SelectItem(0), 9)));
+    let (later, _) = draw(Some((ViewHit::SelectItem(0), 20)));
+    assert_eq!(first, held, "holding its start before it moves");
     assert!(slid, "a sliding name keeps the clock turning");
     assert!(
         !first.contains('…'),
         "under the pointer it passes through: {first:?}"
     );
-    assert_ne!(first, later, "and moves with the clock");
+    assert_ne!(first, later, "and then moving with the clock");
 
     let (elsewhere, slid) = draw(Some((ViewHit::SelectItem(7), 5)));
     assert_eq!(

@@ -353,7 +353,7 @@ fn render_extension(
                     ExtensionHit::Code(hit)
                     | ExtensionHit::Spec(hit)
                     | ExtensionHit::Architect(hit),
-                )) => Some((hit, model.tick)),
+                )) => Some((hit, model.hovered_for())),
                 _ => None,
             },
         },

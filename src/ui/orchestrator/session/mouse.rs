@@ -930,6 +930,7 @@ impl Attach<'_> {
                 }
                 if self.model.hovered != hovered {
                     self.model.hovered = hovered;
+                    self.model.hovered_since = self.model.tick;
                     self.model.dirty = true;
                 }
             }

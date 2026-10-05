@@ -72,9 +72,7 @@ pub(crate) fn render_section_with(
             header_rect.width,
             section.caption.text.clone(),
             color(section.caption.role),
-            // A column every other tick: one per tick reads as a flicker
-            // at the clock the spinners turn on.
-            tick / 2,
+            tick,
         ),
         None => {
             row::push_trailing(

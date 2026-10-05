@@ -1502,6 +1502,10 @@ struct WorkspaceModel {
     /// list a click reads. Only ever set while no modal is open: what
     /// sits under an overlay is not what the pointer is on.
     hovered: Option<WorkspaceHit>,
+    /// The beat of the workspace clock the pointer came to rest on
+    /// `hovered`: what a caption sliding under it counts from, so it can
+    /// hold still before it moves.
+    hovered_since: usize,
     /// The last control pressed, and when. A press flashes for
     /// [`PRESS_FLASH`] so pressing is visible in itself — most of these
     /// buttons answer somewhere else on the frame, or after a round trip,
@@ -1884,6 +1888,12 @@ struct GitBadge {
     checked_at: Instant,
 }
 impl WorkspaceModel {
+    /// Beats of the workspace clock since the pointer came to rest on what
+    /// it is over.
+    pub(super) fn hovered_for(&self) -> usize {
+        self.tick.wrapping_sub(self.hovered_since)
+    }
+
     /// Records, for every open space, which tab its context agent is
     /// currently on — the agent's own tab, or a shell opened beside it.
     ///
