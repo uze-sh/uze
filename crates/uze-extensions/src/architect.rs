@@ -275,6 +275,12 @@ const DECLARE_ARTIFACTS: &str = "Point `workspace.artifacts` in agents.yaml\n\
 const ASK_FOR_ARTIFACTS: &str = "Ask an agent to draw them:\n\n\
                                  `/uze:architect` diagram this project";
 
+/// A declaration the host would not follow. The headline is short because
+/// the surface sets it as a title; the reason, which names the key and the
+/// file, is a sentence and goes under it.
+const UNUSABLE: &str = "agents.yaml needs fixing";
+const FIX_AND_REOPEN: &str = "Fix it and open this again.";
+
 /// Why a declared directory gave nothing back. Same reason as above.
 fn unreadable(declared: &str, reason: &str) -> (String, String) {
     (
@@ -291,8 +297,8 @@ fn read_the_directory(host: &dyn Host, source: ArtifactSource) -> Artifacts {
     match source {
         ArtifactSource::Undeclared => nothing(UNDECLARED.to_owned(), ASK_FOR_ARTIFACTS),
         ArtifactSource::Refused(reason) => nothing(
-            reason,
-            "Fix `workspace.artifacts` in agents.yaml and open this again.",
+            UNUSABLE.to_owned(),
+            &format!("{reason}\n\n{FIX_AND_REOPEN}"),
         ),
         ArtifactSource::Directories { roots, project } => match read_roots(host, &roots) {
             Ok(artifacts) if artifacts.is_empty() => nothing(
@@ -383,7 +389,7 @@ pub fn check(host: &dyn Host, source: ArtifactSource) -> Checkup {
         },
         ArtifactSource::Refused(reason) => Checkup::Unusable {
             text: reason,
-            hint: "Fix `workspace.artifacts` in agents.yaml and run this again.".to_owned(),
+            hint: "Fix agents.yaml and run this again.".to_owned(),
         },
         ArtifactSource::Directories { roots, project } => match read_roots(host, &roots) {
             Ok(artifacts) => Checkup::Checked {

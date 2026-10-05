@@ -287,6 +287,20 @@ fn a_surface_with_nothing_to_draw_says_why_and_what_to_do() {
         view(&state, SPACE).footer.is_empty(),
         "no keys stand under a message with nothing to act on"
     );
+
+    // A manifest error is a paragraph: it goes under a short headline,
+    // never in place of one.
+    let reason = "malformed agents.yaml at /project/agents.yaml: unknown field `worktrees`";
+    state.absorb(read_artifacts(
+        &Bare,
+        Path::new("/project"),
+        ArtifactSource::Refused(reason.to_owned()),
+    ));
+    let Content::Message { text, hint, .. } = view(&state, SPACE).content else {
+        panic!("a refused declaration is a message");
+    };
+    assert_eq!(text, "agents.yaml needs fixing");
+    assert!(hint.unwrap().contains(reason));
 }
 
 #[test]
