@@ -123,3 +123,17 @@ dependency confusion delivered as convenience. A not-found error lists the
 prefixed forms to try instead.
 
 Source change: openspec/changes/archive/2026-09-27-marketplace-access/
+
+**2026-10-05 — the plugin manifest owns the listing** (`plugin-manifest-owns-listing`).
+Section 1's schema line is superseded: a `marketplace.json` entry carries
+`name`, `source` and an optional `category`, and nothing that describes the
+plugin. `description` and `keywords` are read from each plugin's own
+`plugin.json` — in place for a local marketplace, from the mirror at the
+catalogue's commit for a Git one, from the embedded snapshot for the
+official one — because the Agent Plugins 1.0 standard says no other file may
+replace, supplement or override the core fields of `plugin.json`, and the two
+copies had already drifted in this repository's own `uze` plugin. An entry
+still carrying them is ignored, and `uze agent market check` warns on it with
+the action to take.
+
+Source change: openspec/changes/archive/2026-10-05-plugin-manifest-owns-listing/

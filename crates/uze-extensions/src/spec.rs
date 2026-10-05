@@ -141,6 +141,7 @@ fn read_with(
         mark_own(host, &root, target, units);
         subjects = Subject::ALL
             .into_iter()
+            .filter(|subject| *subject != Subject::Archive)
             .filter(|subject| match subject {
                 Subject::Decisions => units.iter().any(|unit| unit.subject == *subject),
                 _ => dialects
@@ -169,6 +170,15 @@ fn mark_own(host: &dyn Host, root: &Path, target: Option<&str>, units: &mut [Uni
     }
 }
 
+/// The subject a unit is listed under: an archived change is listed with
+/// the changes, in their last band.
+fn listed_under(subject: Subject) -> Subject {
+    match subject {
+        Subject::Archive => Subject::Changes,
+        other => other,
+    }
+}
+
 /// Where a change stands, for the bands the changes are listed in.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Band {
@@ -178,10 +188,23 @@ enum Band {
     Ready,
     /// Finished, in a dialect that leaves them where they are.
     Done,
+    /// Finished and put away. A band of the changes rather than a subject
+    /// of its own: an archived change is a change that ended, and a tab
+    /// for it was one more place to look for the same kind of thing.
+    Archived,
 }
 
 impl Band {
-    const ALL: [Band; 4] = [Band::Own, Band::InProgress, Band::Ready, Band::Done];
+    const ALL: [Band; 5] = [
+        Band::Own,
+        Band::InProgress,
+        Band::Ready,
+        Band::Done,
+        Band::Archived,
+    ];
+
+    /// The bands that only ever grow, so they open folded.
+    const FOLDED: [Band; 2] = [Band::Done, Band::Archived];
 
     fn label(self) -> &'static str {
         match self {
@@ -189,11 +212,13 @@ impl Band {
             Band::InProgress => "in progress",
             Band::Ready => "ready to archive",
             Band::Done => "done",
+            Band::Archived => "archived",
         }
     }
 
     fn of(unit: &Unit) -> Self {
         match unit.progress {
+            _ if unit.subject == Subject::Archive => Band::Archived,
             _ if unit.own => Band::Own,
             Some(progress) if progress.complete() && unit.archives => Band::Ready,
             Some(progress) if progress.complete() => Band::Done,
@@ -349,7 +374,7 @@ impl SpecView {
         let target = self.selected?;
         let unit = self.units().get(target.unit())?;
         Some(SpecPlace {
-            subject: self.subject,
+            subject: unit.subject,
             unit: unit.name.clone(),
             artifact: match target {
                 Target::Unit(_) => None,
@@ -377,13 +402,15 @@ impl SpecView {
         if !place.is_some_and(|place| self.restore(&place)) {
             self.land();
         }
-        // A tool that puts nothing away only ever adds to what is done, so
-        // that band opens folded — unless the viewer is being put in it.
+        // What is done and what is put away only ever grow, so those bands
+        // open folded — unless the viewer is being put in one.
         let selected_band = self
             .selected
             .map(|target| Band::of(&self.units()[target.unit()]));
-        if selected_band != Some(Band::Done) {
-            self.folded.insert(Band::Done);
+        for band in Band::FOLDED {
+            if selected_band != Some(band) {
+                self.folded.insert(band);
+            }
         }
         self.redraw();
     }
@@ -396,7 +423,7 @@ impl SpecView {
         else {
             return false;
         };
-        self.subject = place.subject;
+        self.subject = listed_under(place.subject);
         let artifact = place.artifact.as_ref().and_then(|relative| {
             self.units()[unit]
                 .artifacts
@@ -459,7 +486,7 @@ impl SpecView {
     /// checkout's first, and changes by where they stand.
     fn listed(&self, subject: Subject) -> Vec<usize> {
         let mut listed: Vec<usize> = (0..self.units().len())
-            .filter(|&unit| self.units()[unit].subject == subject)
+            .filter(|&unit| listed_under(self.units()[unit].subject) == subject)
             .collect();
         let key = |unit: usize| {
             let unit = &self.units()[unit];
@@ -942,26 +969,10 @@ fn role_marker(role: Role) -> Span {
     }
 }
 
-/// Where a finished change went, told only as far as the checkout's
-/// tools have somewhere for it to go.
-fn where_finished(subjects: &[Subject]) -> Option<String> {
-    if !subjects.contains(&Subject::Archive) {
-        return None;
-    }
-    Some(
-        if subjects.contains(&Subject::Specs) {
-            "Finished changes are under Archive, and what they left under Specs."
-        } else {
-            "Finished changes are under Archive."
-        }
-        .to_owned(),
-    )
-}
-
 fn content(state: &SpecView, space: Size) -> Content {
     if state.listed(state.subject).is_empty() {
         return match state.subject {
-            Subject::Changes => message("Nothing in flight", where_finished(&state.subjects())),
+            Subject::Changes => message("Nothing in flight", None),
             Subject::Specs => message("No specs yet", None),
             Subject::Archive => message("Nothing archived yet", None),
             Subject::Decisions => message("No decisions yet", None),

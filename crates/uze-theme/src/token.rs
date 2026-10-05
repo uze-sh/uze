@@ -61,6 +61,11 @@ vocabulary! {
         TextFaint = "text.faint",
         /// A navigable item that is not the selected one.
         TextInactive = "text.inactive",
+        /// What prose quotes as code — a branch, a command, a path in a
+        /// message. An ink of its own rather than the accent, because on a
+        /// monochrome theme the accent is the text's own white and the
+        /// quoted words would not stand apart.
+        TextCode = "text.code",
 
         // ── border ─────────────────────────────────────────────────────
         /// Hairline under the titlebar and around the sidebar and inputs.

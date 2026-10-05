@@ -151,17 +151,21 @@ fn a_caption_too_long_for_its_room_passes_through_it() {
 
     let (slid, first) = header(long, Some(0));
     assert!(slid, "asked, it slides: {first:?}");
-    // Two ticks a column, so the clock the spinners turn on does not
+    // It holds its start for a rest of ten beats, so a pointer crossing
+    // the header on its way elsewhere sees nothing move.
+    let (_, resting) = header(long, Some(9));
+    assert_eq!(first, resting, "still resting: {resting:?}");
+    // Then two beats a column, so the clock the spinners turn on does not
     // read as a flicker here.
-    let (_, same) = header(long, Some(1));
-    assert_eq!(first, same, "a column every other tick: {first:?}");
-    let (_, moved) = header(long, Some(2));
+    let (_, same) = header(long, Some(11));
+    assert_eq!(first, same, "a column every other beat: {same:?}");
+    let (_, moved) = header(long, Some(12));
     assert_ne!(first, moved, "and then it has moved: {moved:?}");
 
     // It comes round rather than jumping back: one full cycle of the
-    // run lands on what it started from.
+    // run, its rest included, lands on what it started from.
     let cycle = long.chars().count() + 3;
-    let (_, round) = header(long, Some(cycle * 2));
+    let (_, round) = header(long, Some(10 + cycle * 2));
     assert_eq!(first, round, "one cycle returns it: {round:?}");
 }
 
@@ -342,23 +346,42 @@ fn a_band_heading_is_set_apart_and_the_gap_before_it_is_air() {
 }
 
 fn draw(view: &View) -> (Vec<String>, Vec<(Rect, ViewHit)>) {
-    let mut terminal = Terminal::new(TestBackend::new(90, 14)).unwrap();
+    framed(view, 90, 14, uze_keys::Scope::Code)
+}
+
+/// The surface the way the workspace draws it: the bar's leading slot on
+/// the first row, holding the surface's navigation, and the surface under
+/// it — drawn first, so a selector's list opens over it.
+fn framed(
+    view: &View,
+    width: u16,
+    height: u16,
+    scope: uze_keys::Scope,
+) -> (Vec<String>, Vec<(Rect, ViewHit)>) {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     let mut hits = Vec::new();
     terminal
         .draw(|frame| {
+            let area = frame.area();
+            let slot = Rect::new(area.x, area.y, area.width, 1);
+            let surface = Rect::new(area.x, area.y + 1, area.width, area.height - 1);
             render(
                 frame,
                 view,
-                frame.area(),
+                surface,
                 NavigatorFrame {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
-                uze_keys::Scope::Code,
+                scope,
                 None,
                 &mut hits,
             );
+            let mut navigation = Vec::new();
+            render_navigation(frame, view, slot, surface, &mut navigation);
+            hits.splice(0..0, navigation);
         })
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
@@ -476,6 +499,7 @@ fn a_notice_is_said_at_the_end_of_the_footer() {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -597,7 +621,7 @@ fn a_flat_row_pins_its_marker_right_and_gives_up_the_detail_first() {
 /// switches the layout under it, leaves every control on it exactly
 /// where it was.
 #[test]
-fn the_nav_row_is_the_frames_and_does_not_move_with_the_layout() {
+fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
     let sidebar = View {
         title: vec![Span::new("code", Role::Muted)],
         caption: Vec::new(),
@@ -670,23 +694,18 @@ fn the_nav_row_is_the_frames_and_does_not_move_with_the_layout() {
     };
     let (rows, hits) = draw_sized(&sidebar, 80, 12);
     assert!(
-        rows[0].contains("Files") && rows[0].contains("Changes"),
-        "the halves are the surface's first row: {:?}",
+        rows[0].contains("files") && rows[0].contains("changes"),
+        "the halves are the bar's, in its lower case: {:?}",
         rows[0]
     );
     assert!(
-        rows[0].contains("Preview") && rows[0].contains("Source"),
-        "and the ways of drawing that half ride the same row: {:?}",
+        !rows[0].contains("Preview"),
+        "and only the halves: how to draw one stays in the surface: {:?}",
         rows[0]
     );
     assert!(
-        rows[0].find("Files") < rows[0].find("Preview"),
-        "one question at each end: {:?}",
-        rows[0]
-    );
-    assert!(
-        rows[1].contains("main.rs") && !rows[1].contains("Preview"),
-        "the row below is the columns' own, and carries no control: {:?}",
+        rows[1].contains("main.rs") && rows[1].contains("Preview"),
+        "the modes ride the content's own heading row: {:?}",
         rows[1]
     );
     let nav_at = |hits: &[(Rect, ViewHit)]| {
@@ -696,7 +715,7 @@ fn the_nav_row_is_the_frames_and_does_not_move_with_the_layout() {
             .expect("the halves can be pointed at")
     };
     let sidebar_at = nav_at(&hits);
-    assert_eq!(sidebar_at, (0, 0), "flush with the pane's corner");
+    assert_eq!(sidebar_at, (0, 0), "flush with the slot's corner");
 
     // The map takes the frame, which is the switch that used to move
     // the control a column sideways.
@@ -711,7 +730,7 @@ fn the_nav_row_is_the_frames_and_does_not_move_with_the_layout() {
         ..sidebar
     };
     let (rows, hits) = draw_sized(&board, 80, 12);
-    assert!(rows[0].contains("Files"), "the same row: {:?}", rows[0]);
+    assert!(rows[0].contains("files"), "the same row: {:?}", rows[0]);
     assert_eq!(nav_at(&hits), sidebar_at, "at the same cell");
 }
 
@@ -869,6 +888,7 @@ fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, Vie
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -952,34 +972,7 @@ fn a_boards_hints_stop_before_its_caption() {
 const KEPT_WHOLE: [&str; 4] = ["close", "artifacts", "artifact", "rendering"];
 
 fn draw_sized(view: &View, width: u16, height: u16) -> (Vec<String>, Vec<(Rect, ViewHit)>) {
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| {
-            render(
-                frame,
-                view,
-                frame.area(),
-                NavigatorFrame {
-                    width: Some(24),
-                    scroll: NavigatorScroll::default(),
-                    resizing: false,
-                },
-                uze_keys::Scope::Architect,
-                None,
-                &mut hits,
-            );
-        })
-        .unwrap();
-    let buffer = terminal.backend().buffer().clone();
-    let rows = (0..buffer.area.height)
-        .map(|row| {
-            (0..buffer.area.width)
-                .map(|column| buffer[(column, row)].symbol())
-                .collect()
-        })
-        .collect();
-    (rows, hits)
+    framed(view, width, height, uze_keys::Scope::Architect)
 }
 
 /// A click anywhere on a board's drawing resolves to the cell that was
@@ -1042,6 +1035,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                         width: Some(24),
                         scroll: NavigatorScroll::default(),
                         resizing: false,
+                        sliding: None,
                     },
                     uze_keys::Scope::Architect,
                     None,
@@ -1727,6 +1721,7 @@ fn marked_text_is_inverted_where_it_was_drawn() {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 Some(&selection),
@@ -1765,6 +1760,7 @@ fn drawn_rows(view: &View) -> (ratatui::buffer::Buffer, Rendered) {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -1959,6 +1955,7 @@ fn the_caret_marks_the_character_it_sits_on_without_hiding_it() {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -2085,6 +2082,7 @@ fn chrome_uses_the_hosts_palette_and_content_keeps_its_own() {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -2209,6 +2207,7 @@ fn drawn_with(view: &View, scroll: NavigatorScroll) -> (Vec<String>, NavigatorSc
                     width: Some(24),
                     scroll,
                     resizing: false,
+                    sliding: None,
                 },
                 uze_keys::Scope::Code,
                 None,
@@ -2432,4 +2431,83 @@ fn an_item_without_a_marker_lines_up_with_the_groups_beside_it() {
     };
     assert_eq!(column("Cargo.toml"), column("src"), "{rows:#?}");
     assert_eq!(column("main.rs"), column("src"), "{rows:#?}");
+}
+
+/// A name too long for the list's column slides while the pointer is on
+/// its row, and stops at an "…" otherwise; only a frame that slid one asks
+/// the host for the next.
+#[test]
+fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
+    let long = "0042-adopt-a-much-longer-name-than-the-column-holds.md";
+    let view = View {
+        navigator: Some(Navigator {
+            heading: "DECISIONS".to_owned(),
+            badge: "1".to_owned(),
+            focused: true,
+            rows: vec![NavigatorRow::Item {
+                id: 0,
+                name: long.to_owned(),
+                depth: 0,
+                marker: Span::new("", Role::Muted),
+                marker_side: MarkerSide::Leading,
+                detail: String::new(),
+                selected: false,
+                icon: RowIcon::None,
+            }],
+            anchor: None,
+            choosing: None,
+            menu: None,
+        }),
+        ..sample()
+    };
+    let draw = |sliding: Option<(ViewHit, usize)>| {
+        let mut terminal = Terminal::new(TestBackend::new(90, 8)).unwrap();
+        let mut rendered = None;
+        terminal
+            .draw(|frame| {
+                rendered = Some(render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding,
+                    },
+                    uze_keys::Scope::Spec,
+                    None,
+                    &mut Vec::new(),
+                ));
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row: String = (0..24).map(|column| buffer[(column, 1)].symbol()).collect();
+        (row, rendered.unwrap().marquee)
+    };
+
+    let (resting, slid) = draw(None);
+    assert!(
+        resting.contains('…'),
+        "cut where nothing points: {resting:?}"
+    );
+    assert!(!slid, "and nothing asks for another frame");
+
+    let (first, slid) = draw(Some((ViewHit::SelectItem(0), 0)));
+    let (held, _) = draw(Some((ViewHit::SelectItem(0), 9)));
+    let (later, _) = draw(Some((ViewHit::SelectItem(0), 20)));
+    assert_eq!(first, held, "holding its start before it moves");
+    assert!(slid, "a sliding name keeps the clock turning");
+    assert!(
+        !first.contains('…'),
+        "under the pointer it passes through: {first:?}"
+    );
+    assert_ne!(first, later, "and then moving with the clock");
+
+    let (elsewhere, slid) = draw(Some((ViewHit::SelectItem(7), 5)));
+    assert_eq!(
+        elsewhere, resting,
+        "another row under the pointer moves nothing here"
+    );
+    assert!(!slid);
 }

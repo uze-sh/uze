@@ -40,4 +40,4 @@
 
 - [x] 6.1 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace --no-fail-fast`
 - [x] 6.2 `make artifacts` and `openspec validate --all --strict`
-- [ ] 6.3 Hand-validate in the TUI: a manual project moves an agent with "To worktree"; an `always` project places at launch; an old-shape file is refused with the new path named
+- [x] 6.3 Hand-validate in the TUI: a manual project moves an agent with "To worktree"; an `always` project places at launch; an old-shape file meets the ordinary unknown-field error (the moved-key refusal was dropped: no compatibility for the old shape)

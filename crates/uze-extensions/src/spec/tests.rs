@@ -159,7 +159,8 @@ fn an_openspec_checkout_lists_its_changes_specs_and_archive() {
     );
     assert_eq!(
         answer.subjects,
-        [Subject::Changes, Subject::Specs, Subject::Archive]
+        [Subject::Changes, Subject::Specs],
+        "what was put away is a band of the changes, not a tab"
     );
 }
 
@@ -636,6 +637,8 @@ fn changes_are_banded_by_where_they_stand() {
             "",
             "# ready to archive (1)",
             "  a-done",
+            "",
+            "# archived (2)",
         ]
     );
 }
@@ -714,8 +717,25 @@ fn activating_a_document_hands_it_to_the_code_surface() {
     assert!(target.ends_with("openspec/changes/b-change/proposal.md"));
 }
 
+/// The id of the band a navigator draws under `label`.
+fn band_id(state: &SpecView, label: &str) -> usize {
+    view(state, space())
+        .navigator
+        .expect("a navigator")
+        .rows
+        .iter()
+        .find_map(|row| match row {
+            NavigatorRow::Band { id, name, .. } if name == label => Some(*id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no {label} band"))
+}
+
+/// What a tool put away is a change that ended: the last band of the
+/// changes, folded, newest first once it is opened, and never a tab of
+/// its own.
 #[test]
-fn switching_to_the_archive_lists_it_newest_first() {
+fn archived_changes_are_the_last_band_newest_first() {
     let dir = openspec_checkout("spec-archive");
     let mut state = opened(read_with(
         &DiskHost,
@@ -724,9 +744,18 @@ fn switching_to_the_archive_lists_it_newest_first() {
         &[OPENSPEC],
         &ArtifactSource::Undeclared,
     ));
-    handle_mouse(&mut state, Some(ViewHit::SelectSubject(2)), space());
+    let rows = row_names(&state);
+    assert_eq!(rows.last().map(String::as_str), Some("# archived (2)"));
+    assert!(
+        !rows.iter().any(|row| row.contains("newer")),
+        "folded at first"
+    );
 
-    assert_eq!(row_names(&state), ["2026-09-20-newer", "2026-09-01-old"]);
+    let archived = band_id(&state, "archived");
+    handle_mouse(&mut state, Some(ViewHit::ToggleGroup(archived)), space());
+    let rows = row_names(&state);
+    let band = rows.iter().position(|row| row == "# archived (2)").unwrap();
+    assert_eq!(rows[band + 1..], ["  2026-09-20-newer", "  2026-09-01-old"]);
 }
 
 #[test]
@@ -749,13 +778,17 @@ fn a_band_folds_from_its_heading() {
             "  c-open",
             "",
             "# ready to archive (1)",
+            "",
+            "# archived (2)",
         ],
         "folded, a band still says how many it holds"
     );
 }
 
+/// With nothing in flight, what was put away is still the changes' to
+/// show: the surface opens on it rather than on an empty list.
 #[test]
-fn nothing_in_flight_points_at_the_archive_and_the_specs() {
+fn nothing_in_flight_opens_on_what_was_put_away() {
     let dir = TempDir::new("spec-nothing-in-flight");
     write(dir.path(), "openspec/specs/x/spec.md", "# x\n");
     write(
@@ -770,11 +803,7 @@ fn nothing_in_flight_points_at_the_archive_and_the_specs() {
         &[OPENSPEC],
         &ArtifactSource::Undeclared,
     ));
-    let Content::Message { text, hint, .. } = view(&state, space()).content else {
-        panic!("expected a message");
-    };
-    assert_eq!(text, "Nothing in flight");
-    assert!(hint.unwrap().contains("Archive"));
+    assert_eq!(row_names(&state), ["# archived (1)", "  2026-01-01-x"]);
 }
 
 #[test]
@@ -910,7 +939,6 @@ fn each_subject_is_marked_by_what_it_holds() {
         [
             crate::view::RowIcon::InFlight,
             crate::view::RowIcon::Contract,
-            crate::view::RowIcon::Finished,
         ]
     );
 }
@@ -1177,7 +1205,8 @@ fn a_gsd_checkout_lists_phases_and_quick_tasks_the_project_documents_and_milesto
     assert_eq!(dialects, &["GSD"]);
     assert_eq!(
         answer.subjects,
-        [Subject::Changes, Subject::Specs, Subject::Archive]
+        [Subject::Changes, Subject::Specs],
+        "what was put away is a band of the changes, not a tab"
     );
     assert_eq!(
         names(units(&answer), Subject::Changes),
@@ -1358,12 +1387,17 @@ fn declared(root: &Path, places: &[&str]) -> ArtifactSource {
 fn decisions_are_found_by_their_shape_in_the_declared_places() {
     let dir = TempDir::new("spec-decisions");
     let root = dir.path();
-    write(root, "docs/adr/001-keep-one-lock.md", NYGARD);
+    write(
+        root,
+        "docs/adr/001-keep-one-lock.md",
+        "# 1. Keep one lock\n\nDate: 2026-01-02\n\n## Status\n\n\
+         Superceded by [2. Split the lock](002-split-the-lock.md)\n\n## Context\n\nx\n",
+    );
     write(
         root,
         "docs/adr/002-split-the-lock.md",
-        "---\nstatus: accepted\nsupersedes: 001-keep-one-lock.md\n---\n# Split the lock\n\n\
-         ## Decision\n\nz\n",
+        "# 2. Split the lock\n\nDate: 2026-02-03\n\n## Status\n\nAccepted\n\n\
+         Supercedes [1. Keep one lock](001-keep-one-lock.md)\n\n## Context\n\nz\n",
     );
     write(root, "docs/adr/README.md", "# Decisions\n\nAn index.\n");
     write(root, "docs/guide.md", "# Guide\n\nHow to.\n");
@@ -1381,17 +1415,17 @@ fn decisions_are_found_by_their_shape_in_the_declared_places() {
         .clone()
         .unwrap();
     assert!(replaced.superseded, "a later record took its place");
-    assert_eq!(
-        replaced.status.as_deref(),
-        Some("Accepted"),
-        "its own words are kept"
-    );
+    assert_eq!(replaced.status.as_deref(), Some("superseded"));
     assert_eq!(replaced.notes, vec!["Superseded by 002 Split the lock"]);
     let replacing = unit(&answer, Subject::Decisions, "002 Split the lock")
         .standing
         .clone()
         .unwrap();
-    assert_eq!(replacing.notes, vec!["Supersedes 001 Keep one lock"]);
+    assert_eq!(
+        replacing.notes,
+        vec!["Supersedes 001 Keep one lock"],
+        "adr-tools' own `Supercedes` link is the same pair, said once"
+    );
 }
 
 #[test]
@@ -1443,7 +1477,7 @@ fn a_decisions_relations_are_said_above_it_and_its_status_beside_it() {
     write(
         root,
         "docs/adr/002-split-the-lock.md",
-        "# Split the lock\n\nStatus: Proposed\nSee [001](001-keep-one-lock.md)\n\n\
+        "# Split the lock\n\nStatus: Proposed, see [001](001-keep-one-lock.md)\n\n\
          ## Decision\n\nz\n",
     );
     let mut state = opened(read_with(
@@ -1473,7 +1507,7 @@ fn a_decisions_relations_are_said_above_it_and_its_status_beside_it() {
 
     handle_command(&mut state, Command::SelectNext, space());
     let shown = text(&state, 0..200).join("\n");
-    assert!(shown.contains("References 001 Keep one lock"), "{shown}");
+    assert!(shown.contains("Related to 001 Keep one lock"), "{shown}");
 }
 
 /// The records this repository keeps are what the reader is for: every one
@@ -1521,16 +1555,55 @@ fn this_repositorys_own_decisions_are_read() {
         .find(|unit| unit.name.starts_with("019 "))
         .and_then(|unit| unit.standing.clone())
         .unwrap();
-    assert!(
-        !older.superseded,
-        "only a record's front matter says it was replaced"
+    // 054 writes `Supersedes in part: [019](…)` on a line of its own: a
+    // field this repository added, which no template defines, so the
+    // reader leaves it to the text rather than guessing what it means.
+    assert!(!older.superseded);
+    assert!(older.notes.is_empty(), "{:?}", older.notes);
+}
+
+/// The surface never offers more than three tabs, whatever a checkout
+/// carries: every shipped tool's marker at once, and decisions beside them.
+#[test]
+fn no_checkout_offers_more_than_three_subjects() {
+    let dir = TempDir::new("spec-at-most-three");
+    let root = dir.path();
+    write(root, "openspec/changes/a/proposal.md", "## Why\n");
+    write(root, "openspec/specs/x/spec.md", "# x\n");
+    write(
+        root,
+        "openspec/changes/archive/2026-01-01-b/proposal.md",
+        "x\n",
+    );
+    write(root, ".specify/memory/constitution.md", "# c\n");
+    write(root, "specs/001-f/spec.md", "# f\n");
+    write(root, "docs/superpowers/plans/2026-01-02-p.md", "- [ ] s\n");
+    write(
+        root,
+        "docs/superpowers/specs/2026-01-02-d-design.md",
+        "# d\n",
+    );
+    write(root, ".planning/PROJECT.md", "# p\n");
+    write(root, ".planning/phases/01-a/01-01-PLAN.md", "# p\n");
+    write(root, ".planning/milestones/v1/01-01-PLAN.md", "# p\n");
+    write(root, "docs/adr/0001-keep-one-lock.md", NYGARD);
+
+    let answer = read_with(
+        &DiskHost,
+        root,
+        None,
+        SHIPPED,
+        &declared(root, &["docs/adr"]),
+    );
+    assert_eq!(
+        answer.subjects,
+        [Subject::Changes, Subject::Specs, Subject::Decisions]
     );
     assert!(
-        older
-            .notes
+        Subject::ALL
             .iter()
-            .any(|note| note.starts_with("Referenced by 054 ")),
-        "{:?}",
-        older.notes
+            .filter(|s| **s != Subject::Archive)
+            .count()
+            <= 3
     );
 }

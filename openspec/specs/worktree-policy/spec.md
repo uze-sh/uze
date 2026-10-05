@@ -373,7 +373,7 @@ not as absent.
   default rather than to the project
 
 #### Scenario: A declared policy is attributed to the manifest
-- **WHEN** the popup opens in a repository declaring `pr`
+- **WHEN** the popup opens in a repository declaring `workspace.delivery: pr`
 - **THEN** it shows `pr`, attributed to `agents.yaml`
 
 ### Requirement: Changing the policy from the popup is an explicit, versioned edit
@@ -386,7 +386,7 @@ file silently.
 
 #### Scenario: Changing the behavior writes the manifest
 - **WHEN** a completion behavior is chosen in the popup
-- **THEN** `agents.yaml` records it, created first if the project had none
+- **THEN** `agents.yaml` records it as `workspace.delivery`, created first if the project had none
 
 #### Scenario: The consequence is stated before the write
 - **WHEN** a completion behavior is chosen

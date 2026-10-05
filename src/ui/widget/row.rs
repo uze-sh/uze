@@ -107,32 +107,53 @@ pub(crate) fn push_trailing_marquee<'a>(
     width: u16,
     text: String,
     hue: Color,
-    offset: usize,
+    ticks: usize,
 ) -> bool {
     let leading: u16 = spans.iter().map(|span| span.width() as u16).sum();
     let room = usize::from(width.saturating_sub(leading + TRAILING_PAD + 1).max(1));
-    let length = text.chars().count();
-    if length <= room {
+    let Some(window) = marquee_window(&text, room, ticks) else {
         push_trailing(spans, width, text, hue);
         return false;
-    }
-    /// Blank columns between the end of the run and its start coming
-    /// round again, so the two ends are never read as one word.
-    const GAP: usize = 3;
-    let cycle = length + GAP;
-    let run: Vec<char> = text
-        .chars()
-        .chain(std::iter::repeat_n(' ', GAP))
-        .chain(text.chars())
-        .collect();
-    let start = offset % cycle;
-    let window: String = run.iter().skip(start).take(room).collect();
+    };
     spans.push(Span::raw(" ".repeat(usize::from(width).saturating_sub(
         usize::from(leading) + room + usize::from(TRAILING_PAD),
     ))));
     spans.push(Span::styled(window, Style::default().fg(hue)));
     spans.push(Span::raw(" ".repeat(TRAILING_PAD as usize)));
     true
+}
+
+/// What `room` columns show of `text` `ticks` beats of the workspace clock
+/// after the pointer came to rest on it, or `None` when it fits and there
+/// is nothing to slide. The run is the text, a gap, and the text again, so
+/// it leaves on one side as it arrives on the other rather than jumping
+/// back to the start.
+///
+/// It rests before it moves, and again each time it comes round whole: a
+/// pointer crossing a row on its way somewhere else should see nothing
+/// move, and a reader needs the start held long enough to begin reading.
+pub(crate) fn marquee_window(text: &str, room: usize, ticks: usize) -> Option<String> {
+    /// Blank columns between the end of the run and its start coming
+    /// round again, so the two ends are never read as one word.
+    const GAP: usize = 3;
+    /// Beats the text holds still before each pass — about a second at
+    /// the workspace clock's 120 ms.
+    const REST: usize = 10;
+    /// Beats per column: a pace the eye can follow, rather than the
+    /// clock's own, which is a spinner's.
+    const PACE: usize = 2;
+    let length = text.chars().count();
+    if length <= room {
+        return None;
+    }
+    let cycle = length + GAP;
+    let offset = (ticks % (REST + cycle * PACE)).saturating_sub(REST) / PACE;
+    let run: Vec<char> = text
+        .chars()
+        .chain(std::iter::repeat_n(' ', GAP))
+        .chain(text.chars())
+        .collect();
+    Some(run.iter().skip(offset).take(room).collect())
 }
 
 pub(crate) fn push_trailing<'a>(spans: &mut Vec<Span<'a>>, width: u16, text: String, hue: Color) {

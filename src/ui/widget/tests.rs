@@ -757,8 +757,8 @@ fn a_toast_says_how_long_it_has_left_or_draws_no_clock_at_all() {
 }
 
 /// What a message quotes in backticks is drawn as code: the backticks are
-/// gone, and the quoted words stand on a ground of their own, so a branch
-/// name reads apart from the sentence around it on any palette.
+/// gone, and the quoted words take the code ink on the toast's own ground,
+/// so a branch name reads apart from the sentence around it.
 #[test]
 fn a_toast_draws_what_it_quotes_as_code_without_the_backticks() {
     let area = Rect::new(0, 0, 60, 4);
@@ -779,10 +779,16 @@ fn a_toast_draws_what_it_quotes_as_code_without_the_backticks() {
     let title = row(0);
     let code_at = title.find("main").expect("the quoted word is drawn") as u16;
     let prose_at = title.find("is").expect("the prose is drawn") as u16;
-    assert_ne!(
+    assert_eq!(
+        buffer[(code_at, 0)].fg,
+        crate::ui::theme::color(Token::TextCode),
+        "the quoted word wears the code ink"
+    );
+    assert_ne!(buffer[(code_at, 0)].fg, buffer[(prose_at, 0)].fg);
+    assert_eq!(
         buffer[(code_at, 0)].bg,
         buffer[(prose_at, 0)].bg,
-        "the quoted word stands on a ground of its own"
+        "on the same ground as the prose"
     );
 }
 

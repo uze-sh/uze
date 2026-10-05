@@ -130,14 +130,19 @@ impl Attach<'_> {
             ..
         } = *viewport;
         self.drop_selection();
-        // An open extension answers only for the place it is drawn in: the
-        // sidebar and the strip around it are still the chrome's. That
-        // place is the pane and one column more — the content's groove
-        // hugs the frame's edge, in the margin the pane keeps from it.
-        let in_pane = layout
+        // An open extension answers only for the places it is drawn in: the
+        // sidebar and the rest of the bar are still the chrome's. Those
+        // places are the pane and one column more — the content's groove
+        // hugs the frame's edge, in the margin the pane keeps from it —
+        // and the bar's leading slot, wherever its navigation was drawn.
+        let on_surface = layout
             .pane
             .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-            || self.on_content_scrollbar(mouse.column, mouse.row);
+            || self.on_content_scrollbar(mouse.column, mouse.row)
+            || self
+                .model
+                .hit_at(mouse.column, mouse.row)
+                .is_some_and(WorkspaceHit::is_open_surfaces);
         match mouse {
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(
@@ -315,13 +320,13 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
-            _ if in_pane && self.presses_on_text(mouse.column, mouse.row) => {
+            _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
             }
-            _ if self.model.architect.is_some() && in_pane => {
+            _ if self.model.architect.is_some() && on_surface => {
                 self.architect_press(mouse.column, mouse.row);
             }
-            _ if self.model.spec.is_some() && in_pane => {
+            _ if self.model.spec.is_some() && on_surface => {
                 let view_hit = match self.model.hit_rect_at(mouse.column, mouse.row) {
                     Some((_, WorkspaceHit::Extension(ExtensionHit::Spec(hit)))) => Some(hit),
                     _ => None,
@@ -346,7 +351,7 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
-            _ if self.model.code.is_some() && in_pane => {
+            _ if self.model.code.is_some() && on_surface => {
                 let hit = self.model.hit_rect_at(mouse.column, mouse.row);
                 // Mirrors `WorkspaceHit::ResizeSidebar` below: arms
                 // dragging instead of reaching the extension, which only
@@ -925,6 +930,7 @@ impl Attach<'_> {
                 }
                 if self.model.hovered != hovered {
                     self.model.hovered = hovered;
+                    self.model.hovered_since = self.model.tick;
                     self.model.dirty = true;
                 }
             }

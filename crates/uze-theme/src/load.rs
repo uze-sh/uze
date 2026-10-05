@@ -812,6 +812,7 @@ mod tests {
             (Token::TextDim, Rgb(91, 96, 101)),
             (Token::TextFaint, Rgb(61, 66, 71)),
             (Token::TextInactive, Rgb(154, 152, 146)),
+            (Token::TextCode, Rgb(143, 184, 196)),
             // Monochrome: the accent is the ink at full strength, and the
             // sage it used to be is kept only where it means something worked.
             (Token::Accent, Rgb(255, 255, 255)),

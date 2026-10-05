@@ -46,8 +46,8 @@ is the operator's and UZE did not cut it.
 - **THEN** UZE never switches or resets the branch that directory is on
 
 ### Requirement: Isolation is an action on one agent
-The system SHALL offer, for a single agent, an action that gives it a
-checkout of its own: a slot is acquired as the project's policy says, the
+The system SHALL offer, for a single agent, an action named **To worktree**
+that gives it a checkout of its own: a slot is acquired as the project's policy says, the
 agent's record gains its isolation — the checkout, the branch and what the
 branch was cut from — and the agent is relaunched there. The agent's
 identity SHALL NOT change, and its conversation record SHALL stay that
@@ -87,7 +87,7 @@ usually what that agent was doing, and a checkout without it is one
 where the file it was mid-edit on has gone back to its last commit.
 
 Cutting from the last commit instead SHALL be offered as a second
-answer, and only where the tree is known to hold uncommitted work. The
+answer, named **To worktree, no changes**, and only where the tree is known to hold uncommitted work. The
 knowledge is the evaluation's, never a Git read taken while the surface
 draws, so it MAY be up to a refresh old — which is why it gates this
 answer and not the carrying one: a stale *clean* reading costs the
@@ -108,6 +108,10 @@ anything from the operator's own tree.
 #### Scenario: The work is not this agent's to take
 - **WHEN** the root is known to hold uncommitted changes and the operator cuts from the last commit
 - **THEN** the checkout holds the commit alone, and the changes stay in the root they were made in
+
+#### Scenario: The actions say where the agent goes and what stays
+- **WHEN** the menu of an agent in the space's root is opened while the root holds uncommitted changes
+- **THEN** it offers "To worktree" and "To worktree, no changes", and no label speaks of isolating or cleaning
 
 ### Requirement: An isolated agent is the subject of delivery
 The system SHALL treat an isolated agent exactly as a task is treated
@@ -166,19 +170,29 @@ which is how the operator sees that the action happened.
 - **THEN** its row leaves the first group and appears in the second
 
 ### Requirement: A project may declare that its agents start isolated
-The system SHALL let a project declare, in its manifest, that an agent
-launched in it starts isolated rather than in the root. Where it does, an
-agent SHALL be placed in a slot at launch, and the isolation action SHALL
-have nothing to offer. Where the manifest declares nothing, an agent
-SHALL start in the root.
+The system SHALL let a project declare, as `workspace.worktree` in its
+manifest, when an agent launched in it gets a worktree: `always`, at
+launch, or `manual`, only when the operator moves it with **To worktree**.
+Where it declares `always`, an agent SHALL be placed in a slot at launch,
+and the isolation action SHALL have nothing to offer. Where it declares
+`manual`, or nothing, an agent SHALL start in the root. No other value
+SHALL be accepted, and a refusal SHALL name both.
 
 #### Scenario: A project that isolates by default
-- **WHEN** a project's manifest declares that agents start isolated and an agent is launched
+- **WHEN** a project's manifest declares `workspace.worktree: always` and an agent is launched
 - **THEN** the agent is placed in a checkout of its own at launch
 
 #### Scenario: A project that declares nothing
-- **WHEN** a project's manifest declares no default and an agent is launched
+- **WHEN** a project's manifest declares no `workspace.worktree` and an agent is launched
 - **THEN** the agent starts in the space's root
+
+#### Scenario: A manual project moves agents on request
+- **WHEN** a project declares `workspace.worktree: manual` and the operator chooses "To worktree" on an agent
+- **THEN** that agent alone is moved to a checkout of its own
+
+#### Scenario: A value that is not a choice
+- **WHEN** `workspace.worktree` holds `isolated` or `in-place`
+- **THEN** the workspace refuses the declaration, naming `always` and `manual`
 
 ### Requirement: A space can be created from the keyboard
 The system SHALL bind the action that creates a space to a default chord,

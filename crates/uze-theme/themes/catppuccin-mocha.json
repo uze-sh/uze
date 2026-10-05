@@ -10,6 +10,7 @@
     "text.tertiary": "#bac2de",
     "text.secondary": "#a6adc8",
     "text.inactive": "#9399b2",
+    "text.code": "#89dceb",
     "text.muted": "#7f849c",
     "text.dim": "#6c7086",
     "text.faint": "#585b70",

@@ -304,19 +304,16 @@ impl Toast {
 }
 
 /// `message` fitted to `room` columns in `prose`, with what it quotes in
-/// backticks drawn as code: the backticks dropped, the words on a recessed
-/// ground in the accent.
+/// backticks drawn as code: the backticks dropped, the words in the code
+/// ink on the toast's own ground.
 ///
-/// A ground and not only an ink, because the default theme is monochrome
-/// and its accent is the same ink as the title's — a branch name, a
-/// command, a path is the part of an outcome the reader acts on, and it
-/// has to stand apart on every palette. Unbalanced backticks are left as
-/// written: a message that quotes one stray tick is not code from there to
-/// its end.
+/// An ink and not a ground: a band behind a word inside a toast reads as a
+/// second surface on the first. `text.code` is its own token so it stands
+/// apart even on the monochrome default, whose accent is the title's white.
+/// Unbalanced backticks are left as written: a message that quotes one
+/// stray tick is not code from there to its end.
 fn quoted(message: &str, room: u16, prose: Style) -> Vec<Span<'static>> {
-    let code = prose
-        .fg(theme::color(Token::Accent))
-        .bg(theme::color(Token::SurfaceRecessed));
+    let code = prose.fg(theme::color(Token::TextCode));
     let balanced = message.matches('`').count().is_multiple_of(2);
     let mut line = if balanced {
         Line::from(

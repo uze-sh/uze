@@ -49,7 +49,7 @@ mod workspace_tests {
         evaluation_key, forward_paste, forward_scroll, next_agent_label, next_shell_label,
         open_architect, open_code, open_commit_detail, open_spec, pane_relative, pending_tab_drop,
         render::{
-            self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
+            self, FrameMetrics, LeadingSlot, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
         },
         scroll_timeline, scroll_tree, selected_agent_drawer, selected_pane_cwd,
@@ -261,7 +261,14 @@ mod workspace_tests {
         let mut hits = Vec::new();
         terminal
             .draw(|frame| {
-                render_tab_strip(frame, frame.area(), model, &identities_fixture(), &mut hits)
+                render_tab_strip(
+                    frame,
+                    frame.area(),
+                    model,
+                    &identities_fixture(),
+                    LeadingSlot::AgentTabs,
+                    &mut hits,
+                );
             })
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
@@ -284,7 +291,14 @@ mod workspace_tests {
         let mut hits = Vec::new();
         terminal
             .draw(|frame| {
-                render_tab_strip(frame, frame.area(), model, &identities_fixture(), &mut hits)
+                render_tab_strip(
+                    frame,
+                    frame.area(),
+                    model,
+                    &identities_fixture(),
+                    LeadingSlot::AgentTabs,
+                    &mut hits,
+                );
             })
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
@@ -883,11 +897,11 @@ mod workspace_tests {
         assert_ne!(place(&driven), top, "the wheel over it scrolls the content");
     }
 
-    /// The header row is the pane's first row, and the control that says
-    /// which half you are in stands where the heading did — the list's
-    /// heading named the half it was already the only thing showing.
+    /// An open surface's navigation takes the bar's leading slot from the
+    /// agent tabs: the halves are on the bar's row, the list's heading that
+    /// named the half is gone, and a click on one reaches the surface.
     #[test]
-    fn the_code_header_is_the_panes_first_row_and_carries_the_control() {
+    fn the_code_halves_take_the_bars_leading_slot() {
         use uze_extensions::{DirEntry, ExtensionHit, code, view::ViewHit};
 
         let root = PathBuf::from("/repo");
@@ -922,16 +936,24 @@ mod workspace_tests {
 
         let rows = frame_rows(&mut model);
         let layout = full_frame(&mut model);
-        let header = layout.pane.y as usize;
+        let bar = layout.tab_strip.y as usize;
         assert!(
-            rows[header].contains("Files") && rows[header].contains("Map"),
-            "the control is on the pane's first row: {:?}",
-            rows[header]
+            rows[bar].contains("files") && rows[bar].contains("map"),
+            "the halves are on the bar's row: {:?}",
+            rows[bar]
         );
         assert!(
-            !rows[header].contains("FILES"),
-            "and the heading it replaced is gone: {:?}",
-            rows[header]
+            !model.hits.iter().any(|(rect, hit)| {
+                matches!(hit, WorkspaceHit::SelectTab(_) | WorkspaceHit::NewTab)
+                    && rect.y == layout.tab_strip.y
+            }),
+            "in place of the agent tabs: {:?}",
+            rows[bar]
+        );
+        assert!(
+            !rows[layout.pane.y as usize].contains("FILES"),
+            "and the list's heading that named the half is gone: {:?}",
+            rows[layout.pane.y as usize]
         );
 
         let control = model.hits.iter().find(|(_, hit)| {
@@ -941,12 +963,13 @@ mod workspace_tests {
             )
         });
         let (rect, _) = control.expect("the control can be pointed at");
-        assert_eq!(rect.y as usize, header, "on that same row");
+        assert_eq!(rect.y as usize, bar, "on that same row");
     }
 
-    /// An open surface stands where the pane is: the sidebar and the
-    /// strip are still drawn and still answer, and nothing the surface
-    /// draws reaches outside the pane's own rectangle.
+    /// An open surface stands where the pane is, and its navigation in the
+    /// bar's leading slot: the sidebar and the bar's trailing controls are
+    /// still drawn and still answer, and nothing the surface draws reaches
+    /// anywhere else.
     #[test]
     fn an_open_surface_is_drawn_where_the_pane_is() {
         let (mut model, first, _second) = two_agents_with_shells();
@@ -961,20 +984,62 @@ mod workspace_tests {
             .map(|(rect, _)| *rect)
             .collect();
         assert!(!extension_hits.is_empty(), "the surface is drawn");
+        let bar_row = Rect::new(
+            layout.tab_strip.x,
+            layout.tab_strip.y,
+            layout.tab_strip.width,
+            1,
+        );
         assert!(
-            extension_hits
-                .iter()
-                .all(|rect| layout.pane.intersection(*rect) == *rect),
-            "inside the pane: {extension_hits:?} vs {:?}",
+            extension_hits.iter().all(|rect| {
+                layout.pane.intersection(*rect) == *rect || bar_row.intersection(*rect) == *rect
+            }),
+            "inside the pane or the bar's row: {extension_hits:?} vs {:?}",
             layout.pane
         );
         assert!(
             model
                 .hits
                 .iter()
-                .any(|(_, hit)| *hit == WorkspaceHit::SelectTab(first)),
-            "the strip and the sidebar are still there to be clicked"
+                .any(|(_, hit)| *hit == WorkspaceHit::OpenFiles),
+            "the bar's trailing controls are still there to be clicked"
         );
+        assert!(
+            model
+                .hits
+                .iter()
+                .any(|(rect, hit)| *hit == WorkspaceHit::SelectTab(first)
+                    && layout.sidebar.intersection(*rect) == *rect),
+            "and so is the sidebar"
+        );
+    }
+
+    /// Nothing an open surface draws a target for lies over the sidebar,
+    /// so its sections answer as they do with no surface open.
+    #[test]
+    fn an_open_surface_leaves_the_sidebar_its_own() {
+        for open in [
+            (|model: &mut WorkspaceModel| {
+                open_code(model, uze_extensions::code::ContentMode::Contents)
+            }) as fn(&mut WorkspaceModel),
+            |model| model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned())),
+            |model| {
+                model.architect = Some(uze_extensions::architect::ArchitectView::opening(
+                    "/repo".to_owned(),
+                ))
+            },
+        ] {
+            let (mut model, first, _second) = two_agents_with_shells();
+            model.session.as_mut().expect("session").select_tab(first);
+            open(&mut model);
+            let layout = full_frame(&mut model);
+            let over: Vec<_> = model
+                .hits
+                .iter()
+                .filter(|(rect, hit)| hit.is_open_surfaces() && layout.sidebar.intersects(*rect))
+                .collect();
+            assert!(over.is_empty(), "over the sidebar: {over:?}");
+        }
     }
 
     /// The strip lights one thing, the one in the pane: the selected tab,
@@ -994,9 +1059,14 @@ mod workspace_tests {
         assert_eq!(chip_colors(&model, button), (resting, raised));
 
         open_code(&mut model, uze_extensions::code::ContentMode::Contents);
-        let tab = hit_rect(&model, WorkspaceHit::SelectTab(first));
+        let layout = full_frame(&mut model);
+        assert!(
+            !model.hits.iter().any(|(rect, hit)| {
+                *hit == WorkspaceHit::SelectTab(first) && rect.y == layout.tab_strip.y
+            }),
+            "the tab gives the bar up to the surface's navigation"
+        );
         let button = hit_rect(&model, WorkspaceHit::OpenFiles);
-        assert_ne!(chip_colors(&model, tab).1, raised, "the tab gives it up");
         assert_eq!(
             chip_colors(&model, button),
             (ink, lit),
@@ -1105,6 +1175,43 @@ mod workspace_tests {
         };
         assert_eq!(render::spec_summary_height(&summary, true, 40), 1 + 2 + 1);
         assert_eq!(render::spec_summary_height(&summary, false, 40), 1);
+    }
+
+    /// The sidebar's sections are the sidebar's while a surface is open:
+    /// their targets are an extension's too, and a press on one once went to
+    /// the open surface instead, which answered nothing.
+    #[test]
+    fn a_sidebar_section_answers_while_a_surface_is_open() {
+        use uze_extensions::spec::{ChangeSummary, Progress, Summary};
+        let home = UzeHome::at(uze_testkit::temp::scratch(
+            "orchestrator-spec-section-under-surface",
+        ));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        let cwd = model.focused_cwd().expect("a tab in front");
+        model.remembered.spec_summary = Some(SpecSummaryState {
+            cwd,
+            summary: Some(Summary {
+                changes: vec![ChangeSummary {
+                    name: "mine".to_owned(),
+                    progress: Some(Progress { done: 1, total: 4 }),
+                }],
+                done: 1,
+                total: 4,
+            }),
+            checked_at: std::time::Instant::now(),
+        });
+        model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned()));
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let header = driven.hit(|hit| {
+            *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::ToggleSection))
+        });
+        driven.press(header.x, header.y);
+        assert!(
+            driven.attach.model.spec_summary_open,
+            "opened from its header"
+        );
     }
 
     /// The sidebar's spec section says, folded, how far the checkout's own
@@ -1754,8 +1861,9 @@ mod workspace_tests {
                         frame.area(),
                         model,
                         &identities_fixture(),
+                        LeadingSlot::AgentTabs,
                         &mut Vec::new(),
-                    )
+                    );
                 })
                 .unwrap();
             let buffer = terminal.backend().buffer().clone();
@@ -1830,8 +1938,9 @@ mod workspace_tests {
                         frame.area(),
                         model,
                         &identities_fixture(),
+                        LeadingSlot::AgentTabs,
                         &mut Vec::new(),
-                    )
+                    );
                 })
                 .unwrap();
             let buffer = terminal.backend().buffer().clone();
@@ -2359,8 +2468,9 @@ mod workspace_tests {
                     frame.area(),
                     &model,
                     &identities_fixture(),
+                    LeadingSlot::AgentTabs,
                     &mut Vec::new(),
-                )
+                );
             })
             .unwrap();
         assert_eq!(
@@ -6630,7 +6740,14 @@ mod workspace_tests {
             let mut hits = Vec::new();
             terminal
                 .draw(|frame| {
-                    render_tab_strip(frame, frame.area(), model, &identities_fixture(), &mut hits)
+                    render_tab_strip(
+                        frame,
+                        frame.area(),
+                        model,
+                        &identities_fixture(),
+                        LeadingSlot::AgentTabs,
+                        &mut hits,
+                    );
                 })
                 .unwrap();
             let buffer = terminal.backend().buffer().clone();
@@ -6775,8 +6892,9 @@ mod workspace_tests {
                     frame.area(),
                     &model,
                     &identities_fixture(),
+                    LeadingSlot::AgentTabs,
                     &mut Vec::new(),
-                )
+                );
             })
             .unwrap();
         let row = rows.iter().position(|row| row == strip).unwrap() as u16;
@@ -8807,6 +8925,9 @@ mod workspace_tests {
 
         // Typing into the file, the caret goes with the drag while it is
         // still held, so what is typed next lands where the drag ended.
+        // The copy's toast is put away first: it stands over the pane's
+        // top-right corner, where the file's first line now is.
+        driven.attach.model.dismiss_toast(0);
         if let Some(view) = driven.attach.model.code.as_mut() {
             code::handle_command(view, uze_extensions::view::Command::Edit, space);
         }

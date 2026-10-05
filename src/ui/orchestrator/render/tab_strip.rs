@@ -40,13 +40,28 @@ mod activity_frame_tests {
 /// than everywhere else in the TUI. A dim close mark per tab once
 /// more than one exists in the selected space, and a trailing "+" opening
 /// another shell in it.
+/// What the bar's leading slot holds: the context the pane is showing.
+/// The trailing slot — the surfaces, what the work changed, what can be
+/// done to it — is the same in every one of them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ui::orchestrator) enum LeadingSlot {
+    /// The selected agent and the shells opened beside it.
+    AgentTabs,
+    /// An open surface's own navigation, which its caller draws into the
+    /// slot this hands back once the surface itself is drawn.
+    Surface,
+}
+
+/// Draws the bar and answers with its leading slot: where the agent tabs
+/// were drawn, or the room left for the open surface's navigation.
 pub(in crate::ui::orchestrator) fn render_tab_strip(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     model: &WorkspaceModel,
     identities: &[AgentIdentity],
+    leading: LeadingSlot,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
+) -> Rect {
     // No left padding: the pane below sits flush against the divider (see
     // `compute_layout`'s own `content_rows[1].x`, with no left inset
     // either), so the first tab's marker has to start at that same column
@@ -61,26 +76,8 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             Paragraph::new(Span::styled("connecting…", theme::fg(Token::TextMuted))),
             inner,
         );
-        return;
+        return inner;
     };
-
-    // Scoped to the selected space — switching spaces (sidebar) switches
-    // which shells this strip shows, the actual "don't mix projects"
-    // payoff of spaces existing at all.
-    let space = session.selected_space();
-    // …and, within it, to one context: the agent in front of the person
-    // followed by the shells opened alongside it, never another agent's.
-    // A `None` context is the space's own — its bootstrap shell and
-    // anything opened with no agent selected.
-    let context = context_agent(model, identities);
-    let strip = strip_tabs(space, context, identities);
-    // Closability is a per-space rule (the server refuses a removal that
-    // would empty a space — see `Session::remove_tab`), so it's judged
-    // against every tab in the selected space, not just the ones this
-    // strip goes on to show. A close that would take the last of them
-    // still goes through: `close_tab_keeping_a_shell` opens the space's
-    // replacement first.
-    let can_close = space.tabs.len() > 1;
 
     // The header's right end goes down first — before a tab is measured,
     // let alone drawn — and that order is the whole arrangement. The
@@ -325,10 +322,54 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // loses a tab's tail, which the strip can scroll back to, rather than
     // the button that makes the next tab, which nothing else offers.
     let limit = trailing_right;
-    let extension_in_front =
-        model.code.is_some() || model.architect.is_some() || model.spec.is_some();
+    match leading {
+        LeadingSlot::AgentTabs => {
+            let slot = Rect::new(inner.x, inner.y, limit.saturating_sub(inner.x), 1);
+            render_agent_tabs(frame, slot, model, identities, session, hits);
+            // Over the tabs' tail, as it always was: a message takes the
+            // room the actions left, whatever the tabs had put there.
+            render_notice_chip(frame, model, inner, trailing_right);
+            slot
+        }
+        // Here the message goes first and the slot ends where it begins,
+        // because the surface's navigation is drawn into it afterwards.
+        LeadingSlot::Surface => {
+            let notice_left = render_notice_chip(frame, model, inner, trailing_right);
+            Rect::new(inner.x, inner.y, notice_left.saturating_sub(inner.x), 1)
+        }
+    }
+}
+
+/// The leading slot with no surface open: the selected agent, the shells
+/// opened beside it, and a "+" for another, in `slot`.
+fn render_agent_tabs(
+    frame: &mut ratatui::Frame<'_>,
+    slot: Rect,
+    model: &WorkspaceModel,
+    identities: &[AgentIdentity],
+    session: &Session,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let limit = slot.right();
+    // Scoped to the selected space — switching spaces (sidebar) switches
+    // which shells this strip shows, the actual "don't mix projects"
+    // payoff of spaces existing at all.
+    let space = session.selected_space();
+    // …and, within it, to one context: the agent in front of the person
+    // followed by the shells opened alongside it, never another agent's.
+    // A `None` context is the space's own — its bootstrap shell and
+    // anything opened with no agent selected.
+    let context = context_agent(model, identities);
+    let strip = strip_tabs(space, context, identities);
+    // Closability is a per-space rule (the server refuses a removal that
+    // would empty a space — see `Session::remove_tab`), so it's judged
+    // against every tab in the selected space, not just the ones this
+    // strip goes on to show. A close that would take the last of them
+    // still goes through: `close_tab_keeping_a_shell` opens the space's
+    // replacement first.
+    let can_close = space.tabs.len() > 1;
     let mut spans = Vec::new();
-    let mut x = inner.x;
+    let mut x = slot.x;
     let strip_len = strip.len();
     // Where to draw the drag's insertion indicator, if anywhere — captured
     // during the loop below but drawn only after `spans`' one accumulated
@@ -342,9 +383,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         }
         let is_last = strip_index + 1 == strip_len;
         let is_agent = Some(tab.id) == context;
-        // One highlight on the strip: a surface standing in the pane
-        // takes it from the tab it covers.
-        let selected = tab.id == space.selected_tab && !extension_in_front;
+        let selected = tab.id == space.selected_tab;
         let marker_fg = if selected {
             theme::color(Token::Accent)
         } else {
@@ -419,7 +458,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             hits.push((
                 Rect::new(
                     chip_start + chip::PAD + content_width - close_width,
-                    inner.y,
+                    slot.y,
                     close_width,
                     1,
                 ),
@@ -440,7 +479,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             );
         }
         hits.push((
-            Rect::new(chip_start, inner.y, chip_width, 1),
+            Rect::new(chip_start, slot.y, chip_width, 1),
             WorkspaceHit::SelectTab(tab.id),
         ));
         // Same convention as the sidebar's own indicator two functions
@@ -450,7 +489,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         if model.dragging_tab.is_some_and(|dragging| {
             dragging.is_pending_drop_row(TabDragGroup::Strip(space.id, context), tab.id, is_last)
         }) {
-            drop_indicator = Some(Rect::new(chip_start, inner.y, 1, 1));
+            drop_indicator = Some(Rect::new(chip_start, slot.y, 1, 1));
         }
         spans.extend(chip);
         // Just 1 column between chips, not 3 — each chip already reserves
@@ -491,18 +530,13 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     }];
     if x + group_width(&buttons) <= limit {
         let (actions, group_hits) =
-            button_group(model, &buttons, Token::SurfaceRaisedBright, (x, inner.y));
+            button_group(model, &buttons, Token::SurfaceRaisedBright, (x, slot.y));
         hits.extend(group_hits);
         spans.extend(actions);
     }
     frame.render_widget(
         Paragraph::new(Line::from(spans)),
-        Rect::new(
-            inner.x,
-            inner.y,
-            limit.saturating_sub(inner.x),
-            inner.height,
-        ),
+        Rect::new(slot.x, slot.y, slot.width, slot.height),
     );
     if let Some(rect) = drop_indicator {
         frame.render_widget(
@@ -510,8 +544,6 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             rect,
         );
     }
-
-    render_notice_chip(frame, model, inner, trailing_right);
 }
 
 /// A surface chip's label: the word, and the glyph standing for it in a
@@ -686,14 +718,16 @@ pub(super) fn render_zone_hairline(
 /// operator's eye already is. Nothing here is clickable and nothing here
 /// moves a button — the actions were laid out before this was, and this
 /// only takes the room they left.
+///
+/// Answers with where it begins, which is where the leading slot ends.
 pub(super) fn render_notice_chip(
     frame: &mut ratatui::Frame<'_>,
     model: &WorkspaceModel,
     inner: Rect,
     actions_left: u16,
-) {
+) -> u16 {
     let Some(chip) = model.notice_chip() else {
-        return;
+        return actions_left;
     };
     let spans = vec![
         Span::raw(" "),
@@ -726,9 +760,10 @@ pub(super) fn render_notice_chip(
     // Never past the strip's left edge: what does not fit is this
     // message's own tail, clipped by its rect, not the tabs beside it.
     let Some(room) = actions_left.checked_sub(inner.x).filter(|room| *room > 0) else {
-        return;
+        return actions_left;
     };
     let width = (spans.iter().map(Span::width).sum::<usize>() as u16).min(room);
     let rect = Rect::new(actions_left.saturating_sub(width), inner.y, width, 1);
     frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+    rect.x
 }
