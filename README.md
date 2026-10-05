@@ -18,17 +18,24 @@ their own logins.
   <img src="web/public/uze-demo.gif" alt="The uze terminal: two agents at once, each on its own branch in its own checkout, with the checkout's diff, its map and the project's own architecture diagrams a keystroke away" width="860" />
 </p>
 
+</div>
+
+## Install
+
+macOS and Linux:
+
 ```sh
-curl -fsSL https://uze.sh/i | sh        # Linux, macOS
+curl -fsSL https://uze.sh/i | sh
 ```
+
+Windows:
 
 ```powershell
-irm https://uze.sh/i | iex             # Windows
+irm https://uze.sh/i | iex
 ```
 
-**[Full documentation →](https://uze.sh/docs)**
-
-</div>
+Then follow the [quickstart](https://uze.sh/docs/quickstart), or read the
+[full documentation](https://uze.sh/docs).
 
 ## Two tools, one binary
 
