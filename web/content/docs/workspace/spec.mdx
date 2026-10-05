@@ -46,33 +46,31 @@ workspace:
   artifacts: docs     # docs/adr/*.md is found inside it
 ```
 
-A Markdown file there is a decision when its name is a record's: a number of
-three or more digits, a hyphen and a slug, like `0042-use-yaml.md`. That is the
-convention adr-tools, MADR and log4brains share, and it holds in any language:
-nothing reads the words of a heading or a label, so a record written in
-Portuguese is found the same way. Guides, indexes and anything else in the same
-directories are passed over.
+Records are read the way the published ADR formats write them
+([MADR](https://adr.github.io/madr/), [adr-tools](https://github.com/npryce/adr-tools),
+[log4brains](https://github.com/thomvaill/log4brains),
+[adrkit](https://github.com/mbeacom/adrkit) for Spec Kit, and OpenSpec's community
+`spec-driven-with-adr` schema), and nothing a team adds of its own is guessed at.
 
-Each decision is listed by its number and title, with its status beside it. The
-title is the front matter's `title`, else the first `# ` heading. The status is
-the front matter's `status`, else the first `Label: value` line under the title
-that is not a date (`Status: Accepted`, `Situação: Aceita`), else the one line a
-Nygard record's first section holds. A record with none is listed without one.
+| | Read from |
+| --- | --- |
+| A record | a file named like one: a number of three or more digits, optionally after `adr-`, then a slug (`0042-use-yaml.md`, `20240105-use-yaml.md`, `adr-0042-use-yaml.md`). Guides, indexes, templates and dated documents (`2026-01-02-plan.md`) beside them are passed over |
+| Title | the front matter's `title`, else the first `# ` heading (without adr-tools' `1. `), else the slug |
+| Status | the front matter's `status` (MADR), else the header's `Status:` field (MADR 2, log4brains), else the first line of a `## Status` section (adr-tools). A record with none is listed without one |
 
-Which record replaced which is read only from front matter, so it is never a
-guess:
+Each decision is listed by its number and title, with its status beside it.
 
-```yaml
----
-status: accepted
-supersedes: 0001-keep-one-lock.md   # a file or a number; a list works too
----
-```
+A record is **superseded** when its status says so, the way every template
+writes it: `superseded by [ADR-0005](0005-example.md)`, `superseded by ADR-0005`,
+or adr-tools' own `Superceded by [5. …](0005-….md)`; or when a format keeps it as
+a field: adrkit's front matter `supersedes` / `supersededBy`, or the
+`Supersedes: ADR-0001` field OpenSpec's ADR schema writes on the new record
+without touching the old one. Either way both records say it.
 
-The other side is worked out, so the older record shows **superseded** without
-being edited. A link from a record's header to another record is shown as a
-**reference** on both, without saying which way it points. A reference to a
-file that is not there is shown as written.
+Any other link from a status to a record, like adr-tools' `Supercedes` and the
+pairs `adr link` writes, or adrkit's `relatesTo`, is shown once on each record
+as **Related to**, with no direction claimed. Links anywhere else in a record are
+its text's.
 
 A numbered record written inside a change, like `openspec/changes/<name>/adr/`,
 is listed in that change as its **decision**, after the design.

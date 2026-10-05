@@ -34,20 +34,23 @@ behalf and silently misses a project that chose another; a dedicated
 `workspace.decisions` key — rejected, it is a key per kind, which
 `workspace.artifacts` was shaped to avoid.
 
-**Recognition uses only signals that hold in any language.** A record is
-a numbered Markdown file (`NNNN-slug.md`), the one convention adr-tools,
-MADR and log4brains share and no translation changes. The title comes from
-front matter or the first `# ` heading, the status from front matter, the
-header's first non-date `Label: value` line, or a Nygard record's one-line
-first section. *Alternative, the first cut:* matching `## Decision`,
-`Status:` and `Supersedes` in English. Rejected after it shipped: a record
-in Portuguese vanished without a word, which is the failure that looks
-like a lost file.
+**Records are read the way the published templates write them.** MADR,
+adr-tools and log4brains agree on a record's numbered name and define where
+its status goes: front matter `status`, a `Status:` header field, or a
+`## Status` section. Those keys are part of the formats, the way a YAML
+schema's keys are, so reading them is not reading prose; anything a team
+writes outside them is left to the text. *Alternatives, both tried and
+dropped:* matching English headings like `## Decision` (a record in another
+language vanished without a word), then language-neutral guesses such as
+"the first non-date field is the status" (a guess that is wrong on the
+first template that orders its fields differently).
 
-**Supersession comes only from front matter.** `supersedes` and
-`superseded-by` name records by file or number; the inverse edge is
-derived. A header link to another record is a *reference*, shown both
-ways, because whether a sentence says "replaces" or "mentions" is prose.
+**Supersession is the lifecycle state the templates define.** A status
+opening with `superseded` (MADR, log4brains) or `superceded` (adr-tools'
+spelling) names the record that replaced it, by link or as `ADR-NNNN`; the
+inverse edge is derived. Other links from a status are references, shown
+both ways, and dropped where the pair is already related by supersession,
+since adr-tools writes both sides.
 
 **The places move to `shared/`.** A second surface now reads them, which
 is the extraction rule the crate states. `ArtifactSource` becomes

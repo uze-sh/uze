@@ -1358,12 +1358,17 @@ fn declared(root: &Path, places: &[&str]) -> ArtifactSource {
 fn decisions_are_found_by_their_shape_in_the_declared_places() {
     let dir = TempDir::new("spec-decisions");
     let root = dir.path();
-    write(root, "docs/adr/001-keep-one-lock.md", NYGARD);
+    write(
+        root,
+        "docs/adr/001-keep-one-lock.md",
+        "# 1. Keep one lock\n\nDate: 2026-01-02\n\n## Status\n\n\
+         Superceded by [2. Split the lock](002-split-the-lock.md)\n\n## Context\n\nx\n",
+    );
     write(
         root,
         "docs/adr/002-split-the-lock.md",
-        "---\nstatus: accepted\nsupersedes: 001-keep-one-lock.md\n---\n# Split the lock\n\n\
-         ## Decision\n\nz\n",
+        "# 2. Split the lock\n\nDate: 2026-02-03\n\n## Status\n\nAccepted\n\n\
+         Supercedes [1. Keep one lock](001-keep-one-lock.md)\n\n## Context\n\nz\n",
     );
     write(root, "docs/adr/README.md", "# Decisions\n\nAn index.\n");
     write(root, "docs/guide.md", "# Guide\n\nHow to.\n");
@@ -1381,17 +1386,17 @@ fn decisions_are_found_by_their_shape_in_the_declared_places() {
         .clone()
         .unwrap();
     assert!(replaced.superseded, "a later record took its place");
-    assert_eq!(
-        replaced.status.as_deref(),
-        Some("Accepted"),
-        "its own words are kept"
-    );
+    assert_eq!(replaced.status.as_deref(), Some("superseded"));
     assert_eq!(replaced.notes, vec!["Superseded by 002 Split the lock"]);
     let replacing = unit(&answer, Subject::Decisions, "002 Split the lock")
         .standing
         .clone()
         .unwrap();
-    assert_eq!(replacing.notes, vec!["Supersedes 001 Keep one lock"]);
+    assert_eq!(
+        replacing.notes,
+        vec!["Supersedes 001 Keep one lock"],
+        "adr-tools' own `Supercedes` link is the same pair, said once"
+    );
 }
 
 #[test]
@@ -1443,7 +1448,7 @@ fn a_decisions_relations_are_said_above_it_and_its_status_beside_it() {
     write(
         root,
         "docs/adr/002-split-the-lock.md",
-        "# Split the lock\n\nStatus: Proposed\nSee [001](001-keep-one-lock.md)\n\n\
+        "# Split the lock\n\nStatus: Proposed, see [001](001-keep-one-lock.md)\n\n\
          ## Decision\n\nz\n",
     );
     let mut state = opened(read_with(
@@ -1473,7 +1478,7 @@ fn a_decisions_relations_are_said_above_it_and_its_status_beside_it() {
 
     handle_command(&mut state, Command::SelectNext, space());
     let shown = text(&state, 0..200).join("\n");
-    assert!(shown.contains("References 001 Keep one lock"), "{shown}");
+    assert!(shown.contains("Related to 001 Keep one lock"), "{shown}");
 }
 
 /// The records this repository keeps are what the reader is for: every one
@@ -1521,16 +1526,9 @@ fn this_repositorys_own_decisions_are_read() {
         .find(|unit| unit.name.starts_with("019 "))
         .and_then(|unit| unit.standing.clone())
         .unwrap();
-    assert!(
-        !older.superseded,
-        "only a record's front matter says it was replaced"
-    );
-    assert!(
-        older
-            .notes
-            .iter()
-            .any(|note| note.starts_with("Referenced by 054 ")),
-        "{:?}",
-        older.notes
-    );
+    // 054 writes `Supersedes in part: [019](…)` on a line of its own: a
+    // field this repository added, which no template defines, so the
+    // reader leaves it to the text rather than guessing what it means.
+    assert!(!older.superseded);
+    assert!(older.notes.is_empty(), "{:?}", older.notes);
 }

@@ -108,71 +108,102 @@ subject the surface opens on.
 
 ## ADDED Requirements
 
-### Requirement: A decision is recognised by signals that hold in any language
+### Requirement: A decision is read the way the published ADR templates write it
 The surface SHALL look for decisions in every place `workspace.artifacts`
-declares, as deep as each goes, and SHALL NOT require a tool's marker, a
-fixed directory, or any word of a heading or a label. A Markdown file
-SHALL be a decision when its name is a record's: a number of at least
-three digits, a hyphen and a slug (`0042-use-yaml.md`). Its title SHALL be
-the front matter's `title`, else its first `# ` heading, else its slug.
-Its status SHALL be the front matter's `status`, else the first
-`Label: value` line before its first section whose value is not a date,
-else the single short line its first section holds, with the punctuation
-that closes a sentence removed. A record with none of these SHALL be
-listed with no status rather than dropped. Every other file SHALL be
-ignored, without a report. A project that declares no place SHALL be
-offered no decisions subject.
+declares, as deep as each goes, and SHALL NOT require a tool's marker or a
+fixed directory. A Markdown file SHALL be a decision when its name is a
+record's, as every ADR tool names one: a number of at least three digits,
+optionally after `adr-`, a hyphen or underscore, and a slug; a dated
+document named `YYYY-MM-DD-slug.md` SHALL NOT be one. Its title
+SHALL be the front matter's `title`, else its first `# ` heading without
+adr-tools' `N. ` numbering, else its slug. Its status SHALL be the front
+matter's `status`, else the header's `Status:` field, else the first line
+of a `## Status` section, reduced to the state before its first link or
+clause. A record with none of these SHALL be listed with no status rather
+than dropped, and no other field SHALL be read as its status. Every other
+file SHALL be ignored, without a report. A project that declares no place
+SHALL be offered no decisions subject.
 
-#### Scenario: A Nygard record written by adr-tools
-- **WHEN** a declared place holds `0001-keep-one-lock.md` with a title, a
-  `Date:` line and a `## Status` section holding `Accepted`
+#### Scenario: An adr-tools record
+- **WHEN** a declared place holds `0001-keep-one-lock.md` with
+  `# 1. Keep one lock`, a `Date:` line and a `## Status` section holding
+  `Accepted`
 - **THEN** it SHALL be listed as `0001 Keep one lock`, with status
-  `Accepted`, and the date SHALL NOT be taken for the status
-
-#### Scenario: A record in another language
-- **WHEN** a declared place holds `0001-manter-um-lock.md` whose first
-  section is `## Situação` holding `Aceita.`
-- **THEN** it SHALL be listed with status `Aceita`
+  `Accepted`
 
 #### Scenario: A MADR record
 - **WHEN** a declared place holds a numbered file with `status: accepted`
   in its front matter
 - **THEN** it SHALL be listed with status `accepted`
 
+#### Scenario: A log4brains record
+- **WHEN** a declared place holds `20240105-use-markdown.md` whose header
+  holds `- Status: accepted <!-- optional -->`
+- **THEN** it SHALL be listed with status `accepted`
+
+#### Scenario: A record in a shape of its own
+- **WHEN** a declared place holds `0001-manter-um-lock.md` writing its
+  state as `Situação: Aceita`
+- **THEN** it SHALL be listed by its title with no status
+
 #### Scenario: A guide is not a decision
-- **WHEN** a declared place holds `guide.md` and `README.md`
-- **THEN** neither SHALL be listed, and nothing SHALL be reported about
-  them
+- **WHEN** a declared place holds `guide.md`, `README.md` and
+  `adr-template.md`
+- **THEN** none SHALL be listed, and nothing SHALL be reported about them
 
 #### Scenario: Nothing declared
 - **WHEN** the project's `agents.yaml` has no `workspace.artifacts`
 - **THEN** no decisions subject SHALL be offered, even where a `docs/adr/`
   exists
 
-### Requirement: Which record replaced which is said only by structured fields
-A decision SHALL be listed as superseded only when a record says so in
-its front matter: its own `superseded-by`, or another record's
-`supersedes` naming it, by file or by number; each side SHALL name the
-other. A link from a record's header to another record SHALL be shown as
-a reference on both, with no claim about which way it points, because
-telling "replaces" from "mentions" would mean reading the sentence around
-it. A reference the surface cannot resolve to a record SHALL be shown as
-written rather than dropped.
+### Requirement: Supersession is read from the status, as the templates write it
+A decision SHALL be listed as superseded when its status opens with
+`superseded` or adr-tools' `superceded`, and the record its status names —
+by a link to a record file, or as `ADR-NNNN` — SHALL be shown as
+superseding it; each side SHALL name the other. The same SHALL hold for the
+formats that keep it as a field: adrkit's front matter `supersedes` and
+`supersededBy`, and the `Supersedes:` header field of OpenSpec's
+`spec-driven-with-adr` schema. Any other link from a status to a record,
+and adrkit's `relatesTo`, SHALL be shown once on each of the two records as
+related, with no direction claimed, and a pair already related by
+supersession SHALL NOT be shown again as related. Links outside the status SHALL NOT relate records. A
+reference the surface cannot resolve to a record SHALL be shown as written
+rather than dropped.
 
-#### Scenario: A superseded decision
-- **WHEN** `0002-split-the-lock.md` has `supersedes: 0001-keep-one-lock.md`
-  in its front matter
-- **THEN** 0001 SHALL be listed as superseded, named by 0002, and 0002
-  SHALL name 0001
+#### Scenario: adr-tools' supersede
+- **WHEN** `0001-keep-one-lock.md`'s status reads
+  `Superceded by [2. Split the lock](0002-split-the-lock.md)` and
+  `0002-split-the-lock.md`'s reads `Accepted` then
+  `Supercedes [1. Keep one lock](0001-keep-one-lock.md)`
+- **THEN** 0001 SHALL be listed as superseded by 0002, 0002 SHALL name 0001
+  as what it supersedes, and neither SHALL show them as merely related
+
+#### Scenario: OpenSpec's ADR schema, prior record untouched
+- **WHEN** `0002-use-postgres.md` holds `- Supersedes: ADR-0001` and
+  `0001-use-sqlite.md` still reads `accepted`
+- **THEN** 0001 SHALL be listed as superseded by 0002
+
+#### Scenario: adrkit's relations
+- **WHEN** a record's front matter holds `supersedes: ["0005"]` and
+  `relatesTo: ["0002"]`
+- **THEN** 0005 SHALL be listed as superseded by it, and it and 0002 SHALL
+  each show the other as related
+
+#### Scenario: A dated plan beside the records
+- **WHEN** a declared place holds `plans/2026-01-02-catalog.md`
+- **THEN** it SHALL NOT be listed as a decision
+
+#### Scenario: MADR's supersede without a link
+- **WHEN** a record's front matter holds `status: "superseded by ADR-0009"`
+  and `0009-pick-another.md` is in the places
+- **THEN** the record SHALL be listed as superseded by 0009
 
 #### Scenario: A link in prose
-- **WHEN** decision 054's header links `019-boundary.md` in a sentence
-  saying it replaces part of it
-- **THEN** 054 SHALL show a reference to 019, 019 SHALL show it is
-  referenced by 054, and 019 SHALL NOT be listed as superseded
+- **WHEN** a record's header holds its own `Supersedes in part: [019](…)`
+  line, outside its status
+- **THEN** no relation SHALL be shown between the two records
 
-#### Scenario: A reference to a file that is gone
-- **WHEN** a record's front matter supersedes a file the places do not
-  hold
+#### Scenario: A reference to a record that is gone
+- **WHEN** a record's status supersedes a file the places do not hold
 - **THEN** the reference SHALL be shown as written, and the record SHALL
   still be listed
