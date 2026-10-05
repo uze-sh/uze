@@ -10,13 +10,13 @@ const platforms: { id: Platform; label: string; command: string; note: string }[
     id: 'unix',
     label: 'macOS · Linux',
     command: 'curl -fsSL https://uze.sh/i | sh',
-    note: 'x86_64 or aarch64. Checksum verified, installs into ~/.local/bin.',
+    note: 'x86_64 or aarch64, checksum verified.',
   },
   {
     id: 'windows',
     label: 'Windows',
     command: 'irm https://uze.sh/i | iex',
-    note: 'Windows 10 22H2 or 11, x64 or Arm. Needs Git for Windows.',
+    note: 'Windows 10 22H2 or 11, needs Git for Windows.',
   },
 ];
 
