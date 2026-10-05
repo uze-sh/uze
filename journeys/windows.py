@@ -147,8 +147,18 @@ def world_environment(root: Path, binary: Path) -> dict:
         temporary,
     ):
         directory.mkdir(parents=True, exist_ok=True)
-    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
-    system32 = system_root / "System32"
+    env = _environment(root, binary, home, temporary)
+    env["PSModuleAnalysisCachePath"] = str(_seasoned_powershell(root.parent, env))
+    return env
+
+
+def _system32() -> Path:
+    return Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+
+
+def _environment(root: Path, binary: Path, home: Path, temporary: Path) -> dict:
+    system32 = _system32()
+    system_root = system32.parent
     git = shutil.which("git")
     path = [
         root / "bin",
@@ -171,6 +181,53 @@ def world_environment(root: Path, binary: Path) -> dict:
         }
     )
     return env
+
+
+def _seasoned_powershell(worlds: Path, env: dict) -> Path:
+    """The module cache every world's Windows PowerShell reads, built once
+    per run.
+
+    The first command a PowerShell runs walks every module on the machine
+    to find the one that command lives in, and writes what it found to this
+    cache. Measured on the hosted runners, that walk is 33-40 seconds, and
+    it landed inside whichever journey first typed into a pane: on an Arm
+    runner it took most of `09-text-copied-from-a-pane`'s 30-second gesture,
+    and failed it whenever it took all of it. No person meets that walk on
+    every shell they open, so it is paid here, outside any gesture."""
+    cache = worlds / ".powershell" / "ModuleAnalysisCache"
+    if cache.is_file():
+        return cache
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    # Built beside the cache and moved into place whole, so a run beside
+    # this one reads either no cache or a finished one.
+    staging = cache.with_name(f"{cache.name}.{os.getpid()}")
+    started = time.monotonic()
+    subprocess.run(
+        [
+            str(_system32() / "WindowsPowerShell" / "v1.0" / "powershell.exe"),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "echo seasoned | Out-Null",
+        ],
+        env={**env, "PSModuleAnalysisCachePath": str(staging)},
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=600,
+    )
+    print(
+        f"journey: Windows PowerShell's module cache took {time.monotonic() - started:.1f}s to build",
+        file=sys.stderr,
+    )
+    if staging.is_file():
+        os.replace(staging, cache)
+    else:
+        print(
+            f"journey: Windows PowerShell wrote nothing to {staging}; the first pane to run a command builds it",
+            file=sys.stderr,
+        )
+    return cache
 
 
 # ── the process table ────────────────────────────────────────────────────

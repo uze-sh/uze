@@ -283,6 +283,7 @@ jobs:
               "$env:ProgramFiles\Git\cmd",
               "$env:USERPROFILE\.cargo\bin"
           ) -join ';'
+          "FULL_RUNNER_PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "PATH=$kept" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "CARGO_BUILD_JOBS=$env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Prove no POSIX tool is reachable
@@ -313,6 +314,15 @@ jobs:
         if: matrix.clippy
         run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --workspace --no-fail-fast --locked
+      # The cache is saved after the last step, in the environment the steps
+      # left behind, and the runner's `tar` compresses through a `gzip` that
+      # only the runner's own PATH reaches: every Windows save failed with
+      # `gzip: command not found` while the machine was reduced.
+      - name: Give the runner its tools back
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "PATH=$env:FULL_RUNNER_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
   msrv:
     name: MSRV
@@ -636,11 +646,22 @@ jobs:
   # `skipped` is not a failure, deliberately: it is what lets `changes` turn
   # off an expensive tier without a documentation change sitting forever on a
   # check that will never report.
+  #
+  # `needs.*.result` is not the whole answer. A job GitHub cancels because no
+  # runner was ever acquired does not reach it as `cancelled`, whether the
+  # job is this file's own (`MSRV`, `Test (linux)`) or one inside a called
+  # workflow: during the 2026-10-05 Actions outage this check read eleven
+  # such jobs as nothing at all and stayed green. So the run's own jobs are
+  # read as well, and one that never finished its work fails the gate. A
+  # plain failure is still judged by `needs` alone, which is what honours
+  # `continue-on-error` on a leg that only reports.
   gate:
     name: Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: always()
+    permissions:
+      actions: read
     needs:
       - changes
       - fmt
@@ -664,6 +685,21 @@ jobs:
             echo "::error::a job in this run failed or was cancelled"
             exit 1
           fi
+      - name: Every job this run started finished its work
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          unfinished="$(gh api --paginate "repos/${GH_REPO}/actions/runs/${{ github.run_id }}/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[]
+                  | select(.conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "startup_failure")
+                  | "\(.name): \(.conclusion)"')"
+          if [ -n "${unfinished}" ]; then
+            echo "${unfinished}"
+            echo "::error::a job in this run never finished its work — re-run the failed jobs"
+            exit 1
+          fi
           echo "the run is green"
 
   # Every `rust-cache` key ends in a hash of what it was built from, so each
@@ -673,6 +709,11 @@ jobs:
   # push out the one the next pull request was about to read. Only the newest
   # generation of each family on `main` is ever restored, so the rest goes.
   # After the gate, so this run's own entries are already saved.
+  #
+  # A `rust-cache` key ends in two hashes, not one: the toolchain and
+  # environment, then the lockfile. Grouping on the last alone made every
+  # toolchain bump a new family, whose predecessor nothing pruned — 1.8 GB of
+  # them held the repository over its allowance.
   caches:
     name: Prune stale caches
     needs: gate
@@ -688,7 +729,7 @@ jobs:
         run: |
           set -euo pipefail
           gh cache list --ref refs/heads/main --limit 500 --json id,key,createdAt \
-            | jq -r 'map(. + {family: (.key | sub("-[^-]+$"; ""))})
+            | jq -r 'map(. + {family: (.key | if startswith("v0-rust-") then sub("-[0-9a-f]{8}-[0-9a-f]{8}$"; "") else sub("-[^-]+$"; "") end)})
                      | group_by(.family)
                      | map(sort_by(.createdAt) | reverse | .[1:][])
                      | .[] | "\(.id) \(.key)"' \
