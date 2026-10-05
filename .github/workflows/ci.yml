@@ -130,8 +130,9 @@ jobs:
           # runner is the most expensive minute this repository can spend.
           platform_surface='^(crates/uze-core/src/machine/|crates/uze-terminal/|crates/uze-git/|crates/uze-platform/|journeys/|src/shim\.rs$|Cargo\.lock$|\.cargo/config\.toml$|\.github/(workflows/(ci|journeys)\.yml$|actions/journeys/))|(^|/)Cargo\.toml$'
           # What reaches Windows beyond that: every place a path, a process
-          # or a shell is spelled, and the installer.
-          windows_surface='^(src/|crates/|tests/|install\.ps1$)'
+          # or a shell is spelled, the installer, and this file, which says how
+          # the Windows tests run.
+          windows_surface='^(src/|crates/|tests/|install\.ps1$|\.github/workflows/ci\.yml$)'
           # The part of that a journey on macOS can tell apart from one on
           # Linux: the terminal, the processes and the screen it drives. A
           # dependency bump is not in it — linking is what a bump threatens,
@@ -252,6 +253,12 @@ jobs:
           # evicting by LRU on every run, and a branch that writes its own
           # 1.75 GB set evicts the entry the next branch was going to read.
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Before the Windows PATH is reduced below: the action runs in bash,
+      # which that step takes away.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        with:
+          tool: cargo-nextest
       # `.cargo/config.toml` pins `jobs = 2` as a courtesy to a 4-vCPU WSL
       # box. A hosted macOS runner is not that box, and this leg is the
       # slowest in stage 1.
@@ -313,7 +320,14 @@ jobs:
       - name: Clippy
         if: matrix.clippy
         run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test --workspace --no-fail-fast --locked
+      # nextest, not `cargo test`: libtest runs the test binaries one after
+      # another, so the slowest crate's suite is paid in full before the next
+      # one starts — on Windows that serial chain was thirteen of the job's
+      # eighteen minutes. nextest schedules every test of every binary in one
+      # pool, one process per test. It runs no doctests, hence the second
+      # line.
+      - run: cargo nextest run --workspace --no-fail-fast --locked
+      - run: cargo test --workspace --doc --locked
       # The cache is saved after the last step, in the environment the steps
       # left behind, and the runner's `tar` compresses through a `gzip` that
       # only the runner's own PATH reaches: every Windows save failed with
