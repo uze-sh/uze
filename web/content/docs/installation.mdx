@@ -28,26 +28,29 @@ description: Install uze, set up your agents, and keep it current
     installs into `~/.local/bin`.
   </Tab>
   <Tab value="Windows">
-    **Preview.** uze runs natively on Windows and is being proven before it
-    is offered. To try it now, in PowerShell:
-
     ```powershell
-    $env:UZE_WINDOWS_PREVIEW = '1'; irm https://uze.sh/i | iex
+    irm https://uze.sh/i | iex
     ```
 
-    It needs Windows 10 22H2 or Windows 11 (x64 or Arm),
-    [Git for Windows](https://git-scm.com/download/win), and a terminal that
-    understands colour codes, such as Windows Terminal. The installer
-    verifies the release checksum, installs into
+    **Experimental.** uze runs natively on Windows 10 22H2 and Windows 11, x64
+    or Arm, and its Windows support is newer than the rest: expect rough
+    edges, and [report them](https://github.com/uze-sh/uze/issues).
+
+    It needs [Git for Windows](https://git-scm.com/download/win) and a
+    terminal that understands colour codes, such as Windows Terminal. The
+    installer verifies the release checksum, installs into
     `%LOCALAPPDATA%\Programs\uze\bin` and adds it to your `Path`; open a
-    new terminal afterwards.
+    new terminal afterwards. Commands a project declares run in Windows
+    PowerShell, so a step written for one platform can carry a spelling for
+    each (see the project's `agents.yaml`).
 
-    `uze.exe` is not signed yet. Smart App Control, when it is on, can refuse
-    to run it, and `uze doctor` tells you when it is. Commands a project
-    declares run in Windows PowerShell, so a step written for one platform
-    can carry a spelling for each (see the project's `agents.yaml`).
+    `uze.exe` is not signed yet. With Smart App Control on, Windows can
+    refuse to run it, and Smart App Control has no exception for one
+    program: the installer warns you when it is on, and `uze doctor` says so
+    too. A managed machine whose policy allows only signed programs needs
+    uze allowed by its administrator.
 
-    Until Windows is offered, you can also run uze inside
+    You can also run uze inside
     [WSL](https://learn.microsoft.com/windows/wsl/install) with the Linux
     command.
   </Tab>

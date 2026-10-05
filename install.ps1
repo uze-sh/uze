@@ -42,11 +42,6 @@ param(
     $DefaultBaseUrl = 'https://github.com/uze-sh/uze/releases'
     $BuildFloor = 19045
 
-    # Windows is offered once a release candidate has been installed by hand
-    # on both architectures (windows-support task 13.3). Until then this
-    # installer refuses, unless the person asks for the preview explicitly.
-    $Offered = $false
-
     # --- presentation ---------------------------------------------------------
     # The same rule `src/progress.rs` applies to the CLI: colour only for a
     # real console, and a plain transcript everywhere else. A console not in
@@ -178,10 +173,6 @@ public static extern IntPtr SendMessageTimeout(
     }
 
     # --- the machine ----------------------------------------------------------
-    if (-not $Offered -and $env:UZE_WINDOWS_PREVIEW -ne '1') {
-        throw 'uze is not yet offered on Windows. To try the preview anyway, set ' +
-            '$env:UZE_WINDOWS_PREVIEW = ''1'' and run this again.'
-    }
     $currentVersion = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
     $build = [int](Get-ItemProperty -LiteralPath $currentVersion).CurrentBuildNumber
     if ($build -lt $BuildFloor) {

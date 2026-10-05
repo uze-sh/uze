@@ -106,12 +106,12 @@ curl -fsSL https://uze.sh/i | UZE_VERSION={{ version | trim_start_matches(pat="v
 ```
 {% endif %}
 
-Six targets: Linux `x86_64`/`aarch64` × `gnu`/`musl`, and macOS
-`x86_64`/`aarch64`. The installer picks the one that matches the host,
-verifies its SHA-256 against `SHASUMS256.txt` and refuses to install on a
-mismatch.
-{% if get_env(name="UZE_RELEASE_WINDOWS", default="") == "true" %}
-On Windows 10 22H2 or 11, x64 or Arm, in PowerShell:
+Eight targets: Linux `x86_64`/`aarch64` × `gnu`/`musl`, macOS
+`x86_64`/`aarch64`, and Windows `x86_64`/`aarch64` (experimental). The
+installer picks the one that matches the host, verifies its SHA-256 against
+`SHASUMS256.txt` and refuses to install on a mismatch.
+
+On Windows 10 22H2 or 11, x64 or Arm, in PowerShell (experimental):
 
 ```powershell
 irm https://uze.sh/i | iex
@@ -125,7 +125,6 @@ $env:UZE_VERSION = '{{ version | trim_start_matches(pat="v") }}'; irm https://uz
 {% endif %}
 It needs Git for Windows, and installs into
 `%LOCALAPPDATA%\\Programs\\uze\\bin`, which it puts on your `Path`.
-{% endif %}
 
 ## Verify
 
@@ -140,7 +139,7 @@ gh attestation verify uze-x86_64-linux-gnu.tar.gz --repo uze-sh/uze
 The macOS binaries are not notarized. `curl | sh` installs and runs them; a
 tarball fetched through a *browser* is quarantined by Gatekeeper — clear it
 with `xattr -d com.apple.quarantine uze`.
-{% if get_env(name="UZE_RELEASE_WINDOWS", default="") == "true" %}
+
 On Windows, in PowerShell:
 
 ```powershell
@@ -151,7 +150,6 @@ gh attestation verify uze-x86_64-windows.zip --repo uze-sh/uze
 `uze.exe` is not signed yet. SmartScreen may warn about a zip fetched through
 a browser (the installer's download is not marked), and a machine with Smart
 App Control on may refuse to run it at all; `uze doctor` says when it is on.
-{% endif %}
 
 `uze-sbom.cdx.json` is the CycloneDX bill of materials for the shipped binary,
 generated from this tag's own lockfile. Each tarball carries `LICENSE`,

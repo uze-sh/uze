@@ -52,7 +52,6 @@ public static class Program {
 
     function script:Invoke-Installer([string[]]$Arguments = @(), [hashtable]$Environment = @{}) {
         $variables = @{
-            UZE_WINDOWS_PREVIEW = '1'
             UZE_BASE_URL        = ([Uri]$release).AbsoluteUri
             UZE_VERSION         = $version
             UZE_BIN_DIR         = $script:bin

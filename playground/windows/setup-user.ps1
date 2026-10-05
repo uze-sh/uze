@@ -30,7 +30,6 @@ try {
     Note 'uze: install.ps1'
     $env:UZE_BASE_URL = 'file:///' + ("$stage\release" -replace '\\', '/')
     $env:UZE_VERSION = (Get-Content "$stage\version" -Raw).Trim()
-    $env:UZE_WINDOWS_PREVIEW = '1'
     Invoke-Expression (Get-Content "$stage\install.ps1" -Raw) *>&1 | ForEach-Object { Note "  $_" }
     $env:Path = "$env:LOCALAPPDATA\Programs\uze\bin;$env:Path"
 

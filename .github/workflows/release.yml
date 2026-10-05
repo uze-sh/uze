@@ -116,7 +116,6 @@ jobs:
       - name: Preview the release notes
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          UZE_RELEASE_WINDOWS: ${{ vars.UZE_RELEASE_WINDOWS }}
         run: |
           set -euo pipefail
           git-cliff --config cliff.release.toml --unreleased \
@@ -333,11 +332,7 @@ jobs:
   package-windows:
     name: Package Windows
     needs: tag
-    # Windows is offered once a release candidate has been installed by hand
-    # on both architectures (windows-support task 13.3). Until the
-    # repository variable says so, its archives are not built and a release
-    # carries the six tarballs alone.
-    if: needs.tag.outputs.release == 'true' && vars.UZE_RELEASE_WINDOWS == 'true'
+    if: needs.tag.outputs.release == 'true'
     uses: ./.github/workflows/package-windows.yml
     with:
       ref: ${{ needs.tag.outputs.tag }}
@@ -345,11 +340,6 @@ jobs:
   publish:
     name: Publish release
     needs: [tag, package, package-windows]
-    # The Windows archives are optional until they are offered: a skipped
-    # Windows job publishes the rest, a failed one publishes nothing.
-    if: >-
-      always() && needs.tag.outputs.release == 'true' && needs.package.result == 'success'
-      && contains(fromJSON('["success", "skipped"]'), needs.package-windows.result)
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -394,17 +384,11 @@ jobs:
           mkdir -p assets
           mv dist/uze-*.tar.gz dist/uze-*.zip assets/
           cp uze.cdx.json assets/uze-sbom.cdx.json
-          # Scoop's manifest, from the archives' own bytes, when there are
-          # Windows archives to name.
-          zips=(assets/uze-*-windows.zip)
-          if [ "${#zips[@]}" -gt 0 ]; then
-            python3 .github/scripts/scoop_manifest.py assets "${{ needs.tag.outputs.tag }}"
-          fi
+          # Scoop's manifest, from the Windows archives' own bytes.
+          python3 .github/scripts/scoop_manifest.py assets "${{ needs.tag.outputs.tag }}"
           (
             cd assets
-            listed=(*.tar.gz *.zip *.cdx.json)
-            if [ -f uze.json ]; then listed+=(uze.json); fi
-            sha256sum "${listed[@]}" > SHASUMS256.txt
+            sha256sum *.tar.gz *.zip *.cdx.json uze.json > SHASUMS256.txt
           )
           ls -l assets/
           cat assets/SHASUMS256.txt
@@ -414,11 +398,7 @@ jobs:
       # `gh attestation verify uze-<target>.tar.gz --repo uze-sh/uze`.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: "assets/uze-*.tar.gz, assets/uze-sbom.cdx.json"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        if: needs.package-windows.result == 'success'
-        with:
-          subject-path: "assets/uze-*.zip"
+          subject-path: "assets/uze-*.tar.gz, assets/uze-*.zip, assets/uze-sbom.cdx.json"
       # What a stranger who followed an install link actually reads: the
       # changes grouped by kind, breaking ones called out first, every entry
       # linked to its pull request and credited to the person who wrote it,
@@ -429,9 +409,6 @@ jobs:
       - name: Write the release notes
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          # Whether this release carries the Windows archives, which decides
-          # whether its notes say how to install them.
-          UZE_RELEASE_WINDOWS: ${{ vars.UZE_RELEASE_WINDOWS }}
         run: |
           set -euo pipefail
           git-cliff --config cliff.release.toml --latest -o "${RUNNER_TEMP}/notes.md"

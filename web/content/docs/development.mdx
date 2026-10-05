@@ -129,9 +129,9 @@ PowerShell 7 in the `installer-windows` job.
 
 A release enters `main` through a pull request like anything else: the **Release**
 workflow bumps the version, regenerates `CHANGELOG.md`, renders the release notes
-into the PR body, and publishes the six tarballs (Linux gnu/musl, macOS), an
-SBOM and signed provenance on the merge, and the two Windows zips with a Scoop
-manifest once `UZE_RELEASE_WINDOWS` is set. Versions come from one place:
+into the PR body, and publishes the six tarballs (Linux gnu/musl, macOS), the
+two Windows zips with a Scoop manifest, an SBOM and signed provenance on the
+merge. Versions come from one place:
 `[workspace.package].version` in the root `Cargo.toml`, inherited by every crate.
 `docs/versioning.md` is the full procedure.
 

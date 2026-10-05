@@ -850,11 +850,11 @@ new leaf.
   → Per-harness Windows dialect facts carry the measured version. A drift is
   a re-measure, not a guess.
 - **The journey port is 3–5 weeks.**
-  → It is sized as its own task group, and the installer refuses Windows until
-  it is green.
+  → It is sized as its own task group, and was green on both hosted Windows
+  runners before Windows shipped.
 - **The size of the change.**
-  → Kept as one change by decision. Its groups merge in order behind the
-  installer's refusal, and Linux and macOS stay green at every merge.
+  → Kept as one change by decision. Its groups merge in order, and Linux and
+  macOS stay green at every merge.
 
 ## Migration Plan
 
@@ -868,9 +868,19 @@ The attachments ledger gains a receipt kind for a copied artifact (the
 Windows answer to `SymlinkReference`). That is a `Shaped` record change with
 one rung.
 
-**Rollback:** unset the repository variable that enables the Windows release
-rows, and make `install.ps1` refuse again. Existing Windows installs keep
-working, and `uze upgrade` stops finding newer Windows assets.
+**Rollback:** drop the Windows rows from `release.yml` and make `install.ps1`
+refuse Windows again. Existing Windows installs keep working, and
+`uze upgrade` stops finding newer Windows assets.
+
+**Shipped as experimental, not gated.** Windows was to stay behind a
+repository variable and an installer refusal until a release candidate was
+installed by hand on x64 and Arm. It ships instead by default, marked
+experimental in the README, the installation page and the release notes:
+every gate that guarded it passes on both hosted runners, the release path
+is built and installed by `install.ps1` on every change to it, and the one
+known limit, an unsigned `uze.exe` that Smart App Control can refuse, is a
+fact of the machine that a gate would not have changed. Signing is the
+follow-up that lifts it.
 
 ## Open Questions
 
