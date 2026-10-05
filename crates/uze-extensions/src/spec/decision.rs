@@ -112,6 +112,9 @@ pub fn recognise(text: &str) -> Option<Record> {
             relations.extend(relation);
         }
     }
+    // A `## Status` section is prose (`Accepted.`) where a `Status:` line is
+    // a label; listed beside a title, both are the label.
+    let status = status.map(|status| status.trim_end_matches(['.', ';']).trim().to_owned());
     match (title, status, decided) {
         (Some(title), Some(status), true) if !title.is_empty() && !status.is_empty() => {
             Some(Record {
@@ -435,7 +438,7 @@ mod tests {
         assert_eq!(full.title, "Pick a parser");
 
         let minimal = recognise(
-            "# Pick a parser\n\n## Status\n\nProposed\n\n## Decision Outcome\n\nChosen.\n",
+            "# Pick a parser\n\n## Status\n\nProposed.\n\n## Decision Outcome\n\nChosen.\n",
         )
         .unwrap();
         assert_eq!(minimal.status, "Proposed");
