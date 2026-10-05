@@ -19,6 +19,7 @@
     "text.dim": "#5b6065",
     "text.faint": "#3d4247",
     "text.inactive": "#9a9892",
+    "text.code": "#8fb8c4",
 
     "border.default": "~14",
     "border.faint": "~0d",
