@@ -14,7 +14,7 @@ export default function HomePage() {
           that shows it on the right, so the claim and the proof are read
           side by side. The stream is the page's own terminal, with no window
           drawn around it. */}
-      <section className="w-full max-w-[84rem] lg:pt-20">
+      <section className="w-full max-w-[96rem] lg:pt-20">
         <div className="grid gap-x-14 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-center xl:grid-cols-[minmax(0,36rem)_minmax(0,1fr)] xl:gap-x-20">
           {/* Below the two-column width the hero is a screen of its own:
               the claim and the way to install it, with nothing competing
@@ -31,15 +31,27 @@ export default function HomePage() {
               <code className="font-mono text-[0.95em] text-ink">AGENTS.md</code> in Claude Code,
               Codex, OpenCode and Antigravity, and a terminal to run them side by side.
             </p>
-            <div className="mt-8">
-              <InstallTabs />
-            </div>
-            <p className="mt-5 font-mono text-[13px] text-ink">
+            <p className="mt-4 font-mono text-[13px] text-ink">
               <span className="text-success" aria-hidden>
                 ✓{' '}
               </span>
               Not an agent. No model, no API key.
             </p>
+            {/* One row for the one thing to do: the command, and the way into
+                the docs at its height. The source is a click away in the
+                header and at the foot of the page. */}
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-start">
+              <div className="min-w-0 flex-1">
+                <InstallTabs />
+              </div>
+              <Link
+                href="/docs/quickstart"
+                className="inline-flex shrink-0 items-center justify-center px-5 py-2.5 font-mono text-[13px] font-semibold transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:mt-[30px] sm:h-[46px]"
+                style={{ background: 'var(--color-accent)', color: 'var(--color-paper)' }}
+              >
+                Get started
+              </Link>
+            </div>
           </div>
           {/* Stacked, the session is the next section rather than the
               hero's tail: a rule and a heading of its own, so it reads as
