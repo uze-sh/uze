@@ -35,12 +35,6 @@ export default function HomePage() {
               <code className="font-mono text-[0.95em] text-ink">AGENTS.md</code> in Claude Code,
               Codex, OpenCode and Antigravity, and a terminal to run them side by side.
             </p>
-            <p className="mt-4 font-mono text-[13px] text-ink">
-              <span className="text-success" aria-hidden>
-                ✓{' '}
-              </span>
-              Not an agent. No model, no API key.
-            </p>
             {/* One row for the one thing to do: the command, and the way into
                 the docs at its height. The source is a click away in the
                 header and at the foot of the page. */}
@@ -77,11 +71,30 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Under the session it describes, not under the whole hero. */}
+        {/* Under the session it describes, not under the whole hero, and
+            shaped like the chapter bar above it: the agents spread across the
+            session's width, so the session sits framed between the two. */}
         {/* Only beside the full session: the stacked summary names the
             agents in its own second step and links the matrix itself. */}
-        <div className="mt-8 hidden flex-wrap items-start justify-between gap-x-8 gap-y-6 md:flex lg:mt-5 lg:ml-[calc(30rem+3.5rem)]">
-          <p className="max-w-[60ch] text-sm leading-relaxed text-muted">
+        <div className="mt-6 hidden md:block lg:ml-[calc(30rem+3.5rem)]">
+          {/* "Works with", never "powered by": the marks are the agents uze
+              serves, not anything it is made of. */}
+          <ul className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5">
+            {harnessMarks.map((harness) => (
+              <li key={harness.name}>
+                <a
+                  href={homepageOf(harness.name)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="flex items-center gap-2 whitespace-nowrap text-ink transition-colors hover:text-muted"
+                >
+                  <HarnessMark icon={harness.icon} className="size-4" />
+                  <span className="font-mono text-[13px] font-semibold">{harness.name}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-5 border-t border-line px-5 pt-5 text-center text-sm leading-relaxed text-balance text-muted">
             Every route the agents report above is read from the integration that implements it.{' '}
             <Link
               href="/docs/reference/harnesses"
@@ -91,23 +104,6 @@ export default function HomePage() {
             </Link>
             .
           </p>
-          {/* "Works with", never "powered by": the marks are the agents uze
-              serves, not anything it is made of. */}
-          <ul className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:items-center">
-            {harnessMarks.map((harness) => (
-              <li key={harness.name}>
-                <a
-                  href={homepageOf(harness.name)}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="flex items-center gap-2 text-ink transition-colors hover:text-muted"
-                >
-                  <HarnessMark icon={harness.icon} className="size-4" />
-                  <span className="font-mono text-[13px] font-semibold">{harness.name}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
         </div>
       </section>
 
@@ -154,7 +150,7 @@ export default function HomePage() {
                     aria-hidden
                   />
                 </summary>
-                <p className="max-w-[65ch] pb-6 pe-10 text-[15px] leading-relaxed text-muted">{item.a}</p>
+                <div className="max-w-[65ch] pb-6 pe-10 text-[15px] leading-relaxed text-muted">{item.a}</div>
               </details>
             ))}
           </div>

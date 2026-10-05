@@ -3,13 +3,29 @@ import type { ReactNode } from 'react';
 // The landing page's questions, apart from its layout.
 
 // The questions a developer asks in the first minute, answered before they
-// have to open the docs. "Not an agent, no API key" is said here and in the
-// hero's badge and nowhere else: repeated in every section it reads as
-// protesting too much.
+// have to open the docs. "Not an agent, no API key" is said here and nowhere
+// else: repeated in every section it reads as protesting too much.
 export const faq: { q: string; a: ReactNode }[] = [
   {
     q: 'Is uze another coding agent?',
-    a: 'No. uze has no model and needs no API key: your agents keep the logins and subscriptions they already have. uze installs plugins into them and runs them, and you talk to each one exactly as you do today.',
+    a: (
+      <>
+        <ul className="mb-4 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[13.5px] text-ink">
+          {['Not an agent', 'No model', 'No API key'].map((claim) => (
+            <li key={claim} className="flex items-center gap-2">
+              <span className="text-success" aria-hidden>
+                ✓
+              </span>
+              {claim}
+            </li>
+          ))}
+        </ul>
+        <p>
+          Your agents keep the logins and subscriptions they already have. uze installs plugins into
+          them and runs them, and you talk to each one exactly as you do today.
+        </p>
+      </>
+    ),
   },
   {
     q: 'Does it send my code anywhere?',
