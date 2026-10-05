@@ -139,10 +139,10 @@ impl Attach<'_> {
             .pane
             .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
             || self.on_content_scrollbar(mouse.column, mouse.row)
-            || matches!(
-                self.model.hit_at(mouse.column, mouse.row),
-                Some(WorkspaceHit::Extension(_))
-            );
+            || self
+                .model
+                .hit_at(mouse.column, mouse.row)
+                .is_some_and(WorkspaceHit::is_open_surfaces);
         match mouse {
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(

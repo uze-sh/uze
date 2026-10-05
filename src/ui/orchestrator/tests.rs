@@ -1014,6 +1014,34 @@ mod workspace_tests {
         );
     }
 
+    /// Nothing an open surface draws a target for lies over the sidebar,
+    /// so its sections answer as they do with no surface open.
+    #[test]
+    fn an_open_surface_leaves_the_sidebar_its_own() {
+        for open in [
+            (|model: &mut WorkspaceModel| {
+                open_code(model, uze_extensions::code::ContentMode::Contents)
+            }) as fn(&mut WorkspaceModel),
+            |model| model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned())),
+            |model| {
+                model.architect = Some(uze_extensions::architect::ArchitectView::opening(
+                    "/repo".to_owned(),
+                ))
+            },
+        ] {
+            let (mut model, first, _second) = two_agents_with_shells();
+            model.session.as_mut().expect("session").select_tab(first);
+            open(&mut model);
+            let layout = full_frame(&mut model);
+            let over: Vec<_> = model
+                .hits
+                .iter()
+                .filter(|(rect, hit)| hit.is_open_surfaces() && layout.sidebar.intersects(*rect))
+                .collect();
+            assert!(over.is_empty(), "over the sidebar: {over:?}");
+        }
+    }
+
     /// The strip lights one thing, the one in the pane: the selected tab,
     /// or — while a surface stands over it — that surface's button.
     #[test]
@@ -1147,6 +1175,43 @@ mod workspace_tests {
         };
         assert_eq!(render::spec_summary_height(&summary, true, 40), 1 + 2 + 1);
         assert_eq!(render::spec_summary_height(&summary, false, 40), 1);
+    }
+
+    /// The sidebar's sections are the sidebar's while a surface is open:
+    /// their targets are an extension's too, and a press on one once went to
+    /// the open surface instead, which answered nothing.
+    #[test]
+    fn a_sidebar_section_answers_while_a_surface_is_open() {
+        use uze_extensions::spec::{ChangeSummary, Progress, Summary};
+        let home = UzeHome::at(uze_testkit::temp::scratch(
+            "orchestrator-spec-section-under-surface",
+        ));
+        let (mut model, first, _second) = two_agents_with_shells();
+        model.session.as_mut().expect("session").select_tab(first);
+        let cwd = model.focused_cwd().expect("a tab in front");
+        model.remembered.spec_summary = Some(SpecSummaryState {
+            cwd,
+            summary: Some(Summary {
+                changes: vec![ChangeSummary {
+                    name: "mine".to_owned(),
+                    progress: Some(Progress { done: 1, total: 4 }),
+                }],
+                done: 1,
+                total: 4,
+            }),
+            checked_at: std::time::Instant::now(),
+        });
+        model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned()));
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let header = driven.hit(|hit| {
+            *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::ToggleSection))
+        });
+        driven.press(header.x, header.y);
+        assert!(
+            driven.attach.model.spec_summary_open,
+            "opened from its header"
+        );
     }
 
     /// The sidebar's spec section says, folded, how far the checkout's own

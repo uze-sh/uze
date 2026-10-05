@@ -862,6 +862,20 @@ pub(super) enum WorkspaceHit {
     ResizeSidebar,
 }
 
+impl WorkspaceHit {
+    /// Whether this is a target the open surface drew — in the pane, or in
+    /// the bar's leading slot — rather than one of the sections an
+    /// extension keeps in the sidebar, which answer as the sidebar does.
+    pub(super) fn is_open_surfaces(self) -> bool {
+        matches!(
+            self,
+            WorkspaceHit::Extension(
+                ExtensionHit::Code(_) | ExtensionHit::Spec(_) | ExtensionHit::Architect(_)
+            )
+        )
+    }
+}
+
 /// Resolved entirely through the generic `IntegrationPort` contract
 /// (`.id()`/`.display_name()`/`.aliases()`) — never a hardcoded vendor list,
 /// which `src/` is not allowed to hold (see
