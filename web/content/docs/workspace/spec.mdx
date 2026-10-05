@@ -45,21 +45,36 @@ workspace:
   artifacts: docs     # docs/adr/*.md is found inside it
 ```
 
-A Markdown file there is a decision when it reads like one: a title, a status
-(a `Status:` line, a `## Status` section or `status:` in its front matter) and
-a `## Decision` or `## Decision Outcome` section. That covers Nygard's records
-and MADR, whatever tool wrote them. Guides, indexes and anything else in the
-same directories are passed over.
+A Markdown file there is a decision when its name is a record's: a number of
+three or more digits, a hyphen and a slug, like `0042-use-yaml.md`. That is the
+convention adr-tools, MADR and log4brains share, and it holds in any language:
+nothing reads the words of a heading or a label, so a record written in
+Portuguese is found the same way. Guides, indexes and anything else in the same
+directories are passed over.
 
-Each decision is listed by its number and title, with its status beside it.
-What it did to the others is read from its own lines that say so
-(`Supersedes`, `Superseded by`, `Consolidates`, `Amends`) where they link a
-file, and said above the record when it is open. The other direction is
-worked out, so an older record shows **superseded** without being edited. A
-reference that links no file is shown as written.
+Each decision is listed by its number and title, with its status beside it. The
+title is the front matter's `title`, else the first `# ` heading. The status is
+the front matter's `status`, else the first `Label: value` line under the title
+that is not a date (`Status: Accepted`, `Situação: Aceita`), else the one line a
+Nygard record's first section holds. A record with none is listed without one.
 
-A decision written inside a change, like `openspec/changes/<name>/adr/`, is
-listed in that change as its **decision**, after the design.
+Which record replaced which is read only from front matter, so it is never a
+guess:
+
+```yaml
+---
+status: accepted
+supersedes: 0001-keep-one-lock.md   # a file or a number; a list works too
+---
+```
+
+The other side is worked out, so the older record shows **superseded** without
+being edited. A link from a record's header to another record is shown as a
+**reference** on both, without saying which way it points. A reference to a
+file that is not there is shown as written.
+
+A numbered record written inside a change, like `openspec/changes/<name>/adr/`,
+is listed in that change as its **decision**, after the design.
 
 ## Tasks in the sidebar
 

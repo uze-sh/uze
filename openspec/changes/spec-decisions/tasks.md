@@ -5,15 +5,15 @@
 
 ## 2. Decision reader
 
-- [x] 2.1 Add the format test (title, status in any of the three shapes, decision section), reading each file's head only; unit tests for Nygard, MADR full, MADR minimal, a README and a guide
-- [x] 2.2 Read status as written, and supersession edges from links under `Supersedes` / `Superseded by` / `Consolidates` / `Amends`; derive the inverse edge; keep an unresolved reference as text
+- [x] 2.1 Recognise a record by its numbered name; title and status from front matter or structure, never a heading's words; unit tests for adr-tools, MADR, a Portuguese record, a README and a guide
+- [x] 2.2 Read supersession only from front matter `supersedes` / `superseded-by`, header links as references; derive the inverse edge; keep an unresolved reference as written
 - [x] 2.3 Catalog decisions across every declared place on the surface's background read, sorted by file name
 
 ## 3. Surface
 
 - [x] 3.1 Add `Subject::Decisions`, offered only when a declared place holds a decision; list title and status, superseded ones marked
 - [x] 3.2 Render a decision as Markdown with its supersession named above the body; activating opens it in the code surface
-- [x] 3.3 Add `Role::Decision`: a file inside a unit that passes the format test is listed after the design
+- [x] 3.3 Add `Role::Decision`: a numbered record inside a unit is listed after the design
 - [x] 3.4 A checkout with decisions and no tool marker opens on the decisions subject instead of the empty state
 - [ ] 3.5 Add the subject to the selector in `src/ui/`, with `TestBackend` tests for the list and the empty state
 

@@ -889,7 +889,14 @@ fn standing_marker(standing: &Standing) -> Span {
     if standing.superseded {
         Span::new("superseded", Tone::Faint)
     } else {
-        Span::new(standing.status.to_lowercase(), Tone::Muted)
+        Span::new(
+            standing
+                .status
+                .as_deref()
+                .unwrap_or_default()
+                .to_lowercase(),
+            Tone::Muted,
+        )
     }
 }
 

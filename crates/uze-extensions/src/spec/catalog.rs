@@ -276,8 +276,11 @@ fn artifacts(host: &dyn Host, dialect: &Dialect, unit: &Path, depth: usize) -> V
             let text = host.read_file(&path).map_err(|reason| reason.to_string());
             // Whatever the dialect calls it, a file that reads as a decision
             // record is the unit's decision, named by its own title.
-            let record = (classified.role == Role::Other && is_markdown(&path))
-                .then(|| text.as_deref().ok().and_then(decision::recognise))
+            let record = (classified.role == Role::Other)
+                .then(|| {
+                    let text = text.as_deref().ok()?;
+                    decision::recognise(file_name(&relative), text)
+                })
                 .flatten();
             let (role, name) = match record {
                 Some(record) => (Role::Decision, record.title),

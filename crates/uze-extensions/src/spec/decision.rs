@@ -1,19 +1,25 @@
-//! Decision records, recognised by their shape wherever a project keeps
-//! them.
+//! Decision records, recognised wherever a project keeps them by signals
+//! that hold in any language.
 //!
 //! No spec-driven tool decides where decisions live — OpenSpec has them
 //! only through a community schema, Spec Kit only through an extension,
 //! the rest not at all — so they are looked for in the places the project
-//! declared, and a file is one when it reads like one: a title, a status
-//! and a decision section, in the shape Nygard's records and MADR give
-//! them. Everything else in those places is somebody else's document and
-//! is passed over without a word.
+//! declared. What makes a file a record is the convention every ADR tool
+//! shares and no translation changes: a numbered file name,
+//! `NNNN-slug.md`. Headings and field labels are prose in whatever language
+//! the team writes, so nothing here matches a word of them:
 //!
-//! What one decision did to another is read from the lines that say so
-//! (`Supersedes`, `Superseded by`, `Consolidates`, `Amends`) and only
-//! where they name a file; the other direction is derived, so a record
-//! never has to be edited to say it was replaced. A reference that names
-//! no file found is kept as written rather than guessed at.
+//! - the title is the front matter's `title`, else the first `# `
+//!   heading, else the slug;
+//! - the status is the front matter's `status`, else the first
+//!   `Label: value` line of the header whose value is not a date, else the
+//!   one line a Nygard record's first section holds — and a record with
+//!   none of them is listed without one rather than dropped;
+//! - which record replaced which is said only by the front matter's
+//!   `supersedes` / `superseded-by` keys. A link from a record's header to
+//!   another record is a reference, shown in both directions, with no
+//!   claim about which way it points: telling "replaces" from "mentions"
+//!   would mean reading the sentence around the link.
 
 use std::{
     collections::BTreeMap,
@@ -33,169 +39,109 @@ pub const SOURCE: &str = "ADR";
 /// `docs/` holds `adr/` a level or two down, and no further.
 const DEPTH: usize = 6;
 
+/// The fewest digits a record's number has. Every ADR tool pads it — three
+/// or four — which is what tells `001-use-yaml.md` from `1-notes.md`.
+const NUMBER_DIGITS: usize = 3;
+
+/// The longest line read as a status rather than as a paragraph.
+const STATUS_LENGTH: usize = 40;
+
 /// What a file says about itself, when it is a decision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Record {
     pub title: String,
-    /// As written: `Accepted`, `proposed`, `Superseded by 054`.
-    pub status: String,
+    /// As written, without the punctuation that closes a sentence.
+    pub status: Option<String>,
     pub relations: Vec<Relation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Relation {
     pub kind: Kind,
-    pub target: Target,
+    /// A file name, a path, or a record's number, as the record spells it.
+    pub target: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Kind {
-    /// This decision takes the other's place.
+    /// This record takes the other's place.
     Replaces,
-    /// This decision changes part of the other, which still stands.
-    Amends,
-    /// The other decision took this one's place.
+    /// The other record took this one's place.
     ReplacedBy,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Target {
-    /// A file, as the record spells it.
-    File(String),
-    /// A reference that names no file, as written.
-    Text(String),
+    /// This record links the other, saying nothing about which way.
+    References,
 }
 
 /// Where a decision stands among the others the places hold.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Standing {
-    pub status: String,
-    /// A later decision took its place, whatever its own status says.
+    pub status: Option<String>,
+    /// A record that took its place says so, whatever its own status says.
     pub superseded: bool,
     /// One sentence per relation, in both directions: what the reader is
     /// told above the record.
     pub notes: Vec<String>,
 }
 
-/// The record `text` is, or `None` when it is not one.
-pub fn recognise(text: &str) -> Option<Record> {
+/// The record `file_name` holding `text` is, or `None` when the name is not
+/// a record's.
+pub fn recognise(file_name: &str, text: &str) -> Option<Record> {
+    let slug = record_slug(file_name)?;
     let (front, body) = front_matter(text);
-    let mut title = front_value(front, "title");
-    let mut status = front_value(front, "status");
-    let mut decided = false;
-    let mut in_status_section = false;
+    let fields = fields(front);
+    let header = header(body);
+    let title = first(&fields, "title")
+        .or_else(|| {
+            body.lines()
+                .find_map(|line| line.trim().strip_prefix("# "))
+                .map(|title| title.trim().to_owned())
+        })
+        .filter(|title| !title.is_empty())
+        .unwrap_or_else(|| slug.replace('-', " "));
+    let status = first(&fields, "status")
+        .or_else(|| labelled_status(header))
+        .or_else(|| first_section_line(body))
+        .map(|status| status.trim_end_matches(['.', ';']).trim().to_owned())
+        .filter(|status| !status.is_empty());
     let mut relations = Vec::new();
-    for line in body.lines() {
-        let trimmed = line.trim();
-        if let Some(heading) = trimmed.strip_prefix("## ") {
-            let heading = heading.trim().to_ascii_lowercase();
-            in_status_section = heading == "status";
-            decided |= heading == "decision" || heading.starts_with("decision ");
-            continue;
+    for (key, kind) in [
+        ("supersedes", Kind::Replaces),
+        ("superseded-by", Kind::ReplacedBy),
+        ("superseded_by", Kind::ReplacedBy),
+    ] {
+        for target in fields.get(key).into_iter().flatten() {
+            relations.push(Relation {
+                kind,
+                target: target.clone(),
+            });
         }
-        if title.is_none()
-            && let Some(heading) = trimmed.strip_prefix("# ")
+    }
+    for target in links(header) {
+        if !relations
+            .iter()
+            .any(|relation| same_file(&relation.target, &target))
         {
-            title = Some(heading.trim().to_owned());
-            continue;
-        }
-        let plain = unadorned(trimmed);
-        let lower = plain.to_ascii_lowercase();
-        if status.is_none() {
-            if let Some(value) = lower.strip_prefix("status:") {
-                status = Some(plain[plain.len() - value.len()..].trim().to_owned());
-            } else if in_status_section && !plain.is_empty() {
-                status = Some(plain.to_owned());
-            }
-        }
-        if let Some(relation) = relation(plain) {
-            relations.extend(relation);
+            relations.push(Relation {
+                kind: Kind::References,
+                target,
+            });
         }
     }
-    // A `## Status` section is prose (`Accepted.`) where a `Status:` line is
-    // a label; listed beside a title, both are the label.
-    let status = status.map(|status| status.trim_end_matches(['.', ';']).trim().to_owned());
-    match (title, status, decided) {
-        (Some(title), Some(status), true) if !title.is_empty() && !status.is_empty() => {
-            Some(Record {
-                title,
-                status,
-                relations,
-            })
-        }
-        _ => None,
-    }
+    Some(Record {
+        title,
+        status,
+        relations,
+    })
 }
 
-/// A line with the list marker, quote and emphasis a record dresses its
-/// fields in taken off.
-fn unadorned(line: &str) -> &str {
-    line.trim_start_matches(['-', '*', '>', ' '])
-        .trim_start_matches("**")
-        .trim()
-}
-
-/// The relations one line declares, if it declares any.
-fn relation(line: &str) -> Option<Vec<Relation>> {
-    let lower = line.to_ascii_lowercase();
-    // A status line may carry the relation too: `Status: Superseded by 054`.
-    let lower = lower
-        .strip_prefix("status:")
-        .map_or(lower.as_str(), str::trim);
-    let kind = if lower.starts_with("superseded by") {
-        Kind::ReplacedBy
-    } else if lower.starts_with("supersedes") {
-        if lower.contains("in part") || lower.contains("partially") {
-            Kind::Amends
-        } else {
-            Kind::Replaces
-        }
-    } else if lower.starts_with("consolidates") {
-        Kind::Replaces
-    } else if lower.starts_with("amends") {
-        Kind::Amends
-    } else {
-        return None;
-    };
-    let files = files_named(line);
-    let targets = if files.is_empty() {
-        let written = line
-            .split_once(':')
-            .map_or(line, |(_, rest)| rest)
-            .trim()
-            .trim_end_matches("**")
-            .trim();
-        if written.is_empty() {
-            return None;
-        }
-        vec![Target::Text(written.to_owned())]
-    } else {
-        files.into_iter().map(Target::File).collect()
-    };
-    Some(
-        targets
-            .into_iter()
-            .map(|target| Relation { kind, target })
-            .collect(),
-    )
-}
-
-/// Every Markdown file a line links to, by a link or in code.
-fn files_named(line: &str) -> Vec<String> {
-    let mut files = Vec::new();
-    for (open, close) in [("](", ')'), ("`", '`')] {
-        let mut rest = line;
-        while let Some(start) = rest.find(open) {
-            let after = &rest[start + open.len()..];
-            let Some(end) = after.find(close) else { break };
-            let candidate = after[..end].split('#').next().unwrap_or_default().trim();
-            if candidate.ends_with(".md") && !files.iter().any(|file| file == candidate) {
-                files.push(candidate.to_owned());
-            }
-            rest = &after[end + 1..];
-        }
-    }
-    files
+/// The slug of a record's file name: `0042-use-yaml.md` gives `use-yaml`.
+fn record_slug(file_name: &str) -> Option<&str> {
+    let stem = file_name
+        .strip_suffix(".md")
+        .or_else(|| file_name.strip_suffix(".MD"))?;
+    let digits = stem.chars().take_while(char::is_ascii_digit).count();
+    let slug = stem[digits..].strip_prefix('-')?;
+    (digits >= NUMBER_DIGITS && !slug.is_empty()).then_some(slug)
 }
 
 fn front_matter(text: &str) -> (&str, &str) {
@@ -213,12 +159,134 @@ fn front_matter(text: &str) -> (&str, &str) {
     }
 }
 
-fn front_value(front: &str, key: &str) -> Option<String> {
-    front.lines().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        (name.trim().eq_ignore_ascii_case(key))
-            .then(|| value.trim().trim_matches(['"', '\'']).to_owned())
+/// The front matter's keys, each with its value or the items of its list.
+fn fields(front: &str) -> BTreeMap<String, Vec<String>> {
+    let unquote = |value: &str| value.trim().trim_matches(['"', '\'']).to_owned();
+    let mut fields: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut open: Option<String> = None;
+    for line in front.lines() {
+        if let Some(item) = line.trim_start().strip_prefix("- ")
+            && line.starts_with(char::is_whitespace)
+            && let Some(key) = &open
+        {
+            fields.entry(key.clone()).or_default().push(unquote(item));
+            continue;
+        }
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if line.starts_with(char::is_whitespace) {
+            continue;
+        }
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim();
+        let values: Vec<String> = match value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            Some(list) => list
+                .split(',')
+                .map(unquote)
+                .filter(|v| !v.is_empty())
+                .collect(),
+            None if value.is_empty() => Vec::new(),
+            None => vec![unquote(value)],
+        };
+        open = Some(key.clone());
+        fields.entry(key).or_default().extend(values);
+    }
+    fields
+}
+
+fn first(fields: &BTreeMap<String, Vec<String>>, key: &str) -> Option<String> {
+    fields.get(key).and_then(|values| values.first()).cloned()
+}
+
+/// What precedes the first `## ` section: the title and the fields a
+/// record writes under it.
+fn header(body: &str) -> &str {
+    let mut offset = 0;
+    for line in body.split_inclusive('\n') {
+        if line.trim_start().starts_with("## ") {
+            return &body[..offset];
+        }
+        offset += line.len();
+    }
+    body
+}
+
+/// The first section's body, when it is a single short line — which is
+/// where a Nygard record, in any language, writes its status.
+fn first_section_line(body: &str) -> Option<String> {
+    let mut lines = body
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("## "));
+    lines.next()?;
+    let paragraph: Vec<&str> = lines
+        .map(str::trim)
+        .skip_while(|line| line.is_empty())
+        .take_while(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
+    match paragraph.as_slice() {
+        [line] if line.chars().count() <= STATUS_LENGTH => Some(unadorned(line).to_owned()),
+        _ => None,
+    }
+}
+
+/// The first `Label: value` line of the header whose value is not a date —
+/// a record dates itself in the same shape it states its status in.
+fn labelled_status(header: &str) -> Option<String> {
+    header.lines().find_map(|line| {
+        let (label, value) = unadorned(line).split_once(':')?;
+        let value = value.trim().trim_start_matches("**").trim();
+        let label_is_a_word = !label.trim().is_empty()
+            && label.trim().chars().count() <= 20
+            && !label.contains(['[', '(', '`', '#']);
+        (label_is_a_word
+            && !value.is_empty()
+            && !value.contains("](")
+            && !is_date(value)
+            && value.chars().count() <= STATUS_LENGTH)
+            .then(|| value.to_owned())
     })
+}
+
+fn is_date(value: &str) -> bool {
+    let digits = value.chars().filter(char::is_ascii_digit).count();
+    digits >= 6
+        && value
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, '-' | '/' | '.' | ' '))
+}
+
+/// A line with the list marker, quote and emphasis a record dresses its
+/// fields in taken off.
+fn unadorned(line: &str) -> &str {
+    line.trim()
+        .trim_start_matches(['-', '*', '>', ' '])
+        .trim_start_matches("**")
+        .trim()
+}
+
+/// Every Markdown file the header links to, by a link or in code.
+fn links(header: &str) -> Vec<String> {
+    let mut files: Vec<String> = Vec::new();
+    for line in header.lines() {
+        for (open, close) in [("](", ')'), ("`", '`')] {
+            let mut rest = line;
+            while let Some(start) = rest.find(open) {
+                let after = &rest[start + open.len()..];
+                let Some(end) = after.find(close) else { break };
+                let candidate = after[..end].split('#').next().unwrap_or_default().trim();
+                if candidate.ends_with(".md") && !files.iter().any(|file| file == candidate) {
+                    files.push(candidate.to_owned());
+                }
+                rest = &after[end + 1..];
+            }
+        }
+    }
+    files
+}
+
+fn same_file(a: &str, b: &str) -> bool {
+    Path::new(a).file_name() == Path::new(b).file_name()
 }
 
 /// Every decision under the declared places, as units of the decisions
@@ -232,10 +300,16 @@ pub fn read(host: &dyn Host, root: &Path, places: &ArtifactSource) -> Vec<Unit> 
             if found.contains_key(&path) {
                 continue;
             }
+            let Some(file_name) = path.file_name().map(|name| name.to_string_lossy()) else {
+                continue;
+            };
+            if record_slug(&file_name).is_none() {
+                continue;
+            }
             let Ok(text) = host.read_file(&path) else {
                 continue;
             };
-            if let Some(record) = recognise(&text) {
+            if let Some(record) = recognise(&file_name, &text) {
                 found.insert(path, (text, record));
             }
         }
@@ -292,42 +366,23 @@ fn standings(paths: &[PathBuf], found: &BTreeMap<PathBuf, (String, Record)>) -> 
         .collect();
     for (index, path) in paths.iter().enumerate() {
         for relation in &found[path].1.relations {
-            let other = match &relation.target {
-                Target::File(file) => resolve(paths, path, file),
-                Target::Text(_) => None,
+            let other = resolve(paths, path, &relation.target);
+            let named = other.map_or_else(|| relation.target.clone(), name_of);
+            let (said, answered) = match relation.kind {
+                Kind::Replaces => ("Supersedes", "Superseded by"),
+                Kind::ReplacedBy => ("Superseded by", "Supersedes"),
+                Kind::References => ("References", "Referenced by"),
             };
-            let named = match (&relation.target, other) {
-                (_, Some(other)) => name_of(other),
-                (Target::File(file), None) | (Target::Text(file), None) => file.clone(),
-            };
-            match relation.kind {
-                Kind::Replaces => {
-                    standings[index].notes.push(format!("Supersedes {named}"));
-                    if let Some(other) = other {
-                        standings[other].superseded = true;
-                        standings[other]
-                            .notes
-                            .push(format!("Superseded by {}", name_of(index)));
-                    }
-                }
-                Kind::Amends => {
-                    standings[index].notes.push(format!("Amends {named}"));
-                    if let Some(other) = other {
-                        standings[other]
-                            .notes
-                            .push(format!("Amended by {}", name_of(index)));
-                    }
-                }
-                Kind::ReplacedBy => {
-                    standings[index].superseded = true;
-                    standings[index]
-                        .notes
-                        .push(format!("Superseded by {named}"));
-                    if let Some(other) = other {
-                        standings[other]
-                            .notes
-                            .push(format!("Supersedes {}", name_of(index)));
-                    }
+            standings[index].notes.push(format!("{said} {named}"));
+            if relation.kind == Kind::ReplacedBy {
+                standings[index].superseded = true;
+            }
+            if let Some(other) = other {
+                standings[other]
+                    .notes
+                    .push(format!("{answered} {}", name_of(index)));
+                if relation.kind == Kind::Replaces {
+                    standings[other].superseded = true;
                 }
             }
         }
@@ -346,6 +401,12 @@ fn standings(paths: &[PathBuf], found: &BTreeMap<PathBuf, (String, Record)>) -> 
 /// The decision a record's reference names: the file beside it, else the
 /// one file of that name anywhere in the places.
 fn resolve(paths: &[PathBuf], from: &Path, file: &str) -> Option<usize> {
+    if file.chars().all(|c| c.is_ascii_digit()) {
+        let number: u64 = file.parse().ok()?;
+        return paths
+            .iter()
+            .position(|path| path != from && number_of(path).is_some_and(|other| other == number));
+    }
     let beside = normalise(&from.parent().unwrap_or(from).join(file));
     paths
         .iter()
@@ -374,6 +435,12 @@ fn normalise(path: &Path) -> PathBuf {
         }
     }
     normal
+}
+
+fn number_of(path: &Path) -> Option<u64> {
+    let name = path.file_name()?.to_string_lossy();
+    let digits: String = name.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
 }
 
 /// A numbered record keeps its number in front of its title, the way the
@@ -417,77 +484,100 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_nygard_record_is_a_decision() {
+    fn a_numbered_markdown_file_is_a_record_and_nothing_else_is() {
+        assert!(recognise("0042-use-yaml.md", "anything").is_some());
+        assert!(recognise("042-use-yaml.md", "").is_some());
+        for name in [
+            "README.md",
+            "guide.md",
+            "1-notes.md",
+            "0042.md",
+            "0042-use-yaml.txt",
+        ] {
+            assert_eq!(recognise(name, "# A\n\nStatus: Accepted\n"), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_nygard_record_in_any_language_gives_its_title_and_status() {
+        let english = recognise(
+            "0001-keep-one-lock.md",
+            "# 1. Keep one lock\n\nDate: 2026-01-02\n\n## Status\n\nAccepted\n\n## Context\n\nx\n",
+        )
+        .unwrap();
+        assert_eq!(english.title, "1. Keep one lock");
+        assert_eq!(english.status.as_deref(), Some("Accepted"));
+
+        let portuguese = recognise(
+            "0001-manter-um-lock.md",
+            "# Manter um lock\n\n## Situação\n\nAceita.\n\n## Contexto\n\nx\n\n## Decisão\n\ny\n",
+        )
+        .unwrap();
+        assert_eq!(portuguese.title, "Manter um lock");
+        assert_eq!(portuguese.status.as_deref(), Some("Aceita"));
+    }
+
+    #[test]
+    fn a_status_written_as_a_field_is_read_whatever_its_label() {
         let record = recognise(
-            "# Use YAML for the manifest\n\nStatus: Accepted\n\n## Context\n\nWhy.\n\n\
-             ## Decision\n\nWe will.\n\n## Consequences\n\nThen.\n",
+            "054-scope.md",
+            "# Scope\n\nData: 2026-03-04\nEstado: Proposta\nSupersedes in part: [019](019-x.md)\n\n\
+             ## Contexto\n\nLonger than one line here,\nand a second line.\n",
         )
         .unwrap();
-        assert_eq!(record.title, "Use YAML for the manifest");
-        assert_eq!(record.status, "Accepted");
-    }
-
-    #[test]
-    fn a_madr_record_is_a_decision() {
-        let full = recognise(
-            "---\nstatus: accepted\ndate: 2026-01-02\n---\n# Pick a parser\n\n\
-             ## Context and Problem Statement\n\nx\n\n## Decision Outcome\n\nChosen option.\n",
-        )
-        .unwrap();
-        assert_eq!(full.status, "accepted");
-        assert_eq!(full.title, "Pick a parser");
-
-        let minimal = recognise(
-            "# Pick a parser\n\n## Status\n\nProposed.\n\n## Decision Outcome\n\nChosen.\n",
-        )
-        .unwrap();
-        assert_eq!(minimal.status, "Proposed");
-    }
-
-    #[test]
-    fn a_guide_or_a_readme_is_not_a_decision() {
-        assert_eq!(recognise("# Architecture decisions\n\nAn index.\n"), None);
         assert_eq!(
-            recognise("# Getting started\n\n## Decision\n\nNo status anywhere.\n"),
-            None,
-            "a decision section alone is not a record"
-        );
-        assert_eq!(
-            recognise("# Release notes\n\nStatus: shipped\n\n## Changes\n"),
-            None,
-            "a status alone is not a record"
+            record.status.as_deref(),
+            Some("Proposta"),
+            "a date is not a status"
         );
     }
 
     #[test]
-    fn a_status_note_is_not_the_status() {
+    fn madr_front_matter_carries_the_status_and_who_replaced_whom() {
         let record = recognise(
-            "# A\n\nStatus: Accepted\nStatus note: this partially supersedes `016-x.md`.\n\n\
-             ## Decision\n",
+            "0007-pick-a-parser.md",
+            "---\nstatus: superseded\nsuperseded-by: 0009-pick-another.md\nsupersedes:\n  - 0003-old.md\n---\n\
+             # Pick a parser\n\n## Context and Problem Statement\n\nx\n",
         )
         .unwrap();
-        assert_eq!(record.status, "Accepted");
-    }
-
-    #[test]
-    fn relations_name_the_files_they_link() {
-        let record = recognise(
-            "# B\n\nStatus: Accepted\nSupersedes in part: [019](019-boundary.md) (§1)\n\
-             Consolidates: ADR-025 (Commands)\n\n## Decision\n",
-        )
-        .unwrap();
+        assert_eq!(record.status.as_deref(), Some("superseded"));
         assert_eq!(
             record.relations,
             vec![
                 Relation {
-                    kind: Kind::Amends,
-                    target: Target::File("019-boundary.md".to_owned()),
+                    kind: Kind::Replaces,
+                    target: "0003-old.md".to_owned(),
                 },
                 Relation {
-                    kind: Kind::Replaces,
-                    target: Target::Text("ADR-025 (Commands)".to_owned()),
+                    kind: Kind::ReplacedBy,
+                    target: "0009-pick-another.md".to_owned(),
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_link_in_the_header_is_a_reference_whatever_the_sentence_says() {
+        let record = recognise(
+            "054-scope.md",
+            "# Scope\n\nStatus: Accepted\nSubstitui em parte: [019](019-boundary.md)\n\n\
+             ## Context\n\nSee also [020](020-other.md).\n",
+        )
+        .unwrap();
+        assert_eq!(
+            record.relations,
+            vec![Relation {
+                kind: Kind::References,
+                target: "019-boundary.md".to_owned(),
+            }],
+            "a link in the body is not part of the header"
+        );
+    }
+
+    #[test]
+    fn a_record_with_nothing_to_say_about_its_status_is_still_one() {
+        let record = recognise("0003-untitled.md", "Just prose.\n").unwrap();
+        assert_eq!(record.title, "untitled");
+        assert_eq!(record.status, None);
     }
 }

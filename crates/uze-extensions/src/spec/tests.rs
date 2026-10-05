@@ -1362,7 +1362,7 @@ fn decisions_are_found_by_their_shape_in_the_declared_places() {
     write(
         root,
         "docs/adr/002-split-the-lock.md",
-        "# Split the lock\n\nStatus: Accepted\nSupersedes [001](001-keep-one-lock.md)\n\n\
+        "---\nstatus: accepted\nsupersedes: 001-keep-one-lock.md\n---\n# Split the lock\n\n\
          ## Decision\n\nz\n",
     );
     write(root, "docs/adr/README.md", "# Decisions\n\nAn index.\n");
@@ -1381,7 +1381,11 @@ fn decisions_are_found_by_their_shape_in_the_declared_places() {
         .clone()
         .unwrap();
     assert!(replaced.superseded, "a later record took its place");
-    assert_eq!(replaced.status, "Accepted", "its own words are kept");
+    assert_eq!(
+        replaced.status.as_deref(),
+        Some("Accepted"),
+        "its own words are kept"
+    );
     assert_eq!(replaced.notes, vec!["Superseded by 002 Split the lock"]);
     let replacing = unit(&answer, Subject::Decisions, "002 Split the lock")
         .standing
@@ -1439,7 +1443,7 @@ fn a_decisions_relations_are_said_above_it_and_its_status_beside_it() {
     write(
         root,
         "docs/adr/002-split-the-lock.md",
-        "# Split the lock\n\nStatus: Proposed\nSupersedes [001](001-keep-one-lock.md)\n\n\
+        "# Split the lock\n\nStatus: Proposed\nSee [001](001-keep-one-lock.md)\n\n\
          ## Decision\n\nz\n",
     );
     let mut state = opened(read_with(
@@ -1461,11 +1465,15 @@ fn a_decisions_relations_are_said_above_it_and_its_status_beside_it() {
             _ => None,
         })
         .collect();
-    assert_eq!(markers, vec!["superseded", "proposed"]);
+    assert_eq!(
+        markers,
+        vec!["accepted", "proposed"],
+        "a link says nothing about which record replaced which"
+    );
 
     handle_command(&mut state, Command::SelectNext, space());
     let shown = text(&state, 0..200).join("\n");
-    assert!(shown.contains("Supersedes 001 Keep one lock"), "{shown}");
+    assert!(shown.contains("References 001 Keep one lock"), "{shown}");
 }
 
 /// The records this repository keeps are what the reader is for: every one
@@ -1494,18 +1502,34 @@ fn this_repositorys_own_decisions_are_read() {
         records,
         "every numbered record is a decision"
     );
+    let without: Vec<&str> = decisions
+        .iter()
+        .filter(|unit| {
+            unit.standing
+                .as_ref()
+                .is_none_or(|standing| standing.status.as_deref() != Some("Accepted"))
+        })
+        .map(|unit| unit.name.as_str())
+        .collect();
+    assert!(
+        without.is_empty(),
+        "read without an accepted status: {without:?}"
+    );
 
     let older = decisions
         .iter()
         .find(|unit| unit.name.starts_with("019 "))
         .and_then(|unit| unit.standing.clone())
         .unwrap();
-    assert!(!older.superseded, "superseded in part is still in force");
+    assert!(
+        !older.superseded,
+        "only a record's front matter says it was replaced"
+    );
     assert!(
         older
             .notes
             .iter()
-            .any(|note| note.starts_with("Amended by 054 ")),
+            .any(|note| note.starts_with("Referenced by 054 ")),
         "{:?}",
         older.notes
     );

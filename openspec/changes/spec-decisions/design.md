@@ -13,7 +13,7 @@ project declares for its artifacts reach only the architect today, as
 **Goals:**
 - Decisions listed and rendered in the spec surface, from any place the
   project declares, with status and supersession.
-- One format test, used both for kept decisions and for a decision
+- One recognition rule, used both for kept decisions and for a decision
   inside a change.
 
 **Non-Goals:**
@@ -34,22 +34,20 @@ behalf and silently misses a project that chose another; a dedicated
 `workspace.decisions` key — rejected, it is a key per kind, which
 `workspace.artifacts` was shaped to avoid.
 
-**The format test is structural and small.** A title (`# ...`), a status
-(`Status:` line, `## Status` section, or `status:` front matter), and a
-decision section (`## Decision` or `## Decision Outcome`). That admits
-Nygard, MADR full and minimal, and this repository's own records, and
-rejects a README or a guide. Files are read whole, since `Host` grants no
-partial read, and only Markdown files are opened at all; the walk runs on
-the surface's background read, so a large `docs/` costs time nobody waits
-on. *Alternative:*
-file-name pattern (`NNNN-*.md`) — rejected as the test, kept as the sort
-key: MADR's own examples and many projects do not number.
+**Recognition uses only signals that hold in any language.** A record is
+a numbered Markdown file (`NNNN-slug.md`), the one convention adr-tools,
+MADR and log4brains share and no translation changes. The title comes from
+front matter or the first `# ` heading, the status from front matter, the
+header's first non-date `Label: value` line, or a Nygard record's one-line
+first section. *Alternative, the first cut:* matching `## Decision`,
+`Status:` and `Supersedes` in English. Rejected after it shipped: a record
+in Portuguese vanished without a word, which is the failure that looks
+like a lost file.
 
-**Supersession comes from links to files.** A decision's text that links
-another decision's file under a line or section starting with
-`Supersedes`, `Superseded by`, `Consolidates` or `Amends` is an edge; the
-inverse edge is derived, so a record never has to be edited to say it was
-replaced. An edge that names no file found is shown as text.
+**Supersession comes only from front matter.** `supersedes` and
+`superseded-by` name records by file or number; the inverse edge is
+derived. A header link to another record is a *reference*, shown both
+ways, because whether a sentence says "replaces" or "mentions" is prose.
 
 **The places move to `shared/`.** A second surface now reads them, which
 is the extraction rule the crate states. `ArtifactSource` becomes

@@ -48,7 +48,7 @@ dialect's catalog entry: **why** (the motivation), **how** (the design),
 **steps** (the work, as checkboxes), **contract** (a requirement that
 outlives the change), **decision** (a decision record the unit carries),
 or **other**. A Markdown file in a unit SHALL be a decision when it
-passes the same format test as a kept decision, whatever the dialect
+carries a record's numbered name (`NNN-slug.md`), whatever the dialect
 calls it, and SHALL be listed after the design. The roles, and not a tool's file
 names, SHALL be what the surface orders and marks by. A file in a unit
 that the catalog gives no role SHALL be listed as **other** rather than
@@ -108,51 +108,71 @@ subject the surface opens on.
 
 ## ADDED Requirements
 
-### Requirement: A decision is found by its format in the places the project declares
+### Requirement: A decision is recognised by signals that hold in any language
 The surface SHALL look for decisions in every place `workspace.artifacts`
-declares, as deep as each goes, and SHALL NOT require a tool's marker or
-a fixed directory. A Markdown file SHALL be a decision when it carries a
-title, a status, and a decision section, in the shape Nygard's records
-or MADR give them: a `Status:` line, a `## Status` section or a
-`status:` front-matter field, and a `## Decision` or `## Decision Outcome`
-section. Every other file SHALL be ignored, without a report. A project
-that declares no place SHALL be offered no decisions subject.
+declares, as deep as each goes, and SHALL NOT require a tool's marker, a
+fixed directory, or any word of a heading or a label. A Markdown file
+SHALL be a decision when its name is a record's: a number of at least
+three digits, a hyphen and a slug (`0042-use-yaml.md`). Its title SHALL be
+the front matter's `title`, else its first `# ` heading, else its slug.
+Its status SHALL be the front matter's `status`, else the first
+`Label: value` line before its first section whose value is not a date,
+else the single short line its first section holds, with the punctuation
+that closes a sentence removed. A record with none of these SHALL be
+listed with no status rather than dropped. Every other file SHALL be
+ignored, without a report. A project that declares no place SHALL be
+offered no decisions subject.
 
-#### Scenario: Nygard records under docs/adr
-- **WHEN** `workspace.artifacts` is `docs` and `docs/adr/` holds files
-  with a title, `Status: Accepted`, and `## Context`, `## Decision` and
-  `## Consequences` sections
-- **THEN** each SHALL be listed as a decision
+#### Scenario: A Nygard record written by adr-tools
+- **WHEN** a declared place holds `0001-keep-one-lock.md` with a title, a
+  `Date:` line and a `## Status` section holding `Accepted`
+- **THEN** it SHALL be listed as `0001 Keep one lock`, with status
+  `Accepted`, and the date SHALL NOT be taken for the status
+
+#### Scenario: A record in another language
+- **WHEN** a declared place holds `0001-manter-um-lock.md` whose first
+  section is `## Situação` holding `Aceita.`
+- **THEN** it SHALL be listed with status `Aceita`
 
 #### Scenario: A MADR record
-- **WHEN** a declared place holds a file with `status: accepted` in its
-  front matter and a `## Decision Outcome` section
-- **THEN** it SHALL be listed as a decision
+- **WHEN** a declared place holds a numbered file with `status: accepted`
+  in its front matter
+- **THEN** it SHALL be listed with status `accepted`
 
 #### Scenario: A guide is not a decision
-- **WHEN** a declared place holds a Markdown guide with no status and no
-  decision section
-- **THEN** it SHALL NOT be listed, and nothing SHALL be reported about it
+- **WHEN** a declared place holds `guide.md` and `README.md`
+- **THEN** neither SHALL be listed, and nothing SHALL be reported about
+  them
 
 #### Scenario: Nothing declared
 - **WHEN** the project's `agents.yaml` has no `workspace.artifacts`
 - **THEN** no decisions subject SHALL be offered, even where a `docs/adr/`
   exists
 
-### Requirement: A decision shows where it stands and what it replaced
-Each decision SHALL be listed by its title with its status as written. A
-decision SHALL name the decisions it supersedes, and be named by the ones
-that supersede it, where its text links to them by file; a decision a
-later one supersedes SHALL be listed as superseded whatever its own
-status line says. A reference the surface cannot resolve to a file SHALL
-be shown as written rather than dropped.
+### Requirement: Which record replaced which is said only by structured fields
+A decision SHALL be listed as superseded only when a record says so in
+its front matter: its own `superseded-by`, or another record's
+`supersedes` naming it, by file or by number; each side SHALL name the
+other. A link from a record's header to another record SHALL be shown as
+a reference on both, with no claim about which way it points, because
+telling "replaces" from "mentions" would mean reading the sentence around
+it. A reference the surface cannot resolve to a record SHALL be shown as
+written rather than dropped.
 
 #### Scenario: A superseded decision
-- **WHEN** decision 019 is `Accepted` and decision 054 says it supersedes
-  `019-explicit-project-machine-boundary.md`
-- **THEN** 019 SHALL be listed as superseded by 054, and 054 SHALL name 019
+- **WHEN** `0002-split-the-lock.md` has `supersedes: 0001-keep-one-lock.md`
+  in its front matter
+- **THEN** 0001 SHALL be listed as superseded, named by 0002, and 0002
+  SHALL name 0001
+
+#### Scenario: A link in prose
+- **WHEN** decision 054's header links `019-boundary.md` in a sentence
+  saying it replaces part of it
+- **THEN** 054 SHALL show a reference to 019, 019 SHALL show it is
+  referenced by 054, and 019 SHALL NOT be listed as superseded
 
 #### Scenario: A reference to a file that is gone
-- **WHEN** a decision says it supersedes a file the places do not hold
-- **THEN** the reference SHALL be shown as written, and the decision
-  SHALL still be listed
+- **WHEN** a record's front matter supersedes a file the places do not
+  hold
+- **THEN** the reference SHALL be shown as written, and the record SHALL
+  still be listed
