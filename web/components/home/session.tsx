@@ -7,7 +7,8 @@ import { WORKSPACE_LENGTH, Workspace } from '@/components/home/workspace';
 // installed and the stream splits into four lanes, one per agent, each
 // printing what it received in its own form; the project file that now
 // records it; then `uze workspace` takes the screen, with three agents each
-// on a branch in a checkout of its own. The commands and the report lines
+// on a branch in a checkout of its own, and spec, arch and code open in turn
+// on the first one to finish. The commands and the report lines
 // are the CLI's own (src/progress.rs, src/cli/report.rs), the manifest keys
 // are docs/reference/project-files.mdx's, and the workspace is drawn after
 // its recorded frame.
@@ -394,7 +395,8 @@ export function ConsoleSession() {
         A terminal session: uze market add hiukky/ai adds a marketplace; uze git@ai installs the git
         plugin and Claude Code, Codex, OpenCode and Antigravity each report the skills, agent and hook
         they received; agents.yaml records the plugin and the project&apos;s worktree policy; then uze
-        workspace opens with three agents, each on a branch in its own worktree.
+        workspace opens with three agents, each on a branch in its own worktree, then shows the change the
+        first one worked from, the project&apos;s architecture diagram and the diff it left.
       </p>
     </div>
   );

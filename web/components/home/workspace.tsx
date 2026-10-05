@@ -1,12 +1,15 @@
 import type { ReactNode } from 'react';
+import { ExtensionSurface, type Surface } from '@/components/home/extensions';
 
 // The workspace as `uze workspace` draws it, after the recorded frame in
 // web/public/uze-demo-poster.png: spaces down the side, each holding its
 // agents as the work's name over the harness running it; the checkout's
 // history under them; the selected agent's tab and the extensions over the
 // main area; the agent's own session in the pane, in a checkout of its own;
-// and the keys that act here on the last line. Nothing is on it the product
-// does not do, and every key is one docs/workspace/keys.mdx lists.
+// and the keys that act here on the last line. Once the first agent is done,
+// the selection moves to it and spec, arch and code open in turn over the
+// main area. Nothing is on it the product does not do, and every key is one
+// docs/workspace/keys.mdx lists.
 
 type Agent = {
   name: string;
@@ -57,7 +60,15 @@ const PLACED = [250, 550, 850];
 const PROMPT_AT = 1000;
 const ACTIVITY_AT = [1300, 1700, 2100];
 const READY_AT = 2700;
-export const WORKSPACE_LENGTH = 3400;
+// Each extension is opened on the finished agent, takes its one gesture
+// halfway through, and holds long enough to be read.
+const EXTENSIONS: [Surface, number][] = [
+  ['spec', 3600],
+  ['arch', 7000],
+  ['code', 10400],
+];
+const EXTENSION_MS = 3400;
+export const WORKSPACE_LENGTH = EXTENSIONS[2][1] + EXTENSION_MS;
 
 function Key({ k, children }: { k: string; children: ReactNode }) {
   return (
@@ -87,7 +98,10 @@ export function Workspace({ t }: { t: number }) {
   const placed = PLACED.filter((at) => t >= at).length;
   const ready = t >= READY_AT;
   const shown = ACTIVITY.filter((_, i) => t >= ACTIVITY_AT[i]).length;
-  const selected = AGENTS[SELECTED];
+  const open = EXTENSIONS.findLast(([, at]) => t >= at);
+  const surface = open?.[0];
+  const step = open ? t >= open[1] + EXTENSION_MS * 0.45 : false;
+  const selected = AGENTS[surface ? 0 : SELECTED];
   const pane = placed > SELECTED;
 
   return (
@@ -115,8 +129,19 @@ export function Workspace({ t }: { t: number }) {
                 <span className="text-success">+31</span> <span className="text-danger">−4</span>
               </span>
             ) : null}
-            {['spec', 'arch', 'code'].map((name) => (
-              <span key={name} className="bg-surface px-2 py-0.5 text-muted">
+            {(['spec', 'arch', 'code'] as Surface[]).map((name) => (
+              <span
+                key={name}
+                className={`px-2 py-0.5 ${name === surface ? 'font-semibold' : 'bg-surface text-muted'}`}
+                style={
+                  name === surface
+                    ? {
+                        background: 'var(--color-ink)',
+                        color: 'var(--color-paper)',
+                      }
+                    : undefined
+                }
+              >
                 {name}
               </span>
             ))}
@@ -135,15 +160,24 @@ export function Workspace({ t }: { t: number }) {
           </div>
           <div className="max-sm:grid max-sm:grid-cols-3 max-sm:gap-1 max-sm:px-1 max-sm:py-1 sm:mt-1 sm:pl-3">
             {AGENTS.slice(0, placed).map((agent, i) => (
-              <AgentEntry key={agent.name} agent={agent} selected={i === SELECTED} ready={ready && i === 0} />
+              <AgentEntry key={agent.name} agent={agent} selected={agent === selected} ready={ready && i === 0} />
             ))}
           </div>
           <div className="mt-auto max-sm:hidden">
-            <div className="flex items-center gap-2 px-2 py-1 text-muted">
-              <span>›</span>
-              <span>first steps</span>
-              <span className="ml-auto">0 of 6</span>
-            </div>
+            {/* The selected agent's change, once it is the one with a plan. */}
+            {surface ? (
+              <div className="mb-1">
+                <div className="flex items-center gap-2 bg-surface px-2 py-1">
+                  <span className="text-muted">▾</span>
+                  <span className="font-semibold text-ink">tasks</span>
+                  <span className="ml-auto text-muted">2/4</span>
+                </div>
+                <div className="flex items-center gap-2 px-2 py-0.5 pl-6 text-ink">
+                  <span className="truncate">add-not-found</span>
+                  <span className="ml-auto text-muted">2/4</span>
+                </div>
+              </div>
+            ) : null}
             <div className="flex items-center gap-2 bg-surface px-2 py-1">
               <span className="text-muted">▾</span>
               <span className="font-semibold text-ink">timeline</span>
@@ -162,41 +196,51 @@ export function Workspace({ t }: { t: number }) {
         </aside>
 
         {/* The agent's own harness, in its own checkout. */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col p-3">
-          {pane && t >= PROMPT_AT ? (
-            <>
-              <div className="border-l-2 border-accent bg-surface px-3 py-2 text-ink">{selected.prompt}</div>
-              <div className="mt-3 space-y-1.5 px-1 text-muted">
-                {ACTIVITY.slice(0, shown).map((line, i) => (
-                  <div key={line}>
-                    <span className={i === shown - 1 ? 'text-accent' : 'text-muted'}>{i === shown - 1 ? '●' : '✓'}</span>{' '}
-                    {line}
-                  </div>
-                ))}
+        {surface ? (
+          <ExtensionSurface surface={surface} step={step} />
+        ) : (
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col p-3">
+            {pane && t >= PROMPT_AT ? (
+              <>
+                <div className="border-l-2 border-accent bg-surface px-3 py-2 text-ink">{selected.prompt}</div>
+                <div className="mt-3 space-y-1.5 px-1 text-muted">
+                  {ACTIVITY.slice(0, shown).map((line, i) => (
+                    <div key={line}>
+                      <span className={i === shown - 1 ? 'text-accent' : 'text-muted'}>
+                        {i === shown - 1 ? '●' : '✓'}
+                      </span>{' '}
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            <div className="mt-auto">
+              <div className="border-l-2 border-accent bg-surface px-3 py-2">
+                <span className="session-caret" aria-hidden />
+                <div className="mt-1 text-muted">
+                  <span className="text-accent">Build</span>
+                </div>
               </div>
-            </>
-          ) : null}
-          <div className="mt-auto">
-            <div className="border-l-2 border-accent bg-surface px-3 py-2">
-              <span className="session-caret" aria-hidden />
-              <div className="mt-1 text-muted">
-                <span className="text-accent">Build</span>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                <Key k="esc">interrupt</Key>
+                <span className="ml-auto flex gap-4">
+                  <Key k="shift+tab">agents</Key>
+                  <Key k="ctrl+p">commands</Key>
+                </span>
               </div>
+              <div className="mt-2 truncate text-right text-[11px] text-muted">~/api/{selected.checkout}</div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
-              <Key k="esc">interrupt</Key>
-              <span className="ml-auto flex gap-4">
-                <Key k="shift+tab">agents</Key>
-                <Key k="ctrl+p">commands</Key>
-              </span>
-            </div>
-            <div className="mt-2 truncate text-right text-[11px] text-muted">~/api/{selected.checkout}</div>
-          </div>
-        </section>
+          </section>
+        )}
       </div>
 
-      {/* The keys that act here, the way the workspace says them. */}
-      <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-4 gap-y-0.5 border-t border-line px-3 py-1 text-[11px]">
+      {/* The keys that act here, the way the workspace says them. An open
+          extension says its own, under it. */}
+      <div
+        hidden={Boolean(surface)}
+        className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-4 gap-y-0.5 border-t border-line px-3 py-1 text-[11px]"
+      >
         <Key k="alt+n">new agent</Key>
         <Key k="alt+i">deliver</Key>
         <Key k="ctrl+o">manage</Key>

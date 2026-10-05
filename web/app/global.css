@@ -27,6 +27,8 @@
   --color-success: #2f7a4a;
   --color-warn: #8a6100;
   --color-danger: #b3402f;
+  /* What the terminal's markdown draws code and links in. */
+  --color-info: #3d5a99;
 
   --color-fd-background: var(--color-paper);
   --color-fd-foreground: var(--color-ink);
@@ -57,6 +59,7 @@
   --color-success: #8fd19e;
   --color-warn: #d4a72c;
   --color-danger: #d9776b;
+  --color-info: #7d97c9;
 
   /* fumadocs' default-colors sheet gives `.dark` its own neutral #121212
      ground and greys, which outrank the @theme mapping above in dark mode:
