@@ -362,8 +362,11 @@ offered only at 13.3, and until then `install.ps1` refuses it.
       Antigravity 1.2.16 runs an entry as `cmd /c "<command>"`, ignores
       `args`, refuses a `hooks.json` with a BOM, reads `{}` from a pre-tool
       hook as a denial, and mangles any quote: a sealed `-EncodedCommand`
-      line survives, and a deny group blocks it end to end. Open: the
-      labels, and the MCP launcher form.)
+      line survives, and a deny group blocks it end to end. On 1.2.16 a
+      plugin's skill is offered under its own name (`kit`), and an MCP
+      server whose command is a `.cmd` launcher, written as its path, starts
+      without `cmd /c` and answers as `<plugin>_<server>` (`kit_pg`, its
+      tools called). Open: an agent's label.)
 - [x] 6.3 Generate those entries per harness. Paths use forward slashes.
       The OpenCode bridge (`hooks/bridge.rs:196`) spawns `powershell.exe`
       on Windows. `hooks/entries.rs` quoting becomes per dialect.
