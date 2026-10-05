@@ -111,28 +111,41 @@ pub(crate) fn push_trailing_marquee<'a>(
 ) -> bool {
     let leading: u16 = spans.iter().map(|span| span.width() as u16).sum();
     let room = usize::from(width.saturating_sub(leading + TRAILING_PAD + 1).max(1));
-    let length = text.chars().count();
-    if length <= room {
+    let Some(window) = marquee_window(&text, room, offset) else {
         push_trailing(spans, width, text, hue);
         return false;
-    }
-    /// Blank columns between the end of the run and its start coming
-    /// round again, so the two ends are never read as one word.
-    const GAP: usize = 3;
-    let cycle = length + GAP;
-    let run: Vec<char> = text
-        .chars()
-        .chain(std::iter::repeat_n(' ', GAP))
-        .chain(text.chars())
-        .collect();
-    let start = offset % cycle;
-    let window: String = run.iter().skip(start).take(room).collect();
+    };
     spans.push(Span::raw(" ".repeat(usize::from(width).saturating_sub(
         usize::from(leading) + room + usize::from(TRAILING_PAD),
     ))));
     spans.push(Span::styled(window, Style::default().fg(hue)));
     spans.push(Span::raw(" ".repeat(TRAILING_PAD as usize)));
     true
+}
+
+/// What `room` columns show of `text` slid sideways by `offset`, or `None`
+/// when it fits and there is nothing to slide. The run is the text, a gap,
+/// and the text again, so it leaves on one side as it arrives on the other
+/// rather than jumping back to the start.
+pub(crate) fn marquee_window(text: &str, room: usize, offset: usize) -> Option<String> {
+    /// Blank columns between the end of the run and its start coming
+    /// round again, so the two ends are never read as one word.
+    const GAP: usize = 3;
+    let length = text.chars().count();
+    if length <= room {
+        return None;
+    }
+    let run: Vec<char> = text
+        .chars()
+        .chain(std::iter::repeat_n(' ', GAP))
+        .chain(text.chars())
+        .collect();
+    Some(
+        run.iter()
+            .skip(offset % (length + GAP))
+            .take(room)
+            .collect(),
+    )
 }
 
 pub(crate) fn push_trailing<'a>(spans: &mut Vec<Span<'a>>, width: u16, text: String, hue: Color) {
