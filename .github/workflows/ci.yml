@@ -708,6 +708,11 @@ jobs:
   # push out the one the next pull request was about to read. Only the newest
   # generation of each family on `main` is ever restored, so the rest goes.
   # After the gate, so this run's own entries are already saved.
+  #
+  # A `rust-cache` key ends in two hashes, not one: the toolchain and
+  # environment, then the lockfile. Grouping on the last alone made every
+  # toolchain bump a new family, whose predecessor nothing pruned — 1.8 GB of
+  # them held the repository over its allowance.
   caches:
     name: Prune stale caches
     needs: gate
@@ -723,7 +728,7 @@ jobs:
         run: |
           set -euo pipefail
           gh cache list --ref refs/heads/main --limit 500 --json id,key,createdAt \
-            | jq -r 'map(. + {family: (.key | sub("-[^-]+$"; ""))})
+            | jq -r 'map(. + {family: (.key | if startswith("v0-rust-") then sub("-[0-9a-f]{8}-[0-9a-f]{8}$"; "") else sub("-[^-]+$"; "") end)})
                      | group_by(.family)
                      | map(sort_by(.createdAt) | reverse | .[1:][])
                      | .[] | "\(.id) \(.key)"' \
