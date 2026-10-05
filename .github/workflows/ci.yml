@@ -283,6 +283,7 @@ jobs:
               "$env:ProgramFiles\Git\cmd",
               "$env:USERPROFILE\.cargo\bin"
           ) -join ';'
+          "FULL_RUNNER_PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "PATH=$kept" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "CARGO_BUILD_JOBS=$env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Prove no POSIX tool is reachable
@@ -313,6 +314,15 @@ jobs:
         if: matrix.clippy
         run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --workspace --no-fail-fast --locked
+      # The cache is saved after the last step, in the environment the steps
+      # left behind, and the runner's `tar` compresses through a `gzip` that
+      # only the runner's own PATH reaches: every Windows save failed with
+      # `gzip: command not found` while the machine was reduced.
+      - name: Give the runner its tools back
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "PATH=$env:FULL_RUNNER_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
   msrv:
     name: MSRV
