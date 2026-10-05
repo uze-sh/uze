@@ -938,7 +938,7 @@ mod workspace_tests {
         let layout = full_frame(&mut model);
         let bar = layout.tab_strip.y as usize;
         assert!(
-            rows[bar].contains("Files") && rows[bar].contains("Map"),
+            rows[bar].contains("files") && rows[bar].contains("map"),
             "the halves are on the bar's row: {:?}",
             rows[bar]
         );

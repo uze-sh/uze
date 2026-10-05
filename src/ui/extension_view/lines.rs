@@ -368,19 +368,27 @@ pub(super) fn render_modes(
     render_chips(frame, x, area.y, modes, hits, ViewHit::SelectMode);
 }
 
-/// The same control at the other end of the row: what the surface is
-/// about, over the half that does the finding.
+/// What the surface is about, as the workspace bar's leading slot shows
+/// it: in lower case, the way every other label on that bar is set — the
+/// agent, its shells, the surfaces' own buttons.
 pub(super) fn render_subjects(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     subjects: &[Mode],
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
+    let subjects: Vec<Mode> = subjects
+        .iter()
+        .map(|subject| Mode {
+            label: subject.label.to_lowercase(),
+            ..subject.clone()
+        })
+        .collect();
     render_chips(
         frame,
         area.x,
         area.y,
-        subjects,
+        &subjects,
         hits,
         ViewHit::SelectSubject,
     );

@@ -686,8 +686,8 @@ fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
     };
     let (rows, hits) = draw_sized(&sidebar, 80, 12);
     assert!(
-        rows[0].contains("Files") && rows[0].contains("Changes"),
-        "the halves are the bar's: {:?}",
+        rows[0].contains("files") && rows[0].contains("changes"),
+        "the halves are the bar's, in its lower case: {:?}",
         rows[0]
     );
     assert!(
@@ -722,7 +722,7 @@ fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
         ..sidebar
     };
     let (rows, hits) = draw_sized(&board, 80, 12);
-    assert!(rows[0].contains("Files"), "the same row: {:?}", rows[0]);
+    assert!(rows[0].contains("files"), "the same row: {:?}", rows[0]);
     assert_eq!(nav_at(&hits), sidebar_at, "at the same cell");
 }
 
