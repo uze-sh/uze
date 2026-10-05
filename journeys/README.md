@@ -330,6 +330,10 @@ under test, Git and the system's directories: the shell a step runs in is
 runner tooling, never part of the machine the `uze` under test meets.
 Worlds live under `C:\uze-journeys`, where the PowerShell prompt a pane
 shows is short enough to keep a typed command on one line.
+Each world's `LOCALAPPDATA` starts with the module cache Windows PowerShell
+builds the first time it runs, built once per run under
+`C:\uze-journeys\.powershell`: without it, the first command typed into a
+pane walked every module on the machine, which no person's shell does.
 
 A check's path names what UZE was asked to write, and on Windows a colon
 in it is read as the `-` UZE names that file with, since NTFS reads a

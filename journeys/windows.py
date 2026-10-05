@@ -147,8 +147,18 @@ def world_environment(root: Path, binary: Path) -> dict:
         temporary,
     ):
         directory.mkdir(parents=True, exist_ok=True)
-    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
-    system32 = system_root / "System32"
+    env = _environment(root, binary, home, temporary)
+    _carry_powershell_caches(root.parent, home / "AppData" / "Local", env)
+    return env
+
+
+def _system32() -> Path:
+    return Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+
+
+def _environment(root: Path, binary: Path, home: Path, temporary: Path) -> dict:
+    system32 = _system32()
+    system_root = system32.parent
     git = shutil.which("git")
     path = [
         root / "bin",
@@ -171,6 +181,65 @@ def world_environment(root: Path, binary: Path) -> dict:
         }
     )
     return env
+
+
+# Where Windows PowerShell keeps what it learned about the modules on the
+# machine, relative to `LOCALAPPDATA`.
+POWERSHELL_CACHES = Path("Microsoft") / "Windows" / "PowerShell"
+
+
+def _carry_powershell_caches(worlds: Path, local: Path, env: dict) -> None:
+    """Gives a world's `LOCALAPPDATA` the module cache any machine that has
+    run PowerShell once already holds.
+
+    A world's `LOCALAPPDATA` is new, so the first command typed into a
+    pane's PowerShell had it walk every module on the machine to find the
+    one that command lives in. On an Arm runner that walk took most of a
+    30-second gesture, and `09-text-copied-from-a-pane` failed whenever it
+    took all of it. No person meets that walk on every shell they open, so
+    it is paid once per run, outside any gesture, and every world starts
+    from the result."""
+    seasoning = worlds / ".powershell"
+    if not seasoning.is_dir():
+        _season_powershell(seasoning, env)
+    if (seasoned := seasoning / POWERSHELL_CACHES).is_dir():
+        shutil.copytree(seasoned, local / POWERSHELL_CACHES, dirs_exist_ok=True)
+
+
+def _season_powershell(destination: Path, env: dict) -> None:
+    # Seasoned beside the destination and moved into place whole, so a run
+    # beside this one sees either nothing or a finished cache.
+    staging = destination.with_name(f"{destination.name}.{os.getpid()}")
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    started = time.monotonic()
+    subprocess.run(
+        [
+            str(_system32() / "WindowsPowerShell" / "v1.0" / "powershell.exe"),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "echo seasoned | Out-Null",
+        ],
+        env={**env, "LOCALAPPDATA": str(staging)},
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=600,
+    )
+    print(
+        f"journey: Windows PowerShell's module cache took {time.monotonic() - started:.1f}s to build",
+        file=sys.stderr,
+    )
+    if not (staging / POWERSHELL_CACHES).is_dir():
+        print(
+            "journey: Windows PowerShell wrote no module cache; every world starts cold",
+            file=sys.stderr,
+        )
+    try:
+        os.replace(staging, destination)
+    except OSError:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 # ── the process table ────────────────────────────────────────────────────
