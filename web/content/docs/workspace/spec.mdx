@@ -1,0 +1,87 @@
+---
+title: Spec
+description: "Read what a change intends: its proposal, design and tasks, from the spec-driven tool the project uses"
+---
+
+<Demo
+  src="/uze-spec.gif"
+  poster="/uze-spec-poster.png"
+  alt="The spec surface: an agent's change opened on its proposal, its tasks read as a checklist, then the project's specs and archive."
+  caption="Alt+X opens it on the change the agent is working on."
+/>
+
+`Alt+X` opens the plans a spec-driven tool keeps in the checkout: each
+change's proposal, design and tasks, and the specs that outlive them. They
+are found on their own; there is nothing to declare.
+
+| Subject | Lists |
+| --- | --- |
+| Changes | What is in flight, with how many of its tasks are done |
+| Specs | The requirements that outlive the changes |
+| Archive | Finished changes, newest first |
+
+A subject appears only when the tool keeps it: Spec Kit and Superpowers
+archive nothing, so their projects have no Archive.
+
+Changes are grouped by where they stand. **This checkout** is the change the
+agent in the selected tab is working on, found from the files its branch
+touched, and it opens first. **In progress** comes next. A change whose tasks
+are all done sits in **ready to archive** when its tool archives, and in
+**done** when it does not; done opens folded, since it only grows.
+
+`p` switches a document between preview and source. `Enter` opens it in Code,
+where you can edit it. `Tab` moves between the subjects.
+
+## Tasks in the sidebar
+
+When the selected agent is working on a change, a **tasks** section sits in
+the sidebar above the timeline. Its header says how many of that work's tasks
+are done out of all of them, even folded. Open, it lists each change with its
+own count, and clicking one opens Spec on it. Like the timeline, it is about
+the selected checkout only: the rest of the project's changes are in Spec.
+
+## Supported tools
+
+A tool is recognised by the directory it keeps in the checkout.
+
+| Tool | Found by | Status |
+| --- | --- | --- |
+| [OpenSpec](https://github.com/Fission-AI/OpenSpec) | `openspec/` | Supported |
+| [Spec Kit](https://github.com/github/spec-kit) | `.specify/` | Supported |
+| [Superpowers](https://github.com/obra/superpowers) | `docs/superpowers/` | Supported |
+| [GSD](https://github.com/gsd-build/get-shit-done) | `.planning/` | Supported |
+| [Kiro](https://kiro.dev) | `.kiro/specs/` | Planned |
+
+Each tool is a small table of where its files live and what each one is for:
+the proposal or requirements, the design, the tasks, the specs. The surface
+reads those roles, never a tool's own file names, so adding one needs no new
+screen.
+
+| | OpenSpec | Spec Kit |
+| --- | --- | --- |
+| A change | `openspec/changes/<name>/` | `specs/<NNN-name>/` |
+| Why, how, tasks | `proposal.md`, `design.md`, `tasks.md` | `spec.md`, `plan.md` and what it writes beside it, `tasks.md` |
+| Specs | `openspec/specs/<capability>/spec.md` | `.specify/memory/constitution.md` |
+| Archive | `openspec/changes/archive/` | none |
+
+| | Superpowers | GSD |
+| --- | --- | --- |
+| A change | one plan, `docs/superpowers/plans/<date>-<feature>.md` | a phase, `.planning/phases/<NN-name>/`, or a quick task, `.planning/quick/<id>-<slug>/` |
+| Why, how, tasks | the plan's checkbox steps | `NN-SPEC.md` and `NN-CONTEXT.md`, `NN-RESEARCH.md` and the UI and AI specs, every `NN-MM-PLAN.md` |
+| Specs | the designs, `docs/superpowers/specs/<date>-<topic>-design.md` | `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md` |
+| Archive | none | `.planning/milestones/` |
+
+Superpowers writes a design and its plan as two files with no link between
+them, so each is listed on its own, newest first. A GSD plan is a list of
+task blocks rather than checkboxes, so a phase counts its plans instead: a
+plan is done once GSD has written its `SUMMARY.md` beside it. Summaries,
+verification and UAT reports are listed after the plans, by name.
+
+A checkout that keeps more than one lists them together, each change named with its
+tool. Contracts written as YAML, JSON, GraphQL or protobuf are listed beside
+the documents and shown as source.
+
+<Cards>
+  <Card title="Architect" href="/docs/workspace/architect" />
+  <Card title="Code" href="/docs/workspace/code" />
+</Cards>
