@@ -298,10 +298,13 @@ fn a_stop_entry_is_flat_while_a_tool_event_stays_grouped() {
         "a `hooks` group under Stop is dropped by the vendor's parser"
     );
     assert!(flat.get("matcher").is_none(), "Stop matches no tool");
-    assert!(
-        flat["command"]
-            .as_str()
-            .is_some_and(|command| command.contains("'stop' 'observe'")),
+    // Compared through the sealed line rather than read out of it: on
+    // Windows that line is encoded against `cmd /c`.
+    let arguments = wrapper_arguments(&stop, Path::new("/pkg"), &stop.handlers);
+    assert_eq!(arguments[1..3], ["stop", "observe"]);
+    assert_eq!(
+        flat["command"],
+        uze_platform::shell::sealed_script_line("/state/hooks/exec", &arguments),
         "the flat entry still runs the wrapper with the group's arguments: {flat}"
     );
     assert_eq!(flat["timeout"], 12);
@@ -321,8 +324,13 @@ fn agy_named_entry_carries_the_wrapper_and_is_deterministic() {
         entry.get("hooks").is_none(),
         "the named key holds the event map directly; a `hooks` wrapper is one dead hook"
     );
-    assert!(
-        document.contains("'/state/hooks/exec' '/pkg' 'pre_tool_use' 'deny'"),
+    // Compared through the sealed line rather than read out of it: on
+    // Windows that line is encoded against `cmd /c`.
+    let arguments = wrapper_arguments(&hook(), Path::new("/pkg"), &hook().handlers);
+    assert_eq!(arguments[..3], ["/pkg", "pre_tool_use", "deny"]);
+    assert_eq!(
+        entry["PreToolUse"][0]["hooks"][0]["command"],
+        uze_platform::shell::sealed_script_line("/state/hooks/exec", &arguments),
         "the entry runs the shared wrapper with the group's own arguments: {document}"
     );
     assert!(
