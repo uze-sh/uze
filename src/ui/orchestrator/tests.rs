@@ -2331,11 +2331,11 @@ mod workspace_tests {
     #[test]
     fn a_report_in_the_actions_row_is_not_dressed_as_a_button() {
         let mut model = agent_with_task(WorkStateView::Integrating, 3);
-        model.tick = 3;
+        model.tick = a_tick_showing_the_fullest_frame();
         let (rows, hits) = tab_strip(&model);
         let row = rows.join("\n");
         assert!(
-            row.contains(&format!("→ main {}", agent_activity_frame(3))),
+            row.contains(&format!("→ main {}", agent_activity_frame(model.tick))),
             "the report names the delivery and turns while it runs: {row}"
         );
         assert!(
@@ -2345,7 +2345,7 @@ mod workspace_tests {
             "a delivery in flight is not pressed again"
         );
 
-        let spinner = agent_activity_frame(3);
+        let spinner = agent_activity_frame(model.tick);
         let column = rows[0]
             .find(&spinner)
             .map(|index| rows[0][..index].chars().count() as u16)
@@ -4246,6 +4246,16 @@ mod workspace_tests {
         }
     }
 
+    /// A tick on which the working spinner shows its fullest frame, the one
+    /// glyph no separator or caption shares: the spinner wanders rather than
+    /// cycles, so a fixed tick says nothing about which frame is drawn.
+    fn a_tick_showing_the_fullest_frame() -> usize {
+        let fullest = theme::frame(theme::Symbol::StatusWorking, 3);
+        (0..1_000)
+            .find(|&tick| agent_activity_frame(tick) == fullest)
+            .expect("the walk reaches every frame")
+    }
+
     /// The header carries work in flight and nothing else. It says so by
     /// moving: a spinner rides in front of the words, which is what buys
     /// the message the right to be two of them.
@@ -4257,10 +4267,13 @@ mod workspace_tests {
     fn the_header_carries_work_in_flight_and_lets_go_when_it_ends() {
         let mut model = agent_with_task(WorkStateView::Ready, 3);
         model.set_busy_notice("delivering all".to_owned());
-        model.tick = 3;
+        model.tick = a_tick_showing_the_fullest_frame();
         let (rows, _) = tab_strip(&model);
         assert!(
-            rows[0].contains(&format!("{} delivering all", agent_activity_frame(3))),
+            rows[0].contains(&format!(
+                "{} delivering all",
+                agent_activity_frame(model.tick)
+            )),
             "{rows:?}"
         );
 
@@ -4271,7 +4284,7 @@ mod workspace_tests {
             "the hint goes with the work: {settled:?}"
         );
         assert!(
-            !settled[0].contains(&agent_activity_frame(3)),
+            !settled[0].contains(&agent_activity_frame(model.tick)),
             "and so does the spinner: {settled:?}"
         );
     }
