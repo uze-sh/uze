@@ -68,8 +68,12 @@ video:
   font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
   wait_collapse: 1.5        # what an agent's thinking time collapses to
   # The still the site shows first: named by what must be on screen, so a
-  # re-cut cannot silently move it to a half-drawn frame.
-  poster_when: PROMPTS
+  # re-cut cannot silently move it to a half-drawn frame. Not the drawer's
+  # heading: the drawer draws `reading…` first and its prompt list a frame
+  # later, so the heading's frame is the half-drawn one. The list's row is
+  # the prompt wrapped at the drawer's width; the pane breaks it elsewhere,
+  # so only the drawer puts an escape between those two words.
+  poster_when: 'listing every\x1b[^r]*route in src/router'
   sidebar: 31               # where the sidebar band ends, for `in: sidebar`
 sandbox:
   root: ~/.uzedemo          # never on screen
@@ -577,8 +581,11 @@ beats:
     type: add a /ping route to src/router.rs that answers pong, then commit
     # The hint is the right proof — it is in every cast this ever recorded.
     # What was wrong was the patience: a cold session takes longer than 20s
-    # to reach it, and the take died on the app being slow, not wrong.
-    expect: esc to interrupt
+    # to reach it, and the take died on the app being slow, not wrong. The
+    # hint only lives while the agent works, and a warm one finishes this in
+    # ~10s, so the line Claude leaves when it is done (`Crunched for 11s ·
+    # done`) proves the same submission for a poll that arrives late.
+    expect: 'esc to interrupt|for \d+s · done'
     expect_timeout: 60
     pause: 1.8
   - say: a second agent, on a different harness
@@ -726,35 +733,34 @@ beats:
     pause: 0.8
   # By its chord, not by a label: management is reached through a mark in
   # the sidebar now, and a glyph is a worse target than the key the product
-  # documents for it. Every proof below is something only that screen draws
-  # — the menu carries each name permanently, so a name proves nothing.
+  # documents for it. The modal is a row of numbered tabs over one screen;
+  # the tab row is drawn whichever screen is showing, so it proves the modal
+  # is open and nothing else — each screen is then proved by its own
+  # heading, which carries a count only that screen computes.
   - say: the management side, unhurried
     key: C-o
-    # The modal's own footer, which every screen inside it carries: what it
-    # opens *on* is the screen it was left on, so naming one is naming a
-    # memory. The screen this beat wants is asked for next, explicitly.
-    expect: ctrl\+o manage
+    # What it opens *on* is the screen it was left on, so naming a screen
+    # here is naming a memory. The screen this beat wants is asked for next,
+    # explicitly.
+    expect: manage\s+1 Marketplace\s+2 Integrations
     expect_timeout: 8
     pause: 1.2
-  # The plugins live under Marketplace since the screen became a rail of
-  # marketplaces beside a plugin table; the rail's heading is the one thing
-  # only this screen draws.
+  # Aimed at across the whole screen: the modal spans the sidebar's columns
+  # too, so no band holds just the tabs. The tab row sits above everything
+  # else the modal draws, which makes each name's first hit its tab.
   - click: Marketplace
-    in: sidebar
-    offset: 2
-    expect: MARKETPLACES
+    in: screen
+    expect: Marketplace\s+\d+ marketplaces?\s+·
     expect_timeout: 8
     pause: 2.1
   - click: Extensions
-    in: sidebar
-    offset: 2
-    expect: EXTENSION
+    in: screen
+    expect: Extensions\s+\d+ bundled
     expect_timeout: 8
     pause: 2.1
   - click: Integrations
-    in: sidebar
-    offset: 2
-    expect: HARNESS
+    in: screen
+    expect: Integrations\s+\d+ installed
     expect_timeout: 8
     pause: 2.1
   # Back where it opened, with both agents still there: the same chord, and
@@ -763,9 +769,9 @@ beats:
     expect: spec.+arch.+code
     expect_in: strip
     expect_timeout: 6
-    # The strip is drawn under the modal too, so it is the modal's own
-    # footer going that proves it closed.
-    refuse: ctrl\+o manage
+    # The strip is drawn under the modal too, so it is the modal's own tab
+    # row going that proves it closed.
+    refuse: manage\s+1 Marketplace\s+2 Integrations
     pause: 1.8
   - say: and out — the cut stops here, before the screen blanks
     end: C-q

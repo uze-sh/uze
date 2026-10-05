@@ -87,6 +87,10 @@ sandbox:
     # The appearance demo shares this sandbox and ends in another theme.
     - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set default >/dev/null
     - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config icons nerd >/dev/null
+    # A take rebinds a key; the next one must find the defaults again. Here
+    # and not under `clear`, which removes directories and passes over a
+    # file without a word — the take then opened on the key the last one set.
+    - rm -f {home}/.uze/keys.json
   clear:
     # The rewind removes the checkouts but leaves the directory that held
     # them, and the `clean` above deliberately spares it — so an empty
@@ -96,8 +100,6 @@ sandbox:
     - '{fixtures}/demo-app/.worktrees'
     - '{home}/.uze/state/terminal'
     - '{runtime}/uze-runtime'
-    # A take rebinds a key; the next one must find the defaults again.
-    - '{home}/.uze/keys.json'
   write:
     - path: '{home}/demoshell'
       executable: true
@@ -388,24 +390,35 @@ fixtures:
 beats:
   - say: uze is open on a project
     pause: 1.2
+  # The modal's tab row is drawn whichever screen it opens on, so it proves
+  # the modal is open and nothing more; Shortcuts is asked for next.
   - say: every key lives in management, under shortcuts
     key: C-o
-    expect: theme & notifications
+    expect: manage\s+1 Marketplace\s+2 Integrations
     expect_timeout: 8
     pause: 0.6
+  # The tab is the first "Shortcuts" on the screen: the tab row sits above
+  # everything else the modal draws. The filter field's placeholder is the
+  # one thing only this screen draws.
   - click: Shortcuts
     in: screen
-    expect: Filter keys and actions
+    expect: filter keys and actions…
     expect_timeout: 8
     pause: 1.2
+  # The editor's own caret, not the placeholder: the placeholder is there
+  # whether or not the field took the focus.
   - say: find an action by name
-    click: Filter keys and actions
+    click: filter keys and actions
     in: screen
-    expect: 'Filter keys and actions|▏'
+    expect: '/ ▏filter keys and actions'
     pause: 0.3
-  - type: shell
+  # The whole name: the filter matches descriptions too, and "shell" alone
+  # puts the tab chords (whose description mentions shells) first. The proof
+  # is the detail panel naming the selected action's key, which only shows
+  # once New shell is the one selected.
+  - type: new shell
     submit: false
-    expect: New shell
+    expect: 'ctrl\+t\s+— universal'
     expect_timeout: 6
     pause: 1.2
   - say: change its key — the screen waits for one
@@ -421,7 +434,7 @@ beats:
     pause: 2.4
   - say: back in the workspace, F4 opens a shell
     key: C-o
-    refuse: theme & notifications
+    refuse: manage\s+1 Marketplace\s+2 Integrations
     pause: 0.8
   - key: F4
     expect_in: strip
