@@ -301,6 +301,8 @@ vocabulary! {
         /// Work that was finished and put away — the spec surface's
         /// archive.
         Finished = "finished",
+        /// A decision the project keeps — the spec surface's decisions.
+        Decision = "decision",
 
         // ── typography ─────────────────────────────────────────────────
         /// Elided text.

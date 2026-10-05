@@ -26,9 +26,14 @@
 //! render the documents the code surface already previews: a proposal is
 //! read the same way wherever it is opened, and the syntax sets behind a
 //! fenced block are loaded once per process, not once per surface.
+//!
+//! [`places`] joined it when the spec surface came to read decisions from
+//! the same declared directories the architect draws diagrams from: one
+//! declaration, read by every surface that finds something in it.
 
 pub mod canvas;
 pub mod checkout;
 pub mod highlight;
 pub mod markdown;
 pub mod nearest;
+pub mod places;

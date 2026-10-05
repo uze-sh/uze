@@ -284,6 +284,7 @@ pub(super) fn icon_symbol(icon: RowIcon) -> Option<Symbol> {
         RowIcon::InFlight => Symbol::InFlight,
         RowIcon::Contract => Symbol::Contract,
         RowIcon::Finished => Symbol::Finished,
+        RowIcon::Decision => Symbol::Decision,
     })
 }
 

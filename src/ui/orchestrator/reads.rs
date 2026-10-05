@@ -1091,7 +1091,8 @@ pub(super) fn spawn_spec_read(home: &UzeHome, root: PathBuf, sender: mpsc::Sende
                     .ok()
                     .and_then(|app| app.workspace().delivery_policy(&root))
                     .and_then(|policy| policy.target);
-                spec::read_spec(&WorkspaceHost, &root, target.as_deref())
+                let places = crate::ui::extension_host::artifacts_declared_in(&root);
+                spec::read_spec(&WorkspaceHost, &root, target.as_deref(), &places)
             },
             silence,
         );

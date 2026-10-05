@@ -1482,6 +1482,7 @@ mod workspace_tests {
                         artifacts: vec![artifact("proposal"), artifact("design")],
                         progress: None,
                         own: false,
+                        standing: None,
                     }],
                 },
                 subjects: vec![spec::Subject::Changes],

@@ -19,6 +19,7 @@ are found on their own; there is nothing to declare.
 | Changes | What is in flight, with how many of its tasks are done |
 | Specs | The requirements that outlive the changes |
 | Archive | Finished changes, newest first |
+| Decisions | The decision records (ADRs) the project keeps, each with its status |
 
 A subject appears only when the tool keeps it: Spec Kit and Superpowers
 archive nothing, so their projects have no Archive.
@@ -31,6 +32,34 @@ are all done sits in **ready to archive** when its tool archives, and in
 
 `p` switches a document between preview and source. `Enter` opens it in Code,
 where you can edit it. `Tab` moves between the subjects.
+
+## Decisions
+
+No spec tool decides where decisions live, so Spec looks for them where the
+project keeps what describes it: the directories in `workspace.artifacts`
+([agents.yaml](/docs/reference/project-files#artifacts)). Nothing else is
+declared, and any spec tool, or none, works the same:
+
+```yaml
+workspace:
+  artifacts: docs     # docs/adr/*.md is found inside it
+```
+
+A Markdown file there is a decision when it reads like one: a title, a status
+(a `Status:` line, a `## Status` section or `status:` in its front matter) and
+a `## Decision` or `## Decision Outcome` section. That covers Nygard's records
+and MADR, whatever tool wrote them. Guides, indexes and anything else in the
+same directories are passed over.
+
+Each decision is listed by its number and title, with its status beside it.
+What it did to the others is read from its own lines that say so
+(`Supersedes`, `Superseded by`, `Consolidates`, `Amends`) where they link a
+file, and said above the record when it is open. The other direction is
+worked out, so an older record shows **superseded** without being edited. A
+reference that links no file is shown as written.
+
+A decision written inside a change, like `openspec/changes/<name>/adr/`, is
+listed in that change as its **decision**, after the design.
 
 ## Tasks in the sidebar
 

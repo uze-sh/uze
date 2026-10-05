@@ -334,7 +334,9 @@ need to).
   surface it draws. What more than one extension needs lives under
   `shared/`, and only once a second one actually needs it — today that is
   `shared/canvas.rs`, which knows how to put a glyph somewhere and
-  nothing about what is being drawn; `view.rs` and `Host` are the two
+  nothing about what is being drawn, and `shared/places.rs`, the
+  directories `workspace.artifacts` declares, which the host resolves and
+  both `architect` and `spec` read from; `view.rs` and `Host` are the two
   contracts and sit at the crate root. `Host` is where every capability
   is granted — including the two that write, which the code surface's
   save and delete are the only callers of.
@@ -348,7 +350,10 @@ need to).
   checkout only looks like an architecture diagram: nobody writes it, and
   every tile on it is a path the other three halves already answer about.
   `architect` draws what somebody *wrote down* about the project, and
-  nothing that is measured.
+  nothing that is measured. `spec` reads what a checkout *intends*: a
+  spec tool's units, found by the marker the tool defines, and the
+  project's decision records, found by their shape in the declared
+  places, since no tool decides where those live.
 - `crates/uze-integrations` — one module per harness
   (`claude`, `codex`, `opencode`, `antigravity`)
   implementing the shared `IntegrationPort` from `uze-core`, plus `shared/`

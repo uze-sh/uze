@@ -783,6 +783,7 @@ mod tests {
                         | "in-flight"
                         | "contract"
                         | "finished"
+                        | "decision"
                 )
             {
                 continue;

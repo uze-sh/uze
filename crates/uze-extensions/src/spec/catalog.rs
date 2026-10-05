@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{
+    decision::{self, Standing},
     dialect::{Collection, Dialect, Order, Role, Shape, Subject, Tally, classify},
     progress::{self, Progress},
 };
@@ -50,6 +51,8 @@ pub struct Unit {
     pub progress: Option<Progress>,
     /// Whether this checkout touched it.
     pub own: bool,
+    /// For a decision: its status, and what it did to the others.
+    pub standing: Option<Standing>,
 }
 
 /// What reading a checkout found.
@@ -122,6 +125,7 @@ pub fn read_subjects(
                     artifacts,
                     progress,
                     own: false,
+                    standing: None,
                 }
             }));
         }
@@ -269,12 +273,22 @@ fn artifacts(host: &dyn Host, dialect: &Dialect, unit: &Path, depth: usize) -> V
         .map(|relative| {
             let path = unit.join(&relative);
             let classified = classify(dialect, &relative);
+            let text = host.read_file(&path).map_err(|reason| reason.to_string());
+            // Whatever the dialect calls it, a file that reads as a decision
+            // record is the unit's decision, named by its own title.
+            let record = (classified.role == Role::Other && is_markdown(&path))
+                .then(|| text.as_deref().ok().and_then(decision::recognise))
+                .flatten();
+            let (role, name) = match record {
+                Some(record) => (Role::Decision, record.title),
+                None => (classified.role, classified.name),
+            };
             Artifact {
-                text: host.read_file(&path).map_err(|reason| reason.to_string()),
+                text,
                 path,
                 relative,
-                role: classified.role,
-                name: classified.name,
+                role,
+                name,
                 rank: classified.rank,
             }
         })
