@@ -65,7 +65,7 @@ export default function Image() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div style={{ fontSize: 56, color: paper, letterSpacing: -1.5, lineHeight: 1.1 }}>
-            The package manager and workspace for coding agents
+            The package manager for coding agents
           </div>
           <div style={{ fontSize: 30, color: muted }}>{appMotto}</div>
         </div>

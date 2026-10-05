@@ -1,6 +1,8 @@
 import Link from 'next/link';
-import { Check } from 'lucide-react';
-import { InstallCommand } from '@/components/install-command';
+import { Check, Plus } from 'lucide-react';
+import { InstallTabs } from '@/components/install-tabs';
+import { HarnessMark, harnessMarks, homepageOf } from '@/components/harness-marks';
+import { AroundIllustration } from '@/components/around-illustration';
 import { TrademarkNotice } from '@/components/trademark-notice';
 import matrix from '@/lib/harness-matrix.json';
 import { UzeMark } from '@/components/uze-mark';
@@ -13,7 +15,7 @@ const columns: [Capability, string][] = [
   ['context', 'AGENTS.md'],
   ['skills', 'Skills'],
   ['mcp', 'MCP'],
-  ['agents', 'Agents'],
+  ['agents', 'Subagents'],
   ['hooks', 'Hooks'],
   ['session', 'Session'],
   ['package', 'Plugin'],
@@ -40,75 +42,84 @@ function Route({ value }: { value: string }) {
   );
 }
 
-// Where a name links to: the vendor's own page, carried by the same
-// generated matrix the table below is built from (each integration declares
-// it — `IntegrationPort::homepage`), so the site never holds a second copy
-// of a URL only the integration knows.
-function homepageOf(name: string) {
-  return matrix.harnesses.find((harness) => harness.name === name)?.url;
-}
-
-// Icon sources: Claude Code, Codex and OpenCode are simple-icons paths, drawn
-// inline so they take the page's theme — an <image>-embedded SVG renders in its
-// own document and inherits no color from the page. Claude Code carries its own
-// brand orange instead, so it reads the same wherever it is drawn. Antigravity
-// has no distinct mark of its own; that is Google Antigravity's actual favicon,
-// fetched from the vendor's site (public/harnesses/, not redistributed by a
-// third party), at its real brand colors. Terms for all four: CREDITS.md.
-const CLAUDE_ORANGE = '#D97757';
-
-const harnesses = [
-  {
-    name: 'Claude Code',
-    icon: {
-      type: 'path' as const,
-      d: 'M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z',
-      fill: CLAUDE_ORANGE,
-    },
-  },
-  {
-    name: 'Codex',
-    icon: {
-      type: 'path' as const,
-      d: 'M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z',
-    },
-  },
-  {
-    name: 'OpenCode',
-    icon: { type: 'path' as const, d: 'M22 24H2V0h20zM17 4.8H7v14.4h10z' },
-  },
-  {
-    name: 'Antigravity',
-    icon: { type: 'image' as const, href: '/harnesses/antigravity.png' },
-  },
-];
-
+// Said in the reader's words, not the architecture's: what each half does for
+// them, and the one guarantee under it. The mechanism is a link away.
 const pillars = [
   {
-    title: 'One package, four native surfaces',
-    body: 'The Store owns a plugin’s bytes and writes nothing a harness reads. Each integration delivers them through the most native mechanism that harness has: a real plugin where one exists, a safe adapter only as a last resort.',
-    href: '/docs/concepts',
-    link: 'How delivery is decided',
+    title: 'Install once, every agent gets it',
+    body: 'A plugin is skills, MCP servers, hooks and subagents in the open Agent Plugin format. uze keeps one copy and puts it into each agent the way that agent expects: a real plugin where it has one, its own config where it does not, and a report wherever something had to be translated.',
+    href: '/docs/plugins/delivery',
+    link: 'How delivery works',
   },
   {
-    title: 'Semantics survive the trip',
-    body: 'A skill’s invocation policy, a hook’s effect, an agent’s frontmatter: each is translated into the vendor’s own encoding, or reported as adapted. No route is claimed native without a passing real-harness scenario.',
-    href: '/docs/reference/plugin-format',
-    link: 'What travels, and how',
-  },
-  {
-    title: 'One project context',
-    body: 'AGENTS.md is the portable baseline. Every harness reads it natively or through the one bridge uze maintains, inside regions it owns, never four instruction files drifting apart.',
+    title: 'A project carries its own setup',
+    body: 'agents.yaml says which plugins a project uses, agents.lock pins them to a commit, and one AGENTS.md holds the instructions every agent reads. A teammate clones the repo, runs uze install, and has the same setup in every agent they use.',
     href: '/docs/plugins/context',
-    link: 'How context reaches each harness',
+    link: 'Project files and context',
   },
   {
-    title: 'Agents that don’t collide',
-    body: 'Run several at once in one terminal. Each can take an isolated checkout on a branch of its own, readiness is read from Git rather than announced, and finished work comes home through a delivery you trigger, with the diff, the file tree and the project’s own diagrams a keystroke away.',
+    title: 'Agents side by side, never on top of each other',
+    body: 'Each agent runs in its own git worktree, on a branch of its own, so two of them never edit one checkout and your uncommitted work stays out of their way. Whether one is done is read from its branch, not from what it says.',
     href: '/docs/workspace',
     link: 'Inside the workspace',
   },
+  {
+    title: 'Your files stay yours',
+    body: 'uze writes only inside blocks it marks and keeps a receipt for everything it places, so it can update or remove a plugin without touching what you or another tool put next to it. When it finds something it does not own, it reports it and leaves it alone.',
+    href: '/docs/concepts',
+    link: 'Why uze works this way',
+  },
 ];
+
+// The questions a developer asks in the first minute, answered before they
+// have to open the docs. "Not an agent, no API key" is said here and in the
+// hero's badge and nowhere else: repeated in every section it reads as
+// protesting too much.
+const faq: { q: string; a: React.ReactNode }[] = [
+  {
+    q: 'Is uze another coding agent?',
+    a: 'No. uze has no model and needs no API key: your agents keep the logins and subscriptions they already have. uze installs plugins into them and runs them, and you talk to each one exactly as you do today.',
+  },
+  {
+    q: 'Does it send my code anywhere?',
+    a: 'Your code goes only where your agents already send it. uze itself fetches the marketplaces you registered, and checks GitHub for a new release. Release builds contain no telemetry.',
+  },
+  {
+    q: 'Why not symlink one skills folder into every agent?',
+    a: 'Because they do not read the same formats. Codex has no Markdown agent format, so a subagent becomes TOML there; a skill only you may run is written differently in each agent; hooks run through a different mechanism in each. uze also keeps a receipt for everything it places, which is what lets it remove a plugin cleanly later.',
+  },
+  {
+    q: 'Why not just use Claude Code’s own plugins?',
+    a: 'On Claude Code, uze delivers through Claude Code’s own plugin mechanism, so nothing is lost. What you add is the same plugin reaching Codex, OpenCode and Antigravity, and a project that records it, so every teammate gets it too.',
+  },
+  {
+    q: 'Do I need the workspace to use the plugins?',
+    a: 'No. They are two tools in one binary and each works without the other. The package manager serves agents you start yourself, in a terminal, an editor or CI.',
+  },
+  {
+    q: 'What does the workspace add to tmux and git worktree?',
+    a: 'Each agent gets a tab, a branch and a worktree of its own without you creating any of them. You see its diff a keystroke away, and when the work is ready one key rebases it, runs your checks, and leaves the branch for you, merges it or opens a pull request. Closing the terminal stops nothing.',
+  },
+  {
+    q: 'Can a plugin run code on my machine?',
+    a: 'Yes: MCP servers and hooks are commands. Before installing, uze lists every command a plugin can run and asks, and asks again when an update adds one. Plugins are fetched without your Git credentials and never run a repository’s own hooks.',
+  },
+  {
+    q: 'Does it work on Windows?',
+    a: (
+      <>
+        Yes, natively, on Windows 10 22H2 and 11, x64 or Arm: install with{' '}
+        <code className="font-mono text-ink">irm https://uze.sh/i | iex</code>. It needs Git for
+        Windows, and WSL works with the Linux command too.
+      </>
+    ),
+  },
+  {
+    q: 'What does it cost?',
+    a: 'Nothing. uze is open source under the Apache License 2.0, and it is in beta: commands and file formats may still change before v1.',
+  },
+];
+
 
 // What the section below it pictures, said before it is shown: each
 // illustration is one module, and neither reads as that on its own.
@@ -130,36 +141,87 @@ export default function HomePage() {
           something you arrive at by scrolling, not something competing with
           the headline for the same view. */}
       <section className="flex w-full max-w-5xl flex-col justify-center min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] py-14 text-center">
-        <h1 className="mx-auto max-w-[21ch] font-mono font-bold tracking-tight text-ink text-[2.25rem] leading-[1.04] sm:text-6xl lg:text-[4rem]">
-          The package manager and workspace
+        {/* Said first, because it is the first thing a reader gets wrong: a
+            tool "for coding agents" reads as one more coding agent. */}
+        <p className="mx-auto inline-flex items-center gap-2 border border-line px-3 py-1 font-mono text-[11px] text-muted sm:text-xs">
+          <span className="text-accent">●</span>
+          Not an agent. No model, no API key.
+        </p>
+        <h1 className="mx-auto mt-7 font-mono font-bold tracking-tight text-ink text-[2.25rem] leading-[1.06] sm:text-5xl lg:text-[3.5rem]">
+          The package manager
           <br />
           <span className="text-accent">for coding agents.</span>
         </h1>
-        <p className="mx-auto mt-6 max-w-[56ch] text-lg leading-relaxed text-muted">
-          Give Claude Code, Codex, OpenCode and Antigravity the same plugins and one{' '}
-          <code className="font-mono text-ink">AGENTS.md</code>, each delivered natively. Then
-          run several agents at once, each in a checkout of its own. Agents come and go; your
-          work stays.
+        <p className="mx-auto mt-6 max-w-[38rem] text-pretty text-lg leading-relaxed text-muted">
+          Install skills, MCP servers, hooks and{' '}
+          <code className="font-mono text-ink">AGENTS.md</code> into Claude Code, Codex, OpenCode
+          and Antigravity, then run them side by side, each in its own worktree.
         </p>
 
-        <div className="mx-auto mt-9 flex max-w-xl flex-col items-stretch gap-3 sm:flex-row">
-          <div className="flex-1 text-left">
-            <InstallCommand command="curl -fsSL https://uze.sh/i | sh" />
+        <div className="mx-auto mt-9 flex w-full max-w-xl flex-col items-stretch gap-3 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1">
+            <InstallTabs />
           </div>
           <Link
-            href="/docs"
-            className="inline-flex shrink-0 items-center justify-center border border-ink bg-ink px-5 py-2.5 font-mono text-[13px] text-paper transition-opacity hover:opacity-85"
+            href="/docs/quickstart"
+            className="inline-flex shrink-0 items-center justify-center border border-ink bg-ink px-5 py-2.5 font-mono text-[13px] text-paper transition-opacity hover:opacity-85 sm:mt-[30px]"
           >
             Get started
           </Link>
         </div>
-        <p className="mt-3 text-xs text-muted">
-          Linux and macOS, x86_64 or aarch64, checksum verified.{' '}
-          <Link href="/docs/installation" className="text-ink underline underline-offset-4 hover:text-accent transition-colors">
-            Build from source
-          </Link>{' '}
-          on anything else.
-        </p>
+
+        {/* Labelled "works with", never "powered by": the marks are the
+            agents uze serves, not anything uze is made of. */}
+        <div className="mt-12">
+          <p className="font-mono text-[11px] text-muted">Works with</p>
+          <ul className="mt-4 flex flex-wrap items-center justify-center gap-x-8 gap-y-4">
+            {harnessMarks.map((harness) => (
+              <li key={harness.name}>
+                <a
+                  href={homepageOf(harness.name)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="flex items-center gap-2 text-ink transition-colors hover:text-accent"
+                >
+                  <HarnessMark icon={harness.icon} className="size-5" />
+                  <span className="font-mono text-sm font-semibold">{harness.name}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* Where uze sits, before any picture of a terminal with an agent in
+          it: that picture is what reads as "another agent" when it comes
+          first. */}
+      <section className="w-full max-w-5xl border-t border-line py-20 sm:py-24">
+        <SectionHeading
+          eyebrow="Where uze sits"
+          title="Around your agents, not instead of them."
+          body="uze gives the agents you use the same plugins and a worktree each, then brings their work back to your repo."
+        />
+        <div className="mt-12">
+          <AroundIllustration />
+        </div>
+        <div className="mx-auto mt-14 grid max-w-4xl gap-px border border-line bg-line sm:grid-cols-2">
+          <div className="bg-paper p-6">
+            <h3 className="font-mono text-xs text-accent">uze is</h3>
+            <ul className="mt-4 space-y-3 text-sm leading-relaxed text-ink">
+              <li>A package manager for what your agents share: skills, MCP servers, hooks, subagents, AGENTS.md.</li>
+              <li>A terminal that runs several agents side by side, each in its own git worktree.</li>
+              <li>One Rust binary, open source under Apache 2.0.</li>
+            </ul>
+          </div>
+          <div className="bg-paper p-6">
+            <h3 className="font-mono text-xs text-muted">uze is not</h3>
+            <ul className="mt-4 space-y-3 text-sm leading-relaxed text-muted">
+              <li>A coding agent. Your agents do the coding.</li>
+              <li>An orchestrator. You talk to each agent exactly as before.</li>
+              <li>A new plugin format. It installs the open standards as they are written.</li>
+            </ul>
+          </div>
+        </div>
       </section>
 
       {/* What uze does, drawn: a screen of its own, the same height as the
@@ -168,9 +230,9 @@ export default function HomePage() {
           theme. */}
       <section className="flex w-full max-w-[1296px] min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-12">
         <SectionHeading
-          eyebrow="Package manager"
+          eyebrow="1 · Package manager"
           title="One plugin, every agent."
-          body="Install it once. Its bytes stay in one Store, and each capability is delivered through the most native route each harness has."
+          body="Add a marketplace, install a plugin, and each agent receives it through its own mechanism. Green arrived natively, amber was translated, and uze tells you which."
         />
         {/* As wide as the column, and no wider than the height left under
             the heading allows at the stage's 12:5, so the heading and the
@@ -184,42 +246,16 @@ export default function HomePage() {
           modules read as one set; the recording lives in its docs. */}
       <section className="flex w-full max-w-[1296px] min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-12">
         <SectionHeading
-          eyebrow="Workspace"
+          eyebrow="2 · Workspace"
           title="Several agents, one terminal."
-          body="Each agent works in a checkout of its own. Read what it plans, how the project is shaped and what it changed, then bring the work home."
+          body="Each agent works on a branch in its own worktree. Read what it plans and what it changed, then land it with a rebase and your checks."
         />
         <div className="mx-auto mt-4 w-full" style={{ maxWidth: 'calc((100dvh - var(--uze-banner-height) - 3.5rem - 16rem) * 2.4)' }}>
           <WorkspaceIllustration />
         </div>
       </section>
 
-      {/* Who it delivers to. */}
-      <section className="w-full max-w-5xl border-t border-line py-20 sm:py-24">
-        <h2 className="text-center font-mono text-xs text-muted">Delivers natively to</h2>
-        <ul className="mt-10 grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4">
-          {harnesses.map((harness) => (
-            <li key={harness.name} className="text-center">
-              <a
-                href={homepageOf(harness.name)}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="flex flex-col items-center gap-2.5 text-ink transition-colors hover:text-accent"
-              >
-                <svg viewBox="0 0 24 24" className="size-7" aria-hidden>
-                  {harness.icon.type === 'path' ? (
-                    <path d={harness.icon.d} fill={harness.icon.fill ?? 'currentColor'} />
-                  ) : (
-                    <image href={harness.icon.href} width="24" height="24" />
-                  )}
-                </svg>
-                <span className="font-mono text-sm font-semibold">{harness.name}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* What it actually does. */}
+      {/* What each half does for the reader. */}
       <section className="w-full max-w-5xl border-t border-line py-20 sm:py-24">
         <ul className="grid gap-x-16 gap-y-14 sm:grid-cols-2">
           {pillars.map((pillar) => (
@@ -242,10 +278,10 @@ export default function HomePage() {
           built from, so the landing page cannot claim a route the code
           stopped taking. */}
       <section className="w-full max-w-5xl border-t border-line py-20 sm:py-24">
-        <h2 className="font-mono font-semibold text-ink">What each harness receives</h2>
+        <h2 className="font-mono font-semibold text-ink">What each agent receives</h2>
         <p className="mt-1.5 max-w-[68ch] text-sm leading-relaxed text-muted">
           A check means the capability is delivered. The word beside it is how:{' '}
-          <span className="text-ink">native</span> through the harness&apos;s own mechanism,{' '}
+          <span className="text-ink">native</span> through the agent&apos;s own mechanism,{' '}
           <span className="text-ink">bridge</span> or <span className="text-ink">adapted</span>{' '}
           where uze preserves the semantics another way and reports that it did. Every route is
           derived from the integration that implements it.
@@ -255,7 +291,7 @@ export default function HomePage() {
           <table className="w-full min-w-[38rem] border-collapse text-left">
             <thead>
               <tr className="border-b border-line">
-                <th className="py-3 pe-4 font-mono text-xs font-normal text-muted">Harness</th>
+                <th className="py-3 pe-4 font-mono text-xs font-normal text-muted">Agent</th>
                 {columns.map(([key, label]) => (
                   <th key={key} className="px-3 py-3 font-mono text-xs font-normal text-muted">
                     {label}
@@ -291,7 +327,7 @@ export default function HomePage() {
         </div>
 
         <p className="mt-8 text-center text-sm text-muted">
-          A dash means that route does not exist for the harness, and the capability arrives another
+          A dash means that route does not exist for the agent, and the capability arrives another
           way. {matrix.planned.join(', ')} are on the roadmap; cells appear when the integration
           lands.{' '}
           <Link
@@ -304,13 +340,51 @@ export default function HomePage() {
         </p>
       </section>
 
+      {/* One column: two side by side fell out of step the moment one
+          answer opened, and a question is read top to bottom anyway. */}
+      <section id="faq" className="w-full max-w-5xl border-t border-line py-20 sm:py-24">
+        <SectionHeading
+          eyebrow="FAQ"
+          title="Questions people ask first."
+          body="The short answers. The docs have the long ones."
+        />
+        <div className="mx-auto mt-12 max-w-3xl border-t border-line">
+          {/* The answer that undoes the misreading starts open; a reader
+              who only skims sees it without a click. */}
+          {faq.map((item, index) => (
+            <details key={item.q} open={index === 0} className="group border-b border-line">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 font-mono text-[15px] font-semibold text-ink transition-colors hover:text-accent [&::-webkit-details-marker]:hidden">
+                {item.q}
+                <Plus
+                  className="size-4 shrink-0 text-muted transition-transform duration-200 group-open:rotate-45 group-open:text-accent"
+                  strokeWidth={1.75}
+                  aria-hidden
+                />
+              </summary>
+              <p className="max-w-[65ch] pb-6 pe-10 text-[15px] leading-relaxed text-muted">{item.a}</p>
+            </details>
+          ))}
+        </div>
+        <p className="mt-8 text-center text-sm text-muted">
+          Something else?{' '}
+          <Link href="/docs/reference/faq" className="text-ink underline underline-offset-4 hover:text-accent transition-colors">
+            Read the full FAQ
+          </Link>{' '}
+          or{' '}
+          <Link href="https://github.com/uze-sh/uze/discussions" className="text-ink underline underline-offset-4 hover:text-accent transition-colors">
+            ask on GitHub
+          </Link>
+          .
+        </p>
+      </section>
+
       <section className="w-full max-w-5xl border-t border-line py-24 sm:py-28 text-center">
         <h2 className="font-mono text-2xl font-bold tracking-tight text-ink">
           Set it up once, on this machine.
         </h2>
         <p className="mx-auto mt-3 max-w-[52ch] text-sm leading-relaxed text-muted">
-          uze detects the coding agents you already have, provisions the ones you don&apos;t through
-          each vendor&apos;s own installer, and reports what it could not do rather than guessing.
+          uze finds the coding agents you already have, installs any you want through the
+          vendor&apos;s own installer, and reports what it could not do rather than guessing.
         </p>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4 font-mono text-xs">
           <Link

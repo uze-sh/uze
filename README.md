@@ -2,7 +2,7 @@
 
 # uze
 
-**The package manager and workspace for coding agents.**
+**The package manager for coding agents.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/uze-sh/uze/ci.yml?branch=main&style=flat-square&labelColor=1e1f20&label=CI)](https://github.com/uze-sh/uze/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/rust-1.97%2B-7d97c9?style=flat-square&labelColor=1e1f20)](Cargo.toml)
@@ -11,7 +11,8 @@
 
 Give every coding agent you use the same plugins and the same project
 instructions, and run several of them at once without one stepping on
-another.
+another. uze is not an agent itself: no model, no API key, your agents keep
+their own logins.
 
 <p align="center">
   <img src="web/public/uze-demo.gif" alt="The uze terminal: two agents at once, each on its own branch in its own checkout, with the checkout's diff, its map and the project's own architecture diagrams a keystroke away" width="860" />
@@ -22,7 +23,7 @@ curl -fsSL https://uze.sh/i | sh        # Linux, macOS
 ```
 
 ```powershell
-irm https://uze.sh/i | iex             # Windows (experimental)
+irm https://uze.sh/i | iex             # Windows
 ```
 
 **[Full documentation →](https://uze.sh/docs)**
@@ -48,7 +49,7 @@ yourself, the workspace to run them, or both.
 - [x] Harness management · Skills & MCP portability · Project context · Marketplace · TUI
 - [x] Agent & hook portability · Native package delivery
 - [x] Profiles · Environment maintenance · Terminal workspace with isolated agents
-- [x] Reproducible project environments · Theming · Linux releases · macOS releases · Windows releases (experimental)
+- [x] Reproducible project environments · Theming · Linux releases · macOS releases · Windows releases
 - [x] Spec, Architect & Code extensions · Plugin freshness · Records that survive an upgrade
 - [ ] Requirements & dependencies · Plugin versioning · Security & trust
 - [ ] Signed Windows binaries · Runtime context projection · Migration tooling · Ecosystem expansion
