@@ -161,25 +161,10 @@ fn render_surface(
         Some(_) => content_columns(area, held.width),
         None => whole_width(area),
     };
-    // The nav is the surface's, not the list's: it spans the frame, and
-    // both columns start below it.
-    let nav_rows = match view.subjects.is_empty() {
-        true => 0,
-        false => NAV_ROWS,
-    };
-    let nav = nav_row(area);
-    render_subjects(frame, nav, &view.subjects, hits);
-    // Where there is a nav row, the ways of drawing what it selected ride
-    // it: they are what this half can be *asked*, and a control of its
-    // own a row below reads as a second header rather than as the other
-    // end of the first.
-    let (nav_modes, column_modes) = match nav_rows {
-        0 => (&[][..], &view.modes[..]),
-        _ => (&view.modes[..], &[][..]),
-    };
-    render_modes(frame, nav, nav_modes, hits);
-    let navigator_area = below_nav(navigator_area, nav_rows);
-    let content_area = below_nav(content_area, nav_rows);
+    // What the surface is about is the workspace bar's to show (see
+    // [`render_navigation`]); inside, only the ways of drawing what is on
+    // show remain, at the end of the content's own heading row.
+    let column_modes = &view.modes[..];
 
     let mut rendered = Rendered {
         navigator_scroll: held.scroll,
@@ -351,13 +336,9 @@ fn render_board(
 ) -> Rendered {
     let (menu, board, footer) = board_rows(area);
     let mut rendered = Rendered::default();
-    // The board's menu row and the column layout's nav row are the same
-    // cells, which is the whole of why the control does not move when
-    // the map takes the frame. A board draws one or the other on it: the
-    // halves where it has them, the descent where it does not — nothing
-    // has both, and a board that did would have to say which side each
-    // belongs on.
-    render_subjects(frame, menu, &view.subjects, hits);
+    // Where the board is and how to walk it are the workspace bar's (see
+    // [`render_navigation`]); its own first row keeps only the ways of
+    // drawing it.
     render_modes(frame, menu, &view.modes, hits);
     match &view.content {
         Content::Message { text, hint, role } => {
@@ -432,23 +413,48 @@ fn render_board(
         _ => None,
     };
     render_footer_row(frame, footer, &view.footer, scope, trailing);
-    // Last, because its list of groups opens over the board — and its
-    // hits first, because a click on that list must not reach the row of
-    // board lying under it.
-    if let Some(navigator) = view.navigator.as_ref() {
-        let room = menu.width.saturating_sub(modes_width(&view.modes) + 2);
-        let mut menu_hits = Vec::new();
+    rendered
+}
+
+/// What the surface is about and how to move through it, drawn in the
+/// workspace bar's leading slot rather than inside the surface: the
+/// subjects, and on a board the selector and the descent it walks.
+///
+/// Called after the surface is drawn, because a selector's list opens
+/// over it; its hits go first for the same reason, so a click on that list
+/// never reaches the surface lying under it.
+pub(crate) fn render_navigation(
+    frame: &mut ratatui::Frame<'_>,
+    view: &View,
+    slot: Rect,
+    surface: Rect,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) {
+    let mut navigation_hits = Vec::new();
+    render_subjects(frame, slot, &view.subjects, &mut navigation_hits);
+    if view.layout == ViewLayout::Board
+        && let Some(navigator) = view.navigator.as_ref()
+    {
+        let after_subjects = match view.subjects.is_empty() {
+            true => slot.x,
+            false => slot.x.saturating_add(modes_width(&view.subjects) + 2),
+        };
+        let (_, board, _) = board_rows(surface);
         render_menu(
             frame,
-            Rect::new(menu.x, menu.y, room, 1),
+            Rect::new(
+                after_subjects,
+                slot.y,
+                slot.right().saturating_sub(after_subjects),
+                1,
+            ),
             board,
             navigator,
             &view.trail,
-            &mut menu_hits,
+            &mut navigation_hits,
         );
-        hits.splice(0..0, menu_hits);
     }
-    rendered
+    hits.splice(0..0, navigation_hits);
 }
 
 #[cfg(test)]

@@ -15,29 +15,6 @@ pub(crate) fn clamp_navigator_width(width: u16, total_width: u16) -> u16 {
 /// inner height and its right-hand divider reaches edge to edge; only the
 /// content side is split again to carve out a footer that belongs to that
 /// column alone rather than reading as a global app bar.
-/// The surface's own nav row: where the control that says which half you
-/// are in is drawn, in every layout.
-///
-/// A fixed column of the frame rather than the head of whichever column
-/// happens to be beside it — the halves are not the list's, they are the
-/// surface's, and a control that moved a cell when it was used was one
-/// the eye had to find again after every press. It is also why the row
-/// is the list's and the content's alike: neither owns it.
-pub(crate) fn nav_row(frame_area: Rect) -> Rect {
-    Rect::new(frame_area.x, frame_area.y, frame_area.width, 1)
-}
-
-/// Everything below the nav row — or from the frame's edge, for a surface
-/// that has no halves to offer.
-pub(super) fn below_nav(rect: Rect, nav_rows: u16) -> Rect {
-    Rect::new(
-        rect.x,
-        rect.y.saturating_add(nav_rows),
-        rect.width,
-        rect.height.saturating_sub(nav_rows),
-    )
-}
-
 pub(crate) fn content_columns(
     frame_area: Rect,
     navigator_width_override: Option<u16>,
@@ -120,26 +97,10 @@ pub(crate) fn code_space(
     code: Option<&uze_extensions::code::CodeView>,
 ) -> Size {
     match code.map(uze_extensions::code::CodeView::showing) {
-        // The board's menu row *is* the nav row — the same cells, which
-        // is what makes the control stay put across the switch — so the
-        // board loses nothing to it.
         Some(uze_extensions::code::ContentMode::Map) => board_space(frame_area),
-        // A row less: this surface always has halves to offer, so it
-        // always has the row that offers them.
-        _ => {
-            let space = content_space(frame_area, navigator_width_override);
-            Size {
-                height: space.height.saturating_sub(NAV_ROWS),
-                ..space
-            }
-        }
+        _ => content_space(frame_area, navigator_width_override),
     }
 }
-
-/// How many rows the nav takes from a surface that has one. One, and it
-/// is a constant so the room an extension is told it has and the room it
-/// is drawn in cannot disagree.
-pub(super) const NAV_ROWS: u16 = 1;
 
 /// The keys that act here, on one row: with no frame beneath it there is
 /// no edge the row needs keeping off.

@@ -40,13 +40,28 @@ mod activity_frame_tests {
 /// than everywhere else in the TUI. A dim close mark per tab once
 /// more than one exists in the selected space, and a trailing "+" opening
 /// another shell in it.
+/// What the bar's leading slot holds: the context the pane is showing.
+/// The trailing slot — the surfaces, what the work changed, what can be
+/// done to it — is the same in every one of them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ui::orchestrator) enum LeadingSlot {
+    /// The selected agent and the shells opened beside it.
+    AgentTabs,
+    /// An open surface's own navigation, which its caller draws into the
+    /// slot this hands back once the surface itself is drawn.
+    Surface,
+}
+
+/// Draws the bar and answers with its leading slot: where the agent tabs
+/// were drawn, or the room left for the open surface's navigation.
 pub(in crate::ui::orchestrator) fn render_tab_strip(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     model: &WorkspaceModel,
     identities: &[AgentIdentity],
+    leading: LeadingSlot,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
+) -> Rect {
     // No left padding: the pane below sits flush against the divider (see
     // `compute_layout`'s own `content_rows[1].x`, with no left inset
     // either), so the first tab's marker has to start at that same column
@@ -61,7 +76,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             Paragraph::new(Span::styled("connecting…", theme::fg(Token::TextMuted))),
             inner,
         );
-        return;
+        return inner;
     };
 
     // Scoped to the selected space — switching spaces (sidebar) switches
@@ -325,8 +340,10 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // loses a tab's tail, which the strip can scroll back to, rather than
     // the button that makes the next tab, which nothing else offers.
     let limit = trailing_right;
-    let extension_in_front =
-        model.code.is_some() || model.architect.is_some() || model.spec.is_some();
+    if leading == LeadingSlot::Surface {
+        let notice_left = render_notice_chip(frame, model, inner, trailing_right);
+        return Rect::new(inner.x, inner.y, notice_left.saturating_sub(inner.x), 1);
+    }
     let mut spans = Vec::new();
     let mut x = inner.x;
     let strip_len = strip.len();
@@ -342,9 +359,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         }
         let is_last = strip_index + 1 == strip_len;
         let is_agent = Some(tab.id) == context;
-        // One highlight on the strip: a surface standing in the pane
-        // takes it from the tab it covers.
-        let selected = tab.id == space.selected_tab && !extension_in_front;
+        let selected = tab.id == space.selected_tab;
         let marker_fg = if selected {
             theme::color(Token::Accent)
         } else {
@@ -512,6 +527,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     }
 
     render_notice_chip(frame, model, inner, trailing_right);
+    Rect::new(inner.x, inner.y, limit.saturating_sub(inner.x), 1)
 }
 
 /// A surface chip's label: the word, and the glyph standing for it in a
@@ -686,14 +702,16 @@ pub(super) fn render_zone_hairline(
 /// operator's eye already is. Nothing here is clickable and nothing here
 /// moves a button — the actions were laid out before this was, and this
 /// only takes the room they left.
+///
+/// Answers with where it begins, which is where the leading slot ends.
 pub(super) fn render_notice_chip(
     frame: &mut ratatui::Frame<'_>,
     model: &WorkspaceModel,
     inner: Rect,
     actions_left: u16,
-) {
+) -> u16 {
     let Some(chip) = model.notice_chip() else {
-        return;
+        return actions_left;
     };
     let spans = vec![
         Span::raw(" "),
@@ -726,9 +744,10 @@ pub(super) fn render_notice_chip(
     // Never past the strip's left edge: what does not fit is this
     // message's own tail, clipped by its rect, not the tabs beside it.
     let Some(room) = actions_left.checked_sub(inner.x).filter(|room| *room > 0) else {
-        return;
+        return actions_left;
     };
     let width = (spans.iter().map(Span::width).sum::<usize>() as u16).min(room);
     let rect = Rect::new(actions_left.saturating_sub(width), inner.y, width, 1);
     frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+    rect.x
 }

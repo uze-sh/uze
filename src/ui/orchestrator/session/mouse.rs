@@ -130,14 +130,19 @@ impl Attach<'_> {
             ..
         } = *viewport;
         self.drop_selection();
-        // An open extension answers only for the place it is drawn in: the
-        // sidebar and the strip around it are still the chrome's. That
-        // place is the pane and one column more — the content's groove
-        // hugs the frame's edge, in the margin the pane keeps from it.
+        // An open extension answers only for the places it is drawn in: the
+        // sidebar and the rest of the bar are still the chrome's. Those
+        // places are the pane and one column more — the content's groove
+        // hugs the frame's edge, in the margin the pane keeps from it —
+        // and the bar's leading slot, wherever its navigation was drawn.
         let in_pane = layout
             .pane
             .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-            || self.on_content_scrollbar(mouse.column, mouse.row);
+            || self.on_content_scrollbar(mouse.column, mouse.row)
+            || matches!(
+                self.model.hit_at(mouse.column, mouse.row),
+                Some(WorkspaceHit::Extension(_))
+            );
         match mouse {
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(

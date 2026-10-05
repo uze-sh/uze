@@ -342,23 +342,39 @@ fn a_band_heading_is_set_apart_and_the_gap_before_it_is_air() {
 }
 
 fn draw(view: &View) -> (Vec<String>, Vec<(Rect, ViewHit)>) {
-    let mut terminal = Terminal::new(TestBackend::new(90, 14)).unwrap();
+    framed(view, 90, 14, uze_keys::Scope::Code)
+}
+
+/// The surface the way the workspace draws it: the bar's leading slot on
+/// the first row, holding the surface's navigation, and the surface under
+/// it — drawn first, so a selector's list opens over it.
+fn framed(
+    view: &View,
+    width: u16,
+    height: u16,
+    scope: uze_keys::Scope,
+) -> (Vec<String>, Vec<(Rect, ViewHit)>) {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     let mut hits = Vec::new();
     terminal
         .draw(|frame| {
+            let area = frame.area();
+            let slot = Rect::new(area.x, area.y, area.width, 1);
+            let surface = Rect::new(area.x, area.y + 1, area.width, area.height - 1);
             render(
                 frame,
                 view,
-                frame.area(),
+                surface,
                 NavigatorFrame {
                     width: Some(24),
                     scroll: NavigatorScroll::default(),
                     resizing: false,
                 },
-                uze_keys::Scope::Code,
+                scope,
                 None,
                 &mut hits,
             );
+            render_navigation(frame, view, slot, surface, &mut hits);
         })
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
@@ -597,7 +613,7 @@ fn a_flat_row_pins_its_marker_right_and_gives_up_the_detail_first() {
 /// switches the layout under it, leaves every control on it exactly
 /// where it was.
 #[test]
-fn the_nav_row_is_the_frames_and_does_not_move_with_the_layout() {
+fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
     let sidebar = View {
         title: vec![Span::new("code", Role::Muted)],
         caption: Vec::new(),
@@ -671,22 +687,17 @@ fn the_nav_row_is_the_frames_and_does_not_move_with_the_layout() {
     let (rows, hits) = draw_sized(&sidebar, 80, 12);
     assert!(
         rows[0].contains("Files") && rows[0].contains("Changes"),
-        "the halves are the surface's first row: {:?}",
+        "the halves are the bar's: {:?}",
         rows[0]
     );
     assert!(
-        rows[0].contains("Preview") && rows[0].contains("Source"),
-        "and the ways of drawing that half ride the same row: {:?}",
+        !rows[0].contains("Preview"),
+        "and only the halves: how to draw one stays in the surface: {:?}",
         rows[0]
     );
     assert!(
-        rows[0].find("Files") < rows[0].find("Preview"),
-        "one question at each end: {:?}",
-        rows[0]
-    );
-    assert!(
-        rows[1].contains("main.rs") && !rows[1].contains("Preview"),
-        "the row below is the columns' own, and carries no control: {:?}",
+        rows[1].contains("main.rs") && rows[1].contains("Preview"),
+        "the modes ride the content's own heading row: {:?}",
         rows[1]
     );
     let nav_at = |hits: &[(Rect, ViewHit)]| {
@@ -696,7 +707,7 @@ fn the_nav_row_is_the_frames_and_does_not_move_with_the_layout() {
             .expect("the halves can be pointed at")
     };
     let sidebar_at = nav_at(&hits);
-    assert_eq!(sidebar_at, (0, 0), "flush with the pane's corner");
+    assert_eq!(sidebar_at, (0, 0), "flush with the slot's corner");
 
     // The map takes the frame, which is the switch that used to move
     // the control a column sideways.
@@ -952,34 +963,7 @@ fn a_boards_hints_stop_before_its_caption() {
 const KEPT_WHOLE: [&str; 4] = ["close", "artifacts", "artifact", "rendering"];
 
 fn draw_sized(view: &View, width: u16, height: u16) -> (Vec<String>, Vec<(Rect, ViewHit)>) {
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    let mut hits = Vec::new();
-    terminal
-        .draw(|frame| {
-            render(
-                frame,
-                view,
-                frame.area(),
-                NavigatorFrame {
-                    width: Some(24),
-                    scroll: NavigatorScroll::default(),
-                    resizing: false,
-                },
-                uze_keys::Scope::Architect,
-                None,
-                &mut hits,
-            );
-        })
-        .unwrap();
-    let buffer = terminal.backend().buffer().clone();
-    let rows = (0..buffer.area.height)
-        .map(|row| {
-            (0..buffer.area.width)
-                .map(|column| buffer[(column, row)].symbol())
-                .collect()
-        })
-        .collect();
-    (rows, hits)
+    framed(view, width, height, uze_keys::Scope::Architect)
 }
 
 /// A click anywhere on a board's drawing resolves to the cell that was

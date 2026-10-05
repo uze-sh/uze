@@ -152,12 +152,23 @@ pub(super) fn render(
         ),
         WorkspaceHit::ResizeSidebar,
     ));
-    render_tab_strip(frame, layout.tab_strip, model, identities, hits);
-    let extension = render_extension(frame, layout.pane, model, hits, metrics);
-    if extension.is_none() {
-        render_pane(frame, layout.pane, model);
-    }
-    let question = extension.and_then(|drawn| drawn.question);
+    let open = open_extension(model, layout.pane);
+    let leading = match open {
+        Some(_) => LeadingSlot::Surface,
+        None => LeadingSlot::AgentTabs,
+    };
+    let slot = render_tab_strip(frame, layout.tab_strip, model, identities, leading, hits);
+    let question = match &open {
+        Some(open) => {
+            let question = render_extension(frame, layout.pane, model, open, hits, metrics);
+            render_extension_navigation(frame, slot, layout.pane, open, hits);
+            question
+        }
+        None => {
+            render_pane(frame, layout.pane, model);
+            None
+        }
+    };
     // Drawn last so it sits on top of the pane — same ordering the
     // management modal's dialogs use in its own `render`. Anchored to
     // `picker.anchor` (the "✦" button's own rect) rather than centered on
@@ -315,15 +326,91 @@ fn render_extension(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     model: &WorkspaceModel,
+    open: &OpenExtension,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
     metrics: &mut FrameMetrics,
-) -> Option<ExtensionDrawn> {
+) -> Option<Question> {
     // The extension answers with content; the host lays it out and
     // therefore is the only side that can say which rectangle a click
     // landed in. The hits come back in the view's own vocabulary and are
     // tagged with the extension they belong to on the way into the shared
     // `hits` vec — the one place that translation happens.
+    let OpenExtension { view, scope, tag } = open;
+    let (scope, tag) = (*scope, *tag);
     let mut view_hits = Vec::new();
+    metrics.code = Some(crate::ui::extension_view::render(
+        frame,
+        view,
+        area,
+        crate::ui::extension_view::NavigatorFrame {
+            width: model.code_tree_width,
+            scroll: model.code_tree_scroll,
+            resizing: model
+                .code_edge_drag
+                .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
+        },
+        scope,
+        match &model.selection {
+            Some(Selection::Text(marking)) => Some(marking),
+            _ => None,
+        },
+        &mut view_hits,
+    ));
+    crate::ui::extension_view::render_row_menu(
+        frame,
+        view,
+        area,
+        model.code_menu_at,
+        &mut view_hits,
+    );
+    hits.extend(
+        view_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag(hit)))),
+    );
+    view.confirm.clone().map(|confirm| Question {
+        confirm,
+        scope,
+        tag,
+    })
+}
+
+/// The open surface's navigation, in the bar's leading slot. Drawn after
+/// the surface, since a selector's list opens over it, and its hits put
+/// ahead of everything for the same reason.
+fn render_extension_navigation(
+    frame: &mut ratatui::Frame<'_>,
+    slot: Rect,
+    surface: Rect,
+    open: &OpenExtension,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let mut navigation_hits = Vec::new();
+    crate::ui::extension_view::render_navigation(
+        frame,
+        &open.view,
+        slot,
+        surface,
+        &mut navigation_hits,
+    );
+    hits.splice(
+        0..0,
+        navigation_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension((open.tag)(hit)))),
+    );
+}
+
+/// The surface standing in the pane, as it answered for this frame: read
+/// once, so the bar's navigation and the surface below it are drawn from
+/// the same answer.
+struct OpenExtension {
+    view: uze_extensions::view::View,
+    scope: uze_keys::Scope,
+    tag: fn(ViewHit) -> ExtensionHit,
+}
+
+fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
     let (view, scope, tag): (_, _, fn(ViewHit) -> ExtensionHit) =
         if let Some(architect) = &model.architect {
             (
@@ -355,54 +442,13 @@ fn render_extension(
         } else {
             return None;
         };
-    metrics.code = Some(crate::ui::extension_view::render(
-        frame,
-        &view,
-        area,
-        crate::ui::extension_view::NavigatorFrame {
-            width: model.code_tree_width,
-            scroll: model.code_tree_scroll,
-            resizing: model
-                .code_edge_drag
-                .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
-        },
-        scope,
-        match &model.selection {
-            Some(Selection::Text(marking)) => Some(marking),
-            _ => None,
-        },
-        &mut view_hits,
-    ));
-    crate::ui::extension_view::render_row_menu(
-        frame,
-        &view,
-        area,
-        model.code_menu_at,
-        &mut view_hits,
-    );
-    hits.extend(
-        view_hits
-            .into_iter()
-            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag(hit)))),
-    );
-    Some(ExtensionDrawn {
-        question: view.confirm.map(|confirm| Question {
-            confirm,
-            scope,
-            tag,
-        }),
-    })
+    Some(OpenExtension { view, scope, tag })
 }
 
-/// What drawing an extension leaves for the rest of the frame.
-struct ExtensionDrawn {
-    /// The question it waits on. Drawn with the client's other modals,
-    /// centred on the whole frame over the scrim, rather than inside the
-    /// pane: until it is answered nothing else responds, and a dialog
-    /// drawn in the pane says the opposite.
-    question: Option<Question>,
-}
-
+/// The question an open surface waits on. Drawn with the client's other
+/// modals, centred on the whole frame over the scrim, rather than inside the
+/// pane: until it is answered nothing else responds, and a dialog drawn in
+/// the pane says the opposite.
 struct Question {
     confirm: uze_extensions::view::Confirm,
     scope: uze_keys::Scope,
