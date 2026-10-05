@@ -1916,12 +1916,10 @@ Git check. A section the workspace would reject still leaves `install` and
 
 The `agents.yaml` UZE creates says nothing about the workspace, not even
 commented; choosing a policy adds a `workspace:` section and leaves the
-package manager's keys as they were. A file still in the earlier shape is
-refused with one line per moved key, never read.
+package manager's keys as they were.
 
 > `crates/uze-workspace/src/declaration.rs::tests::a_scaffolded_manifest_declares_no_policy`
 > `crates/uze-workspace/src/declaration.rs::tests::choosing_a_delivery_adds_the_section_and_leaves_the_rest_alone`
-> `crates/uze-core/src/project/manifest.rs::tests::the_previous_shape_is_refused_naming_where_each_key_went`
 
 ### Each region of `AGENTS.md` has one owner
 

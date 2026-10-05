@@ -6,9 +6,6 @@ nothing about the workspace and SHALL carry no workspace text at all, not
 even commented: the package manager's keys sit at the root and the
 workspace's live under one `workspace:` section, which appears only after
 somebody chooses a policy, through the workspace or by editing the file.
-A manifest that still carries `worktrees:` or `artifacts:` at its root
-SHALL be refused, and the refusal SHALL name the key's place under
-`workspace:`.
 
 #### Scenario: The first install declares no policy
 - **WHEN** a plugin is installed into a project that has no `agents.yaml`
@@ -26,12 +23,6 @@ SHALL be refused, and the refusal SHALL name the key's place under
   `agents.yaml` has no `workspace:` section
 - **THEN** `agents.yaml` gains a `workspace:` section holding that choice,
   and its `marketplaces:` are left byte for byte as they were
-
-#### Scenario: A manifest in the previous shape
-- **WHEN** `agents.yaml` declares `worktrees: { default: isolated }` at its
-  root
-- **THEN** reading it fails, naming `workspace.worktree` as where the
-  choice now lives
 
 ### Requirement: A workspace setting never fails a package-manager command
 The system SHALL read `agents.yaml` for `install`, `update`, `remove`,

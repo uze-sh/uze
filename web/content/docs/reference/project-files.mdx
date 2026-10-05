@@ -175,21 +175,6 @@ resolved outside the project would rewrite a shared file to whichever machine
 ran the command. A worktree's own manifest is ignored for the same reason:
 the primary checkout owns the policy.
 
-#### A file in the earlier shape
-
-Before this section existed, the same settings sat at the root as `worktrees:`
-and `artifacts:`. uze does not read that shape. It refuses the file and prints
-one line per key, old path to new, so it can be fixed in one pass, by you or by
-the agent that ran the command:
-
-```text
-the workspace's settings moved under one `workspace:` section. Rewrite these and read the file again:
-  worktrees.default: isolated  ->  workspace.worktree: always
-  worktrees.completion  ->  workspace.delivery
-  worktrees.branch  ->  workspace.branch
-  artifacts.path  ->  workspace.artifacts
-```
-
 #### `artifacts`
 
 Where the project keeps the artifacts that describe it: one directory, or a

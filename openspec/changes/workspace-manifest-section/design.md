@@ -16,11 +16,12 @@ lossless round-trip that keeps a person's comments and order.
   alone. `uze-core` still sees one opaque value.
 - Values that answer the question their key asks (`worktree: always |
   manual`, `delivery: handoff | merge | pr`).
-- A manifest in the old shape fails loudly, naming the key's new place.
 
 **Non-Goals:**
-- Reading the old shape. The file is authored, so it has no ladder and
-  no compatibility path (see the persisted-tier rule in AGENTS.md).
+- Reading, migrating or naming the old shape. There are no users yet, so
+  this is the schema from here on: a file in the old shape meets the
+  ordinary unknown-field error and is recreated by hand or by
+  `uze install`. The file is authored, so it has no ladder either (see the persisted-tier rule in AGENTS.md).
 - New artifact kinds. Places become a list here; what is found in them
   is the business of each surface (see the `spec-decisions` change).
 - Renaming the internal vocabulary the code already uses well
@@ -35,22 +36,6 @@ trades `worktrees` and `artifacts` for one `workspace: Option<Value>`, and
 `WorktreePolicy` and the artifact roots it already returns. *Alternative:*
 let `uze-core` type the section. Rejected: that is the dependency
 `module-boundary` exists to forbid.
-
-**The refusal of the old shape lives in `uze-core`.** The root keys are
-`uze-core`'s, so the parse that refuses `worktrees:` and `artifacts:` is
-the root's own, with a message per key naming `workspace.<key>` (and for
-`worktrees.default`, `workspace.worktree`; for `completion`,
-`workspace.delivery`). *Alternative:* the generic unknown-field error.
-Rejected: it would say the key is unknown without saying where it went,
-and every existing project meets this once.
-
-The refusal never reads the old shape and never rewrites the file: the
-file is authored, and an authored file that does not parse is reported,
-never written over. The message is the migration: one line per moved key,
-old path to new path, complete enough that the person or the agent in
-front of it edits the file in one pass. It has an exit, like an advisory
-ignore: the table of moved keys is deleted at `1.0.0`, after which the
-old keys meet the ordinary unknown-field error.
 
 **`always | manual`, not a name for the primary checkout.** The key is
 the mechanism the neighbouring keys already describe (`link`, `setup`,
@@ -87,13 +72,14 @@ when a choice is made, as it does today for `completion`.
 
 ## Risks / Trade-offs
 
-- [Every existing `agents.yaml` with `worktrees:` stops reading] → the
-  refusal names the new path; this repository's own file, the fixtures
-  and the journeys move in the same change; the release notes say it in
-  one line.
+- [Every existing `agents.yaml` with `worktrees:` stops reading] → there
+  are no users yet; this repository's own file, the fixtures and the
+  journeys move in the same change, and anyone else deletes and recreates
+  the file. No compatibility code is carried for it, which is also what
+  keeps reading the manifest as cheap as it was.
 - [An AGENTS.md region already projected names the old keys] → the
   region's text is regenerated on the next reconcile; nothing in it is
   parsed back.
 - [A workspace that writes `workspace.delivery` into a file still in the
-  old shape] → it reads first and is refused, so it never writes into a
-  file it could not read.
+  old shape] → it reads first and fails, so it never writes into a file it
+  could not read.

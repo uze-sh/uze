@@ -349,12 +349,6 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectManifest> {
     // refuses the keys that moved here: a key whose answer is about the
     // *file* cannot be told apart from a same-named key inside an entry
     // once serde has reduced both to "unknown field".
-    if let Some(reason) = document.as_mapping().and_then(moved_under_workspace) {
-        return Err(UzeError::MalformedManifest {
-            path: path.to_path_buf(),
-            reason,
-        });
-    }
     for (key, why) in REFUSED_ROOT_KEYS {
         if document
             .as_mapping()
@@ -384,61 +378,6 @@ const REFUSED_ROOT_KEYS: [(&str, &str); 1] = [(
      affects, and a number to compare would only be needed to keep reading a file UZE no longer \
      understands",
 )];
-
-/// The root keys the workspace's settings lived under before they moved into
-/// `workspace:`. The file is authored, so it is never read in the old shape
-/// and never rewritten: the refusal *is* the migration, one line per key the
-/// file actually holds, complete enough to edit in one pass.
-///
-/// Delete this table, and [`moved_under_workspace`] with it, at `1.0.0`:
-/// past that the old keys meet the ordinary unknown-field error.
-const MOVED_UNDER_WORKSPACE: [&str; 2] = ["worktrees", "artifacts"];
-
-fn moved_under_workspace(root: &serde_yaml::Mapping) -> Option<String> {
-    let mut lines = Vec::new();
-    for section in MOVED_UNDER_WORKSPACE {
-        let Some(value) = root.get(section) else {
-            continue;
-        };
-        let keys: Vec<(String, Option<String>)> = match value.as_mapping() {
-            Some(mapping) => mapping
-                .iter()
-                .map(|(key, value)| (key.as_str().to_owned(), value.as_str().map(str::to_owned)))
-                .collect(),
-            None => Vec::new(),
-        };
-        if keys.is_empty() {
-            lines.push(format!("  {section}:  ->  workspace:"));
-        }
-        for (key, value) in keys {
-            lines.push(format!("  {}", moved_line(section, &key, value.as_deref())));
-        }
-    }
-    (!lines.is_empty()).then(|| {
-        format!(
-            "the workspace's settings moved under one `workspace:` section. Rewrite these and \
-             read the file again:\n{}",
-            lines.join("\n")
-        )
-    })
-}
-
-fn moved_line(section: &str, key: &str, value: Option<&str>) -> String {
-    match (section, key, value) {
-        ("worktrees", "default", Some("isolated")) => {
-            "worktrees.default: isolated  ->  workspace.worktree: always".to_owned()
-        }
-        ("worktrees", "default", Some("in-place")) => {
-            "worktrees.default: in-place  ->  workspace.worktree: manual".to_owned()
-        }
-        ("worktrees", "default", _) => {
-            "worktrees.default  ->  workspace.worktree (always | manual)".to_owned()
-        }
-        ("worktrees", "completion", _) => "worktrees.completion  ->  workspace.delivery".to_owned(),
-        ("artifacts", "path", _) => "artifacts.path  ->  workspace.artifacts".to_owned(),
-        _ => format!("{section}.{key}  ->  workspace.{key}"),
-    }
-}
 
 /// serde's "unknown field" message is accurate and unhelpful for the two
 /// mistakes a person actually makes: writing a resolution into the
@@ -884,32 +823,5 @@ mod tests {
         assert!(!SCAFFOLD.contains("workspace:"), "{SCAFFOLD}");
         assert!(!SCAFFOLD.contains("worktree"), "{SCAFFOLD}");
         assert!(!SCAFFOLD.contains("artifacts"), "{SCAFFOLD}");
-    }
-
-    /// Every key the file still holds in the old shape gets its own line,
-    /// old path to new, so the file can be fixed in one pass by whoever
-    /// reads the refusal.
-    #[test]
-    fn the_previous_shape_is_refused_naming_where_each_key_went() {
-        let message = parsed(
-            "worktrees:\n  default: isolated\n  completion: pr\n  branch: conventional\n\
-             artifacts:\n  path: docs/architecture\nmarketplaces: {}\n",
-        )
-        .unwrap_err()
-        .to_string();
-        for line in [
-            "worktrees.default: isolated  ->  workspace.worktree: always",
-            "worktrees.completion  ->  workspace.delivery",
-            "worktrees.branch  ->  workspace.branch",
-            "artifacts.path  ->  workspace.artifacts",
-        ] {
-            assert!(message.contains(line), "missing `{line}` in:\n{message}");
-        }
-        assert!(
-            parsed("worktrees:\n  default: in-place\n")
-                .unwrap_err()
-                .to_string()
-                .contains("workspace.worktree: manual")
-        );
     }
 }

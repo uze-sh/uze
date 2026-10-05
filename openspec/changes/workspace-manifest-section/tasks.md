@@ -1,7 +1,7 @@
 ## 1. Manifest root (uze-core)
 
 - [x] 1.1 Replace `worktrees` and `artifacts` in `ProjectManifest` with one opaque `workspace` value, and `Section::Worktrees`/`Section::Artifacts` with `Section::Workspace`
-- [x] 1.2 Refuse root `worktrees:` and `artifacts:` with a message naming each key's place under `workspace:` (`default` → `workspace.worktree`, `completion` → `workspace.delivery`); test both
+- [x] 1.2 Carry no compatibility for root `worktrees:` / `artifacts:`: they meet the ordinary unknown-field error
 - [x] 1.3 Reduce `SCAFFOLD` to the header and the commented `marketplaces:` example; update the scaffold tests and `module-boundary`'s "first install declares no policy" test to assert no workspace text at all
 - [x] 1.4 Point `manifest::set_scalar` callers at `workspace.<key>` and test that writing `workspace.delivery` into a file without the section creates it and leaves `marketplaces:` byte-identical
 

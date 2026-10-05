@@ -33,9 +33,9 @@ split in the code (`module-boundary`); the file they share should say so.
 - The scaffold stops writing the commented workspace block. A
   package-manager-only project's `agents.yaml` holds `marketplaces:` and
   nothing else; the keys are documented in the project-files reference.
-- A manifest still carrying root `worktrees:` or `artifacts:` is refused
-  by the parse, and the error names the key's new path. `agents.yaml` is
-  authored, so it has no ladder and no compatibility reading.
+- No compatibility for the old shape: there are no users yet, so a file
+  still carrying root `worktrees:` or `artifacts:` meets the ordinary
+  unknown-key error and is recreated. Nothing reads, migrates or names it.
 - The isolation actions' labels are "To worktree" / "To worktree, no
   changes" (already renamed in the keymap); the specs that name them are
   brought in step.
@@ -62,7 +62,7 @@ None.
 ## Impact
 
 - `crates/uze-core/src/project/manifest.rs`: `ProjectManifest` root keys,
-  `Section`, the scaffold, the refusal naming the moved key.
+  `Section`, the scaffold.
 - `crates/uze-workspace/src/declaration.rs` and `worktree.rs`:
   `WorktreePolicy` field names, `AgentPlacementDefault` values,
   `DeclaredArtifacts` accepting one or many, every malformed-manifest
