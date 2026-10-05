@@ -79,7 +79,7 @@ pub(crate) fn render_plugins(
     let panel_width = if area.width < NARROW {
         0
     } else {
-        super::drawer_width(ResizablePanel::MarketplaceDrawer, model, content)
+        super::drawer_width(ResizablePanel::Drawer, model, content)
     };
     let tree = Rect {
         width: if panel_width > 0 {
@@ -98,13 +98,7 @@ pub(crate) fn render_plugins(
     };
     render_tree(frame, tree, &screen, &markets, hits);
     if panel_width > 0 {
-        let panel = super::drawer(
-            frame,
-            content,
-            ResizablePanel::MarketplaceDrawer,
-            model,
-            hits,
-        );
+        let panel = super::drawer(frame, content, ResizablePanel::Drawer, model, hits);
         render_panel(frame, panel, &screen, hits);
     }
 }

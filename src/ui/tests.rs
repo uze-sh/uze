@@ -560,7 +560,7 @@ fn a_return_visit_draws_what_the_last_one_resolved() {
     let mut model = model_with_plugins(&["one", "two"]);
     model.remembered.resolved_at = Some(std::time::Instant::now());
     model.remembered.plugin_screen.selected = 1;
-    model.remembered.plugin_screen.drawer_width = Some(46);
+    model.drawer_width = Some(46);
     // What one visit ends holding — including work it was in the middle
     // of, which the next visit must not inherit.
     model.status = Status::Working("Inspecting one…".to_owned());
@@ -587,7 +587,7 @@ fn a_return_visit_draws_what_the_last_one_resolved() {
     assert_eq!(model.route, Route::Plugins);
     assert_eq!(model.remembered.plugin_screen.selected, 1);
     assert_eq!(
-        model.remembered.plugin_screen.drawer_width,
+        model.drawer_width,
         Some(46),
         "a drawer stays the width it was dragged to"
     );
@@ -626,10 +626,8 @@ fn a_first_visit_starts_from_the_default_model() {
     assert!(model.remembered.plugins.is_empty());
     assert_eq!(model.route, Route::Overview);
     assert!(
-        model.remembered.plugin_screen.drawer_width.is_none()
-            && model.remembered.extension_screen.drawer_width.is_none()
-            && model.remembered.harness_screen.drawer_width.is_none(),
-        "the widths a screen opens with are stated once, by Default"
+        model.drawer_width.is_none(),
+        "the width a drawer opens with is stated once, by Default"
     );
 }
 
@@ -639,7 +637,7 @@ fn a_first_visit_starts_from_the_default_model() {
 fn the_next_run_opens_on_the_screen_the_last_one_left() {
     let mut model = TuiModel::default();
     model.set_route(Route::Profiles);
-    model.remembered.harness_screen.drawer_width = Some(38);
+    model.drawer_width = Some(38);
     model.profile_columns_width = Some(28);
     model.plugin_market = Some("uze-official".to_owned());
 
@@ -649,7 +647,7 @@ fn the_next_run_opens_on_the_screen_the_last_one_left() {
     let model = TuiModel::recall(None, &layout);
     assert_eq!(model.route, Route::Profiles);
     assert_eq!(
-        model.remembered.harness_screen.drawer_width,
+        model.drawer_width,
         Some(38),
         "a drawer stays the width it was dragged to"
     );
@@ -4902,7 +4900,7 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
         ..TuiModel::default()
     };
     let width = 52;
-    model.remembered.plugin_screen.drawer_width = Some(width);
+    model.drawer_width = Some(width);
     let (terminal, _hits) = drawn_at(&model, 120, 40);
     let rows = buffer_rows(&terminal);
 

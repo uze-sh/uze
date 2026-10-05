@@ -36,7 +36,7 @@ pub(crate) fn render_extensions(
     // screen's detail column, not something opened and closed.
     let drawer_shown = model.selected_extension().is_some();
     let drawer_width =
-        drawer_shown.then(|| super::drawer_width(ResizablePanel::ExtensionDrawer, model, outer));
+        drawer_shown.then(|| super::drawer_width(ResizablePanel::Drawer, model, outer));
     let header_width = outer
         .width
         .saturating_sub(drawer_width.unwrap_or(0))
@@ -153,7 +153,7 @@ fn render_extension_drawer(
     extension: &uze_extensions::registry::BuiltinExtension,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let inner = super::drawer(frame, content, ResizablePanel::ExtensionDrawer, model, hits);
+    let inner = super::drawer(frame, content, ResizablePanel::Drawer, model, hits);
     let enabled = model.extension_enabled(extension.id);
     let offers = uze_application::application::offers::extension_offers(enabled);
     let (body, status) = super::drawer_body_and_footer(inner, &offers);

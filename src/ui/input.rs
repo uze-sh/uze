@@ -689,10 +689,13 @@ mod tests {
     use crate::ui::keys::press;
     use crate::ui::model::{Confirmation, Overlay, ResizablePanel, Route, TuiModel};
 
+    /// The drawers are one column to the person moving between screens:
+    /// a width dragged on one is the width every other screen draws.
     #[test]
-    fn dragging_a_content_divider_records_its_route_local_width() {
+    fn dragging_one_screens_drawer_resizes_every_screens_drawer() {
         let mut model = TuiModel {
-            dragging_panel: Some(ResizablePanel::HarnessDrawer),
+            route: Route::Harnesses,
+            dragging_panel: Some(ResizablePanel::Drawer),
             ..TuiModel::default()
         };
         model.apply_mouse(
@@ -705,7 +708,12 @@ mod tests {
             Rect::new(0, 0, 120, 40),
         );
 
-        assert_eq!(model.remembered.harness_screen.drawer_width, Some(40));
+        model.set_route(Route::Plugins);
+        assert_eq!(
+            crate::ui::view::drawer_width(ResizablePanel::Drawer, &model, Rect::new(0, 0, 120, 40)),
+            40,
+            "the plugins drawer opens at the width dragged on the harnesses screen"
+        );
     }
 
     /// A Windows console reports the key coming up after the one going down;

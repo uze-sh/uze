@@ -441,7 +441,16 @@ impl Attach<'_> {
             if now >= self.next_tick {
                 self.spinner.inc(1);
                 self.model.tick = self.spinner.position() as usize;
-                self.next_tick = now + AGENT_ACTIVITY_TICK;
+                // Scheduled from the beat it was due on, not from when the
+                // loop got round to it: counting from `now` let every late
+                // check stretch that one frame, and the pulse stuttered.
+                // A clock that fell more than a beat behind (the clock was
+                // idle, or a frame was slow) starts over rather than
+                // racing through the frames it missed.
+                self.next_tick += AGENT_ACTIVITY_TICK;
+                if self.next_tick <= now {
+                    self.next_tick = now + AGENT_ACTIVITY_TICK;
+                }
                 self.model.dirty = true;
             }
         }

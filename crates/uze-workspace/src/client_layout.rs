@@ -116,13 +116,13 @@ pub struct ManagementLayout {
     /// The screen that was open, by the client's own id for it; `None`,
     /// or an id the client no longer recognizes, opens its default screen.
     pub route: Option<String>,
-    /// Where each detail drawer's edge was dragged to; `None` leaves the
-    /// width to the client's responsive default. Only the width: a
-    /// screen's detail is the point of the screen, so the drawer is a
-    /// column of it rather than something to be opened and closed.
-    pub marketplace_drawer_width: Option<u16>,
-    pub extension_drawer_width: Option<u16>,
-    pub harness_drawer_width: Option<u16>,
+    /// Where the detail drawers' edge was dragged to; `None` leaves the
+    /// width to the client's responsive default. One width for every
+    /// screen's drawer, because they are the same column to the person
+    /// moving between screens. Only the width: a screen's detail is the
+    /// point of the screen, so the drawer is a column of it rather than
+    /// something to be opened and closed.
+    pub drawer_width: Option<u16>,
     pub profile_columns_width: Option<u16>,
     /// The marketplace the plugin catalog was narrowed to, by name;
     /// `None` shows every marketplace's plugins.
@@ -197,8 +197,7 @@ mod tests {
             },
             management: ManagementLayout {
                 route: Some("plugins".to_owned()),
-                marketplace_drawer_width: Some(52),
-                harness_drawer_width: Some(40),
+                drawer_width: Some(52),
                 plugin_market: Some("uze-official".to_owned()),
                 ..ManagementLayout::default()
             },
@@ -229,7 +228,7 @@ mod tests {
         assert_eq!(layout.management.route.as_deref(), Some("profiles"));
         assert_eq!(layout.workspace, WorkspaceLayout::default());
         assert_eq!(
-            layout.management.marketplace_drawer_width, None,
+            layout.management.drawer_width, None,
             "a field the file does not name is the default, not a value"
         );
     }
