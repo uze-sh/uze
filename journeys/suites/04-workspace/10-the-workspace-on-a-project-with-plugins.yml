@@ -11,8 +11,8 @@ about: |
 world:
   project: demo-app
   manifest: |
-    worktrees:
-      completion: pr
+    workspace:
+      delivery: pr
   files:
     market/marketplace.json: |
       {

@@ -19,9 +19,9 @@ about: |
 world:
   project: demo-app
   manifest: |
-    worktrees:
+    workspace:
       target: main
-      completion: handoff
+      delivery: handoff
 
 scenes:
   - scene: an agent placed through UZE's own launcher names the conversation it starts

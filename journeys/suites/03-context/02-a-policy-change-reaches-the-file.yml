@@ -2,7 +2,7 @@ journey: changing the worktree policy changes what agents read, while the worksp
 tags: [gate, tui, context]
 proves: web/content/docs/workspace/agents.mdx
 about: |
-  UZE reads `worktrees:` live wherever it acts on the policy itself. The
+  UZE reads `workspace:` live wherever it acts on the policy itself. The
   agents that must honour it read something else: the section the workspace
   keeps in `AGENTS.md`. So a policy could be in force for UZE and not for
   them, for as long as nobody ran a command. The workspace closes that gap
@@ -16,9 +16,9 @@ about: |
 world:
   project: demo-app
   manifest: |
-    worktrees:
+    workspace:
       target: main
-      completion: handoff
+      delivery: handoff
 
 scenes:
   - scene: install gives the project its AGENTS.md and leaves the policy to the workspace
@@ -52,8 +52,8 @@ scenes:
     when:
       - shell: |
           set -e
-          printf 'worktrees:\n  target: main\n  completion: merge\n' > {project}/agents.yaml
-        say: the person changes the completion behaviour
+          printf 'workspace:\n  target: main\n  delivery: merge\n' > {project}/agents.yaml
+        say: the person changes the delivery behaviour
       - wait: shell
         until: grep -q "fast-forwards the target" {project}/AGENTS.md
         timeout: 60

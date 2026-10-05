@@ -1,10 +1,9 @@
 //! Where a project keeps the artifacts that describe it.
 //!
-//! The manifest names a directory; this is that name resolved into a
-//! place, or the reason it cannot be one. A presentation surface asks
-//! this rather than reading `agents.yaml` itself, which keeps the file's
-//! shape — and what counts as a path the project may point at — in one
-//! place.
+//! The manifest names directories; this is those names resolved into
+//! places, or the reason they cannot be. A presentation surface asks this
+//! rather than reading `agents.yaml` itself, which keeps the file's shape
+//! — and what counts as a path the project may point at — in one place.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -12,21 +11,27 @@ use uze_core::project_root;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProjectArtifacts {
-    /// The project declares no `artifacts:`, which is an answer and not a
-    /// fault: most projects have not drawn anything yet.
+    /// The project declares no `workspace.artifacts`, which is an answer
+    /// and not a fault: most projects have not drawn anything yet.
     Undeclared,
-    /// The declared directory: where it is, and how the project spelled
-    /// it — the form to show somebody, since it is the one they wrote. It
-    /// may not exist yet; that is for whoever lists it to say.
+    /// The declared directories, in the order the project wrote them.
     Declared {
-        directory: PathBuf,
-        declared: PathBuf,
-        /// The project it was declared in: what a path written inside an
-        /// artifact is relative to.
+        directories: Vec<DeclaredDirectory>,
+        /// The project they were declared in: what a path written inside
+        /// an artifact is relative to.
         project: PathBuf,
     },
     /// Declared, and not something UZE will follow.
     Refused(String),
+}
+
+/// One declared directory: where it is, and how the project spelled it —
+/// the form to show somebody, since it is the one they wrote. It may not
+/// exist yet; that is for whoever lists it to say.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredDirectory {
+    pub directory: PathBuf,
+    pub declared: PathBuf,
 }
 
 /// What the project `cwd` sits in declares about its artifacts.
@@ -38,18 +43,28 @@ pub fn project_artifacts(cwd: &Path) -> ProjectArtifacts {
         Ok(declared) => declared,
         Err(error) => return ProjectArtifacts::Refused(error.to_string()),
     };
-    match declared {
-        None => ProjectArtifacts::Undeclared,
-        Some(artifacts) if stays_inside(&artifacts.path) => ProjectArtifacts::Declared {
-            directory: root.join(&artifacts.path),
-            declared: artifacts.path,
-            project: root,
-        },
-        Some(artifacts) => ProjectArtifacts::Refused(format!(
-            "`artifacts.path` is `{}`, which leaves the project — it has to be a \
-             directory inside it",
-            artifacts.path.display()
-        )),
+    let Some(artifacts) = declared else {
+        return ProjectArtifacts::Undeclared;
+    };
+    if let Some(outside) = artifacts.paths.iter().find(|path| !stays_inside(path)) {
+        // The file has to be fixed either way, and drawing half of what was
+        // declared would need somewhere to say the other half is missing.
+        return ProjectArtifacts::Refused(format!(
+            "`workspace.artifacts` names `{}`, which leaves the project — every entry has to be \
+             a directory inside it",
+            outside.display()
+        ));
+    }
+    ProjectArtifacts::Declared {
+        directories: artifacts
+            .paths
+            .into_iter()
+            .map(|declared| DeclaredDirectory {
+                directory: root.join(&declared),
+                declared,
+            })
+            .collect(),
+        project: root,
     }
 }
 
@@ -74,26 +89,43 @@ mod tests {
 
     #[test]
     fn a_declared_directory_is_resolved_against_the_project_root() {
-        let project = project("artifacts:\n  path: docs/architecture\n");
+        let project = project("workspace:\n  artifacts: docs/architecture\n");
         let nested = project.path().join("src");
         fs::create_dir(&nested).unwrap();
         let ProjectArtifacts::Declared {
-            directory,
-            declared,
+            directories,
             project: root,
         } = project_artifacts(&nested)
         else {
             panic!("the project declares a directory");
         };
-        assert_eq!(declared, PathBuf::from("docs/architecture"));
-        assert_eq!(directory, root.join("docs/architecture"));
-        assert!(directory.ends_with("docs/architecture"));
-        assert!(directory.is_absolute());
+        let [only] = directories.as_slice() else {
+            panic!("one directory was declared: {directories:?}");
+        };
+        assert_eq!(only.declared, PathBuf::from("docs/architecture"));
+        assert_eq!(only.directory, root.join("docs/architecture"));
+        assert!(only.directory.is_absolute());
+    }
+
+    #[test]
+    fn several_directories_keep_the_order_they_were_written_in() {
+        let project = project("workspace:\n  artifacts: [docs, design]\n");
+        let ProjectArtifacts::Declared { directories, .. } = project_artifacts(project.path())
+        else {
+            panic!("the project declares directories");
+        };
+        assert_eq!(
+            directories
+                .iter()
+                .map(|directory| directory.declared.clone())
+                .collect::<Vec<_>>(),
+            vec![PathBuf::from("docs"), PathBuf::from("design")]
+        );
     }
 
     #[test]
     fn a_project_that_declares_nothing_is_not_an_error() {
-        let project = project("worktrees:\n  completion: handoff\n");
+        let project = project("workspace:\n  delivery: handoff\n");
         assert_eq!(
             project_artifacts(project.path()),
             ProjectArtifacts::Undeclared
@@ -101,16 +133,13 @@ mod tests {
     }
 
     #[test]
-    fn a_path_that_leaves_the_project_is_refused() {
+    fn an_entry_that_leaves_the_project_refuses_the_declaration_by_name() {
         for path in ["../elsewhere", "/etc"] {
-            let project = project(&format!("artifacts:\n  path: {path}\n"));
-            assert!(
-                matches!(
-                    project_artifacts(project.path()),
-                    ProjectArtifacts::Refused(_)
-                ),
-                "{path} was followed"
-            );
+            let project = project(&format!("workspace:\n  artifacts: [docs, {path}]\n"));
+            let ProjectArtifacts::Refused(reason) = project_artifacts(project.path()) else {
+                panic!("{path} was followed");
+            };
+            assert!(reason.contains(path), "{reason}");
         }
     }
 }

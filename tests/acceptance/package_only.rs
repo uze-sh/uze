@@ -64,7 +64,7 @@ fn the_package_manager_alone_never_meets_the_workspace() {
         "the agents.yaml uze created declares no policy"
     );
     let manifest = std::fs::read_to_string(world.project.join("agents.yaml")).unwrap();
-    assert!(manifest.contains("# completion: handoff"), "{manifest}");
+    assert!(!manifest.contains("workspace"), "{manifest}");
 
     // AGENTS.md carries the package manager's regions and nothing of the
     // workspace's.
@@ -150,7 +150,7 @@ fn a_workspace_section_the_workspace_rejects_fails_no_package_command() {
     // README.md is tracked, so the workspace refuses to link it.
     std::fs::write(
         world.project.join("agents.yaml"),
-        "worktrees:\n  link: [README.md]\n",
+        "workspace:\n  link: [README.md]\n",
     )
     .unwrap();
 
@@ -168,7 +168,7 @@ fn a_project_that_is_not_a_git_repository_reads_a_workspace_section_without_fail
     let _harnesses = install_fake_harnesses(&env);
     std::fs::write(
         env.project.join("agents.yaml"),
-        "worktrees:\n  link: [.env]\n",
+        "workspace:\n  link: [.env]\n",
     )
     .unwrap();
 

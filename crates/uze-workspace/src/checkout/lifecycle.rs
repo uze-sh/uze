@@ -116,7 +116,7 @@ pub fn collect(
 /// the branches removed.
 ///
 /// A `target` this repository does not have is refused outright rather than
-/// asked about branch by branch: the name comes from `worktrees.target` in
+/// asked about branch by branch: the name comes from `workspace.target` in
 /// `agents.yaml`, which is authored and committed and may well name a
 /// branch this clone never fetched. Nothing is collectable against a
 /// yardstick that does not exist.

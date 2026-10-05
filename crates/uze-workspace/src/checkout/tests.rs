@@ -422,7 +422,7 @@ fn an_integrated_branch_is_pruned_and_an_unintegrated_one_is_not() {
     );
 }
 
-/// `worktrees.target` is authored and committed, so a clone that never
+/// `workspace.target` is authored and committed, so a clone that never
 /// fetched it — a single-branch clone, a gitflow `develop`, a typo —
 /// hands every predicate here a name Git cannot resolve. Answered
 /// "nothing ahead", that made every branch collectable and every slot

@@ -173,16 +173,16 @@ fixtures:
             - Conventional Commits for commit subjects.
       # The policy belongs in the manifest, not the lock: `agents.lock` is
       # derived, and an agent reading a worktree policy from it would be
-      # reading something UZE regenerates. `default: isolated` is what puts
+      # reading something UZE regenerates. `worktree: always` is what puts
       # every agent this demo starts in a checkout of its own.
       - message: 'chore: declare the project''s environment in agents.yaml'
         days_ago: 2
         files:
           agents.yaml: |-
-            worktrees:
-              default: isolated
+            workspace:
+              worktree: always
               target: main
-              completion: handoff
+              delivery: handoff
               branch: conventional
               slots: 3
 

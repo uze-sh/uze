@@ -55,12 +55,16 @@ pub fn artifacts_declared_in(project: &Path) -> uze_extensions::architect::Artif
         uze_application::ProjectArtifacts::Undeclared => ArtifactSource::Undeclared,
         uze_application::ProjectArtifacts::Refused(reason) => ArtifactSource::Refused(reason),
         uze_application::ProjectArtifacts::Declared {
-            directory,
-            declared,
+            directories,
             project,
-        } => ArtifactSource::Directory {
-            path: directory,
-            declared: declared.display().to_string(),
+        } => ArtifactSource::Directories {
+            roots: directories
+                .into_iter()
+                .map(|directory| uze_extensions::architect::ArtifactRoot {
+                    path: directory.directory,
+                    declared: directory.declared.display().to_string(),
+                })
+                .collect(),
             project,
         },
     }

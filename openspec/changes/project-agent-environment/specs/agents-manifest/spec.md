@@ -162,7 +162,7 @@ refusal SHALL NOT point at `agents.lock`, whose version field stays empty
 for the same reason.
 
 #### Scenario: A cap of zero is refused rather than honored
-- **WHEN** a manifest declares `worktrees.slots: 0`
+- **WHEN** a manifest declares `workspace.slots: 0`
 - **THEN** the manifest is reported as malformed, saying it would refuse
   every checkout, rather than loading a policy under which no isolated
   work can ever start
@@ -173,7 +173,7 @@ for the same reason.
   resolve plugin versions yet and naming `ref:` as the pin that exists
 
 ### Requirement: A linked path is validated when the manifest is read
-A path in `worktrees.link` SHALL be relative, SHALL stay inside the
+A path in `workspace.link` SHALL be relative, SHALL stay inside the
 repository, and SHALL be ignored by it; a path violating any of these SHALL
 be rejected when the manifest is read, not when a checkout is prepared,
 because a link to a tracked file is one the agent writes through into the
@@ -297,7 +297,7 @@ honor it read the projected text — so a policy the projection has not
 caught up to is a policy only half in force.
 
 #### Scenario: A changed policy makes the projection stale
-- **WHEN** `worktrees.completion` is changed and nothing has reconciled
+- **WHEN** `workspace.delivery` is changed and nothing has reconciled
   the project context since
 - **THEN** the projected region is reported stale, naming the declared
   value and the projected one

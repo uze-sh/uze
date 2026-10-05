@@ -15,10 +15,10 @@ about: |
 world:
   project: demo-app
   manifest: |
-    worktrees:
-      default: isolated
+    workspace:
+      worktree: always
       target: main
-      completion: merge
+      delivery: merge
       slots: 3
       gate:
         - sh -c 'test ! -f src/ping.rs'

@@ -258,15 +258,18 @@ pub(crate) fn cut_at_word_boundary(slug: &str, limit: usize) -> String {
     }
 }
 
-/// Where an agent starts: in the project's own root, or in a checkout of
-/// its own.
+/// When an agent gets a worktree: only when the operator moves it, or at
+/// every launch. Spelled as *when* rather than *where* so the value never
+/// has to name the primary checkout, which is where `manual` starts.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum AgentPlacementDefault {
-    /// In the project's root, on whatever branch the operator is on.
+    /// In the project's root, on whatever branch the operator is on, until
+    /// somebody moves it with "To worktree".
     #[default]
+    #[serde(rename = "manual")]
     InPlace,
-    /// In a checkout of its own, as `Isolate` would give it.
+    /// In a worktree of its own, at launch.
+    #[serde(rename = "always")]
     Isolated,
 }
 
@@ -332,21 +335,22 @@ impl CompletionBehavior {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorktreePolicy {
-    /// Where an agent launched in this project starts. Undeclared, it
-    /// starts in the project's own root and is isolated when somebody
-    /// asks for it; declared `isolated`, every agent is placed in a
-    /// checkout of its own at launch.
+    /// When an agent launched in this project gets a worktree, declared as
+    /// `worktree`. Undeclared (`manual`), it starts in the project's own
+    /// root and is moved when somebody asks; `always`, every agent is
+    /// placed in a worktree of its own at launch.
     ///
     /// A project's answer rather than a person's: someone who always
     /// isolates should not pay a gesture per agent, and a default each
     /// person sets by hand is one the next person does not have.
-    #[serde(default)]
+    #[serde(default, rename = "worktree")]
     pub default: AgentPlacementDefault,
     /// The branch finished work targets. Undeclared, it is the branch the
     /// primary checkout is on when a task is created.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
-    #[serde(default)]
+    /// Declared as `delivery`: what happens to finished work.
+    #[serde(default, rename = "delivery")]
     pub completion: CompletionBehavior,
     /// The branch vocabulary an agent's own name is judged against.
     /// Undeclared, work is not named and the branch stays the generated

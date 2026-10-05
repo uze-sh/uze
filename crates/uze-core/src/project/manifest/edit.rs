@@ -179,7 +179,7 @@ impl ManifestDocument {
     /// the whole `key: value` block at once keeps the emitter's hands on
     /// the quoting here too.
     /// Whether `key` is written at the root with no value, as the scaffold
-    /// writes `worktrees:`: a heading over commented choices, which declares
+    /// once wrote `worktrees:`: a heading over commented choices, which declares
     /// nothing and which the library therefore does not report as present.
     fn holds_empty_root_key(&self, key: &str) -> bool {
         self.document
@@ -376,8 +376,8 @@ mod tests {
 
     const AUTHORED: &str = "\
 # O ambiente de agentes deste projeto.
-worktrees:
-  completion: pr        # entrega via pull request
+workspace:
+  delivery: pr        # entrega via pull request
   link: [.env.local]
 
 marketplaces:
@@ -406,12 +406,10 @@ marketplaces:
     fn setting_a_scalar_changes_only_that_value() {
         let mut document = open(AUTHORED);
         document
-            .upsert("worktrees", "completion", &value("merge"))
+            .upsert("workspace", "delivery", &value("merge"))
             .unwrap();
         assert_eq!(
-            document
-                .source()
-                .replace("completion: merge", "completion: pr"),
+            document.source().replace("delivery: merge", "delivery: pr"),
             AUTHORED
         );
     }
@@ -438,7 +436,7 @@ marketplaces:
 
     #[test]
     fn adding_the_first_marketplace_creates_the_mapping() {
-        let mut document = open("worktrees:\n  completion: pr\n");
+        let mut document = open("workspace:\n  delivery: pr\n");
         document
             .upsert(
                 "marketplaces",
@@ -449,7 +447,7 @@ marketplaces:
         assert!(
             document
                 .source()
-                .starts_with("worktrees:\n  completion: pr\n")
+                .starts_with("workspace:\n  delivery: pr\n")
         );
         assert_eq!(
             reparsed(&document)["marketplaces"]["ai"]["plugins"][0].as_str(),
@@ -504,7 +502,7 @@ marketplaces:
     /// path holding a comma stays one entry instead of becoming two.
     #[test]
     fn a_value_that_would_break_the_syntax_is_quoted_by_the_emitter() {
-        let mut document = open("worktrees:\n  completion: pr\n");
+        let mut document = open("workspace:\n  delivery: pr\n");
         document
             .upsert(
                 "marketplaces",
@@ -530,7 +528,7 @@ marketplaces:
         let after = document.source();
         assert!(!after.contains("{}"), "left an empty mapping: {after}");
         assert!(!after.contains("marketplaces:"));
-        assert!(after.contains("completion: pr"));
+        assert!(after.contains("delivery: pr"));
     }
 
     #[test]
@@ -556,7 +554,7 @@ marketplaces:
 
     #[test]
     fn a_hash_inside_a_comment_is_not_mistaken_for_a_shape_we_refuse() {
-        let text = "# uses <<: and &anchors in prose\nworktrees:\n  completion: pr\n";
+        let text = "# uses <<: and &anchors in prose\nworkspace:\n  delivery: pr\n";
         assert_eq!(open(text).source(), text);
     }
 }

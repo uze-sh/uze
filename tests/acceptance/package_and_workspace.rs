@@ -60,7 +60,7 @@ fn install_leaves_the_workspace_section_to_the_workspace() {
     // package manager has nothing to say about it.
     std::fs::write(
         world.project.join("agents.yaml"),
-        "worktrees:\n  completion: merge\n",
+        "workspace:\n  delivery: merge\n",
     )
     .unwrap();
     let status = env.run_ok(uze_bin(), &["status", "--format", "json"]);
@@ -130,7 +130,7 @@ fn moving_from_the_package_manager_to_the_workspace_and_back() {
     let manifest = world.project.join("agents.yaml");
     let commented = std::fs::read_to_string(&manifest)
         .unwrap()
-        .replace("  completion: pr", "  # completion: pr");
+        .replace("  delivery: pr", "  # delivery: pr");
     std::fs::write(&manifest, commented).unwrap();
     env.run_ok(uze_bin(), &["install"]);
     assert!(

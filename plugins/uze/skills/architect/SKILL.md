@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Writing and changing the Mermaid diagrams a project keeps under `artifacts:` — choosing which diagram and which level a change belongs in, naming it so it reads where a reader expects, and proving it still draws with `uze agent artifacts check`, which needs no workspace. Use when adding or editing a `.mmd`/`.mermaid` file, when asked to diagram or document an architecture, when a diagram does not draw, or when setting up where a project keeps its architecture.
+description: Writing and changing the Mermaid diagrams a project keeps under `workspace.artifacts` — choosing which diagram and which level a change belongs in, naming it so it reads where a reader expects, and proving it still draws with `uze agent artifacts check`, which needs no workspace. Use when adding or editing a `.mmd`/`.mermaid` file, when asked to diagram or document an architecture, when a diagram does not draw, or when setting up where a project keeps its architecture.
 slash: true
 metadata:
   opencode/autoinvoke: "true"
@@ -12,11 +12,12 @@ A project tells UZE where its architecture lives:
 
 ```yaml
 # agents.yaml
-artifacts:
-  path: docs/architecture
+workspace:
+  artifacts: docs/architecture   # or a list: [docs, design]
 ```
 
-Every `.mmd` or `.mermaid` file under that directory is one **artifact**.
+Every `.mmd` or `.mermaid` file under those directories is one **artifact**;
+anything else there is ignored, so diagrams can live beside other docs.
 `uze agent artifacts check` draws each one the way the workspace would and
 fails on one that does not draw, with or without the workspace running;
 the workspace's architect surface, when it is used, draws them in terminal
@@ -137,9 +138,9 @@ refusal — not a guess at what the parser meant.
 
 ## When a diagram does not appear at all
 
-- The file is not under the declared `artifacts.path`, or does not end in
+- The file is not under a directory `workspace.artifacts` declares, or does not end in
   `.mmd` / `.mermaid`.
-- `agents.yaml` declares no `artifacts:` at all, or declares a path that
+- `agents.yaml` declares no `workspace.artifacts` at all, or declares a path that
   leaves the project — both of which the check names.
 - The directory is read only a few levels deep, so a diagram buried far
   below the declared root is not found.

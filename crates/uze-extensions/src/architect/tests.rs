@@ -271,9 +271,11 @@ fn a_surface_with_nothing_to_draw_says_why_and_what_to_do() {
     assert!(text.contains("No artifacts declared"));
     assert!(hint.unwrap().contains("uze:architect"));
 
-    let empty = ArtifactSource::Directory {
-        path: PathBuf::from("/project/docs/diagrams"),
-        declared: "docs/diagrams".to_owned(),
+    let empty = ArtifactSource::Directories {
+        roots: vec![ArtifactRoot {
+            path: PathBuf::from("/project/docs/diagrams"),
+            declared: "docs/diagrams".to_owned(),
+        }],
         project: PathBuf::from("/project"),
     };
     state.absorb(read_artifacts(&Bare, Path::new("/project"), empty));
@@ -285,6 +287,20 @@ fn a_surface_with_nothing_to_draw_says_why_and_what_to_do() {
         view(&state, SPACE).footer.is_empty(),
         "no keys stand under a message with nothing to act on"
     );
+
+    // A manifest error is a paragraph: it goes under a short headline,
+    // never in place of one.
+    let reason = "malformed agents.yaml at /project/agents.yaml: unknown field `worktrees`";
+    state.absorb(read_artifacts(
+        &Bare,
+        Path::new("/project"),
+        ArtifactSource::Refused(reason.to_owned()),
+    ));
+    let Content::Message { text, hint, .. } = view(&state, SPACE).content else {
+        panic!("a refused declaration is a message");
+    };
+    assert_eq!(text, "agents.yaml needs fixing");
+    assert!(hint.unwrap().contains(reason));
 }
 
 #[test]
@@ -778,9 +794,11 @@ impl Host for Written {
 }
 
 fn declared() -> ArtifactSource {
-    ArtifactSource::Directory {
-        path: PathBuf::from("/project/docs/architecture"),
-        declared: "docs/architecture".to_owned(),
+    ArtifactSource::Directories {
+        roots: vec![ArtifactRoot {
+            path: PathBuf::from("/project/docs/architecture"),
+            declared: "docs/architecture".to_owned(),
+        }],
         project: PathBuf::from("/project"),
     }
 }
@@ -860,7 +878,9 @@ fn what_a_project_declares_decides_whether_having_no_diagrams_is_a_fault() {
 
     let refused = check(
         &Written(Vec::new()),
-        ArtifactSource::Refused("`artifacts.path` leaves the project".to_owned()),
+        ArtifactSource::Refused(
+            "`workspace.artifacts` names `../x`, which leaves the project".to_owned(),
+        ),
     );
     assert!(
         matches!(refused, Checkup::Unusable { text, .. } if text.contains("leaves the project")),
@@ -959,4 +979,35 @@ fn a_check_names_every_link_that_opens_no_file() {
     assert_eq!(links.len(), 2, "{links:?}");
     assert!(links[0].contains("`src/gone.rs` is not a file in the project"));
     assert!(links[1].contains("`../outside.rs` leaves the project"));
+}
+
+/// The same file name under two declared roots is two artifacts, each
+/// named by the root it came from.
+#[test]
+fn two_roots_keep_two_files_of_one_name_apart() {
+    let root = |declared: &str| ArtifactRoot {
+        path: PathBuf::from("/project").join(declared),
+        declared: declared.to_owned(),
+    };
+    let checkup = check(
+        &Written(vec![("overview.mmd", "flowchart LR\n  a[A] --> b[B]\n")]),
+        ArtifactSource::Directories {
+            roots: vec![root("docs"), root("design")],
+            project: PathBuf::from("/project"),
+        },
+    );
+    let Checkup::Checked {
+        declared,
+        artifacts,
+    } = checkup
+    else {
+        panic!("two directories of diagrams are checked");
+    };
+    assert_eq!(declared, "docs, design");
+    let mut origins: Vec<_> = artifacts
+        .iter()
+        .map(|artifact| artifact.origin.clone())
+        .collect();
+    origins.sort();
+    assert_eq!(origins, vec!["design/overview.mmd", "docs/overview.mmd"]);
 }

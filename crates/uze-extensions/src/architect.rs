@@ -184,15 +184,48 @@ pub struct ArchitectPlace {
 pub enum ArtifactSource {
     /// The project declares none.
     Undeclared,
-    /// The declared directory, how the project itself spells it, and the
-    /// project it was declared in.
-    Directory {
-        path: PathBuf,
-        declared: String,
+    /// The declared directories, in the order the project wrote them, and
+    /// the project they were declared in.
+    Directories {
+        roots: Vec<ArtifactRoot>,
         project: PathBuf,
     },
     /// Declared, and not something the host will follow.
     Refused(String),
+}
+
+/// One declared directory, and how the project itself spells it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactRoot {
+    pub path: PathBuf,
+    pub declared: String,
+}
+
+/// How the project spells the directories it declared, for a sentence.
+fn spelled(roots: &[ArtifactRoot]) -> String {
+    roots
+        .iter()
+        .map(|root| format!("`{}`", root.declared))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Every Mermaid file under every root. With more than one root an origin
+/// carries its root's spelling, so `docs/overview.mmd` and
+/// `design/overview.mmd` stay two artifacts rather than one tab.
+fn read_roots(host: &dyn Host, roots: &[ArtifactRoot]) -> Result<Vec<Artifact>, (String, String)> {
+    let mut artifacts = Vec::new();
+    for root in roots {
+        let mut found =
+            catalog::read(host, &root.path).map_err(|reason| (root.declared.clone(), reason))?;
+        if roots.len() > 1 {
+            for artifact in &mut found {
+                artifact.origin = format!("{}/{}", root.declared, artifact.origin);
+            }
+        }
+        artifacts.extend(found);
+    }
+    Ok(artifacts)
 }
 
 /// What reading a checkout produced — everything the surface needs to
@@ -237,16 +270,22 @@ const UNDECLARED: &str = "No artifacts declared";
 /// What to do about it differs, because the two are read by different
 /// people: the check by an agent, which declares the directory itself,
 /// and the surface by a person, who asks an agent to.
-const DECLARE_ARTIFACTS: &str = "Point `artifacts.path` in agents.yaml\n\
+const DECLARE_ARTIFACTS: &str = "Point `workspace.artifacts` in agents.yaml\n\
                                  at a directory of Mermaid files (.mmd).";
 const ASK_FOR_ARTIFACTS: &str = "Ask an agent to draw them:\n\n\
                                  `/uze:architect` diagram this project";
+
+/// A declaration the host would not follow. The headline is short because
+/// the surface sets it as a title; the reason, which names the key and the
+/// file, is a sentence and goes under it.
+const UNUSABLE: &str = "agents.yaml needs fixing";
+const FIX_AND_REOPEN: &str = "Fix it and open this again.";
 
 /// Why a declared directory gave nothing back. Same reason as above.
 fn unreadable(declared: &str, reason: &str) -> (String, String) {
     (
         format!("`{declared}` could not be read"),
-        format!("{reason}. It is the `artifacts.path` agents.yaml declares."),
+        format!("{reason}. It is declared in agents.yaml's `workspace.artifacts`."),
     )
 }
 
@@ -258,21 +297,17 @@ fn read_the_directory(host: &dyn Host, source: ArtifactSource) -> Artifacts {
     match source {
         ArtifactSource::Undeclared => nothing(UNDECLARED.to_owned(), ASK_FOR_ARTIFACTS),
         ArtifactSource::Refused(reason) => nothing(
-            reason,
-            "Fix `artifacts:` in agents.yaml and open this again.",
+            UNUSABLE.to_owned(),
+            &format!("{reason}\n\n{FIX_AND_REOPEN}"),
         ),
-        ArtifactSource::Directory {
-            path,
-            declared,
-            project,
-        } => match catalog::read(host, &path) {
+        ArtifactSource::Directories { roots, project } => match read_roots(host, &roots) {
             Ok(artifacts) if artifacts.is_empty() => nothing(
-                format!("`{declared}` holds no Mermaid files yet"),
+                format!("{} holds no Mermaid files yet", spelled(&roots)),
                 "Add a .mmd file there: a diagram that starts with `C4Context`, \
                  `sequenceDiagram` or `flowchart` is drawn here.",
             ),
             Ok(artifacts) => Artifacts::Found { artifacts, project },
-            Err(reason) => {
+            Err((declared, reason)) => {
                 let (text, hint) = unreadable(&declared, &reason);
                 nothing(text, &hint)
             }
@@ -325,7 +360,7 @@ pub struct Checked {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Checkup {
     Checked {
-        /// The directory checked, how the project itself spells it.
+        /// The directories checked, how the project itself spells them.
         declared: String,
         /// Every artifact in it, in the order the menu lists them. Empty
         /// where the directory holds none, which is an answer and not a
@@ -354,22 +389,22 @@ pub fn check(host: &dyn Host, source: ArtifactSource) -> Checkup {
         },
         ArtifactSource::Refused(reason) => Checkup::Unusable {
             text: reason,
-            hint: "Fix `artifacts:` in agents.yaml and run this again.".to_owned(),
+            hint: "Fix agents.yaml and run this again.".to_owned(),
         },
-        ArtifactSource::Directory {
-            path,
-            declared,
-            project,
-        } => match catalog::read(host, &path) {
+        ArtifactSource::Directories { roots, project } => match read_roots(host, &roots) {
             Ok(artifacts) => Checkup::Checked {
-                declared,
+                declared: roots
+                    .iter()
+                    .map(|root| root.declared.clone())
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 artifacts: Catalog::of(artifacts)
                     .artifacts()
                     .iter()
                     .map(|artifact| checked(host, &project, artifact))
                     .collect(),
             },
-            Err(reason) => {
+            Err((declared, reason)) => {
                 let (text, hint) = unreadable(&declared, &reason);
                 Checkup::Unusable { text, hint }
             }

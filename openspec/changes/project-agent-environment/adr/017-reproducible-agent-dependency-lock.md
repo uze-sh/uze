@@ -32,8 +32,10 @@ manifest exists to derive it from.
 
 **Manifest (`agents.yaml`) — authored, commented, edited in place:**
 ```yaml
-worktrees:
-  completion: pr
+# the workspace's settings, in one flat section a project that only uses
+# plugins never writes
+workspace:
+  delivery: pr
   link: [.env.local]
 
 # a marketplace declares one source, and what the project takes from it;
@@ -84,7 +86,7 @@ plugins:
 **Key decisions:**
 1. **Two files, one direction** — `agents.yaml` → resolution → `agents.lock`. Never the reverse.
 2. **`agents.yaml` is the workspace anchor** for a consumer, replacing `agents.lock` in `workspace.rs`. A project that declared but never resolved is still a workspace.
-3. **The isolation policy moves to the manifest** — every field of it is a decision, not a resolution.
+3. **The isolation policy moves to the manifest** — every field of it is a decision, not a resolution. It lives under one flat `workspace:` section, beside the places the project keeps its artifacts, while `marketplaces:` stays at the root: the file serves two modules, and a project that only uses the package manager writes nothing of the other. The created manifest carries no workspace text at all.
 4. **`version: 1`** (not `lockfileVersion`) — short, explicit.
 5. **`marketplaces` top-level in both** — reproducible identity, not just alias.
 6. **`source.type: git | path | embedded`** — mirrors `PackageSource` variants.

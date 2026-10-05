@@ -10,10 +10,10 @@ It ships four Skills:
   deterministic `uze agent context inspect|plan|reconcile` CLI to make a project's
   instructions context portable.
 - `skills/worktree/SKILL.md`: coordinates isolated worktrees for concurrent
-  agent work and safe integration, honouring the `worktrees:` policy the
+  agent work and safe integration, honouring the `workspace:` policy the
   project declares in `agents.yaml`.
 - `skills/architect/SKILL.md`: writing the Mermaid diagrams a project keeps
-  under `artifacts:`: which view a change belongs in, how the architect
+  under `workspace.artifacts`: which view a change belongs in, how the architect
   surface lists it, and `uze agent artifacts check` as the proof it draws.
 - `skills/author/SKILL.md`: creating a plugin end to end, from choosing or
   creating its marketplace to checking, installing and iterating on it.

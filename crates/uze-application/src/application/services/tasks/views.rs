@@ -22,7 +22,7 @@ pub(super) fn canonical(root: &Path) -> PathBuf {
 
 /// Where one agent is placed: in a checkout of its own, or in the space's
 /// own directory beside whoever else is in it. The same two answers
-/// `worktrees.default` gives, asked of a single launch.
+/// `workspace.worktree` gives, asked of a single launch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PlacementKind {
     Isolated,

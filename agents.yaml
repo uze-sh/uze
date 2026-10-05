@@ -1,18 +1,19 @@
 # This project's agent environment. UZE reads this file; it writes
 # agents.lock, which you never edit.
 
-worktrees:
-  # Every agent launched here gets a checkout of its own, which is what
+# How `uze workspace` runs the agents it launches here.
+workspace:
+  # Every agent launched here gets a worktree of its own, which is what
   # this repository has always done and what its own "Concurrent work
-  # isolation" section tells an agent to expect. Undeclared, an agent
-  # would start in the operator's checkout and be isolated only when
-  # somebody asked.
-  default: isolated
+  # isolation" section tells an agent to expect. Undeclared (`manual`), an
+  # agent would start in the operator's checkout and move to a worktree
+  # only when somebody asked.
+  worktree: always
 
   # UZE rebases an agent's branch onto the target, runs the checks, pushes
   # it, and asks the agent to open the request. The workspace keeps
   # AGENTS.md's "Concurrent work isolation" section in step with it.
-  completion: pr
+  delivery: pr
 
   # An agent names its own work as its first action
   # (`uze agent work name <type>/<subject>`); work that reaches a commit
@@ -20,11 +21,11 @@ worktrees:
   # this vocabulary — the same one this repository's own history uses.
   branch: conventional
 
-# uze's own architecture, as Mermaid: the workspace's architect surface
-# draws these, and its tests draw them too — a diagram here that stops
-# routing is a red build.
-artifacts:
-  path: docs/architecture
+  # Where uze describes itself: the architecture as Mermaid under
+  # docs/architecture, which the architect surface draws and whose tests
+  # draw too — a diagram that stops routing is a red build — and the
+  # decisions under docs/adr. Each file says what it is by its content.
+  artifacts: docs
 
 # Named by URL, never by a path: a path is one machine's, and this file is
 # everyone's. Whoever develops the marketplace reads it from their own

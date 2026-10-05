@@ -2,7 +2,7 @@
 //!
 //! This is the authored half of the pair. Everything a person decides
 //! lives here: which marketplaces the project draws from, which plugins it
-//! wants, and how isolated work is delivered. [`project_lock`] holds the
+//! wants, and — under `workspace:` — how the workspace runs its agents. [`project_lock`] holds the
 //! other half — what resolving these declarations produced — and carries
 //! no intent, so deleting it loses nothing.
 //!
@@ -13,10 +13,11 @@
 //!
 //! One file, sections by owner. This module owns the file, its scaffold and
 //! the list of keys its root may hold, and reads the package manager's
-//! section (`marketplaces`). The workspace's sections ([`Section`]) are
-//! carried unread and parsed by the workspace, so a mistake in one is
-//! reported by the part of UZE that uses it and never stops a package
-//! command that does not.
+//! section (`marketplaces`), which sits at the root because a project that
+//! only uses plugins writes nothing else. The workspace's section
+//! ([`Section`]) is carried unread and parsed by the workspace, so a
+//! mistake in it is reported by the part of UZE that uses it and never
+//! stops a package command that does not.
 //!
 //! [`project_lock`]: crate::project_lock
 
@@ -43,35 +44,29 @@ pub const MANIFEST_FILE_NAME: &str = "agents.yaml";
 pub const BUILT_IN_MARKETPLACE: &str = "uze-official";
 
 /// The manifest as declared. Every field is optional: a project that
-/// declares only an isolation policy is as valid as one that declares only
+/// declares only a workspace policy is as valid as one that declares only
 /// plugins.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    worktrees: Option<serde_yaml::Value>,
+    workspace: Option<serde_yaml::Value>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub marketplaces: BTreeMap<String, DeclaredMarketplace>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    artifacts: Option<serde_yaml::Value>,
 }
 
 /// A root section of `agents.yaml` this module carries but does not read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Section {
-    /// How the workspace isolates agents and delivers their work.
-    Worktrees,
-    /// Where the project keeps its architecture artifacts.
-    Artifacts,
+    /// How `uze workspace` runs the agents it launches, and where the
+    /// project keeps the artifacts that describe it.
+    Workspace,
 }
 
 impl Section {
-    pub const ALL: [Section; 2] = [Section::Worktrees, Section::Artifacts];
-
     pub fn key(self) -> &'static str {
         match self {
-            Section::Worktrees => "worktrees",
-            Section::Artifacts => "artifacts",
+            Section::Workspace => "workspace",
         }
     }
 }
@@ -105,8 +100,7 @@ impl ProjectManifest {
 
     fn raw(&self, section: Section) -> Option<&serde_yaml::Value> {
         match section {
-            Section::Worktrees => self.worktrees.as_ref(),
-            Section::Artifacts => self.artifacts.as_ref(),
+            Section::Workspace => self.workspace.as_ref(),
         }
     }
 
@@ -186,71 +180,17 @@ pub fn load_section<T: DeserializeOwned + 'static>(
     }
 }
 
-/// The file UZE writes when it creates the manifest itself: every key the
-/// schema understands, with the default already in force spelled out beside
-/// it, so the vocabulary is discoverable by opening the file rather than by
-/// reading documentation.
+/// The file UZE writes when it creates the manifest itself: the package
+/// manager's key, with its vocabulary spelled out beside it, so the file
+/// teaches what it can hold by being opened.
 ///
-/// Nothing is live. Every value is commented, because a value written here
-/// would be a decision UZE made on the project's behalf — uncommenting a line
-/// is what changes behavior, never the file appearing. The `worktrees:` key
-/// itself stays, empty: an empty key declares nothing, and it is where the
-/// workspace writes a choice, beside the comments that explain it.
+/// Nothing is live, and nothing about the workspace is written, not even
+/// commented: a project that only uses plugins should not open a file half
+/// about something it never chose. The workspace writes its `workspace:`
+/// section when a choice is made, and the keys it understands are documented
+/// in the project-files reference.
 pub const SCAFFOLD: &str = r"# This project's agent environment. UZE reads this file and writes
 # agents.lock from it — edit this one; the lock regenerates.
-#
-# Every key UZE understands is below. A commented line carries the default
-# already in force: uncomment it to make the choice the project's own.
-
-# How the workspace (`uze workspace`) isolates the agents it launches and
-# what it does with their finished work. Nothing here is in force until you
-# choose it: a project that only uses plugins never needs this section.
-worktrees:
-  # handoff | merge | pr — what UZE does with an agent's finished branch.
-  # `handoff` leaves it for you to integrate.
-  # completion: handoff
-
-  # in-place | isolated — where an agent launched here starts. In place,
-  # it shares the project's own checkout and is isolated when somebody
-  # asks; isolated, every agent gets a checkout of its own at launch.
-  # default: in-place
-
-  # The branch finished work targets. Undeclared, it is the branch the
-  # primary checkout is on when the task is created.
-  # target: main
-
-  # conventional | gitflow | flat | agent — or this project's own list of
-  # types, e.g. [feat, fix, docs, ui]. What an agent's own name for its
-  # work is judged against: it proposes `<type>/<subject>`, UZE accepts it
-  # only if the type is here. Undeclared (`agent`), work is not named and
-  # the branch stays the generated identifier.
-  # branch: conventional
-
-  # Ignored files a fresh checkout links from the primary one. Relative,
-  # inside the repository, and ignored by it — a symlink the agent writes
-  # through reaches the primary.
-  # link: [.env, .env.local]
-
-  # Prepares a fresh checkout, run in it after linking. Its failure warns
-  # and never blocks a launch.
-  # setup: pnpm install
-
-  # Run in the checkout on the rebased commits; the first non-zero exit
-  # refuses delivery and is named. One command, or a list run in order —
-  # a list is what makes a failure say which step failed.
-  # gate:
-  #   - pnpm test
-  #   - pnpm lint
-
-  # The most checkouts that may exist at once. Undeclared, peak
-  # concurrency is the only bound.
-  # slots: 3
-
-  # Free checkouts kept warm for the next agents, the most recently used
-  # first; every other free one is removed, its branch kept. And the days
-  # a free checkout may sit unused before it is removed too.
-  # spare: 2
-  # idle_days: 3
 
 # The marketplaces this project draws from, and what it takes from each.
 # Exactly one source per marketplace — `git:` or `path:` — and a Git one may
@@ -276,15 +216,6 @@ worktrees:
 #     path: ../marketplace
 #     plugins:
 #       - bench-runner
-
-# Where this project keeps the artifacts that describe it: Mermaid files
-# (`.mmd`), which the workspace's architect surface draws. A directory
-# inside the project, read as deep as it goes. Nothing lists the files —
-# each says what it is in its own first word (`C4Context`,
-# `sequenceDiagram`, `flowchart`), and may name itself with a `title:`.
-# artifacts:
-#   path: docs/architecture
-
 ";
 
 /// Creates the manifest with the built-in defaults written out, when the
@@ -676,7 +607,7 @@ mod tests {
 
     #[test]
     fn a_schema_version_is_refused_and_says_why_there_is_none() {
-        let error = parsed("version: 1\nworktrees:\n  completion: pr\n").unwrap_err();
+        let error = parsed("version: 1\nworkspace:\n  delivery: pr\n").unwrap_err();
         let message = error.to_string();
         assert!(message.contains("no schema version"), "{message}");
         assert!(
@@ -688,7 +619,7 @@ mod tests {
     #[test]
     fn ensure_exists_never_touches_a_manifest_somebody_wrote() {
         let root = uze_testkit::temp::scratch("manifest-ensure-existing");
-        let authored = "# mine\nworktrees:\n  completion: pr   # deliberate\n";
+        let authored = "# mine\nworkspace:\n  delivery: pr   # deliberate\n";
         fs::write(manifest_path_for(&root), authored).unwrap();
         assert!(!ensure_exists(&root).unwrap());
         assert_eq!(
@@ -847,8 +778,8 @@ mod tests {
     /// The scaffold is documentation that must not drift from the schema.
     /// Each struct literal is exhaustive, so a field added to the package
     /// manager's section has to be named here, and this then asks the
-    /// created file to offer it. The workspace asks the same of its own
-    /// sections.
+    /// created file to offer it. The workspace's keys are documented in the
+    /// project-files reference, and the workspace asks that of them.
     #[test]
     fn a_created_manifest_offers_every_key_this_module_reads() {
         let marketplace = DeclaredMarketplace {
@@ -864,7 +795,6 @@ mod tests {
             .filter(|line| !line.starts_with(char::is_whitespace))
             .filter_map(|line| line.split_once(':').map(|(key, _)| key.to_owned()))
             .chain(["marketplaces".to_owned()])
-            .chain(Section::ALL.iter().map(|section| section.key().to_owned()))
             .collect();
         assert!(keys.len() > 5, "the shapes emitted nothing to check");
         for key in keys {
@@ -877,14 +807,21 @@ mod tests {
 
     #[test]
     fn a_section_this_module_does_not_read_is_carried_whatever_it_holds() {
-        let manifest = parsed("worktrees:\n  completon: pr\n  slots: 0\n").unwrap();
-        assert!(manifest.declares(Section::Worktrees));
-        assert!(!manifest.declares(Section::Artifacts));
+        let manifest = parsed("workspace:\n  delivry: pr\n  slots: 0\n").unwrap();
+        assert!(manifest.declares(Section::Workspace));
+        assert!(!parsed("").unwrap().declares(Section::Workspace));
     }
 
     #[test]
     fn a_misspelled_root_key_is_still_refused() {
-        let error = parsed("worktree:\n  completion: pr\n").unwrap_err();
-        assert!(error.to_string().contains("worktree"), "{error}");
+        let error = parsed("workspce:\n  delivery: pr\n").unwrap_err();
+        assert!(error.to_string().contains("workspce"), "{error}");
+    }
+
+    #[test]
+    fn a_created_manifest_says_nothing_about_the_workspace() {
+        assert!(!SCAFFOLD.contains("workspace:"), "{SCAFFOLD}");
+        assert!(!SCAFFOLD.contains("worktree"), "{SCAFFOLD}");
+        assert!(!SCAFFOLD.contains("artifacts"), "{SCAFFOLD}");
     }
 }

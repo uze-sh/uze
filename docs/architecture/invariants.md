@@ -1086,7 +1086,7 @@ for it, whether or not its root is a repository.
 ### Isolation is asked of one agent, after it is running (`add-space-kinds`)
 
 A space is a directory and nothing more: every agent launched into one
-starts where the project's `worktrees.default` says, and `Isolate` moves a
+starts where the project's `workspace.worktree` says, and **To worktree** moves a
 single agent into a checkout of its own without changing its identity, its
 tab or its conversation. It is offered only where a slot could actually be
 acquired, refused for an agent that already has one, and it may carry a
@@ -1244,9 +1244,9 @@ delivering still require a tree with nothing uncommitted at all.
 
 ### The pool keeps a few spare slots and no more
 
-At most `worktrees.spare` free slots (two by default), the most recently
+At most `workspace.spare` free slots (two by default), the most recently
 used, are kept warm; every other free slot's directory is removed on the
-next collection, and a free slot unused past `worktrees.idle_days` (three
+next collection, and a free slot unused past `workspace.idle_days` (three
 by default) is removed too. Decided from the slots as they stand, with no
 record of past use; branches are kept, and parked or occupied slots are
 never touched.
@@ -1285,7 +1285,7 @@ fully reachable from the target and the directory of a free slot the pool
 does not keep (below), whose branch stays.
 
 Both removals are authorized by one predicate, and it fails closed: a
-question Git could not answer — most often a `worktrees.target` this clone
+question Git could not answer — most often a `workspace.target` this clone
 does not have — is answered "not integrated", never "nothing ahead". Read
 the other way, a declared target the repository lacks made every branch in
 it collectable.
@@ -1393,7 +1393,7 @@ task's commits directly.
 
 ### A linked file is ignored by the repository
 
-A path in `worktrees.link` must be relative, stay inside the repository and
+A path in `workspace.link` must be relative, stay inside the repository and
 be ignored by it; a violation is a malformed lock at read time, not a
 surprise at launch. Linked or not, a failed `setup` warns and never blocks a
 launch.
@@ -1904,8 +1904,8 @@ listed and held to the same rule by a test.
 
 ### A workspace setting never fails a package command
 
-`agents.yaml`'s `worktrees` and `artifacts` sections are carried unread by
-the manifest and parsed by the workspace, which also owns the `worktrees.link`
+`agents.yaml`'s `workspace` section is carried unread by the manifest and
+parsed by the workspace, which also owns the `workspace.link`
 Git check. A section the workspace would reject still leaves `install` and
 `status` able to read the file.
 
@@ -1914,11 +1914,12 @@ Git check. A section the workspace would reject still leaves `install` and
 
 ### A project declares a policy only by choosing one
 
-The `agents.yaml` UZE creates carries `worktrees:` empty over commented
-choices, so it declares nothing; choosing one writes it beneath that key.
+The `agents.yaml` UZE creates says nothing about the workspace, not even
+commented; choosing a policy adds a `workspace:` section and leaves the
+package manager's keys as they were.
 
 > `crates/uze-workspace/src/declaration.rs::tests::a_scaffolded_manifest_declares_no_policy`
-> `crates/uze-workspace/src/declaration.rs::tests::choosing_a_completion_writes_it_under_the_scaffolds_empty_key`
+> `crates/uze-workspace/src/declaration.rs::tests::choosing_a_delivery_adds_the_section_and_leaves_the_rest_alone`
 
 ### Each region of `AGENTS.md` has one owner
 
