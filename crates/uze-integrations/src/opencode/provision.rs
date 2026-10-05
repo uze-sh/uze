@@ -18,9 +18,10 @@ use uze_core::{
     provisioning::{ProcessRunner, ProcessSpec, ProvisionAction, ProvisioningResult},
 };
 
+use super::distribution;
 use crate::shared::process::{VersionToken, detect_version};
 use crate::shared::provision::{
-    found_outside_path, official_installer, platform_has_automated_route, unsupported_platform,
+    found_outside_path, installer_process, official_installer, unsupported_platform,
 };
 
 /// Resolves the OpenCode V2 executable. V2 is the standard channel
@@ -55,16 +56,32 @@ fn documented_install_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBu
         .into_iter()
         .filter_map(|key| var(key).map(PathBuf::from))
         .collect();
-    if let Some(home) = var("HOME").map(PathBuf::from) {
+    if let Some(home) = var(uze_platform::home::VARIABLE).map(PathBuf::from) {
         dirs.push(home.join("bin"));
-        dirs.push(home.join(".opencode/bin"));
+        dirs.push(home.join(".opencode").join("bin"));
     }
     dirs
 }
 
+/// Every file OpenCode's installers document putting its executable at.
+pub(super) fn install_locations() -> Vec<PathBuf> {
+    documented_install_dirs(|key| std::env::var_os(key))
+        .iter()
+        .flat_map(|dir| {
+            PROGRAMS
+                .iter()
+                .flat_map(move |program| uze_platform::executable::candidates(dir, program))
+        })
+        .collect()
+}
+
 fn installed_outside_path(dirs: &[PathBuf]) -> Option<PathBuf> {
     dirs.iter()
-        .flat_map(|dir| PROGRAMS.iter().map(move |program| dir.join(program)))
+        .flat_map(|dir| {
+            PROGRAMS
+                .iter()
+                .flat_map(move |program| uze_platform::executable::candidates(dir, program))
+        })
         .find(|candidate| candidate.is_file())
 }
 
@@ -79,10 +96,6 @@ pub(super) fn provision_opencode(
     detect: impl Fn() -> HarnessDetection,
     shims_dir: &Path,
 ) -> Result<ProvisioningResult> {
-    if !platform_has_automated_route() {
-        return Ok(unsupported_platform("OpenCode", "https://opencode.ai/docs"));
-    }
-    let method = "official-install-script";
     let resolved = resolve_opencode_binary(shims_dir);
     let before = resolved
         .as_ref()
@@ -93,19 +106,55 @@ pub(super) fn provision_opencode(
     } else {
         ProvisionAction::Install
     };
-    let command = match &resolved {
+    let route = match &resolved {
         Some((which, _))
             if Path::new(which)
-                .file_name()
+                .file_stem()
                 .is_some_and(|name| name == "opencode") =>
         {
-            ProcessSpec::new(which.clone(), ["upgrade"]).with_inherited_output()
+            Route::Installer(ProcessSpec::new(which.clone(), ["upgrade"]).with_inherited_output())
         }
         // `opencode2` is the legacy V2 beta binary. It accepts a positional
         // project path rather than the stable CLI's `upgrade` command, so
         // passing `upgrade` makes it try to `chdir` into that name. The V2
         // installer is its documented install/update route.
-        _ => official_installer("https://opencode.ai/v2/install", "bash"),
+        // OpenCode publishes no installer for Windows, so UZE distributes
+        // the build its installer would fetch (see `distribution`); one
+        // already installed by a package manager is adopted as it is, and
+        // kept current by whichever the person chose.
+        _ => {
+            match official_installer(Some(("https://opencode.ai/v2/install", "bash")), None).here()
+            {
+                Some(line) => Route::Installer(installer_process(line)),
+                None if before.present => {
+                    return Ok(ProvisioningResult::verified(
+                        ProvisionAction::None,
+                        "existing-executable",
+                        before,
+                    ));
+                }
+                None => match distribution::target() {
+                    Some(target) => Route::Distribution(target),
+                    None => {
+                        return Ok(unsupported_platform(
+                            "OpenCode",
+                            "`scoop install opencode`, `choco install opencode` or \
+                             `npm i -g opencode-ai` (https://opencode.ai/docs)",
+                        ));
+                    }
+                },
+            }
+        }
+    };
+    let method = route.method();
+    let command = match route {
+        Route::Installer(command) => command,
+        Route::Distribution(target) => {
+            if let Err(reason) = distribution::install(runner, &target) {
+                return Ok(ProvisioningResult::failed(action, method, reason));
+            }
+            return Ok(verified_after(action, method, &detect, shims_dir));
+        }
     };
     let outcome = match runner.run(&command) {
         Ok(o) => o,
@@ -125,17 +174,43 @@ pub(super) fn provision_opencode(
         };
         return Ok(ProvisioningResult::failed(action, method, reason));
     }
+    Ok(verified_after(action, method, &detect, shims_dir))
+}
+
+/// How OpenCode is put on this machine: its own installer, or the build
+/// that installer would fetch, distributed by UZE where it publishes none.
+enum Route {
+    Installer(ProcessSpec),
+    Distribution(String),
+}
+
+impl Route {
+    fn method(&self) -> &'static str {
+        match self {
+            Self::Installer(_) => "official-install-script",
+            Self::Distribution(_) => "official-npm-package",
+        }
+    }
+}
+
+/// What a route left on the machine, looked for where OpenCode is found.
+fn verified_after(
+    action: ProvisionAction,
+    method: &str,
+    detect: &impl Fn() -> HarnessDetection,
+    shims_dir: &Path,
+) -> ProvisioningResult {
     let verified = detect();
     if !verified.present {
-        return Ok(ProvisioningResult::failed(
+        return ProvisioningResult::failed(
             action,
             method,
             "installer finished but `opencode` could not be verified",
-        ));
+        );
     }
     let off_path = installed_outside_path(&documented_install_dirs(|key| std::env::var_os(key)))
         .and_then(|executable| found_outside_path(&PROGRAMS, shims_dir, &executable));
-    Ok(ProvisioningResult::verified(action, method, verified).found_outside_path(off_path))
+    ProvisioningResult::verified(action, method, verified).found_outside_path(off_path)
 }
 
 #[cfg(test)]
@@ -174,9 +249,6 @@ mod provision_tests {
     /// state.
     #[test]
     fn provision_dispatches_install_or_update_consistently_with_detected_state() {
-        if !cfg!(unix) {
-            return;
-        }
         // `provision`'s install/upgrade command is mocked below, so nothing
         // is genuinely installed — the final `detect()` verification still
         // resolves `opencode`/`opencode2` for real. On a machine with
@@ -223,7 +295,7 @@ mod provision_tests {
         {
             assert_eq!(commands[0].arguments, ["upgrade"]);
         } else {
-            assert_eq!(commands[0].program, "sh");
+            assert_eq!(commands[0].program, uze_platform::shell::ARGV[0]);
             assert!(commands[0].arguments[1].contains("opencode.ai/v2/install"));
         }
         assert_eq!(commands.len(), 1);
@@ -233,7 +305,7 @@ mod provision_tests {
     fn the_installer_destinations_are_searched_in_its_own_order() {
         let dirs = documented_install_dirs(|key| match key {
             "XDG_BIN_DIR" => Some("/xdg/bin".into()),
-            "HOME" => Some("/home/a".into()),
+            key if key == uze_platform::home::VARIABLE => Some("/home/a".into()),
             _ => None,
         });
         assert_eq!(
@@ -249,9 +321,11 @@ mod provision_tests {
         let root = uze_testkit::temp::scratch("opencode-off-path");
         let bin = root.join(".opencode/bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("opencode"), "#!/bin/sh\n").unwrap();
+        let installed = bin.join(uze_platform::executable::file_name("opencode"));
+        std::fs::write(&installed, "#!/bin/sh\n").unwrap();
+        uze_platform::executable::make_runnable(&installed).unwrap();
         let found = installed_outside_path(&[root.join("bin"), bin.clone()]);
-        assert_eq!(found, Some(bin.join("opencode")));
+        assert_eq!(found, Some(installed));
         let _ = std::fs::remove_dir_all(root);
     }
 }

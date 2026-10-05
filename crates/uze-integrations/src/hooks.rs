@@ -155,6 +155,14 @@ impl HookTarget {
             effects: self.effects.iter().copied().collect(),
             supports_native_matchers: true,
             executes_handlers_in_order: true,
+            unfired: wrapper::unfired_here(self)
+                .iter()
+                .map(|unfired| uze_core::hook::UnfiredTool {
+                    event: unfired.event,
+                    tool: unfired.tool.to_owned(),
+                    why: unfired.why.to_owned(),
+                })
+                .collect(),
             ..HookCapabilities::default()
         }
     }
@@ -184,7 +192,7 @@ impl HookTarget {
 
     /// Whether a wrapper can be written and run for this harness here.
     fn deliverable(self) -> bool {
-        cfg!(unix) && self.dialect().is_some()
+        wrapper_source(self).is_some()
     }
 
     /// Whether the shared config is a map of named hooks rather than an
@@ -202,6 +210,14 @@ impl HookTarget {
         config_file: PathBuf,
         evidence: &str,
     ) -> ExposurePlan {
+        // The wrapper runs in this machine's shell, and a machine whose
+        // policy refuses it would run none of the handlers: said before
+        // attaching, rather than found by the first tool call.
+        if let Some(refusal) = uze_core::shell::refusal(uze_home) {
+            return unsupported(format!(
+                "this machine's shell refuses the hook's wrapper: {refusal}"
+            ));
+        }
         hook_plan(resource, &self.capabilities(), false, evidence, |hook| {
             if !self.deliverable() {
                 return None;
@@ -297,10 +313,7 @@ impl HookTarget {
         wrapper: &Path,
     ) -> serde_json::Value {
         let invocation = if self.entry_shape() == Some(EntryShape::EventExec) {
-            HookInvocation::Exec {
-                command: wrapper.display().to_string(),
-                args: wrapper_arguments(hook, package_root, &hook.handlers),
-            }
+            wrapper_exec(wrapper, hook, package_root)
         } else {
             HookInvocation::Line(wrapper_command_line(wrapper, hook, package_root))
         };
@@ -370,6 +383,20 @@ pub(crate) fn hook_plan(
                 .map_or_else(|| evidence.to_owned(), with_compatibility),
         };
     }
+    // A handler is never run in a shell it was not written for, so a group
+    // with one that has no spelling here delivers nothing here.
+    if let Some(unspelled) = hook
+        .handlers
+        .iter()
+        .find(|handler| handler.command.here().is_none())
+    {
+        return unsupported(format!(
+            "hook `{}` has no {} spelling for `{}`, so it is not delivered on this platform",
+            hook.id,
+            uze_core::shell::ShellCommand::platform(),
+            unspelled.command
+        ));
+    }
     match deliver(&hook) {
         Some(artifact) => ExposurePlan {
             route: compatibility.route,
@@ -402,8 +429,21 @@ pub(crate) fn hook_entry_name(resource: &Resource, hook: &PortableHook) -> Strin
 #[cfg(test)]
 mod tests;
 
+/// The wrapper this platform's harnesses run, on its own platform.
+#[cfg(test)]
+mod host_wrapper_tests;
+
+/// The fixtures every wrapper answers, and the answers recorded for them.
+#[cfg(test)]
+mod fixture_set;
+
+/// The recorded answers, held to by the wrapper of the platform it runs on.
+#[cfg(test)]
+mod wrapper_parity_tests;
+
 /// The generated wrapper against real `sh`: the same cases the reference
 /// runtime answers, run through the file a harness would actually execute.
+// The generated POSIX wrapper, run by a real `sh`.
 #[cfg(all(test, unix))]
 mod wrapper_tests;
 
@@ -411,5 +451,6 @@ mod wrapper_tests;
 /// V2-shaped plugin context. Skipped where Bun is absent: the plugin is a
 /// delivered artifact for a harness that embeds Bun, and the goldens above
 /// keep its bytes honest without it.
+// Runs the generated plugin under Bun with Unix file modes.
 #[cfg(all(test, unix))]
 mod opencode_runtime_tests;

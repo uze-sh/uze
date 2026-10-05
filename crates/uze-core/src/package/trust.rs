@@ -112,7 +112,7 @@ pub fn executable_capabilities(resources: &[&Resource]) -> Vec<ExecutableCapabil
 }
 
 fn mcp_execution(resource: &Resource) -> Option<ExecutableCapability> {
-    let config: serde_json::Value = serde_json::from_slice(&resource.capability.payload).ok()?;
+    let config: serde_json::Value = crate::authored::json(&resource.capability.payload).ok()?;
     let command = config.get("command")?.as_str()?.to_owned();
     let arguments = config
         .get("args")
@@ -153,22 +153,31 @@ fn mcp_execution(resource: &Resource) -> Option<ExecutableCapability> {
     })
 }
 
+/// Every handler a hook group runs, each spelling named. A group that
+/// cannot be read is one execution nobody can see, so it is asked about as
+/// such rather than passed over as none.
 fn hook_executions(resource: &Resource) -> Vec<ExecutableCapability> {
-    serde_json::from_slice::<crate::hook::PortableHook>(&resource.capability.payload)
-        .map(|hook| {
-            hook.handlers
-                .into_iter()
-                .enumerate()
-                .map(|(index, handler)| ExecutableCapability {
-                    name: format!("{}#{index}", hook.id),
-                    command: handler.command,
-                    arguments: Vec::new(),
-                    environment: BTreeMap::new(),
-                    working_directory: None,
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    let execution = |name: String, command: String| ExecutableCapability {
+        name,
+        command,
+        arguments: Vec::new(),
+        environment: BTreeMap::new(),
+        working_directory: None,
+    };
+    match serde_json::from_slice::<crate::hook::PortableHook>(&resource.capability.payload) {
+        Ok(hook) => hook
+            .handlers
+            .into_iter()
+            .enumerate()
+            .map(|(index, handler)| {
+                execution(format!("{}#{index}", hook.id), handler.command.describe())
+            })
+            .collect(),
+        Err(error) => vec![execution(
+            resource.name(),
+            format!("handlers that could not be read: {error}"),
+        )],
+    }
 }
 
 /// Whether an update introduces execution the installed package did not
@@ -268,7 +277,7 @@ mod tests {
                     matchers: Vec::new(),
                     handlers: vec![crate::hook::CommandHook {
                         handler_type: crate::hook::CommandHandlerType::Command,
-                        command: "scripts/check".to_owned(),
+                        command: "scripts/check".into(),
                         timeout: 10,
                     }],
                     effect: crate::hook::HookEffect::Deny,
@@ -282,6 +291,65 @@ mod tests {
             executable_capabilities(&[&hook])[0].command,
             "scripts/check"
         );
+    }
+
+    fn hook_resource(payload: Vec<u8>) -> Resource {
+        Resource::from_package_named(
+            PackageId::from_plugin_name("demo", &PathBuf::from("plugin.json")).unwrap(),
+            PathBuf::from("/store/demo"),
+            Capability {
+                kind: CapabilityKind::Hook,
+                path: PathBuf::from("/store/demo/hooks.json"),
+                payload,
+            },
+            "protect-env".to_owned(),
+        )
+    }
+
+    fn guarded(command: crate::shell::ShellCommand) -> Resource {
+        hook_resource(
+            serde_json::to_vec(&crate::hook::PortableHook {
+                id: "protect-env".to_owned(),
+                event: crate::hook::HookEvent::PreToolUse,
+                matchers: Vec::new(),
+                handlers: vec![crate::hook::CommandHook {
+                    handler_type: crate::hook::CommandHandlerType::Command,
+                    command,
+                    timeout: 10,
+                }],
+                effect: crate::hook::HookEffect::Deny,
+                order: 0,
+            })
+            .unwrap(),
+        )
+    }
+
+    /// What runs on Windows is as much the package's execution as what
+    /// runs elsewhere: changing only that spelling asks again.
+    #[test]
+    fn a_change_to_one_platform_s_spelling_is_new_execution() {
+        let before = guarded(crate::shell::ShellCommand::spelled(
+            "./check",
+            "& ./check.ps1",
+        ));
+        let after = guarded(crate::shell::ShellCommand::spelled(
+            "./check",
+            "& ./other.ps1",
+        ));
+        assert!(introduces_new_execution(
+            &executable_capabilities(&[&before]),
+            &executable_capabilities(&[&after])
+        ));
+    }
+
+    /// A group whose handlers cannot be read is not passed over as running
+    /// nothing: it is one execution to authorize.
+    #[test]
+    fn an_unreadable_hook_group_is_asked_about() {
+        let unreadable = hook_resource(b"{not json".to_vec());
+        let executions = executable_capabilities(&[&unreadable]);
+        assert_eq!(executions.len(), 1);
+        assert!(executions[0].command.contains("could not be read"));
     }
 
     #[test]

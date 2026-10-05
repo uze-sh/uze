@@ -127,7 +127,7 @@ pub(super) fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
-    fs::rename(&temporary, path)
+    uze_platform::fs::rename(&temporary, path)
 }
 
 /// The widest and tallest a pane may be told it is.

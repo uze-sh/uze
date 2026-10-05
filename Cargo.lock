@@ -3183,6 +3183,7 @@ dependencies = [
  "uze-git",
  "uze-integrations",
  "uze-keys",
+ "uze-platform",
  "uze-terminal",
  "uze-testkit",
  "uze-theme",
@@ -3200,6 +3201,7 @@ dependencies = [
  "uze-core",
  "uze-integrations",
  "uze-keys",
+ "uze-platform",
  "uze-testkit",
  "uze-workspace",
 ]
@@ -3218,6 +3220,7 @@ dependencies = [
  "tracing",
  "uze-document",
  "uze-git",
+ "uze-platform",
  "uze-testkit",
 ]
 
@@ -3250,6 +3253,7 @@ dependencies = [
  "libc",
  "tracing",
  "tracing-subscriber",
+ "uze-platform",
  "uze-testkit",
 ]
 
@@ -3258,9 +3262,11 @@ name = "uze-integrations"
 version = "1.0.0-beta.10"
 dependencies = [
  "serde_json",
+ "sha2 0.11.0",
  "toml_edit",
  "tracing",
  "uze-core",
+ "uze-platform",
  "uze-testkit",
 ]
 
@@ -3270,6 +3276,15 @@ version = "1.0.0-beta.10"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "uze-platform"
+version = "1.0.0-beta.10"
+dependencies = [
+ "libc",
+ "uze-testkit",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3285,6 +3300,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "uze-document",
+ "uze-platform",
  "uze-testkit",
 ]
 
@@ -3292,8 +3308,10 @@ dependencies = [
 name = "uze-testkit"
 version = "1.0.0-beta.10"
 dependencies = [
+ "serde",
  "serde_json",
  "uze-git",
+ "uze-platform",
 ]
 
 [[package]]
@@ -3318,6 +3336,7 @@ dependencies = [
  "uze-core",
  "uze-document",
  "uze-git",
+ "uze-platform",
  "uze-testkit",
 ]
 

@@ -131,6 +131,12 @@ impl Output {
     }
 }
 
+/// A path as Git printed it, in this platform's spelling (Git for Windows
+/// prints `C:/x/y`).
+pub fn native_path(printed: &str) -> std::path::PathBuf {
+    uze_platform::path::from_tool_output(printed)
+}
+
 /// Runs a Git command that only observes. Never takes the repository write
 /// lock, and asks Git not to take its own optional index lock either, so a
 /// status view cannot block behind — or interfere with — a write in
@@ -220,14 +226,21 @@ pub fn locked<R>(
 
 fn base_command(root: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
-    command.arg("-C").arg(root).args(args);
+    // Git for Windows cannot open a verbatim `\\?\C:\…` root.
+    command
+        .arg("-C")
+        .arg(uze_platform::path::strip_verbatim(root));
+    // Every invocation, not only the one that made a checkout: a `-c`
+    // lasts one command, and a long path read by `status` after `worktree
+    // add` wrote it is the same long path.
+    for (key, value) in uze_platform::git::EVERY_INVOCATION {
+        command.arg("-c").arg(format!("{key}={value}"));
+    }
+    command.args(args);
     // A subprocess that stops to ask for a credential never gets an
     // answer: nothing here is attached to a terminal the operator can see.
     command.env("GIT_TERMINAL_PROMPT", "0");
     command.stdin(Stdio::null());
-    if reaches_a_remote(args) {
-        detach_from_terminal(&mut command);
-    }
     command
 }
 
@@ -246,29 +259,6 @@ fn reaches_a_remote(args: &[&str]) -> bool {
     }
     false
 }
-
-/// Starts the command in a session of its own, with no controlling
-/// terminal. `GIT_TERMINAL_PROMPT` silences Git, not the SSH it runs, and
-/// an SSH wanting a passphrase or a host-key answer opens `/dev/tty`
-/// directly — which, under the workspace client, is the raw-mode terminal
-/// the operator is typing into. Without one to open, it fails and says so.
-#[cfg(unix)]
-fn detach_from_terminal(command: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    // SAFETY: `setsid` is async-signal-safe and touches no memory of the
-    // parent, which is all a `pre_exec` hook may do between fork and exec.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-}
-
-#[cfg(not(unix))]
-fn detach_from_terminal(_command: &mut Command) {}
 
 fn run(command: Command, args: &[&str]) -> Result<Output, SpawnError> {
     if reaches_a_remote(args) {
@@ -302,10 +292,14 @@ fn run_to_completion(mut command: Command) -> Result<Output, SpawnError> {
 }
 
 /// [`run_to_completion`] for a command that may never end on its own: past
-/// `limit` its whole process group — Git and the SSH it started, which
-/// [`detach_from_terminal`] put in a session of their own — is killed and
-/// reaped, and the wait is reported rather than continued.
-#[cfg(unix)]
+/// `limit` Git and everything it started are ended as one tree while Git
+/// is still unreaped, and the wait is reported rather than continued.
+///
+/// The tree has no terminal to ask on. `GIT_TERMINAL_PROMPT` silences Git,
+/// not the SSH it runs, and an SSH wanting a passphrase or a host-key
+/// answer opens the terminal directly — which, under the workspace client,
+/// is the raw-mode terminal the operator is typing into. Without one to
+/// open, it fails and says so.
 fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnError> {
     use std::time::Instant;
 
@@ -313,7 +307,9 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
         tracing::debug_span!("git", args = %arguments_of(&command), exit = tracing::field::Empty);
     let _entered = span.enter();
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command.spawn().map_err(describe_spawn_failure)?;
+    let (mut child, tree) =
+        uze_platform::process::spawn_tree(&mut command, uze_platform::process::Seat::NoTerminal)
+            .map_err(describe_spawn_failure)?;
     let stdout = drain(child.stdout.take());
     let stderr = drain(child.stderr.take());
     let deadline = Instant::now() + limit;
@@ -326,12 +322,7 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
                 pause = (pause * 2).min(Duration::from_millis(100));
             }
             outcome => {
-                // Still unreaped here, so the group id cannot yet belong to
-                // anybody else.
-                let group = child.id() as libc::pid_t;
-                // SAFETY: `kill` takes no pointers; a negative pid names the
-                // process group `setsid` made this child the leader of.
-                unsafe { libc::kill(-group, libc::SIGKILL) };
+                tree.end();
                 let _ = child.wait();
                 return Err(match outcome {
                     Err(error) => describe_spawn_failure(error),
@@ -353,7 +344,6 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
 
 /// Reads a child's pipe to its end on a thread of its own, so neither
 /// pipe can fill while the other is being read.
-#[cfg(unix)]
 fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
     std::thread::spawn(move || {
         let mut bytes = Vec::new();
@@ -362,11 +352,6 @@ fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandl
         }
         bytes
     })
-}
-
-#[cfg(not(unix))]
-fn run_within(command: Command, _limit: Duration) -> Result<Output, SpawnError> {
-    run_to_completion(command)
 }
 
 fn arguments_of(command: &Command) -> String {
@@ -388,6 +373,24 @@ fn describe_spawn_failure(error: io::Error) -> SpawnError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What the platform needs of every Git invocation reaches every one,
+    /// ahead of the subcommand, where `-c` is read.
+    #[test]
+    fn every_invocation_carries_the_platform_s_settings() {
+        let command = base_command(Path::new("."), &["status"]);
+        let arguments: Vec<String> = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        let subcommand = arguments.iter().position(|argument| argument == "status");
+        for (key, value) in uze_platform::git::EVERY_INVOCATION {
+            let setting = arguments
+                .iter()
+                .position(|argument| *argument == format!("{key}={value}"));
+            assert!(setting.is_some() && setting < subcommand, "{arguments:?}");
+        }
+    }
     use std::{path::PathBuf, time::Instant};
 
     /// A span's name and the `exit` it recorded.
@@ -498,12 +501,12 @@ mod tests {
         assert!(!reaches_a_remote(&[]));
     }
 
+    // Drives POSIX programs (`sh`, `sleep`) as stand-ins.
     #[cfg(unix)]
     #[test]
     fn a_command_past_its_limit_is_stopped_and_reported() {
         let mut command = Command::new("sh");
         command.args(["-c", "sleep 30 & sleep 30"]);
-        detach_from_terminal(&mut command);
         let started = Instant::now();
 
         let outcome = run_within(command, Duration::from_millis(200));

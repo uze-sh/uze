@@ -9,7 +9,7 @@ use super::*;
 pub(super) fn uze_home_dir() -> PathBuf {
     env::var_os("UZE_HOME")
         .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".uze")))
+        .or_else(|| uze_platform::home::user_home().map(|home| home.join(".uze")))
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -59,7 +59,7 @@ impl WorkspaceLock {
     pub(super) fn acquire() -> Result<Self, RuntimeError> {
         let mut file = open_workspace_lock()?;
         loop {
-            match flock(&file, libc::LOCK_EX | libc::LOCK_NB) {
+            match try_lock(&file, LockMode::Exclusive) {
                 Ok(()) => {
                     record_claimant(&mut file);
                     return Ok(Self { _file: file });
@@ -109,7 +109,7 @@ pub(super) fn record_claimant(file: &mut fs::File) {
 pub(super) fn claim_holder() -> Option<u32> {
     let recorded = fs::read_to_string(workspace_lock_path()).ok()?;
     let pid: u32 = recorded.trim().parse().ok()?;
-    signalable(pid).filter(|target| runs_uze(*target))?;
+    runs_uze(pid).then_some(())?;
     Some(pid)
 }
 
@@ -132,9 +132,9 @@ pub(super) fn workspace_is_claimed() -> bool {
 /// tells the two apart.
 pub(super) fn held_by_a_server(file: &fs::File) -> io::Result<bool> {
     loop {
-        match flock(file, libc::LOCK_SH | libc::LOCK_NB) {
+        match try_lock(file, LockMode::Shared) {
             Ok(()) => {
-                let _ = flock(file, libc::LOCK_UN);
+                unlock(file);
                 return Ok(false);
             }
             Err(LockRefusal::Interrupted) => {}
@@ -156,14 +156,14 @@ pub(super) fn open_workspace_lock() -> io::Result<fs::File> {
         .open(&path)
 }
 
-pub(super) fn flock(file: &fs::File, operation: libc::c_int) -> Result<(), LockRefusal> {
-    // SAFETY: `file` owns the descriptor for the whole call, and a lock it
-    // takes is released by the kernel when the descriptor closes.
-    if unsafe { libc::flock(file.as_raw_fd(), operation) } == 0 {
-        return Ok(());
-    }
-    let error = io::Error::last_os_error();
-    Err(classify_lock_refusal(error))
+pub(super) use uze_platform::lock::Mode as LockMode;
+
+pub(super) fn try_lock(file: &fs::File, mode: LockMode) -> Result<(), LockRefusal> {
+    uze_platform::lock::try_lock(file, mode).map_err(classify_lock_refusal)
+}
+
+pub(super) fn unlock(file: &fs::File) {
+    uze_platform::lock::unlock(file);
 }
 
 /// Why `flock` said no.
@@ -182,10 +182,9 @@ pub(super) enum LockRefusal {
 }
 
 pub(super) fn classify_lock_refusal(error: io::Error) -> LockRefusal {
-    match error.raw_os_error() {
-        Some(libc::EINTR) => LockRefusal::Interrupted,
-        // The same number on Linux, two names elsewhere; both mean held.
-        Some(code) if code == libc::EWOULDBLOCK || code == libc::EAGAIN => LockRefusal::Contended,
+    match error.kind() {
+        io::ErrorKind::Interrupted => LockRefusal::Interrupted,
+        io::ErrorKind::WouldBlock => LockRefusal::Contended,
         _ => LockRefusal::Unsupported(error),
     }
 }

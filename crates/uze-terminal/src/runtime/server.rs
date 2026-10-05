@@ -170,7 +170,7 @@ impl Server {
         }
     }
 
-    pub(super) fn handle_client(self: Arc<Self>, stream: UnixStream) {
+    pub(super) fn handle_client(self: Arc<Self>, stream: Stream) {
         let _span = tracing::info_span!("terminal.client").entered();
         let reader_stream = match stream.try_clone() {
             Ok(value) => value,
@@ -664,11 +664,11 @@ impl Server {
             // Best-effort: label the sidebar tree with the real shell name
             // immediately instead of leaving the "shell" placeholder until
             // the next status tick.
-            if let Some((cwd, process)) = runtime.foreground_status() {
-                session.update_pane_status(pane_id, cwd, process);
-            }
-            if let Some(through) = runtime.foreground_through_launcher() {
-                session.update_pane_launcher(pane_id, through);
+            if let Some(reading) = runtime.reading() {
+                if let Some((cwd, process)) = reading.status {
+                    session.update_pane_status(pane_id, cwd, process);
+                }
+                session.update_pane_launcher(pane_id, reading.through_launcher);
             }
         }
         let runtime = Arc::new(runtime);
@@ -721,9 +721,12 @@ impl Server {
         let probes: Vec<(PaneId, PathBuf, String, bool)> = runtimes
             .iter()
             .filter_map(|(id, runtime)| {
-                let through = runtime.foreground_through_launcher().unwrap_or(false);
-                runtime
-                    .foreground_status()
+                let reading = runtime.reading();
+                let through = reading
+                    .as_ref()
+                    .is_some_and(|reading| reading.through_launcher);
+                reading
+                    .and_then(|reading| reading.status)
                     .map(|(cwd, process)| (*id, cwd, process, through))
             })
             .collect();
@@ -966,7 +969,7 @@ impl Server {
         *self.stopped.lock().expect("stop state poisoned") = true;
         self.stop_requested.notify_all();
         self.stop_panes();
-        let _ = UnixStream::connect(&self.socket);
+        let _ = transport::connect(&self.socket);
     }
 
     /// Blocks until [`Server::shut_down`] runs, and returns holding the
@@ -1050,43 +1053,6 @@ pub(super) fn spawn_status_ticker(server: Arc<Server>) {
     });
 }
 
-/// Puts back the directory the endpoint lives in, held to the same
-/// ownership and mode [`socket_path`] demanded of it in the first place — a
-/// cleaner that took the socket usually took the directory too.
-pub(super) fn restore_endpoint_directory(socket: &Path) -> io::Result<()> {
-    let Some(directory) = socket.parent() else {
-        return Ok(());
-    };
-    fs::create_dir_all(directory)?;
-    private_directory(directory, current_uid())
-}
-
-/// The process group `pid` leads, when it leads one of its own: a pane's
-/// program is started in a session of its own, so its group is its pid.
-/// `None` for anything else — above all this process's own group, which a
-/// group signal must never reach.
-pub(super) fn own_process_group(pid: u32) -> Option<libc::pid_t> {
-    let pid = libc::pid_t::try_from(pid).ok().filter(|pid| *pid > 1)?;
-    // SAFETY: `getpgid` reads the group of a positive pid and touches no
-    // memory of ours; `getpgrp` takes no arguments and cannot fail.
-    let (group, ours) = unsafe { (libc::getpgid(pid), libc::getpgrp()) };
-    (group == pid && group != ours).then_some(group)
-}
-
-/// The real user id of this process.
-pub(super) fn current_uid() -> libc::uid_t {
-    // SAFETY: `getuid` takes no arguments, cannot fail, and touches no
-    // memory of ours.
-    unsafe { libc::getuid() }
-}
-
-/// What identifies the socket a server bound, so a later look at the same
-/// path can tell "still the one I am listening on" from "gone".
-pub(super) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
-    let metadata = fs::metadata(path).ok()?;
-    Some((metadata.dev(), metadata.ino()))
-}
-
 /// Puts the server back at its endpoint when the endpoint stops being the
 /// one it bound.
 ///
@@ -1111,17 +1077,17 @@ pub(super) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
 /// so never rebound" the only two orderings there are.
 pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
     thread::spawn(move || {
-        let mut bound = socket_identity(&server.socket);
+        let mut bound = transport::identity(&server.socket);
         loop {
             thread::sleep(STATUS_PROBE_INTERVAL);
             let stopped = server.stopped.lock().expect("stop state poisoned");
             if *stopped {
                 break;
             }
-            if socket_identity(&server.socket) == bound {
+            if transport::identity(&server.socket) == bound {
                 continue;
             }
-            match restore_endpoint_directory(&server.socket)
+            match transport::restore(&server.socket)
                 .map_err(RuntimeError::from)
                 .and_then(|()| bind_endpoint(&server.socket))
             {
@@ -1130,7 +1096,7 @@ pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
                         socket = %server.socket.display(),
                         "the terminal endpoint vanished under a live server; rebound it"
                     );
-                    bound = socket_identity(&server.socket);
+                    bound = transport::identity(&server.socket);
                     let accepting = Arc::clone(&server);
                     // The listener this replaces is left blocked in
                     // `accept` on an inode nothing can reach any more, so it

@@ -42,6 +42,7 @@ use uze_core::{
     store::PackageId,
 };
 
+mod distribution;
 mod hooks;
 mod mcp;
 mod preferences;
@@ -110,7 +111,7 @@ impl OpenCodeIntegration {
 
     /// Env-based constructor for the CLI composition root (`registry.rs`).
     pub fn from_env(uze_home: UzeHome) -> Result<Self> {
-        let home = PathBuf::from(std::env::var_os("HOME").ok_or(UzeError::MissingHomeDirectory)?);
+        let home = uze_core::user_home().ok_or(UzeError::MissingHomeDirectory)?;
         let config_root = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".config"));
@@ -250,6 +251,10 @@ impl IntegrationPort for OpenCodeIntegration {
     /// alias is still resolved generically without mutating vendor paths.
     fn runtime_executable_aliases(&self) -> &'static [&'static str] {
         &["opencode2"]
+    }
+
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        provision::install_locations()
     }
 
     /// OpenCode derives a skill's ID from its path (verified in the V2

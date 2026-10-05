@@ -64,7 +64,7 @@ scenes:
     when:
       - shell: |
           set -e
-          python3 -c "
+          {python} -c "
           import json, glob
           [store] = glob.glob('{uze_home}/state/projects/*/agents.json')
           [agent] = [a for a in json.load(open(store))['agents'] if a.get('isolation')]
@@ -83,10 +83,10 @@ scenes:
     then:
       - cmd:
           run: |
-            python3 -c "
-            import json, glob
+            {python} -c "
+            import json, glob, pathlib
             [marker] = glob.glob('{uze_home}/state/projects/*/project.json')
-            print(json.load(open(marker))['root'])
+            print(pathlib.Path(json.load(open(marker))['root']).as_posix())
             "
           stdout_contains: "{project}"
         about: the records still name the repository they belong to

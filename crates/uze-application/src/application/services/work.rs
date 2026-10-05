@@ -7,6 +7,7 @@
 //! held, because it is the agent's only feedback.
 
 use std::path::{Path, PathBuf};
+use uze_core::path::Canonical as _;
 
 use uze_core::{Result, UzeError};
 
@@ -125,8 +126,7 @@ impl Workspace<'_> {
             store.upsert(child);
             Ok(acquired)
         })?;
-        let warnings =
-            checkout::materialize(&caller.primary, &acquired.path, &policy.link, &policy.setup);
+        let warnings = checkout::materialize(&caller.primary, &acquired.path, &policy);
         Ok(SplitWork {
             path: acquired.path,
             warnings,
@@ -398,14 +398,14 @@ fn child_directory(child: &Agent, primary: &Path) -> Result<PathBuf> {
 fn inside_a_child(store: &AgentStore, claim: Claim<'_>, primary: &Path) -> bool {
     let cwd = claim
         .cwd
-        .canonicalize()
+        .canonical()
         .unwrap_or_else(|_| claim.cwd.to_path_buf());
     store
         .agents
         .iter()
         .filter(|agent| agent.parent.as_ref().map(AgentId::as_str) == Some(claim.id))
         .filter_map(|child| child_directory(child, primary).ok())
-        .any(|directory| cwd.starts_with(directory.canonicalize().unwrap_or(directory)))
+        .any(|directory| cwd.starts_with(directory.canonical().unwrap_or(directory)))
 }
 
 /// A topic names a subagent to its agent and labels its row; it is kept to

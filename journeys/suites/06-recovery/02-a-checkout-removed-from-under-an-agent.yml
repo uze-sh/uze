@@ -1,6 +1,11 @@
 journey: a checkout deleted from under an agent costs the checkout, never the work
 tags: [gate, tui, recovery]
 proves: web/content/docs/workspace/agents.mdx
+unsupported:
+  windows: |
+    Windows refuses to delete a directory a running process stands in, so a
+    checkout cannot be deleted from under its agent: the cleanup this
+    journey performs fails before there is anything to recover from.
 about: |
   Checkouts get deleted. A cleanup script, a full disk, a person tidying
   `.worktrees` by hand — and the agent that was working there is suddenly

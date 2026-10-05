@@ -43,16 +43,9 @@ use uze_application::{
 /// client, both of which write to Unix sockets, and with the default
 /// disposition a peer hanging up would kill the server — and every pane it
 /// owns — instead of surfacing as the `EPIPE` the runtime handles.
-#[cfg(unix)]
 fn die_quietly_on_a_closed_pipe() {
-    // Safety: called once, before any thread is spawned and before anything
-    // is written, and `SIG_DFL` is the disposition the process started life
-    // with — it installs no handler of our own.
-    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
+    uze_platform::stdio::die_quietly_on_a_closed_pipe();
 }
-
-#[cfg(not(unix))]
-fn die_quietly_on_a_closed_pipe() {}
 
 fn main() {
     // Checked before any `clap` parsing, on `argv[0]` alone: a process
@@ -63,13 +56,18 @@ fn main() {
     if let Some(name) = shim::detect() {
         shim::run(&name);
     }
-
-    // Help is presentation-only, but every public command routes through the
-    // same renderer before Clap can emit its unstyled generated help.
     // Read lossily rather than through `args()`, which panics on an
     // argument that is not UTF-8: what to do about one is clap's answer to
     // give, and a replacement character matches none of the words below.
     let args: Vec<String> = argv_lossy();
+    // Not for a pane's trampoline, which starts with every pane and has
+    // nothing of an update's to tidy: the next `uze` a person runs does.
+    if args.get(1..3) != Some(&["terminal".to_owned(), "host-pane".to_owned()][..]) {
+        uze::self_update::sweep_set_aside();
+    }
+
+    // Help is presentation-only, but every public command routes through the
+    // same renderer before Clap can emit its unstyled generated help.
     if is_framed(args.get(1..).unwrap_or_default()) {
         progress::open_frame();
     }
@@ -317,13 +315,7 @@ fn run(cli: Cli, leaf: &str) -> Result<()> {
 /// stderr, still reach the person. Done once at the descriptor rather than
 /// at every `println!`, so no report can forget to ask.
 fn silence_stdout() {
-    #[cfg(unix)]
-    if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
-        use std::os::fd::AsRawFd;
-        // Safety: both descriptors are open; stdout is replaced before
-        // anything is written to it.
-        unsafe { libc::dup2(null.as_raw_fd(), libc::STDOUT_FILENO) };
-    }
+    uze_platform::stdio::silence_stdout();
 }
 
 /// The leaf command path `argv` names, spelled the way a person types it
@@ -380,6 +372,13 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         };
     }
     if let Command::Terminal {
+        action: TerminalAction::HostPane { group, program },
+    } = command
+    {
+        let refused: uze_terminal::RuntimeError = uze_terminal::host_pane(&group, &program).into();
+        return Err(terminal_error(refused));
+    }
+    if let Command::Terminal {
         action: TerminalAction::Serve { root },
     } = command
     {
@@ -389,6 +388,11 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         // another program there, going through it too. Nothing outside the
         // workspace is told.
         uze_terminal::put_first_on_pane_path(home.shims_dir());
+        // This binary is the server, and the one a pane's program joins its
+        // group through (`terminal host-pane`).
+        if let Ok(executable) = std::env::current_exe() {
+            uze_terminal::host_panes_with(executable);
+        }
         return uze_terminal::serve(uze_terminal::SpaceSeat { root }).map_err(terminal_error);
     }
     // Ahead of the application: a check running detached from the command
@@ -558,7 +562,11 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
             if !machine {
                 match app.health().status(&root) {
                     Ok(report) => {
-                        emit(format, &report, render_status);
+                        let status = ProjectStatus {
+                            steps_not_spelled_here: app.workspace().steps_not_spelled_here(&root),
+                            report,
+                        };
+                        emit(format, &status, render_status);
                         return Ok(());
                     }
                     Err(uze_application::UzeError::NoProject { .. }) => {}
@@ -816,10 +824,10 @@ mod status_output_tests {
         EnvironmentDrift, InstructionsFile, Portability, ProjectLockStatus, StatusReport,
     };
 
-    use super::{render_status, status_next_step};
+    use super::{ProjectStatus, render_status, status_next_step};
 
-    fn report(instructions: InstructionsFile, portability: Portability) -> StatusReport {
-        StatusReport {
+    fn report(instructions: InstructionsFile, portability: Portability) -> ProjectStatus {
+        let report = StatusReport {
             root: std::path::PathBuf::from("/project"),
             instructions,
             portability,
@@ -829,6 +837,10 @@ mod status_output_tests {
             project_lock: ProjectLockStatus::Absent,
             drift: EnvironmentDrift::default(),
             issues: Vec::new(),
+        };
+        ProjectStatus {
+            report,
+            steps_not_spelled_here: Vec::new(),
         }
     }
 

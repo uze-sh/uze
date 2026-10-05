@@ -40,7 +40,12 @@ use uze_workspace::{continuity, conversation::Claim};
 /// unchanged, including a direct `uze` invocation.
 pub fn detect() -> Option<String> {
     let argv0 = env::args_os().next()?;
-    let name = Path::new(&argv0).file_name()?.to_str()?.to_owned();
+    let name = uze_platform::executable::invoked_name(&argv0)?;
+    // Asked by every `uze` there is, and answered without building the
+    // registry when the name is UZE's own, which no harness is.
+    if name == "uze" {
+        return None;
+    }
     let home = UzeHome::from_env().ok()?;
     let registry = IntegrationRegistry::builtin(&home).ok()?;
     registry
@@ -93,11 +98,16 @@ pub fn run(shim_name: &str) -> ! {
     // lets the shim dispatch to a differently-named real executable without
     // a physical alias file ever being created outside `$UZE_HOME`.
     let mut candidates = vec![shim_name];
+    let mut install_locations = Vec::new();
     if let Some(integration) = &integration {
         candidates.extend(integration.runtime_executable_aliases());
+        install_locations = integration.install_locations();
     }
-    let executable = match harness_runtime::resolve_real_executable(&candidates, &home.shims_dir())
-    {
+    let executable = match harness_runtime::resolve_harness_executable(
+        &candidates,
+        &home.shims_dir(),
+        &install_locations,
+    ) {
         Some(path) => path,
         None => die(&format!(
             "no real `{shim_name}` executable found on PATH outside {} — is it installed?",
@@ -234,31 +244,12 @@ fn exec_or_die(
     run_replacing_process(command, executable)
 }
 
-#[cfg(unix)]
 fn run_replacing_process(mut command: std::process::Command, executable: &Path) -> ! {
-    use std::os::unix::process::CommandExt;
-    // `exec` only returns on failure.
-    let error = command.exec();
+    let error = uze_platform::process::run_in_place(&mut command);
     die(&format!(
         "failed to exec `{}`: {error}",
         executable.display()
     ));
-}
-
-/// Non-Unix fallback: `exec`-style process replacement has no equivalent in
-/// `std` there, so this spawns and waits, forwarding the exit code. Not the
-/// primary, empirically-verified path — Windows/WSL is explicitly deferred;
-/// this only keeps the shim from being
-/// Unix-only at compile time.
-#[cfg(not(unix))]
-fn run_replacing_process(mut command: std::process::Command, executable: &Path) -> ! {
-    match command.status() {
-        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-        Err(error) => die(&format!(
-            "failed to launch `{}`: {error}",
-            executable.display()
-        )),
-    }
 }
 
 fn die(message: &str) -> ! {

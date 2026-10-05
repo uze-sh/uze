@@ -17,7 +17,7 @@ fn uze(home: &PathBuf) -> Command {
     command
         .env("UZE_HOME", home)
         .isolated_home(home)
-        .env("PATH", "/usr/bin:/bin")
+        .env("PATH", uze_testkit::process::system_path())
         // Isolates project-root resolution from this repo's own real
         // `agents.lock` — see `root_remove_no_longer_falls_back_to_global_removal`
         // in tests/cli.rs for why this matters.
@@ -450,14 +450,9 @@ fn a_reader_that_leaves_ends_the_command_quietly() {
 /// used to panic on one before clap ever saw the command line.
 #[test]
 fn a_non_utf8_argument_is_refused_rather_than_panicked_on() {
-    use std::os::unix::ffi::OsStrExt as _;
-
     let home = temporary_home("non-utf8-argument");
     std::fs::create_dir_all(&home).unwrap();
-    let output = uze(&home)
-        .arg(std::ffi::OsStr::from_bytes(&[0xff]))
-        .output()
-        .unwrap();
+    let output = uze(&home).arg(not_unicode()).output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success());
     assert_ne!(output.status.code(), Some(101), "panicked: {stderr}");
@@ -906,9 +901,29 @@ fn market_add_of_a_subdirectory_says_what_it_reads() {
     assert!(output.status.success(), "{said}");
     assert!(said.contains("gitlab.com/team/monorepo"), "{said}");
     assert!(
-        said.contains(&marketplace.canonicalize().unwrap().display().to_string()),
+        said.contains(
+            &uze_platform::path::canonical(&marketplace)
+                .unwrap()
+                .display()
+                .to_string()
+        ),
         "{said}"
     );
     assert!(said.contains("mirrored"), "{said}");
     let _ = std::fs::remove_dir_all(home);
+}
+
+/// An argument no Unicode string spells: a byte UTF-8 never starts with on
+/// Unix, an unpaired surrogate on Windows.
+#[cfg(unix)]
+fn not_unicode() -> std::ffi::OsString {
+    use std::os::unix::ffi::OsStringExt as _;
+    std::ffi::OsString::from_vec(vec![0xff])
+}
+
+// A string that is not Unicode is a lone surrogate on Windows, an invalid byte on Unix.
+#[cfg(windows)]
+fn not_unicode() -> std::ffi::OsString {
+    use std::os::windows::ffi::OsStringExt as _;
+    std::ffi::OsString::from_wide(&[0xd800])
 }

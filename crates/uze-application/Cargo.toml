@@ -9,6 +9,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+uze-platform = { path = "../uze-platform" }
 uze-core = { path = "../uze-core" }
 uze-workspace = { path = "../uze-workspace" }
 uze-keys = { path = "../uze-keys" }

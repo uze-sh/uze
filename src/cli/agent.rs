@@ -63,8 +63,14 @@ pub(crate) fn run_agent_market(app: &UzeApplication, action: AgentMarketAction) 
                                    marketplace) or `--at <dir>` (a standalone checkout)",
                 );
             };
-            // The registry outlives the directory this ran from.
-            let at = cwd()?.join(at);
+            // The registry outlives the directory this ran from, so the
+            // path is made absolute the way the platform makes one: on
+            // Windows that also spells it with one separator throughout.
+            let at =
+                std::path::absolute(&at).map_err(|source| uze_application::UzeError::Read {
+                    path: at.clone(),
+                    source,
+                })?;
             let report = with_spinner(&format!("Scaffolding marketplace {name}..."), || {
                 app.project()
                     .create_marketplace(&name, description.as_deref(), &at)

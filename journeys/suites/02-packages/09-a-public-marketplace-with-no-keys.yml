@@ -120,11 +120,6 @@ world:
       os.rename(port_file + ".partial", port_file)
       faulthandler.cancel_dump_traceback_later()
       server.serve_forever()
-    forge/ssh: |
-      #!/bin/sh
-      printf '%s\n' "$*" >> "$(dirname "$0")/../forge/ssh.log"
-      echo "git@forge: Permission denied (publickey)." >&2
-      exit 255
 
 scenes:
   - scene: a public repository needs nothing but the network
@@ -135,7 +130,7 @@ scenes:
           set -e
           mkdir -p {world}/forge/team
           git clone -q --bare {world}/market {world}/forge/team/plugins
-          cp {world}/forge/ssh {world}/bin/ssh && chmod +x {world}/bin/ssh
+          {fake_harness} --bin-dir {world}/bin --forge-ssh {world}/forge
           nohup {python} {world}/forge/serve.py {world}/forge {world}/forge/port \
             >{world}/forge/serve.log 2>&1 </dev/null &
         say: a public forge
@@ -159,7 +154,7 @@ scenes:
       - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: the plugin reached the harness
-      - file: "{world}/forge/ssh.log"
+      - file: "{world}/bin/.invocations/ssh.log"
         exists: false
         about: ssh was never asked — anonymous HTTPS answered
       - file: "{project}/agents.lock"

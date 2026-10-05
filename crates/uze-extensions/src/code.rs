@@ -918,7 +918,7 @@ impl CodeView {
     /// path they recognise it by, which is what a descent starts from.
     pub(super) fn checkout_name(&self) -> String {
         self.display_root
-            .rsplit('/')
+            .rsplit(['/', '\\'])
             .find(|part| !part.is_empty())
             .unwrap_or(&self.display_root)
             .to_owned()

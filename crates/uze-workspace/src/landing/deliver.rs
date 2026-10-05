@@ -48,11 +48,22 @@ pub(super) fn deliver_locked(
     }
     rebase_in_slot(primary, &slot, state, isolation, &tip)?;
     for step in policy.gate {
-        let (passed, output) = run_shell_bounded(&slot, step, GATE_TIMEOUT);
+        // A gate with no spelling for this platform refuses delivery: it
+        // cannot be run, and work it never checked must not land.
+        let (passed, output) = match step.here() {
+            Some(line) => run_shell_bounded(&slot, line, GATE_TIMEOUT),
+            None => (
+                false,
+                format!(
+                    "this gate has no {} spelling in agents.yaml",
+                    uze_core::shell::ShellCommand::platform()
+                ),
+            ),
+        };
         if !passed {
             *state = WorkState::GateFailed;
             return Err(DeliveryFailure::GateFailed {
-                command: step.clone(),
+                command: step.to_string(),
                 output,
             });
         }
@@ -228,7 +239,7 @@ pub fn paused_rebase(slot: &Path) -> Option<Vec<PathBuf>> {
     let git_dir = uze_git::read(slot, &["rev-parse", "--git-dir"])
         .ok()
         .and_then(|output| output.successful().ok())?;
-    let git_dir = Path::new(git_dir.trim());
+    let git_dir = uze_git::native_path(git_dir.trim());
     let git_dir = if git_dir.is_absolute() {
         git_dir.to_path_buf()
     } else {

@@ -32,6 +32,7 @@ use std::{
     time::{Duration, Instant},
 };
 use uze_application::AgentIdentity;
+use uze_application::path::Canonical as _;
 use uze_application::{
     AgentView, CompletionBehavior, DeliveryOutcome, DeliveryReport, Evaluation, UpstreamSync,
     WorkStateView,
@@ -358,7 +359,7 @@ fn describe_delivery_outcome(report: &DeliveryReport) -> String {
 /// bootstraps a space at the seat it was started with, before any client
 /// attaches.
 fn seating_at(seat: uze_terminal::SpaceSeat) -> uze_terminal::Seating {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = uze_platform::home::user_home();
     if home.is_some_and(|home| home == seat.root) {
         return uze_terminal::Seating::At(seat);
     }
@@ -1276,6 +1277,8 @@ struct Channels {
     code_measures: Answers<MeasureResolution>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
     policy_regions: Answers<PolicyRegionResolution>,
+    /// A project's gates this machine cannot run, read where it opens.
+    unspelled_gates: Answers<UnspelledGates>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
 }
@@ -1413,6 +1416,9 @@ struct Remembered {
     /// edited by hand, so the report is made once a session rather than on
     /// every refresh.
     policy_region_reported: BTreeSet<PathBuf>,
+    /// The projects already said to have a gate this machine cannot run,
+    /// so it is said once a session.
+    unspelled_gates_reported: BTreeSet<PathBuf>,
     /// The names a harness launched through the workspace's shim runs
     /// under, once the registry has answered, and whether it was asked.
     launchers: Option<Vec<String>>,
@@ -1963,7 +1969,7 @@ impl WorkspaceModel {
     /// the first round of `add-space-kinds` allowed on purpose — because
     /// the one the operator is looking at is the one they meant.
     fn space_rooted_at(&self, project: &Path) -> Option<SpaceId> {
-        let canonical = |root: &Path| root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let canonical = |root: &Path| root.canonical().unwrap_or_else(|_| root.to_path_buf());
         let wanted = canonical(project);
         let session = self.session.as_ref()?;
         let matching: Vec<&Space> = session

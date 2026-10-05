@@ -160,41 +160,30 @@ pub(super) fn invocation_heads(
     };
     handlers.iter().filter_map(|handler| {
         let command = handler.get("command")?.as_str()?;
-        if let Some(args) = handler.get("args").and_then(serde_json::Value::as_array) {
-            return Some((command.to_owned(), args.first()?.as_str()?.to_owned()));
-        }
-        let mut words = shell_words(command)?.into_iter();
-        Some((words.next()?, words.next()?))
+        let words: Vec<String> = match handler.get("args").and_then(serde_json::Value::as_array) {
+            Some(args) => std::iter::once(command.to_owned())
+                .chain(
+                    args.iter()
+                        .filter_map(|arg| arg.as_str().map(str::to_owned)),
+                )
+                .collect(),
+            None => uze_platform::shell::words(command)?,
+        };
+        let mut heads = words.into_iter().skip(wrapper_position());
+        Some((heads.next()?, heads.next()?))
     })
 }
 
-/// Splits a command line in the grammar [`shell_quote`] writes: bare
-/// words, single-quoted runs and backslash-escaped characters. `None` for
-/// an unterminated quote.
-pub(super) fn shell_words(line: &str) -> Option<Vec<String>> {
-    let mut words = Vec::new();
-    let mut word: Option<String> = None;
-    let mut characters = line.chars();
-    while let Some(character) = characters.next() {
-        match character {
-            '\'' => {
-                let quoted = word.get_or_insert_with(String::new);
-                loop {
-                    match characters.next()? {
-                        '\'' => break,
-                        inside => quoted.push(inside),
-                    }
-                }
-            }
-            '\\' => word
-                .get_or_insert_with(String::new)
-                .push(characters.next()?),
-            separator if separator.is_whitespace() => words.extend(word.take()),
-            other => word.get_or_insert_with(String::new).push(other),
-        }
+/// Where the wrapper sits among the words that start it: first where the
+/// platform runs a script itself, after the shell's own words where the
+/// shell is told which script to run (see `uze_platform::shell::script`).
+fn wrapper_position() -> usize {
+    let (program, arguments) = uze_platform::shell::script("");
+    if program.is_empty() {
+        0
+    } else {
+        arguments.len()
     }
-    words.extend(word);
-    Some(words)
 }
 
 /// Removes exactly one matching entry, then prunes empty event arrays, an

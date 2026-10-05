@@ -39,6 +39,10 @@ pub mod project;
 pub mod digest;
 pub mod error;
 
+/// What a person wrote, read as they wrote it: the authored tier's one
+/// reading rule, used wherever a manifest or declaration is parsed.
+pub mod authored;
+
 /// Universal user preferences and their per-harness translation. A product
 /// feature (Profiles) rather than part of the portable model — kept at the
 /// root, visibly, rather than filed under a concern it does not belong to.
@@ -65,7 +69,8 @@ pub use delivery::{
     session, state,
 };
 pub use machine::{
-    detection_cache, features, harness_runtime, home, process_cwd, provisioning, subprocess,
+    detection_cache, features, harness_runtime, home, path, process_cwd, provisioning, shell,
+    subprocess,
 };
 pub use package::{acquisition, authoring, hosts, naming, store, trust};
 pub use project::{
@@ -81,6 +86,6 @@ pub use acquisition::{MaterializedPackage, PackageSource, Provenance, ResolvedSo
 pub use capability::Resource;
 pub use error::{Result, UzeError};
 pub use exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan};
-pub use home::UzeHome;
+pub use home::{UzeHome, user_home};
 pub use skill::SkillInvocationPolicy;
 pub use store::{PackageId, StoredPackage, UzeStore};

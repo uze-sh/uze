@@ -13,6 +13,7 @@
 //!   and before any install, through the same parsers the delivery engine
 //!   uses. Never a second grammar.
 
+use crate::path::Canonical as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -344,16 +345,19 @@ fn write_plugin_files(
         )?;
         let scripts = plugin_root.join("scripts");
         create_dir(&scripts)?;
+        // One handler per shell, each declared as that shell's spelling in
+        // hooks.json, so the stub group is delivered on every platform.
         let guard = scripts.join("guard");
         write_file(&guard, include_str!("authoring/guard.sh"))?;
+        write_file(
+            &scripts.join("guard.ps1"),
+            include_str!("authoring/guard.ps1"),
+        )?;
         // A hook command the harness cannot run is the 127 that fails the
         // group silently; the stub ships runnable.
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&guard, fs::Permissions::from_mode(0o755)).map_err(|source| {
-            UzeError::Write {
-                path: guard.clone(),
-                source,
-            }
+        uze_platform::executable::make_runnable(&guard).map_err(|source| UzeError::Write {
+            path: guard.clone(),
+            source,
         })?;
     }
     if caps.mcp {
@@ -460,7 +464,7 @@ fn is_plain_directory_name(value: &str) -> bool {
 
 fn read_json(path: &Path) -> Result<serde_json::Value> {
     let bytes = fs::read(path).map_err(UzeError::read(path))?;
-    serde_json::from_slice(&bytes).map_err(|source| UzeError::Json {
+    crate::authored::json(&bytes).map_err(|source| UzeError::Json {
         path: path.to_path_buf(),
         source,
     })
@@ -510,7 +514,7 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
     let mut findings = Vec::new();
     // First, as on install: nothing below may read through a link that
     // leaves the plugin.
-    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let canonical = root.canonical().unwrap_or_else(|_| root.to_path_buf());
     if let Err(error) = store::assert_self_contained(&canonical) {
         findings.push(error.to_string());
         return Ok(ValidationReport {
@@ -606,6 +610,13 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
                             .extend(common.warnings.into_iter().map(|w| format!("{path}: {w}")));
                     }
                 }
+                if resource.capability.kind == CapabilityKind::Hook
+                    && let Ok(hook) = serde_json::from_slice::<crate::hook::PortableHook>(
+                        &resource.capability.payload,
+                    )
+                {
+                    warnings.extend(spelling_warnings(&hook));
+                }
                 delivers.push(resource.identity());
             }
         }
@@ -618,6 +629,28 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
         warnings,
         agent_plugins,
     })
+}
+
+/// What a hook group's handlers leave out of Windows.
+fn spelling_warnings(hook: &crate::hook::PortableHook) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for handler in &hook.handlers {
+        let command = &handler.command;
+        if command.spelling(crate::shell::Family::PowerShell).is_none() {
+            let consequence = if hook.effect.fails_closed() {
+                "installing the package is refused there, since the guard could not run"
+            } else {
+                "the group is not delivered there"
+            };
+            warnings.push(format!(
+                "hook `{}`: `{}` has no `windows` spelling — {consequence}",
+                hook.id,
+                command.describe()
+            ));
+        }
+    }
+    warnings.dedup();
+    warnings
 }
 
 /// What a harness reading this `SKILL.md`, from the directory named
@@ -802,7 +835,7 @@ fn reaches_outside_the_plugin(token: &str) -> bool {
         None => (false, token),
     };
     let path = Path::new(path);
-    (!inside_the_plugin && path.is_absolute())
+    (!inside_the_plugin && crate::path::is_anchored(path))
         || path
             .components()
             .any(|component| component == Component::ParentDir)
@@ -892,7 +925,7 @@ fn describing_fields_on_entries(
     manifest: &marketplace::MarketplaceManifest,
     root: &Path,
 ) -> Vec<String> {
-    let Ok(raw) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+    let Ok(raw) = crate::authored::json::<serde_json::Value>(bytes) else {
         return Vec::new();
     };
     let entries = raw
@@ -911,7 +944,7 @@ fn describing_fields_on_entries(
         let declared = plugin_manifest
             .as_deref()
             .and_then(|path| fs::read(path).ok())
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+            .and_then(|bytes| crate::authored::json::<serde_json::Value>(&bytes).ok());
         let shown = plugin_manifest.as_deref().map_or_else(
             || "its `plugin.json`".to_owned(),
             |path| format!("`{}`", path.display()),

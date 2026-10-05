@@ -17,24 +17,50 @@ use uze_core::{
     Result,
     integration::HarnessDetection,
     provisioning::{ProcessRunner, ProcessSpec, ProvisionAction, ProvisioningResult},
+    shell::{ShellCommand, Spellings},
 };
 
-/// A vendor's documented `curl -fsSL <url> | <interpreter>` installer,
-/// fetched in full before it runs. In the pipe the interpreter's status is
-/// the pipeline's, so a download that failed reported success, and one cut
-/// off midway ran whatever part of the script had arrived. POSIX `sh` has
-/// no `pipefail` to rely on.
-pub(crate) fn official_installer(url: &str, interpreter: &str) -> ProcessSpec {
-    ProcessSpec::new(
-        "sh",
-        [
-            "-c".to_owned(),
+/// A vendor's documented installer, spelled for each platform it publishes
+/// one for: `curl -fsSL <url> | <interpreter>` and `irm <url> | iex`. A
+/// platform with no spelling has no automated route, and setup names the
+/// vendor's own page instead of guessing.
+///
+/// The Windows script is read as text whatever its content type says. In
+/// Windows PowerShell `irm` hands a script served as
+/// `application/octet-stream` (as `claude.ai/install.ps1` is) back as
+/// bytes, and `iex` then evaluates each byte as a number: nothing is
+/// installed and the line exits zero.
+///
+/// The POSIX script is fetched in full before it runs. In the pipe the
+/// interpreter's status is the pipeline's, so a download that failed
+/// reported success, and one cut off midway ran whatever part of the
+/// script had arrived; POSIX `sh` has no `pipefail` to rely on.
+pub(crate) fn official_installer(
+    posix: Option<(&str, &str)>,
+    windows: Option<&str>,
+) -> ShellCommand {
+    ShellCommand::PerPlatform(Spellings {
+        posix: posix.map(|(url, interpreter)| {
             format!(
                 "installer=$(curl -fsSL {url}) && printf '%s\\n' \"$installer\" | {interpreter}"
-            ),
-        ],
-    )
-    .with_inherited_output()
+            )
+        }),
+        windows: windows.map(|url| {
+            format!(
+                "[Net.ServicePointManager]::SecurityProtocol = \
+                 [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12; \
+                 $response = Invoke-WebRequest -UseBasicParsing -Uri '{url}'; \
+                 $installer = [Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray()); \
+                 Invoke-Expression $installer.TrimStart([char]0xFEFF)"
+            )
+        }),
+    })
+}
+
+/// The process that runs an installer `line` in this platform's shell.
+pub(crate) fn installer_process(line: &str) -> ProcessSpec {
+    let (program, arguments) = uze_platform::shell::invocation(line);
+    ProcessSpec::new(program, arguments).with_inherited_output()
 }
 
 /// One harness's documented provisioning route, as its integration knows
@@ -44,22 +70,16 @@ pub(crate) struct OfficialRoute<'a> {
     pub label: &'a str,
     /// The name a shell resolves the executable by.
     pub program: &'a str,
-    pub install: ProcessSpec,
+    /// The vendor's installer, per platform (see [`official_installer`]).
+    pub install: ShellCommand,
     pub update: ProcessSpec,
+    /// Set on top of the inherited environment, for both.
+    pub environment: &'a [(&'a str, &'a str)],
     /// The secret-free label recorded as the provisioning method.
     pub method: &'a str,
     /// The vendor's own installation page, named whenever UZE has no
     /// official automated route to run on this platform.
     pub manual_route: &'a str,
-}
-
-/// Whether this platform has an automated route UZE runs. The vendors'
-/// Unix installers cover Linux, macOS and WSL; the Windows routes they
-/// document are PowerShell scripts whose command contract has never been
-/// exercised by a Windows runner here, so Windows is reported rather than
-/// guessed at (see the change's `research.md`).
-pub(crate) fn platform_has_automated_route() -> bool {
-    cfg!(unix)
 }
 
 /// The actionable answer for a platform with no automated route: it names
@@ -68,7 +88,7 @@ pub(crate) fn unsupported_platform(label: &str, manual_route: &str) -> Provision
     ProvisioningResult::blocked(format!(
         "UZE has no official automated {label} install route for {os}; install it by \
          following {manual_route}, then run `uze setup` again",
-        os = std::env::consts::OS
+        os = uze_platform::target::OS
     ))
 }
 
@@ -77,8 +97,12 @@ pub(crate) fn unsupported_platform(label: &str, manual_route: &str) -> Provision
 /// person's rc files, which no running shell has read again, so the binary
 /// is looked for here before the bare name a `PATH` search would miss.
 pub(crate) fn native_installer_destination(program: &str) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".local/bin").join(program))
+    let home = uze_core::user_home()?;
+    Some(
+        home.join(".local")
+            .join("bin")
+            .join(uze_platform::executable::file_name(program)),
+    )
 }
 
 /// The verified `executable` when a shell searching `PATH` for `programs`
@@ -105,20 +129,36 @@ pub(crate) fn provision_cli(
     before: HarnessDetection,
     detect: impl Fn(&str) -> HarnessDetection,
 ) -> Result<ProvisioningResult> {
-    if !platform_has_automated_route() {
-        return Ok(unsupported_platform(route.label, route.manual_route));
-    }
     let method = route.method;
     let action = if before.present {
         ProvisionAction::Update
     } else {
         ProvisionAction::Install
     };
+    // Replacing a program a running session holds fails on Windows, and an
+    // update would end in the middle of that session's work: the harness
+    // is left as it is, updated by the next setup nobody is running it in.
+    if before.present && uze_platform::executable::in_use(Path::new(executable)) {
+        return Ok(ProvisioningResult::verified(
+            ProvisionAction::None,
+            "in-use",
+            before,
+        ));
+    }
     let command = if before.present {
         route.update
     } else {
-        route.install
+        let Some(line) = route.install.here() else {
+            return Ok(unsupported_platform(route.label, route.manual_route));
+        };
+        installer_process(line)
     };
+    let command = route
+        .environment
+        .iter()
+        .fold(command, |command, (name, value)| {
+            command.with_env(*name, *value)
+        });
     let outcome = match runner.run(&command) {
         Ok(outcome) => outcome,
         Err(_) => {
@@ -137,6 +177,11 @@ pub(crate) fn provision_cli(
         };
         return Ok(ProvisioningResult::failed(action, method, reason));
     }
+    // Looked for again: an installer can put the program where nothing
+    // was before.
+    let executable =
+        super::process::real_executable(route.program, shims_dir, Some(PathBuf::from(executable)));
+    let executable = executable.as_str();
     let verified = runner.run(&ProcessSpec::new(executable, ["--version"]));
     if !matches!(verified, Ok(output) if output.success) {
         return Ok(ProvisioningResult::failed(
@@ -152,11 +197,12 @@ pub(crate) fn provision_cli(
     )
 }
 
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(all(test, unix))]
 mod official_installer_tests {
     use std::process::Command;
 
-    use super::official_installer;
+    use super::{installer_process, official_installer};
 
     fn run(spec: &uze_core::provisioning::ProcessSpec, path: &std::path::Path) -> bool {
         Command::new(&spec.program)
@@ -177,9 +223,14 @@ mod official_installer_tests {
         let curl = bin.join("curl");
         let marker = bin.join("ran");
         // The interpreter stands in for the vendor's: it records that it ran.
-        let spec = official_installer(
-            "https://example.invalid/install.sh",
-            &format!("cat > '{}'", marker.display()),
+        let interpreter = format!("cat > '{}'", marker.display());
+        let spec = installer_process(
+            official_installer(
+                Some(("https://example.invalid/install.sh", &interpreter)),
+                None,
+            )
+            .spelling(uze_core::shell::Family::Posix)
+            .unwrap(),
         );
 
         std::fs::write(&curl, "#!/bin/sh\necho 'partial'\nexit 22\n").unwrap();
@@ -224,8 +275,9 @@ mod provision_cli_tests {
         OfficialRoute {
             label: "Test Harness",
             program: "does-not-exist-on-this-machine",
-            install: ProcessSpec::new("sh", ["-c", "install"]),
+            install: ShellCommand::spelled("install", "install"),
             update: ProcessSpec::new("sh", ["-c", "update"]),
+            environment: &[],
             method: "official-test-installer",
             manual_route: "https://example.invalid/install",
         }
@@ -244,7 +296,7 @@ mod provision_cli_tests {
             reason.contains("https://example.invalid/install"),
             "{reason}"
         );
-        assert!(reason.contains(std::env::consts::OS), "{reason}");
+        assert!(reason.contains(uze_platform::target::OS), "{reason}");
         assert!(reason.contains("uze setup"), "{reason}");
     }
 
@@ -290,12 +342,13 @@ mod provision_cli_tests {
             |_| HarnessDetection::default(),
         )
         .unwrap();
-        if cfg!(unix) {
-            assert_eq!(result.action, ProvisionAction::Install);
-            let commands = runner.commands.lock().unwrap();
-            assert_eq!(commands[0].arguments, ["-c", "install"]);
-            assert_eq!(commands[1].program, "does-not-exist-on-this-machine");
-        }
+        assert_eq!(result.action, ProvisionAction::Install);
+        let commands = runner.commands.lock().unwrap();
+        assert_eq!(
+            commands[0].arguments,
+            installer_process("install").arguments
+        );
+        assert_eq!(commands[1].program, "does-not-exist-on-this-machine");
     }
 
     #[test]
@@ -316,11 +369,9 @@ mod provision_cli_tests {
             |_| HarnessDetection::default(),
         )
         .unwrap();
-        if cfg!(unix) {
-            assert_eq!(result.action, ProvisionAction::Update);
-            let commands = runner.commands.lock().unwrap();
-            assert_eq!(commands[0].arguments, ["-c", "update"]);
-        }
+        assert_eq!(result.action, ProvisionAction::Update);
+        let commands = runner.commands.lock().unwrap();
+        assert_eq!(commands[0].arguments, ["-c", "update"]);
     }
 
     #[test]
@@ -338,16 +389,14 @@ mod provision_cli_tests {
             |_| HarnessDetection::default(),
         )
         .unwrap();
-        if cfg!(unix) {
-            assert_eq!(
-                result.status,
-                uze_core::provisioning::ProvisionStatus::Failed
-            );
-            assert_eq!(
-                runner.commands.lock().unwrap().len(),
-                1,
-                "must not attempt --version verification after the installer itself failed"
-            );
-        }
+        assert_eq!(
+            result.status,
+            uze_core::provisioning::ProvisionStatus::Failed
+        );
+        assert_eq!(
+            runner.commands.lock().unwrap().len(),
+            1,
+            "must not attempt --version verification after the installer itself failed"
+        );
     }
 }

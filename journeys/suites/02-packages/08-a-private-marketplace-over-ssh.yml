@@ -126,20 +126,6 @@ world:
       os.rename(port_file + ".partial", port_file)
       faulthandler.cancel_dump_traceback_later()
       server.serve_forever()
-    forge/ssh: |
-      #!/bin/sh
-      printf '%s\n' "$*" >> "$(dirname "$0")/../forge/ssh.log"
-      [ "$1" = "-G" ] && exit 0
-      if [ -z "$SSH_AUTH_SOCK" ]; then
-        echo "git@forge: Permission denied (publickey)." >&2
-        exit 255
-      fi
-      for last; do :; done
-      path=${last#* }
-      path=$(printf '%s' "$path" | tr -d "'")
-      root="$(dirname "$0")/../forge"
-      [ -d "$root/$path" ] || path=${path%.git}
-      exec git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack "$root/$path"
 
 scenes:
   - scene: the operator's key reaches a repository HTTPS refuses
@@ -150,7 +136,7 @@ scenes:
           set -e
           mkdir -p {world}/forge/team
           git clone -q --bare {world}/market {world}/forge/team/plugins
-          cp {world}/forge/ssh {world}/bin/ssh && chmod +x {world}/bin/ssh
+          {fake_harness} --bin-dir {world}/bin --forge-ssh {world}/forge
           nohup {python} {world}/forge/serve.py {world}/forge {world}/forge/port user:s3cret \
             >{world}/forge/serve.log 2>&1 </dev/null &
         say: a private forge, reachable only with credentials this machine's Git has none of
@@ -173,10 +159,10 @@ scenes:
       - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: true
         about: the plugin reached the harness from a repository only SSH could read
-      - file: "{world}/forge/ssh.log"
+      - file: "{world}/bin/.invocations/ssh.log"
         contains: "BatchMode=yes"
         about: ssh was the transport, and it was told never to prompt
-      - file: "{world}/forge/ssh.log"
+      - file: "{world}/bin/.invocations/ssh.log"
         contains: "StrictHostKeyChecking=yes"
         about: nor to offer a key to a host the operator never accepted
       - file: "{uze_home}/cache/marketplaces/demo/repo/transport.json"

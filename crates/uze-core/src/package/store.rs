@@ -32,7 +32,7 @@ pub fn read_plugin_manifest(root: &Path) -> Result<PluginManifest> {
     }
     let bytes = read_package_file(&path)?;
     let value: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|source| UzeError::Json {
+        crate::authored::json(&bytes).map_err(|source| UzeError::Json {
             path: path.clone(),
             source,
         })?;
@@ -64,14 +64,7 @@ pub(crate) fn read_package_file(path: &Path) -> Result<Vec<u8>> {
         path: path.to_path_buf(),
         source,
     };
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    let file = options.open(path).map_err(failed)?;
+    let file = uze_platform::fs::open_without_blocking(path).map_err(failed)?;
     if !file.metadata().map_err(failed)?.is_file() {
         return Err(failed(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -116,7 +109,7 @@ fn validate_references(value: &serde_json::Value, manifest: &Path) -> Result<()>
 
 fn validate_reference(reference: &str, manifest: &Path) -> Result<()> {
     let path = Path::new(reference);
-    if path.is_absolute()
+    if crate::path::is_anchored(path)
         || path
             .components()
             .any(|component| matches!(component, std::path::Component::ParentDir))
@@ -404,6 +397,11 @@ struct Registration {
     /// `id.plugin_name()`. `Some(alias)` is only ever written by an explicit
     /// `alias` collision resolution at install time.
     active_name: Option<String>,
+    /// The symbolic links the package holds that its checkout could not make,
+    /// which stand in its directory as copies of what they point at. Read by
+    /// [`UzeStore::digest`]; absent from every entry that has none.
+    #[serde(default, skip_serializing_if = "crate::digest::Links::is_empty")]
+    links: crate::digest::Links,
 }
 
 impl UzeStore {
@@ -532,6 +530,7 @@ impl UzeStore {
                     active_name: active_name
                         .filter(|alias| *alias != name)
                         .map(str::to_owned),
+                    links: package.links().clone(),
                 },
             );
             self.save_registry(&registry)
@@ -564,6 +563,20 @@ impl UzeStore {
             .iter()
             .map(|(id, registration)| self.stored(id, registration))
             .collect())
+    }
+
+    /// The digest of `package`'s bytes: links its checkout could not make
+    /// count as the links they are (see [`crate::digest::tree_sha256_with_links`]),
+    /// so a package digests to one value on every platform.
+    pub fn digest(&self, package: &StoredPackage) -> Result<String> {
+        let links = self
+            .load_registry()?
+            .packages
+            .get(&package.id)
+            .map(|registration| registration.links.clone())
+            .unwrap_or_default();
+        crate::digest::tree_sha256_with_links(&package.root, &links)
+            .map_err(UzeError::read(&package.root))
     }
 
     fn stored(&self, id: &PackageId, registration: &Registration) -> StoredPackage {
@@ -850,7 +863,7 @@ pub(crate) fn assert_self_contained(root: &Path) -> Result<()> {
                 // inside the package once copied, while an absolute one keeps
                 // pointing at the source — a store entry aimed at a directory
                 // UZE does not own and the user may repoint afterwards.
-                if target.is_absolute() {
+                if crate::path::is_anchored(&target) {
                     return Err(UzeError::PackageEscapesRoot { link: path, target });
                 }
                 let Some(resolved) = resolve_lexically(&path, &target) else {
@@ -990,6 +1003,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    // A FIFO, which Windows has no file for.
     #[cfg(unix)]
     #[test]
     fn a_package_file_that_is_a_fifo_is_refused_without_waiting_for_a_writer() {

@@ -9,6 +9,7 @@
 //! a clone can carry hooks and submodule declarations, and Git will honour
 //! configuration it finds unless told not to.
 
+use crate::path::Canonical as _;
 use std::{
     fs,
     ops::ControlFlow,
@@ -22,7 +23,7 @@ use std::{
 use super::forge::{self, Access, Transport};
 use crate::{
     error::{Result, UzeError},
-    subprocess::{kill_reaped_process_group, read_bounded, wait_with_timeout, with_process_group},
+    subprocess::{Seat, read_bounded, spawn_tree, wait_with_timeout},
 };
 
 /// SSH that neither waits on a prompt nor offers a key to a host the
@@ -30,7 +31,7 @@ use crate::{
 /// the process on the terminal it shares with UZE, and an unknown host
 /// collecting the operator's public keys could identify them from a host
 /// named in somebody else's `agents.yaml`.
-const SSH_COMMAND: &str = "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15";
+const SSH_OPTIONS: &str = "-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15";
 
 /// How this machine reaches the network, which a repository cannot
 /// influence. libcurl reads `http_proxy` only in lowercase, the others in
@@ -136,7 +137,14 @@ pub(super) fn reject_option_shaped(value: &str, what: &str) -> Result<()> {
 /// resolved commit.
 ///
 /// `destination` must not exist; the caller owns it and its cleanup.
-pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Result<String> {
+/// What a checkout of a commit produced: the commit, and the symbolic links
+/// its tree holds that the checkout could not make (see [`unmade_links`]).
+pub struct Checkout {
+    pub commit: String,
+    pub links: crate::digest::Links,
+}
+
+pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Result<Checkout> {
     reject_inline_credentials(url)?;
     reject_option_shaped(url, "repository url")?;
     if let Some(reference) = reference {
@@ -184,7 +192,9 @@ pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Re
 
     // What the tree declared is what a checkout writes, so this only
     // answers for whatever the listing could not see.
-    assert_within_size_budget(destination)?;
+    let checked_out = size_within(destination, MAX_MATERIALIZED_BYTES)?;
+    let links = unmade_links(destination)?;
+    stand_in_for_links(destination, &links, MAX_MATERIALIZED_BYTES - checked_out)?;
 
     // The repository's own metadata is not package content, and leaving it in
     // place would let a `.git` directory travel into the Store.
@@ -192,7 +202,108 @@ pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Re
     if git_dir.exists() {
         fs::remove_dir_all(&git_dir).map_err(UzeError::write(git_dir))?;
     }
-    Ok(commit)
+    Ok(Checkout { commit, links })
+}
+
+/// The symbolic links the checked-out tree holds that the checkout could not
+/// make. Where links cannot be made (`core.symlinks=false`, Windows' case
+/// for an ordinary account), Git writes each as a file holding its target;
+/// its index still says it is a link (mode `120000`). Empty wherever the
+/// checkout made them, since those are links on disk the digest reads.
+fn unmade_links(checkout: &Path) -> Result<crate::digest::Links> {
+    let listing = run(&["ls-files", "--stage", "-z"], Some(checkout))?;
+    let mut links = crate::digest::Links::new();
+    for record in listing.split('\0') {
+        let Some((stage, path)) = record.split_once('\t') else {
+            continue;
+        };
+        if !stage.starts_with("120000 ") {
+            continue;
+        }
+        let on_disk = checkout.join(path);
+        let metadata = fs::symlink_metadata(&on_disk).map_err(UzeError::read(&on_disk))?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        let target = fs::read_to_string(&on_disk).map_err(UzeError::read(&on_disk))?;
+        links.insert(PathBuf::from(path), PathBuf::from(target));
+    }
+    Ok(links)
+}
+
+/// Puts a copy of each unmade link's target where the link would be, so a
+/// harness reading the package finds what the link names rather than a file
+/// holding its path; one that names nothing leaves the file Git wrote.
+///
+/// The copies are bytes the repository did not carry, so each is weighed
+/// against what is left of the size budget before it is made. Refused, as
+/// the repository is: a target outside the package, as a link is; one that
+/// holds the link itself, which would copy a directory into itself without
+/// end; one in Git's own metadata, which never travels into the Store; and
+/// one holding another unmade link, whose copy would depend on the order
+/// the two were made in.
+fn stand_in_for_links(
+    checkout: &Path,
+    links: &crate::digest::Links,
+    mut budget: u64,
+) -> Result<()> {
+    let refuse = |path: &Path, target: &Path, why: &str| {
+        UzeError::AcquisitionFailed(format!(
+            "the link `{}` (`{}`) {why}",
+            path.display(),
+            target.display()
+        ))
+    };
+    let unmade: Vec<PathBuf> = links.keys().map(|path| checkout.join(path)).collect();
+    for (path, target) in links {
+        let link = checkout.join(path);
+        let resolved = lexically_within(checkout, &link.parent().unwrap_or(checkout).join(target))
+            .ok_or_else(|| refuse(path, target, "points outside the package"))?;
+        if !resolved.exists() {
+            continue;
+        }
+        if link.starts_with(&resolved) {
+            return Err(refuse(path, target, "points at a directory that holds it"));
+        }
+        let in_git = resolved
+            .strip_prefix(checkout)
+            .is_ok_and(|inside| inside.components().any(|part| part.as_os_str() == ".git"))
+            || checkout.join(".git").starts_with(&resolved);
+        if in_git {
+            return Err(refuse(path, target, "points at Git's own metadata"));
+        }
+        if unmade.iter().any(|other| other.starts_with(&resolved)) {
+            return Err(refuse(path, target, "points at another link"));
+        }
+        budget = budget
+            .checked_sub(size_within(&resolved, budget)?)
+            .ok_or_else(over_budget)?;
+        fs::remove_file(&link).map_err(UzeError::write(&link))?;
+        if resolved.is_dir() {
+            crate::store::copy_tree(&resolved, &link)?;
+        } else {
+            fs::copy(&resolved, &link).map_err(UzeError::write(&link))?;
+        }
+    }
+    Ok(())
+}
+
+/// `path` with `.` and `..` resolved on paper, when it stays inside `root`.
+fn lexically_within(root: &Path, path: &Path) -> Option<PathBuf> {
+    let mut resolved = PathBuf::new();
+    for component in path.strip_prefix(root).ok()?.components() {
+        match component {
+            std::path::Component::Normal(part) => resolved.push(part),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !resolved.pop() {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(root.join(resolved))
 }
 
 /// Turns a request into an immutable commit.
@@ -344,24 +455,37 @@ fn record_size(record: &[u8]) -> u64 {
 }
 
 pub(super) fn assert_within_size_budget(root: &Path) -> Result<()> {
-    fn total(path: &Path, accumulated: &mut u64) -> Result<()> {
-        for entry in fs::read_dir(path).map_err(UzeError::read(path))? {
-            let entry = entry.map_err(UzeError::read(path))?;
-            let metadata = entry.metadata().map_err(UzeError::read(entry.path()))?;
-            if metadata.is_dir() {
-                total(&entry.path(), accumulated)?;
-            } else {
-                *accumulated += metadata.len();
+    size_within(root, MAX_MATERIALIZED_BYTES).map(|_| ())
+}
+
+/// The bytes under `path` (a file or a directory), refused the moment they
+/// pass `budget` rather than counted to the end. A link counts as itself and
+/// is never followed: `skills/up -> ..` would otherwise be counted forever.
+fn size_within(path: &Path, budget: u64) -> Result<u64> {
+    fn total(path: &Path, accumulated: &mut u64, budget: u64) -> Result<()> {
+        let metadata = fs::symlink_metadata(path).map_err(UzeError::read(path))?;
+        if !metadata.is_dir() {
+            *accumulated += metadata.len();
+        } else {
+            for entry in fs::read_dir(path).map_err(UzeError::read(path))? {
+                let entry = entry.map_err(UzeError::read(path))?;
+                total(&entry.path(), accumulated, budget)?;
             }
-            if *accumulated > MAX_MATERIALIZED_BYTES {
-                return Err(UzeError::AcquisitionFailed(format!(
-                    "materialized repository exceeds {MAX_MATERIALIZED_BYTES} bytes"
-                )));
-            }
+        }
+        if *accumulated > budget {
+            return Err(over_budget());
         }
         Ok(())
     }
-    total(root, &mut 0)
+    let mut accumulated = 0;
+    total(path, &mut accumulated, budget)?;
+    Ok(accumulated)
+}
+
+fn over_budget() -> UzeError {
+    UzeError::AcquisitionFailed(format!(
+        "materialized repository exceeds {MAX_MATERIALIZED_BYTES} bytes"
+    ))
 }
 
 /// What one Git invocation may carry beyond the stripped environment.
@@ -393,8 +517,10 @@ impl Reach {
 /// Every flag here closes a way the repository or the ambient machine could
 /// influence the run:
 ///
-/// - `env_clear` plus an explicit `PATH`: no inherited Git configuration, no
-///   proxy or credential helper picked up from the operator's shell.
+/// - a cleared environment keeping only `PATH` and what the platform cannot
+///   run without (`uze_platform::process::clear_environment`): no inherited
+///   Git configuration, no proxy or credential helper picked up from the
+///   operator's shell.
 /// - `GIT_CONFIG_NOSYSTEM` / `GIT_CONFIG_GLOBAL=/dev/null`: system and user
 ///   config cannot introduce a helper, alias or `filter` that runs a command.
 /// - `core.hooksPath=/dev/null`: a repository's own hooks are never run.
@@ -432,9 +558,8 @@ pub(super) fn run_as(
         exit = tracing::field::Empty
     );
     let _entered = span.enter();
-    let command = git_command(reach, arguments, working_directory);
-    let mut child = with_process_group(command)
-        .spawn()
+    let mut command = git_command(reach, arguments, working_directory);
+    let (mut child, tree) = spawn_tree(&mut command, Seat::OwnGroup)
         .map_err(|error| UzeError::AcquisitionFailed(format!("could not run `git`: {error}")))?;
     let Some(mut stdout) = child.stdout.take() else {
         return Err(UzeError::AcquisitionFailed(
@@ -468,9 +593,10 @@ pub(super) fn run_as(
     thread::spawn(move || {
         let _ = stderr_tx.send(read_bounded(&mut stderr, GIT_OUTPUT_CAP));
     });
-    let (status, timed_out) = wait_with_timeout(&mut child, COMMAND_TIMEOUT).map_err(|error| {
-        UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
-    })?;
+    let (status, timed_out) =
+        wait_with_timeout(&mut child, &tree, COMMAND_TIMEOUT).map_err(|error| {
+            UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
+        })?;
     span.record("exit", status.code().unwrap_or(-1));
     if timed_out {
         tracing::warn!("git timed out");
@@ -485,14 +611,14 @@ pub(super) fn run_as(
     let (stdout_bytes, stdout_dropped) = match stdout_rx.recv_timeout(remaining()) {
         Ok(result) => result,
         Err(_) => {
-            kill_reaped_process_group(child.id());
+            tree.end_survivors();
             return Err(timed_out_error());
         }
     };
     let (stderr_bytes, _) = match stderr_rx.recv_timeout(remaining()) {
         Ok(result) => result,
         Err(_) => {
-            kill_reaped_process_group(child.id());
+            tree.end_survivors();
             return Err(timed_out_error());
         }
     };
@@ -517,9 +643,7 @@ fn git_command(reach: Reach, arguments: &[&str], working_directory: Option<&Path
     let mut command = Command::new("git");
     match reach.access {
         Access::Local | Access::Anonymous => {
-            command
-                .env_clear()
-                .env("PATH", std::env::var("PATH").unwrap_or_default());
+            uze_platform::process::clear_environment(&mut command);
         }
         Access::Credentialed => {
             without_git_environment(&mut command, &[]);
@@ -535,6 +659,9 @@ fn git_command(reach: Reach, arguments: &[&str], working_directory: Option<&Path
     };
     command
         .env("GIT_CONFIG_NOSYSTEM", "1")
+        // Git's own spelling of "no file", on every platform it runs on:
+        // Git for Windows reads `/dev/null` as the null device and cannot
+        // open `NUL` as a configuration file.
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
@@ -611,9 +738,8 @@ fn run_records<T: Send + 'static>(
         exit = tracing::field::Empty
     );
     let _entered = span.enter();
-    let command = git_command(reach, arguments, working_directory);
-    let mut child = with_process_group(command)
-        .spawn()
+    let mut command = git_command(reach, arguments, working_directory);
+    let (mut child, tree) = spawn_tree(&mut command, Seat::OwnGroup)
         .map_err(|error| UzeError::AcquisitionFailed(format!("could not run `git`: {error}")))?;
     let (Some(mut stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
         return Err(UzeError::AcquisitionFailed(
@@ -657,9 +783,10 @@ fn run_records<T: Send + 'static>(
     thread::spawn(move || {
         let _ = stderr_tx.send(read_bounded(&mut stderr, GIT_OUTPUT_CAP));
     });
-    let (status, timed_out) = wait_with_timeout(&mut child, COMMAND_TIMEOUT).map_err(|error| {
-        UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
-    })?;
+    let (status, timed_out) =
+        wait_with_timeout(&mut child, &tree, COMMAND_TIMEOUT).map_err(|error| {
+            UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
+        })?;
     span.record("exit", status.code().unwrap_or(-1));
     if timed_out {
         tracing::warn!("git timed out");
@@ -667,14 +794,14 @@ fn run_records<T: Send + 'static>(
     }
     let remaining = || deadline.saturating_duration_since(Instant::now());
     let Ok((state, stopped)) = stdout_rx.recv_timeout(remaining()) else {
-        kill_reaped_process_group(child.id());
+        tree.end_survivors();
         return Err(timed_out_error());
     };
     if stopped {
         return Ok(state);
     }
     let Ok((stderr_bytes, _)) = stderr_rx.recv_timeout(remaining()) else {
-        kill_reaped_process_group(child.id());
+        tree.end_survivors();
         return Err(timed_out_error());
     };
     if !status.success() {
@@ -695,43 +822,50 @@ fn run_records<T: Send + 'static>(
 /// temporary one that this user owns with no access for anybody else — and
 /// when neither can be had, every operation opens its own.
 fn ssh_command() -> String {
+    let command = format!("{} {SSH_OPTIONS}", ssh_program());
     match multiplexing_directory() {
         Some(directory) => format!(
-            "{SSH_COMMAND} -o ControlMaster=auto -o ControlPersist=60 -o \"ControlPath={}/%C\"",
+            "{command} -o ControlMaster=auto -o ControlPersist=60 -o \"ControlPath={}/%C\"",
             directory.display()
         ),
-        None => SSH_COMMAND.to_owned(),
+        None => command,
     }
 }
 
-#[cfg(unix)]
-fn multiplexing_directory() -> Option<PathBuf> {
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
-    // SAFETY: getuid cannot fail and touches no memory.
-    let uid = unsafe { libc::getuid() };
-    let directory = match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(runtime) => PathBuf::from(runtime).join("uze-ssh"),
-        None => std::env::temp_dir().join(format!("uze-ssh-{uid}")),
-    };
-    let _ = fs::DirBuilder::new().mode(0o700).create(&directory);
-    // Never followed: a link planted here would point the socket elsewhere.
-    let metadata = fs::symlink_metadata(&directory).ok()?;
-    let private =
-        metadata.is_dir() && metadata.uid() == uid && metadata.permissions().mode() & 0o077 == 0;
-    // A socket path has to fit `sun_path`, with room for the 40-character
-    // hash `%C` expands to.
-    let fits = directory.as_os_str().len() + 42 < 100;
-    (private && fits && !directory.to_string_lossy().contains('"')).then_some(directory)
+/// The `ssh` the operator's `PATH` names, by its full path. Left as a bare
+/// name, Git looks it up on a `PATH` of its own, and Git for Windows puts
+/// the SSH it bundles first: one that never asks the Windows OpenSSH agent,
+/// where a person's keys are loaded, so a key with a passphrase failed.
+/// Forward slashes and quotes, as the shell Git runs the command in reads.
+/// Whether the SSH program acquisition hands Git is there at all: what a
+/// diagnostic asks, so that it asks the same lookup Git is then given.
+pub fn ssh_available() -> bool {
+    uze_platform::executable::on_path("ssh").is_some()
 }
 
-#[cfg(not(unix))]
+fn ssh_program() -> String {
+    match uze_platform::executable::on_path("ssh") {
+        Some(program) => format!("\"{}\"", program.display().to_string().replace('\\', "/")),
+        None => "ssh".to_owned(),
+    }
+}
+
+/// A private directory for the control sockets, with room for the
+/// 40-character hash `%C` expands to.
 fn multiplexing_directory() -> Option<PathBuf> {
-    None
+    uze_platform::fs::user_socket_directory("uze-ssh", 42)
 }
 
 /// The configuration an attempt carries, beyond the stripped environment's.
 fn pushed_config(reach: Reach) -> Vec<(String, String)> {
     let mut config = vec![("core.sshCommand".to_owned(), ssh_command())];
+    // A package's bytes are what its commit holds on every machine, or the
+    // digest a lock records on one is never reproduced on another.
+    config.extend(
+        uze_platform::git::FAITHFUL_CHECKOUT
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+    );
     if reach.access != Access::Local {
         config.extend(operator_config(NETWORK_KEYS));
     }
@@ -776,16 +910,16 @@ fn operator_config(pattern: &str) -> Vec<(String, String)> {
     static READ: std::sync::Mutex<Vec<(Asked, Settings)>> = std::sync::Mutex::new(Vec::new());
     let key = (
         pattern.to_owned(),
-        [
-            "HOME",
-            "XDG_CONFIG_HOME",
-            "GIT_CONFIG_NOSYSTEM",
-            "GIT_CONFIG_GLOBAL",
-            "GIT_CONFIG_SYSTEM",
-        ]
-        .iter()
-        .map(std::env::var_os)
-        .collect(),
+        uze_platform::home::VARIABLES
+            .iter()
+            .chain(&[
+                "XDG_CONFIG_HOME",
+                "GIT_CONFIG_NOSYSTEM",
+                "GIT_CONFIG_GLOBAL",
+                "GIT_CONFIG_SYSTEM",
+            ])
+            .map(std::env::var_os)
+            .collect(),
     );
     if let Some((_, settings)) = READ
         .lock()
@@ -824,7 +958,7 @@ fn read_operator_config(pattern: &str) -> Vec<(String, String)> {
     else {
         return Vec::new();
     };
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = crate::user_home();
     String::from_utf8_lossy(&output.stdout)
         .split('\0')
         .filter(|entry| !entry.is_empty())
@@ -944,8 +1078,7 @@ fn holds_https_credentials() -> bool {
     let helper = operator_config(CREDENTIAL_KEYS)
         .iter()
         .any(|(key, value)| key.ends_with(".helper") && !value.is_empty());
-    let netrc = std::env::var_os("HOME")
-        .map(PathBuf::from)
+    let netrc = crate::user_home()
         .is_some_and(|home| home.join(".netrc").is_file() || home.join("_netrc").is_file());
     helper || netrc
 }
@@ -1088,7 +1221,7 @@ pub fn redact(message: &str) -> String {
 /// traversal before touching the filesystem, and the physical check catches a
 /// path that only escapes once symlinks are followed.
 pub fn resolve_subdirectory(root: &Path, subdirectory: &Path) -> Result<PathBuf> {
-    if subdirectory.is_absolute()
+    if crate::path::is_anchored(subdirectory)
         || subdirectory
             .components()
             .any(|component| matches!(component, std::path::Component::ParentDir))
@@ -1102,10 +1235,8 @@ pub fn resolve_subdirectory(root: &Path, subdirectory: &Path) -> Result<PathBuf>
     if !candidate.is_dir() {
         return Err(UzeError::MissingPath(candidate));
     }
-    let resolved = candidate
-        .canonicalize()
-        .map_err(UzeError::read(&candidate))?;
-    let root = root.canonicalize().map_err(UzeError::read(root))?;
+    let resolved = candidate.canonical().map_err(UzeError::read(&candidate))?;
+    let root = root.canonical().map_err(UzeError::read(root))?;
     if !resolved.starts_with(&root) {
         return Err(UzeError::PackageEscapesRoot {
             link: candidate,
@@ -1118,6 +1249,94 @@ pub fn resolve_subdirectory(root: &Path, subdirectory: &Path) -> Result<PathBuf>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tree of files, written where the checkout would have left them.
+    fn checkout_with(label: &str, files: &[(&str, &str)]) -> PathBuf {
+        let root = uze_testkit::temp::scratch(label);
+        for (path, contents) in files {
+            let path = root.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, contents).unwrap();
+        }
+        root
+    }
+
+    fn links(pairs: &[(&str, &str)]) -> crate::digest::Links {
+        pairs
+            .iter()
+            .map(|(path, target)| (PathBuf::from(path), PathBuf::from(target)))
+            .collect()
+    }
+
+    #[test]
+    fn an_unmade_link_is_replaced_by_what_it_names() {
+        let root = checkout_with(
+            "stand-in-copied",
+            &[("skills/a/SKILL.md", "body"), ("skills/b", "a")],
+        );
+        stand_in_for_links(&root, &links(&[("skills/b", "a")]), u64::MAX).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("skills/b/SKILL.md")).unwrap(),
+            "body"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Copying a directory into itself never ends: the disk fills, or the
+    /// stack runs out, during an install of somebody else's plugin.
+    #[test]
+    fn a_link_to_a_directory_holding_it_is_refused() {
+        for target in ["..", "."] {
+            let root = checkout_with("stand-in-self", &[("a/l", target), ("a/f", "x")]);
+            let error =
+                stand_in_for_links(&root, &links(&[("a/l", target)]), u64::MAX).expect_err(target);
+            assert!(error.to_string().contains("holds it"), "{error}");
+            assert!(
+                !root.join("a/l/a").exists(),
+                "nothing was copied for {target}"
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_link_into_git_s_metadata_is_refused() {
+        let root = checkout_with(
+            "stand-in-git",
+            &[(".git/config", "[core]"), ("l", ".git/config")],
+        );
+        let error = stand_in_for_links(&root, &links(&[("l", ".git/config")]), u64::MAX)
+            .expect_err("git metadata");
+        assert!(error.to_string().contains("Git's own metadata"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_link_to_a_directory_holding_another_link_is_refused() {
+        let root = checkout_with(
+            "stand-in-chained",
+            &[("a/inner", "../c"), ("c/f", "x"), ("b", "a")],
+        );
+        let error = stand_in_for_links(&root, &links(&[("a/inner", "../c"), ("b", "a")]), u64::MAX)
+            .expect_err("chained");
+        assert!(error.to_string().contains("another link"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Weighed before it is written: a copy that would pass the budget
+    /// leaves the checkout as it was.
+    #[test]
+    fn a_copy_past_the_budget_is_refused_before_it_is_made() {
+        let root = checkout_with("stand-in-budget", &[("a/f", "0123456789"), ("b", "a")]);
+        let error = stand_in_for_links(&root, &links(&[("b", "a")]), 5).expect_err("budget");
+        assert!(error.to_string().contains("exceeds"), "{error}");
+        assert_eq!(
+            fs::read_to_string(root.join("b")).unwrap(),
+            "a",
+            "the file Git wrote stays"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 
     /// The shared temporary directory is writable by every local user, so a
     /// repository planted where the old reader pointed `GIT_DIR` must not
@@ -1164,7 +1383,7 @@ mod tests {
         .unwrap();
         let mut environment = uze_testkit::env::scope();
         environment
-            .set("HOME", &home)
+            .home(&home)
             .set("XDG_CONFIG_HOME", home.join("xdg"))
             .set("GIT_CONFIG_NOSYSTEM", "1")
             .remove("GIT_CONFIG_GLOBAL")
@@ -1209,7 +1428,7 @@ mod tests {
         .unwrap();
         let mut environment = uze_testkit::env::scope();
         environment
-            .set("HOME", &home)
+            .home(&home)
             .set("XDG_CONFIG_HOME", home.join("xdg"))
             .set("GIT_CONFIG_NOSYSTEM", "1")
             .remove("GIT_CONFIG_GLOBAL");
@@ -1341,7 +1560,9 @@ mod tests {
 
     /// What the size budget is judged on, read off the tree before a
     /// checkout writes it — and a directory named `a*b` is that directory,
-    /// never a pattern that also takes `ab` with it.
+    /// never a pattern that also takes `ab` with it. NTFS holds no `*` in a
+    /// name, so the fixture is a Unix one.
+    #[cfg(unix)]
     #[test]
     fn a_tree_is_measured_literally_before_it_is_checked_out() {
         let _env = uze_testkit::env::scope();

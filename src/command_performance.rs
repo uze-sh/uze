@@ -173,6 +173,12 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
         PerformanceClass::JustifiedSlow("internal persistent terminal server process"),
     ),
     (
+        "terminal host-pane",
+        PerformanceClass::JustifiedSlow(
+            "runs a pane's program for as long as the pane does, inside its group",
+        ),
+    ),
+    (
         "setup",
         PerformanceClass::JustifiedSlow(
             "provisions or updates harness executables through each harness's official installer",

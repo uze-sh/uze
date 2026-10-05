@@ -167,6 +167,10 @@ fn model_with_data() -> TuiModel {
         provisioning_state_error: None,
         leftovers: Default::default(),
         maintenance: MaintenanceReport::default(),
+        git_found: true,
+        shell_refusal: None,
+        ssh_missing: false,
+        machine_concerns: Vec::new(),
     });
     model.remembered.context_status = Some(ProjectContextStatus {
         root: PathBuf::from("/home/project"),
@@ -1700,6 +1704,10 @@ fn overview_alerts_classify_conflicts_as_high_and_missing_as_low() {
         provisioning_state_error: None,
         leftovers: Default::default(),
         maintenance: MaintenanceReport::default(),
+        git_found: true,
+        shell_refusal: None,
+        ssh_missing: false,
+        machine_concerns: Vec::new(),
     };
     let alerts = actionable_alerts(Some(&doctor));
     assert_eq!(alerts[0].severity, Severity::High);
@@ -2232,6 +2240,10 @@ fn attachment_health_is_never_unknown_after_a_refresh() {
         provisioning_state_error: None,
         leftovers: Default::default(),
         maintenance: MaintenanceReport::default(),
+        git_found: true,
+        shell_refusal: None,
+        ssh_missing: false,
+        machine_concerns: Vec::new(),
     });
     let (terminal, _hits) = drawn_at(&model, 100, 40);
     let rows = buffer_rows(&terminal);
@@ -3107,7 +3119,7 @@ fn which_git() -> std::path::PathBuf {
         .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
         .unwrap_or_default()
         .into_iter()
-        .map(|directory| directory.join("git"))
+        .flat_map(|directory| uze_platform::executable::candidates(&directory, "git"))
         .find(|candidate| candidate.is_file())
         .expect("git must be on PATH for this test")
 }
@@ -3160,7 +3172,7 @@ fn overview_install_intent_reaches_install_project_environment() {
     };
     uze_core::project_lock::save_lock(&project, &lock).unwrap();
 
-    environment.set("HOME", &base);
+    environment.home(&base);
     environment.set("UZE_HOME", &home);
     // Isolate PATH to a directory with nothing on it: on a machine
     // where `uze setup claude` has ever actually run, the real
@@ -3178,7 +3190,11 @@ fn overview_install_intent_reaches_install_project_environment() {
     let empty_path_dir = base.join("empty-path");
     std::fs::create_dir_all(&empty_path_dir).unwrap();
     let git = which_git();
-    std::os::unix::fs::symlink(&git, empty_path_dir.join("git")).unwrap();
+    uze_platform::fs::symlink(
+        &git,
+        &empty_path_dir.join(uze_platform::executable::file_name("git")),
+    )
+    .unwrap();
     environment.set("PATH", &empty_path_dir);
 
     let uze_home = UzeHome::at(&home);
@@ -3206,7 +3222,7 @@ fn overview_install_intent_reaches_install_project_environment() {
     );
     let result = receiver.recv_timeout(Duration::from_secs(30)).unwrap();
     match result {
-        super::worker::WorkerResult::Mutated(Ok((message, data))) => {
+        super::worker::WorkerResult::Mutated(_, Ok((message, data))) => {
             assert!(
                 message.contains("Installed"),
                 "install must report success, got {message}"
@@ -3224,7 +3240,7 @@ fn overview_install_intent_reaches_install_project_environment() {
             );
             assert!(project.missing_plugins.is_empty());
         }
-        super::worker::WorkerResult::Mutated(Err(error)) => {
+        super::worker::WorkerResult::Mutated(_, Err(error)) => {
             panic!("expected Mutated(Ok(..)), got Mutated(Err({error}))")
         }
         super::worker::WorkerResult::TrustRequired { plugin, detail, .. } => {

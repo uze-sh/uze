@@ -2,7 +2,9 @@
 
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
-use crate::hooks::{EntryShape, HookRunner, HookTarget, UNBOUND, WrapperDialect};
+use crate::hooks::{
+    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, Unfired, WrapperDialect,
+};
 
 /// Codex mirrors Claude Code's event names in its own `hooks.json` command
 /// form: observations, approvals and denials are expressible. Input
@@ -21,13 +23,30 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
     tools: TOOLS,
     runner: HookRunner::Wrapper {
         dialect: WrapperDialect {
-            tool_filter: ".tool_name // empty",
-            input_filter: ".tool_input // {}",
-            cwd_filter: ".cwd // empty",
-            deny_document: "printf '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$reason_json\"",
+            payload: PayloadPaths {
+                tool: ".tool_name // empty",
+                input: ".tool_input // {}",
+                cwd: ".cwd // empty",
+            },
             // Stop is the one event whose stdout must parse as JSON even
             // when nothing was decided.
-            allow_document: "[ \"$HOOK_EVENT\" = stop ] && printf '{}'",
+            posix: Decisions {
+                deny: "printf '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$reason_json\"",
+                allow: "[ \"$HOOK_EVENT\" = stop ] && printf '{}'",
+                unfired: &[],
+            },
+            powershell: Some(Decisions {
+                deny: "[Console]::Out.Write('{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":' + $reasonJson + '}}')",
+                allow: "if ($hookEvent -eq 'stop') { [Console]::Out.Write('{}') }",
+                // Measured and reported upstream: a Windows shell command runs
+                // as `command_execution`, which fires no PreToolUse hook.
+                unfired: &[Unfired {
+                    event: HookEvent::PreToolUse,
+                    tool: "shell",
+                    why: "Codex runs a Windows shell command without firing it \
+                          (https://github.com/openai/codex/issues/24453)",
+                }],
+            }),
             deny_exit: "2",
         },
         // Codex's entries carry a command string only: one quoted shell line.

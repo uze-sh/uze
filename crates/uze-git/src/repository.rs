@@ -69,7 +69,7 @@ fn answer(question: Question, cwd: &Path, args: &[&str]) -> Result<PathBuf, Stri
     let stdout = crate::read(cwd, args)
         .map_err(|error| error.to_string())?
         .successful()?;
-    let resolved = PathBuf::from(stdout.trim());
+    let resolved = crate::native_path(stdout.trim());
     if resolved.as_os_str().is_empty() {
         return Err(format!("git {} answered with nothing", args.join(" ")));
     }

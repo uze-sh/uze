@@ -53,8 +53,13 @@ pub fn name(surface: &str) -> Vec<Span> {
 /// text gave all of it the same weight, which is how a line stops being
 /// read.
 pub fn caption(display_root: &str, branch: &str) -> Vec<Span> {
-    let (parent, name) = match display_root.rsplit_once('/') {
-        Some((parent, name)) => (format!("{parent}/"), name.to_owned()),
+    // A root shown as the host's platform spells it: `~/src/uze`, or
+    // `~\src\uze` on Windows.
+    let (parent, name) = match display_root.rfind(['/', '\\']) {
+        Some(at) => (
+            display_root[..=at].to_owned(),
+            display_root[at + 1..].to_owned(),
+        ),
         None => (String::new(), display_root.to_owned()),
     };
     let mut spans = vec![
@@ -71,6 +76,17 @@ pub fn caption(display_root: &str, branch: &str) -> Vec<Span> {
 #[cfg(test)]
 mod tests {
     use crate::{architect, architect::ArchitectView, code, view::Size};
+
+    /// The checkout's own name is what stands out, however the host's
+    /// platform separates the directories leading to it.
+    #[test]
+    fn the_checkout_is_named_apart_from_its_parents_on_either_separator() {
+        for root in ["~/uze/.worktrees/joipv0", "~\\uze\\.worktrees\\joipv0"] {
+            let spans = super::caption(root, "");
+            assert_eq!(spans[1].text, "joipv0", "{root}");
+            assert_eq!(format!("{}{}", spans[0].text, spans[1].text), root);
+        }
+    }
 
     /// Both surfaces say a checkout in the same words, and differ only in
     /// the name on top. Held because "they look alike today" is not the

@@ -17,6 +17,7 @@
 //! (`uze agent context reconcile`'s persistent instruction bridge) — that remains
 //! a separate, later decision pending empirical comparison.
 
+use crate::path::Canonical as _;
 use std::{
     ffi::OsString,
     fs,
@@ -92,40 +93,89 @@ impl HarnessRuntimeContribution {
 /// `None`: that would re-enter PATH search and could resolve straight back
 /// to the shim.
 pub fn resolve_real_executable(names: &[&str], shims_dir: &Path) -> Option<PathBuf> {
-    let canonical_shims_dir = shims_dir.canonicalize().ok();
+    resolve_real_executable_in(harness_search_path(), names, shims_dir)
+}
+
+/// [`resolve_real_executable`] in the `PATH` a shell opened now would
+/// search, where the platform keeps one apart from this process's: what an
+/// installer that only added its directory to it has made reachable to
+/// every new shell, though not to the one this runs in.
+pub fn resolve_for_a_new_shell(names: &[&str], shims_dir: &Path) -> Option<PathBuf> {
+    let path = uze_platform::environment::path_of_a_new_shell()?;
+    resolve_real_executable_in(std::env::split_paths(&path), names, shims_dir)
+}
+
+/// The real executable of a harness named `names`, wherever it can be
+/// found without asking a person: on this process's `PATH`, on the one a
+/// new shell searches, and at `install_locations`, where its installer
+/// documents putting it. What setup verifies and what the shim launches,
+/// found the same way.
+pub fn resolve_harness_executable(
+    names: &[&str],
+    shims_dir: &Path,
+    install_locations: &[PathBuf],
+) -> Option<PathBuf> {
+    resolve_real_executable(names, shims_dir)
+        .or_else(|| resolve_for_a_new_shell(names, shims_dir))
+        .or_else(|| {
+            // Through the same walk, so a documented location that leads
+            // back to UZE (a link into the shims) is refused like a `PATH`
+            // entry that does.
+            install_locations.iter().find_map(|location| {
+                let directory = location.parent()?.to_path_buf();
+                let name = location.file_name()?.to_str()?;
+                resolve_real_executable_in([directory], &[name], shims_dir)
+            })
+        })
+}
+
+fn resolve_real_executable_in(
+    search_path: impl IntoIterator<Item = PathBuf>,
+    names: &[&str],
+    shims_dir: &Path,
+) -> Option<PathBuf> {
+    let canonical_shims_dir = shims_dir.canonical().ok();
     let running = std::env::current_exe()
-        .and_then(|executable| executable.canonicalize())
+        .and_then(|executable| executable.canonical())
         .ok();
-    for dir in harness_search_path() {
+    for dir in search_path {
         // Canonicalizing is a filesystem round trip per `PATH` entry, and
         // on a WSL `PATH` carrying Windows directories each one crosses a
         // network filesystem. Only an entry that could *be* the shims
         // directory — same final component — is worth resolving; every
         // other entry is compared as spelled.
-        let could_be_shims = dir == shims_dir
-            || (dir.file_name().is_some() && dir.file_name() == shims_dir.file_name());
+        let could_be_shims = crate::path::same_path(&dir, shims_dir)
+            || dir.file_name().is_some_and(|name| {
+                shims_dir
+                    .file_name()
+                    .is_some_and(|shims| crate::path::same_path(Path::new(name), Path::new(shims)))
+            });
         let is_shims_dir = could_be_shims
-            && match (dir.canonicalize().ok(), &canonical_shims_dir) {
-                (Some(a), Some(b)) => &a == b,
-                _ => dir == shims_dir,
+            && match (dir.canonical().ok(), &canonical_shims_dir) {
+                (Some(a), Some(b)) => crate::path::same_path(&a, b),
+                _ => crate::path::same_path(&dir, shims_dir),
             };
         if is_shims_dir {
             continue;
         }
-        for name in names {
-            let candidate = dir.join(name);
+        for candidate in names
+            .iter()
+            .flat_map(|name| executable_candidates(&dir, name))
+        {
             if !is_executable_file(&candidate) {
                 continue;
             }
-            let resolved = candidate.canonicalize().unwrap_or(candidate);
+            let resolved = candidate.canonical().unwrap_or(candidate);
             // The directory test above sees only the entry as spelled: a
             // `~/.local/bin/claude` linking into the shims, or an entry
             // that is the shims directory under another name, resolves back
             // to UZE all the same.
             let leads_back_to_uze = canonical_shims_dir
                 .as_ref()
-                .is_some_and(|shims| resolved.starts_with(shims))
-                || running.as_ref() == Some(&resolved);
+                .is_some_and(|shims| crate::path::is_within(&resolved, shims))
+                || running
+                    .as_ref()
+                    .is_some_and(|running| crate::path::same_path(running, &resolved));
             if !leads_back_to_uze {
                 return Some(resolved);
             }
@@ -148,75 +198,17 @@ pub fn harness_search_path() -> Vec<PathBuf> {
     let Some(path) = std::env::var_os("PATH") else {
         return Vec::new();
     };
-    let remote = network_mount_points();
+    let remote = uze_platform::mounts::network_mount_points();
     std::env::split_paths(&path)
         .filter(|dir| !remote.iter().any(|mount| dir.starts_with(mount)))
         .collect()
 }
 
-/// Mount points of the filesystems reached over a network protocol, read
-/// once per process from the kernel's mount table. Empty where there is
-/// no such table.
-fn network_mount_points() -> &'static [PathBuf] {
-    static MOUNTS: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
-    MOUNTS.get_or_init(|| {
-        fs::read_to_string("/proc/self/mounts")
-            .map(|table| network_mount_points_in(&table))
-            .unwrap_or_default()
-    })
-}
-
-/// Parses a `/proc/self/mounts` table (`source mountpoint fstype …`, one
-/// mount per line, spaces in a path escaped as octal `\040`).
-fn network_mount_points_in(table: &str) -> Vec<PathBuf> {
-    const NETWORK_FILESYSTEMS: &[&str] = &["9p"];
-    table
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split(' ');
-            let _source = fields.next()?;
-            let mount_point = fields.next()?;
-            let filesystem = fields.next()?;
-            NETWORK_FILESYSTEMS
-                .contains(&filesystem)
-                .then(|| PathBuf::from(unescape_mount_field(mount_point)))
-        })
-        .collect()
-}
-
-fn unescape_mount_field(field: &str) -> String {
-    let mut out = String::with_capacity(field.len());
-    let mut characters = field.chars().peekable();
-    while let Some(character) = characters.next() {
-        if character != '\\' {
-            out.push(character);
-            continue;
-        }
-        let digits: String = characters.by_ref().take(3).collect();
-        match u8::from_str_radix(&digits, 8) {
-            Ok(byte) => out.push(byte as char),
-            Err(_) => {
-                out.push('\\');
-                out.push_str(&digits);
-            }
-        }
-    }
-    out
-}
-
 /// Shared by the PATH walks in this module and in `detection_cache` — the
 /// same question, asked for the same reason, so it has one answer.
-#[cfg(unix)]
-pub(crate) fn is_executable_file(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-}
-
-#[cfg(not(unix))]
-pub(crate) fn is_executable_file(path: &Path) -> bool {
-    path.is_file()
-}
+pub(crate) use uze_platform::executable::{
+    candidates as executable_candidates, is_executable as is_executable_file,
+};
 
 /// Deterministic, filesystem-safe id for a project root. A project's
 /// canonical path used directly as a directory name risks length limits,
@@ -226,7 +218,7 @@ pub(crate) fn is_executable_file(path: &Path) -> bool {
 /// (`crate::digest`): this identifies a project for cache-directory naming
 /// and authenticates nothing.
 pub fn project_id_for(canonical_project_root: &Path) -> String {
-    crate::digest::short_hex(canonical_project_root.to_string_lossy().as_bytes())
+    crate::digest::short_hex(crate::path::identity(canonical_project_root).as_bytes())
 }
 
 /// Names the canonical project root every projection under a project's
@@ -368,10 +360,41 @@ fn write_marker(project_dir: &Path, canonical_project_root: &Path) -> Result<()>
 
 #[cfg(test)]
 mod tests {
+    /// A harness its installer put where no search path reaches is found
+    /// at the location the integration documents, and a documented
+    /// location that is UZE's own shim is not.
+    #[test]
+    fn a_harness_off_every_path_is_found_where_its_installer_puts_it() {
+        let root = uze_testkit::temp::scratch("harness-install-location");
+        let shims = root.join("shims");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&shims).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        let name = "uze-test-harness-off-path";
+        let installed = bin.join(uze_platform::executable::file_name(name));
+        uze_testkit::process::install_executable(&installed, b"#!/bin/sh\n");
+        let shim = shims.join(uze_platform::executable::file_name(name));
+        uze_testkit::process::install_executable(&shim, b"#!/bin/sh\n");
+
+        let found =
+            super::resolve_harness_executable(&[name], &shims, std::slice::from_ref(&installed));
+        assert_eq!(
+            found.map(|path| path.canonical().unwrap()),
+            Some(installed.canonical().unwrap())
+        );
+        assert_eq!(
+            super::resolve_harness_executable(&[name], &shims, &[shim]),
+            None
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     /// The Conformance Lab reproduces this digest in Python to write a task
     /// document by hand (`conformance/contract/continuity.py::project_id`).
     /// A drift here makes that scene fail rather than pass wrongly, and this
-    /// is where the two are pinned to one another.
+    /// is where the two are pinned to one another. The Lab runs on Linux, and
+    /// a Windows path's identity folds its case, so the pin is a Unix one.
+    #[cfg(unix)]
     #[test]
     fn the_lab_reproduces_this_digest() {
         assert_eq!(
@@ -383,6 +406,7 @@ mod tests {
     use super::*;
     use std::fs;
 
+    // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     fn make_executable(path: &Path) {
         use std::os::unix::fs::PermissionsExt;
@@ -391,6 +415,7 @@ mod tests {
     }
 
     #[test]
+    // Its stand-in programs are POSIX scripts (`make_executable`).
     #[cfg(unix)]
     fn resolves_real_executable_skipping_shims_dir_even_when_it_is_first_on_path() {
         let mut env = uze_testkit::env::scope();
@@ -412,13 +437,11 @@ mod tests {
         );
 
         let resolved = resolve_real_executable(&["claude"], &shims_dir).expect("resolved");
-        assert_eq!(
-            resolved,
-            real_bin_dir.join("claude").canonicalize().unwrap()
-        );
+        assert_eq!(resolved, real_bin_dir.join("claude").canonical().unwrap());
     }
 
     #[test]
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     fn a_path_entry_that_links_into_the_shims_dir_is_skipped_too() {
         let mut env = uze_testkit::env::scope();
@@ -443,11 +466,12 @@ mod tests {
 
         assert_eq!(
             resolve_real_executable(&["claude"], &shims_dir),
-            Some(real_bin_dir.join("claude").canonicalize().unwrap())
+            Some(real_bin_dir.join("claude").canonical().unwrap())
         );
     }
 
     #[test]
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     fn the_running_executable_is_never_resolved_as_the_harness() {
         let mut env = uze_testkit::env::scope();
@@ -468,18 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn a_windows_drive_mounted_into_wsl_is_not_where_a_harness_is_looked_for() {
-        let table = "/dev/sdd / ext4 rw,relatime 0 0\n\
-                     C:\\134 /mnt/c 9p rw,noatime,aname=drvfs;path=C:\\ 0 0\n\
-                     D:\\134 /mnt/my\\040drive 9p rw 0 0\n\
-                     tmpfs /run tmpfs rw 0 0\n";
-        assert_eq!(
-            network_mount_points_in(table),
-            vec![PathBuf::from("/mnt/c"), PathBuf::from("/mnt/my drive")]
-        );
-    }
-
-    #[test]
+    // Its stand-in programs are POSIX scripts (`make_executable`).
     #[cfg(unix)]
     fn no_real_executable_on_path_resolves_to_none_not_the_shim() {
         let mut env = uze_testkit::env::scope();

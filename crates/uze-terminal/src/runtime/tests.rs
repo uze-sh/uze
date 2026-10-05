@@ -1,12 +1,12 @@
 #[test]
 fn the_named_directory_leads_the_pane_path_once() {
     let first = Path::new("/home/x/.uze/shims");
-    let joined =
-        crate::runtime::path_with_first(Some("/usr/bin:/home/x/.uze/shims:/bin".into()), first);
-    assert_eq!(
-        joined,
-        std::ffi::OsString::from("/home/x/.uze/shims:/usr/bin:/bin")
+    let path = |directories: &[&str]| std::env::join_paths(directories).unwrap();
+    let joined = crate::runtime::path_with_first(
+        Some(path(&["/usr/bin", "/home/x/.uze/shims", "/bin"])),
+        first,
     );
+    assert_eq!(joined, path(&["/home/x/.uze/shims", "/usr/bin", "/bin"]));
     assert_eq!(
         crate::runtime::path_with_first(None, first),
         std::ffi::OsString::from("/home/x/.uze/shims")
@@ -14,26 +14,23 @@ fn the_named_directory_leads_the_pane_path_once() {
 }
 
 use super::{
-    ANSWERS_WITHIN, Arrival, Launch, Listener, MAX_FRAME, MAX_PANE_DIMENSION, MAX_SOCKET_PATH,
-    Outbox, PaneRuntime, PersistedWorkspace, ReplySink, RuntimeError, Selection, Server,
-    WORKSPACE_SCHEMA_VERSION, WorkspaceLock, arrival, bind_endpoint, forward_events,
-    held_by_a_server, identify, identity_of, listener_at, load_persisted_workspace_at,
-    persisted_state_path, read_event, read_message, relaunch_command_for_process, retire,
-    send_request, serves_this_build, signalable, snapshot, socket_path, view_for,
-    workspace_is_claimed, workspace_lock_path, write_atomically, write_message,
+    ANSWERS_WITHIN, Arrival, Launch, Listener, MAX_FRAME, MAX_PANE_DIMENSION, Outbox, PaneRuntime,
+    PersistedWorkspace, ReplySink, RuntimeError, Selection, Server, WORKSPACE_SCHEMA_VERSION,
+    WorkspaceLock, arrival, bind_endpoint, forward_events, held_by_a_server, identity_of,
+    load_persisted_workspace_at, persisted_state_path, read_event, read_message,
+    relaunch_command_for_process, send_request, serves_this_build, snapshot, socket_path, view_for,
+    workspace_is_claimed, write_atomically, write_message,
 };
-use std::os::unix::fs::PermissionsExt;
+// Only the Unix tests below tell a listener apart by what it runs.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use super::identify;
+use super::{listener_at, retire, workspace_lock_path};
 use std::sync::{Arc, Mutex};
 
-// Several tests below carry
-// `#[cfg(any(target_os = "linux", target_os = "macos"))]`. That is not a
-// list of platforms anybody chose; it is the set `process_probe` can
-// answer on, and these are the tests that start a real server, read a
-// real pane's foreground status, or relaunch a persisted one — all of
-// which need the kernel to say where a process is standing and what it
-// is running. On a platform where the probe returns `None` they would
-// assert against an answer nothing can give. Widen the gate by teaching
-// `process_probe` a new platform, never by widening it here.
+// The tests below run on every platform, a real server and real panes
+// included. The few gated to Unix drive POSIX programs (`sh`, `sleep`, a
+// FIFO, a process group, a zombie) to reach what they prove, and each says
+// so where it is gated.
 
 use crate::Palette;
 
@@ -42,7 +39,8 @@ use crate::Palette;
 fn reply_sink(sender: std::sync::mpsc::Sender<Vec<u8>>) -> ReplySink {
     ReplySink::new(sender, Arc::new(Mutex::new(Palette::default())))
 }
-use crate::state::{PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed};
+use crate::state::PLACEHOLDER_PANE_SIZE;
+use crate::state::{SpaceSeed, TabSeed};
 use crate::{MouseMode, PaneId, TerminalColor};
 use crate::{Session, SpaceId, TabId};
 use alacritty_terminal::{
@@ -52,11 +50,8 @@ use alacritty_terminal::{
     vte::ansi::Processor,
 };
 use std::collections::BTreeMap;
-use std::{
-    path::{Path, PathBuf},
-    thread,
-    time::Duration,
-};
+use std::path::PathBuf;
+use std::{path::Path, thread, time::Duration};
 
 /// A client's selection overlays the shared session wherever it still
 /// points at something, and falls back to the server's default where
@@ -140,54 +135,9 @@ fn two_terminals_that_disagree_about_the_environment_share_one_endpoint() {
     };
 
     assert_eq!(one, other, "the workspace decides, not the session");
-    assert!(
-        one.starts_with(&home),
-        "and it sits beside the workspace it serves, where no cleaner \
-             reaches it without taking the workspace too: {}",
-        one.display()
-    );
 
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_dir_all(&elsewhere);
-}
-
-/// `XDG_RUNTIME_DIR` is somebody else's variable and can be arbitrarily
-/// deep. A socket path that does not fit `sun_path` fails at `bind` with
-/// an error naming the limit and not the directory — which reached a
-/// user as `could not acquire package: terminal runtime I/O error: path
-/// must be shorter than SUN_LEN`, from a command that has nothing to do
-/// with sockets.
-#[test]
-fn a_runtime_directory_too_long_for_a_socket_is_stepped_over() {
-    let deep = uze_testkit::temp::socket_scratch("deep").join("a".repeat(120));
-    std::fs::create_dir_all(&deep).unwrap();
-    let mut env = uze_testkit::env::scope();
-    // Both of the candidates that come before `/tmp`: a home is
-    // wherever the operator put it, and so is somebody else's
-    // runtime directory.
-    env.set("UZE_HOME", &deep);
-    env.set("XDG_RUNTIME_DIR", &deep);
-
-    let socket = socket_path().expect("a too-long runtime directory is not fatal");
-    assert!(
-        socket.as_os_str().len() <= MAX_SOCKET_PATH,
-        "the chosen socket path must fit sun_path, got {} bytes: {}",
-        socket.as_os_str().len(),
-        socket.display()
-    );
-    assert!(
-        !socket.starts_with(&deep),
-        "the directory that could not hold the socket must not have been chosen"
-    );
-    // Binding is the only real proof: the length rule exists to make this
-    // call succeed, so the test performs it rather than trusting the
-    // arithmetic.
-    let _ = std::fs::remove_file(&socket);
-    let listener = std::os::unix::net::UnixListener::bind(&socket)
-        .expect("the chosen path must actually bind");
-    drop(listener);
-    let _ = std::fs::remove_file(&socket);
-    let _ = std::fs::remove_dir_all(&deep);
 }
 
 /// "Nothing is running" is the ordinary state of `uze workspace stop`,
@@ -210,30 +160,23 @@ fn stopping_a_runtime_that_is_not_running_is_not_a_failure() {
     let _ = std::fs::remove_file(&socket);
     assert!(
         super::stop().is_ok(),
-        "no socket at all is nothing to stop, not a failure"
+        "no endpoint at all is nothing to stop, not a failure"
     );
 
-    // The shape a cleaner leaves: the file is there, the server is not.
-    leave_a_stale_socket(&socket);
-    assert!(
-        super::stop().is_ok(),
-        "a socket nobody answers is nothing to stop either"
-    );
-
-    let _ = std::fs::remove_file(&socket);
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
 /// The kernel names whoever listens on a socket, and the process table
 /// says what that process runs: this very executable, a `uze` of
 /// another build, or something nobody can vouch for as `uze` at all.
+// Unix only: A process that is not `uze`, run as a POSIX shell (`ReadyProcess`).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn the_listener_is_told_apart_by_what_it_runs() {
     let scratch = uze_testkit::temp::socket_scratch("identify");
     std::fs::create_dir_all(&scratch).unwrap();
-    let socket = scratch.join("test.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
+    let listener = super::transport::bind(&socket).unwrap();
     assert_eq!(
         listener_at(&socket),
         Listener::ThisBuild(std::process::id()),
@@ -255,45 +198,9 @@ fn the_listener_is_told_apart_by_what_it_runs() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-/// A socket file nobody listens on names nobody, so there is nobody to
-/// signal.
-#[test]
-fn a_socket_nobody_listens_on_names_nobody() {
-    let scratch = uze_testkit::temp::socket_scratch("nobody");
-    std::fs::create_dir_all(&scratch).unwrap();
-    let socket = scratch.join("test.sock");
-    leave_a_stale_socket(&socket);
-
-    assert_eq!(listener_at(&socket), Listener::Nobody);
-
-    let _ = std::fs::remove_dir_all(&scratch);
-}
-
-/// The server holding the workspace claim binds over whatever it finds
-/// at the socket path: a crashed server's leftover file is not a peer,
-/// and refusing to bind over it left the workspace unreachable.
-#[test]
-fn a_stale_socket_is_reclaimed_by_the_server_that_binds() {
-    let scratch = uze_testkit::temp::socket_scratch("reclaim");
-    std::fs::create_dir_all(&scratch).unwrap();
-    let socket = scratch.join("test.sock");
-    leave_a_stale_socket(&socket);
-    assert!(std::os::unix::net::UnixStream::connect(&socket).is_err());
-
-    let listener = bind_endpoint(&socket).expect("a stale socket is bound over");
-    assert!(
-        std::os::unix::net::UnixStream::connect(&socket).is_ok(),
-        "the reclaimed endpoint answers"
-    );
-
-    drop(listener);
-    let _ = std::fs::remove_dir_all(&scratch);
-}
-
 /// A server of another build — a `make install` over a running one — is
 /// ended, and not merely abandoned: it holds the workspace claim, and a
 /// fresh server cannot restore the workspace until it lets go.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_server_of_another_build_is_retired_and_lets_go_of_the_workspace() {
     let scratch = uze_testkit::temp::socket_scratch("retire");
@@ -305,7 +212,10 @@ fn a_server_of_another_build_is_retired_and_lets_go_of_the_workspace() {
     let mut old = ClaimHolder::spawn_as(&another_build_of_this_binary(&scratch), &uze_home);
     assert!(workspace_is_claimed());
 
-    retire(old.pid(), &scratch.join("test.sock"));
+    retire(
+        old.pid(),
+        &super::transport::scratch_endpoint(&scratch, "test.sock"),
+    );
 
     assert!(
         !workspace_is_claimed(),
@@ -322,7 +232,6 @@ fn a_server_of_another_build_is_retired_and_lets_go_of_the_workspace() {
 /// find nothing, and report success while the workspace stayed shut:
 /// the operator was told there was nothing to stop, could not open
 /// uze, and restarting the machine was the only way out.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_server_answering_at_no_endpoint_this_build_names_is_still_stopped() {
     let scratch = uze_testkit::temp::socket_scratch("stop-claimed");
@@ -358,7 +267,6 @@ fn a_server_answering_at_no_endpoint_this_build_names_is_still_stopped() {
 /// endpoint this build does not compute and names nobody, so nothing
 /// here can end it — and saying "nothing to stop" is what sent an
 /// operator to restart their machine. It is said instead.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_claim_this_build_cannot_name_is_reported_rather_than_called_stopped() {
     let scratch = uze_testkit::temp::socket_scratch("stop-unnamed");
@@ -377,7 +285,7 @@ fn a_claim_this_build_cannot_name_is_reported_rather_than_called_stopped() {
     let refused = super::stop().expect_err("a claim nobody can name is not a clean stop");
     let said = refused.to_string();
     assert!(
-        said.contains("serving this workspace") && said.contains("pgrep"),
+        said.contains("serving this workspace") && said.contains(&super::host::find_server()),
         "the message names the situation and how to end it: {said}"
     );
     assert!(
@@ -534,6 +442,14 @@ fn snapshot_renders_the_scrollback_viewport() {
     assert!(!rendered.contains("third"));
 }
 
+/// The argv that runs a line in this platform's shell, written once for
+/// each shell.
+fn shell_argv(posix: &str, windows: &str) -> Vec<String> {
+    let (program, arguments) =
+        uze_platform::shell::invocation(uze_platform::shell::spelling(posix, windows));
+    std::iter::once(program).chain(arguments).collect()
+}
+
 /// A pane whose screen did not move offers nothing the second time: the
 /// baseline goes out, and an identical one after it does not.
 #[test]
@@ -541,12 +457,12 @@ fn damage_that_changes_nothing_drawn_is_not_offered() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(12),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
         Launch::Program {
-            argv: vec!["/bin/sh".into(), "-c".into(), "sleep 30".into()],
+            argv: shell_argv("sleep 30", "Start-Sleep 30"),
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
@@ -566,7 +482,7 @@ fn damage_since_last_is_sparse_after_a_small_change() {
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(9),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -605,7 +521,7 @@ fn pane_process_keeps_output_until_explicit_stop() {
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(7),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -627,6 +543,7 @@ fn pane_process_keeps_output_until_explicit_stop() {
     assert!(rendered, "the printed line never reached the grid");
 }
 
+// Unix only: Reads the foreground of a pane running `/bin/sh` against the terminal's own process group leader.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
@@ -655,8 +572,7 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
     // what the kernel reports, and the kernel answers with the real
     // path: `/tmp` is a symlink to `/private/tmp` on macOS, so spawning
     // in `/tmp` and expecting `/tmp` back never matches there.
-    let pane_cwd = PathBuf::from("/tmp")
-        .canonicalize()
+    let pane_cwd = uze_platform::path::canonical(&std::env::temp_dir())
         .expect("the system temp directory must resolve");
     let pane = PaneRuntime::spawn(
         PaneId(11),
@@ -701,7 +617,7 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
     let mut last_seen = None;
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     while std::time::Instant::now() < deadline {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && *process == expected_name
         {
@@ -732,6 +648,7 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
 /// `UZE_SHIM_NAME`, set by `src/shim.rs` right before it `exec`s into
 /// the real binary, must survive that and still be what
 /// `foreground_status` reports.
+// Unix only: A POSIX shell `exec`s into a program named like a version, as a Unix harness binary is.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
@@ -746,7 +663,7 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(13),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -777,7 +694,7 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
     let mut status = None;
     let mut last_seen = None;
     for _ in 0..500 {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && process == "claude"
         {
@@ -802,6 +719,7 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
 /// never read as a harness that went around it. Linux already calls it
 /// `claude` (the link's name); macOS calls it `uze` (the file the link
 /// resolves to), so either name is the shim in the foreground.
+// Unix only: Catches the shim between its start and its `exec`, which Windows, with no `exec`, has no moment for.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
@@ -815,7 +733,7 @@ fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(31),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -830,11 +748,11 @@ fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
     let mut through = None;
     let mut last_seen = None;
     for _ in 0..500 {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && (process == "claude" || process == "uze")
         {
-            through = pane.foreground_through_launcher();
+            through = pane.reading().map(|reading| reading.through_launcher);
             break;
         }
         last_seen = reading.or(last_seen);
@@ -877,7 +795,7 @@ fn only_asking_to_open_a_space_may_create_one() {
     let server = Arc::new(server);
 
     let attach = |seating: crate::Seating| {
-        let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (client, driver) = super::transport::pair().unwrap();
         let serving = {
             let server = Arc::clone(&server);
             std::thread::spawn(move || server.handle_client(client))
@@ -956,7 +874,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
         .set("XDG_RUNTIME_DIR", &runtime_dir);
     let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
     let server = Arc::new(server);
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -1025,6 +943,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
     );
 }
 
+// Unix only: Proves a process group and a FIFO end with the pane; Windows ends a Job Object, proven in uze-platform.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 /// Stopping a pane ends what its program left behind in its process
 /// group, not only the program: a worker deaf to the hangup would
@@ -1042,7 +961,7 @@ fn a_stopped_pane_takes_its_process_group_with_it() {
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(8),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -1109,7 +1028,7 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
     let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
     let server = Arc::new(server);
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -1181,13 +1100,16 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
 
 /// A stopped pane's process is reaped, not left a zombie for the life of
 /// the server: once the reaper is done, its pid names no process at all
-/// — a zombie would still answer `kill(pid, 0)`.
+/// — a zombie would still answer `kill(pid, 0)`. Zombies and the hangup
+/// the program ignores are POSIX's.
+// Unix only: A zombie and a SIGHUP are Unix things.
+#[cfg(unix)]
 #[test]
 fn a_stopped_pane_leaves_no_zombie() {
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(7),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -1224,10 +1146,11 @@ fn a_stopped_pane_leaves_no_zombie() {
 
     pane.stop().join().expect("the reaper finished");
 
-    // SAFETY: signal 0 only asks whether `pid` is addressable; nothing
-    // is delivered, and `pid` is the positive id of our own child.
-    let addressable = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
-    assert!(!addressable, "pid {pid} survived as a zombie");
+    assert_ne!(
+        uze_platform::process::alive(pid),
+        Some(true),
+        "pid {pid} survived as a zombie"
+    );
 }
 
 /// A program's first output can land before its pane is registered,
@@ -1255,7 +1178,7 @@ fn a_spawned_pane_is_flushed_once_it_is_registered() {
         .create_space(None, seat_at(&project), 80, 24)
         .pane;
     let silent = Launch::Program {
-        argv: vec!["sleep".into(), "30".into()],
+        argv: shell_argv("sleep 30", "Start-Sleep 30"),
         env: Vec::new(),
     };
     server.spawn_pane(pane, silent).unwrap();
@@ -1276,14 +1199,22 @@ fn a_spawned_pane_is_flushed_once_it_is_registered() {
 
 #[test]
 fn the_server_works_in_no_checkout() {
-    let command = super::server_command(Path::new("/usr/bin/uze"), &seat_at(Path::new("/project")));
-    assert_eq!(command.get_current_dir(), Some(Path::new("/")));
+    let project = Path::new("/project");
+    let command = super::server_command(Path::new("/usr/bin/uze"), &seat_at(project));
+    assert_ne!(command.get_current_dir(), Some(project));
+    assert_eq!(
+        command.get_current_dir(),
+        Some(super::host::server_directory().as_path())
+    );
 }
 
 /// A program that does not read its input fills the terminal's buffer,
 /// and the write into it blocks for as long as the program runs. That
 /// wait belongs to the one pane: the map every other pane's input,
-/// output and resize go through stays free.
+/// output and resize go through stays free. Told with a POSIX line
+/// discipline in raw mode; a pseudoconsole buffers input on its own terms.
+// Unix only: Drives `/bin/sh` panes that `exec` into `cat`-like writers.
+#[cfg(unix)]
 #[test]
 fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
     let scratch = uze_testkit::temp::socket_scratch("blocked-write");
@@ -1322,7 +1253,7 @@ fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     while !server
         .runtime(pane)
-        .and_then(|runtime| runtime.foreground_status())
+        .and_then(|runtime| runtime.reading().and_then(|reading| reading.status))
         .is_some_and(|(_, process)| process == "sleep")
     {
         assert!(
@@ -1424,7 +1355,7 @@ fn attaching_without_a_root_neither_creates_nor_reopens_a_space() {
         launch
     };
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -1471,6 +1402,7 @@ fn attaching_without_a_root_neither_creates_nor_reopens_a_space() {
 /// spaces and tabs a previous instance for this same `root` had, each
 /// tab's pane relaunched with whatever it was last spawned with —
 /// `None` for a plain shell, the recorded `argv` for an agent.
+// Unix only: Relaunches `sleep`, a program Windows does not ship.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands() {
@@ -1542,7 +1474,6 @@ fn a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_finished_direct_agent_is_replaced_by_a_shell_in_its_pane() {
     let scratch = uze_testkit::temp::socket_scratch("agentexit");
@@ -1573,19 +1504,7 @@ fn a_finished_direct_agent_is_replaced_by_a_shell_in_its_pane() {
         .pane;
     server.spawn_pane(pane, exits_at_once(Vec::new())).unwrap();
 
-    for _ in 0..40 {
-        server.restore_finished_agent_panes();
-        let restored = server
-            .panes
-            .lock()
-            .expect("panes poisoned")
-            .get(&pane)
-            .is_some_and(|runtime| runtime.launch == Launch::Shell);
-        if restored {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
+    wait_for_shell_respawn(&server, pane);
     assert!(
         server
             .panes
@@ -1612,6 +1531,10 @@ fn relaunch_command_for_process_recognizes_a_named_process_but_not_a_plain_shell
     // a candidate naming a file rather than a command is refused.
     assert_eq!(relaunch_command_for_process("/tmp/payload"), None);
     assert_eq!(relaunch_command_for_process("./payload"), None);
+    assert_eq!(relaunch_command_for_process(r"C:\Temp\payload"), None);
+    assert_eq!(relaunch_command_for_process(r".\payload"), None);
+    assert_eq!(relaunch_command_for_process("C:payload"), None);
+    assert_eq!(relaunch_command_for_process("PowerShell"), None);
     assert_eq!(
         relaunch_command_for_process("claude"),
         Some(vec!["claude".to_owned()])
@@ -1623,6 +1546,7 @@ fn relaunch_command_for_process_recognizes_a_named_process_but_not_a_plain_shell
 /// launch of its own), where someone then typed an agent
 /// straight into it — `update_pane_status` here stands in for the
 /// status ticker's own probe reporting that live.
+// Unix only: Relaunches `sleep`, a program Windows does not ship.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_plain_shell_tab_running_a_recognized_process_relaunches_as_that_process() {
@@ -1683,7 +1607,6 @@ fn a_plain_shell_tab_running_a_recognized_process_relaunches_as_that_process() {
 /// over a difference of one field. The guard now climbs the rung
 /// instead: the kind is dropped deliberately, every other field is
 /// carried, and the spaces open.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside() {
     let scratch = uze_testkit::temp::socket_scratch("persprev");
@@ -1705,9 +1628,9 @@ fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside
     std::fs::write(
         &path,
         format!(
-            r#"{{"spaces":[{{"label":"demo","root":"{root}","kind":"worktree","tabs":[
-                     {{"label":"shell","cwd":"{root}","agent":null,"launch":"Shell"}}]}}]}}"#,
-            root = kept.display()
+            r#"{{"spaces":[{{"label":"demo","root":{root},"kind":"worktree","tabs":[
+                     {{"label":"shell","cwd":{root},"agent":null,"launch":"Shell"}}]}}]}}"#,
+            root = serde_json::to_string(&kept).unwrap()
         )
         .as_bytes(),
     )
@@ -1753,7 +1676,6 @@ fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside
 /// Which tab belongs with which has to survive the process, and a
 /// `TabId` does not — the snapshot names the agent by its position in
 /// the very list `Session::restore` rebuilds.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn the_snapshot_names_a_tabs_agent_by_position() {
     let scratch = uze_testkit::temp::socket_scratch("persagent");
@@ -1789,7 +1711,6 @@ fn the_snapshot_names_a_tabs_agent_by_position() {
 /// Selecting a tab broadcasts the session and persists it, but nothing
 /// selection-shaped is persisted: the same bytes are not written (and
 /// fsynced) again, and a real change still is.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn persisting_an_unchanged_workspace_writes_nothing() {
     let scratch = uze_testkit::temp::socket_scratch("persame");
@@ -1833,7 +1754,6 @@ fn persisting_an_unchanged_workspace_writes_nothing() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_persisted_command_that_no_longer_resolves_falls_back_to_a_plain_shell() {
     let scratch = uze_testkit::temp::socket_scratch("perstale");
@@ -1996,7 +1916,6 @@ fn a_full_repaint_of_the_largest_pane_fits_in_one_frame() {
 /// is ~137 GB, and a failed allocation aborts the process that owns
 /// every live agent pane. One malformed frame must not be able to do
 /// that, from a buggy client as easily as a hostile one.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
     let scratch = uze_testkit::temp::socket_scratch("resizemax");
@@ -2021,7 +1940,7 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
         .pane
         .id;
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -2085,7 +2004,6 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
 /// A selection is drawn for every client, so the server puts it away
 /// itself when nobody will: when the drag covered only blanks, and when
 /// the client that made it leaves without saying so.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
     let scratch = uze_testkit::temp::socket_scratch("selectleave");
@@ -2124,7 +2042,7 @@ fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
         head: (10, 22),
     };
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -2189,6 +2107,7 @@ fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
 /// project, routinely a `uze` run from inside a shimmed agent. A plain
 /// shell that inherited that stamp reports as the agent, persists as
 /// one, and is relaunched as one on the next restart.
+// Unix only: Reads a `/bin/sh` pane's environment through its process group leader.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_pane_does_not_inherit_the_servers_shim_identity() {
@@ -2199,7 +2118,7 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(21),
-        PathBuf::from("/tmp").canonicalize().unwrap(),
+        uze_platform::path::canonical(&std::env::temp_dir()).unwrap(),
         80,
         24,
         damage,
@@ -2219,7 +2138,7 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
     // process it forked from, which here is this test binary.
     let mut reported = None;
     for _ in 0..500 {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && *process == expected_name
         {
@@ -2232,8 +2151,9 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
         .master
         .lock()
         .expect("master poisoned")
-        .process_group_leader();
-    let through_launcher = pane.foreground_through_launcher();
+        .as_ref()
+        .and_then(|master| master.process_group_leader());
+    let through_launcher = pane.reading().map(|reading| reading.through_launcher);
     pane.stop();
 
     assert!(
@@ -2248,7 +2168,7 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
     );
     let leader = leader.expect("the spawned shell owns the PTY foreground group");
     assert_eq!(
-        crate::process_probe::environment_value_of(leader, "UZE_SHIM_NAME"),
+        uze_platform::probe::environment_value_of(leader as u32, "UZE_SHIM_NAME"),
         None,
         "a pane's environment may only carry what that pane's own launch put there"
     );
@@ -2271,15 +2191,18 @@ fn read_when_written(path: &Path) -> String {
 /// appear would otherwise be free to read the empty half of that window.
 fn report_variable(variable: &str, into: &Path) -> Vec<String> {
     let partial = into.with_extension("partial");
-    vec![
-        "/bin/sh".to_owned(),
-        "-c".to_owned(),
-        format!(
-            "printf %s \"${{{variable}-unset}}\" > \"{partial}\" && mv \"{partial}\" \"{reported}\"",
-            partial = partial.display(),
-            reported = into.display()
+    let (partial, reported) = (partial.display(), into.display());
+    shell_argv(
+        &format!(
+            "printf %s \"${{{variable}-unset}}\" > \"{partial}\" && mv \"{partial}\" \"{reported}\""
         ),
-    ]
+        &format!(
+            "$value = [Environment]::GetEnvironmentVariable('{variable}'); \
+             if ($null -eq $value) {{ $value = 'unset' }}; \
+             [IO.File]::WriteAllText('{partial}', $value); \
+             Move-Item -LiteralPath '{partial}' -Destination '{reported}'"
+        ),
+    )
 }
 
 fn seat_at(root: &Path) -> crate::SpaceSeat {
@@ -2288,6 +2211,8 @@ fn seat_at(root: &Path) -> crate::SpaceSeat {
     }
 }
 
+// Unix only: `sleep`, a program Windows does not ship.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn sleep_five() -> Launch {
     Launch::Program {
         argv: vec!["sleep".to_owned(), "5".to_owned()],
@@ -2295,14 +2220,33 @@ fn sleep_five() -> Launch {
     }
 }
 
-/// `/bin/sh -c 'exit 0'`, not `/bin/true`: macOS keeps `true` in
-/// `/usr/bin` and has no `/bin/true` at all. `/bin/sh` is the one path
-/// POSIX actually promises, and what this needs is any process that
+/// The shell exiting at once, not `true`: macOS keeps `true` in
+/// `/usr/bin`, Windows has none, and what this needs is any process that
 /// exits at once.
 fn exits_at_once(env: Vec<(String, String)>) -> Launch {
     Launch::Program {
-        argv: vec!["/bin/sh".to_owned(), "-c".to_owned(), "exit 0".to_owned()],
+        argv: shell_argv("exit 0", "exit 0"),
         env,
+    }
+}
+
+/// Waits for `pane`, whose program ends at once, to be given the person's
+/// shell in its place. That program is a shell line, and a PowerShell
+/// started cold takes seconds to begin and end.
+fn wait_for_shell_respawn(server: &Server, pane: PaneId) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        server.restore_finished_agent_panes();
+        let restored = server
+            .panes
+            .lock()
+            .expect("panes poisoned")
+            .get(&pane)
+            .is_some_and(|runtime| runtime.launch == Launch::Shell);
+        if restored {
+            return;
+        }
+        thread::sleep(Duration::from_millis(25));
     }
 }
 
@@ -2451,19 +2395,7 @@ fn a_shell_respawn_carries_no_launch_environment() {
         .clone();
     assert_eq!(launched, stamp("agent-done"), "the tab reports the launch");
 
-    for _ in 0..40 {
-        server.restore_finished_agent_panes();
-        let restored = server
-            .panes
-            .lock()
-            .expect("panes poisoned")
-            .get(&pane)
-            .is_some_and(|runtime| runtime.launch == Launch::Shell);
-        if restored {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
+    wait_for_shell_respawn(&server, pane);
     let panes = server.panes.lock().expect("panes poisoned");
     let runtime = panes.get(&pane).expect("the pane was respawned");
     assert_eq!(runtime.launch, Launch::Shell);
@@ -2481,6 +2413,7 @@ fn a_shell_respawn_carries_no_launch_environment() {
 /// The other half of the identity rule: an *inherited* stamp names an
 /// ancestor, not the process it is read from, so it must be ignored.
 /// Every child of a shimmed agent carries `UZE_SHIM_NAME`.
+// Unix only: A POSIX shell `exec`s into the stamped program.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
@@ -2495,7 +2428,7 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(23),
-        PathBuf::from("/tmp"),
+        std::env::temp_dir(),
         80,
         24,
         damage,
@@ -2517,7 +2450,7 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
     let mut reported = None;
     let mut last_seen = None;
     for _ in 0..500 {
-        let reading = pane.foreground_status();
+        let reading = pane.reading().and_then(|reading| reading.status);
         if let Some((_, process)) = &reading
             && process == "2.1.251"
         {
@@ -2544,6 +2477,7 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
 /// the time it would be signalled, and pids are recycled: a process that
 /// is not running `uze` is never signalled — an editor, a build, another
 /// agent of the person's own.
+// Unix only: A process that is not `uze`, run as a POSIX shell (`ReadyProcess`).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_process_that_is_not_uze_is_never_signalled() {
@@ -2553,7 +2487,10 @@ fn a_process_that_is_not_uze_is_never_signalled() {
     env.set("UZE_HOME", &scratch);
 
     let bystander = ReadyProcess::spawn(Path::new("/bin/sh"));
-    retire(bystander.pid(), &scratch.join("test.sock"));
+    retire(
+        bystander.pid(),
+        &super::transport::scratch_endpoint(&scratch, "test.sock"),
+    );
 
     assert!(
         bystander.finish(),
@@ -2566,6 +2503,7 @@ fn a_process_that_is_not_uze_is_never_signalled() {
 /// addressable by `kill(pid, 0)`, which once left the endpoint held
 /// hostage for the whole remaining life of that client. A zombie holds
 /// no descriptor, so it holds no claim.
+// Unix only: A zombie, left unreaped with `waitid`, is a Linux thing.
 #[cfg(target_os = "linux")]
 #[test]
 fn a_crashed_server_nobody_reaped_holds_no_claim() {
@@ -2587,56 +2525,12 @@ fn a_crashed_server_nobody_reaped_holds_no_claim() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-/// The endpoint directory decides where a socket carrying every pane's
-/// contents lives. `create_dir_all` answers `Ok(())` for a path that is
-/// already there — a symlink to somewhere else included — and
-/// `set_permissions` follows symlinks, so "it exists" is not evidence
-/// of anything where the name is one any local user can predict.
-#[test]
-fn a_runtime_directory_that_is_not_ours_to_own_is_stepped_over() {
-    let scratch = uze_testkit::temp::socket_scratch("dirowner");
-    let xdg = scratch.join("xdg");
-    let elsewhere = scratch.join("elsewhere");
-    std::fs::create_dir_all(&xdg).unwrap();
-    std::fs::create_dir_all(&elsewhere).unwrap();
-    let owner = super::current_uid();
-    let candidate = xdg.join(format!("uze-runtime-{owner}"));
-    std::os::unix::fs::symlink(&elsewhere, &candidate).unwrap();
-
-    let mut env = uze_testkit::env::scope();
-    // `UZE_HOME` leads the candidates, so it is pointed somewhere too
-    // long to hold a socket: what is under test is the runtime
-    // directory behind it.
-    env.set("UZE_HOME", scratch.join("h".repeat(120)));
-    env.set("XDG_RUNTIME_DIR", &xdg);
-    let socket = socket_path().expect("a bad candidate is stepped over, not fatal");
-    assert!(
-        !socket.starts_with(&xdg),
-        "a symlinked candidate must not be adopted, got {}",
-        socket.display()
-    );
-
-    // A directory this user genuinely owns is theirs to correct rather
-    // than to refuse — a permissive umask on first run is the ordinary
-    // way one is created too open.
-    std::fs::remove_file(&candidate).unwrap();
-    std::fs::create_dir_all(&candidate).unwrap();
-    std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o777)).unwrap();
-    let socket = socket_path().expect("our own directory is usable");
-    assert!(socket.starts_with(&candidate));
-    let mode = std::fs::metadata(&candidate).unwrap().permissions().mode();
-    assert_eq!(mode & 0o777, 0o700, "the mode is corrected, not inherited");
-
-    let _ = std::fs::remove_dir_all(&scratch);
-}
-
 /// The recorded WSL case: `/tmp` wiped under a live server takes the
 /// socket with it, and a second server started then would restore the
 /// same `workspace.json` — every agent twice in the same checkout, both
 /// servers persisting over each other.
 /// The claim lives beside the workspace, under `$UZE_HOME`, so a
 /// cleaner that can reach it has taken the workspace too.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_second_server_refuses_to_restore_a_workspace_another_one_holds() {
     let scratch = uze_testkit::temp::socket_scratch("wslock");
@@ -2711,12 +2605,12 @@ fn an_asker_is_never_mistaken_for_a_server() {
     let starting = open();
 
     let asker = open();
-    super::flock(&asker, libc::LOCK_SH | libc::LOCK_NB).expect("an asker takes it shared");
+    super::try_lock(&asker, super::LockMode::Shared).expect("an asker takes it shared");
     assert!(!held_by_a_server(&starting).unwrap());
     drop(asker);
 
     let server = open();
-    super::flock(&server, libc::LOCK_EX | libc::LOCK_NB).expect("a server takes it exclusively");
+    super::try_lock(&server, super::LockMode::Exclusive).expect("a server takes it exclusively");
     assert!(held_by_a_server(&starting).unwrap());
     drop(server);
 
@@ -2745,40 +2639,6 @@ fn a_workspace_deleted_under_its_server_reads_as_unclaimed() {
 
     holder.release();
     let _ = std::fs::remove_dir_all(&scratch);
-}
-
-/// Where the process [`leave_a_stale_socket`] runs binds its socket.
-const STALE_SOCKET: &str = "UZE_TERMINAL_TEST_STALE_SOCKET";
-
-/// The process side of [`leave_a_stale_socket`]. Ignored so the suite
-/// never runs it on its own, and guarded by [`STALE_SOCKET`] so
-/// `--include-ignored` binds nothing.
-#[test]
-#[ignore = "binds a socket and exits, run by leave_a_stale_socket in a process of its own"]
-fn binds_a_socket_and_exits() {
-    if let Some(path) = std::env::var_os(STALE_SOCKET) {
-        std::os::unix::net::UnixListener::bind(path).expect("the socket path binds");
-    }
-}
-
-/// A socket file nobody listens on — the shape a crashed server leaves.
-///
-/// Bound by a process of its own that has exited before this returns:
-/// a listener this process bound and dropped is copied into every child
-/// a sibling test forks until that child's `exec`, and answers a
-/// connect for as long.
-fn leave_a_stale_socket(path: &Path) {
-    let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--ignored",
-            "--exact",
-            "runtime::tests::binds_a_socket_and_exits",
-        ])
-        .env(STALE_SOCKET, path)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .expect("this test binary runs itself");
-    assert!(status.success() && path.exists(), "{status}");
 }
 
 /// Set on the process that plays the other server in the claim tests.
@@ -2821,7 +2681,9 @@ fn holds_the_workspace_claim_while_its_stdin_is_open() {
             let server = Arc::new(server);
             let listener = bind_endpoint(&socket).expect("the holder binds its endpoint");
             std::thread::spawn(move || {
-                for stream in listener.incoming().flatten() {
+                for stream in
+                    std::iter::repeat_with(|| super::transport::accept(&listener)).flatten()
+                {
                     let server = Arc::clone(&server);
                     std::thread::spawn(move || server.handle_client(stream));
                 }
@@ -2912,6 +2774,7 @@ impl ClaimHolder {
 
     /// Kills the holder and leaves it unreaped — what a client that
     /// started a server and never waited on it is left with.
+    // Unix only: A zombie, left unreaped with `waitid`, is a Linux thing.
     #[cfg(target_os = "linux")]
     fn crash(mut self) -> Zombie {
         self.process.kill().expect("the holder is killed");
@@ -2931,9 +2794,11 @@ impl ClaimHolder {
     }
 }
 
+// Unix only: A zombie, left unreaped with `waitid`, is a Linux thing.
 #[cfg(target_os = "linux")]
 struct Zombie(ClaimHolder);
 
+// Unix only: A zombie, left unreaped with `waitid`, is a Linux thing.
 #[cfg(target_os = "linux")]
 impl Zombie {
     fn reap(mut self) {
@@ -2946,26 +2811,24 @@ impl Zombie {
 fn another_build_of_this_binary(scratch: &Path) -> PathBuf {
     let directory = scratch.join("another-build");
     std::fs::create_dir_all(&directory).unwrap();
-    let copy = directory.join("uze");
-    // Copied by a child that has exited before the copy runs, so no
-    // descriptor open for writing on it lingers in a process a sibling
-    // test forked — the kernel's `ETXTBSY`.
-    let copied = std::process::Command::new("cp")
-        .arg(std::env::current_exe().unwrap())
-        .arg(&copy)
-        .status()
-        .expect("cp runs");
-    assert!(copied.success());
+    let copy = directory.join(uze_platform::executable::file_name("uze"));
+    let image = std::fs::read(std::env::current_exe().unwrap()).unwrap();
+    uze_platform::executable::install(&copy, &image).unwrap();
     copy
 }
 
 /// A shell that has certainly `exec`ed — it said so — and waits to be
 /// told to finish.
+// A POSIX shell's `-c`, for the Unix tests that need a process that is not
+// `uze` and is certainly running.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 struct ReadyProcess {
     process: std::process::Child,
     output: std::io::BufReader<std::process::ChildStdout>,
 }
 
+// See `ReadyProcess`: a POSIX shell, for the Unix tests.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl ReadyProcess {
     fn spawn(shell: &Path) -> Self {
         let mut process = std::process::Command::new(shell)
@@ -3042,7 +2905,6 @@ fn a_workspace_that_gave_every_space_a_kind_opens_on_this_build() {
 }
 
 /// Nothing persisted at all is a first run, not a loss.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_first_run_reports_nothing() {
     let scratch = uze_testkit::temp::socket_scratch("setaside-first");
@@ -3071,7 +2933,6 @@ fn a_first_run_reports_nothing() {
 /// process from the screen. So what it could not carry waits for the
 /// first client and is said there — not in a log that is off unless
 /// `UZE_LOG` is set, which is where the one that mattered went.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_client_is_told_what_the_runtime_could_not_carry() {
     let scratch = uze_testkit::temp::socket_scratch("setaside-told");
@@ -3092,7 +2953,7 @@ fn a_client_is_told_what_the_runtime_could_not_carry() {
 
     // A socket pair stands in for the endpoint: what is being proven
     // is what a client is told once it attaches, not how it got there.
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -3207,7 +3068,6 @@ fn the_persisted_workspace_is_replaced_in_one_step() {
 /// panes at a size `within_pane_bounds` permits — and that a restart
 /// restores — made the frame unsendable, and every attached client sat
 /// frozen on chrome that still looked live.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() {
     let scratch = uze_testkit::temp::socket_scratch("bigsnap");
@@ -3267,7 +3127,7 @@ fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() 
         );
     }
 
-    let (client, driver) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
         std::thread::spawn(move || server.handle_client(client))
@@ -3337,7 +3197,7 @@ fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() 
 /// see pile up behind it.
 #[test]
 fn a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen() {
-    let (peer, socket) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (peer, socket) = super::transport::pair().unwrap();
     let (outbox, receiver) = super::Outbox::new();
     let events = Arc::new(outbox);
     let writing = {
@@ -3368,6 +3228,7 @@ fn a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen() {
 /// heard by a server no client has ever attached to, which is where it
 /// was being dropped: `Stop` as a first frame fell through to "not an
 /// `Attach`" and the connection was closed without an answer.
+// Unix only: Runs `sleep`, a program Windows does not ship.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to() {
@@ -3391,7 +3252,7 @@ fn stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to() {
 
     let mut ready = false;
     for _ in 0..200 {
-        if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
+        if super::transport::connect(&socket).is_ok() {
             ready = true;
             break;
         }
@@ -3418,32 +3279,26 @@ fn stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to() {
 /// on NFS, FUSE or a 9p mount, with no command that could clear it.
 #[test]
 fn only_a_held_lock_reads_as_another_server() {
-    let refusal = |errno| super::classify_lock_refusal(std::io::Error::from_raw_os_error(errno));
+    let refusal = |kind| super::classify_lock_refusal(std::io::Error::from(kind));
     assert!(matches!(
-        refusal(libc::EWOULDBLOCK),
+        refusal(std::io::ErrorKind::WouldBlock),
         super::LockRefusal::Contended
     ));
     assert!(matches!(
-        refusal(libc::EINTR),
+        refusal(std::io::ErrorKind::Interrupted),
         super::LockRefusal::Interrupted
     ));
-    for unsupported in [libc::ENOLCK, libc::EOPNOTSUPP, libc::ENOSYS, libc::EBADF] {
+    for unsupported in [
+        std::io::ErrorKind::Unsupported,
+        std::io::ErrorKind::PermissionDenied,
+        std::io::ErrorKind::InvalidInput,
+        std::io::ErrorKind::Other,
+    ] {
         assert!(
             matches!(refusal(unsupported), super::LockRefusal::Unsupported(_)),
-            "errno {unsupported} is a filesystem that cannot lock, not a server that holds one"
+            "{unsupported:?} is a filesystem that cannot lock, not a server that holds one"
         );
     }
-}
-
-/// `kill(2)` reads `0` as the caller's own process group and a negative
-/// pid as a group, `-1` as every process the user owns. A pid that does
-/// not fit is never turned into one of those.
-#[test]
-fn a_pid_that_does_not_name_one_process_is_never_signalled() {
-    assert_eq!(signalable(0), None);
-    assert_eq!(signalable(u32::MAX), None, "which would read as -1");
-    assert_eq!(signalable(i32::MAX as u32 + 1), None);
-    assert_eq!(signalable(4192325), Some(4192325));
 }
 
 /// Only two facts decide what an attach does to the endpoint: who holds
@@ -3486,7 +3341,7 @@ fn an_attach_replaces_only_a_server_it_can_name() {
 /// the peer's side, so what ends the thread can only be the channel.
 #[test]
 fn a_clients_writer_thread_ends_with_the_client() {
-    let (_peer, socket) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (_peer, socket) = super::transport::pair().unwrap();
     let (outbox, receiver) = Outbox::new();
     let outbox = Arc::new(outbox);
     let backlog = outbox.backlog();
@@ -3518,16 +3373,16 @@ fn a_peer_the_server_refuses_is_hung_up_on() {
     }
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home);
-    let socket = scratch.join("test.sock");
+    let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
     let (server, _damage) = Server::new(seat_at(&project), socket.clone()).unwrap();
     let server = Arc::new(server);
-    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let listener = super::transport::bind(&socket).unwrap();
     let serving = thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
+        let stream = super::transport::accept(&listener).unwrap();
         server.handle_client(stream);
     });
 
-    let mut peer = std::os::unix::net::UnixStream::connect(&socket).unwrap();
+    let mut peer = super::transport::connect(&socket).unwrap();
     peer.set_read_timeout(Some(ANSWERS_WITHIN)).unwrap();
     send_request(
         &mut peer,
@@ -3572,12 +3427,12 @@ fn a_server_that_answers_this_builds_handshake_serves_it() {
     }
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home);
-    let socket = scratch.join("test.sock");
+    let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
     let (server, _damage) = Server::new(seat_at(&project), socket.clone()).unwrap();
     let server = Arc::new(server);
-    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let listener = super::transport::bind(&socket).unwrap();
     let serving = std::thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
+        let stream = super::transport::accept(&listener).unwrap();
         server.handle_client(stream);
     });
 
@@ -3601,10 +3456,10 @@ fn a_server_that_cannot_answer_is_never_taken_for_one_that_can() {
     let scratch = uze_testkit::temp::socket_scratch("serves-refused");
     std::fs::create_dir_all(&scratch).unwrap();
 
-    let refusing = scratch.join("refusing.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&refusing).unwrap();
+    let refusing = super::transport::scratch_endpoint(&scratch, "refusing.sock");
+    let listener = super::transport::bind(&refusing).unwrap();
     let answering = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let mut stream = super::transport::accept(&listener).unwrap();
         let _ = write_message(
             &mut stream,
             &crate::ClientEvent::Error {
@@ -3618,20 +3473,20 @@ fn a_server_that_cannot_answer_is_never_taken_for_one_that_can() {
     );
     let _ = answering.join();
 
-    let hanging_up = scratch.join("hanging-up.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&hanging_up).unwrap();
-    let dropping = std::thread::spawn(move || drop(listener.accept().unwrap()));
+    let hanging_up = super::transport::scratch_endpoint(&scratch, "hanging-up.sock");
+    let listener = super::transport::bind(&hanging_up).unwrap();
+    let dropping = std::thread::spawn(move || drop(super::transport::accept(&listener).unwrap()));
     assert!(
         !serves_this_build(&hanging_up),
         "and neither can one that hangs up on the handshake"
     );
     let _ = dropping.join();
 
-    let silent = scratch.join("silent.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&silent).unwrap();
+    let silent = super::transport::scratch_endpoint(&scratch, "silent.sock");
+    let listener = super::transport::bind(&silent).unwrap();
     let (answered, asked) = std::sync::mpsc::channel::<()>();
     let holding = std::thread::spawn(move || {
-        let held = listener.accept().unwrap();
+        let held = super::transport::accept(&listener).unwrap();
         let _ = asked.recv();
         drop(held);
     });
@@ -3645,7 +3500,7 @@ fn a_server_that_cannot_answer_is_never_taken_for_one_that_can() {
     let _ = holding.join();
 
     assert!(
-        !serves_this_build(&scratch.join("nobody.sock")),
+        !serves_this_build(&super::transport::scratch_endpoint(&scratch, "nobody.sock")),
         "an endpoint nothing is behind answers nothing either"
     );
 
@@ -3658,7 +3513,6 @@ fn a_server_that_cannot_answer_is_never_taken_for_one_that_can() {
 /// "another build" in the meantime. It used to be retired on sight —
 /// every pane it held killed with it, mid-conversation, because a
 /// binary had been replaced on disk.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_second_client_attaches_to_a_live_server_of_another_build() {
     let scratch = uze_testkit::temp::socket_scratch("attach-another-build");
@@ -3716,7 +3570,7 @@ fn a_second_client_attaches_to_a_live_server_of_another_build() {
 /// [`HANDSHAKE_DEADLINE`] says it prevents.
 #[test]
 fn a_dribbling_peer_runs_out_of_handshake_rather_than_restarting_it() {
-    let (peer, socket) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (peer, socket) = super::transport::pair().unwrap();
     let dribbling = std::thread::spawn(move || {
         let mut peer = peer;
         for _ in 0..40 {
@@ -3778,4 +3632,139 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
         attach.len() < super::MAX_HANDSHAKE_FRAME as usize,
         "and the bound still has to fit what a handshake actually says"
     );
+}
+
+/// The endpoint as a file in a directory: what a Unix-domain socket is and a
+/// named pipe is not.
+// Unix only: Unix socket files and their directory; the named pipe has neither.
+#[cfg(unix)]
+mod socket_files;
+
+/// A Windows pane, driven as a person at the keyboard drives it: its
+/// text as one string, and a wait for some to appear.
+// Windows only: these drive Windows PowerShell and ConPTY, the console a
+// Windows pane is; the Unix panes are driven by the tests above.
+#[cfg(windows)]
+mod windows_panes {
+    use super::*;
+
+    fn shell_pane(columns: u16, rows: u16) -> (PaneRuntime, std::sync::mpsc::Receiver<PaneId>) {
+        // What `terminal host-pane` does for a pane in production: however
+        // this test binary was started, its programs can be interrupted.
+        uze_platform::interrupt::restore_default();
+        let (damage, damage_events) = std::sync::mpsc::channel();
+        let pane = PaneRuntime::spawn(
+            PaneId(91),
+            std::env::temp_dir(),
+            columns,
+            rows,
+            damage,
+            Launch::Shell,
+            Arc::new(Mutex::new(Palette::default())),
+        )
+        .unwrap();
+        (pane, damage_events)
+    }
+
+    fn text(pane: &PaneRuntime) -> String {
+        pane.snapshot()
+            .cells
+            .into_iter()
+            .map(|cell| cell.character)
+            .collect()
+    }
+
+    fn shows(
+        pane: &PaneRuntime,
+        damage: &std::sync::mpsc::Receiver<PaneId>,
+        wanted: impl Fn(&str) -> bool,
+    ) -> bool {
+        wanted(&text(pane))
+            || std::iter::from_fn(|| damage.recv_timeout(Duration::from_secs(20)).ok())
+                .any(|_| wanted(&text(pane)))
+    }
+
+    /// The console's startup question (the cursor position, `ESC[6n`) is
+    /// answered, or PowerShell would sit waiting for it and never prompt.
+    #[test]
+    fn the_shell_prompts_because_its_startup_question_is_answered() {
+        let (pane, damage) = shell_pane(80, 24);
+        let prompted = shows(&pane, &damage, |screen| screen.contains("PS "));
+        pane.stop();
+        assert!(prompted, "the prompt never came: {}", text(&pane).trim());
+    }
+
+    /// Ctrl+C reaches a program a pane runs, as at a console of one's own:
+    /// what is typed after it runs.
+    #[test]
+    fn ctrl_c_stops_a_program_running_in_a_pane() {
+        let (pane, damage) = shell_pane(100, 30);
+        assert!(shows(&pane, &damage, |screen| screen.contains("PS ")));
+        pane.write(b"ping -t 127.0.0.1\r");
+        assert!(
+            shows(&pane, &damage, |screen| screen.matches("127.0.0.1").count()
+                >= 4),
+            "ping answered"
+        );
+        pane.write(b"\x03");
+        // The interrupt also empties the console's input, so what comes
+        // next is typed once the prompt is back, as a person would.
+        assert!(
+            shows(&pane, &damage, |screen| screen.matches("PS ").count() >= 2),
+            "the prompt came back after Ctrl+C"
+        );
+        pane.write(b"Write-Output ('after' + '-interrupt')\r");
+        let resumed = shows(&pane, &damage, |screen| screen.contains("after-interrupt"));
+        let screen = text(&pane);
+        pane.stop();
+        assert!(
+            resumed,
+            "the shell never ran what came after Ctrl+C:\n{}",
+            screen
+                .as_bytes()
+                .chunks(100)
+                .map(String::from_utf8_lossy)
+                .map(|line| line.trim_end().to_owned())
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    /// A resized pane is the new size, and what it held is still on it.
+    #[test]
+    fn a_resized_pane_takes_the_new_size_and_keeps_its_text() {
+        let (pane, damage) = shell_pane(100, 30);
+        assert!(shows(&pane, &damage, |screen| screen.contains("PS ")));
+        pane.write(b"Write-Output ('before' + '-resize')\r");
+        assert!(shows(&pane, &damage, |screen| screen.contains("before-resize")));
+        pane.resize(60, 20);
+        let resized = shows(&pane, &damage, |_| {
+            let snapshot = pane.snapshot();
+            snapshot.columns == 60 && snapshot.rows == 20
+        });
+        let kept = text(&pane).contains("before-resize");
+        pane.stop();
+        assert!(resized, "the pane never took its new size");
+        assert!(kept, "the resize lost what the pane held");
+    }
+
+    /// Once a pane is closed its reader ends: nothing is left waiting on a
+    /// console nobody holds.
+    #[test]
+    fn a_closed_pane_s_reader_ends() {
+        let (pane, damage) = shell_pane(80, 24);
+        assert!(shows(&pane, &damage, |screen| screen.contains("PS ")));
+        pane.stop().join().unwrap();
+        drop(pane);
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        let ended = loop {
+            match damage.recv_timeout(Duration::from_millis(250)) {
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break true,
+                _ if std::time::Instant::now() > deadline => break false,
+                _ => {}
+            }
+        };
+        assert!(ended, "the reader outlived its pane");
+    }
 }

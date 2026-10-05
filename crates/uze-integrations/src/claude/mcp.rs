@@ -116,6 +116,7 @@ pub fn detach_mcp_entry(executable: &Path, command_home: &Path, entry_name: &str
     cli_remove(executable, command_home, "claude", entry_name)
 }
 
+// Its stand-in programs are POSIX shell scripts.
 #[cfg(all(test, unix))]
 mod tests {
     use std::{fs, os::unix::fs::PermissionsExt, path::Path};

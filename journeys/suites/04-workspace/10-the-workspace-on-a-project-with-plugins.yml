@@ -71,9 +71,16 @@ scenes:
 
   - scene: and then a harness typed into a pane goes through the shim
     when:
-      - type: "command -v claude > {world}/which-claude"
-        say: ask the pane's shell which claude it would run
-        expect: which-claude
+      # Asked through Python rather than the shell's own `command -v`: the
+      # pane's shell is bash here and PowerShell on Windows, and one line
+      # both run is the same question asked of the PATH the pane holds. One
+      # expression, because tmux reads a typed `;` as the end of its command.
+      - type: >-
+          {python} -c "__import__('pathlib').Path(r'{world}/which-claude').write_text(__import__('pathlib').Path(__import__('shutil').which('claude')).as_posix())"
+        say: ask the pane which claude it would run
+        # No `expect`: the line is long enough to wrap wherever the
+        # interpreter's path puts it, and the answer landing on disk below
+        # is the proof the line ran.
       - wait: shell
         until: test -s {world}/which-claude
         timeout: 20

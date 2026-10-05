@@ -362,6 +362,14 @@ pub(crate) enum TerminalAction {
         #[arg(long)]
         root: PathBuf,
     },
+    /// A pane's program, run inside its group; started only by the server
+    HostPane {
+        /// The group the program joins before it starts
+        group: String,
+        /// The program and its arguments
+        #[arg(last = true, required = true)]
+        program: Vec<std::ffi::OsString>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

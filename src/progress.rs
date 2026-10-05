@@ -95,7 +95,7 @@ fn color_enabled() -> bool {
     if std::env::var_os("CLICOLOR_FORCE").is_some_and(|value| !value.is_empty() && value != "0") {
         return true;
     }
-    std::io::stdout().is_terminal() && std::env::var("TERM").is_ok_and(|term| term != "dumb")
+    uze_platform::stdio::escapes_reach_the_terminal()
 }
 
 fn paint(text: impl AsRef<str>, style: Style) -> String {
@@ -318,17 +318,7 @@ pub fn report_title(name: &str, detail: Option<&str>) -> String {
 
 /// `path` as a person reads it: under `$HOME` it starts with `~`.
 pub fn path(path: &std::path::Path) -> String {
-    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from)
-        && !home.as_os_str().is_empty()
-        && let Ok(rest) = path.strip_prefix(&home)
-    {
-        return if rest.as_os_str().is_empty() {
-            "~".to_owned()
-        } else {
-            format!("~/{}", rest.display())
-        };
-    }
-    path.display().to_string()
+    uze_platform::home::shorten(path)
 }
 
 /// `1 plugin`, `3 plugins`.

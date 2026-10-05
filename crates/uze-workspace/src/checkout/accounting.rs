@@ -18,7 +18,7 @@ pub fn linked_worktrees(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
     let mut main = true;
     for line in listing.lines().chain(std::iter::once("")) {
         if let Some(path) = line.strip_prefix("worktree ") {
-            current = Some((PathBuf::from(path), None));
+            current = Some((uze_git::native_path(path), None));
         } else if let Some(reference) = line.strip_prefix("branch ")
             && let Some(entry) = current.as_mut()
         {
@@ -78,9 +78,13 @@ pub fn account(primary: &Path, harness_dirs: &[(&str, &str)]) -> Vec<AccountedCh
             let harness = harness_dirs.iter().find(|(_, directory)| {
                 roots
                     .iter()
-                    .any(|root| path.starts_with(root.join(directory)))
+                    .any(|root| uze_platform::path::is_within(path, &root.join(directory)))
             });
-            let owner = match (harness, path.parent() == Some(container.as_path())) {
+            let directly_under = |container: &Path| {
+                path.parent()
+                    .is_some_and(|parent| uze_platform::path::same_path(parent, container))
+            };
+            let owner = match (harness, directly_under(&container)) {
                 (Some((harness, _)), _) => Owner::Harness {
                     harness: (*harness).to_owned(),
                 },
@@ -110,7 +114,10 @@ pub(super) fn isolated_checkouts(primary: &Path) -> Vec<(PathBuf, Option<String>
     let container = primary.join(WORKTREES_DIRECTORY);
     linked_worktrees(primary)
         .into_iter()
-        .filter(|(path, _)| path.parent() == Some(container.as_path()))
+        .filter(|(path, _)| {
+            path.parent()
+                .is_some_and(|parent| uze_platform::path::same_path(parent, &container))
+        })
         .collect()
 }
 

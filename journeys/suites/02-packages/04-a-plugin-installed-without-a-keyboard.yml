@@ -68,7 +68,11 @@ scenes:
         pause: 1.0
       - click: "Marketplace"
         say: open the Marketplace screen from its tab, the first match from the top
-        expect: "filter plugins"
+        # The staged plugin, not the search field: the field is drawn while
+        # the marketplaces are still being read, and a runner slow enough
+        # to still be reading them had nothing to search.
+        expect: "flow"
+        expect_timeout: 60
       - click: "filter plugins"
         say: click the search field, which nothing could click before
         expect: "flow"

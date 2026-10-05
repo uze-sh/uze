@@ -59,21 +59,20 @@ scenes:
 
   - scene: the agent names the work, and both halves of the name land
     when:
+      # Run as the agent: identity is the stamp its launch carried, read
+      # from the agent's own process rather than from any record.
+      #
+      # Matched on this world's own launcher rather than on `bin/claude`:
+      # the suite runs one journey after another in one process table, and
+      # a previous world's agent still winding down answered a bare match
+      # first — so this step read somebody else's identity and named work
+      # that was not there.
       - shell: |
           set -e
           slot=$(ls -d {project}/.worktrees/*/ | head -1)
           cd "$slot"
-          # Run as the agent: identity is the stamp its launch carried,
-          # read from the agent's own process rather than from any record
-          # (`ps e`, not /proc: the suite runs on macOS too).
-          #
-          # Matched on this world's own launcher rather than on
-          # `bin/claude`: the suite runs one journey after another in one
-          # process table, and a previous world's agent still winding down
-          # answered a bare pgrep first — so this step read somebody
-          # else's identity and named work that was not there.
-          export UZE_AGENT=$(ps eww -o command= -p "$(pgrep -f '{world}/bin/claude' | head -1)" | tr ' ' '\n' | sed -n 's/^UZE_AGENT=//p')
           {uze} agent work name fix/branch-naming
+        inherit: { from: "{world}/bin/claude", names: [UZE_AGENT] }
         say: the agent names its work from inside its own checkout
       - wait: screen
         until: "branch naming"
@@ -102,11 +101,8 @@ scenes:
           set -e
           slot=$(ls -d {project}/.worktrees/*/ | head -1)
           cd "$slot"
-          # Run as the agent: identity is the stamp its launch carried,
-          # read from the agent's own process rather than from any record
-          # (`ps e`, not /proc: the suite runs on macOS too).
-          export UZE_AGENT=$(ps eww -o command= -p "$(pgrep -f '{world}/bin/claude' | head -1)" | tr ' ' '\n' | sed -n 's/^UZE_AGENT=//p')
           {uze} agent work name fix/second-thoughts
+        inherit: { from: "{world}/bin/claude", names: [UZE_AGENT] }
         say: the agent names its work again, having found out what it is
     then:
       - cmd:

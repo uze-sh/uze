@@ -5,7 +5,7 @@ UZE_BIN ?= target/debug/uze
 RELEASE_BIN ?= target/release/uze
 INSTALL_ARGS ?= --force
 
-.PHONY: help build release install wsl-lab run test test-acceptance test-conformance test-installer harness-matrix check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
+.PHONY: help build release install playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
 
 help: ## Show the available local-development targets.
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -33,8 +33,14 @@ release-notes: ## Preview the GitHub Release page for the latest tag (cliff.rele
 install: ## Force-rebuild (no version bump) and install/replace `uze`, with the OTLP exporter compiled in.
 	$(CARGO) install --path . --bin uze --locked --features telemetry $(INSTALL_ARGS)
 
-wsl-lab: ## Build the release here and deploy binary + playground plugin into the WSL distro named Lab.
-	./playground/install-wsl-distro.sh Lab
+playground-windows: ## Open a fresh Windows Sandbox with this checkout's uze installed (run from WSL).
+	./playground/windows/up.sh
+
+playground-linux: ## Open a fresh throwaway WSL distribution with this checkout's uze installed.
+	./playground/linux/up.sh
+
+playground-linux-down: ## Remove the throwaway WSL distribution.
+	./playground/linux/up.sh --down
 
 run: build ## Run the debug binary; pass arguments with `ARGS="doctor"`.
 	$(UZE_BIN) $(ARGS)
@@ -145,7 +151,7 @@ journey-image: ## Build the pinned journey runtime image (tmux, git, python).
 	docker build -f journeys/Dockerfile -t $(JOURNEY_IMAGE) journeys/
 
 journey-docker: build journey-image ## Run a journey inside the pinned container, against this build.
-	$(CARGO) build --locked -p uze-testkit --bin uze-fake-harness
+	$(CARGO) build --locked --features dev-servers --bin uze-fake-harness
 	mkdir -p journeys/.evidence
 	docker run --rm --init \
 		--user "$$(id -u):$$(id -g)" -e HOME=/tmp/journey-home \

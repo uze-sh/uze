@@ -245,7 +245,7 @@ where
     // A journal that cannot be opened is not a reason to fail the run the
     // journal is about: the process goes on with nothing written, exactly
     // as it did before there was one.
-    restrict_to_owner(&dir);
+    create_private_journal_dir(&dir);
     prune_to_size(&dir, &name, JOURNAL_BYTES);
     let appender = match tracing_appender::rolling::Builder::new()
         .rotation(tracing_appender::rolling::Rotation::DAILY)
@@ -281,16 +281,8 @@ where
 /// Best-effort: a journal that cannot be restricted is still a journal,
 /// and failing the run over its mode would lose the record this exists
 /// to keep.
-#[cfg(unix)]
-fn restrict_to_owner(dir: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::create_dir_all(dir);
-    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
-}
-
-#[cfg(not(unix))]
-fn restrict_to_owner(dir: &std::path::Path) {
-    let _ = std::fs::create_dir_all(dir);
+fn create_private_journal_dir(dir: &std::path::Path) {
+    let _ = uze_platform::fs::create_private_dir_all(dir);
 }
 
 /// Drops the oldest days of `name`'s journal until what is left fits in
@@ -547,6 +539,7 @@ mod tests {
     /// users. `prompt_history` already keeps its own record at `0600`;
     /// leaving the journal beside it world-readable answered the same
     /// question two different ways.
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     #[test]
     fn the_journal_is_reachable_by_its_owner_alone() {

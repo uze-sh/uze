@@ -61,7 +61,7 @@ scenes:
     then:
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import json
             spaces = json.load(open('{uze_home}/state/terminal/workspace.json'))['spaces']
             print('%d space(s)' % len(spaces))
@@ -71,11 +71,12 @@ scenes:
         about: the pick opened a space beside the one uze started in
       - cmd:
           run: |
-            python3 -c "
-            import json
+            {python} -c "
+            import json, pathlib
             spaces = json.load(open('{uze_home}/state/terminal/workspace.json'))['spaces']
-            inside = [space['root'] for space in spaces if '/.worktrees/' in space['root'] + '/']
-            project = [space['root'] for space in spaces if space['root'] == '{project}']
+            roots = [pathlib.Path(space['root']).as_posix() for space in spaces]
+            inside = [root for root in roots if '/.worktrees/' in root + '/']
+            project = [root for root in roots if root == '{project}']
             print('rooted at the project' if project and not inside else 'inside: %s' % inside)
             "
           stdout_contains: "rooted at the project"

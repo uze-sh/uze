@@ -235,6 +235,11 @@ impl Attach<'_> {
         }
         // A directory first seen is where a space opens: its project's
         // `AGENTS.md` is brought in step before any agent there reads it.
+        spawn_unspelled_gates(
+            self.home,
+            unread.clone(),
+            self.channels.unspelled_gates.sender.clone(),
+        );
         spawn_policy_region_sync(
             self.home,
             unread,
@@ -330,6 +335,38 @@ impl Attach<'_> {
                 kind,
                 title,
                 format!("{}: {}", resolution.file.display(), resolution.problem),
+                None,
+            );
+        }
+    }
+
+    /// A project whose gates this machine cannot run: said once a session,
+    /// before a delivery from it is refused for that.
+    pub(super) fn absorb_unspelled_gates(&mut self) {
+        while let Ok(answer) = self.channels.unspelled_gates.receiver.try_recv() {
+            if !self
+                .model
+                .remembered
+                .unspelled_gates_reported
+                .insert(answer.project.clone())
+            {
+                continue;
+            }
+            let gates = answer
+                .gates
+                .iter()
+                .map(|gate| format!("`{gate}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.model.raise_toast(
+                ToastKind::Warned,
+                "A gate cannot run on this machine",
+                format!(
+                    "{}: {gates} has no `{}` spelling in agents.yaml, so delivery from here is \
+                     refused",
+                    answer.project.display(),
+                    answer.platform
+                ),
                 None,
             );
         }

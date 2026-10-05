@@ -21,6 +21,7 @@ use uze_core::{
 };
 use uze_integrations::{codex::CodexIntegration, opencode::OpenCodeIntegration};
 
+use uze_testkit::fake_harness::{Action, FakeHarness};
 use uze_testkit::temp::scratch;
 
 fn temp(label: &str) -> PathBuf {
@@ -128,20 +129,12 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
 }
 
 /// A fake `codex` that answers every plugin CLI call successfully.
-#[cfg(unix)]
 fn fake_codex_bin_dir(root: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let dir = root.join("fake-bin");
-    fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("codex");
-    fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).unwrap();
+    FakeHarness::new(&dir, "codex").build();
     dir
 }
 
-#[cfg(unix)]
 fn with_fake_codex(root: &Path, f: impl FnOnce()) {
     let fake_bin = fake_codex_bin_dir(root);
     let mut scope = uze_testkit::env::scope();
@@ -153,36 +146,28 @@ fn with_fake_codex(root: &Path, f: impl FnOnce()) {
 /// JSON (via env vars) so integration-owned package receipts can be
 /// inspected and detached truthfully in tests that exercise per-integration
 /// detach/update.
-#[cfg(unix)]
 fn with_truthful_fake_codex(
     root: &Path,
     marketplace_json: &str,
     plugins_json: &str,
     f: impl FnOnce(),
 ) {
-    use std::os::unix::fs::PermissionsExt;
     let dir = root.join("fake-bin");
-    fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("codex");
-    fs::write(
-        &path,
-        "#!/bin/sh\ncase \"$1 $2 $3\" in\n  \"plugin marketplace list\") echo \"$FAKE_CODEX_MARKETPLACES\" ;;\n  \"plugin list --json\") echo \"$FAKE_CODEX_PLUGINS\" ;;\n  *) exit 0 ;;\nesac\n",
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).unwrap();
+    FakeHarness::new(&dir, "codex")
+        .on_prefix(
+            ["plugin", "marketplace", "list"],
+            Action::stdout(marketplace_json),
+        )
+        .on_prefix(["plugin", "list", "--json"], Action::stdout(plugins_json))
+        .build();
     let mut scope = uze_testkit::env::scope();
     scope.set("PATH", uze_testkit::temp::path_prefixed(&dir));
-    scope.set("FAKE_CODEX_MARKETPLACES", marketplace_json);
-    scope.set("FAKE_CODEX_PLUGINS", plugins_json);
     f();
 }
 
 /// Codex and OpenCode against one machine: the OpenCode config file sits
 /// at `<root>/opencode/opencode.json`, so its skills root is
 /// `<root>/opencode/skills`.
-#[cfg(unix)]
 fn codex_and_opencode(root: &Path) -> (UzeApplication, PathBuf, PathBuf, UzeHome) {
     let agents_home = root.join("agents-home");
     let uze_home = UzeHome::at(root.join("uze-home"));
@@ -211,9 +196,7 @@ fn codex_and_opencode(root: &Path) -> (UzeApplication, PathBuf, PathBuf, UzeHome
 
 /// A `flow` package whose `review` skill is user-only and ships a script
 /// and a reference beside its `SKILL.md`.
-#[cfg(unix)]
 fn review_fixture(root: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let fixture_root = root.join("fixture");
     let skill = fixture_root.join("skills/review");
     fs::create_dir_all(skill.join("scripts")).unwrap();
@@ -222,7 +205,7 @@ fn review_fixture(root: &Path) -> PathBuf {
     fs::write(skill.join("references/guide.md"), "Guide.\n").unwrap();
     let script = skill.join("scripts/check.sh");
     fs::write(&script, "#!/bin/sh\necho ok\n").unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    uze_platform::executable::make_runnable(&script).unwrap();
     fs::write(
         fixture_root.join("plugin.json"),
         r#"{"name":"flow","version":"1.0.0","description":"review fixture"}"#,
@@ -251,9 +234,7 @@ fn links_under(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-#[cfg(unix)]
 fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
-    use std::os::unix::fs::PermissionsExt;
     let root = temp("skill-root-opencode");
     with_fake_codex(&root, || {
         let (application, agents_home, opencode_skills, _) = codex_and_opencode(&root);
@@ -265,7 +246,7 @@ fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
             )
             .expect("the skill installs for both harnesses");
 
-        let entry = opencode_skills.join("flow:review");
+        let entry = opencode_skills.join(uze_core::path::file_name_for("flow:review"));
         assert!(entry.is_dir() && !entry.is_symlink(), "a real directory");
         let skill = fs::read_to_string(entry.join("SKILL.md")).unwrap();
         assert!(skill.contains("opencode/autoinvoke: false"), "{skill}");
@@ -279,14 +260,19 @@ fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
         );
         let script = entry.join("scripts/check.sh");
         assert!(script.is_file() && !script.is_symlink());
-        assert_ne!(
-            fs::metadata(&script).unwrap().permissions().mode() & 0o111,
-            0,
-            "a copied script stays executable"
+        assert_eq!(
+            uze_platform::executable::is_executable(&script),
+            uze_platform::executable::is_executable(
+                &root.join("fixture/skills/review/scripts/check.sh")
+            ),
+            "a copied script runs exactly as its source does"
         );
         assert!(links_under(&opencode_skills).is_empty());
         assert!(
-            !agents_home.join("skills/flow:review").exists(),
+            !agents_home
+                .join("skills")
+                .join(uze_core::path::file_name_for("flow:review"))
+                .exists(),
             "Codex's plugin covers the skill: nothing is written to its loose root"
         );
     });
@@ -294,7 +280,6 @@ fn opencode_gets_a_directory_of_its_own_with_its_supporting_files_copied() {
 }
 
 #[test]
-#[cfg(unix)]
 fn codex_alone_keeps_the_user_only_skill_hidden_from_the_model() {
     let root = temp("skill-root-codex-only");
     with_fake_codex(&root, || {
@@ -335,7 +320,6 @@ fn codex_alone_keeps_the_user_only_skill_hidden_from_the_model() {
 }
 
 #[test]
-#[cfg(unix)]
 fn an_update_rebuilds_the_directory_and_the_receipt_still_matches() {
     let root = temp("skill-root-update");
     let (application, _, opencode_skills, uze_home) = codex_and_opencode(&root);
@@ -356,13 +340,23 @@ fn an_update_rebuilds_the_directory_and_the_receipt_still_matches() {
                 &uze_core::trust::AlwaysTrust,
             )
             .expect("initial install");
-        let before = fs::read(opencode_skills.join("flow:review/SKILL.md")).unwrap();
+        let before = fs::read(
+            opencode_skills
+                .join(uze_core::path::file_name_for("flow:review"))
+                .join("SKILL.md"),
+        )
+        .unwrap();
         application
             .plugins()
             .update("flow", &uze_core::trust::AlwaysTrust)
             .expect("update succeeds");
         assert_eq!(
-            fs::read(opencode_skills.join("flow:review/SKILL.md")).unwrap(),
+            fs::read(
+                opencode_skills
+                    .join(uze_core::path::file_name_for("flow:review"))
+                    .join("SKILL.md")
+            )
+            .unwrap(),
             before
         );
         let receipt = uze_core::state::receipts(&uze_home, Some("flow@local"))
@@ -380,7 +374,6 @@ fn an_update_rebuilds_the_directory_and_the_receipt_still_matches() {
 }
 
 #[test]
-#[cfg(unix)]
 fn an_edited_skill_is_drift_and_is_left_as_the_operator_left_it() {
     let root = temp("skill-root-drift");
     with_fake_codex(&root, || {
@@ -392,7 +385,9 @@ fn an_edited_skill_is_drift_and_is_left_as_the_operator_left_it() {
                 &uze_core::trust::AlwaysTrust,
             )
             .expect("initial install");
-        let skill = opencode_skills.join("flow:review/SKILL.md");
+        let skill = opencode_skills
+            .join(uze_core::path::file_name_for("flow:review"))
+            .join("SKILL.md");
         fs::write(&skill, "edited by hand\n").unwrap();
 
         let receipt = uze_core::state::receipts(&uze_home, Some("flow@local"))
@@ -416,7 +411,6 @@ fn an_edited_skill_is_drift_and_is_left_as_the_operator_left_it() {
 }
 
 #[test]
-#[cfg(unix)]
 fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
     let root = temp("skill-root-upgrade");
     with_fake_codex(&root, || {
@@ -437,15 +431,18 @@ fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
             .into_iter()
             .find(|r| r.integration == "opencode")
             .unwrap();
-        fs::remove_dir_all(opencode_skills.join("flow:review")).unwrap();
+        fs::remove_dir_all(opencode_skills.join(uze_core::path::file_name_for("flow:review")))
+            .unwrap();
         let wrapper = uze_home
             .runtime_dir()
             .join("attachments/opencode/skills/flow/review");
         fs::create_dir_all(&wrapper).unwrap();
         fs::write(wrapper.join("SKILL.md"), "old wrapper\n").unwrap();
-        let link = agents_home.join("skills/flow:review");
+        let link = agents_home
+            .join("skills")
+            .join(uze_core::path::file_name_for("flow:review"));
         fs::create_dir_all(link.parent().unwrap()).unwrap();
-        std::os::unix::fs::symlink(&wrapper, &link).unwrap();
+        uze_platform::fs::symlink(&wrapper, &link).unwrap();
         uze_core::state::forget_receipt(&uze_home, &current).unwrap();
         for integration in ["opencode", "codex"] {
             let mut old = current.clone();
@@ -466,7 +463,12 @@ fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
             .expect("the install after an upgrade succeeds");
 
         assert!(!link.exists() && !link.is_symlink(), "the old link is gone");
-        assert!(opencode_skills.join("flow:review/SKILL.md").is_file());
+        assert!(
+            opencode_skills
+                .join(uze_core::path::file_name_for("flow:review"))
+                .join("SKILL.md")
+                .is_file()
+        );
         let receipts = uze_core::state::receipts(&uze_home, Some("flow@local")).unwrap();
         assert!(
             receipts.iter().all(|r| !matches!(
@@ -480,7 +482,6 @@ fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
 }
 
 #[test]
-#[cfg(unix)]
 fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
     let root = temp("skill-root-blocked-one");
     with_fake_codex(&root, || {
@@ -501,7 +502,7 @@ fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
         .unwrap();
 
         // Somebody else's directory at the name `review` needs.
-        let theirs = opencode_skills.join("flow:review");
+        let theirs = opencode_skills.join(uze_core::path::file_name_for("flow:review"));
         fs::create_dir_all(&theirs).unwrap();
         fs::write(theirs.join("SKILL.md"), "theirs\n").unwrap();
 
@@ -519,7 +520,10 @@ fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
             "the entry UZE does not own is untouched"
         );
         assert!(
-            opencode_skills.join("flow:commit/SKILL.md").is_file(),
+            opencode_skills
+                .join(uze_core::path::file_name_for("flow:commit"))
+                .join("SKILL.md")
+                .is_file(),
             "the capability whose name was free is delivered"
         );
         assert!(
@@ -545,7 +549,6 @@ fn a_name_somebody_else_holds_blocks_its_own_capability_and_no_other() {
 /// out of the Store: the file it points at exists, and a write through it —
 /// a hook building into its root — leaves the bytes the lock pins alone.
 #[test]
-#[cfg(unix)]
 fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
     let root = temp("skill-root-plugin-root");
     with_fake_codex(&root, || {
@@ -564,7 +567,12 @@ fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
             .add(PackageSource::local(fixture), &uze_core::trust::AlwaysTrust)
             .expect("installs");
 
-        let skill = fs::read_to_string(opencode_skills.join("flow:run/SKILL.md")).unwrap();
+        let skill = fs::read_to_string(
+            opencode_skills
+                .join(uze_core::path::file_name_for("flow:run"))
+                .join("SKILL.md"),
+        )
+        .unwrap();
         let named = skill
             .lines()
             .find_map(|line| line.strip_prefix("Read "))
@@ -593,7 +601,6 @@ fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
 /// is UZE's own, by its receipt: the next install replaces it with the
 /// delivered root rather than refusing it as somebody else's.
 #[test]
-#[cfg(unix)]
 fn an_mcp_entry_an_earlier_build_rooted_in_the_store_is_restated() {
     let root = temp("skill-root-mcp-restated");
     with_fake_codex(&root, || {
@@ -634,32 +641,40 @@ fn an_mcp_entry_an_earlier_build_rooted_in_the_store_is_restated() {
                     )
             })
             .expect("OpenCode holds the server as a config entry");
-        let delivered = uze_home
-            .runtime_dir()
-            .join("packages/served@local")
-            .to_string_lossy()
-            .into_owned();
-        let stored = uze_home
-            .plugins_dir()
-            .join("local/served")
-            .to_string_lossy()
-            .into_owned();
+        let delivered = uze_home.runtime_dir().join("packages").join("served@local");
+        let stored = uze_home.plugins_dir().join("local").join("served");
+        // As the configuration's text spells them: a JSON string escapes
+        // the separator Windows writes.
+        let in_json = |path: &Path| {
+            let quoted = serde_json::to_string(&path.to_string_lossy()).unwrap();
+            quoted.trim_matches('"').to_owned()
+        };
         let config = fs::read_to_string(&config_path).unwrap();
-        assert!(config.contains(&delivered), "{config}");
-        fs::write(&config_path, config.replace(&delivered, &stored)).unwrap();
+        assert!(config.contains(&in_json(&delivered)), "{config}");
+        fs::write(
+            &config_path,
+            config.replace(&in_json(&delivered), &in_json(&stored)),
+        )
+        .unwrap();
         let mut earlier = receipt.clone();
         if let uze_core::integration::ManagedArtifact::VendorConfigEntry { command, .. } =
             &mut earlier.artifact
         {
-            *command = PathBuf::from(command.to_string_lossy().replace(&delivered, &stored));
+            // The same text replaced as in the configuration above, so the
+            // two still agree: the earlier build wrote one entry, not two.
+            *command = PathBuf::from(
+                command
+                    .to_string_lossy()
+                    .replace(&*delivered.to_string_lossy(), &stored.to_string_lossy()),
+            );
         }
         uze_core::state::record_receipt(&uze_home, earlier).unwrap();
 
         install();
 
         let config = fs::read_to_string(&config_path).unwrap();
-        assert!(config.contains(&delivered), "restated: {config}");
-        assert!(!config.contains(&stored), "{config}");
+        assert!(config.contains(&in_json(&delivered)), "restated: {config}");
+        assert!(!config.contains(&in_json(&stored)), "{config}");
         let receipt = uze_core::state::receipts(&uze_home, Some("served@local"))
             .unwrap()
             .into_iter()

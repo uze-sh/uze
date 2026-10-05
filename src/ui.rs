@@ -312,12 +312,7 @@ fn io_error(source: io::Error) -> uze_application::UzeError {
 /// `~/relative/path` when `root` is under the user's home directory, else
 /// the path as-is — mirrors what a shell prompt usually shows.
 pub(crate) fn display_project_path(root: &std::path::Path) -> String {
-    if let Some(home) = std::env::var_os("HOME")
-        && let Ok(relative) = root.strip_prefix(&home)
-    {
-        return format!("~/{}", relative.display());
-    }
-    root.display().to_string()
+    uze_platform::home::shorten(root)
 }
 
 // --- Shared helpers ---------------------------------------------------------

@@ -10,7 +10,12 @@
 //! Every source is held to it identically, which is why these tests use a
 //! plain local directory. If containment only applied to remote acquisition,
 //! the same malicious package would simply be offered as a local path.
+//!
+//! Unix only: every case plants a symbolic link, which Windows lets an
+//! ordinary account make only in developer mode. What Windows acquisition
+//! does with a Git link entry is its own rule (task 6.8).
 
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #![cfg(unix)]
 
 use std::{

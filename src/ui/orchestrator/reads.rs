@@ -169,6 +169,52 @@ pub(super) fn spawn_policy_region_sync(
     });
 }
 
+/// A project's gates this machine's shell has no spelling for, and the
+/// spelling they lack.
+pub(super) struct UnspelledGates {
+    pub(super) project: PathBuf,
+    pub(super) gates: Vec<String>,
+    pub(super) platform: &'static str,
+}
+
+/// Reads, where a space first opens, which of its project's gates this
+/// machine cannot run: what refuses every delivery from here, said before
+/// one is asked for. Off the frame: it reads `agents.yaml`.
+pub(super) fn spawn_unspelled_gates(
+    home: &UzeHome,
+    directories: Vec<PathBuf>,
+    sender: mpsc::Sender<UnspelledGates>,
+) {
+    if directories.is_empty() {
+        return;
+    }
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _pass = crate::telemetry::background_pass!("tui.unspelled_gates");
+        let Ok(app) = tui_application(home) else {
+            return;
+        };
+        for directory in directories {
+            let unspelled: Vec<_> = app
+                .workspace()
+                .steps_not_spelled_here(&directory)
+                .into_iter()
+                .filter(|step| step.step == uze_application::PolicyStep::Gate)
+                .collect();
+            let Some(platform) = unspelled.first().map(|step| step.platform) else {
+                continue;
+            };
+            let _ = sender.send(UnspelledGates {
+                project: uze_application::slot_key(&directory),
+                gates: unspelled.into_iter().map(|step| step.command).collect(),
+                platform,
+            });
+        }
+    });
+}
+
 /// Asks the registry, once, which names a harness launched through a shim
 /// runs under. Off the frame: composing the application reads the machine.
 pub(super) fn spawn_launcher_names(home: &UzeHome, sender: mpsc::Sender<Vec<String>>) {

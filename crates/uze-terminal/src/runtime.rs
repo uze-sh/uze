@@ -2,9 +2,6 @@ use std::{
     collections::BTreeMap,
     env, fs,
     io::{self, BufReader, Read, Write},
-    os::unix::fs::{MetadataExt, PermissionsExt},
-    os::unix::io::AsRawFd,
-    os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, mpsc},
     thread,
@@ -27,19 +24,20 @@ use crate::{
     Palette, PaneDamage, PaneId, PaneSnapshot, RenderCell, Seating, SelectionGesture, Session,
     SpaceId, SpaceSeat, TabId, TerminalColor,
     launch::Launch,
-    process_probe,
     selection::PaneSelection,
     state::{OpenedSpace, PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed},
 };
 
 mod endpoint;
 mod framing;
+mod host;
 mod lock;
 mod outbox;
 mod pane;
 mod persist;
 mod process;
 mod server;
+use uze_platform::endpoint as transport;
 
 pub use endpoint::*;
 pub use framing::*;
@@ -49,6 +47,14 @@ use pane::*;
 use persist::*;
 use process::*;
 use server::*;
+pub use transport::{Stream, connect, pair as stream_pair};
+
+/// A pane's program run inside the group named `group`: what the server
+/// starts in its place where a program joins its group only from inside
+/// (see `host::pane_host`). Returns only when it could not run `argv`.
+pub fn host_pane(group: &str, argv: &[std::ffi::OsString]) -> std::io::Error {
+    uze_platform::process::pane::host_grouped(group, argv)
+}
 
 /// ADR-038: the endpoint is local and user-private; no network transport is
 /// exposed by this runtime.
@@ -62,11 +68,13 @@ pub enum RuntimeError {
     Pty(String),
 }
 
+/// One home, one identity, however its path was spelled: on Windows a
+/// home reached as `C:\Users\X` and as `c:\users\x` (or `\\?\C:\…`) is one
+/// workspace, and two identities would start a second server for it.
 fn identity_of(root: &Path) -> String {
-    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let hash = canonical
-        .as_os_str()
-        .as_encoded_bytes()
+    let canonical = uze_platform::path::canonical(root).unwrap_or_else(|_| root.to_path_buf());
+    let hash = uze_platform::path::identity(&canonical)
+        .as_bytes()
         .iter()
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)

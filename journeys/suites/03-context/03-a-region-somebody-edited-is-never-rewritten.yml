@@ -78,7 +78,7 @@ scenes:
     when:
       - shell: |
           set -e
-          python3 - <<'EDIT'
+          {python} - <<'EDIT'
           from pathlib import Path
           page = Path("{project}/AGENTS.md")
           body = page.read_text()

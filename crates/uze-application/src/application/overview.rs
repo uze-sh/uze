@@ -335,6 +335,7 @@ fn derive_memory(agents_md: bool, portability: Option<&Portability>) -> MemorySt
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use uze_core::path::Canonical as _;
 
     use uze_core::{PackageSource, UzeHome, trust::AlwaysTrust};
 
@@ -762,7 +763,7 @@ mod tests {
 
         let summary = fx.app.project().summary(&inner.join("src")).unwrap();
         assert_eq!(summary.kind, AnchorKind::Consumer);
-        assert_eq!(summary.root, inner.canonicalize().unwrap());
+        assert_eq!(summary.root, inner.canonical().unwrap());
         assert_eq!(
             summary.project.environment,
             ProjectEnvironmentState::InstallRequired

@@ -1,6 +1,9 @@
 //! The pool of slots under `.worktrees/`, and acquiring, resuming and materializing one.
 
 use super::*;
+use uze_core::shell::ShellCommand;
+
+use crate::worktree::PolicyStep;
 
 /// How many free slots are kept, and for how long. Decided from the slots
 /// as they stand, never from a history of how many were used: a rule with
@@ -297,18 +300,12 @@ pub(super) fn create(
     let _ = git(primary, &["worktree", "prune"]);
     let id = CheckoutId::generate();
     let relative = format!("{WORKTREES_DIRECTORY}/{id}");
+    let mut add = vec!["worktree", "add", "--quiet"];
     match start {
-        Start::Branching { base_tip } => git(
-            primary,
-            &[
-                "worktree", "add", "--quiet", "-b", branch, "--", &relative, base_tip,
-            ],
-        )?,
-        Start::Existing => git(
-            primary,
-            &["worktree", "add", "--quiet", "--", &relative, branch],
-        )?,
-    };
+        Start::Branching { base_tip } => add.extend(["-b", branch, "--", &relative, base_tip]),
+        Start::Existing => add.extend(["--", &relative, branch]),
+    }
+    git(primary, &add)?;
     exclude_isolation_directory(primary)?;
     let path = primary.join(relative);
     // Unrecorded, the directory would be nobody's to reuse or remove for
@@ -337,17 +334,13 @@ pub(super) fn create(
 /// A checkout's preparation, in order: links from the primary, then the
 /// declared setup command. Every problem is a warning — a checkout without
 /// its `.env` or its dependencies is still better than no agent — and the
-/// warnings are what the tab shows.
+/// warnings are what the tab shows. A gate this machine cannot run is said
+/// here too, when the work starts, rather than first at its delivery.
 pub const SETUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
-pub fn materialize(
-    primary: &Path,
-    slot: &Path,
-    links: &[PathBuf],
-    setup: &[String],
-) -> Vec<String> {
+pub fn materialize(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<String> {
     let mut warnings = Vec::new();
-    for link in links {
+    for link in &policy.link {
         let source = primary.join(link);
         let destination = slot.join(link);
         if !source.exists() {
@@ -366,34 +359,41 @@ pub fn materialize(
             warnings.push(format!("could not prepare `{}`: {error}", link.display()));
             continue;
         }
-        if let Err(error) = symlink(&source, &destination) {
+        if let Err(error) = uze_platform::fs::link_entry(&source, &destination) {
             warnings.push(format!("could not link `{}`: {error}", link.display()));
         }
     }
     // In order, and stopping at the first failure: a later step almost
     // always assumes the earlier one ran, so continuing would produce a
     // second, more confusing warning about the same cause.
-    for step in setup {
-        let (passed, output) = crate::subprocess::run_shell_bounded(slot, step, SETUP_TIMEOUT);
+    for step in &policy.setup {
+        // Never run in a shell it was not written for: the checkout is
+        // still placed, and says which step it went without.
+        let Some(line) = step.here() else {
+            warnings.push(format!(
+                "setup `{step}` has no {} spelling; not run",
+                ShellCommand::platform()
+            ));
+            break;
+        };
+        let (passed, output) = crate::subprocess::run_shell_bounded(slot, line, SETUP_TIMEOUT);
         if !passed {
             let tail = output.lines().last().unwrap_or("").to_owned();
             warnings.push(format!("setup `{step}` failed: {tail}"));
             break;
         }
     }
+    warnings.extend(
+        policy
+            .steps_not_spelled_here()
+            .into_iter()
+            .filter(|(step, _)| *step == PolicyStep::Gate)
+            .map(|(_, gate)| {
+                format!(
+                    "gate `{gate}` has no {} spelling; this work cannot be delivered from here",
+                    ShellCommand::platform()
+                )
+            }),
+    );
     warnings
-}
-
-#[cfg(unix)]
-pub(super) fn symlink(source: &Path, destination: &Path) -> std::io::Result<()> {
-    std::os::unix::fs::symlink(source, destination)
-}
-
-#[cfg(not(unix))]
-pub(super) fn symlink(source: &Path, destination: &Path) -> std::io::Result<()> {
-    if source.is_dir() {
-        std::os::windows::fs::symlink_dir(source, destination)
-    } else {
-        std::os::windows::fs::symlink_file(source, destination)
-    }
 }

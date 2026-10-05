@@ -275,7 +275,7 @@ fn installing_another_plugin_never_renames_an_existing_one() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    let alpha_before = skills_dir.join("alpha:review");
+    let alpha_before = skills_dir.join(uze_core::path::file_name_for("alpha:review"));
     assert!(alpha_before.is_dir());
 
     // Installing a second plugin with the SAME logical name must not rename
@@ -288,7 +288,11 @@ fn installing_another_plugin_never_renames_an_existing_one() {
         )
         .unwrap();
     assert!(alpha_before.is_dir(), "alpha:review is untouched");
-    assert!(skills_dir.join("beta:review").is_dir());
+    assert!(
+        skills_dir
+            .join(uze_core::path::file_name_for("beta:review"))
+            .is_dir()
+    );
 
     // Reverse order yields the exact same labels per plugin.
     let root2 = temp("order-reverse");
@@ -307,8 +311,16 @@ fn installing_another_plugin_never_renames_an_existing_one() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    assert!(skills2.join("alpha:review").is_dir());
-    assert!(skills2.join("beta:review").is_dir());
+    assert!(
+        skills2
+            .join(uze_core::path::file_name_for("alpha:review"))
+            .is_dir()
+    );
+    assert!(
+        skills2
+            .join(uze_core::path::file_name_for("beta:review"))
+            .is_dir()
+    );
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(root2).unwrap();
 }
@@ -331,8 +343,16 @@ fn same_named_skills_from_two_packages_are_independently_addressable() {
             &uze_core::trust::AlwaysTrust,
         )
         .unwrap();
-    assert!(skills_dir.join("alpha:review").is_dir());
-    assert!(skills_dir.join("beta:review").is_dir());
+    assert!(
+        skills_dir
+            .join(uze_core::path::file_name_for("alpha:review"))
+            .is_dir()
+    );
+    assert!(
+        skills_dir
+            .join(uze_core::path::file_name_for("beta:review"))
+            .is_dir()
+    );
     assert!(
         !skills_dir.join("review").exists(),
         "no bare alias is created"
@@ -362,7 +382,10 @@ fn labels_never_touch_canonical_identity_store_or_receipts() {
     let ManagedArtifact::GeneratedTree { path, .. } = &receipt.artifact else {
         panic!("expected a materialized skill directory");
     };
-    assert_eq!(path.file_name().unwrap(), "workflow:review");
+    assert_eq!(
+        path.file_name().unwrap(),
+        uze_core::path::file_name_for("workflow:review").as_str()
+    );
     // Store bytes stay byte-identical.
     assert_eq!(
         fs::read(package.root.join("skills/review/SKILL.md")).unwrap(),
@@ -404,7 +427,6 @@ fn claude_declares_plain_and_namespaces_natively_without_double_prefix() {
 
 #[test]
 fn claude_shim_namespace_matches_plugin_and_never_double_prefixes() {
-    #[cfg(unix)]
     {
         let root = temp("claude-shim");
         let home = UzeHome::at(&root);
@@ -418,7 +440,10 @@ fn claude_shim_namespace_matches_plugin_and_never_double_prefixes() {
         let ManagedArtifact::GeneratedTree { path, .. } = &receipt.artifact else {
             panic!("expected a materialized skill directory");
         };
-        assert_eq!(path.file_name().unwrap(), "workflow:review");
+        assert_eq!(
+            path.file_name().unwrap(),
+            uze_core::path::file_name_for("workflow:review").as_str()
+        );
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(path.join(".claude-plugin/plugin.json")).unwrap())
                 .unwrap();

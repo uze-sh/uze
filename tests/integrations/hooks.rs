@@ -36,10 +36,82 @@ fn hook_package(label: &str, manifest: &str) -> (PathBuf, Vec<Resource>) {
         r#"{"name":"hook-demo","version":"1.0.0","description":"Hooks fixture"}"#,
     )
     .unwrap();
-    fs::write(pkg.join("hooks.json"), manifest).unwrap();
+    fs::write(pkg.join("hooks.json"), spelled_for_every_shell(manifest)).unwrap();
     let id = PackageId::from_plugin_name("hook-demo", &pkg.join("plugin.json")).unwrap();
     let resources = package_resources_at(&id, &pkg).unwrap();
     (root, resources)
+}
+
+/// `manifest` with every handler line declared for both shells, as an
+/// author writing for every platform declares it: what is under test here is
+/// delivery, which the same text proves under either spelling.
+fn spelled_for_every_shell(manifest: &str) -> String {
+    let mut document: serde_json::Value = serde_json::from_str(manifest).unwrap();
+    for groups in document["hooks"]
+        .as_object_mut()
+        .into_iter()
+        .flat_map(|events| events.values_mut())
+        .filter_map(serde_json::Value::as_array_mut)
+    {
+        for handler in groups
+            .iter_mut()
+            .filter_map(|group| group["hooks"].as_array_mut())
+            .flatten()
+        {
+            if let Some(line) = handler["command"].as_str().map(str::to_owned) {
+                handler["command"] = serde_json::json!({ "posix": line, "windows": line });
+            }
+        }
+    }
+    document.to_string()
+}
+
+/// Codex runs a Windows shell command without firing PreToolUse
+/// (openai/codex#24453), so a shell guard is reported there, never delivered.
+#[cfg(unix)]
+const CODEX_GUARDS_SHELL: CompatibilityRoute = CompatibilityRoute::Native;
+// What Codex was measured to fire on Windows (see above).
+#[cfg(windows)]
+const CODEX_GUARDS_SHELL: CompatibilityRoute = CompatibilityRoute::Unsupported;
+
+/// What a hook entry runs, read back: the generated wrapper it starts and
+/// the arguments the wrapper is handed. `words` is the entry's command
+/// followed by its arguments; this platform's shell may start a script
+/// through an interpreter, so the wrapper is the last word of
+/// [`uze_platform::shell::script`]'s form, wherever that puts it.
+fn wrapper_invocation(words: &[String]) -> (PathBuf, Vec<String>) {
+    // The form is the program and then its arguments, with the script's
+    // path as its last word: the program itself on Unix.
+    let (_, arguments) = uze_platform::shell::script("");
+    let path_at = arguments.len();
+    let wrapper = words
+        .get(path_at)
+        .unwrap_or_else(|| panic!("the entry starts a script: {words:?}"));
+    (PathBuf::from(wrapper), words[path_at + 1..].to_vec())
+}
+
+/// Whether `path` is the wrapper UZE generates, under the name this
+/// platform's template gives it.
+fn is_generated_wrapper(path: &Path) -> bool {
+    path.file_stem().is_some_and(|stem| stem == "exec")
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|directory| directory == "hooks")
+}
+
+/// The words a hook entry's `command` and `args` start.
+fn entry_words(handler: &serde_json::Value) -> Vec<String> {
+    std::iter::once(&handler["command"])
+        .chain(handler["args"].as_array().into_iter().flatten())
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// A guard on file writes, which every harness fires its pre-tool event
+/// for on every platform: what a test about an entry's mechanics guards.
+fn file_write_guard() -> &'static str {
+    r#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"file.write","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/scripts/check","timeout":10}]}]}}"#
 }
 
 fn deny_group() -> &'static str {
@@ -87,10 +159,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
         claude.exposure_plan(protect).route,
         CompatibilityRoute::Native
     );
-    assert_eq!(
-        codex.exposure_plan(protect).route,
-        CompatibilityRoute::Native
-    );
+    assert_eq!(codex.exposure_plan(protect).route, CODEX_GUARDS_SHELL);
     assert_eq!(
         opencode.exposure_plan(protect).route,
         // OpenCode V2 exposes no input-based block (spec:
@@ -309,26 +378,25 @@ fn claude_merges_into_settings_json_preserving_foreign_content() {
     assert_eq!(groups[0]["hooks"][0]["command"], "foreign");
     assert_eq!(document["theme"], "dark");
     let entry = &groups[1];
-    assert_eq!(entry["matcher"], "Bash");
-    let command = entry["hooks"][0]["command"].as_str().unwrap();
+    assert_eq!(entry["matcher"], "Bash|PowerShell");
     assert!(
-        command.ends_with("/hooks/exec"),
-        "the entry runs the generated wrapper, not the packager: {command}"
+        entry["hooks"][0]["args"].is_array(),
+        "the wrapper is started through the exec form"
+    );
+    let words = entry_words(&entry["hooks"][0]);
+    let (wrapper, args) = wrapper_invocation(&words);
+    assert!(
+        is_generated_wrapper(&wrapper),
+        "the entry runs the generated wrapper, not the packager: {words:?}"
     );
     assert!(
-        !command.contains("hook-exec"),
+        !words.iter().any(|word| word.contains("hook-exec")),
         "no UZE binary may sit on the hook's execution path"
     );
     assert!(
-        Path::new(command).is_file(),
+        wrapper.is_file(),
         "the wrapper the entry names must exist on disk"
     );
-    let args: Vec<&str> = entry["hooks"][0]["args"]
-        .as_array()
-        .expect("the wrapper is started through the exec form")
-        .iter()
-        .map(|value| value.as_str().unwrap())
-        .collect();
     assert_eq!(args[1], "pre_tool_use");
     assert_eq!(args[2], "deny");
     assert!(
@@ -628,10 +696,11 @@ fn reinstalling_replaces_a_previous_packager_entry_and_leaves_foreign_ones() {
         "the old UZE entry was replaced, not added to"
     );
     assert_eq!(groups[0], foreign, "the foreign entry is untouched");
-    let command = groups[1]["hooks"][0]["command"].as_str().unwrap();
+    let words = entry_words(&groups[1]["hooks"][0]);
+    let (wrapper, _) = wrapper_invocation(&words);
     assert!(
-        command.ends_with("/hooks/exec") && !command.contains("hook-exec"),
-        "the entry now runs the generated wrapper: {command}"
+        is_generated_wrapper(&wrapper) && !words.iter().any(|word| word.contains("hook-exec")),
+        "the entry now runs the generated wrapper: {words:?}"
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -642,7 +711,7 @@ fn reinstalling_replaces_a_previous_packager_entry_and_leaves_foreign_ones() {
 
 #[test]
 fn codex_writes_its_own_hooks_json_command_form() {
-    let (root, resources) = hook_package("codex-hooks", deny_group());
+    let (root, resources) = hook_package("codex-hooks", file_write_guard());
     let protect = hook_resource(&resources, "protect-env");
     let home = UzeHome::at(root.join("uze"));
     let codex = CodexIntegration::new(root.join("agents"), home);
@@ -673,8 +742,10 @@ fn codex_writes_its_own_hooks_json_command_form() {
     let groups = document["hooks"]["PreToolUse"].as_array().unwrap();
     assert_eq!(groups.len(), 1);
     let command = groups[0]["hooks"][0]["command"].as_str().unwrap();
+    let words = uze_platform::shell::words(command).expect("one line the shell reads");
+    let (wrapper, args) = wrapper_invocation(&words);
     assert!(
-        command.contains("/hooks/exec' ") && command.contains(" 'pre_tool_use' 'deny' "),
+        is_generated_wrapper(&wrapper) && args[1..3] == ["pre_tool_use", "deny"],
         "Codex's entry is one shell line invoking the generated wrapper: {command}"
     );
     assert!(
@@ -703,7 +774,7 @@ fn codex_writes_its_own_hooks_json_command_form() {
 
 #[test]
 fn foreign_codex_hooks_survive_attach_and_detach() {
-    let (root, resources) = hook_package("codex-foreign", deny_group());
+    let (root, resources) = hook_package("codex-foreign", file_write_guard());
     let protect = hook_resource(&resources, "protect-env");
     let home = UzeHome::at(root.join("uze"));
     let codex = CodexIntegration::new(root.join("agents"), home);
@@ -1096,6 +1167,10 @@ fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_never_bridged() {
 /// Lab, `hooks > delivery`, against the vendor's own plugin guide). So the
 /// hook is a capability-level delivery — one named entry in a shared file —
 /// and the package plan claims nothing about it.
+/// Unix only: it reads the wrapper's path back out of the entry's line,
+/// which on Windows is encoded against `cmd /c` (proven instead by
+/// `a_sealed_line_reaches_its_script_intact_through_cmd`).
+#[cfg(unix)]
 #[test]
 fn antigravity_delivers_hooks_as_named_entries_in_the_shared_config() {
     let (_root, resources) = hook_package("agy-hooks", deny_group());
@@ -1144,6 +1219,9 @@ fn antigravity_delivers_hooks_as_named_entries_in_the_shared_config() {
 
 /// Attach, inspect and detach against a `hooks.json` that already holds a
 /// hand-written hook: UZE owns exactly its own named key.
+/// Unix only: it reads the wrapper's path back out of the entry's line,
+/// which on Windows is encoded against `cmd /c`.
+#[cfg(unix)]
 #[test]
 fn antigravity_hook_delivery_never_touches_a_foreign_named_hook() {
     let (_root, resources) = hook_package("agy-hooks-merge", deny_group());

@@ -14,6 +14,7 @@
 //! sweep a `readdir` rather than an exercise in reading back what
 //! something derived.
 
+use crate::path::Canonical as _;
 use std::{fs, path::Path, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -159,27 +160,12 @@ fn carry_across_the_move(home: &UzeHome, id: &str, directory: &Path) {
 /// its own. Gathering the records into one directory must not quietly
 /// widen that: the least private thing decides the mode, so the whole
 /// directory takes the strictest one any of its contents needs.
-#[cfg(unix)]
 fn create_private(directory: &Path) -> Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
-    if directory.is_dir() {
-        return Ok(());
-    }
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(directory)
-        .map_err(|source| crate::error::UzeError::Write {
+    uze_platform::fs::create_private_dir_all(directory).map_err(|source| {
+        crate::error::UzeError::Write {
             path: directory.to_path_buf(),
             source,
-        })
-}
-
-#[cfg(not(unix))]
-fn create_private(directory: &Path) -> Result<()> {
-    fs::create_dir_all(directory).map_err(|source| crate::error::UzeError::Write {
-        path: directory.to_path_buf(),
-        source,
+        }
     })
 }
 
@@ -189,7 +175,7 @@ fn create_private(directory: &Path) -> Result<()> {
 /// this module exists to prevent.
 fn canonical(project_root: &Path) -> PathBuf {
     project_root
-        .canonicalize()
+        .canonical()
         .unwrap_or_else(|_| project_root.to_path_buf())
 }
 
@@ -213,7 +199,7 @@ mod tests {
 
         assert_eq!(
             roots(&home),
-            vec![project.canonicalize().unwrap()],
+            vec![project.canonical().unwrap()],
             "the id is a one-way hash, and this is what makes it reversible"
         );
         fs::remove_dir_all(scratch).unwrap();
@@ -224,7 +210,7 @@ mod tests {
         let (home, scratch) = home("project-marker-newer");
         let project = scratch.join("demo");
         fs::create_dir_all(&project).unwrap();
-        let id = project_id_for(&project.canonicalize().unwrap());
+        let id = project_id_for(&project.canonical().unwrap());
         let marker = home.project_marker_path(&id);
         fs::create_dir_all(marker.parent().unwrap()).unwrap();
         let newer = br#"{"schema_version":99,"somewhere":"else"}"#;
@@ -250,7 +236,7 @@ mod tests {
 
         assert_eq!(
             roots(&home),
-            vec![kept.canonicalize().unwrap()],
+            vec![kept.canonical().unwrap()],
             "one project's records go, and no other project's do"
         );
         fs::remove_dir_all(scratch).unwrap();
@@ -264,7 +250,7 @@ mod tests {
         let project = scratch.join("vanished");
         fs::create_dir_all(&project).unwrap();
         ensure(&home, &project).unwrap();
-        let recorded = project.canonicalize().unwrap();
+        let recorded = project.canonical().unwrap();
         fs::remove_dir_all(&project).unwrap();
 
         assert_eq!(
@@ -287,7 +273,7 @@ mod tests {
 
         assert_eq!(
             roots(&home),
-            vec![good.canonicalize().unwrap()],
+            vec![good.canonical().unwrap()],
             "a sweep answers for every project it can read"
         );
         fs::remove_dir_all(scratch).unwrap();
@@ -302,7 +288,7 @@ mod tests {
         let (home, scratch) = home("project-carried");
         let project = scratch.join("demo");
         fs::create_dir_all(&project).unwrap();
-        let canonical = project.canonicalize().unwrap();
+        let canonical = project.canonical().unwrap();
         let id = project_id_for(&canonical);
 
         // Where the previous release left them.

@@ -159,12 +159,7 @@ impl Workspace<'_> {
             .concern(&isolation.target)
             .into_iter()
             .collect::<Vec<_>>();
-        warnings.extend(checkout::materialize(
-            &primary,
-            &acquired.path,
-            &policy.link,
-            &policy.setup,
-        ));
+        warnings.extend(checkout::materialize(&primary, &acquired.path, &policy));
         let view = self.placed_view(&primary, task.id.as_str(), &policy);
         Ok(AgentPlacement {
             project: primary.clone(),
@@ -272,8 +267,7 @@ impl Workspace<'_> {
 
         // Outside the lock, like every other unbounded step: the
         // project's `setup` runs here, and so does the copy.
-        let mut warnings =
-            checkout::materialize(&primary, &acquired.path, &policy.link, &policy.setup);
+        let mut warnings = checkout::materialize(&primary, &acquired.path, &policy);
         if carry == Carry::CopyOfChanges
             && let Err(reason) = checkout::carry_changes(&primary, &acquired.path)
         {
@@ -367,8 +361,7 @@ impl Workspace<'_> {
         // Preparing the checkout runs the project's `setup`; it waits for
         // nobody and nobody waits behind it.
         if let Some(acquired) = acquired_slot {
-            placement.warnings =
-                checkout::materialize(&primary, &acquired.path, &policy.link, &policy.setup);
+            placement.warnings = checkout::materialize(&primary, &acquired.path, &policy);
         }
         placement.view = self.placed_view(&primary, placement.placement.agent().as_str(), &policy);
         Ok(placement)

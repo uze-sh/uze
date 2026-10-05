@@ -43,11 +43,11 @@ mod workspace_tests {
         CompletionBehavior, DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer,
         GitBadge, GitResolution, PendingDrop, PlacementResolution, PromptScope, RootPicker,
         ScrollDirection, SpecResolution, SpecSummaryState, SupportResolution, TabDragGroup,
-        UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView, WorkspaceModel,
-        adopt_agent_labels, agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
-        can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
-        forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
-        open_commit_detail, open_spec, pane_relative, pending_tab_drop,
+        UnspelledGates, UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView,
+        WorkspaceModel, adopt_agent_labels, agent_activity_frame, agent_identity_for_tab,
+        answered_or, blank_pane, can_close_tab_from_menu, checkout_lost, encode_mouse,
+        evaluation_key, forward_paste, forward_scroll, next_agent_label, next_shell_label,
+        open_architect, open_code, open_commit_detail, open_spec, pane_relative, pending_tab_drop,
         render::{
             self, FrameMetrics, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
@@ -2619,6 +2619,37 @@ mod workspace_tests {
     /// undeliverable again, and repainting every 120 ms forever, because
     /// a pending delivery is one of the three things that keep the
     /// spinner's clock turning.
+    /// A project whose gate this machine cannot run is said when its space
+    /// opens, once, with the gate and the spelling it lacks.
+    #[test]
+    fn a_gate_this_machine_cannot_run_is_said_once() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-unspelled-gate"));
+        let mut driven = driven(agent_with_task(WorkStateView::Ready, 1), &home);
+        for _ in 0..2 {
+            driven
+                .attach
+                .channels
+                .unspelled_gates
+                .sender
+                .send(UnspelledGates {
+                    project: PathBuf::from("/repo"),
+                    gates: vec!["make check".to_owned()],
+                    platform: "windows",
+                })
+                .unwrap();
+        }
+        driven.pump();
+
+        let toasts = &driven.attach.model.remembered.toasts;
+        assert_eq!(toasts.len(), 1, "said once");
+        assert_eq!(toasts[0].text, "A gate cannot run on this machine");
+        assert!(
+            toasts[0].detail.contains("`make check`") && toasts[0].detail.contains("`windows`"),
+            "{}",
+            toasts[0].detail
+        );
+    }
+
     #[test]
     fn a_delivery_that_answered_nothing_still_gives_the_task_back() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-delivery-silence"));
@@ -5576,6 +5607,33 @@ mod workspace_tests {
         );
     }
 
+    /// AltGr types into the picker: a Windows console reports it as
+    /// Ctrl+Alt, and `/` is AltGr+Q on ABNT2, so a path typed there lost
+    /// every separator.
+    #[test]
+    fn altgr_types_its_character_into_the_picker() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-altgr"));
+        let mut driven = driven(agent_session_in("/repo"), &home);
+        let chord = uze_keys::active()
+            .chord_for(uze_keys::Action::NewSpace, &[uze_keys::Scope::Workspace])
+            .expect("space creation is reachable from the keyboard");
+        driven.press_key(key_event(chord));
+
+        let alt_graph = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        driven.press_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE));
+        driven.press_key(KeyEvent::new(KeyCode::Char('/'), alt_graph));
+        driven.press_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+
+        let picker = driven
+            .attach
+            .model
+            .root_picker
+            .as_ref()
+            .expect("the picker is still open");
+        assert_eq!(picker.input(), "g/e");
+    }
+
     /// The management surface is a modal over the workspace, not a mode
     /// beside it: the action that opens it closes it again, the frame
     /// draws it over everything, and the client behind it stays attached.
@@ -8337,7 +8395,7 @@ mod workspace_tests {
     /// the channels a background read answers through.
     pub(super) struct Driven<'a> {
         pub(super) attach: Attach<'a>,
-        server: std::os::unix::net::UnixStream,
+        server: uze_terminal::Stream,
         events: std::sync::mpsc::Receiver<ClientEvent>,
         /// The reader thread's end, held so the channel stays connected.
         /// Dropping it is exactly what the real reader does when the
@@ -8414,7 +8472,11 @@ mod workspace_tests {
 
         /// Every request written to the server since the last read.
         fn sent(&mut self) -> Vec<ClientRequest> {
-            self.server.set_nonblocking(true).unwrap();
+            // Whatever has arrived: a read that waits past this is one
+            // nothing was written for.
+            self.server
+                .set_read_timeout(Some(std::time::Duration::from_millis(10)))
+                .unwrap();
             let mut buffer = Vec::new();
             let mut chunk = [0u8; 8192];
             while let Ok(read) = std::io::Read::read(&mut self.server, &mut chunk) {
@@ -8488,11 +8550,11 @@ mod workspace_tests {
         )
         .unwrap();
         std::fs::create_dir_all(home.shims_dir()).unwrap();
-        std::fs::write(home.shims_dir().join(identity.binary), "").unwrap();
+        std::fs::write(home.shim_path(identity.binary), "").unwrap();
     }
 
     pub(super) fn driven(model: WorkspaceModel, home: &UzeHome) -> Driven<'_> {
-        let (client, server) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (client, server) = uze_terminal::stream_pair().unwrap();
         let (events, events_rx) = std::sync::mpsc::channel();
         Driven {
             attach: Attach {
@@ -10272,8 +10334,8 @@ mod workspace_tests {
         };
         assert_eq!(closed, space);
         assert_eq!(
-            Some(replacement.root.as_os_str()),
-            std::env::var_os("HOME").as_deref(),
+            Some(replacement.root.as_path()),
+            uze_platform::home::user_home().as_deref(),
             "the workspace lands at home"
         );
     }
@@ -10287,7 +10349,7 @@ mod workspace_tests {
     fn starting_at_home_lands_in_the_workspace_rather_than_adding_to_it() {
         use uze_terminal::{Seating, SpaceSeat};
 
-        let home = PathBuf::from(std::env::var_os("HOME").expect("a home directory"));
+        let home = uze_platform::home::user_home().expect("a home directory");
         let seat = |root: &Path| SpaceSeat {
             root: root.to_path_buf(),
         };
@@ -10751,7 +10813,7 @@ mod workspace_tests {
         std::fs::remove_dir_all(&placement.cwd).unwrap();
         app.workspace().release_abandoned_tasks(&root, &[], &[]);
 
-        let primary = root.canonicalize().unwrap();
+        let primary = uze_platform::path::canonical(&root).unwrap();
         let task = app
             .workspace()
             .tasks(&primary)
@@ -10910,7 +10972,7 @@ mod workspace_tests {
             uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
             task_id,
         );
-        let project = root.canonicalize().unwrap();
+        let project = uze_platform::path::canonical(&root).unwrap();
         let sent = driven.sent();
         assert!(
             sent.iter().any(|request| matches!(

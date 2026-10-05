@@ -627,7 +627,9 @@ mod tests {
     }
 
     /// The directory is named by a marketplace; `plugins/*` there is one
-    /// oddly named directory, never every plugin in the repository.
+    /// oddly named directory, never every plugin in the repository. NTFS
+    /// holds no `*` in a name, so the fixture is a Unix one.
+    #[cfg(unix)]
     #[test]
     fn a_subdirectory_named_like_a_pattern_is_materialized_literally() {
         let (root, _first, _second) = origin("mirror-literal");

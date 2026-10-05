@@ -4,14 +4,18 @@ use super::*;
 
 pub(super) struct PaneRuntime {
     pub(super) id: PaneId,
-    pub(super) master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
+    /// Taken only when the pane is let go (see its `Drop`).
+    pub(super) master: Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>,
     pub(super) writer: Arc<Mutex<Box<dyn Write + Send>>>,
     /// Shared with the thread that reaps it once the pane is stopped.
     pub(super) child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
-    /// Read while the leader is alive: once a finished leader is reaped,
-    /// its group can no longer be asked for, though what it left running
-    /// is still in it. See [`PaneRuntime::end_leftovers`].
-    pub(super) process_group: Option<libc::pid_t>,
+    /// The pane's program and everything it starts, ended together. Read
+    /// while the leader is alive: once a finished leader is reaped, what it
+    /// left running is still in it. See [`PaneRuntime::end_leftovers`].
+    pub(super) group: Option<Arc<uze_platform::process::pane::Group>>,
+    /// The pid of the pane's program, read once at spawn: `child` is held
+    /// for the whole of a stop, and a foreground read must not wait on it.
+    pub(super) leader: Option<u32>,
     pub(super) terminal: Arc<Mutex<Term<ReplySink>>>,
     /// What this pane was spawned as — kept so a workspace restart can
     /// respawn the same launch in the same tab (see [`Server::persist`]),
@@ -25,6 +29,20 @@ pub(super) struct PaneRuntime {
     /// follow the content under a selection the moment it is drawn. Always
     /// locked after `terminal`, never before it.
     pub(super) selection: Arc<Mutex<PaneSelection>>,
+}
+
+/// Closing a pseudoterminal's master can wait: ConPTY's
+/// `ClosePseudoConsole` returns only once the output it still holds has
+/// been read. Done on whichever thread let the pane go, it held that
+/// request for as long; done on the reader's own, it would wait on itself.
+/// So the master is closed on a thread of its own while the reader keeps
+/// draining to its end, which is also what lets the reader end at all.
+impl Drop for PaneRuntime {
+    fn drop(&mut self) {
+        if let Some(master) = self.master.get_mut().ok().and_then(Option::take) {
+            thread::spawn(move || drop(master));
+        }
+    }
 }
 
 /// Answers a pane's own program, including its OSC 10/11 colour queries.
@@ -80,6 +98,90 @@ impl EventListener for ReplySink {
     }
 }
 
+/// What a pane starts, in its directory and its own environment, and the
+/// group made for it before it starts, where the platform makes one then.
+fn pane_command(
+    id: PaneId,
+    cwd: PathBuf,
+    launch: &Launch,
+) -> Result<(CommandBuilder, Option<uze_platform::process::pane::Group>), RuntimeError> {
+    let argv: Vec<std::ffi::OsString> = if launch.argv().is_empty() {
+        vec![host::default_shell().into()]
+    } else {
+        launch.argv().iter().map(Into::into).collect()
+    };
+    let grouped = uze_platform::process::pane::grouped(argv, host::pane_host().as_deref())
+        .map_err(|error| RuntimeError::Pty(error.to_string()))?;
+    let mut command = CommandBuilder::from_argv(grouped.argv);
+    command.cwd(cwd);
+    // `CommandBuilder` seeds a pane from *this* process's environment,
+    // and this process is the server — started by whatever `uze`
+    // invocation first needed one, which in this project is routinely a
+    // `uze` run from inside a shimmed agent. Without this every plain
+    // shell would inherit that agent's identity stamp, report as the
+    // agent in the sidebar, persist as one, and be relaunched as one on
+    // the next restart. A pane's environment may only carry what that
+    // pane's own launch put there.
+    for inherited in crate::launch::STAMPED_VARIABLES {
+        command.env_remove(inherited);
+    }
+    if let Some(first) = PANE_PATH_FIRST.get() {
+        command.env("PATH", path_with_first(env::var_os("PATH"), first));
+    }
+    for (name, value) in launch.env() {
+        command.env(name, value);
+    }
+    // What tells a `uze` started inside this pane that it is inside one,
+    // so it opens a space here instead of a client within a client.
+    command.env(crate::launch::PANE_VARIABLE, id.0.to_string());
+    host::prepare_pane(&mut command);
+    Ok((command, grouped.group))
+}
+
+/// Feeds the pane's output to its emulator, on a thread of its own, until
+/// the program's end of the terminal closes, and says each time that the
+/// pane changed.
+fn read_output(
+    id: PaneId,
+    mut reader: Box<dyn std::io::Read + Send>,
+    terminal: Arc<Mutex<Term<ReplySink>>>,
+    selection: Arc<Mutex<PaneSelection>>,
+    damage: mpsc::Sender<PaneId>,
+) {
+    thread::spawn(move || {
+        let mut parser: Processor = Processor::new();
+        let mut buffer = [0; 8192];
+        loop {
+            match std::io::Read::read(&mut reader, &mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(read) => {
+                    let mut terminal = terminal.lock().expect("terminal poisoned");
+                    parser.advance(&mut *terminal, &buffer[..read]);
+                    selection
+                        .lock()
+                        .expect("selection poisoned")
+                        .observe(&terminal);
+                    drop(terminal);
+                    let _ = damage.send(id);
+                }
+            }
+        }
+    });
+}
+
+/// Writes back to the program what the emulator answers its queries with
+/// (a cursor position, a colour), on a thread of its own.
+fn answer_queries(replies: mpsc::Receiver<Vec<u8>>, writer: Arc<Mutex<Box<dyn Write + Send>>>) {
+    thread::spawn(move || {
+        while let Ok(bytes) = replies.recv() {
+            if let Ok(mut writer) = writer.lock() {
+                let _ = writer.write_all(&bytes);
+                let _ = writer.flush();
+            }
+        }
+    });
+}
+
 impl PaneRuntime {
     pub(super) fn spawn(
         id: PaneId,
@@ -99,43 +201,15 @@ impl PaneRuntime {
                 pixel_height: 0,
             })
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let mut command = match launch.argv().split_first() {
-            Some((program, args)) => {
-                let mut builder = CommandBuilder::new(program);
-                builder.args(args);
-                builder
-            }
-            None => CommandBuilder::new(env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())),
-        };
-        command.cwd(cwd);
-        // `CommandBuilder` seeds a pane from *this* process's environment,
-        // and this process is the server — started by whatever `uze`
-        // invocation first needed one, which in this project is routinely a
-        // `uze` run from inside a shimmed agent. Without this every plain
-        // shell would inherit that agent's identity stamp, report as the
-        // agent in the sidebar, persist as one, and be relaunched as one on
-        // the next restart. A pane's environment may only carry what that
-        // pane's own launch put there.
-        for inherited in crate::launch::STAMPED_VARIABLES {
-            command.env_remove(inherited);
-        }
-        if let Some(first) = PANE_PATH_FIRST.get() {
-            command.env("PATH", path_with_first(env::var_os("PATH"), first));
-        }
-        for (name, value) in launch.env() {
-            command.env(name, value);
-        }
-        // What tells a `uze` started inside this pane that it is inside one,
-        // so it opens a space here instead of a client within a client.
-        command.env(crate::launch::PANE_VARIABLE, id.0.to_string());
-        if env::var_os("TERM").is_none() {
-            command.env("TERM", "xterm-256color");
-        }
+        let (command, made_group) = pane_command(id, cwd, &launch)?;
         let mut child = pair
             .slave
             .spawn_command(command)
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let process_group = child.process_id().and_then(own_process_group);
+        let leader = child.process_id();
+        let group = made_group
+            .or_else(|| leader.and_then(uze_platform::process::pane::Group::adopt))
+            .map(Arc::new);
         let endpoints = pair.master.try_clone_reader().and_then(|reader| {
             pair.master
                 .take_writer()
@@ -155,44 +229,22 @@ impl PaneRuntime {
             &TermSize::new(columns as usize, rows as usize),
             ReplySink::new(reply_sender, palette),
         )));
-        let parser_terminal = Arc::clone(&terminal);
         let selection = Arc::new(Mutex::new(PaneSelection::default()));
-        let parser_selection = Arc::clone(&selection);
-        thread::spawn(move || {
-            let mut reader = reader;
-            let mut parser: Processor = Processor::new();
-            let mut buffer = [0; 8192];
-            loop {
-                match std::io::Read::read(&mut reader, &mut buffer) {
-                    Ok(0) | Err(_) => break,
-                    Ok(read) => {
-                        let mut terminal = parser_terminal.lock().expect("terminal poisoned");
-                        parser.advance(&mut *terminal, &buffer[..read]);
-                        parser_selection
-                            .lock()
-                            .expect("selection poisoned")
-                            .observe(&terminal);
-                        drop(terminal);
-                        let _ = damage.send(id);
-                    }
-                }
-            }
-        });
-        let reply_writer = Arc::clone(&writer);
-        thread::spawn(move || {
-            while let Ok(bytes) = reply_receiver.recv() {
-                if let Ok(mut writer) = reply_writer.lock() {
-                    let _ = writer.write_all(&bytes);
-                    let _ = writer.flush();
-                }
-            }
-        });
+        read_output(
+            id,
+            reader,
+            Arc::clone(&terminal),
+            Arc::clone(&selection),
+            damage,
+        );
+        answer_queries(reply_receiver, Arc::clone(&writer));
         Ok(Self {
             id,
-            master: Mutex::new(pair.master),
+            master: Mutex::new(Some(pair.master)),
             writer,
             child: Arc::new(Mutex::new(child)),
-            process_group,
+            leader,
+            group,
             terminal,
             launch,
             last_sent: Mutex::new(None),
@@ -231,60 +283,49 @@ impl PaneRuntime {
     }
 
     pub(super) fn resize(&self, columns: u16, rows: u16) {
-        let _ = self
-            .master
-            .lock()
-            .expect("master poisoned")
-            .resize(PtySize {
+        if let Some(master) = self.master.lock().expect("master poisoned").as_ref() {
+            let _ = master.resize(PtySize {
                 rows,
                 cols: columns,
                 pixel_width: 0,
                 pixel_height: 0,
             });
+        }
         self.terminal
             .lock()
             .expect("terminal poisoned")
             .resize(TermSize::new(columns as usize, rows as usize));
     }
-    /// Ends the pane's process and reaps it, on a thread of its own.
-    ///
-    /// `kill` is a SIGHUP with a grace period of up to a fifth of a second
-    /// and then a SIGKILL nobody waits on: done inline it held the request
-    /// that closed the tab for that long, and left every pane whose program
-    /// outlived the grace period a zombie for the life of the server.
+
+    /// Ends the pane's process and everything it started, and reaps it,
+    /// on a thread of its own: done inline it held the request that closed
+    /// the tab, and left a program that outlived its hangup a zombie for
+    /// the life of the server.
     pub(super) fn stop(&self) -> thread::JoinHandle<()> {
         let child = Arc::clone(&self.child);
+        let group = self.group.clone();
         thread::spawn(move || {
             let mut child = child.lock().expect("child poisoned");
-            let group = child.process_id().and_then(own_process_group);
-            // Waited on whether or not the signal landed: a program that
+            // Waited on whether or not the kill landed: a program that
             // already exited is exactly the zombie this is here to reap.
             let _ = child.kill();
             // What the leader started and left behind: a harness's workers
             // that ignore the hangup would otherwise outlive the pane, and
             // hold its terminal open so its reader never ends either.
             if let Some(group) = group {
-                // SAFETY: `group` is a positive process-group id that is
-                // the pane's own and not this process's (`own_process_group`),
-                // so the negation addresses exactly that group.
-                unsafe { libc::kill(-group, libc::SIGKILL) };
+                group.end();
             }
             let _ = child.wait();
         })
     }
 
-    /// Kills what a finished agent left running in its group: workers that
+    /// Ends what a finished agent left running in its group: workers that
     /// ignore the hangup keep the old terminal open, and its reader alive.
     /// Called only right after [`PaneRuntime::finished_agent`] reaped the
-    /// leader. A group id outlives its leader only while members remain,
-    /// so the longer the gap, the likelier an empty group's id has gone to
-    /// a newer process that leads a group of its own.
+    /// leader.
     pub(super) fn end_leftovers(&self) {
-        if let Some(group) = self.process_group {
-            // SAFETY: `group` is a positive process-group id that was the
-            // pane's own and not this process's at spawn
-            // (`own_process_group`), and its leader was reaped a moment ago.
-            unsafe { libc::kill(-group, libc::SIGKILL) };
+        if let Some(group) = &self.group {
+            group.end();
         }
     }
 
@@ -300,26 +341,14 @@ impl PaneRuntime {
                 .is_some()
     }
 
-    /// Best-effort `(cwd, process name)` for whatever is currently running
-    /// in the foreground of this pane — the same two facts `tmux` shows as
+    /// Best-effort reading of whatever runs in the foreground of this pane:
+    /// its directory and name (the two facts `tmux` shows as
     /// `pane_current_path`/`pane_current_command`, asked of the kernel
-    /// through [`process_probe`]. `None` when the platform cannot answer, or
-    /// when the process exited between the group-leader lookup and the read.
-    pub(super) fn foreground_status(&self) -> Option<(PathBuf, String)> {
-        let pgid = self
-            .master
-            .lock()
-            .expect("master poisoned")
-            .process_group_leader()?;
-        let cwd = process_probe::current_directory_of(pgid)?;
-        let process = shim_launched_name(pgid).or_else(|| process_probe::command_name_of(pgid))?;
-        Some((cwd, process))
-    }
-
-    /// Whether the foreground process carries the stamp of the launcher
-    /// that started it, read from its own environment (`/proc` on Linux,
-    /// `KERN_PROCARGS2` on macOS). `None` when there is no foreground
-    /// process to ask.
+    /// through [`uze_platform::probe`]), and whether it carries the stamp of
+    /// the launcher that started it, read from its own environment. `None`
+    /// when there is no foreground process; its status `None` when the
+    /// platform cannot answer, or the process exited between the lookup and
+    /// the read, which leaves the stamp still worth saying.
     ///
     /// The shim itself, caught before its `exec`, is the launcher at work:
     /// it already answers to the harness's name (`comm` is the symlink it
@@ -327,13 +356,28 @@ impl PaneRuntime {
     /// in the environment it hands the harness. The probe made right after
     /// a spawn lands in exactly that window, so reading it as a bypass
     /// warned about every agent the workspace launched.
-    pub(super) fn foreground_through_launcher(&self) -> Option<bool> {
-        let pgid = self
-            .master
-            .lock()
-            .expect("master poisoned")
-            .process_group_leader()?;
-        Some(shim_launched_name(pgid).is_some() || runs_uze(pgid))
+    ///
+    /// The foreground is found once and its stamp read once: on Windows that
+    /// is a walk of the pane's processes and a read of each one's
+    /// environment, every second, for every pane.
+    pub(super) fn reading(&self) -> Option<ForegroundReading> {
+        let pid = self.foreground_process()?;
+        let launched = shim_launched_name(pid);
+        let through_launcher = launched.is_some() || runs_uze(pid);
+        let status = uze_platform::probe::current_directory_of(pid).and_then(|cwd| {
+            let process = launched.or_else(|| uze_platform::probe::command_name_of(pid))?;
+            Some((cwd, process))
+        });
+        Some(ForegroundReading {
+            status,
+            through_launcher,
+        })
+    }
+
+    /// The process in the foreground of this pane, as the platform knows
+    /// it (see [`host::foreground`]).
+    fn foreground_process(&self) -> Option<u32> {
+        host::foreground(self.leader?, self.group.as_deref())
     }
 
     pub(super) fn snapshot(&self) -> PaneSnapshot {
@@ -436,23 +480,31 @@ impl PaneRuntime {
 /// shim — a bypassed launch, a harness that isn't shimmed, or a plain
 /// shell — in which case `foreground_status` falls back to `comm`.
 ///
-/// The name is accepted only from the process the shim stamped it on.
+/// The name is accepted only from the process the shim launched.
 /// `UZE_SHIM_NAME` is an ordinary environment variable: every child of a
 /// shimmed agent inherits it, so a shell running *under* one would
 /// otherwise answer with its ancestor's identity. `UZE_SHIM_PID` carries
-/// the pid the stamp was made for — the shim `exec`s, so that pid is the
-/// agent's own — and an inherited pair no longer names the process it is
-/// read from.
-pub(super) fn shim_launched_name(pgid: libc::pid_t) -> Option<String> {
-    let stamped: libc::pid_t =
-        process_probe::environment_value_of(pgid, crate::launch::SHIM_PID_VARIABLE)?
-            .trim()
-            .parse()
-            .ok()?;
-    if stamped != pgid {
-        return None;
-    }
-    process_probe::environment_value_of(pgid, crate::launch::SHIM_NAME_VARIABLE)
+/// the shim's own pid, and only the program it ran in its place
+/// (`uze_platform::process::launched_by`) answers to it.
+pub(super) fn shim_launched_name(pgid: u32) -> Option<String> {
+    shim_launched(pgid)
+        .then(|| uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_NAME_VARIABLE))
+        .flatten()
+}
+
+/// Whether UZE's launcher started `pid`, from the stamp it carries: one
+/// read of its environment, for a caller that needs no more than that.
+pub(super) fn shim_launched(pid: u32) -> bool {
+    uze_platform::probe::environment_value_of(pid, crate::launch::SHIM_PID_VARIABLE)
+        .and_then(|stamped| stamped.trim().parse::<u32>().ok())
+        .is_some_and(|stamped| uze_platform::process::launched_by(pid, stamped))
+}
+
+/// What a pane's foreground is, read once (see [`PaneRuntime::reading`]).
+pub(super) struct ForegroundReading {
+    /// Its directory and name.
+    pub(super) status: Option<(PathBuf, String)>,
+    pub(super) through_launcher: bool,
 }
 
 pub(super) fn cell_coordinates(
@@ -481,7 +533,7 @@ pub(super) fn cell_coordinates(
 /// [`Server::clients`]. That is why this is handed a [`Backlog`] and not
 /// the outbox itself: see the note on `Backlog`.
 pub(super) fn forward_events(
-    mut socket: UnixStream,
+    mut socket: Stream,
     events: &mpsc::Receiver<ClientEvent>,
     backlog: &Backlog,
 ) {

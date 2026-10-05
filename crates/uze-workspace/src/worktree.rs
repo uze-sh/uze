@@ -21,6 +21,7 @@
 //! UZE already placed it in.
 
 use std::path::{Path, PathBuf};
+use uze_core::shell::ShellCommand;
 
 use serde::{Deserialize, Serialize};
 
@@ -365,7 +366,7 @@ pub struct WorktreePolicy {
         deserialize_with = "one_or_many",
         skip_serializing_if = "Vec::is_empty"
     )]
-    pub setup: Vec<String>,
+    pub setup: Vec<ShellCommand>,
     /// What runs in the task's checkout on the rebased commits; a non-zero
     /// exit refuses delivery.
     #[serde(
@@ -373,7 +374,7 @@ pub struct WorktreePolicy {
         deserialize_with = "one_or_many",
         skip_serializing_if = "Vec::is_empty"
     )]
-    pub gate: Vec<String>,
+    pub gate: Vec<ShellCommand>,
     /// The most checkouts that may exist at once. Undeclared, peak
     /// concurrency is the only bound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -391,14 +392,15 @@ pub struct WorktreePolicy {
 /// One command, or an ordered list of them. A single command is the
 /// common case and reads better on one line; a list is what makes a
 /// failure say *which* step failed instead of handing back the output of a
-/// chain the shell assembled.
+/// chain the shell assembled. A command is a line, or a `posix`/`windows`
+/// pair (see [`ShellCommand`]); a bare pair is one command.
 fn one_or_many<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> std::result::Result<Vec<String>, D::Error> {
+) -> std::result::Result<Vec<ShellCommand>, D::Error> {
     struct OneOrMany;
 
     impl<'de> serde::de::Visitor<'de> for OneOrMany {
-        type Value = Vec<String>;
+        type Value = Vec<ShellCommand>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
             formatter.write_str("a command, or a list of commands run in order")
@@ -408,7 +410,15 @@ fn one_or_many<'de, D: serde::Deserializer<'de>>(
             self,
             command: &str,
         ) -> std::result::Result<Self::Value, E> {
-            Ok(vec![command.to_owned()])
+            Ok(vec![ShellCommand::from(command)])
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            map: A,
+        ) -> std::result::Result<Self::Value, A::Error> {
+            Deserialize::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                .map(|command| vec![command])
         }
 
         fn visit_seq<A: serde::de::SeqAccess<'de>>(
@@ -444,6 +454,29 @@ impl WorktreePolicy {
             })
             .collect()
     }
+
+    /// The commands this platform's shell has no spelling for, each with
+    /// the step it belongs to: a setup step that is skipped here, a gate
+    /// that refuses every delivery here.
+    pub fn steps_not_spelled_here(&self) -> Vec<(PolicyStep, &ShellCommand)> {
+        let setup = self
+            .setup
+            .iter()
+            .map(|command| (PolicyStep::Setup, command));
+        let gate = self.gate.iter().map(|command| (PolicyStep::Gate, command));
+        setup
+            .chain(gate)
+            .filter(|(_, command)| command.here().is_none())
+            .collect()
+    }
+}
+
+/// Which of a policy's command lists a command is in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PolicyStep {
+    Setup,
+    Gate,
 }
 
 impl WorktreePolicy {
@@ -640,6 +673,26 @@ pub fn isolated_checkout(path: &Path) -> Option<IsolatedCheckout<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uze_core::path::Canonical as _;
+
+    /// A step written only for the other platform's shell is named, with
+    /// the list it is in; one spelled for both is not.
+    #[test]
+    fn a_step_spelled_only_for_the_other_shell_is_named_here() {
+        let elsewhere = ShellCommand::spelled(
+            uze_platform::shell::spelling("", "make"),
+            uze_platform::shell::spelling("make", ""),
+        );
+        let policy = WorktreePolicy {
+            setup: vec![ShellCommand::spelled("make", "make")],
+            gate: vec![elsewhere.clone()],
+            ..WorktreePolicy::default()
+        };
+        assert_eq!(
+            policy.steps_not_spelled_here(),
+            [(PolicyStep::Gate, &elsewhere)]
+        );
+    }
 
     #[test]
     fn the_projected_text_never_asks_for_a_top_level_worktree() {
@@ -775,7 +828,7 @@ mod tests {
         assert_eq!(from_root, from_isolated);
         assert_eq!(
             from_root,
-            root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
+            root.canonical().unwrap_or_else(|_| root.to_path_buf())
         );
     }
 

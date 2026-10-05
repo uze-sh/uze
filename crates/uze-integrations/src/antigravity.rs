@@ -123,6 +123,8 @@ pub const ID: &str = "antigravity";
 /// surfaced in its own output, unavoidable in this version. Documented
 /// destination: `~/.local/bin/agy`.
 const INSTALLER_URL: &str = "https://antigravity.google/cli/install.sh";
+/// The PowerShell installer the vendor documents for Windows.
+const WINDOWS_INSTALLER_URL: &str = "https://antigravity.google/cli/install.ps1";
 
 #[derive(Clone)]
 pub struct AntigravityIntegration {
@@ -167,8 +169,8 @@ impl AntigravityIntegration {
 
     /// Env-based constructor for the CLI composition root (`registry.rs`).
     pub fn from_env(uze_home: UzeHome) -> Result<Self> {
-        let home = std::env::var_os("HOME").ok_or(UzeError::MissingHomeDirectory)?;
-        Ok(Self::new(PathBuf::from(home).join(".agents"), uze_home))
+        let home = uze_core::user_home().ok_or(UzeError::MissingHomeDirectory)?;
+        Ok(Self::new(home.join(".agents"), uze_home))
     }
 
     /// The UZE-managed `hooks.json` at Antigravity's shared customization
@@ -218,6 +220,10 @@ impl AntigravityIntegration {
 impl IntegrationPort for AntigravityIntegration {
     fn id(&self) -> &'static str {
         ID
+    }
+
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        native_installer_destination("agy").into_iter().collect()
     }
 
     fn display_name(&self) -> &'static str {
@@ -349,8 +355,9 @@ impl IntegrationPort for AntigravityIntegration {
         let route = OfficialRoute {
             label: "Antigravity CLI",
             program: "agy",
-            install: official_installer(INSTALLER_URL, "bash"),
+            install: official_installer(Some((INSTALLER_URL, "bash")), Some(WINDOWS_INSTALLER_URL)),
             update: ProcessSpec::new(&executable, ["update"]).with_inherited_output(),
+            environment: &[],
             method: "official-native-installer",
             manual_route: "https://antigravity.google/docs/cli/install/",
         };

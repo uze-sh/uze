@@ -60,9 +60,10 @@ jobs:
           # changed: a pull request only takes macOS when it reaches something
           # macOS can tell apart (`ci.yml`'s `journey_platform_surface`), and
           # this is what stands behind every change it did not take it for.
-          PLATFORMS: ${{ inputs.platforms || '[{"platform":"linux","runner":"ubuntu-24.04"},{"platform":"macos","runner":"macos-15"}]' }}
+          # Windows, x64 and Arm, is performed here alone until it is offered.
+          PLATFORMS: ${{ inputs.platforms || '[{"platform":"linux","runner":"ubuntu-24.04"},{"platform":"macos","runner":"macos-15"},{"platform":"windows","runner":"windows-2025"},{"platform":"windows-arm","runner":"windows-11-arm"}]' }}
         run: |
-          legs="$(jq -c '[.[] | ({linux: 5, macos: 4}[.platform]) as $of
+          legs="$(jq -c '[.[] | ({linux: 5, macos: 4, windows: 4, "windows-arm": 2}[.platform]) as $of
                           | range(1; $of + 1) as $shard
                           | {platform, runner, shard: $shard, of: $of}]' <<< "${PLATFORMS}")"
           echo "legs=${legs}" >> "${GITHUB_OUTPUT}"
@@ -86,6 +87,11 @@ jobs:
     # release, which is as far as either can pin.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
+    # The steps are bash, which a Windows runner has through Git for Windows
+    # but does not default to.
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:

@@ -25,27 +25,21 @@ const MAX_SHELL_OUTPUT_BYTES: usize = 64 * 1024;
 /// one case that is not — a descendant still holding a pipe open.
 const READER_GRACE: Duration = Duration::from_secs(2);
 
-/// Runs `command` in its own process group so a timeout can kill the whole
-/// tree (the process AND its descendants), never just the direct child.
-/// No-op on platforms without process groups.
-pub fn with_process_group(mut command: Command) -> Command {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    command
-}
+pub use uze_platform::process::{Seat, Tree, spawn_tree};
 
 /// Polls `child` to completion but never longer than `timeout`.
 ///
 /// Returning `(status, false)` means the process exited on its own.
-/// Returning `(status, true)` means the deadline was reached: the whole
-/// process group was killed (sweeping `/proc` for stragglers twice, because
-/// a descendant forked between the two can otherwise survive the group
-/// signal) and the direct child was reaped so it cannot stay a zombie.
-pub fn wait_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<(ExitStatus, bool)> {
-    let (status, ending) = wait_until(child, timeout, || false)?;
+/// Returning `(status, true)` means the deadline was reached: the child's
+/// whole [`Tree`] was ended (twice, because a descendant forked between the
+/// two can otherwise survive the first) and the direct child was reaped so
+/// it cannot stay a zombie.
+pub fn wait_with_timeout(
+    child: &mut Child,
+    tree: &Tree,
+    timeout: Duration,
+) -> io::Result<(ExitStatus, bool)> {
+    let (status, ending) = wait_until(child, tree, timeout, || false)?;
     Ok((status, ending == Ending::TimedOut))
 }
 
@@ -56,19 +50,21 @@ pub enum Ending {
     Interrupted,
 }
 
-/// [`wait_with_timeout`] for a child started [`without_controlling_terminal`]:
-/// the terminal's Ctrl-C no longer reaches it, so an interrupt `watch` saw
-/// kills its group the way the deadline would.
+/// [`wait_with_timeout`] for a child seated [`Seat::NoTerminal`]: the
+/// terminal's Ctrl-C no longer reaches it, so an interrupt `watch` saw ends
+/// its tree the way the deadline would.
 pub fn wait_with_timeout_or_interrupt(
     child: &mut Child,
+    tree: &Tree,
     timeout: Duration,
     watch: &InterruptWatch,
 ) -> io::Result<(ExitStatus, Ending)> {
-    wait_until(child, timeout, || watch.interrupted())
+    wait_until(child, tree, timeout, || watch.interrupted())
 }
 
 fn wait_until(
     child: &mut Child,
+    tree: &Tree,
     timeout: Duration,
     interrupted: impl Fn() -> bool,
 ) -> io::Result<(ExitStatus, Ending)> {
@@ -83,19 +79,19 @@ fn wait_until(
                 } else {
                     Ending::TimedOut
                 };
-                kill_process_group(pid);
+                tree.end();
                 // The second sweep happens while the child is dead but not
                 // yet reaped: until it is, neither its pid nor its group id
-                // can be handed to another process, so both signals can
-                // only reach what this child started.
+                // can be handed to another process, so both can only reach
+                // what this child started.
                 wait_without_reaping(pid);
-                kill_process_group(pid);
+                tree.end();
                 let status = child.wait()?;
                 return Ok((status, ending));
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
             Err(source) => {
-                kill_process_group(pid);
+                tree.end();
                 let _ = child.wait();
                 return Err(source);
             }
@@ -103,226 +99,10 @@ fn wait_until(
     }
 }
 
-/// Starts `command` in a session of its own: its own process group, and no
-/// controlling terminal. A vendor installer that asks a question on
-/// `/dev/tty` then gets no terminal to ask on and takes its default, rather
-/// than waiting for an answer nobody is shown until its deadline.
-pub fn without_controlling_terminal(mut command: Command) -> Command {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // SAFETY: `setsid` is async-signal-safe and touches no memory.
-        unsafe {
-            command.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-    }
-    command
-}
+pub use uze_platform::interrupt::InterruptWatch;
 
-#[cfg(unix)]
-static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-#[cfg(unix)]
-extern "C" fn note_interrupt(_signal: libc::c_int) {
-    INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
-}
-
-/// Catches `SIGINT` while it lives, restoring whatever handled it before.
-pub struct InterruptWatch {
-    #[cfg(unix)]
-    previous: libc::sigaction,
-}
-
-impl InterruptWatch {
-    #[cfg(unix)]
-    pub fn install() -> Self {
-        INTERRUPTED.store(false, std::sync::atomic::Ordering::SeqCst);
-        // SAFETY: both structs are plain data, zeroed is valid for them, and
-        // the handler only stores to an atomic.
-        unsafe {
-            let mut action: libc::sigaction = std::mem::zeroed();
-            action.sa_sigaction = note_interrupt as extern "C" fn(libc::c_int) as usize;
-            libc::sigemptyset(&mut action.sa_mask);
-            let mut previous: libc::sigaction = std::mem::zeroed();
-            libc::sigaction(libc::SIGINT, &action, &mut previous);
-            Self { previous }
-        }
-    }
-
-    #[cfg(not(unix))]
-    pub fn install() -> Self {
-        Self {}
-    }
-
-    pub fn interrupted(&self) -> bool {
-        #[cfg(unix)]
-        {
-            INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
-        }
-        #[cfg(not(unix))]
-        {
-            false
-        }
-    }
-
-    /// Restores the previous handler and delivers the interrupt to it, so
-    /// the process ends the way the Ctrl-C would have ended it.
-    pub fn deliver(self) {
-        drop(self);
-        #[cfg(unix)]
-        // SAFETY: plain `raise(3)`.
-        unsafe {
-            libc::raise(libc::SIGINT);
-        }
-    }
-}
-
-impl Drop for InterruptWatch {
-    fn drop(&mut self) {
-        #[cfg(unix)]
-        // SAFETY: `previous` is what `sigaction` handed back on install.
-        unsafe {
-            libc::sigaction(libc::SIGINT, &self.previous, std::ptr::null_mut());
-        }
-    }
-}
-
-/// Blocks until `pid` has exited, leaving it for [`Child::wait`] to reap.
-#[cfg(unix)]
 fn wait_without_reaping(pid: u32) {
-    let id = libc::id_t::from(pid);
-    // SAFETY: `siginfo_t` is plain data the kernel fills in; zeroed is a
-    // valid value for it.
-    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-    loop {
-        // SAFETY: `info` outlives the call, and `WNOWAIT` leaves the child
-        // for `Child::wait` to reap.
-        let outcome =
-            unsafe { libc::waitid(libc::P_PID, id, &mut info, libc::WEXITED | libc::WNOWAIT) };
-        if outcome == 0 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
-            return;
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn wait_without_reaping(_pid: u32) {}
-
-/// Kills a whole process group — the process plus any descendant it started.
-///
-/// This issues the `kill(2)` syscalls directly and must never shell out to
-/// `/bin/kill`. procps-ng's `kill` parses a negative pid by its *first digit
-/// only* (`case '?'`: `pid = '0' - optopt`, then exits), so `kill -KILL -1234`
-/// or `-KILL -10000` becomes `kill(-1, SIGKILL)` — every process the user
-/// owns, including the login shell, `systemd --user`, and the agent that ran
-/// the tests — while `-KILL -2345` becomes a silent no-op against group 2.
-/// The latter is the "group signal misses a member under WSL2" quirk this
-/// helper used to work around with a `/proc` sweep; the former is what took
-/// the whole WSL session down whenever a timed-out child's pid started with
-/// `1`. The sweep is kept as a belt-and-braces pass for a descendant that
-/// left the group (`setsid`) between the two signals.
-///
-/// Only for a child not yet reaped: it also signals `pid` itself. Once the
-/// child has been waited on, use [`kill_reaped_process_group`].
-#[cfg(unix)]
-pub fn kill_process_group(pid: u32) {
-    signal_group(pid, true);
-}
-
-/// [`kill_process_group`] for a child already reaped — the group a
-/// descendant still holding a pipe belongs to. Its pid is no longer this
-/// process's to signal: the kernel may have handed it to anybody.
-#[cfg(unix)]
-pub fn kill_reaped_process_group(pid: u32) {
-    signal_group(pid, false);
-}
-
-#[cfg(unix)]
-fn signal_group(pid: u32, leader_unreaped: bool) {
-    // `kill(0)` / `kill(-1)` would target our own group / every process we
-    // own. No child ever has such a pid; refuse rather than risk it.
-    let Ok(pgid) = libc::pid_t::try_from(pid) else {
-        return;
-    };
-    if pgid <= 1 {
-        return;
-    }
-    // SAFETY: plain `kill(2)` calls on a pid we spawned; no memory involved.
-    unsafe {
-        libc::kill(-pgid, libc::SIGKILL);
-        // Also signal the direct child by pid, in case it changed its own
-        // process group before the group signal landed.
-        if leader_unreaped {
-            libc::kill(pgid, libc::SIGKILL);
-        }
-    }
-    for member in process_group_members(pid) {
-        if let Ok(member) = libc::pid_t::try_from(member)
-            && member > 1
-        {
-            // SAFETY: as above.
-            unsafe {
-                libc::kill(member, libc::SIGKILL);
-            }
-        }
-    }
-}
-
-#[cfg(not(unix))]
-pub fn kill_process_group(pid: u32) {
-    let _ = Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .status();
-}
-
-#[cfg(not(unix))]
-pub fn kill_reaped_process_group(pid: u32) {
-    kill_process_group(pid);
-}
-
-/// Reads `/proc` directly (rather than shelling out to `ps --pgid`) to list
-/// every PID currently reporting `pgid` as its process group.
-///
-/// Empty on a platform without `/proc` — macOS included — and that is
-/// correct rather than merely tolerable: this sweep is the belt-and-braces
-/// pass for a descendant that left the group via `setsid`, added for a WSL2
-/// quirk. The two `kill(2)` calls above are what actually kill the group,
-/// and they are portable. A platform where the sweep finds nothing loses a
-/// backstop, not the kill.
-#[cfg(unix)]
-fn process_group_members(pgid: u32) -> Vec<u32> {
-    let mut members = Vec::new();
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return members;
-    };
-    for entry in entries.flatten() {
-        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
-            continue;
-        };
-        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
-            continue;
-        };
-        // Fields are space-separated, but the second field (comm) is
-        // parenthesized and may itself contain spaces or parens, so split
-        // on the last ')' rather than naively splitting on whitespace.
-        let Some((_, after_comm)) = stat.rsplit_once(')') else {
-            continue;
-        };
-        // After comm: state(0) ppid(1) pgrp(2) ...
-        let pgrp = after_comm
-            .split_whitespace()
-            .nth(2)
-            .and_then(|field| field.parse::<u32>().ok());
-        if pgrp == Some(pgid) {
-            members.push(pid);
-        }
-    }
-    members
+    uze_platform::process::wait_without_reaping(pid);
 }
 
 /// Reads a child handle to EOF, keeping the **last** `cap` bytes and
@@ -377,7 +157,17 @@ pub fn read_bounded<R: Read>(mut handle: R, cap: usize) -> (Vec<u8>, usize) {
 pub fn program_on_path(program: &str) -> bool {
     crate::harness_runtime::harness_search_path()
         .iter()
-        .any(|directory| crate::harness_runtime::is_executable_file(&directory.join(program)))
+        .any(|directory| {
+            crate::harness_runtime::executable_candidates(directory, program)
+                .iter()
+                .any(|candidate| crate::harness_runtime::is_executable_file(candidate))
+        })
+}
+
+/// `command` handed to the shell this platform runs authored lines in (see
+/// [`uze_platform::shell`]).
+pub fn shell_invocation(command: &str) -> Command {
+    uze_platform::shell::command(command)
 }
 
 /// Runs a shell command in `cwd`, bounded in time and output. Returns
@@ -385,21 +175,14 @@ pub fn program_on_path(program: &str) -> bool {
 /// project-declared commands (a checkout's setup, a delivery's gate, a
 /// forge CLI) whose output is what the operator or the agent is told.
 pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool, String) {
-    let shell = if Path::new("/bin/sh").exists() {
-        "/bin/sh"
-    } else {
-        "sh"
-    };
-    let mut invocation = Command::new(shell);
-    invocation.arg("-c").arg(command);
-    let child = with_process_group(invocation)
+    let mut invocation = shell_invocation(command);
+    invocation
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .current_dir(cwd)
-        .spawn();
-    let mut child = match child {
-        Ok(child) => child,
+        .current_dir(cwd);
+    let (mut child, tree) = match spawn_tree(&mut invocation, Seat::OwnGroup) {
+        Ok(spawned) => spawned,
         Err(error) => return (false, format!("could not run `{command}`: {error}")),
     };
     // One reader per stream, never one reading them in turn: a pipe holds
@@ -408,10 +191,9 @@ pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool,
     // block the child, so stdout never reaches EOF either and the whole
     // command hangs until its deadline — reported as a timeout, with nothing
     // captured to say otherwise.
-    let pid = child.id();
     let stdout = drain_on_thread(child.stdout.take().expect("piped"));
     let stderr = drain_on_thread(child.stderr.take().expect("piped"));
-    let (status, timed_out) = match wait_with_timeout(&mut child, timeout) {
+    let (status, timed_out) = match wait_with_timeout(&mut child, &tree, timeout) {
         Ok(outcome) => outcome,
         Err(error) => return (false, format!("`{command}` failed: {error}")),
     };
@@ -419,8 +201,8 @@ pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool,
     // the readers finish; a descendant that left the group could still hold
     // one open, so the wait is bounded rather than unconditional.
     let mut swept = false;
-    let stdout = stdout.collect(pid, &mut swept);
-    let stderr = stderr.collect(pid, &mut swept);
+    let stdout = stdout.collect(&tree, &mut swept);
+    let stderr = stderr.collect(&tree, &mut swept);
     let captured = combine_streams(&stdout, &stderr);
     if timed_out {
         // What the command managed to say before the deadline is usually the
@@ -465,14 +247,13 @@ fn drain_on_thread<R: Read + Send + 'static>(handle: R) -> Drain {
 }
 
 impl Drain {
-    /// Waits out the reader, sweeping the process group once if it cannot
-    /// finish.
+    /// Waits out the reader, sweeping the tree once if it cannot finish.
     ///
     /// A descendant that left the group — a `setsid`'d daemon, a dev server,
     /// a language server a suite started — still holds the pipe, so the
     /// reader never sees EOF. Killing the group is what closes it; `swept`
     /// keeps the two streams from each paying for their own kill.
-    fn collect(self, pid: u32, swept: &mut bool) -> Stream {
+    fn collect(self, tree: &Tree, swept: &mut bool) -> Stream {
         if let Ok((bytes, dropped)) = self.answer.recv_timeout(READER_GRACE) {
             // Sending is the reader's last act, so this joins a thread that
             // is already on its way out rather than waiting on one.
@@ -480,7 +261,7 @@ impl Drain {
             return Stream::Read { bytes, dropped };
         }
         if !*swept {
-            kill_reaped_process_group(pid);
+            tree.end_survivors();
             *swept = true;
         }
         match self.answer.recv_timeout(READER_GRACE) {
@@ -544,17 +325,15 @@ fn combine_streams(stdout: &Stream, stderr: &Stream) -> String {
 #[cfg(test)]
 mod tests {
 
+    // Signals a process, as only Unix does.
     #[cfg(unix)]
     #[test]
     fn an_interrupt_kills_a_child_the_terminal_no_longer_reaches() {
+        let _interrupts = uze_testkit::process::interrupts();
         let watch = InterruptWatch::install();
-        let mut child = without_controlling_terminal({
-            let mut command = Command::new("sh");
-            command.args(["-c", "sleep 30 & sleep 30"]);
-            command
-        })
-        .spawn()
-        .unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30 & sleep 30"]);
+        let (mut child, tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
         let group = child.id();
         // SAFETY: plain `raise(3)`; the watch catches it.
         unsafe {
@@ -563,23 +342,47 @@ mod tests {
 
         let started = Instant::now();
         let (_, ending) =
-            wait_with_timeout_or_interrupt(&mut child, Duration::from_secs(60), &watch).unwrap();
+            wait_with_timeout_or_interrupt(&mut child, &tree, Duration::from_secs(60), &watch)
+                .unwrap();
 
         assert_eq!(ending, Ending::Interrupted);
         assert!(started.elapsed() < Duration::from_secs(10));
         drop(watch);
-        assert!(
-            process_group_members(group).is_empty(),
-            "the whole tree is gone"
-        );
+        assert!(group_is_empty(group), "the whole tree is gone");
     }
+
+    /// Whether no process is left in group `pgid`: signal 0 to the group
+    /// delivers nothing and answers `ESRCH` once it is empty, on every Unix
+    /// (a `/proc` scan here found nothing on macOS, which has none, and so
+    /// proved nothing there).
+    // Asks the kernel about a process group, as only Unix keeps them.
+    #[cfg(unix)]
+    fn group_is_empty(pgid: u32) -> bool {
+        // SAFETY: signal 0 checks for existence and delivers nothing.
+        let answer = unsafe { libc::kill(-(pgid as libc::pid_t), 0) };
+        answer == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+    }
+
     #[test]
     fn a_program_is_found_only_where_path_actually_holds_an_executable() {
-        assert!(super::program_on_path("sh"), "the system shell is on PATH");
+        assert!(
+            super::program_on_path(uze_platform::shell::ARGV[0]),
+            "the system shell is on PATH"
+        );
         assert!(!super::program_on_path("a-program-nobody-installed"));
     }
 
     use super::*;
+
+    /// One step, spelled for each shell, as a project declares one: what is
+    /// under test is how a step is run and reported, in whichever shell this
+    /// platform runs it.
+    fn step(posix: &str, windows: &str) -> String {
+        crate::shell::ShellCommand::spelled(posix, windows)
+            .here()
+            .expect("the step is spelled for every platform")
+            .to_owned()
+    }
 
     #[test]
     fn read_bounded_caps_and_counts_what_it_dropped() {
@@ -625,7 +428,10 @@ mod tests {
         let started = Instant::now();
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "head -c 1048576 /dev/zero | tr '\\0' 'e' 1>&2; echo done",
+            &step(
+                "head -c 1048576 /dev/zero | tr '\\0' 'e' 1>&2; echo done",
+                "[Console]::Error.Write('e' * 1048576); 'done'",
+            ),
             Duration::from_secs(30),
         );
         assert!(succeeded, "the command did not exit zero: {output}");
@@ -643,7 +449,10 @@ mod tests {
     fn a_command_writing_past_the_cap_still_exits_zero_with_truncated_output() {
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "head -c 1048576 /dev/zero | tr '\\0' 'o'",
+            &step(
+                "head -c 1048576 /dev/zero | tr '\\0' 'o'",
+                "[Console]::Out.Write('o' * 1048576)",
+            ),
             Duration::from_secs(30),
         );
         assert!(succeeded, "a verbose command was reported as failed");
@@ -667,8 +476,12 @@ mod tests {
     fn a_failing_gate_reports_the_failure_and_not_the_progress_noise() {
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "i=0; while [ $i -lt 4000 ]; do echo \"   Compiling crate-$i v0.1.0\"; \
-             i=$((i+1)); done; echo 'FAILURES: test_auth_redirect FAILED'; exit 1",
+            &step(
+                "i=0; while [ $i -lt 4000 ]; do echo \"   Compiling crate-$i v0.1.0\"; \
+                 i=$((i+1)); done; echo 'FAILURES: test_auth_redirect FAILED'; exit 1",
+                "foreach ($i in 0..3999) { \"   Compiling crate-$i v0.1.0\" }; \
+                 'FAILURES: test_auth_redirect FAILED'; exit 1",
+            ),
             Duration::from_secs(60),
         );
         assert!(!succeeded);
@@ -687,7 +500,7 @@ mod tests {
     fn a_timed_out_command_reports_what_it_managed_to_say() {
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "echo preface; sleep 30",
+            &step("echo preface; sleep 30", "'preface'; Start-Sleep 30"),
             Duration::from_millis(300),
         );
         assert!(!succeeded);
@@ -707,7 +520,11 @@ mod tests {
         let started = Instant::now();
         let (succeeded, output) = run_shell_bounded(
             Path::new("."),
-            "sleep 60 & echo 'the step said this'",
+            &step(
+                "sleep 60 & echo 'the step said this'",
+                "Start-Process -NoNewWindow powershell.exe '-NoProfile','-Command','Start-Sleep 60'; \
+                 'the step said this'",
+            ),
             Duration::from_secs(30),
         );
         assert!(succeeded);
@@ -740,23 +557,25 @@ mod tests {
 
     #[test]
     fn wait_with_timeout_kills_a_hung_child() {
-        let mut child = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let (mut child, tree) = spawn_tree(
+            &mut uze_platform::shell::command(&step("sleep 30", "Start-Sleep 30")),
+            Seat::OwnGroup,
+        )
+        .unwrap();
         let (status, timed_out) =
-            wait_with_timeout(&mut child, Duration::from_millis(300)).unwrap();
+            wait_with_timeout(&mut child, &tree, Duration::from_millis(300)).unwrap();
         assert!(timed_out);
         assert!(!status.success());
     }
 
     #[test]
     fn wait_with_timeout_returns_promptly_for_a_fast_child() {
-        // `/bin/sh -c 'exit 0'`, not `/bin/true`: macOS keeps `true` under
-        // `/usr/bin` and ships no `/bin/true`. `/bin/sh` is the one path
-        // POSIX promises, and any process that exits at once will do.
-        let mut child = Command::new("/bin/sh")
-            .args(["-c", "exit 0"])
-            .spawn()
-            .unwrap();
-        let (status, timed_out) = wait_with_timeout(&mut child, Duration::from_secs(5)).unwrap();
+        // The shell exiting at once, not `true`: macOS ships no `/bin/true`
+        // and Windows none at all, and any process that exits at once will do.
+        let (mut child, tree) =
+            spawn_tree(&mut uze_platform::shell::command("exit 0"), Seat::OwnGroup).unwrap();
+        let (status, timed_out) =
+            wait_with_timeout(&mut child, &tree, Duration::from_secs(5)).unwrap();
         assert!(!timed_out);
         assert!(status.success());
     }

@@ -96,7 +96,7 @@ scenes:
         about: exactly one change was discarded — the other agent's survives
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import glob, json, os
             isolated = sorted((agent for store in glob.glob('{uze_home}/state/projects/*/agents.json') for agent in json.load(open(store))['agents'] if agent.get('isolation')), key=lambda agent: agent['created_at_unix'])
             slot = isolated[-1]['isolation']['checkout']

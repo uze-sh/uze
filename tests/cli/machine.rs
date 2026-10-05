@@ -1,4 +1,10 @@
+// The cases that drive shebang stand-ins are Unix-only until the stand-ins
+// dispatch through `uze-fake-harness` (windows-support task 9.2); what only
+// they use is unused elsewhere.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
+
 use std::{path::PathBuf, process::Command};
+use uze_testkit::fake_harness::{Action, FakeHarness, McpNames};
 use uze_testkit::process::IsolatedHome;
 
 fn package_fixture() -> PathBuf {
@@ -24,7 +30,7 @@ fn install_via_marketplace_json(
     home: &std::path::Path,
     uze_home: &std::path::Path,
     package: &std::path::Path,
-    path: &str,
+    path: &std::ffi::OsStr,
 ) -> std::process::Output {
     let (market_args, install_args) =
         uze_testkit::marketplace::marketplace_install_args(home, package);
@@ -58,7 +64,7 @@ fn install_via_marketplace(
     home: &std::path::Path,
     uze_home: &std::path::Path,
     package: &std::path::Path,
-    path: &str,
+    path: &std::ffi::OsStr,
 ) -> std::process::Output {
     let (market_args, install_args) =
         uze_testkit::marketplace::marketplace_install_args(home, package);
@@ -94,10 +100,10 @@ fn mcp_package_fixture_with_resolved_binary(dest_dir: &std::path::Path) -> PathB
     std::fs::create_dir_all(dest_dir).unwrap();
     std::fs::copy(source.join("plugin.json"), dest_dir.join("plugin.json")).unwrap();
     let manifest = std::fs::read_to_string(source.join("mcp.json")).unwrap();
-    let resolved = manifest.replace(
-        "__UZE_MCP_FIXTURE_BINARY__",
-        env!("CARGO_BIN_EXE_uze-mcp-conformance-fixture"),
-    );
+    // Inside a JSON string, so spelled as one: a Windows path's separators
+    // are escapes there.
+    let binary = serde_json::to_string(env!("CARGO_BIN_EXE_uze-mcp-conformance-fixture")).unwrap();
+    let resolved = manifest.replace("__UZE_MCP_FIXTURE_BINARY__", binary.trim_matches('"'));
     std::fs::write(dest_dir.join("mcp.json"), resolved).unwrap();
     dest_dir.to_path_buf()
 }
@@ -140,15 +146,11 @@ fn no_subcommand_prints_help_even_inside_a_workspace_pane() {
 /// <name> -- <command> [args...]`; Codex's is `<name> -- <command>
 /// [args...]` — the script skips known flags and takes the first
 /// remaining token as the entry name, working for both shapes.
-#[cfg(unix)]
 fn fake_harness_bin_dir(label: &str) -> PathBuf {
-    use std::{fs, os::unix::fs::PermissionsExt};
-
     let dir = temporary_home(label);
-    fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
     let mcp_state_dir = dir.join("mcp-state");
-    let command_log = dir.join("commands.log");
-    fs::create_dir_all(&mcp_state_dir).unwrap();
+    std::fs::create_dir_all(&mcp_state_dir).unwrap();
     for (name, version_line) in [
         ("claude", "9.9.9 (Fake Claude)"),
         ("codex", "codex-cli 9.9.9"),
@@ -156,77 +158,37 @@ fn fake_harness_bin_dir(label: &str) -> PathBuf {
         ("opencode2", "opencode2 v9.9.9"),
         ("agy", "agy 9.9.9"),
     ] {
-        let path = dir.join(name);
-        let script = format!(
-            r#"#!/bin/sh
-echo "$0|$*" >> "{command_log}"
-if [ "$1" = "plugin" ]; then
-  case "$2" in
-    list) echo '{{"imports":[]}}'; exit 0 ;;
-    install)
-      mkdir -p "$HOME/.gemini/config/plugins"
-      staged="$HOME/.gemini/config/plugins/$(basename "$3")"
-      cp -R "$3/." "$staged/" 2>/dev/null || true
-      # Real `agy` stages the copy under the plugin's own declared
-      # manifest name (plugin.json's "name" field), not the source
-      # directory's basename (verified against real agy 1.1.22 — see
-      # antigravity/plugin.rs's attach_generated_plugin) — a generated
-      # envelope's source dir is named after the qualified package id,
-      # which differs from the plugin's bare declared name.
-      declared=$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$staged/plugin.json" 2>/dev/null | head -n 1)
-      if [ -n "$declared" ] && [ "$declared" != "$(basename "$3")" ]; then
-        rm -rf "$HOME/.gemini/config/plugins/$declared"
-        mv "$staged" "$HOME/.gemini/config/plugins/$declared"
-      fi
-      exit 0
-      ;;
-    uninstall) exit 0 ;;
-  esac
-fi
-if [ "$1" = "mcp" ]; then
-  case "$2" in
-    get)
-      [ -f "{state}/$3" ] && exit 0 || exit 1
-      ;;
-    remove)
-      rm -f "{state}/$3"
-      exit 0
-      ;;
-    add)
-      shift 2
-      name=""
-      while [ "$#" -gt 0 ]; do
-        case "$1" in
-          --scope|--transport) shift 2 ;;
-          --) shift; break ;;
-          *) name="$1"; shift ;;
-        esac
-      done
-      # Claude's own rule: a registry name outside it is refused, and the
-      # stand-in refusing it too is what keeps a label the real CLI would
-      # reject from passing here.
-      if [ "$(basename "$0")" = claude ]; then
-        case "$name" in
-          *[!A-Za-z0-9_-]*)
-            echo "Invalid name $name. Names can only contain letters, numbers, hyphens, and underscores." >&2
-            exit 1 ;;
-        esac
-      fi
-      touch "{state}/$name"
-      exit 0
-      ;;
-    *) exit 0 ;;
-  esac
-fi
-echo '{version_line}'
-"#,
-            state = mcp_state_dir.display(),
-            command_log = command_log.display(),
-        );
-        fs::write(&path, script).unwrap();
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
+        FakeHarness::new(&dir, name)
+            .shared_log(dir.join("commands.log"))
+            .version_line(version_line)
+            .on_prefix(["plugin", "list"], Action::stdout(r#"{"imports":[]}"#))
+            // Real `agy` stages the copy under the plugin's own declared
+            // manifest name, not the source directory's basename (verified
+            // against real agy 1.1.22 — see antigravity/plugin.rs's
+            // attach_generated_plugin).
+            .on_prefix(
+                ["plugin", "install"],
+                Action::StagePlugin {
+                    under_home: PathBuf::from(".gemini/config/plugins"),
+                },
+            )
+            .on_prefix(["plugin"], Action::Exit(0))
+            // Claude's own rule: a registry name outside it is refused, and
+            // the stand-in refusing it too is what keeps a label the real
+            // CLI would reject from passing here.
+            .on_prefix(
+                ["mcp"],
+                Action::McpRegistry {
+                    state_dir: mcp_state_dir.clone(),
+                    names: if name == "claude" {
+                        McpNames::Claude
+                    } else {
+                        McpNames::Any
+                    },
+                },
+            )
+            .on_prefix([""], Action::stdout(version_line))
+            .build();
     }
     dir
 }
@@ -234,48 +196,38 @@ echo '{version_line}'
 /// A fake legacy V2-only installation. The isolated PATH deliberately has no
 /// stable `opencode`: this proves `uze setup opencode` handles `opencode2`
 /// without passing it the stable CLI's incompatible `upgrade` subcommand.
+// Its stand-in programs are POSIX shell scripts.
 #[cfg(unix)]
 fn fake_legacy_opencode_bin_dir(label: &str) -> PathBuf {
-    use std::{fs, os::unix::fs::PermissionsExt};
-
     let dir = temporary_home(label);
-    fs::create_dir_all(&dir).unwrap();
-    let command_log = dir.join("commands.log");
-    for (name, script) in [
-        (
-            "opencode2",
-            format!(
-                "#!/bin/sh\necho \"$0|$*\" >> \"{}\"\necho 'opencode2 v9.9.9'\n",
-                command_log.display()
-            ),
-        ),
-        (
-            "sh",
-            format!(
-                "#!/bin/sh\necho \"$0|$*\" >> \"{}\"\nexit 0\n",
-                command_log.display()
-            ),
-        ),
-    ] {
-        let path = dir.join(name);
-        fs::write(&path, script).unwrap();
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).unwrap();
-    }
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("commands.log");
+    FakeHarness::new(&dir, "opencode2")
+        .shared_log(&log)
+        .version_line("opencode2 v9.9.9")
+        .on_prefix([""], Action::stdout("opencode2 v9.9.9"))
+        .build();
+    // The POSIX installer route runs through `sh`: this one records it and
+    // installs nothing.
+    FakeHarness::new(&dir, "sh").shared_log(&log).build();
     dir
 }
 
 #[test]
 fn inspect_reports_an_installed_plugin_without_vendor_writes() {
     let home = temporary_home("cli-inspect");
-    let add = install_via_marketplace(&home, &home, &package_fixture(), "/usr/bin:/bin");
+    let add = install_via_marketplace(
+        &home,
+        &home,
+        &package_fixture(),
+        &uze_testkit::process::system_path(),
+    );
     assert!(add.status.success());
     let before = std::fs::read(home.join("state/attachments.json")).ok();
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
         .isolated_home(&home)
-        .env("PATH", "/usr/bin:/bin")
+        .env("PATH", uze_testkit::process::system_path())
         .args(["inspect", "uze-agent-skill-conformance", "--format", "json"])
         .output()
         .unwrap();
@@ -294,7 +246,12 @@ fn inspect_reports_an_installed_plugin_without_vendor_writes() {
 #[test]
 fn add_and_inspect_use_the_same_injected_uze_home() {
     let home = temporary_home("cli-store");
-    let add = install_via_marketplace_json(&home, &home, &package_fixture(), "/usr/bin:/bin");
+    let add = install_via_marketplace_json(
+        &home,
+        &home,
+        &package_fixture(),
+        &uze_testkit::process::system_path(),
+    );
     assert!(add.status.success());
     let installed: serde_json::Value = serde_json::from_slice(&add.stdout).unwrap();
     assert_eq!(
@@ -306,7 +263,7 @@ fn add_and_inspect_use_the_same_injected_uze_home() {
     let inspect = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
         .isolated_home(&home)
-        .env("PATH", "/usr/bin:/bin")
+        .env("PATH", uze_testkit::process::system_path())
         .args(["inspect", "uze-agent-skill-conformance", "--format", "json"])
         .output()
         .unwrap();
@@ -317,7 +274,7 @@ fn add_and_inspect_use_the_same_injected_uze_home() {
         report["plugin"]["store_path"]
             .as_str()
             .unwrap()
-            .contains("store/plugins"),
+            .contains(&uze_testkit::process::native("store/plugins")),
         "store_path should live under the Store's plugins dir, got {}",
         report["plugin"]["store_path"]
     );
@@ -338,10 +295,16 @@ fn add_and_inspect_use_the_same_injected_uze_home() {
 #[test]
 fn setup_reports_absent_harnesses_as_failure_without_writing_state() {
     let home = temporary_home("cli-setup-absent");
+    // Through a proxy nobody answers: a route that downloads a harness by an
+    // absolute path (OpenCode's on Windows) would otherwise install it.
+    let unreachable = "http://127.0.0.1:9";
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
         .isolated_home(&home)
         .env("PATH", "")
+        .env("HTTPS_PROXY", unreachable)
+        .env("https_proxy", unreachable)
+        .env("ALL_PROXY", unreachable)
         .arg("setup")
         .output()
         .unwrap();
@@ -399,10 +362,12 @@ fn doctor_reports_package_bytes_no_install_records_and_keeps_them() {
 #[test]
 fn doctor_reports_not_configured_before_any_setup() {
     let home = temporary_home("cli-doctor-before-setup");
+    // The system's own tools and Git: no harness can be found, and the
+    // machine still has what doctor requires of it.
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
         .isolated_home(&home)
-        .env("PATH", "")
+        .env("PATH", uze_testkit::process::system_path())
         .arg("doctor")
         .output()
         .unwrap();
@@ -441,7 +406,6 @@ fn doctor_ends_with_the_documentation_url() {
 /// L2 setup conformance: this list is intentionally compared to the product
 /// registry below. Registering another harness therefore requires an explicit
 /// setup scenario here rather than silently inheriting partial coverage.
-#[cfg(unix)]
 const SETUP_CONFORMANCE_HARNESSES: [(&str, &str, &str); 4] = [
     ("claude-code", "claude", "update"),
     ("codex", "codex", "update"),
@@ -454,7 +418,6 @@ const SETUP_CONFORMANCE_HARNESSES: [(&str, &str, &str); 4] = [
 /// proving the update reaches a real vendor binary on PATH rather than a UZE
 /// shim, while keeping installer/network behavior out of `cargo test`.
 #[test]
-#[cfg(unix)]
 fn setup_conformance_matrix_covers_every_registered_harness() {
     use uze_core::home::UzeHome;
     use uze_integrations::registry::IntegrationRegistry;
@@ -477,7 +440,7 @@ fn setup_conformance_matrix_covers_every_registered_harness() {
     let home = temporary_home("cli-setup-conformance-home");
     let uze_home = temporary_home("cli-setup-conformance-uze-home");
     let fake_bin = fake_harness_bin_dir("cli-setup-conformance-bin");
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
 
     for (harness, executable, update_command) in SETUP_CONFORMANCE_HARNESSES {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
@@ -497,15 +460,15 @@ fn setup_conformance_matrix_covers_every_registered_harness() {
             stdout.contains("up to date"),
             "unexpected setup output for {harness}: {stdout}"
         );
+        let executable = uze_platform::executable::file_name(executable);
         assert!(
-            uze_home.join("shims").join(executable).is_symlink(),
+            uze_home.join("shims").join(&executable).exists(),
             "uze setup {harness} must create its default {executable} shim"
         );
         let commands = std::fs::read_to_string(fake_bin.join("commands.log")).unwrap();
+        let reached = format!("{}{executable}|{update_command}", std::path::MAIN_SEPARATOR);
         assert!(
-            commands
-                .lines()
-                .any(|line| line.ends_with(&format!("/{executable}|{update_command}"))),
+            commands.lines().any(|line| line.ends_with(&reached)),
             "{harness} did not use the documented {update_command} route through the resolved real {executable} binary: {commands}"
         );
     }
@@ -517,12 +480,13 @@ fn setup_conformance_matrix_covers_every_registered_harness() {
 }
 
 #[test]
+// OpenCode's installer is POSIX shell; Windows gets its distributed build instead.
 #[cfg(unix)]
 fn setup_opencode_legacy_binary_uses_installer_not_stable_upgrade() {
     let home = temporary_home("cli-setup-opencode2-home");
     let uze_home = temporary_home("cli-setup-opencode2-uze-home");
     let fake_bin = fake_legacy_opencode_bin_dir("cli-setup-opencode2-bin");
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
 
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
@@ -552,7 +516,6 @@ fn setup_opencode_legacy_binary_uses_installer_not_stable_upgrade() {
 /// `uze setup codex` with Codex present takes its update route and records
 /// the version it verified afterwards, as the provisioning history.
 #[test]
-#[cfg(unix)]
 fn setup_codex_records_the_version_it_verified_after_the_update() {
     use uze_core::provisioning::{ProvisionAction, ProvisionStatus};
 
@@ -562,7 +525,7 @@ fn setup_codex_records_the_version_it_verified_after_the_update() {
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
         .isolated_home(&home)
-        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .env("PATH", uze_testkit::process::path_with(&[&fake_bin]))
         .args(["setup", "codex"])
         .output()
         .unwrap();
@@ -589,7 +552,6 @@ fn setup_codex_records_the_version_it_verified_after_the_update() {
 /// Claude is handed: no capability-level copy beside it, and nothing
 /// delivered twice by a second setup.
 #[test]
-#[cfg(unix)]
 fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
     let home = temporary_home("cli-setup-after-add-home");
     let uze_home = temporary_home("cli-setup-after-add-uze-home");
@@ -611,7 +573,12 @@ fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
             .collect()
     };
 
-    let add = install_via_marketplace(&home, &uze_home, &package_fixture(), "/usr/bin:/bin");
+    let add = install_via_marketplace(
+        &home,
+        &uze_home,
+        &package_fixture(),
+        &uze_testkit::process::system_path(),
+    );
     assert!(
         add.status.success(),
         "{}",
@@ -626,7 +593,7 @@ fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
             .isolated_home(&home)
-            .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+            .env("PATH", uze_testkit::process::path_with(&[&fake_bin]))
             .args(["setup", "claude-code"])
             .output()
             .unwrap();
@@ -676,6 +643,7 @@ fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
 /// opencode` verifies it there and says where it is, and that the shell it
 /// runs in does not reach it until a new one starts.
 #[test]
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
     use std::os::unix::fs::PermissionsExt;
@@ -703,7 +671,7 @@ fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
         .isolated_home(&home)
-        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .env("PATH", uze_testkit::process::path_with(&[&fake_bin]))
         .env_remove("OPENCODE_INSTALL_DIR")
         .env_remove("XDG_BIN_DIR")
         .args(["setup", "opencode"])
@@ -746,6 +714,7 @@ fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
 /// puts it, `~/.local/bin/<program>`, which the shell `uze setup` runs in
 /// does not reach yet: setup verifies it there, says where it is, puts the
 /// shim in front of it, and warns about nothing.
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn assert_fresh_native_install_found_outside_path(
     program: &str,
@@ -778,7 +747,7 @@ fn assert_fresh_native_install_found_outside_path(
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
         .isolated_home(&home)
-        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .env("PATH", uze_testkit::process::path_with(&[&fake_bin]))
         .args(["setup", program])
         .output()
         .unwrap();
@@ -820,6 +789,7 @@ fn assert_fresh_native_install_found_outside_path(
 }
 
 #[test]
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn setup_claude_reports_where_a_fresh_install_landed_outside_path() {
     assert_fresh_native_install_found_outside_path(
@@ -831,6 +801,7 @@ fn setup_claude_reports_where_a_fresh_install_landed_outside_path() {
 }
 
 #[test]
+// Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn setup_codex_reports_where_a_fresh_install_landed_outside_path() {
     assert_fresh_native_install_found_outside_path(
@@ -852,7 +823,11 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     let home = temporary_home("cli-setup-then-add-home");
     let uze_home = temporary_home("cli-setup-then-add-uze-home");
     let fake_bin = fake_harness_bin_dir("cli-setup-then-add-bin");
-    let path = format!("{}:{}", fake_bin.display(), std::env::var("PATH").unwrap());
+    let path = std::env::join_paths(
+        std::iter::once(fake_bin.clone())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
 
     let run = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
@@ -977,7 +952,11 @@ fn add_prepares_a_detected_opencode_and_attaches_without_prior_setup() {
     let home = temporary_home("cli-add-autoprepares-opencode-home");
     let uze_home = temporary_home("cli-add-autoprepares-opencode-uze-home");
     let fake_bin = fake_harness_bin_dir("cli-add-autoprepares-opencode-bin");
-    let path = format!("{}:{}", fake_bin.display(), std::env::var("PATH").unwrap());
+    let path = std::env::join_paths(
+        std::iter::once(fake_bin.clone())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
 
     let output = install_via_marketplace(&home, &uze_home, &package_fixture(), &path);
     assert!(
@@ -1023,7 +1002,11 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     let fake_bin = fake_harness_bin_dir("cli-mcp-bin");
     let mcp_package_dir = temporary_home("cli-mcp-package");
     let package = mcp_package_fixture_with_resolved_binary(&mcp_package_dir);
-    let path = format!("{}:{}", fake_bin.display(), std::env::var("PATH").unwrap());
+    let path = std::env::join_paths(
+        std::iter::once(fake_bin.clone())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
 
     let run = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
@@ -1148,12 +1131,17 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
 #[test]
 fn plugin_remove_uses_the_package_centric_application_flow() {
     let home = temporary_home("cli-remove");
-    let add = install_via_marketplace(&home, &home, &package_fixture(), "/usr/bin:/bin");
+    let add = install_via_marketplace(
+        &home,
+        &home,
+        &package_fixture(),
+        &uze_testkit::process::system_path(),
+    );
     assert!(add.status.success());
     let remove = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
         .isolated_home(&home)
-        .env("PATH", "/usr/bin:/bin")
+        .env("PATH", uze_testkit::process::system_path())
         .args([
             "remove",
             "-m",
@@ -1202,7 +1190,7 @@ fn a_name_typed_in_another_case_resolves_to_the_one_on_record() {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &home)
             .isolated_home(&home)
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", uze_testkit::process::system_path())
             .current_dir(&home)
             .args(args)
             .output()
@@ -1253,7 +1241,12 @@ fn a_name_typed_in_another_case_resolves_to_the_one_on_record() {
 #[test]
 fn root_remove_no_longer_falls_back_to_global_removal() {
     let home = temporary_home("cli-remove-no-fallback");
-    let add = install_via_marketplace(&home, &home, &package_fixture(), "/usr/bin:/bin");
+    let add = install_via_marketplace(
+        &home,
+        &home,
+        &package_fixture(),
+        &uze_testkit::process::system_path(),
+    );
     assert!(add.status.success());
 
     // `current_dir(&home)` matters here: this repo's own root (the ambient
@@ -1265,7 +1258,7 @@ fn root_remove_no_longer_falls_back_to_global_removal() {
     let remove = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &home)
         .isolated_home(&home)
-        .env("PATH", "/usr/bin:/bin")
+        .env("PATH", uze_testkit::process::system_path())
         .current_dir(&home)
         .args(["remove", "uze-agent-skill-conformance"])
         .output()
@@ -1307,7 +1300,6 @@ fn root_remove_no_longer_falls_back_to_global_removal() {
 /// Edits the SKILL.md of one skill directory this package owns by hand,
 /// so reconciliation reports `Drifted` and the removal plan refuses to
 /// touch it — the lifecycle-safety outcome `Blocked` reports.
-#[cfg(unix)]
 fn drift_a_managed_attachment(home: &std::path::Path) {
     let skills = home.join(".config/opencode/skills");
     let managed = std::fs::read_dir(&skills)
@@ -1323,13 +1315,16 @@ fn drift_a_managed_attachment(home: &std::path::Path) {
 /// report used to print and the process exit 0, so
 /// `uze remove x -m && uze install y -m` ran the second half after
 /// the first had done nothing.
-#[cfg(unix)]
 #[test]
 fn a_blocked_removal_reports_and_fails() {
     let home = temporary_home("cli-remove-blocked-home");
     let uze_home = temporary_home("cli-remove-blocked-uze-home");
     let fake_bin = fake_harness_bin_dir("cli-remove-blocked-bin");
-    let path = format!("{}:{}", fake_bin.display(), std::env::var("PATH").unwrap());
+    let path = std::env::join_paths(
+        std::iter::once(fake_bin.clone())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
 
     let add = install_via_marketplace(&home, &uze_home, &package_fixture(), &path);
     assert!(
@@ -1371,13 +1366,16 @@ fn a_blocked_removal_reports_and_fails() {
 
 /// The same for `uze update -m`, which blocks on the same check: it
 /// removes the installed package before putting the new one in place.
-#[cfg(unix)]
 #[test]
 fn a_blocked_update_reports_and_fails() {
     let home = temporary_home("cli-update-blocked-home");
     let uze_home = temporary_home("cli-update-blocked-uze-home");
     let fake_bin = fake_harness_bin_dir("cli-update-blocked-bin");
-    let path = format!("{}:{}", fake_bin.display(), std::env::var("PATH").unwrap());
+    let path = std::env::join_paths(
+        std::iter::once(fake_bin.clone())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
 
     let add = install_via_marketplace(&home, &uze_home, &package_fixture(), &path);
     assert!(
@@ -1425,14 +1423,13 @@ fn a_blocked_update_reports_and_fails() {
 /// Updating a machine whose packages are already at their source's head
 /// moves nothing, and says so — every time it is asked, under a header
 /// that names the machine rather than a project that is not there.
-#[cfg(unix)]
 #[test]
 fn a_machine_update_with_nothing_new_says_already_current() {
     let home = temporary_home("cli-update-current-home");
     let uze_home = temporary_home("cli-update-current-uze-home");
-    let path = "/usr/bin:/bin";
+    let path = uze_testkit::process::system_path();
 
-    let add = install_via_marketplace(&home, &uze_home, &package_fixture(), path);
+    let add = install_via_marketplace(&home, &uze_home, &package_fixture(), &path);
     assert!(
         add.status.success(),
         "install failed: {}",
@@ -1443,7 +1440,7 @@ fn a_machine_update_with_nothing_new_says_already_current() {
         let update = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
             .isolated_home(&home)
-            .env("PATH", path)
+            .env("PATH", &path)
             // The scope and each plugin's own line are the detailed report's.
             .args(["update", "-m", "--verbose"])
             .output()
@@ -1472,7 +1469,6 @@ fn a_machine_update_with_nothing_new_says_already_current() {
 /// asks the machine to update the plugin: the Store takes the edit, and the
 /// report says it moved and where from — never "already current" over bytes
 /// that just changed.
-#[cfg(unix)]
 #[test]
 fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
     let home = temporary_home("cli-update-linked-home");
@@ -1488,7 +1484,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
         let output = Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &uze_home)
             .isolated_home(&home)
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", uze_testkit::process::system_path())
             .args(args)
             .output()
             .unwrap();
@@ -1553,7 +1549,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
             .current_dir(&project)
             .env("UZE_HOME", &uze_home)
             .isolated_home(&home)
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", uze_testkit::process::system_path())
             .args(args)
             .output()
             .unwrap();
@@ -1605,40 +1601,40 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
 
 /// A bin directory whose `agy` is detected and refuses every plugin install,
 /// optionally beside an `opencode` that delivers.
-#[cfg(unix)]
 fn refusing_harness_bin_dir(label: &str, with_opencode: bool) -> PathBuf {
-    use std::{fs, os::unix::fs::PermissionsExt};
-
     let dir = temporary_home(label);
-    fs::create_dir_all(&dir).unwrap();
-    let mut scripts = vec![(
-        "agy",
-        r#"#!/bin/sh
-if [ "$1" = "plugin" ]; then
-  case "$2" in
-    list) echo '{"imports":[]}'; exit 0 ;;
-    install) echo "the plugin cache is read-only" >&2; exit 1 ;;
-    *) exit 0 ;;
-  esac
-fi
-echo 'agy 9.9.9'
-"#,
-    )];
+    std::fs::create_dir_all(&dir).unwrap();
+    FakeHarness::new(&dir, "agy")
+        .version_line("agy 9.9.9")
+        .on_prefix(["plugin", "list"], Action::stdout(r#"{"imports":[]}"#))
+        .on_prefix(
+            ["plugin", "install"],
+            Action::Refuse {
+                reason: "the plugin cache is read-only".to_owned(),
+            },
+        )
+        .on_prefix(["plugin"], Action::Exit(0))
+        .on_prefix([""], Action::stdout("agy 9.9.9"))
+        .build();
     if with_opencode {
-        scripts.push(("opencode", "#!/bin/sh\necho 'opencode v9.9.9'\n"));
-    }
-    for (name, script) in scripts {
-        let path = dir.join(name);
-        fs::write(&path, script).unwrap();
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
+        opencode_answering(&dir);
     }
     dir
 }
 
-#[cfg(unix)]
-fn machine_json(home: &std::path::Path, path: &str, args: &[&str]) -> serde_json::Value {
+/// A stand-in OpenCode in `bin` that answers every call with its version.
+fn opencode_answering(bin: &std::path::Path) {
+    FakeHarness::new(bin, "opencode")
+        .version_line("opencode v9.9.9")
+        .on_prefix([""], Action::stdout("opencode v9.9.9"))
+        .build();
+}
+
+fn machine_json(
+    home: &std::path::Path,
+    path: &std::ffi::OsStr,
+    args: &[&str],
+) -> serde_json::Value {
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", home)
         .isolated_home(home)
@@ -1657,12 +1653,11 @@ fn machine_json(home: &std::path::Path, path: &str, args: &[&str]) -> serde_json
 
 /// "Failed to install" used to leave the package installed: `status -m`
 /// listed it and `doctor` counted its receipts as matched.
-#[cfg(unix)]
 #[test]
 fn an_install_the_only_harness_refuses_is_not_installed() {
     let home = temporary_home("cli-install-refused");
     let fake_bin = refusing_harness_bin_dir("cli-install-refused-bin", false);
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
 
     let add = install_via_marketplace(&home, &home, &package_fixture(), &path);
     let stderr = String::from_utf8_lossy(&add.stderr);
@@ -1705,12 +1700,11 @@ fn an_install_the_only_harness_refuses_is_not_installed() {
 
 /// One harness takes the package and the other refuses: the install
 /// fails, the package stays, and the listing names what it did not reach.
-#[cfg(unix)]
 #[test]
 fn an_install_one_harness_refuses_is_listed_as_partially_delivered() {
     let home = temporary_home("cli-install-partial");
     let fake_bin = refusing_harness_bin_dir("cli-install-partial-bin", true);
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
 
     let add = install_via_marketplace_json(&home, &home, &package_fixture(), &path);
     assert!(!add.status.success(), "a partial install reported success");
@@ -1773,10 +1767,9 @@ fn an_install_one_harness_refuses_is_listed_as_partially_delivered() {
 /// named `reviewer.md` in OpenCode's agents directory — is taken back off
 /// on the next install and replaced by the file carrying its plugin's
 /// label, so an upgrade never leaves the old name answering beside the new.
-#[cfg(unix)]
 #[test]
 fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::fs;
     use uze_core::{UzeHome, exposure::ManagedArtifact, state};
 
     let home = temporary_home("cli-agent-rename");
@@ -1790,10 +1783,8 @@ fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
     .unwrap();
     let bin = home.join("bin");
     fs::create_dir_all(&bin).unwrap();
-    let opencode = bin.join("opencode");
-    fs::write(&opencode, "#!/bin/sh\necho 'opencode v9.9.9'\n").unwrap();
-    fs::set_permissions(&opencode, fs::Permissions::from_mode(0o755)).unwrap();
-    let path = format!("{}:/usr/bin:/bin", bin.display());
+    opencode_answering(&bin);
+    let path = uze_testkit::process::path_with(&[&bin]);
     let uze_home = home.join(".uze");
 
     let first = install_via_marketplace_json(&home, &uze_home, &package, &path);
@@ -1803,7 +1794,10 @@ fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
         String::from_utf8_lossy(&first.stderr)
     );
     let agents = home.join(".config/opencode/agents");
-    let labelled = agents.join("crew:reviewer.md");
+    let labelled = agents.join(format!(
+        "{}.md",
+        uze_core::path::file_name_for("crew:reviewer")
+    ));
     assert!(labelled.is_file() && !labelled.is_symlink());
 
     // The ledger and the disk as 1.0.0-beta.3 left them.
@@ -1859,10 +1853,9 @@ fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
 /// different places — `~/.config/opencode/skills/crew:review/` and
 /// `~/.config/opencode/agents/crew:review.md` — so neither is refused as
 /// holding the other's name.
-#[cfg(unix)]
 #[test]
 fn a_skill_and_an_agent_of_one_name_are_both_delivered() {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::fs;
 
     let home = temporary_home("cli-skill-agent-same-name");
     let package = home.join("crew");
@@ -1881,10 +1874,8 @@ fn a_skill_and_an_agent_of_one_name_are_both_delivered() {
     .unwrap();
     let bin = home.join("bin");
     fs::create_dir_all(&bin).unwrap();
-    let opencode = bin.join("opencode");
-    fs::write(&opencode, "#!/bin/sh\necho 'opencode v9.9.9'\n").unwrap();
-    fs::set_permissions(&opencode, fs::Permissions::from_mode(0o755)).unwrap();
-    let path = format!("{}:/usr/bin:/bin", bin.display());
+    opencode_answering(&bin);
+    let path = uze_testkit::process::path_with(&[&bin]);
 
     let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
     assert!(
@@ -1895,11 +1886,17 @@ fn a_skill_and_an_agent_of_one_name_are_both_delivered() {
     let report = String::from_utf8_lossy(&add.stdout);
     assert!(!report.contains("not delivered"), "{report}");
     assert!(
-        home.join(".config/opencode/skills/crew:review/SKILL.md")
+        home.join(".config/opencode/skills")
+            .join(uze_core::path::file_name_for("crew:review"))
+            .join("SKILL.md")
             .is_file()
     );
     assert!(
-        home.join(".config/opencode/agents/crew:review.md")
+        home.join(".config/opencode/agents")
+            .join(format!(
+                "{}.md",
+                uze_core::path::file_name_for("crew:review")
+            ))
             .is_file()
     );
     let _ = fs::remove_dir_all(home);
@@ -1908,12 +1905,11 @@ fn a_skill_and_an_agent_of_one_name_are_both_delivered() {
 /// A project's `uze install` that places a plugin one harness refuses says
 /// so and exits non-zero, as `install -m` does: the environment it reports
 /// is not the one every harness received.
-#[cfg(unix)]
 #[test]
 fn a_project_install_one_harness_refuses_fails_and_names_it() {
     let home = temporary_home("cli-project-install-partial");
     let fake_bin = refusing_harness_bin_dir("cli-project-install-partial-bin", true);
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
     let package = package_fixture();
     let name = uze_testkit::marketplace::package_manifest_name(&package);
     let market = home.join("market");
@@ -1960,7 +1956,6 @@ fn a_project_install_one_harness_refuses_fails_and_names_it() {
 
 /// A package with a skill and an agent whose frontmatter only Claude Code
 /// reads whole, so every route a harness can take shows up somewhere.
-#[cfg(unix)]
 fn composed_package(home: &std::path::Path) -> PathBuf {
     use std::fs;
 
@@ -1981,8 +1976,7 @@ fn composed_package(home: &std::path::Path) -> PathBuf {
     package
 }
 
-#[cfg(unix)]
-fn uze_at(home: &std::path::Path, path: &str, args: &[&str]) -> std::process::Output {
+fn uze_at(home: &std::path::Path, path: &std::ffi::OsStr, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", home.join(".uze"))
         .isolated_home(home)
@@ -1993,8 +1987,7 @@ fn uze_at(home: &std::path::Path, path: &str, args: &[&str]) -> std::process::Ou
         .unwrap()
 }
 
-#[cfg(unix)]
-fn uze_json_at(home: &std::path::Path, path: &str, args: &[&str]) -> serde_json::Value {
+fn uze_json_at(home: &std::path::Path, path: &std::ffi::OsStr, args: &[&str]) -> serde_json::Value {
     let mut with_json = args.to_vec();
     with_json.extend(["--format", "json"]);
     let output = uze_at(home, path, &with_json);
@@ -2011,12 +2004,11 @@ fn uze_json_at(home: &std::path::Path, path: &str, args: &[&str]) -> serde_json:
 /// only worth running before a release if it says what the install says:
 /// the same route and the same capabilities short of native, harness by
 /// harness.
-#[cfg(unix)]
 #[test]
 fn inspect_and_install_report_agree_on_every_harness() {
     let home = temporary_home("cli-inspect-agrees");
     let fake_bin = fake_harness_bin_dir("cli-inspect-agrees-bin");
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
     let package = composed_package(&home);
 
     let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
@@ -2087,12 +2079,11 @@ fn inspect_and_install_report_agree_on_every_harness() {
 /// A path Claude Code would load as a component no canonical capability
 /// defines is left out of its delivery, and `inspect` says so for exactly
 /// the paths the package holds, on that harness alone.
-#[cfg(unix)]
 #[test]
 fn inspect_names_the_paths_a_harness_does_not_receive() {
     let home = temporary_home("cli-inspect-withheld");
     let fake_bin = fake_harness_bin_dir("cli-inspect-withheld-bin");
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
     let package = composed_package(&home);
     std::fs::create_dir_all(package.join("commands")).unwrap();
     std::fs::write(package.join("commands/hello.md"), "Say hello.\n").unwrap();
@@ -2135,7 +2126,6 @@ fn inspect_names_the_paths_a_harness_does_not_receive() {
 /// cached copy of the plugin can be empty, and an agent file an earlier
 /// build wrote can carry fields OpenCode drops the agent over. Doctor
 /// compares what the plan expects with what each harness would load.
-#[cfg(unix)]
 #[test]
 fn doctor_reports_an_empty_plugin_cache_and_an_unreadable_agent() {
     use std::fs;
@@ -2143,7 +2133,7 @@ fn doctor_reports_an_empty_plugin_cache_and_an_unreadable_agent() {
 
     let home = temporary_home("cli-doctor-intent");
     let fake_bin = fake_harness_bin_dir("cli-doctor-intent-bin");
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
     let package = composed_package(&home);
     let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
     assert!(
@@ -2282,20 +2272,16 @@ fn doctor_reports_an_empty_plugin_cache_and_an_unreadable_agent() {
 }
 
 /// A PATH whose only harness is a stand-in OpenCode, written under `home`.
-#[cfg(unix)]
-fn opencode_only_path(home: &std::path::Path) -> String {
-    use std::{fs, os::unix::fs::PermissionsExt};
+fn opencode_only_path(home: &std::path::Path) -> std::ffi::OsString {
+    use std::fs;
 
     let bin = home.join("bin");
     fs::create_dir_all(&bin).unwrap();
-    let opencode = bin.join("opencode");
-    fs::write(&opencode, "#!/bin/sh\necho 'opencode v9.9.9'\n").unwrap();
-    fs::set_permissions(&opencode, fs::Permissions::from_mode(0o755)).unwrap();
-    format!("{}:/usr/bin:/bin", bin.display())
+    opencode_answering(&bin);
+    uze_testkit::process::path_with(&[&bin])
 }
 
 /// `crew`, carrying one agent, `reviewer`.
-#[cfg(unix)]
 fn crew_with_an_agent(home: &std::path::Path) -> PathBuf {
     let package = home.join("crew");
     std::fs::create_dir_all(package.join("agents")).unwrap();
@@ -2309,7 +2295,6 @@ fn crew_with_an_agent(home: &std::path::Path) -> PathBuf {
 }
 
 /// The one receipt recording a generated file: the agent's.
-#[cfg(unix)]
 fn agent_receipt(uze: &uze_core::UzeHome) -> uze_core::integration::AttachmentReceipt {
     uze_core::state::receipts(uze, None)
         .unwrap()
@@ -2327,7 +2312,6 @@ fn agent_receipt(uze: &uze_core::UzeHome) -> uze_core::integration::AttachmentRe
 /// operator edited since, is theirs: the next install leaves the edit where
 /// it is and holds the agent back, rather than offering it a second time
 /// under its label beside the edit.
-#[cfg(unix)]
 #[test]
 fn an_earlier_agent_file_the_operator_edited_is_held_back_not_replaced() {
     use std::fs;
@@ -2344,7 +2328,10 @@ fn an_earlier_agent_file_the_operator_edited_is_held_back_not_replaced() {
         String::from_utf8_lossy(&first.stderr)
     );
     let agents = home.join(".config/opencode/agents");
-    let labelled = agents.join("crew:reviewer.md");
+    let labelled = agents.join(format!(
+        "{}.md",
+        uze_core::path::file_name_for("crew:reviewer")
+    ));
     assert!(labelled.is_file());
 
     // What an earlier build wrote, under the name it gave the agent.
@@ -2394,8 +2381,11 @@ fn an_earlier_agent_file_the_operator_edited_is_held_back_not_replaced() {
 /// What doctor finds of `crew` on `integration`. Doctor repairs what it
 /// can before it reports, so the delivery is read while another mutation
 /// holds the lock, which is when what doctor finds is what is on disk.
-#[cfg(unix)]
-fn crew_findings(home: &std::path::Path, path: &str, integration: &str) -> Vec<serde_json::Value> {
+fn crew_findings(
+    home: &std::path::Path,
+    path: &std::ffi::OsStr,
+    integration: &str,
+) -> Vec<serde_json::Value> {
     let _held =
         uze_core::persistence::MutationLock::acquire(&uze_core::UzeHome::at(home.join(".uze")))
             .unwrap();
@@ -2421,7 +2411,6 @@ fn crew_findings(home: &std::path::Path, path: &str, integration: &str) -> Vec<s
 
 /// An agent whose file is gone is reported missing, by the name a session
 /// would have called it.
-#[cfg(unix)]
 #[test]
 fn doctor_reports_an_agent_whose_file_is_gone_as_missing() {
     let home = temporary_home("cli-doctor-missing");
@@ -2433,7 +2422,11 @@ fn doctor_reports_an_agent_whose_file_is_gone_as_missing() {
         "{}",
         String::from_utf8_lossy(&add.stderr)
     );
-    std::fs::remove_file(home.join(".config/opencode/agents/crew:reviewer.md")).unwrap();
+    std::fs::remove_file(home.join(".config/opencode/agents").join(format!(
+        "{}.md",
+        uze_core::path::file_name_for("crew:reviewer")
+    )))
+    .unwrap();
 
     let findings = crew_findings(&home, &path, "opencode");
     assert!(
@@ -2447,6 +2440,7 @@ fn doctor_reports_an_agent_whose_file_is_gone_as_missing() {
 
 /// A hook entry delivered intact but under another name than its plan
 /// gives it is reported renamed, saying the name it answers to instead.
+/// Antigravity CLI's named entries, which only the POSIX wrapper makes.
 #[cfg(unix)]
 #[test]
 fn doctor_reports_a_hook_delivered_under_another_name_as_renamed() {
@@ -2454,7 +2448,7 @@ fn doctor_reports_a_hook_delivered_under_another_name_as_renamed() {
 
     let home = temporary_home("cli-doctor-renamed");
     let fake_bin = fake_harness_bin_dir("cli-doctor-renamed-bin");
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
     let add = install_via_marketplace_json(
         &home,
         &home.join(".uze"),
@@ -2511,8 +2505,8 @@ fn doctor_reports_a_hook_delivered_under_another_name_as_renamed() {
 }
 
 /// `crew`, carrying an MCP server and hooks for two events: `ensure-ui`
-/// on session start and `watch` before a shell command.
-#[cfg(unix)]
+/// on session start and `watch` before a shell command, each spelled for
+/// both shells.
 fn crew_with_a_server_and_hooks(home: &std::path::Path) -> PathBuf {
     let package = home.join("crew");
     std::fs::create_dir_all(&package).unwrap();
@@ -2524,7 +2518,7 @@ fn crew_with_a_server_and_hooks(home: &std::path::Path) -> PathBuf {
     .unwrap();
     std::fs::write(
         package.join("hooks.json"),
-        r#"{"hooks":{"SessionStart":[{"id":"ensure-ui","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/ensure-ui"}]}],"PreToolUse":[{"id":"watch","matcher":"shell","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/watch"}]}]}}"#,
+        r#"{"hooks":{"SessionStart":[{"id":"ensure-ui","hooks":[{"type":"command","command":{"posix":"${PLUGIN_ROOT}/ensure-ui","windows":"& '${PLUGIN_ROOT}/ensure-ui.ps1'"}}]}],"PreToolUse":[{"id":"watch","matcher":"shell","hooks":[{"type":"command","command":{"posix":"${PLUGIN_ROOT}/watch","windows":"& '${PLUGIN_ROOT}/watch.ps1'"}}]}]}}"#,
     )
     .unwrap();
     package
@@ -2532,12 +2526,11 @@ fn crew_with_a_server_and_hooks(home: &std::path::Path) -> PathBuf {
 
 /// The effective view of a package with a server and hooks names both for
 /// the harness asked about.
-#[cfg(unix)]
 #[test]
 fn inspect_names_the_servers_and_hooks_a_harness_receives() {
     let home = temporary_home("cli-inspect-mcp-hooks");
     let fake_bin = fake_harness_bin_dir("cli-inspect-mcp-hooks-bin");
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
     let add = install_via_marketplace_json(
         &home,
         &home.join(".uze"),
@@ -2589,13 +2582,13 @@ fn inspect_names_the_servers_and_hooks_a_harness_receives() {
 
 /// Antigravity CLI fires no session start: the install reports that
 /// group Unsupported there, with why, and still delivers the package's
-/// other hook to it.
+/// other hook to it — through the POSIX wrapper, the only one it takes.
 #[cfg(unix)]
 #[test]
 fn antigravity_reports_a_session_start_hook_unsupported_and_takes_the_rest() {
     let home = temporary_home("cli-antigravity-session-start");
     let fake_bin = fake_harness_bin_dir("cli-antigravity-session-start-bin");
-    let path = format!("{}:/usr/bin:/bin", fake_bin.display());
+    let path = uze_testkit::process::path_with(&[&fake_bin]);
     let add = install_via_marketplace_json(
         &home,
         &home.join(".uze"),

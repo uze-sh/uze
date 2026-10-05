@@ -11,8 +11,20 @@ use super::*;
 /// general POSIX-adjacent knowledge, not the specific-harness knowledge
 /// `uze-core`'s vendor-neutrality rule is actually about, so it's fine for
 /// this crate to hold.
-pub(super) const PLAIN_SHELL_PROCESS_NAMES: [&str; 8] =
-    ["shell", "zsh", "bash", "sh", "dash", "fish", "ksh", "tcsh"];
+pub(super) const PLAIN_SHELL_PROCESS_NAMES: [&str; 12] = [
+    "shell",
+    "zsh",
+    "bash",
+    "sh",
+    "dash",
+    "fish",
+    "ksh",
+    "tcsh",
+    "cmd",
+    "powershell",
+    "pwsh",
+    "nu",
+];
 
 /// A best-effort relaunch command for a pane that was spawned as a shell
 /// (see [`PaneRuntime::launch`]) but whose last-
@@ -33,7 +45,13 @@ pub(super) const PLAIN_SHELL_PROCESS_NAMES: [&str; 8] =
 /// chose.
 pub(super) fn relaunch_command_for_process(process: &str) -> Option<Vec<String>> {
     let trimmed = process.trim();
-    if trimmed.is_empty() || trimmed.contains('/') || PLAIN_SHELL_PROCESS_NAMES.contains(&trimmed) {
+    if trimmed.is_empty()
+        || trimmed.contains(['/', '\\', ':'])
+        // Windows names a process in whatever case its image was given.
+        || PLAIN_SHELL_PROCESS_NAMES
+            .iter()
+            .any(|shell| shell.eq_ignore_ascii_case(trimmed))
+    {
         return None;
     }
     Some(vec![trimmed.to_owned()])
@@ -71,27 +89,30 @@ pub(super) fn server_executable() -> Result<PathBuf, RuntimeError> {
 /// and the server is spawned with the client's.
 pub(super) fn which_uze() -> Option<PathBuf> {
     env::split_paths(&env::var_os("PATH")?)
-        .map(|directory| directory.join("uze"))
+        .map(|directory| directory.join(uze_platform::executable::file_name("uze")))
         .find(|candidate| candidate.is_file())
 }
 
 pub(super) fn start_server(seat: &SpaceSeat) -> Result<(), RuntimeError> {
-    server_command(&server_executable()?, seat).spawn()?;
+    let detached =
+        uze_platform::process::spawn_detached(&mut server_command(&server_executable()?, seat))?;
+    if !detached.outlives_host {
+        tracing::warn!(
+            "this terminal does not let processes leave it; the uze server will end when it closes"
+        );
+    }
     Ok(())
 }
 
 pub(super) fn server_command(executable: &Path, seat: &SpaceSeat) -> std::process::Command {
-    use std::os::unix::process::CommandExt;
-
     let mut command = std::process::Command::new(executable);
     command
         .args(["terminal", "serve", "--root"])
         .arg(&seat.root)
         // The first `uze` usually runs inside an agent's checkout, and a
         // server left working there for its whole life would hold that
-        // checkout in use long after the agent ended. Every pane is started
-        // in a directory of its own, so the server needs none.
-        .current_dir("/")
+        // checkout in use long after the agent ended.
+        .current_dir(host::server_directory())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -99,12 +120,7 @@ pub(super) fn server_command(executable: &Path, seat: &SpaceSeat) -> std::proces
         // inherits its environment: a trace context left here would join
         // everything run in any pane to that one command's trace.
         .env_remove("TRACEPARENT")
-        .env_remove("TRACESTATE")
-        // A process group of its own, or the server sits in the launching
-        // terminal's: a `SIGHUP` when that terminal closes, or a `Ctrl+C`
-        // to its foreground group, would take down every pane — precisely
-        // the property this runtime exists to hold (ADR-038).
-        .process_group(0);
+        .env_remove("TRACESTATE");
     command
 }
 
@@ -113,10 +129,10 @@ pub(super) fn server_command(executable: &Path, seat: &SpaceSeat) -> std::proces
 /// [`spawn_endpoint_watch`] has yet to put it back.
 pub(super) const READY_WITHIN: Duration = Duration::from_secs(2);
 
-pub(super) fn connect_waiting(socket: &Path) -> Result<UnixStream, RuntimeError> {
+pub(super) fn connect_waiting(socket: &Path) -> Result<Stream, RuntimeError> {
     let deadline = Instant::now() + READY_WITHIN;
     loop {
-        match UnixStream::connect(socket) {
+        match transport::connect(socket) {
             Ok(stream) => return Ok(stream),
             Err(error)
                 if matches!(
@@ -150,15 +166,14 @@ pub(super) fn connect_waiting(socket: &Path) -> Result<UnixStream, RuntimeError>
 /// underneath a live process, which is exactly the state the server being
 /// replaced is in. A process the table cannot read — a zombie, a platform
 /// [`process_probe`] does not answer for — is not `uze`.
-pub(super) fn runs_uze(pid: libc::pid_t) -> bool {
-    let Some(image) = process_probe::executable_of(pid as u32) else {
-        return false;
-    };
-    let Some(name) = image.file_name() else {
-        return false;
-    };
-    let name = name.to_string_lossy();
-    name.strip_suffix(" (deleted)").unwrap_or(&name) == "uze"
+pub(super) fn runs_uze(pid: u32) -> bool {
+    uze_platform::probe::executable_of(pid)
+        .and_then(|image| {
+            image
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .is_some_and(|name| host::is_uze_image(&name))
 }
 
 /// Whether `pid` runs the same executable image as this process. The image
@@ -169,7 +184,8 @@ pub(super) fn runs_this_executable(pid: u32) -> bool {
     let Some(mine) = env::current_exe().ok() else {
         return false;
     };
-    process_probe::executable_of(pid).is_some_and(|image| image == mine)
+    uze_platform::probe::executable_of(pid)
+        .is_some_and(|image| uze_platform::path::same_path(&image, &mine))
 }
 
 /// The pid listening on `socket`. The kernel stamps the listener's
@@ -177,38 +193,30 @@ pub(super) fn runs_this_executable(pid: u32) -> bool {
 /// something a connection could claim. `None` when nobody
 /// answers, or when the platform cannot say.
 pub(super) fn listening_peer(socket: &Path) -> Option<u32> {
-    let stream = UnixStream::connect(socket).ok()?;
-    process_probe::peer_pid(&stream)
-}
-
-/// `pid` as something `kill(2)` may be given — only where it names one
-/// process. `kill(0, …)` is the caller's own process group and a negative
-/// pid is a group too, `-1` every process the user owns.
-pub(super) fn signalable(pid: u32) -> Option<libc::pid_t> {
-    libc::pid_t::try_from(pid).ok().filter(|pid| *pid > 0)
+    let stream = transport::connect(socket).ok()?;
+    transport::peer_pid(&stream)
 }
 
 /// How long a server being replaced has to let go before it is made to.
 pub(super) const RETIRE_WITHIN: Duration = Duration::from_secs(1);
 
-/// Ends a server this client cannot use: a cooperative `SIGTERM` first —
-/// its persisted workspace is what lets the fresh server restore the same
-/// tabs — and `SIGKILL` only if it has not let go of the endpoint and the
+/// Ends a server this client cannot use: asked to stop first — its
+/// persisted workspace is what lets the fresh server restore the same tabs
+/// — and ended outright only if it has not let go of the endpoint and the
 /// claim promptly. A pid that is not running `uze` by the time it would be
-/// signalled is left alone.
+/// stopped is left alone.
 pub(super) fn retire(pid: u32, socket: &Path) {
-    let Some(target) = signalable(pid) else {
-        return;
-    };
     let released = || listening_peer(socket) != Some(pid) && !workspace_is_claimed();
-    for signal in [libc::SIGTERM, libc::SIGKILL] {
-        if !runs_uze(target) {
+    let channel = stop_channel(socket);
+    for ask_first in [true, false] {
+        if !runs_uze(pid) {
             return;
         }
-        // SAFETY: `target` is a positive pid (`signalable` refuses 0 and
-        // negatives, which would address a group or every process) that
-        // was just confirmed to run `uze`.
-        unsafe { libc::kill(target, signal) };
+        if ask_first {
+            uze_platform::process::request_stop(pid, &channel);
+        } else {
+            uze_platform::process::terminate(pid);
+        }
         let deadline = Instant::now() + RETIRE_WITHIN;
         while !released() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(25));
@@ -217,4 +225,13 @@ pub(super) fn retire(pid: u32, socket: &Path) {
             return;
         }
     }
+}
+
+/// The name a server listens for a stop request under: its endpoint's own
+/// name, a shape no build changes, so any build can retire any other.
+pub(super) fn stop_channel(socket: &Path) -> String {
+    socket
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }

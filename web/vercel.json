@@ -2,7 +2,25 @@
   "rewrites": [
     {
       "source": "/i",
+      "has": [{ "type": "header", "key": "user-agent", "value": ".*PowerShell.*" }],
+      "destination": "https://raw.githubusercontent.com/uze-sh/uze/main/install.ps1"
+    },
+    {
+      "source": "/i",
       "destination": "https://raw.githubusercontent.com/uze-sh/uze/main/install.sh"
+    },
+    {
+      "source": "/i.ps1",
+      "destination": "https://raw.githubusercontent.com/uze-sh/uze/main/install.ps1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/i",
+      "headers": [
+        { "key": "Vary", "value": "User-Agent" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
     }
   ]
 }

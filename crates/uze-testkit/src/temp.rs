@@ -65,9 +65,7 @@ pub const REAL_HOME_SUBDIRS: &[&str] = &[
 /// [`TestEnvironment::apply`] has overwritten `HOME`.
 fn real_home() -> Option<PathBuf> {
     static REAL_HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
-    REAL_HOME
-        .get_or_init(|| std::env::var_os("HOME").map(PathBuf::from))
-        .clone()
+    REAL_HOME.get_or_init(uze_platform::home::user_home).clone()
 }
 
 /// Panics if `path` could reach the developer's real home or a real harness
@@ -142,7 +140,7 @@ impl TempDir {
         // `/var` is a symlink to `/private/var`, so every such assertion
         // fails on the prefix while pointing at identical-looking paths.
         // Resolved once, here, rather than in each test that noticed.
-        let path = path.canonicalize().unwrap_or(path);
+        let path = canonical(&path).unwrap_or(path);
         assert_not_real_home(&path);
         TempDir { path, keep }
     }
@@ -264,7 +262,7 @@ pub fn socket_scratch(label: &str) -> PathBuf {
     // Canonicalized for the same reason `TempDir` is: `/tmp` is a symlink to
     // `/private/tmp` on macOS, and the kernel answers every question about a
     // path with the real one.
-    let path = path.canonicalize().unwrap_or(path);
+    let path = canonical(&path).unwrap_or(path);
     assert_not_real_home(&path);
     path
 }
@@ -431,7 +429,11 @@ impl TestEnvironment {
     pub fn apply(&self) -> ProcessEnvGuard<'static> {
         let mut scope = crate::env::scope();
         scope
-            .set("HOME", &self.home)
+            .home(&self.home)
+            .set(
+                crate::process::GIT_CONFIG_NOSYSTEM.0,
+                crate::process::GIT_CONFIG_NOSYSTEM.1,
+            )
             .set("UZE_HOME", &self.uze_home)
             .set("PATH", self.scoped_path());
         for key in crate::process::XDG_BASE_DIRS {
@@ -439,4 +441,11 @@ impl TestEnvironment {
         }
         scope
     }
+}
+
+/// `canonicalize`, as production code canonicalizes (without the verbatim
+/// prefix Windows adds), so a scratch path compares equal to what that
+/// hands back.
+fn canonical(path: &Path) -> std::io::Result<PathBuf> {
+    uze_platform::path::canonical(path)
 }

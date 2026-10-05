@@ -1,0 +1,6 @@
+# One spelling of every text file on every platform: templates and goldens
+# are compared byte for byte, and packages digest the same everywhere.
+* text=auto eol=lf
+
+# A vendored licence, kept exactly as its authors wrote it.
+web/app/fonts/OFL.txt -text

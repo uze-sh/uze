@@ -2,10 +2,8 @@
 //! real executable on PATH, yet internal harness resolution must reach the
 //! real binary and never recurse into the shim.
 
-use std::path::Path;
-
 use uze_core::UzeHome;
-use uze_testkit::fake_harness::FakeHarness;
+use uze_testkit::fake_harness::{Action, FakeHarness};
 use uze_testkit::temp::TestEnvironment;
 
 use crate::util::uze_bin;
@@ -13,28 +11,13 @@ use crate::util::uze_bin;
 /// A poisoned shim: it records every invocation (so a recursion is provable)
 /// and answers with a bogus version. Sits in UZE's own shims dir, ahead of
 /// the real-looking fake on PATH — the exact hazard after `uze setup`.
-fn poison_shim(env: &TestEnvironment, name: &str, poison_version: &str) -> std::path::PathBuf {
+fn poison_shim(env: &TestEnvironment, name: &str, poison_version: &str) -> FakeHarness {
     let shims = UzeHome::at(&env.uze_home).shims_dir();
-    let marker = env.root().join(format!("shim-invoked-{name}"));
-    let script = format!(
-        "#!/bin/sh\necho 'poison' >> '{}'\necho '{poison_version}'\n",
-        marker.display()
-    );
-    let path = shims.join(name);
-    create_executable(&path, &script);
-    path
+    FakeHarness::new(&shims, name)
+        .version_line(poison_version)
+        .build()
 }
 
-fn create_executable(path: &Path, script: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, script).unwrap();
-    let mut permissions = std::fs::metadata(path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(path, permissions).unwrap();
-}
-
-#[cfg(unix)]
 #[test]
 fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion() {
     let env = TestEnvironment::isolated();
@@ -51,24 +34,20 @@ fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion(
             .build();
     }
     // Poisoned UZE shims for every vendor, first on PATH.
-    for (name, poison) in [
+    let poisoned: Vec<_> = [
         ("claude", "POISON (should never be read) 0.0.1"),
         ("codex", "codex-cli POISON"),
         ("opencode", "opencode2 vPOISON"),
         ("agy", "1.0.0-POISON"),
-    ] {
-        poison_shim(&env, name, poison);
-    }
+    ]
+    .into_iter()
+    .map(|(name, poison)| (name, poison_shim(&env, name, poison)))
+    .collect();
 
     // Run the real uze with PATH = shims : fake_bin : system bins. The
-    // shim scripts must stay ahead of everything else (the real hazard),
-    // but `/bin/sh` must remain reachable for the fake executables.
+    // shims must stay ahead of everything else (the real hazard).
     let shims = UzeHome::at(&env.uze_home).shims_dir();
-    let path = format!(
-        "{}:{}:/usr/bin:/bin",
-        shims.display(),
-        env.fake_bin.display()
-    );
+    let path = uze_testkit::process::path_with(&[&shims, &env.fake_bin]);
     let output = env
         .command(uze_bin())
         .env("PATH", &path)
@@ -107,10 +86,9 @@ fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion(
     }
 
     // No recursion: none of the shims ever ran.
-    for name in ["claude", "codex", "opencode", "agy"] {
-        let marker = env.root().join(format!("shim-invoked-{name}"));
+    for (name, shim) in poisoned {
         assert!(
-            !marker.exists(),
+            shim.invocations().is_empty(),
             "shim {name} was invoked — internal harness resolution recursed into the runtime shim"
         );
     }
@@ -120,26 +98,27 @@ fn runtime_shim_active_internal_calls_resolve_real_executable_without_recursion(
 /// pane by reading `UZE_SHIM_NAME` back out of the launched process's live
 /// environment — necessary because a harness is free to overwrite its own
 /// `comm` (Claude Code sets its process title to its version string). This
-/// exercises the actual dispatch a shim symlink invocation takes
+/// exercises the actual dispatch a shim invocation takes
 /// (`src/shim.rs::run` → `exec_or_die`), not just the internal detection
 /// path the test above covers, and checks the one thing that dispatch must
 /// hand the real binary: its own invoked name, in its environment.
-#[cfg(unix)]
 #[test]
 fn shim_dispatch_stamps_its_own_invoked_name_into_the_real_binarys_environment() {
     let env = TestEnvironment::isolated();
     let shims = UzeHome::at(&env.uze_home).shims_dir();
     std::fs::create_dir_all(&shims).unwrap();
-    let shim_entry = shims.join("claude");
-    std::os::unix::fs::symlink(uze_bin(), &shim_entry).unwrap();
+    let shim_entry = shims.join(uze_platform::executable::file_name("claude"));
+    uze_platform::executable::place_launcher(uze_bin(), &shim_entry).unwrap();
 
     // The "real" claude, further down PATH than the shim entry — dumps its
     // own live environment so the assertion can see exactly what the shim
     // exec'd it with.
     let real_dir = env.root().join("real-bin");
-    create_executable(&real_dir.join("claude"), "#!/bin/sh\nenv\n");
+    FakeHarness::new(&real_dir, "claude")
+        .on([""], Action::PrintEnvironment)
+        .build();
 
-    let path = format!("{}:{}:/usr/bin:/bin", shims.display(), real_dir.display());
+    let path = uze_testkit::process::path_with(&[&shims, &real_dir]);
     let output = env
         .command(&shim_entry)
         .env("PATH", &path)

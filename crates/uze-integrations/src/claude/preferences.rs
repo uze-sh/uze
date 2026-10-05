@@ -46,28 +46,45 @@ const MODEL: &[&str] = &["model"];
 /// who wrote it — so asking for Claude's default leaves those alone.
 const UNRESOLVABLE_MODELS: &[Value] = &[Value::Text("default")];
 
+/// What Claude's sandbox needs installed, per operating system Claude
+/// ships one on (`uze_platform::target::OS`), as `(package, program)`: Linux
+/// and WSL2 need bubblewrap and socat on `PATH`; macOS's Seatbelt needs
+/// nothing. An operating system not listed — native Windows — has none.
+const SANDBOX_REQUIREMENTS: &[(&str, &[(&str, &str)])] = &[
+    ("linux", &[("bubblewrap", "bwrap"), ("socat", "socat")]),
+    ("macos", &[]),
+];
+
 /// What the machine offers Claude's sandbox. Read by the integration, not
 /// here, so the translation stays a function of its inputs.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct SandboxHost {
-    /// Programs Claude's sandbox needs that this machine does not have.
-    pub(crate) missing: Vec<&'static str>,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum SandboxHost {
+    /// Claude has a sandbox here; it starts once these programs are
+    /// installed.
+    Available { missing: Vec<&'static str> },
+    /// Claude has no sandbox on this operating system.
+    Absent,
 }
 
 impl SandboxHost {
-    /// Claude's Linux and WSL2 sandbox needs both programs on `PATH`;
-    /// macOS's Seatbelt needs nothing installed.
     pub(crate) fn detect() -> Self {
-        if !cfg!(target_os = "linux") {
-            return Self::default();
-        }
-        Self {
-            missing: [("bubblewrap", "bwrap"), ("socat", "socat")]
-                .into_iter()
-                .filter(|(_, program)| !uze_core::subprocess::program_on_path(program))
-                .map(|(package, _)| package)
-                .collect(),
-        }
+        Self::on(
+            uze_platform::target::OS,
+            uze_core::subprocess::program_on_path,
+        )
+    }
+
+    fn on(os: &str, installed: impl Fn(&str) -> bool) -> Self {
+        SANDBOX_REQUIREMENTS
+            .iter()
+            .find(|(name, _)| *name == os)
+            .map_or(Self::Absent, |(_, requirements)| Self::Available {
+                missing: requirements
+                    .iter()
+                    .filter(|(_, program)| !installed(program))
+                    .map(|(package, _)| *package)
+                    .collect(),
+            })
     }
 }
 
@@ -131,10 +148,16 @@ fn sandbox(sandbox: SandboxScope, host: &SandboxHost) -> Axis {
         ),
     }
     .set(SANDBOX, Value::Flag(true));
-    if host.missing.is_empty() {
-        return axis;
-    }
-    let missing = host.missing.join(" and ");
+    let missing = match host {
+        SandboxHost::Absent => {
+            return Axis::new(
+                CompatibilityRoute::Unsupported,
+                "Claude has no sandbox on this operating system; its commands run unsandboxed",
+            );
+        }
+        SandboxHost::Available { missing } if missing.is_empty() => return axis,
+        SandboxHost::Available { missing } => missing.join(" and "),
+    };
     let unavailable = format!(
         "Claude cannot start its sandbox here without {missing}, and runs every command \
          unsandboxed instead — install {missing}"
@@ -197,7 +220,9 @@ mod tests {
     }
 
     fn equipped() -> SandboxHost {
-        SandboxHost::default()
+        SandboxHost::Available {
+            missing: Vec::new(),
+        }
     }
 
     fn written(path: &Path) -> serde_json::Value {
@@ -237,7 +262,7 @@ mod tests {
 
     #[test]
     fn a_sandbox_this_machine_cannot_start_is_degraded_and_says_what_is_missing() {
-        let host = SandboxHost {
+        let host = SandboxHost::Available {
             missing: vec!["socat"],
         };
         let path = temp_path("sandbox-missing");
@@ -250,8 +275,21 @@ mod tests {
     }
 
     #[test]
+    fn an_operating_system_without_claudes_sandbox_says_so_and_writes_nothing() {
+        assert_eq!(SandboxHost::on("windows", |_| true), SandboxHost::Absent);
+        let translation = translate(&Preferences::default(), &SandboxHost::Absent);
+        assert_eq!(translation.sandbox.route, CompatibilityRoute::Unsupported);
+        assert_eq!(
+            SandboxHost::on("linux", |program| program == "bwrap"),
+            SandboxHost::Available {
+                missing: vec!["socat"]
+            }
+        );
+    }
+
+    #[test]
     fn full_access_needs_no_sandbox_dependency() {
-        let host = SandboxHost {
+        let host = SandboxHost::Available {
             missing: vec!["bubblewrap", "socat"],
         };
         let translation = translate(

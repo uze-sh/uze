@@ -16,24 +16,27 @@ that a gesture landed — never as an assertion.
 from __future__ import annotations
 
 import argparse
-import fcntl
 import fnmatch
 import glob as globlib
 import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
-import signal
 import subprocess
 import sys
-import termios
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+# Every platform question — the process table, a terminal nobody answers,
+# the screen a journey reads — is asked of one module, chosen here once.
+if sys.platform == "win32":
+    import windows as machine
+else:
+    import unix as machine
 
 # A run reports as it goes, and it has to report as it goes *wherever* it
 # runs. Python line-buffers stdout only when it is a terminal; into a pipe —
@@ -60,7 +63,9 @@ REPO = Path(__file__).resolve().parent.parent
 # a world addressed through the symlink would never match the cwd `lsof`
 # reports and a `process: cwd:` check could not hold. Resolves to itself on
 # Linux, and leaves the not-yet-created tail alone on both.
-WORLDS = Path(os.path.realpath(os.environ.get("JOURNEY_WORLDS", "/tmp/uze-journeys")))
+WORLDS = Path(
+    os.path.realpath(os.environ.get("JOURNEY_WORLDS", machine.DEFAULT_WORLDS))
+)
 EVIDENCE = Path(
     os.environ.get("JOURNEY_EVIDENCE", Path(__file__).resolve().parent / ".evidence")
 )
@@ -82,84 +87,6 @@ def say(message: str) -> None:
 def die(message: str, code: int = 1):
     print(f"journey: {message}", file=sys.stderr)
     raise SystemExit(code)
-
-
-# ── the process table ────────────────────────────────────────────────────
-#
-# A `then` check may ask whether something is still running, and scope the
-# question to this world — "is an agent still standing in that checkout".
-# Answering it means reading two facts about a process this script did not
-# start: what it inherited, and where it is standing. Linux keeps both in
-# `/proc`; macOS has neither and answers through `ps -E` and `lsof`.
-#
-# The rule these functions exist to enforce: **`None` is not "no"**. Reading
-# `/proc` on a machine that has none used to raise `OSError`, get caught, and
-# `continue` — so every process was skipped, nothing was ever found, and a
-# check asserting `alive: false` passed while observing exactly nothing. That
-# is the one failure this tier is built to prevent, reproduced by the runner
-# itself. A platform that cannot answer now says so and the run stops.
-
-
-def process_environ(pid: int | str) -> bytes | None:
-    """The environment `pid` was started with. `None` means *this platform
-    could not say* — never that the variable is absent."""
-    if sys.platform == "linux":
-        try:
-            return Path(f"/proc/{pid}/environ").read_bytes()
-        except OSError:
-            return b""
-    if sys.platform == "darwin":
-        # `ps -E` appends the environment to the command line. It answers for
-        # processes this user owns, which is every process a journey starts.
-        result = subprocess.run(
-            ["ps", "-Ewwo", "command=", "-p", str(pid)],
-            capture_output=True,
-        )
-        return result.stdout if result.returncode == 0 else b""
-    return None
-
-
-def process_cwd(pid: int | str) -> str | None:
-    """The directory `pid` is standing in, or `None` when unobservable."""
-    if sys.platform == "linux":
-        try:
-            return str(Path(f"/proc/{pid}/cwd").resolve())
-        except OSError:
-            return None
-    if sys.platform == "darwin":
-        result = subprocess.run(
-            ["lsof", "-a", "-d", "cwd", "-Fn", "-p", str(pid)],
-            capture_output=True,
-            text=True,
-        )
-        for line in result.stdout.splitlines():
-            if line.startswith("n"):
-                return line[1:]
-        return None
-    return None
-
-
-def process_alive(pid: int) -> bool:
-    """Signal 0: the portable "does this pid exist" — `/proc/<pid>` is not."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # Alive, and owned by somebody else.
-        return True
-    return True
-
-
-def require_process_table() -> None:
-    """Refuses to run where a `process:` check could only ever answer "no"."""
-    if sys.platform not in ("linux", "darwin"):
-        die(
-            f"the process table cannot be read on {sys.platform}: a `process:` "
-            "check here would observe nothing and report 'not running'. Teach "
-            "`process_environ`/`process_cwd` this platform before running "
-            "journeys on it."
-        )
 
 
 # ── the world ────────────────────────────────────────────────────────────
@@ -196,18 +123,20 @@ class World:
 
     def vars(self) -> dict:
         names = {
-            "world": str(self.root),
-            "home": str(self.home),
-            "uze_home": str(self.uze_home),
-            "project": str(self.project),
-            "repo": str(REPO),
-            "shell_rc": str(self.home / shell_rc_name()),
+            "world": machine.spell(self.root),
+            "home": machine.spell(self.home),
+            "uze_home": machine.spell(self.uze_home),
+            "project": machine.spell(self.project),
+            "repo": machine.spell(REPO),
+            "shell_rc": machine.spell(self.home / machine.shell_rc_name()),
+            "shell": machine.SHELL,
+            "fake_harness": machine.spell(standin_binary()),
         }
         # Only for a journey that asks for it: resolving it eagerly would
         # put a build in front of every run of every chapter.
         released = RELEASED.get("path")
         if released:
-            names["released_uze"] = str(released)
+            names["released_uze"] = machine.spell(released)
         return names
 
 
@@ -275,22 +204,6 @@ def git_in_repo(*args: str) -> subprocess.CompletedProcess:
     )
 
 
-def shell_rc_name() -> str:
-    """The startup file the world's shell actually reads on this platform.
-
-    The world runs bash, and bash reads `.bashrc` for an interactive
-    non-login shell and `.bash_profile` for a login one. On Linux a terminal
-    opens the former; on macOS every terminal window is a login shell, so
-    that is the file UZE writes its `PATH` line into there — and a journey
-    asserting `.bashrc` on a Mac would be asserting the wrong file, not
-    finding a bug.
-
-    A journey says `{shell_rc}` and means "wherever this shell reads its
-    startup from", which is the claim it actually wants to make.
-    """
-    return ".bash_profile" if sys.platform == "darwin" else ".bashrc"
-
-
 def standin_binary() -> Path:
     """The tool that writes the harness stand-ins — `uze-fake-harness` from
     `uze-testkit`."""
@@ -302,13 +215,13 @@ def standin_binary() -> Path:
             die(f"JOURNEY_FAKE_HARNESS names {named}, which does not exist")
         return Path(named)
     for candidate in (
-        REPO / "target" / "debug" / "uze-fake-harness",
-        REPO / "target" / "release" / "uze-fake-harness",
+        REPO / "target" / "debug" / f"uze-fake-harness{machine.EXECUTABLE_SUFFIX}",
+        REPO / "target" / "release" / f"uze-fake-harness{machine.EXECUTABLE_SUFFIX}",
     ):
         if candidate.exists():
             return candidate
     die(
-        "no uze-fake-harness binary: run `cargo build -p uze-testkit --bin uze-fake-harness`. "
+        "no uze-fake-harness binary: run `cargo build --features dev-servers --bin uze-fake-harness`. "
         "The stand-ins come from uze-testkit so this tier and the Rust suites cannot come to "
         "disagree about what a harness does."
     )
@@ -376,15 +289,10 @@ def hold_world(root: Path) -> None:
     only worth having if they ran alone.
     """
     root.parent.mkdir(parents=True, exist_ok=True)
-    lease = os.open(f"{root}.lease", os.O_RDWR | os.O_CREAT, 0o644)
-    try:
-        fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        holder = os.pread(lease, 32, 0).decode(errors="replace").strip() or "?"
-        say(f"waiting for the run holding {root} (pid {holder})")
-        fcntl.flock(lease, fcntl.LOCK_EX)
-    os.ftruncate(lease, 0)
-    os.pwrite(lease, str(os.getpid()).encode(), 0)
+    machine.take_lease(
+        f"{root}.lease",
+        lambda holder: say(f"waiting for the run holding {root} (pid {holder})"),
+    )
 
 
 def build_world(spec: dict, slug: str, binary: Path, keep: bool) -> World:
@@ -410,12 +318,7 @@ def build_world(spec: dict, slug: str, binary: Path, keep: bool) -> World:
     env = {
         "HOME": str(root / "home"),
         "UZE_HOME": str(root / "home" / ".uze"),
-        "XDG_RUNTIME_DIR": str(root / "run"),
-        "PATH": f"{root / 'bin'}:{binary.parent}:/usr/local/bin:/usr/bin:/bin",
-        "TERM": "xterm-256color",
-        "SHELL": "/bin/bash",
-        "LANG": "C.UTF-8",
-        "PS1": "journey $ ",
+        **machine.world_environment(root, binary),
         "GIT_AUTHOR_NAME": "Ada Lovelace",
         "GIT_AUTHOR_EMAIL": "ada@journey.test",
         "GIT_COMMITTER_NAME": "Ada Lovelace",
@@ -479,71 +382,6 @@ def this_build_opens_first(spec: dict) -> bool:
     return "{uze}" in next(opened, "")
 
 
-def kill_session(session: int) -> None:
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            fields = (entry / "stat").read_text().rsplit(")", 1)[1].split()
-        except (OSError, IndexError):
-            continue
-        if int(fields[3]) == session:
-            try:
-                os.kill(int(entry.name), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-
-
-def run_with_a_terminal(
-    command, timeout: float = 120, **options
-) -> subprocess.CompletedProcess:
-    """`subprocess.run`, with a controlling terminal nobody answers.
-
-    stdin and the captured streams stay off the terminal, so UZE behaves as
-    it does under any script. What changes is `/dev/tty`: a person's machine
-    has one, and a vendor installer that asks on it hangs a provisioning step
-    that let it through — which no world without one could ever show. The
-    deadline turns that hang into a failure that says so.
-
-    A string runs under `sh -m`, as an interactive shell would: a job sent to
-    the background gets a process group of its own, so the hangup the
-    terminal's session sends when the shell exits does not take it along.
-    """
-    if isinstance(command, str):
-        command = ["/bin/sh", "-m", "-c", command]
-    controller, terminal = os.openpty()
-    path = os.ttyname(terminal)
-    os.close(terminal)
-
-    def take_the_terminal() -> None:
-        descriptor = os.open(path, os.O_RDWR)
-        fcntl.ioctl(descriptor, termios.TIOCSCTTY, 0)
-        os.close(descriptor)
-
-    try:
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-            preexec_fn=take_the_terminal,
-            **options,
-        )
-        try:
-            stdout, stderr = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            kill_session(process.pid)
-            stdout, stderr = process.communicate()
-            stderr += f"\n[journey] still running after {timeout:.0f}s, killed\n"
-        return subprocess.CompletedProcess(
-            process.args, process.returncode, stdout, stderr
-        )
-    finally:
-        os.close(controller)
-
-
 def set_up_the_machine(root: Path, binary: Path, env: dict) -> None:
     """A machine somebody works in is one where `uze setup` has run.
 
@@ -557,7 +395,7 @@ def set_up_the_machine(root: Path, binary: Path, env: dict) -> None:
     """
     if (Path(env["UZE_HOME"]) / "state").is_dir():
         return
-    result = run_with_a_terminal([str(binary), "setup"], cwd=root, env=env)
+    result = machine.run_with_a_terminal([str(binary), "setup"], cwd=root, env=env)
     if result.returncode != 0:
         die(
             f"`uze setup` failed while building the world: {result.stdout}{result.stderr}"
@@ -634,26 +472,18 @@ def seed_project(project: Path, world_spec: dict, env: dict) -> None:
 
 @dataclass
 class Screen:
-    """One tmux session holding the app's pty. Coordinates are read from the
-    frame on screen now — never typed in advance, because strips move."""
+    """The app's terminal, as this platform holds it (`machine.Terminal`).
+    Coordinates are read from the frame on screen now — never typed in
+    advance, because strips move."""
 
-    session: str
+    terminal: machine.Terminal
     sidebar: int = 31
 
     def pane(self) -> str:
-        return subprocess.run(
-            ["tmux", "capture-pane", "-t", self.session, "-p"],
-            capture_output=True,
-            text=True,
-        ).stdout
+        return self.terminal.pane()
 
     def alive(self) -> bool:
-        return (
-            subprocess.run(
-                ["tmux", "has-session", "-t", self.session], capture_output=True
-            ).returncode
-            == 0
-        )
+        return self.terminal.alive()
 
     def band(self, where: str) -> tuple[int, int]:
         # The strip is the tab row right of the sidebar: the sidebar's own
@@ -708,16 +538,11 @@ class Screen:
             haystack = self.pane()
         return re.search(pattern, haystack) is not None
 
-    def send(self, *args: str) -> None:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", self.session, *args], capture_output=True
-        )
-
     def key(self, name: str) -> None:
-        self.send(name)
+        self.terminal.key(name)
 
     def literal(self, text: str) -> None:
-        self.send("-l", text)
+        self.terminal.literal(text)
 
     def mouse(self, col: int, row: int, button: int = 0) -> None:
         # SGR (1006) press/release into the pty: an app that enabled mouse
@@ -745,9 +570,7 @@ class Screen:
             time.sleep(0.03)
 
     def kill(self) -> None:
-        subprocess.run(
-            ["tmux", "kill-session", "-t", self.session], capture_output=True
-        )
+        self.terminal.kill()
 
     def wait_until_gone(self, seconds: float) -> bool:
         deadline = time.monotonic() + seconds
@@ -774,6 +597,7 @@ GESTURES = (
     "type",
     "key",
     "shell",
+    "kill",
     "wait",
 )
 AIMED = ("click", "rclick", "dclick", "drag")
@@ -795,8 +619,8 @@ class Runner:
             # never answer from a sealed environment.
             names = {
                 **self.world.vars(),
-                "uze": str(self.binary),
-                "python": sys.executable,
+                "uze": machine.spell(self.binary),
+                "python": machine.spell(sys.executable),
             }
 
             def swap(match):
@@ -848,78 +672,20 @@ class Runner:
         )
 
     def _open(self, step: dict) -> None:
-        command = self.resolve(step["open"])
-        cast = self.cast
-        cwd = self.resolve(step.get("in", "{project}"))
-        session = f"journey-{os.getpid()}"
-        subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True)
-        # `env -i` rather than tmux's own `-e`: tmux sessions inherit the
-        # tmux server's environment, and one inherited `UZE_PANE` makes the
-        # app believe it is nested inside a pane of the developer's own
-        # running workspace.
-        launch = " ".join(
-            ["env", "-i"]
-            + [
-                shlex.quote(f"{key}={value}")
-                for key, value in self.world.shell_env().items()
-            ]
-            + [shlex.quote(command) if isinstance(command, str) else " ".join(command)]
+        tap = step.get("tap")
+        if tap and machine.Terminal.TAP_REFUSAL:
+            raise Failed(machine.Terminal.TAP_REFUSAL)
+        terminal = machine.Terminal.open(
+            self.resolve(step["open"]),
+            cwd=self.resolve(step.get("in", "{project}")),
+            env=self.world.shell_env(),
+            cols=int(step.get("cols", 150)),
+            rows=int(step.get("rows", 40)),
+            cast=self.cast,
+            title=self.title,
+            tap=self.resolve(tap) if tap else None,
         )
-        # A cast is for a person to watch; it is never what proves a check.
-        # Recorded inside the tmux pane, so reading the screen is unaffected.
-        if cast:
-            launch = (
-                f"asciinema rec -q --overwrite -e TERM "
-                f"-t {shlex.quote(self.title)} -c {shlex.quote(launch)} {shlex.quote(str(cast))}"
-            )
-        # The pane outlives the app on purpose. tmux tears a session down the
-        # moment its command exits, and an app that refused to start would
-        # then leave an empty capture — the one frame worth having.
-        epilogue = (
-            "; status=$?"
-            "; printf '\\n[journey] the app exited with %s\\n' \"$status\""
-            "; sleep 3600"
-        )
-        launch = "sh -c " + shlex.quote(launch + epilogue)
-        subprocess.run(
-            [
-                "tmux",
-                "new-session",
-                "-d",
-                "-s",
-                session,
-                "-x",
-                str(step.get("cols", 150)),
-                "-y",
-                str(step.get("rows", 40)),
-                "-c",
-                cwd,
-                launch,
-            ],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["tmux", "set-option", "-t", session, "status", "off"], capture_output=True
-        )
-        # What the app writes to its terminal, byte for byte — the only
-        # witness of a request the app makes of the terminal itself (a
-        # clipboard write) rather than of a cell. Per pane, so the tmux
-        # server's own options are left alone.
-        if tap := step.get("tap"):
-            subprocess.run(
-                [
-                    "tmux",
-                    "pipe-pane",
-                    "-t",
-                    session,
-                    "-o",
-                    f"cat >> {shlex.quote(self.resolve(tap))}",
-                ],
-                check=True,
-                capture_output=True,
-            )
-        self.screen = Screen(session)
+        self.screen = Screen(terminal)
         time.sleep(1.5)
 
     def close_app(self) -> None:
@@ -993,16 +759,56 @@ class Runner:
 
     def _shell(self, step: dict) -> None:
         command = self.resolve(step["shell"])
-        result = run_with_a_terminal(
-            command,
-            cwd=self.world.project,
-            env=self.world.shell_env(),
-        )
+        env = self.world.shell_env()
+        if inherit := step.get("inherit"):
+            env.update(self.inherited(self.resolve(inherit)))
+        result = machine.run_with_a_terminal(command, cwd=self.world.project, env=env)
         if result.returncode != 0 and step.get("check", True):
             raise Failed(
                 f"{self.label(step)}: shell failed ({result.returncode})\n"
                 f"{result.stdout}{result.stderr}"
             )
+
+    def _kill(self, step: dict) -> None:
+        """Ends every process of this world matching `kill`, at once and
+        without asking, the way a reboot ends them, and waits for them to be
+        gone. Read from the process table, which every platform answers."""
+        pattern = self.resolve(step["kill"])
+        victims = [int(pid) for pid in machine.pids_matching(pattern) if self.owns(pid)]
+        for pid in victims:
+            machine.kill(pid)
+        deadline = time.monotonic() + float(step.get("timeout", 20))
+        while survivors := [pid for pid in victims if machine.process_alive(pid)]:
+            if time.monotonic() > deadline:
+                raise Failed(f"{self.label(step)}: still running: {survivors}")
+            time.sleep(0.2)
+
+    def owns(self, pid: int | str) -> bool:
+        """Whether `pid` belongs to this world: it carries the world's HOME,
+        which no other world's process and none of the developer's does."""
+        environ = machine.process_environ(pid)
+        return bool(environ) and f"HOME={self.world.home}".encode() in environ
+
+    def inherited(self, inherit: dict) -> dict:
+        """The variables `inherit["names"]` holds in the environment of the
+        newest process matching `inherit["from"]`: a step run as that
+        process, with the identity its launch carried rather than any record
+        of it. Read from the process table, which every platform answers."""
+        pids = sorted(int(pid) for pid in machine.pids_matching(inherit["from"]))
+        if not pids:
+            raise Failed(f"no process matches {inherit['from']!r} to inherit from")
+        environ = machine.process_environ(pids[-1]) or b""
+        entries = re.split(rb"[\0\s]", environ)
+        found = {}
+        for name in inherit["names"]:
+            prefix = f"{name}=".encode()
+            value = next(
+                (e[len(prefix) :] for e in entries if e.startswith(prefix)), None
+            )
+            if value is None:
+                raise Failed(f"{name} is not in the environment of {inherit['from']!r}")
+            found[name] = value.decode()
+        return found
 
     def _wait(self, step: dict) -> None:
         until = self.resolve(step.get("until", ""))
@@ -1012,8 +818,7 @@ class Runner:
             if kind == "shell":
                 ok = (
                     subprocess.run(
-                        until,
-                        shell=True,
+                        machine.shell_argv(until),
                         cwd=self.world.project,
                         env=self.world.shell_env(),
                         capture_output=True,
@@ -1021,7 +826,7 @@ class Runner:
                     == 0
                 )
             elif kind == "file":
-                ok = bool(globlib.glob(until))
+                ok = bool(globlib.glob(machine.host_path(until)))
             elif kind == "screen":
                 ok = self.screen.shows(until, step.get("in", "screen"))
             else:
@@ -1097,7 +902,7 @@ def resolve_json(document, path: str) -> list:
 VERBS = (
     "dir",
     "file",
-    "link",
+    "launcher",
     "tree",
     "json",
     "git",
@@ -1107,6 +912,44 @@ VERBS = (
     "capture",
     "cmd",
 )
+
+
+# The checks whose subject is a path on disk, and where inside them it is.
+PATH_FIELDS = {
+    "dir": (),
+    "file": (),
+    "launcher": (),
+    "json": (),
+    "tree": (),
+    "capture": ("dirs", "tree"),
+}
+
+
+def on_disk(spec: dict) -> dict:
+    """A check with each path it reads spelled as this platform's filesystem
+    holds it. A journey names what UZE was asked to write — a skill called
+    `flow:commit` — and on Windows that is a directory UZE named `flow-commit`,
+    because NTFS reads a colon as a stream separator."""
+
+    def held(value):
+        if isinstance(value, str):
+            return machine.host_path(value)
+        if isinstance(value, list):
+            return [held(item) for item in value]
+        return value
+
+    spec = dict(spec)
+    for verb, inner in PATH_FIELDS.items():
+        if verb not in spec:
+            continue
+        if not inner:
+            spec[verb] = held(spec[verb])
+        elif isinstance(spec[verb], dict):
+            spec[verb] = {
+                key: held(value) if key in inner else value
+                for key, value in spec[verb].items()
+            }
+    return spec
 
 
 class Checker:
@@ -1156,7 +999,7 @@ class Checker:
         verb = next((name for name in VERBS if name in spec), None)
         if verb is None:
             return False, f"no check verb in {spec!r}"
-        return getattr(self, f"_{verb}")(self.runner.resolve(spec))
+        return getattr(self, f"_{verb}")(on_disk(self.runner.resolve(spec)))
 
     # verbs ---------------------------------------------------------------
 
@@ -1363,33 +1206,20 @@ class Checker:
                 )
         return True, f"{shape}"
 
-    def _link(self, spec: dict) -> tuple[bool, str]:
-        pattern = spec["link"]
-        found = sorted(
-            path for path in globlib.glob(pattern) if Path(path).is_symlink()
-        )
+    def _launcher(self, spec: dict) -> tuple[bool, str]:
+        pattern = spec["launcher"]
+        found = machine.launchers(pattern)
         if spec.get("exists") is False:
             return (not found), (
-                f"{pattern}: still a link" if found else f"{pattern}: absent"
+                f"{pattern}: {found} still placed" if found else f"{pattern}: absent"
             )
         if not found:
-            return False, f"{pattern}: no symlink there"
-        if "count" in spec and len(found) != spec["count"]:
-            return (
-                False,
-                f"{pattern}: expected {spec['count']} links, found {len(found)}",
-            )
-        targets = {path: os.readlink(path) for path in found}
-        if wanted := spec.get("resolves_to"):
-            wrong = {
-                path: target for path, target in targets.items() if wanted not in target
-            }
-            if wrong:
-                return (
-                    False,
-                    f"{pattern}: {wanted!r} is not what these point at: {wrong}",
-                )
-        return True, f"{[f'{Path(k).name} -> {v}' for k, v in targets.items()]}"
+            return False, f"{pattern}: no launcher there"
+        binary = Path(self.runner.binary)
+        strays = [path for path in found if not machine.launches(path, binary)]
+        if strays:
+            return False, f"{pattern}: {strays} do not run {binary}"
+        return True, f"{[Path(path).name for path in found]} run {binary.name}"
 
     def _tree(self, spec: dict) -> tuple[bool, str]:
         roots = spec["tree"] if isinstance(spec["tree"], list) else [spec["tree"]]
@@ -1459,16 +1289,14 @@ class Checker:
         the developer's own shells and every other world's.
         """
         where = spec.get("cwd")
-        require_process_table()
+        if problem := machine.process_table_problem():
+            die(problem)
         found = []
-        for pid in subprocess.run(
-            ["pgrep", "-f", spec["matching"]], capture_output=True, text=True
-        ).stdout.split():
-            environ = process_environ(pid)
-            if environ is None or f"HOME={self.world.home}".encode() not in environ:
+        for pid in machine.pids_matching(spec["matching"]):
+            if not self.runner.owns(pid):
                 continue
             if where:
-                cwd = process_cwd(pid)
+                cwd = machine.process_cwd(pid)
                 if cwd is None or where not in cwd:
                     continue
                 found.append(f"{pid} in {cwd}")
@@ -1516,7 +1344,7 @@ class Checker:
         return True, f"{pattern}: {found if found else 'not running'}"
 
     def _cmd(self, spec: dict) -> tuple[bool, str]:
-        result = run_with_a_terminal(
+        result = machine.run_with_a_terminal(
             spec["cmd"]["run"],
             cwd=self.world.project,
             env=self.world.shell_env(),
@@ -1588,10 +1416,39 @@ def load(path: Path) -> dict:
         die(f"{path}: {error}")
 
 
+# The platforms a journey can be declared unsupported on, as
+# `machine.PLATFORM` names them.
+PLATFORMS = ("linux", "macos", "windows")
+
+
+def unsupported_here(spec: dict) -> str | None:
+    """Why this journey cannot run on this platform, when it says so.
+
+    A declaration in the journey, with its reason, rather than a skip
+    decided here: a claim the suite stops proving somewhere has to be
+    visible where the claim is written, and `journey list` prints it.
+    """
+    reason = (spec.get("unsupported") or {}).get(machine.PLATFORM)
+    return " ".join(reason.split()) if reason else None
+
+
 def validate(spec: dict, path: Path | None = None) -> list[str]:
     problems = []
     if not spec.get("journey"):
         problems.append("the journey has no name")
+    unsupported = spec.get("unsupported") or {}
+    if not isinstance(unsupported, dict):
+        problems.append("`unsupported` maps a platform to the reason it cannot run")
+    else:
+        for platform, reason in unsupported.items():
+            if platform not in PLATFORMS:
+                problems.append(
+                    f"`unsupported` names {platform!r}, which is not one of {PLATFORMS}"
+                )
+            if not isinstance(reason, str) or not reason.strip():
+                problems.append(
+                    f"`unsupported` gives {platform!r} no reason — say why it cannot run"
+                )
     # A journey may name the user-facing page whose claim it backs. This
     # catches structural drift — a page that lost its proof, a proof that
     # points nowhere — and tells whoever changes the flow which page to
@@ -1651,8 +1508,8 @@ def binary_path() -> Path:
             die(f"JOURNEY_UZE names {named}, which does not exist")
         return Path(named)
     for candidate in (
-        REPO / "target" / "debug" / "uze",
-        REPO / "target" / "release" / "uze",
+        REPO / "target" / "debug" / f"uze{machine.EXECUTABLE_SUFFIX}",
+        REPO / "target" / "release" / f"uze{machine.EXECUTABLE_SUFFIX}",
     ):
         if candidate.exists():
             return candidate
@@ -1679,6 +1536,8 @@ def command_list(args) -> int:
         proves = spec.get("proves") or []
         for page in [proves] if isinstance(proves, str) else proves:
             print(f"      {DIM}proves {page}{OFF}")
+        for platform in spec.get("unsupported") or {}:
+            print(f"      {YELLOW}unsupported on {platform}{OFF}")
     print()
     return 0
 
@@ -1713,10 +1572,16 @@ def command_probe(args) -> int:
     spec = load(Path(args.spec))
     world = build_world(spec, Path(args.spec).stem, binary_path(), keep=args.keep)
     runner = Runner(world=world, binary=binary_path())
-    runner._open({"open": "{repo}/target/debug/uze", "cols": 150, "rows": 40})
+    runner._open(
+        {
+            "open": f"{{repo}}/target/debug/uze{machine.EXECUTABLE_SUFFIX}",
+            "cols": 150,
+            "rows": 40,
+        }
+    )
     say(f"world at {world.root}")
-    say(f"attach with:  tmux attach -t {runner.screen.session}")
-    say(f"read it with: tmux capture-pane -t {runner.screen.session} -p")
+    for hint in runner.screen.terminal.attach_hints():
+        say(hint)
     return 0
 
 
@@ -1782,7 +1647,14 @@ def command_run_all(args) -> int:
             f"{RED}{len(failed)} of {len(specs)} journeys failed{OFF}: {', '.join(failed)}"
         )
         return 1
-    say(f"{len(specs)} journeys held")
+    unsupported = sum(1 for spec in specs if unsupported_here(load(spec)))
+    if unsupported:
+        say(
+            f"{len(specs) - unsupported} journeys held, "
+            f"{unsupported} unsupported on {machine.PLATFORM}"
+        )
+    else:
+        say(f"{len(specs)} journeys held")
     return 0
 
 
@@ -1792,6 +1664,10 @@ def run_one(args, path: Path) -> int:
         for problem in problems:
             print(f"{RED}✕{OFF} {problem}")
         return 1
+    if reason := unsupported_here(spec):
+        print(f"\n{BOLD}{spec['journey']}{OFF}")
+        print(f"{YELLOW}−{OFF} unsupported on {machine.PLATFORM}: {reason}")
+        return 0
 
     world = build_world(spec, path.stem, binary_path(), keep=args.keep)
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -1989,11 +1865,7 @@ def write_evidence(
     (evidence / "run.log").write_text("\n".join(transcript) + "\n")
     world = runner.world
     (evidence / "world.txt").write_text(
-        subprocess.run(
-            ["find", str(world.project), str(world.uze_home), "-maxdepth", "4"],
-            capture_output=True,
-            text=True,
-        ).stdout
+        machine.list_tree([world.project, world.uze_home], 4)
     )
     # The small state documents themselves, not only their paths. These are
     # what a check reads, so a failure is undiagnosable without them — and
@@ -2013,13 +1885,11 @@ def write_evidence(
             state.mkdir(exist_ok=True)
             (state / source.name).write_text(source.read_text(errors="replace"))
     processes = []
-    for line in subprocess.run(
-        ["pgrep", "-a", "."], capture_output=True, text=True
-    ).stdout.splitlines():
+    for line in machine.process_listing():
         number = line.split(" ", 1)[0]
-        environ = process_environ(number)
+        environ = machine.process_environ(number)
         if environ and f"HOME={world.home}".encode() in environ:
-            processes.append(f"{line}\n    cwd {process_cwd(number) or '?'}")
+            processes.append(f"{line}\n    cwd {machine.process_cwd(number) or '?'}")
     (evidence / "processes.txt").write_text("\n".join(processes) + "\n")
 
 
@@ -2037,32 +1907,23 @@ def stop_world_servers(world: World) -> None:
         capture_output=True,
     )
     stopped = []
-    for pid in subprocess.run(
-        ["pgrep", "-f", "uze"], capture_output=True, text=True
-    ).stdout.split():
-        environ = process_environ(pid)
+    for pid in machine.pids_matching("uze"):
+        environ = machine.process_environ(pid)
         if not environ or f"HOME={world.home}".encode() not in environ:
             continue
-        try:
-            os.kill(int(pid), 15)
+        if machine.terminate(int(pid)):
             stopped.append(int(pid))
-        except OSError:
-            pass
     # Waited on, not fired and forgotten: the endpoint is named after the
     # world's UZE_HOME, so a server still shutting down when the next run
     # starts is a live socket the next client connects to and then watches
     # die — which shows up as a tab whose pane never paints.
     deadline = time.monotonic() + 10
     while stopped and time.monotonic() < deadline:
-        stopped = [pid for pid in stopped if process_alive(pid)]
+        stopped = [pid for pid in stopped if machine.process_alive(pid)]
         if stopped:
             time.sleep(0.2)
-    if stopped:
-        for pid in stopped:
-            try:
-                os.kill(pid, 9)
-            except OSError:
-                pass
+    for pid in stopped:
+        machine.kill(pid)
 
 
 def main() -> int:
@@ -2103,7 +1964,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    for tool in ("tmux", "git"):
+    machine.prepare_interpreter()
+    for tool in machine.REQUIRED_TOOLS:
         if not shutil.which(tool):
             die(f"{tool} is required")
+    for missing in machine.missing_tools():
+        die(f"{missing} is required")
     raise SystemExit(main())

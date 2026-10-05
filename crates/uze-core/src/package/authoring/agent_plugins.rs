@@ -89,7 +89,7 @@ pub(super) fn judge(root: &Path) -> (StandardConformance, Vec<String>) {
 fn read_json(path: &Path) -> Option<serde_json::Value> {
     crate::store::read_package_file(path)
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .and_then(|bytes| crate::authored::json(&bytes).ok())
 }
 
 fn manifest_divergences(root: &Path, divergences: &mut Vec<String>, warnings: &mut Vec<String>) {

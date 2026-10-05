@@ -21,7 +21,10 @@ pub struct UzeHome {
 
 impl UzeHome {
     pub fn from_env() -> Result<Self> {
-        Self::from_values(env::var_os("UZE_HOME"), env::var_os("HOME"))
+        Self::from_values(
+            env::var_os("UZE_HOME"),
+            user_home().map(std::path::PathBuf::into_os_string),
+        )
     }
 
     pub fn at(root: impl Into<PathBuf>) -> Self {
@@ -328,6 +331,12 @@ impl UzeHome {
         self.cache_dir().join("harness_detection.json")
     }
 
+    /// What this machine's shell was last observed to refuse (see
+    /// `shell::refusal`): observed again when gone or stale.
+    pub fn shell_observation_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("shell.json")
+    }
+
     /// Cross-invocation cache of per-receipt attachment *read* results
     /// (see `application::inspection_cache` and ADR 018). Same
     /// reconstructable-optimization caveat as the detection cache: never
@@ -371,6 +380,13 @@ impl UzeHome {
     /// shell rc files.
     pub fn shims_dir(&self) -> PathBuf {
         self.root.join("shims")
+    }
+
+    /// The launcher a harness called `name` is started through, as this
+    /// platform names an executable (`claude`, `claude.exe`).
+    pub fn shim_path(&self, name: &str) -> PathBuf {
+        self.shims_dir()
+            .join(uze_platform::executable::file_name(name))
     }
 
     /// One project's own corner of the runtime tree, keyed by
@@ -440,9 +456,13 @@ impl UzeHome {
         let home = home
             .filter(|value| !value.is_empty())
             .ok_or(UzeError::MissingHomeDirectory)?;
-        Ok(Self::at(absolute_or_refuse("HOME", home)?.join(".uze")))
+        Ok(Self::at(
+            absolute_or_refuse(uze_platform::home::VARIABLE, home)?.join(".uze"),
+        ))
     }
 }
+
+pub use uze_platform::home::{expand, shorten, user_home};
 
 fn absolute_or_refuse(variable: &'static str, value: std::ffi::OsString) -> Result<PathBuf> {
     let path = PathBuf::from(value);
@@ -460,20 +480,25 @@ fn absolute_or_refuse(variable: &'static str, value: std::ffi::OsString) -> Resu
 mod tests {
     use super::*;
 
+    /// A directory every platform reads as absolute.
+    fn absolute(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(name)
+    }
+
     #[test]
     fn explicit_uze_home_wins_over_default_home() {
         let home = UzeHome::from_values(
-            Some("/tmp/explicit-uze".into()),
-            Some("/tmp/user-home".into()),
+            Some(absolute("explicit-uze").into()),
+            Some(absolute("user-home").into()),
         )
         .unwrap();
-        assert_eq!(home.root(), Path::new("/tmp/explicit-uze"));
+        assert_eq!(home.root(), absolute("explicit-uze"));
     }
 
     #[test]
     fn default_home_is_derived_only_when_uze_home_is_missing() {
-        let home = UzeHome::from_values(None, Some("/tmp/user-home".into())).unwrap();
-        assert_eq!(home.root(), Path::new("/tmp/user-home/.uze"));
+        let home = UzeHome::from_values(None, Some(absolute("user-home").into())).unwrap();
+        assert_eq!(home.root(), absolute("user-home").join(".uze"));
     }
 
     /// `export UZE_HOME="$SOMETHING_UNSET"` is how a wrapper script sets a
@@ -481,8 +506,9 @@ mod tests {
     /// happen to be standing in".
     #[test]
     fn an_empty_uze_home_is_read_as_unset() {
-        let home = UzeHome::from_values(Some("".into()), Some("/tmp/user-home".into())).unwrap();
-        assert_eq!(home.root(), Path::new("/tmp/user-home/.uze"));
+        let home =
+            UzeHome::from_values(Some("".into()), Some(absolute("user-home").into())).unwrap();
+        assert_eq!(home.root(), absolute("user-home").join(".uze"));
     }
 
     #[test]
@@ -569,7 +595,7 @@ mod tests {
         assert!(matches!(
             UzeHome::from_values(None, Some("user-home".into())),
             Err(UzeError::RelativeHomeDirectory {
-                variable: "HOME",
+                variable: uze_platform::home::VARIABLE,
                 ..
             })
         ));

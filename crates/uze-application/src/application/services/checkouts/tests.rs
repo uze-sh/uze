@@ -41,6 +41,8 @@ impl IntegrationPort for Keeper {
     }
 }
 
+use uze_testkit::process::native as shown;
+
 fn application(label: &str) -> UzeApplication {
     UzeApplication::new(
         UzeHome::at(uze_testkit::temp::scratch(label)),
@@ -63,11 +65,11 @@ fn add_by_hand(repository: &Repository, path: &Path, branch: &str) -> PathBuf {
         &path.to_string_lossy(),
         "HEAD",
     ]);
-    path.canonicalize().unwrap()
+    path.canonical().unwrap()
 }
 
 fn primary(repository: &Repository) -> PathBuf {
-    repository.root().canonicalize().unwrap()
+    repository.root().canonical().unwrap()
 }
 
 fn row<'a>(view: &'a CheckoutsView, path: &Path) -> &'a CheckoutView {
@@ -223,7 +225,7 @@ fn removing_a_checkout_keeps_its_branch_and_never_takes_the_primary() {
         .remove_checkout_seen(&root, &path, &nobody())
         .unwrap();
 
-    assert_eq!(removed.name, ".worktrees/done");
+    assert_eq!(removed.name, shown(".worktrees/done"));
     assert!(removed.bytes > 0);
     assert!(!path.exists());
     assert!(checkout::branch_exists(&root, "done"), "the branch is kept");
@@ -278,7 +280,7 @@ fn an_adopted_clean_checkout_is_the_next_agents_slot() {
         .workspace()
         .place_new_agent(&root, Some(PlacementKind::Isolated), "keeper", &[])
         .unwrap();
-    assert_eq!(placed.cwd.canonicalize().unwrap(), path);
+    assert_eq!(placed.cwd.canonical().unwrap(), path);
 }
 
 #[test]
@@ -313,7 +315,11 @@ fn cleaning_up_removes_only_what_is_done_and_says_why_it_kept_the_rest() {
     removed.sort_unstable();
     assert_eq!(
         removed,
-        [".worktrees/one", ".worktrees/three", ".worktrees/two"]
+        [
+            shown(".worktrees/one"),
+            shown(".worktrees/three"),
+            shown(".worktrees/two")
+        ]
     );
     assert!(done.iter().all(|path| !path.exists()));
     assert!(done.iter().all(|path| {
@@ -326,15 +332,18 @@ fn cleaning_up_removes_only_what_is_done_and_says_why_it_kept_the_rest() {
         .map(|kept| (kept.name.as_str(), kept.reason.as_str()))
         .collect();
     assert!(
-        kept.contains(&(".worktrees/working", "it holds uncommitted work")),
+        kept.contains(&(
+            shown(".worktrees/working").as_str(),
+            "it holds uncommitted work"
+        )),
         "{kept:?}"
     );
     let not_landed = format!("its work is not in {}", repository.branch());
     assert!(
-        kept.contains(&(".worktrees/ahead", not_landed.as_str())),
+        kept.contains(&(shown(".worktrees/ahead").as_str(), not_landed.as_str())),
         "{kept:?}"
     );
-    assert_eq!(clean_up.left_to_harness, [".keeper/worktrees/own"]);
+    assert_eq!(clean_up.left_to_harness, [shown(".keeper/worktrees/own")]);
     assert!(working.join("draft.txt").is_file());
     assert!(ahead.is_dir());
     assert!(harness.is_dir(), "a harness's own is left to its harness");

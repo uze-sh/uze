@@ -38,7 +38,6 @@
 
 use std::{
     env, fs,
-    os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
@@ -209,17 +208,16 @@ fn updated_to(home: &UzeHome, ledger: Ledger) -> Option<String> {
 /// Starts `uze upgrade --background` in a process group of its own, so the Ctrl+C
 /// that ends the next command in this terminal cannot end it too.
 fn hand_off_check() {
-    use std::os::unix::process::CommandExt as _;
     let Ok(binary) = env::current_exe() else {
         return;
     };
-    let _ = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .args(["upgrade", "--background"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .process_group(0)
-        .spawn();
+        .stderr(Stdio::null());
+    let _ = uze_platform::process::spawn_detached(&mut command);
 }
 
 fn this_binary() -> Option<PathBuf> {
@@ -350,6 +348,14 @@ fn install_over(
 ) -> Result<(), String> {
     let _span = tracing::info_span!("self_update.install", version = %latest).entered();
     releases.install(latest, &owned.binary, &home.cache_dir())?;
+    // The harness launchers run this binary too; where they are copies of
+    // it they would go on running the one just replaced. One that cannot be
+    // placed now is placed again by the next setup.
+    if let Err(error) =
+        uze_platform::executable::refresh_launchers(&owned.binary, &home.shims_dir())
+    {
+        tracing::warn!(%error, "the harness launchers were not refreshed");
+    }
     owned.version = latest.to_owned();
     let _ = write_json(&receipt_path(home), owned);
     amend_ledger(home, |stored| stored.installed = Some(latest.to_owned()));
@@ -530,8 +536,15 @@ impl Releases for Published {
     /// API: the redirect carries no rate limit and no JSON, and it is the
     /// same "latest" the installer resolves.
     fn latest(&self) -> Option<String> {
-        let output = Command::new("curl")
-            .args(["-fsSL", "--max-time", "15", "-o", "/dev/null", "-w"])
+        let output = system_tool("curl")
+            .args([
+                "-fsSL",
+                "--max-time",
+                "15",
+                "-o",
+                uze_platform::fs::NULL_DEVICE,
+                "-w",
+            ])
             .arg("%{url_effective}")
             .arg(format!("{}/latest", self.base))
             .stdin(Stdio::null())
@@ -543,7 +556,7 @@ impl Releases for Published {
     }
 
     fn changelog(&self, version: &str) -> Option<String> {
-        let output = Command::new("curl")
+        let output = system_tool("curl")
             .args(["-fsSL", "--max-time", "15"])
             .arg(format!("{SOURCES}/v{version}/CHANGELOG.md"))
             .stdin(Stdio::null())
@@ -575,8 +588,10 @@ impl Releases for Published {
             if sha256(&bytes) != expected {
                 return Err(format!("checksum mismatch for {archive}"));
             }
-            let unpack = Command::new("tar")
-                .arg("-xzf")
+            // Both GNU tar and the bsdtar Windows ships tell a gzip from a
+            // zip by its bytes.
+            let unpack = system_tool("tar")
+                .arg("-xf")
                 .arg(scratch.join(&archive))
                 .arg("-C")
                 .arg(&unpacked)
@@ -588,15 +603,23 @@ impl Releases for Published {
             if !unpack.success() {
                 return Err(format!("cannot unpack {archive}"));
             }
-            replace(&unpacked.join("uze"), version, target)
+            replace(
+                &unpacked.join(uze_platform::executable::file_name("uze")),
+                version,
+                target,
+            )
         })();
         let _ = fs::remove_dir_all(&scratch);
         result
     }
 }
 
+fn system_tool(name: &str) -> Command {
+    uze_platform::tools::system(name)
+}
+
 fn fetch(url: &str, to: &Path) -> Result<(), String> {
-    let status = Command::new("curl")
+    let status = system_tool("curl")
         .args(["-fsSL", "--max-time", "300", "-o"])
         .arg(to)
         .arg(url)
@@ -615,8 +638,7 @@ fn fetch(url: &str, to: &Path) -> Result<(), String> {
 /// release it claims to be — the same last step `install.sh` takes, and for
 /// the same reason: a file that does not run is worse than an old one.
 fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
-    fs::set_permissions(staged, fs::Permissions::from_mode(0o755))
-        .map_err(|error| error.to_string())?;
+    make_runnable(staged).map_err(|error| error.to_string())?;
     let reported = Command::new(staged)
         .arg("--version")
         .stdin(Stdio::null())
@@ -629,12 +651,15 @@ fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
     // Beside the target, so the rename below never crosses a filesystem —
     // which is the only way it stays a rename rather than a copy that a
     // pane's shim could catch half-written.
-    let beside = target.with_file_name(format!(".uze-update-{}", std::process::id()));
+    let beside = target.with_file_name(uze_platform::executable::file_name(&format!(
+        ".uze-update-{}",
+        std::process::id()
+    )));
     let placed = (|| {
         fs::copy(staged, &beside)?;
-        fs::set_permissions(&beside, fs::Permissions::from_mode(0o755))?;
+        make_runnable(&beside)?;
         fs::File::open(&beside)?.sync_all()?;
-        fs::rename(&beside, target)
+        uze_platform::executable::replace_running(&beside, target)
     })();
     if placed.is_err() {
         let _ = fs::remove_file(&beside);
@@ -642,21 +667,39 @@ fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
     placed.map_err(|error| format!("cannot replace {}: {error}", target.display()))
 }
 
+use uze_platform::executable::make_runnable;
+
+/// Removes the images an upgrade set aside beside the running binary, once
+/// nothing runs them.
+pub fn sweep_set_aside() {
+    if let Ok(running) = env::current_exe() {
+        uze_platform::executable::sweep_replaced(&running);
+    }
+}
+
 /// The asset `install.sh` would pick for this machine. Where the installer
 /// has to ask `ldd` which C library the system uses, a running binary
 /// already knows which one it was built against.
 fn asset() -> Option<String> {
-    let arch = match env::consts::ARCH {
+    use uze_platform::target;
+    asset_for(target::OS, target::ARCH, target::MUSL)
+}
+
+/// The release archive built for `os` on `arch`: the table `release.yml`
+/// publishes and the installers read.
+fn asset_for(os: &str, arch: &str, musl: bool) -> Option<String> {
+    let arch = match arch {
         arch @ ("x86_64" | "aarch64") => arch,
         _ => return None,
     };
-    let platform = match env::consts::OS {
-        "macos" => format!("{arch}-macos"),
-        "linux" if cfg!(target_env = "musl") => format!("{arch}-linux-musl"),
-        "linux" => format!("{arch}-linux-gnu"),
+    let (platform, extension) = match os {
+        "macos" => (format!("{arch}-macos"), "tar.gz"),
+        "linux" if musl => (format!("{arch}-linux-musl"), "tar.gz"),
+        "linux" => (format!("{arch}-linux-gnu"), "tar.gz"),
+        "windows" => (format!("{arch}-windows"), "zip"),
         _ => return None,
     };
-    Some(format!("uze-{platform}.tar.gz"))
+    Some(format!("uze-{platform}.{extension}"))
 }
 
 /// The version a release page's address names — `…/releases/tag/v1.2.3`.
@@ -807,6 +850,9 @@ fn unix_now() -> u64 {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    // Unix file modes, which Windows does not keep.
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
     use uze_testkit::temp::TempDir;
 
     #[test]
@@ -853,19 +899,21 @@ mod tests {
 
     #[test]
     fn the_asset_is_the_one_the_installer_picks() {
-        let asset = asset().expect("every platform uze runs on has a release asset");
         assert!(
-            asset.starts_with("uze-") && asset.ends_with(".tar.gz"),
-            "{asset}"
+            asset().is_some(),
+            "every platform uze runs on has a release asset"
         );
-        if cfg!(target_os = "macos") {
-            assert!(asset.contains("-macos"), "{asset}");
-        } else {
-            assert!(
-                asset.contains("-linux-gnu") || asset.contains("-linux-musl"),
-                "{asset}"
-            );
+        for (os, arch, musl, expected) in [
+            ("linux", "x86_64", false, "uze-x86_64-linux-gnu.tar.gz"),
+            ("linux", "aarch64", true, "uze-aarch64-linux-musl.tar.gz"),
+            ("macos", "aarch64", false, "uze-aarch64-macos.tar.gz"),
+            ("windows", "x86_64", false, "uze-x86_64-windows.zip"),
+            ("windows", "aarch64", false, "uze-aarch64-windows.zip"),
+        ] {
+            assert_eq!(asset_for(os, arch, musl).as_deref(), Some(expected));
         }
+        assert_eq!(asset_for("freebsd", "x86_64", false), None);
+        assert_eq!(asset_for("linux", "riscv64", false), None);
     }
 
     #[test]
@@ -1250,6 +1298,8 @@ mod tests {
         assert_eq!(ledger.checked_at, 10_000);
     }
 
+    /// The stand-in release is a shell script, which only Unix runs.
+    #[cfg(unix)]
     #[test]
     fn a_replacement_that_does_not_run_as_the_release_is_refused() {
         let dir = TempDir::new("self-update-replace");

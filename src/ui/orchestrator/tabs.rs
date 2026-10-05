@@ -434,7 +434,7 @@ pub(super) fn hit_at(model: &WorkspaceModel, column: u16, row: u16) -> Option<Wo
 /// from, which is an agent's own question wherever it lands.
 pub(super) fn home_seat() -> uze_terminal::SpaceSeat {
     uze_terminal::SpaceSeat {
-        root: std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from),
+        root: uze_platform::home::user_home().unwrap_or_else(std::env::temp_dir),
     }
 }
 

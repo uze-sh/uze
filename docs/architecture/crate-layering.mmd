@@ -32,6 +32,7 @@ flowchart TD
   end
   git[uze-git<br/>the one Git transport]
   document[uze-document<br/>the shape a record declares]
+  process[uze-platform<br/>locks · process trees · kernel facts]
   store[(Store · ~/.uze)]
 
   cli --> app
@@ -64,3 +65,6 @@ flowchart TD
   package --> store
   delivery --> document
   terminal --> document
+  terminal --> process
+  machine --> process
+  git --> process

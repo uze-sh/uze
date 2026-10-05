@@ -1520,11 +1520,11 @@ that cannot answer must not be read as a negative answer — the endpoint keeps
 the state it had rather than tearing down a healthy server, and a pane
 reports no foreground status rather than an invented one.
 
-Adding a platform means teaching `process_probe`, never widening a `cfg` at
-a call site.
+Adding a platform means teaching `uze_platform::probe`, never widening a
+`cfg` at a call site.
 
-> `crates/uze-terminal/src/process_probe.rs::tests::the_platform_answers_about_this_process`
-> `crates/uze-terminal/src/process_probe.rs::tests::a_key_matches_only_itself`
+> `crates/uze-platform/src/probe.rs::tests::the_platform_answers_about_this_process`
+> `crates/uze-platform/src/probe.rs::tests::a_key_matches_only_itself`
 > `crates/uze-terminal/src/runtime/tests.rs::foreground_status_prefers_the_shim_identity_over_a_version_named_comm`
 
 ### Nothing a peer sends is acted on before it is bounded
@@ -1600,11 +1600,11 @@ socket carrying every pane's contents is put in it.
 > `crates/uze-terminal/src/runtime/tests.rs::a_crashed_server_nobody_reaped_holds_no_claim`
 > `crates/uze-terminal/src/runtime/tests.rs::a_server_answering_at_no_endpoint_this_build_names_is_still_stopped`
 > `crates/uze-terminal/src/runtime/tests.rs::a_claim_this_build_cannot_name_is_reported_rather_than_called_stopped`
-> `crates/uze-terminal/src/runtime/tests.rs::a_stale_socket_is_reclaimed_by_the_server_that_binds`
+> `crates/uze-terminal/src/runtime/tests/socket_files.rs::a_stale_socket_is_reclaimed_by_the_server_that_binds`
 > `crates/uze-terminal/src/runtime/tests.rs::a_server_of_another_build_is_retired_and_lets_go_of_the_workspace`
 > `crates/uze-terminal/src/runtime/tests.rs::a_process_that_is_not_uze_is_never_signalled`
-> `crates/uze-terminal/src/runtime/tests.rs::a_pid_that_does_not_name_one_process_is_never_signalled`
-> `crates/uze-terminal/src/runtime/tests.rs::a_runtime_directory_that_is_not_ours_to_own_is_stepped_over`
+> `crates/uze-platform/src/process/unix.rs::tests::a_pid_that_does_not_name_one_process_is_never_signalled`
+> `crates/uze-terminal/src/runtime/tests/socket_files.rs::a_runtime_directory_that_is_not_ours_to_own_is_stepped_over`
 
 ### A live server is ended only when it cannot serve the client that found it
 
@@ -2145,7 +2145,7 @@ there is a network round trip, a `PATH` inherited from Windows carries a
 dozen of them, and a harness UZE integrates keeps its state under `$HOME`
 on this side.
 
-> `crates/uze-core/src/machine/harness_runtime.rs::tests::a_windows_drive_mounted_into_wsl_is_not_where_a_harness_is_looked_for`
+> `crates/uze-platform/src/mounts.rs::tests::a_windows_drive_mounted_into_wsl_is_a_network_mount`
 
 ## Harness conformance (`assert-one-capability-contract`)
 
@@ -2405,6 +2405,74 @@ for what can be done now and for nothing else.
 > `uze-application::application::offers::tests::an_action_that_cannot_run_says_why_rather_than_doing_nothing`
 > `src/ui/tests.rs::every_drawer_draws_what_its_row_can_do_as_buttons`
 > `src/ui/tests.rs::the_drawer_offers_what_can_be_done_as_buttons`
+
+---
+
+## Platforms (windows-support)
+
+### A guard that cannot run on this platform is never installed
+
+A `deny`, `ask` or `transform` group with a handler that has no spelling
+for this platform's shell refuses the whole package before the Store holds
+any of it: delivered without its guard, the package would let through what
+the guard checks.
+
+> `crates/uze-application/src/application/tests.rs::a_package_whose_guard_cannot_run_here_is_not_installed`
+
+### Every platform's hook wrapper answers as the contract records
+
+The generated wrapper of the platform the suite runs on (`exec` on Unix,
+`exec.ps1` on Windows) answers every recorded fixture with the recorded
+exit, decision and reason; a guard that cannot decide denies.
+
+> `crates/uze-integrations/src/hooks/wrapper_parity_tests.rs::every_fixture_is_answered_as_recorded_on_this_platform`
+> `crates/uze-integrations/src/hooks/host_wrapper_tests.rs::a_guard_that_cannot_decide_denies`
+
+### A project command never runs in a shell it was not written for
+
+A setup step or gate with no spelling for this platform is not run, and is
+said at placement and in `uze status`; a gate without one refuses delivery.
+
+> `crates/uze-workspace/src/checkout/tests.rs::a_checkout_placed_where_its_gate_cannot_run_says_so`
+> `tests/acceptance/workspace_health.rs::status_names_a_gate_this_machine_cannot_run`
+
+### A label is held under a name every filesystem takes
+
+A delivered skill or agent is written under `file_name_for` its label
+(`flow:review` is `flow-review` on Windows), and a receipt is matched to a
+label through what it holds, never by reading a label back out of a name.
+
+> `crates/uze-platform/src/fs_name.rs::a_label_becomes_a_name_ntfs_holds`
+> `crates/uze-core/src/delivery/exposure.rs::a_label_names_the_artifact_that_holds_it`
+
+### Nothing UZE links needs a privilege
+
+A link to a directory reads through, reads back as a link and is removed
+alone on every platform (a junction on Windows, which any user may make).
+
+> `crates/uze-platform/src/fs.rs::a_directory_link_reads_through_and_goes_alone`
+
+### A child with no terminal still runs, and asks nobody
+
+A tree started with no terminal runs a line of this platform's shell and
+reports its exit: Windows PowerShell given no console at all ran nothing.
+
+> `crates/uze-platform/src/process.rs::a_shell_line_with_no_terminal_still_runs`
+
+### A cross-process lock leaves its holder readable
+
+An exclusive holder refuses another holder, and what it wrote in the lock
+file (its pid) stays readable to whoever needs to name it.
+
+> `crates/uze-platform/src/lock.rs::an_exclusive_holder_refuses_another_and_keeps_its_contents_readable`
+
+### A harness is found wherever its installer put it
+
+The shim and setup find a harness through one lookup: this process's
+`PATH`, the one a new shell searches, then where its installer documents
+putting it, never anything that leads back to UZE.
+
+> `crates/uze-core/src/machine/harness_runtime.rs::a_harness_off_every_path_is_found_where_its_installer_puts_it`
 
 ---
 

@@ -138,6 +138,21 @@ The direction is journey → page, not page → journey: the suite changes far
 more often than the site, the link belongs where the change happens, and the
 site's frontmatter schema stays untouched.
 
+### A journey can say where it cannot run
+
+```yaml
+unsupported:
+  windows: |
+    No Windows release exists yet to upgrade from.
+```
+
+A platform (`linux`, `macos`, `windows`) and the reason, in the journey,
+where the claim is written. `run` prints the reason instead of performing
+it, `list` prints the platform, and `journey validate` refuses a platform it
+does not know or one with no reason. It is a statement that the suite stops
+proving a claim somewhere, so it is never decided by the runner on a
+journey's behalf.
+
 ### Worlds repeat before they deserve a name
 
 The `world:` block stays in the journey, where a reader can see it without
@@ -169,7 +184,8 @@ scenes:
 | `drag` | the left button pressed on the target, moved across `span:` cells (default the target's width) and released; `shift: true` holds Shift throughout |
 | `type` | one character at a time; `submit: false` to leave Enter out, `clear: all` to empty a field |
 | `key` | one key or a list (`Escape`, `C-g`, `BSpace`) |
-| `shell` | a command in the world (what an agent would do to its own checkout), with a controlling terminal nobody answers and 120s to finish (see stand-ins) |
+| `shell` | a command in the world (what an agent would do to its own checkout), with a controlling terminal nobody answers and 120s to finish (see stand-ins); `inherit: { from: <pattern>, names: [...] }` runs it with those variables from the newest matching process's environment, as that process |
+| `kill` | ends every process of the world whose command line matches the pattern, at once and without asking, as a reboot does, and waits until they are gone |
 | `wait` | `screen` / `file` / `shell` with `until:` and a `timeout:` |
 
 Aiming a click: `in:` bands the search (`strip`, `sidebar`, `pane`),
@@ -191,6 +207,7 @@ this, and the linter refuses it rather than the reviewer. Synchronization is
 |---|---|
 | `dir` | directories matching a glob: `count`, `exists`, `same_as: <capture>` |
 | `file` | files matching a glob: `count`, `exists`, `contains` |
+| `launcher` | launchers matching a glob, each of which must run the `uze` under test (a link on Unix, a copy named `<name>.exe` on Windows): `exists: false` for none |
 | `git` | `worktrees:` count, `branches:` pattern + `count:`, `dirty:`, `in:` |
 | `tasks` | the task store UZE writes: `count`, `states`, `checkouts`, `newest_state`, `any_state`, `newest_checkout_in: <capture>`, `one_task_per_checkout` |
 | `process` | `matching:` + `alive:`, scoped to this world's processes; `count:` where one thing is one process, `same_as:`/`more_than: <capture>` where it is not — a login shell forks a child on some hosts |
@@ -262,8 +279,11 @@ whose world says `first_run: true`. A journey that only runs commands, or
 that opens the previous release first, gets the machine that left it.
 
 A journey addresses the world through `{world}`, `{home}`, `{uze_home}`,
-`{project}`, `{repo}`, `{uze}` and `{python}` (the interpreter running the
-suite, for a journey that stands a server up in its world) — plus
+`{project}`, `{repo}`, `{uze}`, `{python}` (the interpreter running the
+suite, for a journey that stands a server up in its world or reads a
+document in a check), `{fake_harness}` (the stand-in writer, for a
+journey that stages one of its own) and `{shell}` (the shell a pane opens,
+as the process table names it) — plus
 `{shell_rc}`, which is the file the
 world's shell actually reads its startup from. That one is a placeholder
 rather than a path because the answer differs by platform: bash reads
@@ -285,3 +305,41 @@ asks a question on `/dev/tty` the way the Codex installer does. `shell` and
 terminal while stdin and the captured streams stay off it, so `uze setup` is
 always met by a vendor that asks: one that lets its child reach the terminal
 hangs, and the 120s deadline fails it.
+
+## On Windows
+
+The runner asks every platform question of one module, chosen once at
+import: `unix.py` (tmux, `/proc` or `ps`/`lsof`, a controlling terminal
+nobody answers) or `windows.py`. A journey is the same file on both.
+
+```powershell
+python -m pip install --only-binary :all: -r journeys/requirements-windows.txt
+python journeys/journey.py run journeys/suites --tag gate
+```
+
+| question | Unix | Windows |
+|---|---|---|
+| the screen | a tmux session | a ConPTY (`pywinpty`) read into a `pyte` screen, which answers the cursor-position query ConPTY asks at startup |
+| keys and clicks | `tmux send-keys` | the same tmux key names, written as the sequences a terminal sends; clicks as SGR reports, which ConPTY turns into the app's mouse events |
+| the process table | `/proc`, `ps`, `lsof` | `psutil` |
+| a `shell:` step | `/bin/sh` with a terminal nobody answers | Git's MSYS bash by absolute path (`C:\Program Files\Git\usr\bin\bash.exe`, or `JOURNEY_BASH`), the world's `PATH` first and Git's POSIX tools after it, stdin closed, the tree ended at the deadline |
+
+Placeholders spell paths with forward slashes, which Git Bash and every
+Windows program read, and the world's `PATH` is its own `bin`, the binary
+under test, Git and the system's directories: the shell a step runs in is
+runner tooling, never part of the machine the `uze` under test meets.
+Worlds live under `C:\uze-journeys`, where the PowerShell prompt a pane
+shows is short enough to keep a typed command on one line.
+
+A check's path names what UZE was asked to write, and on Windows a colon
+in it is read as the `-` UZE names that file with, since NTFS reads a
+colon as a stream separator: `skills/flow:commit` is `skills/flow-commit`
+on disk. `{shell}` is the shell a pane opens, as the process table names
+it: `bash`, or a command line that starts with `powershell.exe`, which
+leaves out the process hosting the pane that names it as an argument.
+
+The packages are pinned and installed from wheels only; each publishes
+`win_amd64` and `win_arm64` wheels for CPython 3.12 and 3.13.
+
+`tap:` reads what ConPTY emits, which carries a request the app makes of
+the terminal itself (an OSC 52 clipboard write) through unchanged.

@@ -3,6 +3,7 @@
 //! both.
 
 use std::{collections::BTreeSet, path::Path};
+use uze_core::path::Canonical as _;
 
 use serde::Serialize;
 
@@ -58,7 +59,7 @@ fn declared_marketplace_for(
 }
 
 fn declared_path(linked_source: std::path::PathBuf, project_root: &Path) -> std::path::PathBuf {
-    let linked_source = linked_source.canonicalize().unwrap_or(linked_source);
+    let linked_source = linked_source.canonical().unwrap_or(linked_source);
     match linked_source.strip_prefix(project_root) {
         Ok(inside) if inside.as_os_str().is_empty() => std::path::PathBuf::from("."),
         Ok(inside) => inside.to_path_buf(),
@@ -253,7 +254,7 @@ impl Project<'_> {
                 continue;
             }
             if let Some(expected) = &locked.integrity
-                && uze_core::digest::tree_sha256(&stored.root).ok().as_ref() == Some(expected)
+                && self.0.store.digest(&stored).ok().as_ref() == Some(expected)
             {
                 continue;
             }
@@ -282,7 +283,7 @@ impl Project<'_> {
     /// when it names a project, as opposed to one somewhere inside it.
     #[tracing::instrument(name = "project.is_root", skip_all, fields(dir = %dir.display()))]
     pub fn is_root(&self, dir: &Path) -> bool {
-        let Ok(canonical) = dir.canonicalize() else {
+        let Ok(canonical) = dir.canonical() else {
             return false;
         };
         project_root::resolve_project_root(&canonical)
@@ -778,7 +779,7 @@ impl Project<'_> {
         InstalledRevision {
             content: package
                 .as_ref()
-                .and_then(|package| uze_core::digest::tree_sha256(&package.root).ok()),
+                .and_then(|package| self.0.store.digest(package).ok()),
             provenance: package
                 .map(|package| package.provenance.resolved.display())
                 .unwrap_or_default(),
@@ -991,7 +992,7 @@ impl Project<'_> {
             // delivered to a harness: a moved tag, a rewritten history or a
             // substituted remote must stop here, not be discovered later by
             // reading what an agent was told to do.
-            Self::verify_integrity_of(&name, &locked, materialized.root())?;
+            Self::verify_integrity_of(&name, &locked, &materialized)?;
             let report = self.0.plugins().install_materialized(
                 materialized,
                 marketplace,
@@ -1050,7 +1051,7 @@ impl Project<'_> {
             })?;
             let materialized =
                 self.reproduce_locked_plugin(recorded, &locked.marketplace, &name)?;
-            Self::verify_integrity_of(&name, &locked, materialized.root())?;
+            Self::verify_integrity_of(&name, &locked, &materialized)?;
             match self
                 .0
                 .plugins()
@@ -1205,7 +1206,7 @@ impl Project<'_> {
         })?;
         let joined = root.join(declared_path);
         let path = joined
-            .canonicalize()
+            .canonical()
             .map_err(|_| UzeError::MissingPath(joined.clone()))?;
         Ok(PackageSource::Local { path })
     }
@@ -1271,9 +1272,16 @@ impl Project<'_> {
         else {
             return Ok(false);
         };
+        // Pinnable bytes that cannot be read fail the lock: one written
+        // without the digest they were owed would reproduce anything.
+        let integrity = if reproducible {
+            Some(self.0.store.digest(&stored)?)
+        } else {
+            None
+        };
         lock.plugins.insert(
             plugin.to_owned(),
-            LockedPlugin::resolved(marketplace, &stored.root, reproducible)?,
+            LockedPlugin::resolved(marketplace, integrity),
         );
         lock.marketplaces.insert(
             marketplace.to_owned(),
@@ -1305,11 +1313,15 @@ impl Project<'_> {
     /// Refuses bytes that are not the bytes the lock pinned. An entry with
     /// no `integrity` is not checked — a local path has none to record, and
     /// so has nothing to contradict.
-    fn verify_integrity_of(plugin: &str, locked: &LockedPlugin, acquired: &Path) -> Result<()> {
+    fn verify_integrity_of(
+        plugin: &str,
+        locked: &LockedPlugin,
+        acquired: &uze_core::acquisition::MaterializedPackage,
+    ) -> Result<()> {
         let Some(expected) = &locked.integrity else {
             return Ok(());
         };
-        let found = uze_core::digest::tree_sha256(acquired).map_err(UzeError::read(acquired))?;
+        let found = acquired.digest()?;
         if &found == expected {
             return Ok(());
         }
@@ -1386,9 +1398,10 @@ impl Project<'_> {
         {
             return false;
         }
-        locked.integrity.as_ref().is_some_and(|expected| {
-            uze_core::digest::tree_sha256(&stored.root).ok().as_ref() != Some(expected)
-        })
+        locked
+            .integrity
+            .as_ref()
+            .is_some_and(|expected| self.0.store.digest(&stored).ok().as_ref() != Some(expected))
     }
 }
 

@@ -1,0 +1,15 @@
+# The journey runner's packages on Windows, where tmux and /proc have no
+# counterpart: a ConPTY to hold the app (pywinpty), a screen to read its
+# frames into (pyte, and wcwidth beneath it), and the process table (psutil).
+#
+# Pinned, and installed with `--only-binary :all:`: every one of these
+# publishes win_amd64 and win_arm64 wheels for CPython 3.12 and 3.13, so a
+# runner never compiles one, and a release that drops a wheel fails the
+# install instead of reaching for a compiler the runner does not have.
+#
+#   python -m pip install --only-binary :all: -r journeys/requirements-windows.txt
+psutil==7.2.2
+pyte==0.8.2
+pywinpty==3.0.5
+PyYAML==6.0.3
+wcwidth==0.9.1

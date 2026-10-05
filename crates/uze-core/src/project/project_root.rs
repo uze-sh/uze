@@ -12,6 +12,7 @@
 //! outside every marker the answer is absence, and the caller decides what
 //! runs machine-only and what refuses.
 
+use crate::path::Canonical as _;
 use std::path::{Path, PathBuf};
 
 use crate::{Result, UzeError, manifest::MANIFEST_FILE_NAME, project_context::AGENTS_MD_FILE_NAME};
@@ -51,7 +52,7 @@ pub(crate) fn find_upward<T>(
     } else {
         path.parent().unwrap_or(path)
     };
-    let start = directory.canonicalize().map_err(UzeError::read(path))?;
+    let start = directory.canonical().map_err(UzeError::read(path))?;
     let answer = start.ancestors().find_map(found);
     Ok((start, answer))
 }
@@ -75,7 +76,7 @@ mod tests {
         // cwd is sub, which declares nothing; the walk finds the parent's
         // manifest, and the parent is the project root
         let resolved = resolve_project_root(&sub).unwrap();
-        assert_eq!(resolved, Some(root.canonicalize().unwrap()));
+        assert_eq!(resolved, Some(root.canonical().unwrap()));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -104,7 +105,7 @@ mod tests {
         let sub = repo.join("src");
         fs::create_dir_all(&sub).unwrap();
         let resolved = resolve_project_root(&sub).unwrap();
-        assert_eq!(resolved, Some(repo.canonicalize().unwrap()));
+        assert_eq!(resolved, Some(repo.canonical().unwrap()));
         fs::remove_dir_all(outer).unwrap();
     }
 
@@ -119,7 +120,7 @@ mod tests {
         fs::create_dir_all(root.join(".git")).unwrap();
         fs::write(docs.join(AGENTS_MD_FILE_NAME), "# not this one\n").unwrap();
         let resolved = resolve_project_root(&docs).unwrap();
-        assert_eq!(resolved, Some(root.canonicalize().unwrap()));
+        assert_eq!(resolved, Some(root.canonical().unwrap()));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -134,7 +135,7 @@ mod tests {
         fs::write(root.join(GIT_MARKER), "gitdir: elsewhere\n").unwrap();
         fs::write(docs.join(AGENTS_MD_FILE_NAME), "# not this one\n").unwrap();
         let resolved = resolve_project_root(&docs).unwrap();
-        assert_eq!(resolved, Some(root.canonicalize().unwrap()));
+        assert_eq!(resolved, Some(root.canonical().unwrap()));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -151,7 +152,7 @@ mod tests {
         let sub = root.join("sub");
         fs::create_dir_all(&sub).unwrap();
         let resolved = resolve_project_root(&sub).unwrap();
-        assert_eq!(resolved, Some(root.canonicalize().unwrap()));
+        assert_eq!(resolved, Some(root.canonical().unwrap()));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -164,7 +165,7 @@ mod tests {
         let sub = repo.join("src");
         fs::create_dir_all(&sub).unwrap();
         let resolved = resolve_project_root(&sub).unwrap();
-        assert_eq!(resolved, Some(repo.canonicalize().unwrap()));
+        assert_eq!(resolved, Some(repo.canonical().unwrap()));
         fs::remove_dir_all(outer).unwrap();
     }
 }

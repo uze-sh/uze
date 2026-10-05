@@ -257,6 +257,7 @@ fn one_package_with_two_mcp_servers_produces_two_named_resources() {
     fs::remove_dir_all(home.root()).unwrap();
 }
 
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
 fn store_preserves_plugin_symlinks_and_executable_permissions() {
@@ -335,6 +336,7 @@ fn an_install_interrupted_mid_copy_never_blocks_the_next_attempt() {
 /// The mirror: an ingest that fails after the bytes are copied leaves the
 /// Store as it found it, so the failure is one the operator can simply
 /// retry rather than the state the test above describes.
+// Unix file modes, which Windows does not keep.
 #[cfg(unix)]
 #[test]
 fn a_failed_ingest_leaves_no_directory_behind() {

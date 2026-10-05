@@ -67,11 +67,11 @@ fn mirror_dir(
 }
 
 fn mirror_link(link: &Path, destination: &Path, package_root: &Path) -> Result<()> {
-    let resolved = fs::canonicalize(link).map_err(|error| UzeError::Read {
+    let resolved = uze_core::path::canonical(link).map_err(|error| UzeError::Read {
         path: link.to_path_buf(),
         source: error,
     })?;
-    if !resolved.starts_with(package_root) {
+    if !uze_core::path::is_within(&resolved, package_root) {
         return Err(UzeError::ExposureUnavailable(format!(
             "a generated envelope refuses symlink `{}`: it resolves outside the package",
             link.display()
@@ -130,6 +130,7 @@ mod tests {
             &source.join("linked.sh"),
         )
         .unwrap();
+        // Unix file modes, which Windows does not keep.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -139,7 +140,7 @@ mod tests {
             )
             .unwrap();
         }
-        let package_root = fs::canonicalize(&source).unwrap();
+        let package_root = uze_core::path::canonical(&source).unwrap();
 
         let target = root.join("envelope");
         mirror_tree(
@@ -160,6 +161,7 @@ mod tests {
         let linked = target.join("linked.sh");
         assert!(!linked.is_symlink());
         assert_eq!(fs::read_to_string(linked).unwrap(), "script");
+        // Unix file modes, which Windows does not keep.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

@@ -28,7 +28,29 @@ description: Install uze, set up your agents, and keep it current
     installs into `~/.local/bin`.
   </Tab>
   <Tab value="Windows">
-    **Coming soon.** Until then, run uze inside
+    ```powershell
+    irm https://uze.sh/i | iex
+    ```
+
+    **Experimental.** uze runs natively on Windows 10 22H2 and Windows 11, x64
+    or Arm, and its Windows support is newer than the rest: expect rough
+    edges, and [report them](https://github.com/uze-sh/uze/issues).
+
+    It needs [Git for Windows](https://git-scm.com/download/win) and a
+    terminal that understands colour codes, such as Windows Terminal. The
+    installer verifies the release checksum, installs into
+    `%LOCALAPPDATA%\Programs\uze\bin` and adds it to your `Path`; open a
+    new terminal afterwards. Commands a project declares run in Windows
+    PowerShell, so a step written for one platform can carry a spelling for
+    each (see the project's `agents.yaml`).
+
+    `uze.exe` is not signed yet. With Smart App Control on, Windows can
+    refuse to run it, and Smart App Control has no exception for one
+    program: the installer warns you when it is on, and `uze doctor` says so
+    too. A managed machine whose policy allows only signed programs needs
+    uze allowed by its administrator.
+
+    You can also run uze inside
     [WSL](https://learn.microsoft.com/windows/wsl/install) with the Linux
     command.
   </Tab>
@@ -93,5 +115,13 @@ and every hour after, and tells you when one is installed; restart to use it.
    rm ~/.local/bin/uze
    rm -rf ~/.uze
    ```
+
+   On Windows, the installer does it, and takes uze off your `Path`:
+
+   ```powershell
+   & ([scriptblock]::Create((irm https://uze.sh/i))) -Uninstall -Purge
+   ```
+
+   Leave out `-Purge` to keep `~\.uze`.
 
 The agents themselves stay installed; remove them the way their vendor says.

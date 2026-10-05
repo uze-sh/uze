@@ -237,6 +237,23 @@ impl Health<'_> {
             provisioning_state_error,
             leftovers,
             maintenance: MaintenanceReport::default(),
+            git_found: uze_core::subprocess::program_on_path("git"),
+            shell_refusal: uze_core::shell::remembered_refusal(&self.0.home),
+            ssh_missing: uze_core::state::marketplace_list(&self.0.home)
+                .unwrap_or_default()
+                .iter()
+                .any(|(_, record)| {
+                    matches!(&record.source, uze_core::PackageSource::Git { url, .. }
+                        if uze_core::acquisition::forge::reached_over_ssh(url))
+                })
+                && !uze_core::acquisition::git::ssh_available(),
+            machine_concerns: uze_platform::machine::concerns()
+                .into_iter()
+                .map(|concern| MachineConcern {
+                    subject: concern.subject.to_owned(),
+                    detail: concern.detail,
+                })
+                .collect(),
         }
     }
 
@@ -751,10 +768,7 @@ impl UzeApplication {
         if !integration.supports_runtime_integration() {
             return true;
         }
-        self.home
-            .shims_dir()
-            .join(integration.shim_name())
-            .is_file()
+        self.home.shim_path(integration.shim_name()).is_file()
     }
 }
 
@@ -976,7 +990,7 @@ fn check_delivery(
         if let (Some(wanted), Some(found)) = (
             capability.exposed_name.as_deref(),
             entry.receipt.artifact.exposure_name(),
-        ) && wanted != found
+        ) && !entry.receipt.artifact.is_named(wanted)
         {
             failing.insert(capability.identity.clone());
             findings.push(DeliveryFinding {

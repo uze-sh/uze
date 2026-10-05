@@ -42,6 +42,15 @@ impl<'a> ProcessEnvGuard<'a> {
     }
 
     /// Removes `key`, remembering the previous value so it can be restored.
+    /// Points every variable a home is read from at `home` (see
+    /// [`crate::process::profile`]).
+    pub fn home(&mut self, home: impl AsRef<std::path::Path>) -> &mut Self {
+        for (key, value) in crate::process::profile(home.as_ref()) {
+            self.set(key, value);
+        }
+        self
+    }
+
     pub fn remove(&mut self, key: &'a str) -> &mut Self {
         let previous = std::env::var_os(key);
         // SAFETY: same reasoning as `set`.

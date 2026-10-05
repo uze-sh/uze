@@ -77,6 +77,13 @@ pub enum HookEffect {
 }
 
 impl HookEffect {
+    /// Whether a handler that cannot be evaluated decides against the
+    /// operation: a guard, whose failing to run must never let the tool
+    /// through.
+    pub const fn fails_closed(self) -> bool {
+        matches!(self, Self::Ask | Self::Deny | Self::Transform)
+    }
+
     pub const fn abi_name(self) -> &'static str {
         match self {
             Self::Observe => "observe",
@@ -111,7 +118,9 @@ pub struct HookGroup {
 pub struct CommandHook {
     #[serde(rename = "type")]
     pub handler_type: CommandHandlerType,
-    pub command: String,
+    /// One POSIX line, or a `posix`/`windows` pair: each platform runs only
+    /// the spelling written for it.
+    pub command: crate::shell::ShellCommand,
     #[serde(default = "default_timeout")]
     pub timeout: u16,
 }
@@ -134,6 +143,32 @@ pub struct PortableHook {
     pub handlers: Vec<CommandHook>,
     pub effect: HookEffect,
     pub order: usize,
+}
+
+impl PortableHook {
+    /// Whether a handler of this group has no spelling for this platform's
+    /// shell, so the group cannot run here as its author wrote it.
+    pub fn unspelled_here(&self) -> bool {
+        self.handlers
+            .iter()
+            .any(|handler| handler.command.here().is_none())
+    }
+}
+
+/// The guard groups of the package at `package_root` with a handler this
+/// platform has no spelling for. Such a guard would be left out of the
+/// delivery, and every operation it guards would go through unchecked: a
+/// package declaring one is not installed here at all.
+pub fn guards_unspelled_here(package_root: &Path) -> Result<Vec<String>> {
+    let manifest_path = package_root.join(HOOKS_FILE_NAME);
+    let Ok(bytes) = std::fs::read(&manifest_path) else {
+        return Ok(Vec::new());
+    };
+    Ok(parse_manifest(&manifest_path, &bytes)?
+        .into_iter()
+        .filter(|hook| hook.effect.fails_closed() && hook.unspelled_here())
+        .map(|hook| hook.id)
+        .collect())
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -317,6 +352,16 @@ pub struct HookCompatibility {
     pub reason: Option<String>,
 }
 
+/// A tool a target never fires an event for, where its integration has
+/// measured that it does not, with why.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnfiredTool {
+    pub event: HookEvent,
+    /// The portable tool alias (`shell`).
+    pub tool: String,
+    pub why: String,
+}
+
 /// An integration's declaration of the hook semantics it can preserve. This
 /// lives in Core because it is vocabulary, not vendor knowledge; each vendor
 /// integration supplies concrete values.
@@ -327,6 +372,9 @@ pub struct HookCapabilities {
     pub supports_native_matchers: bool,
     pub supports_input_transform: bool,
     pub executes_handlers_in_order: bool,
+    /// The tools an event is never fired for here: a group that depends
+    /// on one would be delivered and never run.
+    pub unfired: Vec<UnfiredTool>,
 }
 
 /// Calculates compatibility over the actual semantic axes. `Native` is
@@ -354,6 +402,19 @@ pub fn assess(
         && !capabilities.supports_native_matchers
     {
         Some("the target cannot safely apply an explicit native tool matcher".to_owned())
+    } else if let Some(gap) = capabilities.unfired.iter().find(|gap| {
+        gap.event == hook.event
+            && (hook.matchers.is_empty()
+                || hook.matchers.iter().any(
+                    |matcher| matches!(matcher, HookMatcher::Portable(tool) if *tool == gap.tool),
+                ))
+    }) {
+        Some(format!(
+            "the target never fires `{}` for `{}` here: {}",
+            hook.event.abi_name(),
+            gap.tool,
+            gap.why
+        ))
     } else if hook.effect == HookEffect::Transform && !capabilities.supports_input_transform {
         Some("the target cannot safely transform pre-tool input".to_owned())
     } else if !capabilities.executes_handlers_in_order && hook.handlers.len() > 1 {
@@ -394,11 +455,10 @@ pub fn group_timeout_bound(handlers: &[CommandHook]) -> u32 {
 /// Parses and validates one package/project `hooks.json`. The returned order
 /// is deterministic: semantic event order then source group order.
 pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
-    let manifest: HookManifest =
-        serde_json::from_slice(bytes).map_err(|source| UzeError::Json {
-            path: path.to_path_buf(),
-            source,
-        })?;
+    let manifest: HookManifest = crate::authored::json(bytes).map_err(|source| UzeError::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let mut seen = std::collections::BTreeSet::new();
     let mut hooks = Vec::new();
     for (event, groups) in manifest.hooks {
@@ -450,7 +510,7 @@ pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
                 None => Vec::new(),
             };
             for handler in &group.hooks {
-                if handler.command.trim().is_empty() {
+                if handler.command.is_empty() {
                     return invalid(path, &format!("hook `{id}` has an empty command"));
                 }
                 if !(1..=MAX_TIMEOUT_SECONDS).contains(&handler.timeout) {
@@ -497,6 +557,29 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    /// A guard written only for the other platform's shell cannot run
+    /// here, and is named; an observing group or a guard spelled for both
+    /// is not.
+    #[test]
+    fn a_guard_spelled_only_for_another_platform_is_named_here() {
+        let other = uze_platform::shell::spelling("windows", "posix");
+        let root = uze_testkit::temp::scratch("guards-unspelled");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(HOOKS_FILE_NAME),
+            format!(
+                r#"{{"hooks":{{"PreToolUse":[
+                    {{"id":"elsewhere","matcher":"shell","effect":"deny","hooks":[{{"type":"command","command":{{"{other}":"check"}}}}]}},
+                    {{"id":"everywhere","matcher":"shell","effect":"deny","hooks":[{{"type":"command","command":{{"posix":"check","windows":"check"}}}}]}},
+                    {{"id":"watching","matcher":"shell","hooks":[{{"type":"command","command":{{"{other}":"log"}}}}]}}
+                ]}}}}"#
+            ),
+        )
+        .unwrap();
+        assert_eq!(guards_unspelled_here(&root).unwrap(), ["elsewhere"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn parses_ordered_portable_groups_and_defaults_timeout() {
         let hooks = parse_manifest(Path::new("hooks.json"), br#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"shell|file.write|native:Write","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/check"},{"type":"command","command":"second","timeout":10}]}]}}"#).unwrap();
@@ -510,6 +593,18 @@ mod tests {
                 HookMatcher::Portable("file.write".into()),
                 HookMatcher::Native("Write".into())
             ]
+        );
+    }
+
+    /// What Windows PowerShell 5.1 writes with `-Encoding UTF8`, read as
+    /// the same manifest.
+    #[test]
+    fn a_manifest_saved_with_a_byte_order_mark_parses() {
+        let manifest = br#"{"hooks":{"PreToolUse":[{"id":"guard","matcher":"shell","hooks":[{"type":"command","command":"check"}]}]}}"#;
+        let marked = [b"\xEF\xBB\xBF".as_slice(), manifest].concat();
+        assert_eq!(
+            parse_manifest(Path::new("hooks.json"), &marked).unwrap(),
+            parse_manifest(Path::new("hooks.json"), manifest).unwrap()
         );
     }
 
@@ -670,5 +765,47 @@ mod tests {
         };
         let compatibility = assess(&hook, &HookCapabilities::default(), false);
         assert_eq!(compatibility.route, CompatibilityRoute::Unsupported);
+    }
+
+    /// A guard on a tool the target never fires its event for would be
+    /// delivered and never run, so it is not delivered: a group on that
+    /// tool, or on every tool, which would let exactly that one through.
+    #[test]
+    fn a_group_on_a_tool_the_target_never_fires_for_is_unsupported() {
+        let group = |matchers: Vec<HookMatcher>| PortableHook {
+            id: "protect".into(),
+            event: HookEvent::PreToolUse,
+            matchers,
+            handlers: vec![CommandHook {
+                handler_type: CommandHandlerType::Command,
+                command: "check".into(),
+                timeout: 1,
+            }],
+            effect: HookEffect::Deny,
+            order: 0,
+        };
+        let capabilities = HookCapabilities {
+            events: [HookEvent::PreToolUse].into(),
+            effects: [HookEffect::Deny].into(),
+            supports_native_matchers: true,
+            executes_handlers_in_order: true,
+            unfired: vec![UnfiredTool {
+                event: HookEvent::PreToolUse,
+                tool: "shell".into(),
+                why: "measured".into(),
+            }],
+            ..HookCapabilities::default()
+        };
+        for matchers in [vec![HookMatcher::Portable("shell".into())], Vec::new()] {
+            let compatibility = assess(&group(matchers), &capabilities, false);
+            assert_eq!(compatibility.route, CompatibilityRoute::Unsupported);
+            assert!(compatibility.reason.unwrap().contains("never fires"));
+        }
+        let edits = assess(
+            &group(vec![HookMatcher::Portable("edit".into())]),
+            &capabilities,
+            false,
+        );
+        assert_eq!(edits.route, CompatibilityRoute::Native);
     }
 }

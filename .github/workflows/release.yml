@@ -140,7 +140,7 @@ jobs:
           fi
           {
             printf '%s\n\n' "Version bump across every workspace crate, with the changelog for \`${tag}\` folded into the same commit."
-            printf '%s\n\n' "Merging this tags the merge commit \`${tag}\` and publishes the release: six tarballs (Linux gnu/musl, macOS), the SBOM, signed provenance and SHASUMS256.txt."
+            printf '%s\n\n' "Merging this tags the merge commit \`${tag}\` and publishes the release: six tarballs (Linux gnu/musl, macOS), the two Windows zips once Windows is enabled, the SBOM, signed provenance and SHASUMS256.txt."
             printf '%s\n' "---"
             printf '%s\n\n' "Below is the release page this will publish, exactly as generated:"
             cat "$notes"
@@ -309,22 +309,6 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-${{ matrix.target }}
-      # Only Linux gets here: `endsWith(target, '-musl')` is false for both
-      # Apple targets, and macOS has no musl.
-      #
-      # syntect pulls `onig_sys`, which compiles Oniguruma from C, so a musl
-      # target needs a musl C toolchain — the gnu ones use the runner's own
-      # gcc and were the two that passed. Only the compiler is installed
-      # here: which one cc-rs asks for is `.cargo/config.toml`'s `[env]`, so
-      # a musl build fails the same way, and works the same way, on a laptop
-      # as it does here. Each musl target builds on a runner of its own
-      # architecture, which is why plain `musl-gcc` is right for both.
-      - name: Install the musl C toolchain
-        if: endsWith(matrix.target, '-musl')
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq musl-tools
       - run: cargo build --locked --release --bin uze --target ${{ matrix.target }}
       # Apache-2.0 4(a) and 4(d): whoever receives the binary has to receive
       # the licence and the NOTICE with it. Staging them beside the binary is
@@ -345,9 +329,17 @@ jobs:
           path: dist/uze-${{ matrix.platform }}.tar.gz
           retention-days: 1
 
+  package-windows:
+    name: Package Windows
+    needs: tag
+    if: needs.tag.outputs.release == 'true'
+    uses: ./.github/workflows/package-windows.yml
+    with:
+      ref: ${{ needs.tag.outputs.tag }}
+
   publish:
     name: Publish release
-    needs: [tag, package]
+    needs: [tag, package, package-windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -384,14 +376,20 @@ jobs:
       # One document for the binary crate, without build-time dependencies:
       # what ships is what a scanner should be asked about.
       - name: Generate the SBOM
-        run: cargo cyclonedx --format json --spec-version 1.5 --no-build-deps
+        run: cargo cyclonedx --format json --spec-version 1.5 --no-build-deps --target all
       - name: Collect assets and checksums
         run: |
           set -euo pipefail
+          shopt -s nullglob
           mkdir -p assets
-          mv dist/uze-*.tar.gz assets/
+          mv dist/uze-*.tar.gz dist/uze-*.zip assets/
           cp uze.cdx.json assets/uze-sbom.cdx.json
-          (cd assets && sha256sum *.tar.gz *.cdx.json > SHASUMS256.txt)
+          # Scoop's manifest, from the Windows archives' own bytes.
+          python3 .github/scripts/scoop_manifest.py assets "${{ needs.tag.outputs.tag }}"
+          (
+            cd assets
+            sha256sum *.tar.gz *.zip *.cdx.json uze.json > SHASUMS256.txt
+          )
           ls -l assets/
           cat assets/SHASUMS256.txt
       # Signed provenance for each asset: which workflow, which commit, which
@@ -400,7 +398,7 @@ jobs:
       # `gh attestation verify uze-<target>.tar.gz --repo uze-sh/uze`.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: "assets/uze-*.tar.gz, assets/uze-sbom.cdx.json"
+          subject-path: "assets/uze-*.tar.gz, assets/uze-*.zip, assets/uze-sbom.cdx.json"
       # What a stranger who followed an install link actually reads: the
       # changes grouped by kind, breaking ones called out first, every entry
       # linked to its pull request and credited to the person who wrote it,

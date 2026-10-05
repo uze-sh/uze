@@ -1,0 +1,37 @@
+[package]
+name = "uze-platform"
+version.workspace = true
+edition = "2024"
+rust-version = "1.97"
+description = "What UZE asks of the operating system, answered once per platform: processes, endpoints, locks, shells, paths and the facts only the kernel holds"
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Published by Microsoft and already in the tree; only the API families
+# named here are compiled.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_Kernel",
+  "Win32_System_Console",
+  "Win32_System_Registry",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_System_Time",
+  "Wdk_System_Threading",
+] }
+
+[dev-dependencies]
+uze-testkit = { path = "../uze-testkit" }

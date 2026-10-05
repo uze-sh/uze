@@ -122,11 +122,16 @@ everywhere.
 the prebuilt binary for the machine from GitHub Releases, verifies its SHA-256
 against `SHASUMS256.txt`, refuses on mismatch, and installs into `$XDG_BIN_HOME`
 or `~/.local/bin` (ADR-034). `make test-installer` exercises it, and gates CI.
+`install.ps1` is its Windows counterpart, installing into
+`%LOCALAPPDATA%\Programs\uze\bin` and the user's `Path`;
+`tests/scripts/installer.Tests.ps1` runs it under Windows PowerShell 5.1 and
+PowerShell 7 in the `installer-windows` job.
 
 A release enters `main` through a pull request like anything else: the **Release**
 workflow bumps the version, regenerates `CHANGELOG.md`, renders the release notes
-into the PR body, and publishes the six tarballs (Linux gnu/musl, macOS), an
-SBOM and signed provenance on the merge. Versions come from one place:
+into the PR body, and publishes the six tarballs (Linux gnu/musl, macOS), the
+two Windows zips with a Scoop manifest, an SBOM and signed provenance on the
+merge. Versions come from one place:
 `[workspace.package].version` in the root `Cargo.toml`, inherited by every crate.
 `docs/versioning.md` is the full procedure.
 

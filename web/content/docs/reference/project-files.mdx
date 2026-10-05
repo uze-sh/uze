@@ -87,6 +87,28 @@ worktrees:
   idle_days: 3
 ```
 
+A command is a line for a POSIX shell, the `sh` Linux and macOS run it in.
+For a project worked on from Windows too, spell a step for each shell instead:
+Windows runs its `windows` spelling in Windows PowerShell. A command both
+shells read the same way is still written twice, because each shell is only
+ever handed the line written for it:
+
+```yaml
+worktrees:
+  setup:
+    posix: cp .env.example .env
+    windows: Copy-Item .env.example .env
+  gate:
+    - posix: pnpm test
+      windows: pnpm test
+    - posix: test -f dist/app.js
+      windows: if (-not (Test-Path dist/app.js)) { exit 1 }
+```
+
+A step with no spelling for the machine it runs on is not run there. A `setup`
+step is skipped with a warning naming it; a `gate` step refuses the delivery,
+because work nothing checked never lands. `uze status` lists every such step.
+
 <Callout type="warn">
   A `link` entry must be relative, stay inside the repository, **and be ignored
   by it**: a tracked file linked into a checkout would land in the agent's

@@ -2,7 +2,9 @@
 
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
-use crate::hooks::{EntryShape, HookRunner, HookTarget, UNBOUND, WrapperDialect};
+use crate::hooks::{
+    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
+};
 
 /// Antigravity CLI's named hooks carry camelCase payloads and native
 /// `allow`/`ask`/`deny` decisions. It has no session-start event
@@ -26,13 +28,28 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
     tools: TOOLS,
     runner: HookRunner::Wrapper {
         dialect: WrapperDialect {
-            tool_filter: ".toolCall.name // empty",
-            input_filter: ".toolCall.args // {}",
-            cwd_filter: ".workspacePaths[0] // empty",
-            deny_document: "printf '{\"decision\":\"deny\",\"reason\":%s}' \"$reason_json\"",
+            payload: PayloadPaths {
+                tool: ".toolCall.name // empty",
+                input: ".toolCall.args // {}",
+                cwd: ".workspacePaths[0] // empty",
+            },
             // Only the pre-tool event carries a decision; the others answer
             // with the empty object the vendor's contract requires.
-            allow_document: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
+            posix: Decisions {
+                deny: "printf '{\"decision\":\"deny\",\"reason\":%s}' \"$reason_json\"",
+                allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
+                unfired: &[],
+            },
+            // Measured on 1.2.16 on Windows: the entry is run as
+            // `cmd /c "<command>"` (an `args` array is ignored), the payload
+            // arrives on stdin as on Linux, and a pre-tool hook allows by
+            // writing nothing, `{}` reading as a denial. The entry's line is
+            // sealed against `cmd`'s quoting (`sealed_wrapper_command_line`).
+            powershell: Some(Decisions {
+                deny: "[Console]::Out.Write('{\"decision\":\"deny\",\"reason\":' + $reasonJson + '}')",
+                allow: "if ($hookEvent -ne 'pre_tool_use') { [Console]::Out.Write('{}') }",
+                unfired: &[],
+            }),
             // The decision is the stdout document; a non-zero exit is a
             // failed hook here, not a block.
             deny_exit: "0",

@@ -62,7 +62,8 @@ pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Resul
         &plugin_dir.join("plugin.json"),
         &serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
     )?;
-    let package_root = fs::canonicalize(&package.root).map_err(UzeError::read(&package.root))?;
+    let package_root =
+        uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
     materialize_generated_skills(package, &package_root, dir)?;
     if let Some(servers) = delivered_mcp_servers(package) {
         write_file(
@@ -403,7 +404,8 @@ mod generated_native_tests {
     /// The envelope mirrors a Skill's supporting files too, keeping a helper
     /// script executable, and resolves a file symlink the package keeps
     /// inside itself to the bytes it names — Codex's cache copy would drop
-    /// the link.
+    /// the link. A mode bit and a symlink a test may create are Unix facts.
+    #[cfg(unix)]
     #[test]
     fn envelope_mirrors_supporting_files_and_resolves_in_package_symlinks() {
         use std::os::unix::fs::PermissionsExt;
@@ -439,6 +441,8 @@ mod generated_native_tests {
 
     /// A symlink that escapes the package is refused by name — never
     /// followed into foreign bytes, never silently dropped.
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
     #[test]
     fn envelope_refuses_a_symlink_that_escapes_the_package() {
         let (_root, pkg) = make_plain_package("mirror-escape", false);
@@ -761,14 +765,11 @@ mod generated_native_tests {
         let server = &delivered["mcpServers"]["srv"];
         assert_eq!(
             server["args"][0],
-            pkg.root
-                .join("scripts/server.py")
-                .to_string_lossy()
-                .as_ref()
+            format!("{}/scripts/server.py", pkg.root.display())
         );
         assert_eq!(
             server["env"]["DATA"],
-            pkg.root.join("data").to_string_lossy().as_ref()
+            format!("{}/data", pkg.root.display())
         );
         let _ = fs::remove_dir_all(_root);
     }

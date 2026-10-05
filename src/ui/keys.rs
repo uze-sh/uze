@@ -69,14 +69,22 @@ pub(crate) fn end_enhanced_input(support: KeyboardSupport) {
     }
 }
 
-/// The chord a key event stands for, or `None` for an event that is not a
-/// keystroke uze binds against — a release or repeat under the enhancement
-/// protocol, or a key outside the vocabulary.
+/// Whether `event` is a keystroke: a key going down. A Windows console
+/// reports every key coming up as well, as the enhancement protocol does
+/// elsewhere, and a surface that acted on that second event would close the
+/// moment the press that opened it was let go.
 ///
-/// Repeats are dropped rather than treated as presses: a held key that
-/// closed a tab once must not close nine more.
+/// Repeats are not keystrokes either: a held key that closed a tab once
+/// must not close nine more.
+pub(crate) fn is_keystroke(event: &KeyEvent) -> bool {
+    event.kind == KeyEventKind::Press
+}
+
+/// The chord a key event stands for, or `None` for an event that is not a
+/// keystroke uze binds against (see [`is_keystroke`]) or a key outside the
+/// vocabulary.
 pub(crate) fn chord_of(event: KeyEvent) -> Option<Chord> {
-    if event.kind != KeyEventKind::Press {
+    if !is_keystroke(&event) {
         return None;
     }
     let key = match event.code {
@@ -101,11 +109,7 @@ pub(crate) fn chord_of(event: KeyEvent) -> Option<Chord> {
         KeyCode::PageDown => Key::PageDown,
         _ => return None,
     };
-    let mut mods = Mods {
-        ctrl: event.modifiers.contains(KeyModifiers::CONTROL),
-        alt: event.modifiers.contains(KeyModifiers::ALT),
-        shift: event.modifiers.contains(KeyModifiers::SHIFT),
-    };
+    let mut mods = mods_of(&event);
     if event.code == KeyCode::BackTab {
         mods.shift = true;
     }
@@ -121,6 +125,15 @@ pub(crate) fn chord_of(event: KeyEvent) -> Option<Chord> {
     Some(Chord::new(mods, key))
 }
 
+/// The modifiers a terminal reported, as the vocabulary names them.
+fn mods_of(event: &KeyEvent) -> Mods {
+    Mods {
+        ctrl: event.modifiers.contains(KeyModifiers::CONTROL),
+        alt: event.modifiers.contains(KeyModifiers::ALT),
+        shift: event.modifiers.contains(KeyModifiers::SHIFT),
+    }
+}
+
 /// The text a keystroke types, for a surface that is taking text (see
 /// `uze_keys::Scope::consumes_text`). `None` when the keystroke is not a
 /// character at all.
@@ -132,6 +145,14 @@ pub(crate) fn text_of(event: KeyEvent) -> Option<char> {
         {
             Some(character)
         }
+        _ => alt_graph_text(&event),
+    }
+}
+
+/// The character AltGr typed, by [`Mods::alt_graph_types`]'s rule.
+pub(crate) fn alt_graph_text(event: &KeyEvent) -> Option<char> {
+    match event.code {
+        KeyCode::Char(character) if mods_of(event).alt_graph_types(character) => Some(character),
         _ => None,
     }
 }
@@ -154,6 +175,16 @@ mod tests {
 
     fn chord(text: &str) -> Chord {
         Chord::parse(text).expect(text)
+    }
+
+    /// AltGr reported as Ctrl+Alt types its character into a field; a
+    /// letter under Ctrl+Alt is a chord.
+    #[test]
+    fn altgr_is_text_and_ctrl_alt_on_a_letter_is_not() {
+        let alt_graph = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        assert_eq!(text_of(press(KeyCode::Char('@'), alt_graph)), Some('@'));
+        assert_eq!(text_of(press(KeyCode::Char('k'), alt_graph)), None);
+        assert_eq!(text_of(press(KeyCode::Char('7'), alt_graph)), None);
     }
 
     #[test]

@@ -55,9 +55,12 @@ fn one_plugin_reaches_every_harness_with_no_duplicate_delivery() {
     // OpenCode: a directory of its own preserving the canonical body while
     // publishing the stable qualified label. Codex's plugin covers the
     // skill, so nothing lands in Codex's loose root beside it.
-    let opencode_entry = env
-        .home
-        .join(".config/opencode/skills/uze-agent-skill-conformance:uze-e2e");
+    let opencode_entry =
+        env.home
+            .join(".config/opencode/skills")
+            .join(uze_core::path::file_name_for(
+                "uze-agent-skill-conformance:uze-e2e",
+            ));
     assert!(
         opencode_entry.is_dir() && !opencode_entry.is_symlink(),
         "OpenCode's skill entry must be a real directory"
@@ -70,7 +73,10 @@ fn one_plugin_reaches_every_harness_with_no_duplicate_delivery() {
     );
     assert!(
         !env.home
-            .join(".agents/skills/uze-agent-skill-conformance:uze-e2e")
+            .join(".agents/skills")
+            .join(uze_core::path::file_name_for(
+                "uze-agent-skill-conformance:uze-e2e"
+            ))
             .exists(),
         "a skill Codex's plugin covers is not also delivered loose"
     );
@@ -150,10 +156,12 @@ fn invocation_policy_projects_per_harness_classification() {
     // never sees it as auto-discoverable.
     let opencode_root = env.home.join(".config/opencode/skills");
     assert!(
-        opencode_root.join("policy-fixture:commit").is_dir(),
+        opencode_root
+            .join(uze_core::path::file_name_for("policy-fixture:commit"))
+            .is_dir(),
         "default skill must be projected for OpenCode"
     );
-    let review = opencode_root.join("policy-fixture:review");
+    let review = opencode_root.join(uze_core::path::file_name_for("policy-fixture:review"));
     let review_skill = std::fs::read_to_string(review.join("SKILL.md"))
         .expect("user-only skill must be projected with its own SKILL.md");
     assert!(
@@ -204,7 +212,8 @@ fn a_model_only_skill_reaches_opencode_in_its_own_encoding() {
 
     let entry = env
         .home
-        .join(".config/opencode/skills/conflict-fixture:audit");
+        .join(".config/opencode/skills")
+        .join(uze_core::path::file_name_for("conflict-fixture:audit"));
     assert!(
         entry.is_dir() && !entry.is_symlink(),
         "OpenCode's own directory for the model-only Skill"
@@ -274,7 +283,10 @@ fn claude_agents_ride_in_the_plugin_and_an_earlier_loose_copy_is_retired() {
         })
         .expect("another harness holds the agent on its own");
     let identity = held_elsewhere.resource_identity.clone().unwrap();
-    let earlier = claude_agents.join("crew:reviewer.md");
+    let earlier = claude_agents.join(format!(
+        "{}.md",
+        uze_core::path::file_name_for("crew:reviewer")
+    ));
     let written = "---\nname: crew:reviewer\ndescription: Reviews a change.\n---\nReview.\n";
     std::fs::create_dir_all(&claude_agents).unwrap();
     std::fs::write(&earlier, written).unwrap();

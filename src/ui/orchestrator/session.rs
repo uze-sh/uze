@@ -66,7 +66,7 @@ pub(super) struct Viewport {
 /// Everything one attach holds while its loop runs.
 pub(super) struct Attach<'a> {
     pub(super) model: WorkspaceModel,
-    pub(super) stream: std::os::unix::net::UnixStream,
+    pub(super) stream: uze_terminal::Stream,
     pub(super) home: &'a UzeHome,
     /// The registered harness set, resolved once per attach — it cannot
     /// change mid-session.
@@ -298,6 +298,7 @@ impl Attach<'_> {
         }
         self.absorb_surface_answers();
         self.absorb_policy_regions();
+        self.absorb_unspelled_gates();
         self.absorb_launchers();
         self.schedule_surface_reads();
         if self.model.expire_agent_activity(Instant::now()) {

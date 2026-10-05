@@ -34,9 +34,11 @@ pub(super) fn bridge_hooks(
                     "effect": hook.effect.abi_name(),
                     "matchers": hook.matchers.iter().flat_map(|m| tool_names(target, m)).collect::<Vec<_>>(),
                     "handlers": hook.handlers.iter().map(|handler| serde_json::json!({
-                        "command": handler.command.replace(
-                            "${PLUGIN_ROOT}",
-                            &package_root.display().to_string(),
+                        "command": uze_platform::shell::script_text(
+                            &handler.command.here().unwrap_or_default().replace(
+                                "${PLUGIN_ROOT}",
+                                &package_root.display().to_string(),
+                            ),
                         ),
                         "timeout": handler.timeout,
                     })).collect::<Vec<_>>(),
@@ -125,6 +127,9 @@ pub(crate) fn opencode_bridge(
     let groups = serde_json::to_string(&bridge_hooks(target, hooks, plugin_root))
         .expect("generated groups serialize");
     let aliases = bridge_alias_table(target);
+    // The shell a handler line is written for on this platform, decided
+    // when the bridge is generated.
+    let shell = serde_json::to_string(uze_platform::shell::ARGV).expect("shell words serialize");
     let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
     let reason_limit = HANDLER_REASON_LIMIT;
     format!(
@@ -146,6 +151,7 @@ pub(crate) fn opencode_bridge(
 
 const ROOT = {root};
 const GROUPS = {groups};
+const SHELL = {shell};
 
 // native tool name -> portable alias and its portable fields
 const ALIASES = {{
@@ -193,7 +199,7 @@ async function collect(stream) {{
 async function handler(command, timeout, env) {{
   let proc;
   try {{
-    proc = Bun.spawn(["/bin/sh", "-c", command], {{
+    proc = Bun.spawn([...SHELL, command], {{
       cwd: ROOT,
       env,
       stdin: "ignore",

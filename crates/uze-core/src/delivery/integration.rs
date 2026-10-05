@@ -322,6 +322,15 @@ pub trait IntegrationPort: Send + Sync {
         &[]
     }
 
+    /// Where this harness's official installer documents putting its
+    /// executable, looked in after `PATH` and the path a new shell searches
+    /// (see [`crate::harness_runtime::resolve_harness_executable`]): an
+    /// installer that edits no search path at all (Claude Code's on
+    /// Windows) leaves its program reachable only here. Default: nowhere.
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
+
     /// The physical name this harness's PATH shim symlink is created under
     /// (`shims_dir/<shim_name>`) — the name a user actually types. Defaults
     /// to the first alias, else the id. Shared by `ensure_runtime_shim`
@@ -840,7 +849,9 @@ mod artifact_representation_tests {
     }
 }
 
-#[cfg(test)]
+/// Both cases are receipt-owned symlinks.
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
+#[cfg(all(test, unix))]
 mod lifecycle_tests {
     use super::*;
     use std::{fs, path::PathBuf};
@@ -854,7 +865,6 @@ mod lifecycle_tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn symlink_receipt_is_safe_only_when_ownership_still_matches() {
         use std::os::unix::fs::symlink;
@@ -908,7 +918,6 @@ mod lifecycle_tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[cfg(unix)]
     #[test]
     fn unreadable_symlink_state_is_blocked() {
         use std::os::unix::fs::PermissionsExt;

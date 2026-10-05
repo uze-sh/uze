@@ -11,7 +11,10 @@ fn hook() -> PortableHook {
         ],
         handlers: vec![CommandHook {
             handler_type: CommandHandlerType::Command,
-            command: "${PLUGIN_ROOT}/check".into(),
+            command: uze_core::shell::ShellCommand::spelled(
+                "${PLUGIN_ROOT}/check",
+                "& \"${PLUGIN_ROOT}/check.ps1\"",
+            ),
             timeout: 10,
         }],
         effect: HookEffect::Deny,
@@ -33,7 +36,7 @@ fn invocation(hook: &PortableHook) -> HookInvocation {
 fn vendor_aliases_are_explicit() {
     assert_eq!(
         tool_names(crate::claude::HOOKS, &HookMatcher::Portable("shell".into())),
-        ["Bash"]
+        ["Bash", "PowerShell"]
     );
     assert_eq!(
         tool_names(
@@ -167,7 +170,8 @@ fn a_platform_without_a_wrapper_template_delivers_no_hook() {
     };
     assert_eq!(wrapper, crate::claude::HOOKS.wrapper_path(&home));
     let entry: serde_json::Value = serde_json::from_str(&expected).unwrap();
-    assert_eq!(entry["hooks"][0]["command"], wrapper.display().to_string());
+    let (program, _) = uze_platform::shell::script(&wrapper.display().to_string());
+    assert_eq!(entry["hooks"][0]["command"], program);
 
     assert!(
         wrapper_source(crate::opencode::HOOKS).is_none(),
@@ -207,7 +211,7 @@ fn a_hook_that_cannot_be_delivered_is_reported_unsupported() {
 fn group_entry_omits_matcher_for_unmatch_all_and_reserves_native_timeout() {
     let mut hook = hook();
     let entry = group_entry(crate::claude::HOOKS, &hook, &invocation(&hook));
-    assert_eq!(entry["matcher"], "Bash|Write");
+    assert_eq!(entry["matcher"], "Bash|PowerShell|Write");
     assert_eq!(entry["hooks"][0]["type"], "command");
     assert_eq!(
         entry["hooks"][0]["timeout"], 12,
@@ -294,10 +298,13 @@ fn a_stop_entry_is_flat_while_a_tool_event_stays_grouped() {
         "a `hooks` group under Stop is dropped by the vendor's parser"
     );
     assert!(flat.get("matcher").is_none(), "Stop matches no tool");
-    assert!(
-        flat["command"]
-            .as_str()
-            .is_some_and(|command| command.contains("'stop' 'observe'")),
+    // Compared through the sealed line rather than read out of it: on
+    // Windows that line is encoded against `cmd /c`.
+    let arguments = wrapper_arguments(&stop, Path::new("/pkg"), &stop.handlers);
+    assert_eq!(arguments[1..3], ["stop", "observe"]);
+    assert_eq!(
+        flat["command"],
+        uze_platform::shell::sealed_script_line("/state/hooks/exec", &arguments),
         "the flat entry still runs the wrapper with the group's arguments: {flat}"
     );
     assert_eq!(flat["timeout"], 12);
@@ -317,8 +324,13 @@ fn agy_named_entry_carries_the_wrapper_and_is_deterministic() {
         entry.get("hooks").is_none(),
         "the named key holds the event map directly; a `hooks` wrapper is one dead hook"
     );
-    assert!(
-        document.contains("'/state/hooks/exec' '/pkg' 'pre_tool_use' 'deny'"),
+    // Compared through the sealed line rather than read out of it: on
+    // Windows that line is encoded against `cmd /c`.
+    let arguments = wrapper_arguments(&hook(), Path::new("/pkg"), &hook().handlers);
+    assert_eq!(arguments[..3], ["/pkg", "pre_tool_use", "deny"]);
+    assert_eq!(
+        entry["PreToolUse"][0]["hooks"][0]["command"],
+        uze_platform::shell::sealed_script_line("/state/hooks/exec", &arguments),
         "the entry runs the shared wrapper with the group's own arguments: {document}"
     );
     assert!(
@@ -620,9 +632,10 @@ fn the_opencode_plugin_is_the_wrapper_with_the_packages_groups_as_data() {
         plugin.contains("code === 3"),
         "the decision channel is the exit code"
     );
-    assert!(
-        !plugin.contains("Stop"),
-        "no stop surface is ever claimed for OpenCode"
+    assert_eq!(
+        plugin.matches("ctx.tool.hook(").count(),
+        2,
+        "no stop surface is ever claimed for OpenCode: the two tool hooks are all it registers"
     );
     assert!(
         !plugin.to_lowercase().contains("uze"),
@@ -720,6 +733,7 @@ fn a_merge_keeps_the_users_own_key_order() {
 /// under the umask and chmods afterwards, so a crash between the two
 /// leaves the right bytes unrunnable — exit 126, which a `deny` group
 /// turns into a permanent block.
+// Unix file modes, which Windows does not keep.
 #[cfg(unix)]
 #[test]
 fn a_wrapper_that_lost_its_executable_bit_is_drift_and_is_repaired() {
@@ -778,7 +792,9 @@ fn hook_receipt(
 /// The shared wrapper outlives every entry but the last one. The prune
 /// runs inside a detach, while the ledger still lists the receipt being
 /// detached — so "still used" has to be read from the harness's config,
-/// not from the ledger, or the wrapper is never removed at all.
+/// not from the ledger, or the wrapper is never removed at all. Told on
+/// Antigravity's named entries, which only the POSIX wrapper serves.
+#[cfg(unix)]
 #[test]
 fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
     let root = uze_testkit::temp::scratch("hooks-prune");
@@ -825,7 +841,9 @@ fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
 /// A ledger that cannot be read has not answered "nothing uses it"; it
 /// has not answered at all. Deleting a wrapper live entries still run
 /// leaves every one of them exiting 127 — which every harness reads as
-/// non-blocking.
+/// non-blocking. Told on Antigravity's named entries, which only the POSIX
+/// wrapper serves.
+#[cfg(unix)]
 #[test]
 fn an_unreadable_ledger_keeps_the_shared_wrapper() {
     let root = uze_testkit::temp::scratch("hooks-prune-ledger");
@@ -881,10 +899,7 @@ fn an_entry_that_drifted_still_counts_as_using_the_wrapper() {
     let entry = group_entry(
         crate::claude::HOOKS,
         &hook(),
-        &HookInvocation::Exec {
-            command: wrapper.display().to_string(),
-            args: wrapper_arguments(&hook(), Path::new("/pkg"), &hook().handlers),
-        },
+        &wrapper_exec(&wrapper, &hook(), Path::new("/pkg")),
     );
     let expected = serde_json::to_string(&entry).unwrap();
     merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
@@ -915,7 +930,6 @@ fn an_entry_that_drifted_still_counts_as_using_the_wrapper() {
 /// delivered before: the wrapper is generated tier, so an earlier
 /// build's copy is still UZE's to remove, and the next attach
 /// reproduces the current one.
-#[cfg(unix)]
 #[test]
 fn a_wrapper_an_earlier_build_wrote_still_removes() {
     let root = uze_testkit::temp::scratch("hooks-stale-wrapper");
@@ -955,6 +969,7 @@ fn a_wrapper_an_earlier_build_wrote_still_removes() {
 
 /// Only the header marks a wrapper as generated; a file somebody else
 /// put there is still not UZE's to remove.
+// Its stand-in programs are POSIX shell scripts.
 #[cfg(unix)]
 #[test]
 fn a_wrapper_without_the_generated_header_is_drift() {
@@ -1028,18 +1043,6 @@ fn another_packages_entry_through_the_same_wrapper_is_not_drift() {
 }
 
 #[test]
-fn shell_words_reads_back_what_shell_quote_wrote() {
-    let fragments = ["/state/hooks/exec", "/tmp/plugin root", "it's", "a'b'c", ""];
-    let line = fragments
-        .iter()
-        .map(|fragment| shell_quote(fragment))
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert_eq!(shell_words(&line).unwrap(), fragments);
-    assert_eq!(shell_words("'unterminated"), None);
-}
-
-#[test]
 fn an_unreadable_ledger_refuses_to_merge_rather_than_duplicate() {
     let root = uze_testkit::temp::scratch("hooks-previous-ledger");
     let home = UzeHome::at(root.join("home"));
@@ -1047,4 +1050,72 @@ fn an_unreadable_ledger_refuses_to_merge_rather_than_duplicate() {
     fs::write(home.state_dir().join("attachments.json"), b"{ not json").unwrap();
     assert!(previous_hook_entry_content(&home, "claude", "pkg@market:protect-env").is_err());
     let _ = fs::remove_dir_all(root);
+}
+
+/// The Windows wrapper is generated and pinned on every platform, so a
+/// change to it is reviewed where the suite runs, not first seen on a
+/// Windows machine.
+#[test]
+fn the_powershell_wrapper_is_one_byte_identical_file_per_harness() {
+    for target in [
+        crate::claude::HOOKS,
+        crate::codex::HOOKS,
+        crate::antigravity::HOOKS,
+    ] {
+        let Some(source) = PowerShellWrapper::source(target) else {
+            continue;
+        };
+        let golden = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("goldens")
+            .join(format!("hooks-exec-{target}.ps1"));
+        if std::env::var_os("UZE_REGENERATE_GOLDENS").is_some() {
+            fs::write(&golden, &source).unwrap();
+        }
+        assert_eq!(
+            fs::read_to_string(&golden).unwrap_or_default(),
+            source,
+            "{} is out of date; regenerate it with UZE_REGENERATE_GOLDENS=1",
+            golden.display()
+        );
+        assert!(
+            source.starts_with('\u{feff}'),
+            "Windows PowerShell reads a script without a byte-order mark as ANSI"
+        );
+        assert!(
+            !source.to_lowercase().contains("uze"),
+            "nothing in a delivered artifact may name the packager"
+        );
+    }
+}
+
+/// Every harness a wrapper delivers to has a measured Windows entry form,
+/// and so a Windows wrapper: Antigravity's arrived with the sealed line
+/// that survives its `cmd /c`.
+#[test]
+fn every_wrapper_harness_has_a_windows_wrapper() {
+    for target in [
+        crate::claude::HOOKS,
+        crate::codex::HOOKS,
+        crate::antigravity::HOOKS,
+    ] {
+        assert!(PowerShellWrapper::source(target).is_some(), "{target}");
+    }
+}
+
+/// Codex on Windows runs a shell command without firing PreToolUse, which
+/// only the Windows template declares, so a shell guard is reported there
+/// and delivered everywhere else.
+#[test]
+fn codex_s_windows_shell_gap_is_declared_by_the_windows_template_alone() {
+    let gap = PowerShellWrapper::unfired(crate::codex::HOOKS);
+    assert!(
+        gap.iter()
+            .any(|unfired| unfired.event == HookEvent::PreToolUse
+                && unfired.tool == "shell"
+                && unfired.why.contains("openai/codex/issues/24453")),
+        "{gap:?}"
+    );
+    assert!(PosixWrapper::unfired(crate::codex::HOOKS).is_empty());
+    assert!(PowerShellWrapper::unfired(crate::claude::HOOKS).is_empty());
 }

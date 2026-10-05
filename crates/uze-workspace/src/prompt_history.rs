@@ -262,53 +262,21 @@ fn compact(file: &Path) -> Result<()> {
         payload.push(b'\n');
     }
     write_atomic(file, &payload)?;
-    restrict_to_owner(file);
-    Ok(())
+    // `write_atomic` renames a fresh file into place, which does not keep
+    // the mode the append path gave the one it replaced.
+    uze_platform::fs::restrict_to_owner(file).map_err(UzeError::write(file))
 }
 
-#[cfg(unix)]
 fn create_private_dir(dir: &Path) -> Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
-    if dir.is_dir() {
-        return Ok(());
-    }
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
-        .map_err(UzeError::write(dir))
+    uze_platform::fs::create_private_dir_all(dir).map_err(UzeError::write(dir))
 }
 
-#[cfg(not(unix))]
-fn create_private_dir(dir: &Path) -> Result<()> {
-    fs::create_dir_all(dir).map_err(UzeError::write(dir))
-}
-
-#[cfg(unix)]
-fn private_append_options() -> OpenOptions {
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut options = OpenOptions::new();
-    options.create(true).append(true).mode(0o600);
-    options
-}
-
-#[cfg(not(unix))]
 fn private_append_options() -> OpenOptions {
     let mut options = OpenOptions::new();
     options.create(true).append(true);
+    uze_platform::fs::private_file(&mut options);
     options
 }
-
-/// `write_atomic` renames a fresh file into place, so a compaction would
-/// otherwise reset the mode the append path established.
-#[cfg(unix)]
-fn restrict_to_owner(file: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = fs::set_permissions(file, fs::Permissions::from_mode(0o600));
-}
-
-#[cfg(not(unix))]
-fn restrict_to_owner(_file: &Path) {}
 
 fn now_secs() -> u64 {
     SystemTime::now()
@@ -317,30 +285,13 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-/// Local midnight preceding `now_secs`. The offset is read from the
-/// broken-down local time rather than a fixed zone so the boundary follows
-/// the machine's clock, including DST, without a calendar dependency.
-#[cfg(unix)]
+/// Local midnight preceding `now_secs`, following the machine's clock,
+/// DST included, without a calendar dependency.
 fn local_day_start(now_secs: u64) -> u64 {
-    let Ok(time) = libc::time_t::try_from(now_secs) else {
-        return utc_day_start(now_secs);
-    };
-    // SAFETY: `tm` is plain integers and a nullable pointer, for which
-    // all-zero bytes are a valid value; `localtime_r` overwrites it below.
-    let mut local: libc::tm = unsafe { std::mem::zeroed() };
-    // SAFETY: both pointers are valid for the duration of the call, and
-    // `localtime_r` writes only into the `tm` it is handed.
-    let resolved = unsafe { libc::localtime_r(&time, &mut local) };
-    if resolved.is_null() {
-        return utc_day_start(now_secs);
+    match uze_platform::clock::seconds_into_local_day(now_secs) {
+        Some(since_midnight) => now_secs.saturating_sub(since_midnight),
+        None => utc_day_start(now_secs),
     }
-    let since_midnight = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec;
-    now_secs.saturating_sub(u64::try_from(since_midnight).unwrap_or(0))
-}
-
-#[cfg(not(unix))]
-fn local_day_start(now_secs: u64) -> u64 {
-    utc_day_start(now_secs)
 }
 
 fn utc_day_start(now_secs: u64) -> u64 {
@@ -556,6 +507,7 @@ mod tests {
         clear(&temp.home, a).unwrap();
     }
 
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     #[test]
     fn history_is_owner_only() {

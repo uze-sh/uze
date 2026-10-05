@@ -52,16 +52,19 @@ use std::{
 
 use crate::{Result, UzeError, home::UzeHome};
 
-/// Creates `link` pointing at `target`, or reports that this platform has
-/// no symbolic links for UZE to own.
-#[cfg(unix)]
+/// Creates `link` pointing at `target`, or reports that this platform
+/// grants UZE no symbolic links to own.
 pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(target, link).map_err(UzeError::write(link))
-}
-
-#[cfg(not(unix))]
-pub fn create_symlink(_target: &Path, link: &Path) -> Result<()> {
-    Err(UzeError::SymlinkUnsupported(link.to_path_buf()))
+    uze_platform::fs::symlink(target, link).map_err(|source| {
+        if source.kind() == std::io::ErrorKind::Unsupported {
+            UzeError::SymlinkUnsupported(link.to_path_buf())
+        } else {
+            UzeError::Write {
+                path: link.to_path_buf(),
+                source,
+            }
+        }
+    })
 }
 
 pub fn write_atomic(path: &Path, payload: &[u8]) -> Result<()> {
@@ -122,7 +125,7 @@ fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Res
     };
     match fs::symlink_metadata(destination) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::rename(staging, destination).map_err(write_error)?;
+            uze_platform::fs::rename(staging, destination).map_err(write_error)?;
         }
         Err(error) => return Err(write_error(error)),
         Ok(metadata) if !metadata.is_dir() => {
@@ -134,9 +137,9 @@ fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Res
                 let _ = fs::remove_dir_all(staging);
             } else {
                 let retired = swap_path(parent, name, "retired");
-                fs::rename(destination, &retired).map_err(write_error)?;
-                if let Err(error) = fs::rename(staging, destination) {
-                    let _ = fs::rename(&retired, destination);
+                uze_platform::fs::rename(destination, &retired).map_err(write_error)?;
+                if let Err(error) = uze_platform::fs::rename(staging, destination) {
+                    let _ = uze_platform::fs::rename(&retired, destination);
                     return Err(write_error(error));
                 }
                 let _ = fs::remove_dir_all(&retired);
@@ -148,35 +151,8 @@ fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Res
 }
 
 /// Swaps two directories in one step where the kernel offers it.
-#[cfg(target_os = "linux")]
 fn exchange(a: &Path, b: &Path) -> std::io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-
-    const RENAME_EXCHANGE: libc::c_uint = 1 << 1;
-    let a = CString::new(a.as_os_str().as_bytes())?;
-    let b = CString::new(b.as_os_str().as_bytes())?;
-    // A raw syscall rather than `libc::renameat2`, which the musl release
-    // targets do not all export.
-    let status = unsafe {
-        libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD,
-            a.as_ptr(),
-            libc::AT_FDCWD,
-            b.as_ptr(),
-            RENAME_EXCHANGE,
-        )
-    };
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn exchange(_a: &Path, _b: &Path) -> std::io::Result<()> {
-    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    uze_platform::fs::exchange(a, b)
 }
 
 /// A hidden sibling of `name` owned by this process: hidden, because it sits
@@ -212,19 +188,10 @@ fn remove_abandoned_swaps(parent: &Path, name: &str) {
     }
 }
 
-#[cfg(unix)]
+/// Alive unless the platform says plainly that nothing runs at `pid`: a pid
+/// it will not answer for may be somebody's live staging, and is left alone.
 fn process_is_alive(pid: u32) -> bool {
-    let Ok(pid) = libc::pid_t::try_from(pid) else {
-        return false;
-    };
-    // Signal 0 checks existence only; EPERM still means the process exists.
-    let signalled = unsafe { libc::kill(pid, 0) } == 0;
-    signalled || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-}
-
-#[cfg(not(unix))]
-fn process_is_alive(_pid: u32) -> bool {
-    true
+    uze_platform::process::alive(pid) != Some(false)
 }
 
 /// Where `path` ends up once every symbolic link on the way is followed,
@@ -278,7 +245,7 @@ fn replace_atomically(
         file.write_all(payload)
             .map_err(UzeError::write(&temporary))?;
         file.sync_all().map_err(UzeError::write(&temporary))?;
-        fs::rename(&temporary, path).map_err(UzeError::write(path))?;
+        uze_platform::fs::rename(&temporary, path).map_err(UzeError::write(path))?;
         sync_directory(parent);
         Ok(())
     })();
@@ -316,15 +283,9 @@ fn temporary_path(path: &Path, parent: &Path) -> PathBuf {
     ))
 }
 
-#[cfg(unix)]
 fn sync_directory(path: &Path) {
-    if let Ok(directory) = File::open(path) {
-        let _ = directory.sync_all();
-    }
+    uze_platform::fs::sync_directory(path);
 }
-
-#[cfg(not(unix))]
-fn sync_directory(_path: &Path) {}
 
 /// Process-wide mutation guard for one UZE home.
 ///
@@ -416,25 +377,8 @@ fn try_lock_exclusive_briefly(file: &File) -> std::io::Result<()> {
 
 /// Takes an exclusive advisory lock on `file` without waiting: a held lock
 /// is `WouldBlock`, and the lock lasts as long as the file stays open.
-#[cfg(unix)]
 pub fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
-    use std::os::fd::AsRawFd;
-    // SAFETY: `flock` is called on a file descriptor this process owns and
-    // keeps open for as long as the lock is held.
-    let outcome = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if outcome == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-/// Without an OS-level advisory lock there is nothing to serialize two
-/// processes with; a cross-process guarantee is a Unix property here,
-/// matching the runtime's supported platforms.
-#[cfg(not(unix))]
-pub fn try_lock_exclusive(_file: &File) -> std::io::Result<()> {
-    Ok(())
+    uze_platform::lock::try_lock(file, uze_platform::lock::Mode::Exclusive)
 }
 
 #[cfg(test)]
@@ -495,7 +439,9 @@ mod tests {
     #[test]
     fn a_directory_is_created_when_nothing_was_there() {
         let root = uze_testkit::temp::scratch("replace-dir-fresh");
-        let destination = root.join("skills/flow:review");
+        let destination = root
+            .join("skills")
+            .join(crate::path::file_name_for("flow:review"));
         replace_dir(&destination, |staging| {
             fs::write(staging.join("SKILL.md"), "body").unwrap();
             Ok(())
@@ -507,12 +453,13 @@ mod tests {
         );
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn something_other_than_a_directory_is_never_replaced() {
         let root = uze_testkit::temp::scratch("replace-dir-conflict");
         fs::create_dir_all(root.join("elsewhere")).unwrap();
-        let destination = root.join("flow:review");
+        let destination = root.join(crate::path::file_name_for("flow:review"));
         std::os::unix::fs::symlink(root.join("elsewhere"), &destination).unwrap();
 
         let outcome = replace_dir(&destination, |_| Ok(()));
@@ -522,7 +469,6 @@ mod tests {
         assert_eq!(siblings(&root), ["elsewhere", "flow:review"]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn staging_left_by_a_dead_process_is_removed_and_a_live_one_kept() {
         let root = uze_testkit::temp::scratch("replace-dir-abandoned");
@@ -537,6 +483,7 @@ mod tests {
         assert!(live.exists());
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_preserving_write_goes_through_a_symlink_and_keeps_the_mode() {
@@ -570,6 +517,7 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_preserving_write_through_a_dangling_symlink_creates_its_target() {
@@ -704,6 +652,7 @@ mod tests {
     /// The case `Drop` cannot cover: a holder killed outright. The kernel
     /// closes its descriptors, so the lock is free for the next process with
     /// nothing to reclaim and nobody to ask about a pid.
+    // Signals a process, as only Unix does.
     #[cfg(unix)]
     #[test]
     fn a_holder_killed_outright_releases_the_lock() {

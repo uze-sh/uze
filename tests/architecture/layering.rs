@@ -146,9 +146,10 @@ const RULES: &[Rule] = &[
             (
                 "crates/uze-testkit/src/forge.rs",
                 "test infrastructure playing the *server*: it runs `git http-backend` \
-             as CGI for a loopback forge, which needs the CGI environment and \
-             binary stdin and stdout that neither client contract has, and it \
-             reaches no repository on anyone's behalf",
+             as CGI for a loopback forge, and `git upload-pack` behind its stand-in \
+             `ssh`, which need the CGI environment and binary stdin and stdout \
+             that neither client contract has, and it reaches no repository on \
+             anyone's behalf",
             ),
         ],
         budget: &[],
@@ -1011,7 +1012,7 @@ fn test_module_declarations(path: &std::path::Path) -> Vec<PathBuf> {
     let lines: Vec<&str> = contents.lines().collect();
     let mut declared = Vec::new();
     for (index, line) in lines.iter().enumerate() {
-        if line.trim() != "#[cfg(test)]" {
+        if !is_test_gate(line) {
             continue;
         }
         let Some(next) = lines.get(index + 1) else {
@@ -1036,11 +1037,162 @@ fn test_module_declarations(path: &std::path::Path) -> Vec<PathBuf> {
     declared
 }
 
+/// `#[cfg(test)]`, or a `cfg` that compiles what follows only under test
+/// (`all(test, unix)`).
+fn is_test_gate(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("#[cfg(") && contains_word(line, "test") && !line.contains("not(test")
+}
+
+fn contains_word(text: &str, word: &str) -> bool {
+    text.match_indices(word).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + word.len()..].chars().next();
+        let boundary = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        boundary(before) && boundary(after)
+    })
+}
+
+/// Whether `code` (a line with its comment cut off) is an attribute or a
+/// `cfg!` that names a platform.
+fn names_a_platform(code: &str) -> bool {
+    let trimmed = code.trim_start();
+    let gate = trimmed.starts_with("#[") || trimmed.starts_with("#![") || code.contains("cfg!(");
+    gate && code.contains("cfg")
+        && [
+            "unix",
+            "windows",
+            "target_os",
+            "target_family",
+            "target_env",
+            "target_arch",
+        ]
+        .iter()
+        .any(|platform| contains_word(code, platform))
+}
+
+/// Whether `code` reads the build target at run time, where an attribute
+/// would have been caught: a branch written as `consts::OS == "windows"` is
+/// the same fork as a `cfg`. `uze_platform::target` is where a table that
+/// picks an archive or a package reads it, as data.
+fn reads_the_build_target(code: &str) -> bool {
+    [
+        "consts::OS",
+        "consts::ARCH",
+        "consts::FAMILY",
+        "EXE_SUFFIX",
+        "EXE_EXTENSION",
+    ]
+    .iter()
+    .any(|constant| code.contains(constant))
+}
+
+/// Production code outside `uze-platform` names no platform: a crate that
+/// needs to decide something per platform is missing a concept there, and
+/// a `cfg` written where the decision is needed is how one platform's
+/// behaviour grows a fork the other never sees (D3).
+#[test]
+fn only_uze_platform_names_a_platform() {
+    let root = repository_root();
+    let mut found = Vec::new();
+    for scope in ["src", "crates"] {
+        for (path, contents) in production_sources(&root.join(scope)) {
+            let relative = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if relative.starts_with("crates/uze-platform/") || relative.contains("/tests/") {
+                continue;
+            }
+            for line in contents.lines() {
+                let code = line.split("//").next().unwrap_or_default();
+                if (names_a_platform(code) || reads_the_build_target(code)) && !is_test_gate(line) {
+                    found.push(format!("  {relative}: {}", line.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "\n\nplatform named outside uze-platform:\n\n{}\n\n\
+         Add the concept to uze-platform (a value when the decision is data, a \
+         function when it is behaviour) and call it from here.\n",
+        found.join("\n")
+    );
+}
+
+/// Whether the gate at `index` says why it is one: a comment beside it, or
+/// one in the comments and attributes right above it (its doc comment
+/// included), that names the platform or what only it has.
+fn explains_its_platform(lines: &[&str], index: usize) -> bool {
+    const NAMED: [&str; 5] = ["Unix", "Windows", "Linux", "macOS", "POSIX"];
+    let names = |text: &str| NAMED.iter().any(|platform| text.contains(platform));
+    if lines[index]
+        .split_once("//")
+        .is_some_and(|(_, comment)| names(comment))
+    {
+        return true;
+    }
+    lines[..index]
+        .iter()
+        .rev()
+        .map(|line| line.trim())
+        .take_while(|line| line.starts_with("//") || line.starts_with("#["))
+        .any(|line| line.starts_with("//") && names(line))
+}
+
+/// A test gated to a platform says why, in the comments right above the
+/// gate or beside it, naming the platform or what only it has: some
+/// behaviour exists on one platform only (a mode bit, a symlink without
+/// privilege, a FIFO), and a gate that does not say so cannot be told from
+/// a test that was only ever written for one machine.
+#[test]
+fn a_test_gated_to_a_platform_says_why() {
+    let root = repository_root();
+    let mut files = Vec::new();
+    for scope in ["src", "crates", "tests"] {
+        collect_rust_files(&root.join(scope), &mut files);
+    }
+    let mut over = Vec::new();
+    for path in files {
+        let relative = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.starts_with("crates/uze-platform/src/") {
+            continue;
+        }
+        let contents = fs::read_to_string(&path).unwrap_or_default();
+        let lines: Vec<&str> = contents.lines().collect();
+        let unexplained = lines
+            .iter()
+            .enumerate()
+            .filter(|(index, line)| {
+                let code = line.split("//").next().unwrap_or_default();
+                names_a_platform(code) && !explains_its_platform(&lines, *index)
+            })
+            .count();
+        if unexplained > 0 {
+            over.push(format!("  {relative}: {unexplained} without a reason"));
+        }
+    }
+    assert!(
+        over.is_empty(),
+        "\n\ntests gated to a platform without saying why:\n\n{}\n\n\
+         Say why in a comment above the gate, naming the platform or what only \
+         it has, or let the test run on every platform through uze-platform's \
+         concepts.\n",
+        over.join("\n")
+    );
+}
+
 pub(crate) fn strip_test_modules(contents: &str) -> String {
     let mut out = Vec::new();
     let mut lines = contents.lines().peekable();
     while let Some(line) = lines.next() {
-        if line.trim() == "#[cfg(test)]"
+        if is_test_gate(line)
             && let Some(next) = lines.peek()
             && next.trim_start().starts_with("mod ")
             && next.contains('{')
@@ -1090,6 +1242,43 @@ fn repository_root() -> PathBuf {
 /// The test finds the writers rather than checking a list somebody
 /// maintains: a new `state_dir().join("…")` anywhere but the map fails it,
 /// so the next document is named where every other one is.
+/// `uze-platform` answers what the operating system can do, for a caller
+/// that says what it wants. A name of UZE's own — a directory under
+/// `$UZE_HOME`, a file or pipe called `uze-…` — composed in it is policy in
+/// the mechanism, and escapes `every_path_uze_owns_is_named_in_the_map`,
+/// which looks for the map's anchors and finds none here.
+#[test]
+fn uze_platform_names_no_path_of_uze_s_own() {
+    let root = repository_root();
+    let offenders: Vec<String> = production_sources(&root.join("crates/uze-platform/src"))
+        .into_iter()
+        .filter(|(_, source)| {
+            source
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .any(|line| {
+                    line.contains("\"uze")
+                        || line.contains("uze-{")
+                        || line.contains("\".uze")
+                        || line.contains("join(\"state\")")
+                })
+        })
+        .map(|(path, _)| {
+            path.strip_prefix(&root)
+                .unwrap_or(&path)
+                .display()
+                .to_string()
+        })
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "architecture rule violated: uze-platform names no path of UZE's own\n\n  \
+         these compose one: {offenders:?}\n\n  \
+         Fix: take the name or the directory from the caller, as \
+         `endpoint::Address` does."
+    );
+}
+
 #[test]
 fn every_path_uze_owns_is_named_in_the_map() {
     /// The map itself, which is the one place these may be composed.
@@ -1153,4 +1342,44 @@ fn every_path_uze_owns_is_named_in_the_map() {
          Fix: add the path to `{THE_MAP}` with the reason it exists, and call \
          that."
     );
+}
+
+/// The workspace crates `manifest` depends on outside its tests: every
+/// `uze-…` key of a `[dependencies]` or `[target.….dependencies]` table.
+fn workspace_dependencies(manifest: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut in_dependencies = false;
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_dependencies = line.ends_with("dependencies]") && !line.contains("dev-dependencies");
+            continue;
+        }
+        if in_dependencies
+            && let Some((name, _)) = line.split_once('=')
+            && name.trim().starts_with("uze-")
+        {
+            found.push(name.trim().to_owned());
+        }
+    }
+    found
+}
+
+/// `uze-platform` answers what differs per operating system for `uze-core`,
+/// `uze-git` and the terminal runtime alike, so it may depend on none of
+/// them — and `uze-terminal`, which owns the panes and nothing of UZE's,
+/// depends on no crate here but the two it obeys.
+#[test]
+fn the_platform_crate_is_a_leaf_and_the_terminal_reaches_only_it_and_documents() {
+    let root = repository_root();
+    let manifest = |crate_name: &str| {
+        std::fs::read_to_string(root.join("crates").join(crate_name).join("Cargo.toml")).unwrap()
+    };
+    assert_eq!(
+        workspace_dependencies(&manifest("uze-platform")),
+        Vec::<String>::new(),
+        "uze-platform names no workspace crate outside its tests"
+    );
+    let mut terminal = workspace_dependencies(&manifest("uze-terminal"));
+    terminal.sort();
+    assert_eq!(terminal, ["uze-document", "uze-platform"]);
 }

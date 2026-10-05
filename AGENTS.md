@@ -254,11 +254,27 @@ need to).
   makes this the opposite of scattered compatibility, which this project
   refuses — the current struct stays clean *because* the old shapes live
   in the ladder.
+- `crates/uze-platform` — what UZE asks the operating system, answered
+  once per platform: processes and their trees (process groups; Job
+  Objects), kernel facts about a process (`probe`), cross-process locks, the
+  shell an authored line runs in (`sh -c`; Windows PowerShell 5.1), paths,
+  the home directory, private files, executables and the image a running
+  binary is replaced by, stdio, the desktop's URL openers and the system's
+  own tools. **One concept per module, one API per concept, and one
+  implementation per platform selected by `cfg` at that module's boundary**
+  (`mod unix;`/`mod windows;` behind `use … as imp`): nothing that uses it
+  branches on the operating system, and a `cfg!` at a call site anywhere
+  else in the workspace is a missing concept here. Distinct per-platform
+  data gets distinct types, never optional fields on a shared one. A leaf
+  crate naming no domain, no UZE path and no harness, because `uze-core`,
+  `uze-git`, the terminal runtime and the binary all need it and none may
+  depend on another for it.
 - `crates/uze-terminal` — the local terminal runtime: a server owning the
   pseudoterminals and a versioned client protocol, so a pane survives a
-  client leaving. Depends on nothing in the workspace but `uze-document`,
-  whose rule it obeys like everything else that persists — the path to its
-  own workspace is the only thing it computes for itself.
+  client leaving. Depends on nothing in the workspace but `uze-platform`
+  and `uze-document`, whose rule it obeys like everything else that
+  persists — the path to its own workspace is the only thing it computes
+  for itself.
 - `crates/uze-theme` — the design vocabulary: colour `Token`s, named
   `Symbol`s, the theme file schema, and the resolver that completes a
   partial theme from the built-in default. A leaf crate — it resolves no
@@ -372,7 +388,9 @@ need to).
   infrastructure in `crates/uze-testkit` (isolated `TestEnvironment`,
   `FakeHarness`, canonical/scenario fixtures), and the taxonomy documented
   in `tests/README.md` (L0-L4).
-- `playground/` — WSL/distro install helpers (`make wsl-lab`) and a
+- `playground/` — disposable worlds to try this checkout by hand
+  (`make playground-windows`: Windows Sandbox; `make playground-linux`: a
+  throwaway WSL distribution) and a
   default local plugin used for manual dogfooding.
 - `docs/adr/` — numbered architecture decision records (read before making
   a structural change; recent ones cover generated native-package

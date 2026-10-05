@@ -34,6 +34,7 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use uze_core::path::Canonical as _;
 
 use serde::{Deserialize, Serialize};
 
@@ -489,7 +490,7 @@ impl AgentStore {
 /// The document for `project_root`, keyed on the canonical root.
 pub fn store_path(home: &UzeHome, project_root: &Path) -> PathBuf {
     let canonical = project_root
-        .canonicalize()
+        .canonical()
         .unwrap_or_else(|_| project_root.to_path_buf());
     home.tasks_path(&project_id_for(&canonical))
 }
@@ -659,6 +660,12 @@ pub fn locked_reporting<T>(
     project_root: &Path,
     mutate: impl FnOnce(&mut AgentStore) -> Result<T>,
 ) -> Result<(T, Recovery)> {
+    // Before the lock, whose file is what would otherwise create the
+    // project's directory: `ensure` carries the previous layout's records
+    // in only while that directory is new, and a lock taken first left a
+    // release's agents behind at the old name while this build recorded
+    // its own beside nothing.
+    crate::record::ensure(home, project_root)?;
     let path = store_path(home, project_root);
     let _held = MutationGuard::acquire(&path)?;
     // Read in the document crate's own vocabulary rather than through
@@ -704,9 +711,12 @@ impl MutationGuard {
         }
         let parent = path.parent().expect("UZE state paths have a parent");
         fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
+        // Readable or writable, not append-only: Windows refuses to lock a
+        // handle that may only append.
         let file = OpenOptions::new()
             .create(true)
-            .append(true)
+            .truncate(false)
+            .write(true)
             .open(&path)
             .map_err(UzeError::write(&path))?;
         let started = Instant::now();
@@ -965,6 +975,42 @@ mod tests {
     /// used to refuse every mutation of the project, so no agent could be
     /// placed at all — over a file nobody authored. It is moved aside,
     /// the bytes are kept, and the work carries on.
+    /// The first thing a build does to a project it never recorded is often
+    /// to place an agent, under the lock: a release's agents, still at the
+    /// layout's old name, are carried in before that agent is added.
+    #[test]
+    fn a_mutation_meets_the_agents_the_previous_layout_recorded() {
+        let home = home("task-previous-layout");
+        let root = uze_testkit::temp::scratch("task-previous-layout-project");
+        let canonical = root.canonical().unwrap();
+        let old = home
+            .state_dir()
+            .join("tasks")
+            .join(format!("{}.json", project_id_for(&canonical)));
+        fs::create_dir_all(old.parent().unwrap()).unwrap();
+        fs::write(
+            &old,
+            br#"{"schema_version":4,"agents":[{"id":"released","harness":"claude",
+              "label":"a","created_at_unix":1,"ended_at_unix":null,
+              "state":{"state":"running"},"isolation":null}]}"#,
+        )
+        .unwrap();
+
+        locked(&home, &root, |store| {
+            store.upsert(task("placed by this build"));
+            Ok(())
+        })
+        .unwrap();
+
+        let store = load(&home, &root).unwrap();
+        assert!(
+            store.get(&AgentId("released".to_owned())).is_some(),
+            "the release's agent is still recorded"
+        );
+        assert_eq!(store.agents.len(), 2, "beside the one this build placed");
+        assert!(!old.exists(), "and nothing is left at the old name");
+    }
+
     /// Shape 3 kept where the work stood inside the isolation, so an
     /// agent in the project's own root had no state at all — and therefore
     /// no mark on any surface. The rung lifts it out, and gives the one

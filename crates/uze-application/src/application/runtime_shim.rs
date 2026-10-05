@@ -8,8 +8,8 @@ impl UzeApplication {
     /// Idempotently creates/refreshes the PATH shim for `integration` when
     /// it opts in via `IntegrationPort::supports_runtime_integration` — see
     /// that method's doc comment for why there is no separate enabled/
-    /// disabled flag: the shim symlink's own presence at `shims_dir/<name>`
-    /// is the only state this tracks. `Ok(None)` (not an error) when the
+    /// disabled flag: the launcher's own presence at
+    /// [`UzeHome::shim_path`] is the only state this tracks. `Ok(None)` (not an error) when the
     /// integration has no runtime-integration story. Called automatically
     /// by `setup()` — running `uze setup <harness>` is the entire opt-in,
     /// no separate flag. `installed_off_path` is where provisioning just
@@ -36,48 +36,37 @@ impl UzeApplication {
         // differently from `shim_name` is still found.
         let mut candidates = vec![shim_name];
         candidates.extend(integration.runtime_executable_aliases());
-        uze_core::harness_runtime::resolve_real_executable(&candidates, &shims_dir)
-            .or_else(|| installed_off_path.map(Path::to_path_buf))
-            .ok_or_else(|| {
-                UzeError::ExposureUnavailable(format!(
-                    "no real `{shim_name}` executable found on PATH outside {} — install it \
+        uze_core::harness_runtime::resolve_harness_executable(
+            &candidates,
+            &shims_dir,
+            &integration.install_locations(),
+        )
+        .or_else(|| installed_off_path.map(Path::to_path_buf))
+        .ok_or_else(|| {
+            UzeError::ExposureUnavailable(format!(
+                "no real `{shim_name}` executable found on PATH outside {} — install it \
                          first",
-                    shims_dir.display()
-                ))
-            })?;
+                shims_dir.display()
+            ))
+        })?;
 
         fs::create_dir_all(&shims_dir).map_err(UzeError::write(&shims_dir))?;
         let uze_binary = std::env::current_exe().map_err(|source| UzeError::Process {
             program: "uze".to_owned(),
             source,
         })?;
-        let shim_path = shims_dir.join(shim_name);
-        refresh_shim_symlink(&uze_binary, &shim_path)?;
+        let shim_path = self.home.shim_path(shim_name);
+        uze_platform::executable::place_launcher(&uze_binary, &shim_path).map_err(|source| {
+            if source.kind() == std::io::ErrorKind::AlreadyExists {
+                UzeError::ManagedEntryConflict(shim_path.clone())
+            } else {
+                UzeError::Write {
+                    path: shim_path.clone(),
+                    source,
+                }
+            }
+        })?;
 
         Ok(Some(RuntimeShimSetup { shim_path }))
     }
-}
-
-/// Idempotently points `link` at `target`. A symlink already at `link` is
-/// repointed whoever made it — the shims directory is UZE's own — and
-/// anything that is not a symlink is refused as a conflict.
-fn refresh_shim_symlink(target: &Path, link: &Path) -> Result<()> {
-    match fs::symlink_metadata(link) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            let current = fs::read_link(link).map_err(UzeError::read(link))?;
-            if current == target {
-                return Ok(());
-            }
-            fs::remove_file(link).map_err(UzeError::write(link))?;
-        }
-        Ok(_) => return Err(UzeError::ManagedEntryConflict(link.to_path_buf())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(UzeError::Read {
-                path: link.to_path_buf(),
-                source: error,
-            });
-        }
-    }
-    uze_core::persistence::create_symlink(target, link)
 }

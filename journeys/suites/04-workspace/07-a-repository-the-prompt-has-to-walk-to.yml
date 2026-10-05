@@ -89,7 +89,7 @@ scenes:
     then:
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import json
             spaces = json.load(open('{uze_home}/state/terminal/workspace.json'))['spaces']
             print('%d space(s)' % len(spaces))
@@ -99,12 +99,12 @@ scenes:
         about: the walk opened a space beside the one uze started in
       - cmd:
           run: |
-            python3 -c "
-            import json
+            {python} -c "
+            import json, pathlib
             spaces = json.load(open('{uze_home}/state/terminal/workspace.json'))['spaces']
-            print('\n'.join(space['root'] for space in spaces))
+            print('\n'.join(pathlib.Path(space['root']).as_posix() for space in spaces))
             "
-          stdout_contains: "/projects/group/engine"
+          stdout_contains: "{world}/projects/group/engine"
         about: rooted at the repository two folders down, not at the folder on the way
       - dir: "{world}/projects/group/engine/.worktrees/*"
         count: 0

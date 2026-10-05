@@ -121,8 +121,8 @@ impl CodexIntegration {
 
     /// Env-based constructor for the CLI composition root (`registry.rs`).
     pub fn from_env(uze_home: UzeHome) -> Result<Self> {
-        let home = std::env::var_os("HOME").ok_or(UzeError::MissingHomeDirectory)?;
-        Ok(Self::new(PathBuf::from(home).join(".agents"), uze_home))
+        let home = uze_core::user_home().ok_or(UzeError::MissingHomeDirectory)?;
+        Ok(Self::new(home.join(".agents"), uze_home))
     }
 
     fn provisioning_executable(&self) -> String {
@@ -137,6 +137,10 @@ impl CodexIntegration {
 impl IntegrationPort for CodexIntegration {
     fn id(&self) -> &'static str {
         "codex"
+    }
+
+    fn install_locations(&self) -> Vec<std::path::PathBuf> {
+        native_installer_destination("codex").into_iter().collect()
     }
 
     /// `codex` is both the stable id and the name people type — the label
@@ -273,14 +277,15 @@ impl IntegrationPort for CodexIntegration {
         let route = OfficialRoute {
             label: "Codex",
             program: "codex",
-            install: official_installer("https://chatgpt.com/codex/install.sh", "sh")
-                .with_env(NON_INTERACTIVE, "1"),
+            install: official_installer(
+                Some(("https://chatgpt.com/codex/install.sh", "sh")),
+                Some("https://chatgpt.com/codex/install.ps1"),
+            ),
             // Real-CLI dogfood against codex-cli 0.148.0 found `--upgrade` is not
             // a recognized flag — `codex --help` lists `update` as a
             // subcommand instead.
-            update: ProcessSpec::new(executable.clone(), ["update"])
-                .with_inherited_output()
-                .with_env(NON_INTERACTIVE, "1"),
+            update: ProcessSpec::new(executable.clone(), ["update"]).with_inherited_output(),
+            environment: &[(NON_INTERACTIVE, "1")],
             method: "official-native-installer",
             manual_route: "https://github.com/openai/codex/blob/main/README.md",
         };

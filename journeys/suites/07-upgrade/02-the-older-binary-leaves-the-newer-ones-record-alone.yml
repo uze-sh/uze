@@ -1,6 +1,10 @@
 journey: a release older than this build never takes this build's records
 tags: [upgrade, cli, recovery]
 proves: web/content/docs/workspace/index.mdx
+unsupported:
+  windows: |
+    No Windows release exists yet to upgrade from: the previous release is
+    built from its tag, and every tag so far predates native Windows.
 about: |
   Recovery moves in one direction. A record older than this build is this
   build's to carry across or, failing that, to set aside. A record *newer*
@@ -65,7 +69,7 @@ scenes:
     then:
       - cmd:
           run: |
-            python3 -c "
+            {python} -c "
             import glob
             [store] = glob.glob('{uze_home}/state/projects/*/agents.json')
             before = open('{world}/recorded-before').read()

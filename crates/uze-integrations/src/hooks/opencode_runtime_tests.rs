@@ -52,7 +52,7 @@ fn observing(command: &str, timeout: u16) -> PortableHook {
         matchers: Vec::new(),
         handlers: vec![CommandHook {
             handler_type: CommandHandlerType::Command,
-            command: command.to_owned(),
+            command: command.into(),
             timeout,
         }],
         effect: HookEffect::Observe,
@@ -150,7 +150,7 @@ fn the_plugin_runs_the_handlers_on_the_harnesss_own_runtime() {
             .into_iter()
             .map(|name| CommandHook {
                 handler_type: CommandHandlerType::Command,
-                command: format!("${{PLUGIN_ROOT}}/scripts/{name}"),
+                command: format!("${{PLUGIN_ROOT}}/scripts/{name}").into(),
                 timeout: 10,
             })
             .collect(),

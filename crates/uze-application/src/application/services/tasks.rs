@@ -137,7 +137,7 @@ impl Workspace<'_> {
                 Some("this harness offers no way to continue a conversation".to_owned()),
             );
         }
-        let launcher = self.0.home.shims_dir().join(integration.shim_name());
+        let launcher = self.0.home.shim_path(integration.shim_name());
         if launcher.exists() {
             return (launcher, None);
         }

@@ -16,34 +16,60 @@
 //! which commands a workflow actually shelled out to (`assert_calls`-shaped
 //! evidence) instead of trusting that a script "probably ran".
 //!
-//! Rule semantics: first matching rule wins (rules are matched in insertion
-//! order); the fallback is `exit 0`. Scripts are POSIX `sh` — the same
-//! mechanism the existing tests used, but centralized and self-describing.
-//! On non-UNIX platforms the builder panics rather than silently producing a
-//! script the test environment cannot execute.
+//! Rule semantics: the argv is joined by spaces, rules are matched in
+//! insertion order against it, the first match wins, and the fallback is
+//! `exit 0`.
+//!
+//! The executable is the `uze-fake-harness` binary itself, placed in the bin
+//! directory under the stand-in's name (`claude`, `claude.exe`) beside its
+//! rule table: started under any name but its own, that binary is the
+//! stand-in, and it runs the table (see [`stand_in`]). Nothing here is a
+//! shell script, so the same stand-in answers on every platform.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use serde::{Deserialize, Serialize};
+
+pub mod stand_in;
+
 /// One rule's behavior when its pattern matches.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Action {
     /// Print `stdout` (with a trailing newline) and exit 0.
     Stdout(String),
     /// Exit with `code` and no output.
     Exit(i32),
-    /// Raw POSIX `sh` lines inserted verbatim into the `case` arm (the
-    /// escape hatch for vendor shapes too odd to model; the arm must end in
-    /// `exit` or fall through to the case end).
-    Script(String),
     /// Touch a marker file and exit 0.
     TouchFile(PathBuf),
+    /// Print the environment the stand-in was started with, one
+    /// `NAME=value` per line, and exit 0: what a launcher handed the
+    /// harness, read back.
+    PrintEnvironment,
+    /// Record `PID=<its own pid>` and its environment at `into`, whole or
+    /// not at all, then hold its process for a minute: a harness started in
+    /// a pane, caught running.
+    RecordLaunch { into: PathBuf },
     /// Simulate a vendor `mcp add` state transition: skip
     /// `--scope <x>`/`--transport <y>`/`--`, take the next token as the
     /// entry name, touch `<state_dir>/<name>`, exit 0.
     McpEntryMark(PathBuf),
+    /// A vendor's MCP registry, one marker file per entry under
+    /// `state_dir`: `mcp get <name>` succeeds when the entry is there,
+    /// `mcp remove <name>` drops it, and `mcp add …` records the name
+    /// [`Action::McpEntryMark`] would — refused, as the vendor refuses it,
+    /// when `names` is [`McpNames::Claude`] and the name breaks Claude's
+    /// rule. Any other `mcp` verb succeeds.
+    McpRegistry { state_dir: PathBuf, names: McpNames },
+    /// Stage the plugin directory `plugin install <source>` names under
+    /// `<home>/<under_home>/<its declared name>`, the way Antigravity's CLI
+    /// does, `<home>` being the home the stand-in was started with.
+    StagePlugin { under_home: PathBuf },
+    /// Write `reason` on stderr and exit 1: a vendor refusing.
+    Refuse { reason: String },
     /// Simulate a vendor `plugin install <source>`: copy the source
-    /// directory (argv position `arg_index`, 1-based shell position) into
-    /// `<dest>/<basename>` and exit 0.
+    /// directory (argv position `arg_index`, 1-based like a shell's `$N`)
+    /// into `<dest>/<basename>` and exit 0.
     CliPluginInstall { dest: PathBuf, arg_index: usize },
     /// The full vendor plugin-marketplace lifecycle as a state machine:
     /// `plugin marketplace add|list`, `plugin install|add <sel>`,
@@ -77,72 +103,49 @@ pub enum Action {
         transcripts_root: PathBuf,
         banner: String,
     },
+    /// The same transcript, named by the conversation the second argument
+    /// names, written empty, and nothing held: a harness started only to
+    /// prove which conversation it was told to open.
+    RecordConversation { transcripts_root: PathBuf },
     /// Antigravity's stub-install lifecycle: `plugin install <root>`
     /// stages a byte copy under `dest/<basename>` and `plugin list`
     /// answers `{"imports":[{"name":...}]}` from persisted state.
     VendorAgy { state_dir: PathBuf, dest: PathBuf },
+    /// What the Codex installer ends with: a question asked on the
+    /// terminal, whatever stdin is, answered by nobody when no one is
+    /// watching. Every stand-in's update verb asks it, so a provisioning
+    /// step that leaves its child a terminal hangs.
+    AsksOnTheTerminal,
+    /// An `ssh` to a forge: serves `git-upload-pack` for the bare
+    /// repositories under `root`, whatever host it is asked for. `-G` (the
+    /// configuration query) succeeds; a host under `.invalid` does not
+    /// resolve; and with no `SSH_AUTH_SOCK` the forge refuses the key, which
+    /// is how a test proves the operator's agent socket crossed UZE's
+    /// stripped environment.
+    ForgeSsh { root: PathBuf },
 }
 
-/// The POSIX script a scripted agent runs — see
-/// [`FakeHarness::scripted_agent`].
-const SCRIPTED_AGENT: &str = r#"#!/bin/sh
-# scripted agent generated by uze-testkit: plays the step script written
-# for the checkout it was started in, then answers what is typed into its
-# pane, the way a harness's prompt would take a message.
-slot=$(basename "$PWD")
-dir="${AGENT_SCRIPTS:?AGENT_SCRIPTS must name the scripts directory}"
-log="$dir/$slot.log"
-if [ -f "$dir/$slot.start.sh" ]; then
-  sh "$dir/$slot.start.sh" >>"$log" 2>&1
-fi
-: > "$dir/$slot.started"
-while IFS= read -r line; do
-  printf '%s
-' "$line" >> "$dir/$slot.inbox"
-  case "$line" in
-    *"rebase --continue"*)
-      if [ -f "$dir/$slot.conflict.sh" ]; then
-        sh "$dir/$slot.conflict.sh" >>"$log" 2>&1
-      fi
-      : > "$dir/$slot.resolved"
-      ;;
-    *"checks failed"*)
-      if [ -f "$dir/$slot.gate.sh" ]; then
-        sh "$dir/$slot.gate.sh" >>"$log" 2>&1
-      fi
-      : > "$dir/$slot.fixed"
-      ;;
-    *"Open a pull request"*|*"Open a merge request"*)
-      if [ -f "$dir/$slot.request.sh" ]; then
-        sh "$dir/$slot.request.sh" >>"$log" 2>&1
-      fi
-      : > "$dir/$slot.opened"
-      ;;
-    quit)
-      exit 0
-      ;;
-  esac
-done
-"#;
-
-/// What the Codex installer ends with: a question asked on `/dev/tty`,
-/// whatever stdin is, answered by nobody when no one is watching. Every
-/// stand-in's update verb and every installer the stand-in `curl` serves
-/// asks it, so a provisioning step that leaves its child a terminal hangs.
+/// The question [`Action::AsksOnTheTerminal`] asks, as the POSIX installer
+/// the stand-in `curl` serves spells it: what a `curl … | sh` route pipes
+/// into its shell.
 const ASKS_ON_THE_TERMINAL: &str = r#"if ( : </dev/tty ) 2>/dev/null; then
   printf 'Start now? [y/N] ' >/dev/tty
   read -r answer </dev/tty
 fi"#;
 
+/// Which names a stand-in's MCP registry takes.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum McpNames {
+    Any,
+    /// Letters, digits, hyphens and underscores only.
+    Claude,
+}
+
 /// Vendor flavor for [`Action::VendorMarketplace`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum MarketplaceVendor {
     Claude,
     Codex,
-}
-
-fn asks_on_the_terminal() -> Action {
-    Action::Script(format!("{ASKS_ON_THE_TERMINAL}\nexit 0"))
 }
 
 impl Action {
@@ -152,18 +155,36 @@ impl Action {
     }
 }
 
-enum Pattern {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) enum Pattern {
     /// Exact match of the full argv joined by spaces.
     Exact(String),
-    /// Prefix match: argv starts with these tokens.
+    /// Prefix match: the joined argv starts with these tokens.
     Prefix(String),
-    /// Special-case `--version` (the default behavior is a version echo).
-    Version,
+    /// The joined argv holds this anywhere.
+    Containing(String),
 }
 
-struct Rule {
-    pattern: Pattern,
-    action: Action,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct Rule {
+    pub(crate) pattern: Pattern,
+    pub(crate) action: Action,
+}
+
+/// What a stand-in is, written beside it as `.fake/<name>.json`.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) enum Role {
+    /// A vendor CLI answering by its rule table; `--version` answers
+    /// `version_line` before any rule is asked.
+    Rules {
+        log: PathBuf,
+        /// Shared by several stand-ins: `<executable>|<args>` per call.
+        shared_log: Option<PathBuf>,
+        version_line: String,
+        rules: Vec<Rule>,
+    },
+    /// See [`FakeHarness::scripted_agent`].
+    ScriptedAgent { log: PathBuf },
 }
 
 /// Mutable rule-table builder; `.build()` materializes the executable.
@@ -171,6 +192,7 @@ pub struct FakeHarnessBuilder {
     name: String,
     bin_dir: PathBuf,
     invocations_dir: PathBuf,
+    shared_log: Option<PathBuf>,
     rules: Vec<Rule>,
     version_line: String,
 }
@@ -195,336 +217,106 @@ impl FakeHarnessBuilder {
         self
     }
 
+    /// `on` with the joined argv holding `token` anywhere (`--json`).
+    pub fn on_containing(mut self, token: &str, action: Action) -> Self {
+        self.rules.push(Rule {
+            pattern: Pattern::Containing(token.to_owned()),
+            action,
+        });
+        self
+    }
+
+    /// Also logs every call to `log`, which several stand-ins may share, as
+    /// `<the executable's path>|<its arguments>`: which binary a workflow
+    /// reached, not only what it was asked.
+    pub fn shared_log(mut self, log: impl Into<PathBuf>) -> Self {
+        self.shared_log = Some(log.into());
+        self
+    }
+
     /// Overrides the `--version` answer (default: the harness name).
     pub fn version_line(mut self, line: impl Into<String>) -> Self {
         self.version_line = line.into();
         self
     }
 
-    /// Writes the executable into `bin_dir` with mode 0o755 and returns the
-    /// ready-to-assert handle.
+    /// Places the stand-in in `bin_dir` beside its rule table and returns
+    /// the ready-to-assert handle.
     pub fn build(self) -> FakeHarness {
-        #[cfg(not(unix))]
+        let log = self.invocations_dir.join(format!("{}.log", self.name));
+        place(
+            &self.bin_dir,
+            &self.name,
+            &Role::Rules {
+                log,
+                shared_log: self.shared_log,
+                version_line: self.version_line,
+                rules: self.rules,
+            },
+        );
+        FakeHarness::placed(&self.bin_dir, &self.name, self.invocations_dir)
+    }
+}
+
+/// Writes `role` as the table the stand-in called `name` reads, and puts the
+/// dispatcher in `bin_dir` under that name (see [`stand_in_file`]). Never a
+/// symbolic link, which would leave the stand-in reading its own name off
+/// the dispatcher's path.
+fn place(bin_dir: &Path, name: &str, role: &Role) {
+    let tables = bin_dir.join(stand_in::TABLES);
+    std::fs::create_dir_all(&tables)
+        .unwrap_or_else(|error| panic!("FakeHarness: {}: {error}", tables.display()));
+    let table = tables.join(format!("{name}.json"));
+    std::fs::write(
+        &table,
+        serde_json::to_vec_pretty(role).expect("a stand-in's table serializes"),
+    )
+    .unwrap_or_else(|error| panic!("FakeHarness: {}: {error}", table.display()));
+
+    let executable = bin_dir.join(uze_platform::executable::file_name(name));
+    let _ = std::fs::remove_file(&executable);
+    let dispatcher = dispatcher();
+    uze_platform::executable::place_copy(&dispatcher, &executable).unwrap_or_else(|error| {
         panic!(
-            "FakeHarness generates POSIX sh scripts; supported on Unix only ({})",
-            self.name
-        );
+            "FakeHarness: cannot place {} as {}: {error}",
+            dispatcher.display(),
+            executable.display()
+        )
+    });
+    uze_platform::executable::make_runnable(&executable)
+        .unwrap_or_else(|error| panic!("FakeHarness: {}: {error}", executable.display()));
+}
 
-        let (script_path, log_path) = {
-            let script_path = self.bin_dir.join(&self.name);
-            let log_path = self.invocations_dir.join(format!("{}.log", self.name));
-            (script_path, log_path)
-        };
-
-        let mut script = format!(
-            "#!/bin/sh\n# fake harness '{}' generated by uze-testkit\n\
-             echo \"$*\" >> '{}'\ncase \"$*\" in\n",
-            self.name,
-            log_path.display()
-        );
-
-        // `--version` echoes the declared line unless a rule claims it first.
-        let version_rule = Rule {
-            pattern: Pattern::Version,
-            action: Action::stdout(self.version_line.clone()),
-        };
-        for rule in std::iter::once(version_rule).chain(self.rules) {
-            match rule.pattern {
-                Pattern::Version => {
-                    script.push_str("  --version)\n");
-                }
-                Pattern::Exact(expected) => {
-                    // Quotes are mandatory: the pattern is a single shell
-                    // word (dash rejects space-separated words), and our
-                    // argv joins tokens with spaces.
-                    script.push_str(&format!("  \"{expected}\")\n"));
-                }
-                Pattern::Prefix(prefix) => {
-                    // `"tokens"*)` — one shell word: quoted literals plus an
-                    // UNQUOTED wildcard (dash treats a wholly-quoted `*` as
-                    // a literal, which would never match).
-                    script.push_str(&format!("  \"{prefix}\"*)\n"));
-                }
-            }
-            script.push_str(&emit_action(&rule.action));
-            script.push_str("  ;;\n");
-        }
-
-        script.push_str("esac\nexit 0\n");
-
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::write(&script_path, script).unwrap_or_else(|error| {
+/// The `uze-fake-harness` binary: `UZE_FAKE_HARNESS` when set, otherwise
+/// where Cargo put it beside the running test, which every `cargo test` of
+/// the root package builds (`required-features = ["dev-servers"]`, turned on
+/// by its self dev-dependency).
+pub fn dispatcher() -> PathBuf {
+    if let Some(path) = std::env::var_os("UZE_FAKE_HARNESS") {
+        return PathBuf::from(path);
+    }
+    let name = uze_platform::executable::file_name("uze-fake-harness");
+    std::env::current_exe()
+        .ok()
+        .and_then(|test| {
+            test.ancestors()
+                .skip(1)
+                .take(3)
+                .map(|directory| directory.join(&name))
+                .find(|candidate| candidate.is_file())
+        })
+        .unwrap_or_else(|| {
             panic!(
-                "FakeHarness: failed to write {}: {error}",
-                script_path.display()
+                "FakeHarness: no `{name}` beside this test; run the root package's tests \
+                 (`cargo test`), which build it, or name one in UZE_FAKE_HARNESS"
             )
-        });
-        let mut permissions = std::fs::metadata(&script_path)
-            .unwrap_or_else(|error| {
-                panic!(
-                    "FakeHarness: failed to stat {}: {error}",
-                    script_path.display()
-                )
-            })
-            .permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(&script_path, permissions).unwrap();
-
-        FakeHarness {
-            name: self.name,
-            script_path,
-            invocations_dir: self.invocations_dir,
-        }
-    }
-}
-
-fn emit_action(action: &Action) -> String {
-    match action {
-        Action::Stdout(text) => format!("    echo '{}'\n    exit 0\n", text.replace('\'', "'\\''")),
-        Action::Exit(code) => format!("    exit {code}\n"),
-        Action::Script(lines) => {
-            let mut block = String::new();
-            for line in lines.lines() {
-                block.push_str("    ");
-                block.push_str(line);
-                block.push('\n');
-            }
-            block
-        }
-        Action::TouchFile(path) => format!("    touch '{}'\n    exit 0\n", path.display()),
-        Action::McpEntryMark(state_dir) => {
-            let mut block = String::from("    shift 2\n");
-            block.push_str("    name=\"\"\n");
-            block.push_str("    while [ \"$#\" -gt 0 ]; do\n");
-            block.push_str("      case \"$1\" in\n");
-            block.push_str("        --scope|--transport) shift 2 ;;\n");
-            block.push_str("        --) shift ; break ;;\n");
-            block.push_str("        *) name=\"$1\" ; shift ;;\n");
-            block.push_str("      esac\n");
-            block.push_str("    done\n");
-            block.push_str(&format!(
-                "    [ -n \"$name\" ] && touch '{}/'\"$name\"\n",
-                state_dir.display()
-            ));
-            block.push_str("    exit 0\n");
-            block
-        }
-        Action::CliPluginInstall { dest, arg_index } => format!(
-            "    plugin_dest='{}'\n    mkdir -p \"$plugin_dest\"\n    cp -R \"${}\" \"$plugin_dest/$(basename \"${}\")\" 2>/dev/null || true\n    exit 0\n",
-            dest.display(),
-            arg_index,
-            arg_index
-        ),
-        Action::InteractiveSession { banner } => emit_interactive_session(banner),
-        Action::ConversationSession {
-            transcripts_root,
-            banner,
-        } => {
-            // Claude Code's own naming: one directory per working
-            // directory, every character that is not alphanumeric replaced
-            // by a hyphen, one `.jsonl` per conversation named by its id.
-            let mut block = format!(
-                "    transcripts='{}'\n\
-                 \x20   slug=$(printf '%s' \"$PWD\" | sed 's/[^A-Za-z0-9]/-/g')\n\
-                 \x20   mkdir -p \"$transcripts/$slug\"\n\
-                 \x20   printf '{{\"session\":\"%s\"}}\\n' \"$2\" >> \"$transcripts/$slug/$2.jsonl\"\n",
-                transcripts_root.display()
-            );
-            block.push_str(&emit_interactive_session(banner));
-            block
-        }
-        Action::VendorMarketplace { state_dir, vendor } => {
-            emit_vendor_marketplace(state_dir, *vendor)
-        }
-        Action::VendorAgy { state_dir, dest } => emit_vendor_agy(state_dir, dest),
-    }
-}
-
-/// The banner and the read loop an interactive stand-in holds its terminal
-/// with. One copy: a session that also records its conversation differs
-/// only in what it does before the prompt appears.
-fn emit_interactive_session(banner: &str) -> String {
-    format!(
-        "    printf '%s\\n' '{banner}'\n\
-         \x20   printf 'cwd %s\\n' \"$PWD\"\n\
-         \x20   while IFS= read -r line; do\n\
-         \x20     [ \"$line\" = '/exit' ] && exit 0\n\
-         \x20     printf '> %s\\n' \"$line\"\n\
-         \x20   done\n\
-         \x20   exit 0\n"
-    )
-}
-
-/// Generates the Antigravity stub-install state-machine script.
-fn emit_vendor_agy(state_dir: &Path, dest: &Path) -> String {
-    let mut block = String::new();
-    block.push_str(&format!("    state_dir='{}'\n", state_dir.display()));
-    block.push_str(&format!("    dest='{}'\n", dest.display()));
-    block.push_str("    mkdir -p \"$state_dir\"\n");
-    block.push_str("    case \"$*\" in\n");
-    block.push_str("      \"plugin install\"*)\n");
-    block.push_str("        root=\"$3\"\n");
-    // The real `agy` stages a plugin under its manifest's `name`, not its
-    // directory's: a generated plugin lives in `<name>--<market>/`.
-    block.push_str(
-        "        id=$(sed -n 's/^[[:space:]]*\"name\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' \"$root/plugin.json\" 2>/dev/null | head -n 1)\n",
-    );
-    block.push_str("        [ -n \"$id\" ] || id=$(basename \"$root\")\n");
-    block.push_str("        mkdir -p \"$dest\"\n");
-    block.push_str("        cp -R \"$root\" \"$dest/$id\" 2>/dev/null || true\n");
-    block.push_str("        printf '%s\\n' \"$id\" >> \"$state_dir/installed\"\n");
-    block.push_str("        exit 0\n        ;;\n");
-    block.push_str("      \"plugin list\"*)\n");
-    block.push_str("        out=\"\"\n");
-    block.push_str("        while IFS= read -r id; do\n");
-    block.push_str("          out=\"$out{\\\"name\\\":\\\"$id\\\"},\"\n");
-    block.push_str("        done < \"$state_dir/installed\" 2>/dev/null\n");
-    block.push_str("        printf '{\"imports\":[%s]}' \"${out%,}\"\n");
-    block.push_str("        exit 0\n        ;;\n");
-    block.push_str("      \"plugin uninstall\"*)\n");
-    block.push_str("        id=\"$3\"\n");
-    block.push_str(&drop_installed_id("id"));
-    block.push_str("        rm -rf \"$dest/$id\"\n");
-    block.push_str("        exit 0\n        ;;\n");
-    block.push_str("    esac\n");
-    block
-}
-
-/// Shell that removes the line holding `$<variable>` from the persisted
-/// list of installed ids.
-///
-/// `grep -vxF` rather than `sed -i`: BSD `sed` — which is macOS's `sed` —
-/// reads whatever follows `-i` as the backup suffix, so the GNU spelling
-/// silently consumes the script as a suffix and then treats the filename as
-/// the script. The stand-in would answer "still installed" forever, and the
-/// lifecycle tests would fail somewhere far from the cause. `-x -F` also
-/// removes the reason the `sed` form needed a `\|...|` delimiter at all: a
-/// package id containing `/` is a literal string here, never a pattern.
-fn drop_installed_id(variable: &str) -> String {
-    format!(
-        "        if [ -n \"${variable}\" ] && [ -f \"$state_dir/installed\" ]; then\n\
-         \x20         grep -vxF \"${variable}\" \"$state_dir/installed\" \
-         > \"$state_dir/installed.new\"\n\
-         \x20         mv \"$state_dir/installed.new\" \"$state_dir/installed\"\n\
-         \x20       fi\n"
-    )
-}
-
-/// Generates the vendored marketplace state-machine script for
-/// [`Action::VendorMarketplace`].
-fn emit_vendor_marketplace(state_dir: &Path, vendor: MarketplaceVendor) -> String {
-    let state = format!("'{}'", state_dir.display());
-    let mut block = String::new();
-    block.push_str(&format!("    state_dir={state}\n"));
-    block.push_str("    mkdir -p \"$state_dir\"\n");
-    // `plugin marketplace add <root>`: remember root and marketplace name
-    // (read out of the catalogue UZE itself wrote; default `uze-store`).
-    block.push_str("    case \"$*\" in\n");
-    block.push_str("      \"plugin marketplace add\"*)\n");
-    block.push_str("        root=\"\"\n");
-    block.push_str("        for arg in \"$@\"; do root=\"$arg\"; done\n");
-    block.push_str("        printf '%s' \"$root\" > \"$state_dir/root\"\n");
-    block.push_str(
-        "        name=$(sed -n 's/.*\"name\" *: *\"\\([^\"]*\\)\".*/\\1/p' \"$root/marketplace.json\" \"$root/.claude-plugin/marketplace.json\" \"$root/.agents/plugins/marketplace.json\" 2>/dev/null | head -1)\n",
-    );
-    block.push_str("        [ -n \"$name\" ] || name=\"uze-store\"\n");
-    block.push_str("        printf '%s' \"$name\" > \"$state_dir/name\"\n");
-    block.push_str("        exit 0\n");
-    block.push_str("        ;;\n");
-    // `plugin install|add <selector>`: record the selector.
-    block.push_str("      \"plugin install\"*|\"plugin add\"*)\n");
-    block.push_str("        sel=\"$3\"\n");
-    block.push_str(
-        "        [ -n \"$sel\" ] && printf '%s\\n' \"$sel\" >> \"$state_dir/installed\"\n",
-    );
-    block.push_str("        id=\"${sel%%@*}\"\n");
-    block.push_str("        root=$(cat \"$state_dir/root\" 2>/dev/null)\n");
-    block.push_str("        [ -n \"$root\" ] && mkdir -p \"$root/$id\"\n");
-    block.push_str("        exit 0\n");
-    block.push_str("        ;;\n");
-    match vendor {
-        MarketplaceVendor::Claude => {
-            block.push_str("      \"plugin marketplace list\"*)\n");
-            block.push_str("        root=$(cat \"$state_dir/root\" 2>/dev/null)\n");
-            block.push_str("        name=$(cat \"$state_dir/name\" 2>/dev/null)\n");
-            block.push_str("        if [ -n \"$root\" ]; then\n");
-            block.push_str(
-                "          printf '[{\"name\":\"%s\",\"path\":\"%s\"}]' \"$name\" \"$root\"\n",
-            );
-            block.push_str("        else\n          printf '[]'\n        fi\n");
-            block.push_str("        exit 0\n        ;;\n");
-            block.push_str("      \"plugin list\"*)\n");
-            block.push_str("        out=\"\"\n");
-            block.push_str("        while IFS= read -r sel; do\n");
-            block.push_str(
-                "          entry=$(printf '{\"id\":\"%s\",\"enabled\":true}' \"$sel\")\n",
-            );
-            block.push_str("          out=\"$out$entry,\"\n");
-            block.push_str("        done < \"$state_dir/installed\" 2>/dev/null\n");
-            block.push_str("        printf '[%s]' \"${out%,}\"\n");
-            block.push_str("        exit 0\n        ;;\n");
-            block.push_str("      \"plugin uninstall\"*)\n");
-            block.push_str("        sel=\"$3\"\n");
-            block.push_str(&drop_installed_id("sel"));
-            block.push_str("        exit 0\n        ;;\n");
-        }
-        MarketplaceVendor::Codex => {
-            block.push_str("      \"plugin marketplace list\"*)\n");
-            block.push_str("        root=$(cat \"$state_dir/root\" 2>/dev/null)\n");
-            block.push_str("        name=$(cat \"$state_dir/name\" 2>/dev/null)\n");
-            block.push_str("        if [ -n \"$root\" ]; then\n");
-            block.push_str(
-                "          printf '{\"marketplaces\":[{\"name\":\"%s\",\"root\":\"%s\"}]}' \"$name\" \"$root\"\n",
-            );
-            block.push_str("        else\n          printf '{\"marketplaces\":[]}'\n        fi\n");
-            block.push_str("        exit 0\n        ;;\n");
-            block.push_str("      \"plugin list\"*)\n");
-            block.push_str("        out=\"\"\n");
-            block.push_str("        root=$(cat \"$state_dir/root\" 2>/dev/null)\n");
-            block.push_str("        name=$(cat \"$state_dir/name\" 2>/dev/null)\n");
-            block.push_str("        while IFS= read -r sel; do\n");
-            // `sel` is the vendor selector `{active_name}@{native
-            // marketplace}` (ADR-036: `active_name` is bare, never
-            // marketplace-qualified). The real Codex resolves an install by
-            // looking up `active_name` in its own catalogue and reporting
-            // back that entry's `source.path` — the generated dir named by
-            // the qualified `{plugin}@{marketplace}` id (see
-            // `codex::generate::generated_catalogue_document`), which has no
-            // fixed relationship to `active_name` any more (an alias can
-            // make them differ). Do the same lookup here, against the exact
-            // catalogue UZE wrote, instead of deriving the path from the
-            // selector's shape.
-            block.push_str("          active=\"${sel%%@*}\"\n");
-            block.push_str("          catalog=\"$root/.agents/plugins/marketplace.json\"\n");
-            block.push_str(
-                "          nameline=$(grep -n \"\\\"name\\\": *\\\"$active\\\"\" \"$catalog\" 2>/dev/null | head -1 | cut -d: -f1)\n",
-            );
-            block.push_str("          relpath=\"\"\n");
-            block.push_str("          if [ -n \"$nameline\" ]; then\n");
-            block.push_str(
-                "            relpath=$(tail -n \"+$nameline\" \"$catalog\" | sed -n 's/.*\"path\" *: *\"\\([^\"]*\\)\".*/\\1/p' | head -1)\n",
-            );
-            block.push_str("          fi\n");
-            block.push_str("          relpath=\"${relpath#./}\"\n");
-            block.push_str("          entry=$(printf '{\"pluginId\":\"%s\",\"enabled\":true,\"installed\":true,\"marketplaceName\":\"%s\",\"path\":\"%s/%s\"}' \"$sel\" \"$name\" \"$root\" \"$relpath\")\n");
-            block.push_str("          out=\"$out$entry,\"\n");
-            block.push_str("        done < \"$state_dir/installed\" 2>/dev/null\n");
-            block.push_str("        printf '{\"installed\":[%s]}' \"${out%,}\"\n");
-            block.push_str("        exit 0\n        ;;\n");
-            block.push_str("      \"plugin remove\"*)\n");
-            block.push_str("        sel=\"$3\"\n");
-            block.push_str(&drop_installed_id("sel"));
-            block.push_str("        exit 0\n        ;;\n");
-        }
-    }
-    block.push_str("    esac\n");
-    block
+        })
 }
 
 /// Materialized fake executable plus its invocation log.
 pub struct FakeHarness {
     name: String,
-    script_path: PathBuf,
+    executable: PathBuf,
     invocations_dir: PathBuf,
 }
 
@@ -541,28 +333,26 @@ impl FakeHarness {
             name: name.to_owned(),
             bin_dir: bin_dir.to_path_buf(),
             invocations_dir: bin_dir.join(".invocations"),
+            shared_log: None,
             rules: Vec::new(),
             version_line: format!("{name} fake 0.0.0"),
         }
     }
 
-    /// The executable path (for `PATH`-based resolution checks).
-    /// A long-lived, interactive fake agent: started in a checkout, it runs
-    /// `<scripts_dir>/<checkout name>.start.sh` when present, touches
+    /// A long-lived, interactive fake agent: started in a checkout, it does
+    /// the `start` [`Steps`] written for that checkout when present, touches
     /// `<checkout name>.started`, then reads its pane line by line — a line
-    /// mentioning `rebase --continue` runs `<checkout name>.conflict.sh` and
-    /// touches `.resolved`; one asking it to open a pull request runs
-    /// `.request.sh` and touches `.opened`; one mentioning `checks failed`
-    /// runs `.gate.sh`
-    /// and touches `.fixed`; `quit` exits. Every line lands in `.inbox`.
-    /// `AGENT_SCRIPTS` must name `scripts_dir` in the agent's environment.
+    /// mentioning `rebase --continue` does the `conflict` steps and touches
+    /// `.resolved`; one asking it to open a pull request does `request` and
+    /// touches `.opened`; one mentioning `checks failed` does `gate` and
+    /// touches `.fixed`; `quit` exits. Every line lands in `.inbox`.
+    /// `AGENT_SCRIPTS` must name the scripts directory in the agent's
+    /// environment.
     ///
     /// What a model would do, made deterministic: an engine test scripts
     /// the commits an agent makes and how it answers a message, and asserts
     /// on Git instead of on a transcript.
     pub fn scripted_agent(bin_dir: &Path, name: &str) -> FakeHarness {
-        #[cfg(not(unix))]
-        panic!("FakeHarness generates POSIX sh scripts; supported on Unix only ({name})");
         let invocations_dir = bin_dir.join(".invocations");
         std::fs::create_dir_all(&invocations_dir).unwrap_or_else(|error| {
             panic!(
@@ -570,29 +360,36 @@ impl FakeHarness {
                 invocations_dir.display()
             )
         });
-        let script_path = bin_dir.join(name);
-        std::fs::write(&script_path, SCRIPTED_AGENT).unwrap_or_else(|error| {
-            panic!(
-                "FakeHarness: failed to write {}: {error}",
-                script_path.display()
-            )
-        });
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        place(
+            bin_dir,
+            name,
+            &Role::ScriptedAgent {
+                log: invocations_dir.join(format!("{name}.log")),
+            },
+        );
+        FakeHarness::placed(bin_dir, name, invocations_dir)
+    }
+
+    fn placed(bin_dir: &Path, name: &str, invocations_dir: PathBuf) -> FakeHarness {
         FakeHarness {
             name: name.to_owned(),
-            script_path,
+            executable: bin_dir.join(uze_platform::executable::file_name(name)),
             invocations_dir,
         }
     }
 
+    /// The executable path (for `PATH`-based resolution checks).
     pub fn path(&self) -> PathBuf {
-        self.script_path.clone()
+        self.executable.clone()
     }
 
     /// A `Command` that spawns this fake with the caller-supplied args.
     pub fn command(&self) -> Command {
-        Command::new(&self.script_path)
+        Command::new(&self.executable)
+    }
+    /// The file every call is logged to, one argument line per call.
+    pub fn invocations_log(&self) -> PathBuf {
+        self.invocations_dir.join(format!("{}.log", self.name))
     }
 
     /// Parsed invocation log: one entry per call, tokens split on
@@ -668,7 +465,7 @@ impl Standard<'_> {
                 self.conversational(
                     FakeHarness::new(self.bin_dir, "claude")
                         .version_line("9.9.9 (Fake Claude)")
-                        .on(["update"], asks_on_the_terminal())
+                        .on(["update"], Action::AsksOnTheTerminal)
                         .on_prefix(
                             ["plugin"],
                             Action::VendorMarketplace {
@@ -685,7 +482,7 @@ impl Standard<'_> {
             self.interactive(
                 FakeHarness::new(self.bin_dir, "codex")
                     .version_line("codex-cli 9.9.9")
-                    .on(["update"], asks_on_the_terminal())
+                    .on(["update"], Action::AsksOnTheTerminal)
                     .on_prefix(
                         ["plugin"],
                         Action::VendorMarketplace {
@@ -699,7 +496,7 @@ impl Standard<'_> {
             self.interactive(
                 FakeHarness::new(self.bin_dir, self.opencode_binary)
                     .version_line("opencode2 v9.9.9")
-                    .on(["upgrade"], asks_on_the_terminal()),
+                    .on(["upgrade"], Action::AsksOnTheTerminal),
                 session("OpenCode", "v9.9.9 (fake)"),
             )
             .build(),
@@ -711,7 +508,7 @@ impl Standard<'_> {
                 // right to do and what the real vendor never produces.
                 FakeHarness::new(self.bin_dir, "agy")
                     .version_line("9.9.9")
-                    .on(["update"], asks_on_the_terminal())
+                    .on(["update"], Action::AsksOnTheTerminal)
                     .on_prefix(
                         ["plugin"],
                         Action::VendorAgy {
@@ -777,5 +574,102 @@ impl Standard<'_> {
         builder
             .on_prefix(["--session-id"], conversation())
             .on_prefix(["--resume"], conversation())
+    }
+}
+
+/// What a scripted agent does at one of its steps (`start`, `conflict`,
+/// `gate`, `request`), in the checkout it was started in: written by a test
+/// with [`Steps::write_for`], done by the stand-in itself, so no shell is
+/// involved on any platform.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Steps(Vec<Step>);
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) enum Step {
+    /// Writes `content` to `path`, relative to where the agent stands.
+    Write { path: PathBuf, content: String },
+    /// Runs `program` with `args` and `env` where the agent stands, its
+    /// stdout written to `capture` when there is one.
+    Run {
+        program: PathBuf,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+        capture: Option<PathBuf>,
+    },
+    /// The steps inside, done in the directory `named_in` names.
+    Within { named_in: PathBuf, steps: Vec<Step> },
+}
+
+impl Steps {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn write(mut self, path: impl Into<PathBuf>, content: impl Into<String>) -> Self {
+        self.0.push(Step::Write {
+            path: path.into(),
+            content: content.into(),
+        });
+        self
+    }
+
+    pub fn git(self, args: &[&str]) -> Self {
+        self.git_with(args, &[])
+    }
+
+    /// `git` with variables set for this one command.
+    pub fn git_with(mut self, args: &[&str], env: &[(&str, &str)]) -> Self {
+        self.0.push(Step::Run {
+            program: PathBuf::from("git"),
+            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            env: env
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect(),
+            capture: None,
+        });
+        self
+    }
+
+    /// Runs `program`, writing what it prints to `capture`.
+    pub fn run_capturing(
+        mut self,
+        program: impl Into<PathBuf>,
+        args: &[&str],
+        capture: impl Into<PathBuf>,
+    ) -> Self {
+        self.0.push(Step::Run {
+            program: program.into(),
+            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            env: Vec::new(),
+            capture: Some(capture.into()),
+        });
+        self
+    }
+
+    /// These, then `more`.
+    pub fn and(mut self, more: Steps) -> Self {
+        self.0.extend(more.0);
+        self
+    }
+
+    /// `inner`, done in the directory whose path the file `named_in` holds.
+    pub fn within(mut self, named_in: impl Into<PathBuf>, inner: Steps) -> Self {
+        self.0.push(Step::Within {
+            named_in: named_in.into(),
+            steps: inner.0,
+        });
+        self
+    }
+
+    /// Writes these as `step` for the checkout called `slot`, in the
+    /// scripts directory the agent was told about.
+    pub fn write_for(&self, scripts: &Path, slot: &str, step: &str) {
+        let path = scripts.join(format!("{slot}.{step}.json"));
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&self.0).expect("steps serialize"),
+        )
+        .unwrap_or_else(|error| panic!("Steps: {}: {error}", path.display()));
     }
 }

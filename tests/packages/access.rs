@@ -7,8 +7,6 @@
 //! that is what the operator's credentials *are*; they run under the
 //! testkit's environment lock, one at a time.
 
-#![cfg(unix)]
-
 use std::{
     fs,
     net::TcpListener,
@@ -46,7 +44,7 @@ impl World {
         let ssh = FakeSsh::install(&root, &forge);
         let mut environment = uze_testkit::env::scope();
         environment
-            .set("HOME", &operator)
+            .home(&operator)
             .set("XDG_CONFIG_HOME", operator.join("xdg"))
             .set("PATH", ssh.path())
             .remove("SSH_AUTH_SOCK")
@@ -474,12 +472,15 @@ fn the_operators_aliases_and_filters_do_not_run() {
     let server = GitHttpServer::start(&world.forge, Some(("user", TOKEN)), Answer::Git);
     world.credential_for(&server.url(""));
     let credentials = fs::read_to_string(world.operator.join(".gitconfig")).unwrap();
+    // A backslash escapes in a Git config value; forward slashes are a
+    // path on every platform Git runs on.
+    let config_path = |path: &std::path::Path| path.display().to_string().replace('\\', "/");
     world.operator_config(&format!(
         "{credentials}[filter \"evil\"]\n\tsmudge = sh -c 'touch {}; cat'\n\
          [core]\n\tattributesFile = {}\n[alias]\n\tshow = !touch {}\n",
-        marker.display(),
-        world.operator.join("attributes").display(),
-        marker.display(),
+        config_path(&marker),
+        config_path(&world.operator.join("attributes")),
+        config_path(&marker),
     ));
     fs::write(world.operator.join("attributes"), "* filter=evil\n").unwrap();
 

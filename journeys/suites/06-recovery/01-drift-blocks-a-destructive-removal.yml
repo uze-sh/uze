@@ -52,9 +52,13 @@ scenes:
 
   - scene: somebody repoints one of the artifacts at something else
     when:
+      # `flow?commit`: the skill is `flow:commit`, which Windows holds as
+      # `flow-commit` since NTFS reads a colon as a stream separator.
       - shell: |
           set -e
-          echo "edited by hand" > "{home}/.config/opencode/skills/flow:commit/SKILL.md"
+          for skill in "{home}"/.config/opencode/skills/flow?commit/SKILL.md; do
+            echo "edited by hand" > "$skill"
+          done
         say: edit the managed skill, the way a person or another tool would
     then:
       - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"

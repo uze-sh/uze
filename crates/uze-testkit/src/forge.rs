@@ -226,10 +226,9 @@ fn backend(stream: &mut TcpStream, root: &Path, request: &Request) -> std::io::R
         .split_once('?')
         .unwrap_or((request.target.as_str(), ""));
     let mut command = Command::new("git");
+    uze_platform::process::clear_environment(&mut command);
     command
         .arg("http-backend")
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_PROJECT_ROOT", root)
@@ -295,6 +294,19 @@ fn backend(stream: &mut TcpStream, root: &Path, request: &Request) -> std::io::R
     stream.write_all(body)
 }
 
+/// The forge's side of a fetch over SSH: `git upload-pack` for
+/// `repository` on this process's own stdin and stdout, as `sshd` hands a
+/// client's command to it. Its exit code, or `None` when it did not run.
+pub(crate) fn upload_pack(repository: &Path) -> Option<i32> {
+    Command::new("git")
+        .args(["-c", "uploadpack.allowFilter=true"])
+        .args(["-c", "uploadpack.allowAnySHA1InWant=true", "upload-pack"])
+        .arg(repository)
+        .status()
+        .ok()?
+        .code()
+}
+
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
@@ -337,42 +349,18 @@ pub struct FakeSsh {
 impl FakeSsh {
     pub fn install(directory: &Path, root: &Path) -> Self {
         let bin = directory.join("fake-ssh-bin");
-        std::fs::create_dir_all(&bin).expect("bin directory");
-        let log = directory.join("fake-ssh.log");
-        let script = format!(
-            r#"#!/bin/sh
-printf '%s\n' "$*" >> '{log}'
-[ "$1" = "-G" ] && exit 0
-for argument; do
-  case "$argument" in
-    *.invalid)
-      echo "ssh: Could not resolve hostname ${{argument#*@}}: Name or service not known" >&2
-      exit 255 ;;
-  esac
-done
-if [ -z "$SSH_AUTH_SOCK" ]; then
-  echo "git@forge: Permission denied (publickey)." >&2
-  exit 255
-fi
-for last; do :; done
-path=${{last#* }}
-path=$(printf '%s' "$path" | tr -d "'")
-path=${{path#/}}
-[ -d '{root}'/"$path" ] || path=${{path%.git}}
-exec git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack '{root}'/"$path"
-"#,
-            log = log.display(),
-            root = root.display(),
-        );
-        let path = bin.join("ssh");
-        std::fs::write(&path, script).expect("fake ssh");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("executable");
+        let ssh = crate::fake_harness::FakeHarness::new(&bin, "ssh")
+            .on_containing(
+                "",
+                crate::fake_harness::Action::ForgeSsh {
+                    root: root.to_path_buf(),
+                },
+            )
+            .build();
+        Self {
+            bin,
+            log: ssh.invocations_log(),
         }
-        Self { bin, log }
     }
 
     /// `PATH` with this `ssh` first.

@@ -664,6 +664,7 @@ mod tests {
     /// both leave the region absent, so the inspection alone tells the
     /// operator the wrong thing: "the region is missing" rather than "UZE
     /// could not write it".
+    // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     #[test]
     fn a_write_that_could_not_happen_is_named_rather_than_reported_as_absent() {

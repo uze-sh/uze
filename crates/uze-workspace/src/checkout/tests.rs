@@ -946,32 +946,39 @@ fn a_repository_without_a_commit_cannot_host_a_slot() {
     assert!(matches!(error, AcquireError::Git(_)), "{error}");
 }
 
+fn linking(links: &[&str]) -> WorktreePolicy {
+    WorktreePolicy {
+        link: links.iter().map(PathBuf::from).collect(),
+        ..WorktreePolicy::default()
+    }
+}
+
+fn setting_up(setup: uze_core::shell::ShellCommand) -> WorktreePolicy {
+    WorktreePolicy {
+        setup: vec![setup],
+        ..WorktreePolicy::default()
+    }
+}
+
 #[test]
-fn a_linked_file_is_a_symlink_and_a_missing_target_only_warns() {
+fn a_linked_file_reaches_the_primarys_and_a_missing_target_only_warns() {
     let repository = repository("slots-materialize");
     let primary = repository.root();
     fs::write(primary.join(".env"), "SECRET=1\n").unwrap();
     let mut store = AgentStore::default();
     let (_, slot) = launch(&repository, &mut store, "materialize");
 
-    let warnings = materialize(
-        primary,
-        &slot.path,
-        &[PathBuf::from(".env"), PathBuf::from(".env.local")],
-        &[],
-    );
+    let warnings = materialize(primary, &slot.path, &linking(&[".env", ".env.local"]));
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].contains(".env.local"));
     let linked = slot.path.join(".env");
-    assert!(
-        fs::symlink_metadata(&linked)
-            .unwrap()
-            .file_type()
-            .is_symlink()
-    );
     assert_eq!(fs::read_to_string(&linked).unwrap(), "SECRET=1\n");
+    // Linked, not copied: what the primary's file holds now is what the
+    // checkout reads.
+    fs::write(primary.join(".env"), "SECRET=2\n").unwrap();
+    assert_eq!(fs::read_to_string(&linked).unwrap(), "SECRET=2\n");
     assert!(
-        materialize(primary, &slot.path, &[PathBuf::from(".env")], &[]).is_empty(),
+        materialize(primary, &slot.path, &linking(&[".env"])).is_empty(),
         "idempotent"
     );
 }
@@ -985,12 +992,18 @@ fn a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent() {
     let warnings = materialize(
         primary,
         &slot.path,
-        &[],
-        &["echo preparing; echo 'no such tool: pnpm' >&2; exit 3".to_owned()],
+        &setting_up(uze_core::shell::ShellCommand::spelled(
+            "echo preparing; echo 'no such tool: pnpm' >&2; exit 3",
+            "'preparing'; [Console]::Error.WriteLine('no such tool: pnpm'); exit 3",
+        )),
     );
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].contains("no such tool: pnpm"), "{warnings:?}");
-    assert!(materialize(primary, &slot.path, &[], &["touch prepared".to_owned()]).is_empty());
+    let prepare = uze_core::shell::ShellCommand::spelled(
+        "touch prepared",
+        "New-Item prepared -ItemType File | Out-Null",
+    );
+    assert!(materialize(primary, &slot.path, &setting_up(prepare)).is_empty());
     assert!(
         slot.path.join("prepared").exists(),
         "setup runs in the checkout"
@@ -1031,5 +1044,28 @@ fn upstream_divergence_counts_both_directions_and_needs_an_upstream() {
         upstream_divergence(primary),
         None,
         "detached: nothing tracks"
+    );
+}
+
+/// A gate this machine cannot run is said when the work starts, not first
+/// when its delivery is refused for it.
+#[test]
+fn a_checkout_placed_where_its_gate_cannot_run_says_so() {
+    let repository = repository("slots-gate-unspelled");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (_, slot) = launch(&repository, &mut store, "gate");
+    let policy = WorktreePolicy {
+        gate: vec![uze_core::shell::ShellCommand::spelled(
+            uze_platform::shell::spelling("", "make check"),
+            uze_platform::shell::spelling("make check", ""),
+        )],
+        ..WorktreePolicy::default()
+    };
+    let warnings = materialize(primary, &slot.path, &policy);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0].contains("gate `make check`") && warnings[0].contains("cannot be delivered"),
+        "{warnings:?}"
     );
 }

@@ -280,6 +280,7 @@ fn install_project_environment_is_a_no_op_once_everything_is_installed() {
 /// not be written was reported as `NoChanges`, which reads as "everything
 /// already agrees", while the half of the environment the agents actually
 /// read had not moved at all.
+// Unix file modes, which Windows does not keep.
 #[cfg(unix)]
 #[test]
 fn install_reports_a_projection_it_could_not_write_instead_of_no_changes() {
@@ -1151,7 +1152,10 @@ fn project_root_resolution_is_deterministic_from_a_subdirectory() {
     let nested = fx.project_root.join("a/b/c");
     fs::create_dir_all(&nested).unwrap();
     let resolved = project_root::resolve_project_root(&nested).unwrap();
-    assert_eq!(resolved, Some(fx.project_root.canonicalize().unwrap()));
+    assert_eq!(
+        resolved,
+        Some(uze_platform::path::canonical(&fx.project_root).unwrap())
+    );
 }
 
 /// Drift along the chain a project's environment passes through, and what

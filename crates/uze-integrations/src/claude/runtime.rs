@@ -135,7 +135,7 @@ fn project_resource_projection(
         // is tolerated: a concurrent projection may have already removed
         // it between the `is_symlink` check and this call.
         if projected.is_symlink() {
-            match fs::remove_file(&projected) {
+            match uze_platform::fs::remove_link(&projected) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error.to_string()),
@@ -165,12 +165,18 @@ fn project_resource_projection(
     // target either way. Same nonce pattern `write_atomic` uses.
     let temporary = temporary_projection_path(parent, resource);
     uze_core::persistence::create_symlink(&project_source, &temporary).map_err(|error| {
-        let _ = fs::remove_file(&temporary);
+        let _ = uze_platform::fs::remove_link(&temporary);
         error.to_string()
     })?;
-    if let Err(error) = fs::rename(&temporary, &projected) {
-        let _ = fs::remove_file(&temporary);
-        return Err(error.to_string());
+    if let Err(error) = uze_platform::fs::rename_link_over(&temporary, &projected) {
+        let _ = uze_platform::fs::remove_link(&temporary);
+        // Where the move is not atomic (Windows) a concurrent projection
+        // can win it; every writer links the same source, so its link
+        // standing there is this one's outcome too.
+        let converged = fs::read_link(&projected).is_ok_and(|target| target == project_source);
+        if !converged {
+            return Err(error.to_string());
+        }
     }
     Ok(())
 }
@@ -239,6 +245,7 @@ pub(super) fn runtime_contribution(ctx: &RuntimeContext) -> HarnessRuntimeContri
 #[cfg(test)]
 mod runtime_projection_tests {
     use std::path::PathBuf;
+    use uze_core::path::Canonical as _;
 
     use uze_core::harness_runtime::{self, RuntimeContext};
     use uze_core::home::UzeHome;
@@ -297,7 +304,7 @@ mod runtime_projection_tests {
         assert!(runtime_dir.starts_with(home.runtime_dir()));
 
         let claude_md = std::fs::read_to_string(runtime_dir.join("CLAUDE.md")).unwrap();
-        let canonical_agents_md = project.join("AGENTS.md").canonicalize().unwrap();
+        let canonical_agents_md = project.join("AGENTS.md").canonical().unwrap();
         assert_eq!(claude_md, format!("@{}\n", canonical_agents_md.display()));
 
         // The project's own working tree must never gain a file from this.
@@ -370,7 +377,7 @@ mod runtime_projection_tests {
         // Occupy the exact path the projection needs as a *file* instead of
         // a directory, so `create_dir_all` fails deterministically without
         // needing real permission games.
-        let agents_md = project.join("AGENTS.md").canonicalize().unwrap();
+        let agents_md = project.join("AGENTS.md").canonical().unwrap();
         let project_id = harness_runtime::project_id_for(agents_md.parent().unwrap());
         let blocked_path = home.runtime_projection_dir("claude-code", &project_id);
         std::fs::create_dir_all(blocked_path.parent().unwrap()).unwrap();
@@ -414,11 +421,7 @@ mod runtime_projection_tests {
         assert!(projected_skills.is_symlink());
         assert_eq!(
             std::fs::read_link(&projected_skills).unwrap(),
-            project
-                .join(".agents")
-                .join("skills")
-                .canonicalize()
-                .unwrap()
+            project.join(".agents").join("skills").canonical().unwrap()
         );
         let skill_body =
             std::fs::read_to_string(projected_skills.join("demo-skill").join("SKILL.md")).unwrap();
@@ -428,11 +431,7 @@ mod runtime_projection_tests {
         assert!(projected_agents.is_symlink());
         assert_eq!(
             std::fs::read_link(&projected_agents).unwrap(),
-            project
-                .join(".agents")
-                .join("agents")
-                .canonicalize()
-                .unwrap()
+            project.join(".agents").join("agents").canonical().unwrap()
         );
         let agent_body = std::fs::read_to_string(projected_agents.join("reviewer.md")).unwrap();
         assert_eq!(agent_body, "canary agent\n");
@@ -666,16 +665,8 @@ mod runtime_projection_tests {
         let runtime_dir = PathBuf::from(&contributions[0].extra_args[1]);
         let projected_skills = runtime_dir.join(".claude").join("skills");
         let projected_agents = runtime_dir.join(".claude").join("agents");
-        let expected_skills = project
-            .join(".agents")
-            .join("skills")
-            .canonicalize()
-            .unwrap();
-        let expected_agents = project
-            .join(".agents")
-            .join("agents")
-            .canonicalize()
-            .unwrap();
+        let expected_skills = project.join(".agents").join("skills").canonical().unwrap();
+        let expected_agents = project.join(".agents").join("agents").canonical().unwrap();
         assert_eq!(
             std::fs::read_link(&projected_skills).unwrap(),
             expected_skills

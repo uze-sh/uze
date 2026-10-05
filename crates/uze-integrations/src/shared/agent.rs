@@ -76,7 +76,10 @@ pub(crate) fn agent_file_plan(
     ExposurePlan {
         route: route.0,
         mechanism: ExposureMechanism::Managed(ManagedArtifact::GeneratedFile {
-            path: agents_dir.join(format!("{label}.{extension}")),
+            path: agents_dir.join(format!(
+                "{}.{extension}",
+                uze_core::path::file_name_for(label)
+            )),
             content,
         }),
         evidence: route.1,

@@ -23,6 +23,7 @@
 //! the same kind, read from a clone that happens to be on this disk, and
 //! it pins exactly as well.
 
+use crate::path::Canonical as _;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -73,7 +74,7 @@ impl MarketplaceSubpath {
         let escapes = || UzeError::MarketplaceSubpathEscapes {
             subpath: subpath.display().to_string(),
         };
-        if subpath.is_absolute() {
+        if crate::path::is_anchored(subpath) {
             return Err(escapes());
         }
         let mut parts = Vec::new();
@@ -98,10 +99,10 @@ impl MarketplaceSubpath {
     /// `toplevel`, refusing one outside it.
     pub fn within_checkout(toplevel: &Path, directory: &Path) -> Result<Self> {
         let toplevel = toplevel
-            .canonicalize()
+            .canonical()
             .unwrap_or_else(|_| toplevel.to_path_buf());
         let canonical = directory
-            .canonicalize()
+            .canonical()
             .unwrap_or_else(|_| directory.to_path_buf());
         let relative =
             canonical
@@ -148,9 +149,9 @@ impl MarketplaceSubpath {
         };
         let joined = checkout.join(subpath);
         let canonical = joined
-            .canonicalize()
+            .canonical()
             .map_err(|_| UzeError::MissingPath(joined.clone()))?;
-        let top = checkout.canonicalize().map_err(UzeError::read(checkout))?;
+        let top = checkout.canonical().map_err(UzeError::read(checkout))?;
         if !canonical.starts_with(&top) {
             return Err(UzeError::MarketplaceSubpathEscapes {
                 subpath: subpath.clone(),
@@ -191,11 +192,14 @@ pub fn repository_of(source: &PackageSource) -> Result<MarketplaceRepository> {
             subpath: MarketplaceSubpath::of(subdirectory.as_deref())?,
         }),
         PackageSource::Local { path } => {
-            let toplevel =
-                git_answer(path, &["rev-parse", "--show-toplevel"]).ok_or_else(|| {
-                    UzeError::MarketplaceNotARepository {
-                        path: path.to_path_buf(),
-                    }
+            let toplevel = git_answer(path, &["rev-parse", "--show-toplevel"])
+                .map(|printed| {
+                    uze_git::native_path(&printed)
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .ok_or_else(|| UzeError::MarketplaceNotARepository {
+                    path: path.to_path_buf(),
                 })?;
             // A repository with no commit has no revision to pin and
             // nothing to compare a later one against.
@@ -336,7 +340,7 @@ impl PluginListing {
     /// `agent plugin check` is where it is reported.
     pub fn read(bytes: Option<&[u8]>) -> Self {
         let Some(manifest) =
-            bytes.and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+            bytes.and_then(|bytes| crate::authored::json::<serde_json::Value>(bytes).ok())
         else {
             return Self::default();
         };
@@ -370,7 +374,7 @@ impl PluginListing {
 /// [`resolve_plugin_source`], scoped to the one entry actually requested.
 pub fn parse_manifest(bytes: &[u8]) -> Result<MarketplaceManifest> {
     let manifest: MarketplaceManifest =
-        serde_json::from_slice(bytes).map_err(|source| UzeError::Json {
+        crate::authored::json(bytes).map_err(|source| UzeError::Json {
             path: PathBuf::from("marketplace.json"),
             source,
         })?;
@@ -444,11 +448,11 @@ pub fn resolve_plugin_source(
         .find(|entry| entry.name == plugin_name)
         .ok_or_else(|| UzeError::UnknownPackage(plugin_name.to_owned()))?;
     let canonical_root = marketplace_root
-        .canonicalize()
+        .canonical()
         .map_err(UzeError::read(marketplace_root))?;
     let joined = canonical_root.join(&entry.source);
     let canonical_source = joined
-        .canonicalize()
+        .canonical()
         .map_err(|_| UzeError::MissingPath(joined.clone()))?;
     if !canonical_source.starts_with(&canonical_root) {
         return Err(UzeError::UnsafePathReference {
@@ -546,6 +550,7 @@ mod subdirectory_tests {
         }
     }
 
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_working_tree_directory_linked_outside_the_checkout_is_refused() {
@@ -692,7 +697,7 @@ mod tests {
         let manifest = parse_manifest(&fs::read(root.join("marketplace.json")).unwrap()).unwrap();
 
         let resolved = resolve_plugin_source(&manifest, "uze", &root).unwrap();
-        assert_eq!(resolved, dir.canonicalize().unwrap());
+        assert_eq!(resolved, dir.canonical().unwrap());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -710,11 +715,11 @@ mod tests {
 
         assert_eq!(
             resolve_plugin_source(&manifest, "uze", &root).unwrap(),
-            first.canonicalize().unwrap()
+            first.canonical().unwrap()
         );
         assert_eq!(
             resolve_plugin_source(&manifest, "rust-guidelines", &root).unwrap(),
-            second.canonicalize().unwrap()
+            second.canonical().unwrap()
         );
         fs::remove_dir_all(root).unwrap();
     }

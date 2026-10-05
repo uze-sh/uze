@@ -1,6 +1,7 @@
 //! The read models a person's surfaces are drawn from: an agent, its state, a delivery's report.
 
 use super::*;
+use uze_core::path::Canonical as _;
 
 /// A task ended because its agent is gone, and what became of its slot.
 /// What one pass of [`Workspace::reconcile_occupancy`] changed.
@@ -16,7 +17,7 @@ pub struct Reconciliation {
 /// The canonical spelling of a directory: the key every record of it is
 /// stored under, so two spellings of one root never make two stores.
 pub(super) fn canonical(root: &Path) -> PathBuf {
-    root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
+    root.canonical().unwrap_or_else(|_| root.to_path_buf())
 }
 
 /// Where one agent is placed: in a checkout of its own, or in the space's

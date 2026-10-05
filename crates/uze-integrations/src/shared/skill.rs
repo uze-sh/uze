@@ -68,12 +68,16 @@ pub(crate) fn setup_pending_plan(harness: &str) -> ExposurePlan {
 /// The physical entry name for `resource`: the one shared-root resolution
 /// settled on, else the integration's own first candidate.
 pub(crate) fn entry_name(integration: &dyn IntegrationPort, resource: &Resource) -> Option<String> {
-    resource.resolved_exposure_name.clone().or_else(|| {
-        integration
-            .exposure_name_candidates(resource)
-            .into_iter()
-            .next()
-    })
+    resource
+        .resolved_exposure_name
+        .clone()
+        .or_else(|| {
+            integration
+                .exposure_name_candidates(resource)
+                .into_iter()
+                .next()
+        })
+        .map(|label| uze_core::path::file_name_for(&label))
 }
 
 /// The stable namespaced invocation label (`flow:review`, ADR-026) a
@@ -323,7 +327,7 @@ fn copy_supporting_files(
         return Ok(());
     }
     let package_root =
-        fs::canonicalize(package_root).unwrap_or_else(|_| package_root.to_path_buf());
+        uze_core::path::canonical(package_root).unwrap_or_else(|_| package_root.to_path_buf());
     let mut excluded = vec!["SKILL.md"];
     excluded.extend_from_slice(skip);
     crate::shared::tree::mirror_tree(canonical_dir, destination, &package_root, &excluded)

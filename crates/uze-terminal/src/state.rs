@@ -52,7 +52,7 @@ pub struct Space {
 /// The label a space gets from its root when nobody names it: the root's
 /// last component, or `home` for the home directory itself.
 pub fn space_label(root: &Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = uze_platform::home::user_home();
     if home.as_deref().is_some_and(|home| home == root) {
         return "home".to_owned();
     }
@@ -234,12 +234,14 @@ impl Session {
     /// it. One root names one space: a directory reached by two spellings
     /// is the same place, and there is nothing else for a space to be.
     pub fn space_for(&self, seat: &SpaceSeat) -> Option<SpaceId> {
-        let canonical = |root: &Path| root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let canonical = |root: &Path| {
+            uze_platform::path::canonical(root).unwrap_or_else(|_| root.to_path_buf())
+        };
         let wanted = canonical(&seat.root);
         self.workspace
             .spaces
             .iter()
-            .find(|space| canonical(&space.root) == wanted)
+            .find(|space| uze_platform::path::same_path(&canonical(&space.root), &wanted))
             .map(|space| space.id)
     }
 

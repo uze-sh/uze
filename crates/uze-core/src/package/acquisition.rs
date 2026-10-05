@@ -14,6 +14,7 @@
 //!                              provenance             provenance
 //! ```
 
+use crate::path::Canonical as _;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -228,17 +229,11 @@ impl ResolvedSource {
 /// than over a transport. Everything with a scheme is not — `file://`
 /// included, which Git itself routes through the transport layer and which
 /// is the spelling that means "treat this as a remote". `scp`-style
-/// `host:path` is remote too.
+/// `host:path` is remote too: it never has a root, while a path rooted as
+/// this platform roots one does — `/srv/ai`, and on Windows `C:\repo`,
+/// `c:/repo` and `/srv/ai` on the current drive, as Git reads them there.
 fn names_a_local_path(url: &str) -> bool {
-    if url.contains("://") {
-        return false;
-    }
-    // A colon before the first slash is a host (`git@example.com:org/repo`);
-    // one after it is just a directory with a colon in its name.
-    if url.split('/').next().unwrap_or_default().contains(':') {
-        return false;
-    }
-    Path::new(url).is_absolute()
+    !url.contains("://") && Path::new(url).has_root()
 }
 
 /// Everything the Store persists about a package's origin, and nothing it
@@ -283,15 +278,32 @@ pub struct MaterializedPackage {
     /// separately from `root` because `root` may be narrowed to a
     /// subdirectory while cleanup still owns the whole checkout.
     owned_scratch: Option<PathBuf>,
+    /// The symbolic links the package holds that its checkout could not
+    /// make, relative to `root` (see [`crate::digest::tree_sha256_with_links`]).
+    links: crate::digest::Links,
 }
 
 impl MaterializedPackage {
+    /// The symbolic links the package holds that its checkout could not
+    /// make, relative to [`MaterializedPackage::root`].
+    pub fn links(&self) -> &crate::digest::Links {
+        &self.links
+    }
+
+    /// The digest of the package's bytes, its unmade links counted as the
+    /// links they are: the value a lock pins, on every platform.
+    pub fn digest(&self) -> Result<String> {
+        crate::digest::tree_sha256_with_links(&self.root, &self.links)
+            .map_err(UzeError::read(&self.root))
+    }
+
     /// A directory UZE created and must remove once the Store has ingested it.
     pub fn owned(root: PathBuf, provenance: Provenance) -> Self {
         Self {
             owned_scratch: Some(root.clone()),
             root,
             provenance,
+            links: crate::digest::Links::new(),
         }
     }
 
@@ -301,6 +313,7 @@ impl MaterializedPackage {
             root,
             provenance,
             owned_scratch: None,
+            links: crate::digest::Links::new(),
         }
     }
 
@@ -385,11 +398,23 @@ pub fn acquire(source: &PackageSource) -> Result<MaterializedPackage> {
                 },
             );
             let checkout = scratch.join("checkout");
-            let commit = git::materialize(url, reference.as_deref(), &checkout)?;
+            let git::Checkout { commit, links } =
+                git::materialize(url, reference.as_deref(), &checkout)?;
             let root = match subdirectory {
                 Some(subdirectory) => git::resolve_subdirectory(&checkout, subdirectory)?,
-                None => checkout,
+                None => checkout.clone(),
             };
+            // Named from the package's own root, which a subdirectory narrows.
+            let prefix = root
+                .strip_prefix(&checkout)
+                .unwrap_or(Path::new(""))
+                .to_path_buf();
+            materialized.links = links
+                .into_iter()
+                .filter_map(|(path, target)| {
+                    Some((path.strip_prefix(&prefix).ok()?.to_path_buf(), target))
+                })
+                .collect();
             materialized.retarget(
                 root,
                 Provenance {
@@ -436,13 +461,7 @@ pub fn scratch_directory() -> Result<PathBuf> {
         "uze-acquire-{}-{nonce}-{sequence}",
         std::process::id()
     ));
-    let mut builder = fs::DirBuilder::new();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(&path).map_err(UzeError::write(&path))?;
+    uze_platform::fs::create_private_dir(&path).map_err(UzeError::write(&path))?;
     Ok(path)
 }
 
@@ -453,7 +472,7 @@ fn checked_directory(root: &Path) -> Result<PathBuf> {
     if !root.is_dir() {
         return Err(UzeError::NotDirectory(root.to_path_buf()));
     }
-    root.canonicalize().map_err(UzeError::read(root))
+    root.canonical().map_err(UzeError::read(root))
 }
 
 /// What a materialized package declares, read **before** the Store has
@@ -529,15 +548,12 @@ mod tests {
 
         let materialized = acquire(&source).unwrap();
 
-        assert_eq!(
-            materialized.root(),
-            root.join("inner").canonicalize().unwrap()
-        );
+        assert_eq!(materialized.root(), root.join("inner").canonical().unwrap());
         assert_eq!(&materialized.provenance().requested, &source);
         assert_eq!(
             materialized.provenance().resolved,
             ResolvedSource::Local {
-                path: root.join("inner").canonicalize().unwrap()
+                path: root.join("inner").canonical().unwrap()
             }
         );
         let _ = fs::remove_dir_all(root);

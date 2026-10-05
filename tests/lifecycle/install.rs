@@ -216,7 +216,10 @@ fn one_plugin_install_is_planned_once_for_native_and_decomposed_harnesses() {
         "__UZE_MCP_FIXTURE_BINARY__"
     );
     assert!(
-        root.join("config/opencode/skills/uze-plugin-first-conformance:uze-plugin-first")
+        root.join("config/opencode/skills")
+            .join(uze_core::path::file_name_for(
+                "uze-plugin-first-conformance:uze-plugin-first"
+            ))
             .is_dir(),
         "OpenCode V2 should expose the skill under its stable namespaced label"
     );
