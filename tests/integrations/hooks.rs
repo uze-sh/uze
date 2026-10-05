@@ -66,9 +66,6 @@ fn spelled_for_every_shell(manifest: &str) -> String {
     document.to_string()
 }
 
-/// Antigravity's hooks reach it only through the POSIX wrapper: on Windows
-/// no entry form is measured to survive its `cmd /C`, so they are reported,
-/// never delivered (`antigravity/hooks.rs`).
 /// Codex runs a Windows shell command without firing PreToolUse
 /// (openai/codex#24453), so a shell guard is reported there, never delivered.
 #[cfg(unix)]
@@ -76,13 +73,6 @@ const CODEX_GUARDS_SHELL: CompatibilityRoute = CompatibilityRoute::Native;
 // What Codex was measured to fire on Windows (see above).
 #[cfg(windows)]
 const CODEX_GUARDS_SHELL: CompatibilityRoute = CompatibilityRoute::Unsupported;
-
-// What Antigravity was measured to take on Windows (see above).
-#[cfg(unix)]
-const ANTIGRAVITY_DELIVERS: CompatibilityRoute = CompatibilityRoute::Native;
-// What Antigravity was measured to take on Windows (see above).
-#[cfg(windows)]
-const ANTIGRAVITY_DELIVERS: CompatibilityRoute = CompatibilityRoute::Unsupported;
 
 /// What a hook entry runs, read back: the generated wrapper it starts and
 /// the arguments the wrapper is handed. `words` is the entry's command
@@ -180,7 +170,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     assert_eq!(
         antigravity.exposure_plan(protect).route,
-        ANTIGRAVITY_DELIVERS
+        CompatibilityRoute::Native
     );
 
     // Stop must never claim an OpenCode equivalence (spec scenario).
@@ -202,7 +192,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     assert_eq!(
         antigravity.exposure_plan(archive).route,
-        ANTIGRAVITY_DELIVERS
+        CompatibilityRoute::Native
     );
 
     // Ask cannot be enforced on Claude (not in its declared effect set) and
@@ -229,7 +219,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     assert_eq!(
         antigravity.exposure_plan(prompt).route,
-        ANTIGRAVITY_DELIVERS,
+        CompatibilityRoute::Native,
         "Antigravity documents native allow/ask/deny decisions"
     );
 }
@@ -288,7 +278,7 @@ fn session_start_is_native_where_fired_and_unsupported_where_not() {
     );
     assert_eq!(
         antigravity.exposure_plan(watch).route,
-        ANTIGRAVITY_DELIVERS,
+        CompatibilityRoute::Native,
         "the package's other groups still reach Antigravity"
     );
     assert_eq!(
@@ -1177,7 +1167,9 @@ fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_never_bridged() {
 /// Lab, `hooks > delivery`, against the vendor's own plugin guide). So the
 /// hook is a capability-level delivery — one named entry in a shared file —
 /// and the package plan claims nothing about it.
-/// Antigravity's delivery itself, which only the POSIX wrapper makes.
+/// Unix only: it reads the wrapper's path back out of the entry's line,
+/// which on Windows is encoded against `cmd /c` (proven instead by
+/// `a_sealed_line_reaches_its_script_intact_through_cmd`).
 #[cfg(unix)]
 #[test]
 fn antigravity_delivers_hooks_as_named_entries_in_the_shared_config() {
@@ -1227,7 +1219,8 @@ fn antigravity_delivers_hooks_as_named_entries_in_the_shared_config() {
 
 /// Attach, inspect and detach against a `hooks.json` that already holds a
 /// hand-written hook: UZE owns exactly its own named key.
-/// Antigravity's delivery itself, which only the POSIX wrapper makes.
+/// Unix only: it reads the wrapper's path back out of the entry's line,
+/// which on Windows is encoded against `cmd /c`.
 #[cfg(unix)]
 #[test]
 fn antigravity_hook_delivery_never_touches_a_foreign_named_hook() {
