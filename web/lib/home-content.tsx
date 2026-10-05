@@ -1,37 +1,6 @@
 import type { ReactNode } from 'react';
 
-// The landing page's words, apart from its layout: the home page and the
-// design explorations under /lab say the same thing, so a variant is judged
-// on how it looks rather than on copy that drifted.
-
-// Said in the reader's words, not the architecture's: what each half does for
-// them, and the one guarantee under it. The mechanism is a link away.
-export const pillars = [
-  {
-    title: 'Install once, every agent gets it',
-    body: 'A plugin is skills, MCP servers, hooks and subagents in the open Agent Plugin format. uze keeps one copy and puts it into each agent the way that agent expects: a real plugin where it has one, its own config where it does not, and a report wherever something had to be translated.',
-    href: '/docs/plugins/delivery',
-    link: 'How delivery works',
-  },
-  {
-    title: 'A project carries its own setup',
-    body: 'agents.yaml says which plugins a project uses, agents.lock pins them to a commit, and one AGENTS.md holds the instructions every agent reads. A teammate clones the repo, runs uze install, and has the same setup in every agent they use.',
-    href: '/docs/plugins/context',
-    link: 'Project files and context',
-  },
-  {
-    title: 'Agents side by side, never on top of each other',
-    body: 'Each agent runs in its own git worktree, on a branch of its own, so two of them never edit one checkout and your uncommitted work stays out of their way. Whether one is done is read from its branch, not from what it says.',
-    href: '/docs/workspace',
-    link: 'Inside the workspace',
-  },
-  {
-    title: 'Your files stay yours',
-    body: 'uze writes only inside blocks it marks and keeps a receipt for everything it places, so it can update or remove a plugin without touching what you or another tool put next to it. When it finds something it does not own, it reports it and leaves it alone.',
-    href: '/docs/concepts',
-    link: 'Why uze works this way',
-  },
-];
+// The landing page's questions, apart from its layout.
 
 // The questions a developer asks in the first minute, answered before they
 // have to open the docs. "Not an agent, no API key" is said here and in the

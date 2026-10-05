@@ -73,7 +73,7 @@ function AgentEntry({ agent, selected, ready }: { agent: Agent; selected: boolea
       className={`flex items-start gap-2 px-2 py-1 ${selected ? 'bg-surface' : ''}`}
       style={selected ? { boxShadow: 'inset 2px 0 0 var(--color-accent)' } : undefined}
     >
-      <span className={`w-3 shrink-0 text-center ${ready ? 'text-accent' : 'text-muted'}`}>{ready ? '✓' : '⠿'}</span>
+      <span className={`w-3 shrink-0 text-center ${ready ? 'text-success' : 'text-muted'}`}>{ready ? '✓' : '⠿'}</span>
       <span className="min-w-0 flex-1">
         <span className={`block truncate ${selected ? 'font-semibold text-ink' : 'text-ink'}`}>{agent.name}</span>
         <span className={`block truncate ${selected ? 'text-warn' : 'text-muted'}`}>{agent.harness}</span>
@@ -112,7 +112,7 @@ export function Workspace({ t }: { t: number }) {
           <span className="ml-auto flex items-center gap-1.5 max-sm:hidden">
             {ready ? (
               <span className="mr-2">
-                <span className="text-accent">+31</span> <span className="text-danger">−4</span>
+                <span className="text-success">+31</span> <span className="text-danger">−4</span>
               </span>
             ) : null}
             {['spec', 'arch', 'code'].map((name) => (
@@ -178,7 +178,7 @@ export function Workspace({ t }: { t: number }) {
           ) : null}
           <div className="mt-auto">
             <div className="border-l-2 border-accent bg-surface px-3 py-2">
-              <span className="cs-caret" aria-hidden />
+              <span className="session-caret" aria-hidden />
               <div className="mt-1 text-muted">
                 <span className="text-accent">Build</span>
               </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { WORKSPACE_LENGTH, Workspace } from '@/components/lab/console/workspace';
+import { WORKSPACE_LENGTH, Workspace } from '@/components/home/workspace';
 
 // One terminal session, scripted: a marketplace is added, one plugin is
 // installed and the stream splits into four lanes, one per agent, each
@@ -12,7 +12,7 @@ import { WORKSPACE_LENGTH, Workspace } from '@/components/lab/console/workspace'
 // are docs/reference/project-files.mdx's, and the workspace is drawn after
 // its recorded frame.
 
-type Tone = 'ink' | 'muted' | 'accent' | 'warn' | 'title' | 'key' | 'lit';
+type Tone = 'ink' | 'muted' | 'faint' | 'success' | 'warn' | 'title' | 'key';
 type Span = { text: string; tone?: Tone };
 type Row = Span[];
 
@@ -35,7 +35,7 @@ const TICK_MS = 33;
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 const ok = (name: string, detail?: string): Row => [
-  { text: '✓ ', tone: 'accent' },
+  { text: '✓ ', tone: 'success' },
   { text: name, tone: 'ink' },
   ...(detail ? [{ text: '  ' + detail, tone: 'muted' as Tone }] : []),
 ];
@@ -76,8 +76,8 @@ const delivered: Lane[] = [
 const yaml = (key: string, value?: string, indent = 0): Row =>
   value === undefined
     ? [{ text: ' '.repeat(indent) + key + ':', tone: 'key' }]
-    : [{ text: ' '.repeat(indent) + key + ': ', tone: 'key' }, { text: value, tone: 'accent' }];
-const comment = (text: string, indent = 0): Row => [{ text: ' '.repeat(indent) + '# ' + text, tone: 'muted' }];
+    : [{ text: ' '.repeat(indent) + key + ': ', tone: 'key' }, { text: value, tone: 'ink' }];
+const comment = (text: string, indent = 0): Row => [{ text: ' '.repeat(indent) + '# ' + text, tone: 'faint' }];
 
 // This repository's own agents.yaml, trimmed to the keys the page talks about.
 const manifest: Row[] = [
@@ -92,7 +92,11 @@ const manifest: Row[] = [
   yaml('ai', undefined, 2),
   yaml('git', 'https://github.com/hiukky/ai', 4),
   yaml('plugins', undefined, 4),
-  [{ text: '      - git', tone: 'lit' }],
+  [
+    { text: '      - ', tone: 'key' },
+    { text: 'git', tone: 'ink' },
+    { text: '   # added by uze git@ai', tone: 'faint' },
+  ],
 ];
 
 function report(verb: string): Row {
@@ -134,7 +138,7 @@ function build() {
   rows([
     report('market add'),
     blank,
-    [{ text: '+ ', tone: 'accent' }, { text: 'hiukky/ai', tone: 'ink' }, { text: '   cloned', tone: 'muted' }],
+    [{ text: '+ ', tone: 'success' }, { text: 'hiukky/ai', tone: 'ink' }, { text: '   cloned', tone: 'muted' }],
     blank,
     [{ text: '1 marketplace added', tone: 'ink' }, { text: ' [1.1s]', tone: 'muted' }],
     blank,
@@ -145,7 +149,7 @@ function build() {
   chapter('add a plugin');
   prompt('uze git@ai');
   spin('Installing git@ai...', 900);
-  rows([report('install'), blank, [{ text: '+ ', tone: 'accent' }, { text: 'git@ai', tone: 'ink' }, { text: '   3f2a91c', tone: 'muted' }], blank]);
+  rows([report('install'), blank, [{ text: '+ ', tone: 'success' }, { text: 'git@ai', tone: 'ink' }, { text: '   3f2a91c', tone: 'muted' }], blank]);
   events.push({ kind: 'lanes', at: t, lanes: delivered, laneStagger: 260, rowStagger: 90 });
   t += 260 * 3 + 90 * 5 + 200;
   rows([blank, [{ text: '1 plugin added to this project', tone: 'ink' }, { text: ' [652ms]', tone: 'muted' }], blank]);
@@ -174,17 +178,16 @@ const screenAt = script.events.find((event) => event.kind === 'screen')?.at ?? I
 
 function toneClass(tone: Tone | undefined) {
   switch (tone) {
-    case 'accent':
-      return 'text-accent';
+    case 'success':
+      return 'text-success';
     case 'warn':
       return 'text-warn';
     case 'title':
       return 'font-semibold text-ink';
     case 'ink':
-    case 'key':
       return 'text-ink';
-    case 'lit':
-      return 'bg-accent/15 text-ink';
+    case 'faint':
+      return 'text-muted/60';
     default:
       return 'text-muted';
   }
@@ -207,9 +210,9 @@ function Line({ row }: { row: Row }) {
 function Prompt({ children, caret }: { children?: ReactNode; caret: boolean }) {
   return (
     <div className="whitespace-pre">
-      <span className="text-accent">❯ </span>
+      <span className="text-muted">❯ </span>
       <span className="text-ink">{children}</span>
-      {caret ? <span className="cs-caret" aria-hidden /> : null}
+      {caret ? <span className="session-caret" aria-hidden /> : null}
     </div>
   );
 }
@@ -220,7 +223,7 @@ export function AgentChip({ children }: { children: ReactNode }) {
   return (
     <span
       className="inline-block px-1.5 py-px font-mono text-[0.92em] font-semibold leading-snug"
-      style={{ background: 'var(--cs-chip-paper)', color: 'var(--cs-chip-ink)' }}
+      style={{ background: 'var(--color-ink)', color: 'var(--color-paper)' }}
     >
       {children}
     </span>
@@ -376,15 +379,6 @@ export function ConsoleSession() {
             </button>
           );
         })}
-        {!still ? (
-          <button
-            type="button"
-            onClick={() => play(0)}
-            className="ml-auto py-1 text-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            replay
-          </button>
-        ) : null}
       </div>
 
       <div className="h-[30rem] font-mono sm:h-[31rem]" aria-hidden>
@@ -393,7 +387,7 @@ export function ConsoleSession() {
         ) : (
           <div
             ref={stream}
-            className="cs-scrollback h-full overflow-hidden py-4 text-[12.5px] leading-[1.6] sm:text-[13.5px]"
+            className="session-scrollback h-full overflow-hidden py-4 text-[12.5px] leading-[1.6] sm:text-[13.5px]"
           >
             <Scrollback t={t} />
           </div>
