@@ -32,20 +32,22 @@ fi
 
 if [ "$interactive" = 1 ]; then
   esc="$(printf '\033')"
-  # The palette is `src/progress.rs`'s, by value: sage for what worked, amber
-  # for what needs attention, red only for failure.
+  # The palette is `src/progress.rs`'s, by value: monochrome, with the accent
+  # at full white, green for what worked, amber for what needs attention, red
+  # only for failure.
   BRIGHT="${esc}[1;38;2;242;240;234m"
   MUTED="${esc}[38;2;107;113;118m"
   # Bold grey: a section heading reads as structure, not as one more
   # muted label — `progress::HEADING`, same reasoning.
   HEADING="${esc}[1;38;2;107;113;118m"
-  ACCENT="${esc}[38;2;143;209;158m"
+  ACCENT="${esc}[38;2;255;255;255m"
+  SUCCESS="${esc}[38;2;143;209;158m"
   AMBER="${esc}[38;2;224;181;103m"
   DANGER="${esc}[38;2;224;118;95m"
   RESET="${esc}[0m"
   ERASE="${esc}[2K"
 else
-  BRIGHT=""; MUTED=""; HEADING=""; ACCENT=""; AMBER=""; DANGER=""; RESET=""; ERASE=""
+  BRIGHT=""; MUTED=""; HEADING=""; ACCENT=""; SUCCESS=""; AMBER=""; DANGER=""; RESET=""; ERASE=""
 fi
 
 say() { printf '%s\n' "$*"; }
@@ -74,7 +76,7 @@ centred() {
 # `uze setup` logs behind. It carries the download URL, which is also what the
 # offline fixture test reads the resolved release path out of.
 note() { printf '%s│%s %s\n' "$MUTED" "$RESET" "$*"; }
-ok() { printf '%s✓%s %s\n' "$ACCENT" "$RESET" "$*"; }
+ok() { printf '%s✓%s %s\n' "$SUCCESS" "$RESET" "$*"; }
 warn() { printf '%s!%s %s\n' "$AMBER" "$RESET" "$*" >&2; }
 
 spinner_pid=""
@@ -237,7 +239,7 @@ fi
 # what "latest" currently means.
 printf '%s%s%s\n' "$BRIGHT" "$(centred UZE)" "$RESET"
 printf '%s%s%s\n' "$MUTED" "$(centred "$platform")" "$RESET"
-printf '%s%s%s\n' "$MUTED" "$(centred 'The package manager and workspace for coding agents')" "$RESET"
+printf '%s%s%s\n' "$MUTED" "$(centred 'Agents come and go. Your work stays.')" "$RESET"
 say ""
 note "${base_url}/${path}/${archive}"
 

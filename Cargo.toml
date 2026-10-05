@@ -3,7 +3,7 @@ name = "uze"
 version.workspace = true
 edition = "2024"
 rust-version = "1.97"
-description = "The package manager and workspace for coding agents"
+description = "A layer between you and your coding agents: the same plugins in each, and a workspace to run them side by side"
 license.workspace = true
 authors.workspace = true
 # UZE is not published to crates.io. Native Cargo field (independent of

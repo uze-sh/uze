@@ -53,7 +53,8 @@ param(
     $Bright = Paint '1;38;2;242;240;234'
     $Muted = Paint '38;2;107;113;118'
     $Heading = Paint '1;38;2;107;113;118'
-    $Accent = Paint '38;2;143;209;158'
+    $Accent = Paint '38;2;255;255;255'
+    $Success = Paint '38;2;143;209;158'
     $Amber = Paint '38;2;224;181;103'
     $Danger = Paint '38;2;224;118;95'
     $Reset = Paint '0'
@@ -62,7 +63,7 @@ param(
     $Cross = if ($utf8) { [string][char]0x00D7 } else { 'x' }
 
     function Note([string]$Text) { Write-Host "$Muted$Gutter$Reset $Text" }
-    function Ok([string]$Text) { Write-Host "$Accent$Tick$Reset $Text" }
+    function Ok([string]$Text) { Write-Host "$Success$Tick$Reset $Text" }
     function Warn([string]$Text) { Write-Host "$Amber!$Reset $Text" }
     function Centred([string]$Text) {
         $width = 60
@@ -204,7 +205,7 @@ public static extern IntPtr SendMessageTimeout(
     try {
         Write-Host "$Bright$(Centred 'UZE')$Reset"
         Write-Host "$Muted$(Centred "$arch-windows")$Reset"
-        Write-Host "$Muted$(Centred 'The package manager and workspace for coding agents')$Reset"
+        Write-Host "$Muted$(Centred 'Agents come and go. Your work stays.')$Reset"
         Write-Host ''
         Note "$baseUrl/$releasePath/$archive"
 

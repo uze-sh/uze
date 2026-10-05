@@ -204,7 +204,7 @@ pub(crate) fn print_root_help() {
     );
     println!(
         "{}",
-        progress::label("The package manager and workspace for coding agents")
+        progress::label("Agents come and go. Your work stays.")
     );
     println!();
     println!(
