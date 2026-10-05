@@ -277,9 +277,9 @@ pub fn default_theme() -> &'static Theme {
 /// The default theme *as written*, which is the bottom of every stack.
 ///
 /// Merging happens between declarations rather than between resolved colours,
-/// and that is not an implementation detail: `state.success` is written
-/// `@accent` in the default, so a theme that repaints the accent has to
-/// repaint success with it. Completing from an already-resolved theme would
+/// and that is not an implementation detail: `surface.selected` and
+/// `command.packages` are written `@accent` in the default, so a theme that
+/// repaints the accent has to repaint them with it. Completing from an already-resolved theme would
 /// hand it the old accent's value and quietly break every alias the default
 /// relies on.
 pub fn default_file() -> &'static ThemeFile {
@@ -811,7 +811,9 @@ mod tests {
             (Token::TextDim, Rgb(91, 96, 101)),
             (Token::TextFaint, Rgb(61, 66, 71)),
             (Token::TextInactive, Rgb(154, 152, 146)),
-            (Token::Accent, Rgb(143, 209, 158)),
+            // Monochrome: the accent is the ink at full strength, and the
+            // sage it used to be is kept only where it means something worked.
+            (Token::Accent, Rgb(255, 255, 255)),
             (Token::StateSuccess, Rgb(143, 209, 158)),
             (Token::StateWarning, Rgb(224, 181, 103)),
             (Token::StateDanger, Rgb(224, 118, 95)),
@@ -821,7 +823,10 @@ mod tests {
             // Derived, and landing exactly where the hand-blended constants
             // did — see `derived_surfaces_are_composited_rather_than_transcribed`.
             (Token::BorderFaint, Rgb(22, 24, 25)),
-            (Token::SurfaceSelected, Rgb(22, 30, 26)),
+            // A neutral lift between `surface.raised` and
+            // `surface.raised-bright`, so a selection still reads where it
+            // sits on a raised ground now that it carries no hue.
+            (Token::SurfaceSelected, Rgb(37, 39, 40)),
             (Token::SurfaceRaised, Rgb(32, 34, 35)),
             (Token::SurfaceRaisedSubtle, Rgb(27, 29, 30)),
             (Token::SurfaceRecessed, Rgb(16, 18, 19)),
@@ -865,7 +870,7 @@ mod tests {
         let background = loaded.theme.background();
         assert_eq!(
             loaded.theme.color(Token::SurfaceSelected),
-            Rgb(0xbd, 0x93, 0xf9).over(background, 0x17)
+            Rgb(0xbd, 0x93, 0xf9).over(background, 0x1c)
         );
         let repainted = load(r##"{ "colors": { "state.danger": "#ff5555" } }"##);
         assert_eq!(
@@ -944,7 +949,7 @@ mod tests {
         assert_eq!(loaded.theme.color(Token::TextMuted), Rgb(0x44, 0x55, 0x66));
         // Written `@accent` two layers down, and it followed the child.
         assert_eq!(
-            loaded.theme.color(Token::StateSuccess),
+            loaded.theme.color(Token::CommandPackages),
             Rgb(0xaa, 0xbb, 0xcc)
         );
     }
@@ -1041,11 +1046,17 @@ mod tests {
 
     #[test]
     fn an_alias_follows_through_the_overriding_theme() {
-        // `state.success` aliases `accent` in the default, so a theme that
-        // repaints the accent repaints success too — which is what aliasing
-        // is for, and what the two colours meant when they were one const.
+        // `command.packages` aliases `accent` in the default, so a theme that
+        // repaints the accent repaints the package manager's commands too —
+        // which is what aliasing is for.
         let loaded = load(r##"{ "colors": { "accent": "#ff8800" } }"##);
-        assert_eq!(loaded.theme.color(Token::StateSuccess), Rgb(255, 136, 0));
+        assert_eq!(loaded.theme.color(Token::CommandPackages), Rgb(255, 136, 0));
+        // Success is its own declaration in the default, not an alias of the
+        // accent: a monochrome accent must not turn every check mark white.
+        assert_eq!(
+            loaded.theme.color(Token::StateSuccess),
+            default_theme().color(Token::StateSuccess)
+        );
     }
 
     #[test]

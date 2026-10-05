@@ -92,6 +92,9 @@ struct Emphasis {
     bold: bool,
     italic: bool,
     struck: bool,
+    /// Inside a link's text: a reference, drawn in the hue inline code
+    /// wears, since both point at something rather than say it.
+    link: bool,
 }
 
 /// The document being built, one event at a time.
@@ -166,8 +169,11 @@ impl Document {
             Event::Code(code) => {
                 // Inline code keeps its backticks' meaning without their
                 // characters: it is the one run of text that is quoted
-                // rather than emphasised.
-                self.push(Span::new(code.to_string(), Role::Accent));
+                // rather than emphasised, so it wears the hue that
+                // classifies rather than the accent — under a monochrome
+                // theme the accent is the ink, and a quoted name drawn in
+                // it read as nothing at all.
+                self.push(Span::new(code.to_string(), Role::Info));
             }
             Event::SoftBreak => self.push(Span::new(" ", Role::Default)),
             Event::HardBreak => self.flush(),
@@ -211,6 +217,7 @@ impl Document {
             Tag::Emphasis => self.emphasis.italic = true,
             Tag::Strong => self.emphasis.bold = true,
             Tag::Strikethrough => self.emphasis.struck = true,
+            Tag::Link { .. } => self.emphasis.link = true,
             Tag::BlockQuote(_) => {
                 self.flush();
                 self.quotes += 1;
@@ -271,6 +278,7 @@ impl Document {
             TagEnd::Emphasis => self.emphasis.italic = false,
             TagEnd::Strong => self.emphasis.bold = false,
             TagEnd::Strikethrough => self.emphasis.struck = false,
+            TagEnd::Link => self.emphasis.link = false,
             TagEnd::BlockQuote(_) => {
                 self.flush();
                 self.quotes = self.quotes.saturating_sub(1);
@@ -348,14 +356,23 @@ impl Document {
         let mut span = span;
         if let Some(level) = self.heading {
             span.bold = true;
+            // Weight and brightness carry the hierarchy, not hue: the
+            // accent is the ink under a monochrome theme and would put a
+            // heading level on a par with body text.
             span.role = match level {
-                HeadingLevel::H1 => Role::Bright,
-                HeadingLevel::H2 => Role::Accent,
+                HeadingLevel::H1 | HeadingLevel::H2 => Role::Bright,
                 _ => Role::Secondary,
             };
         } else {
             span.bold |= self.emphasis.bold;
             span.italic |= self.emphasis.italic;
+            if span.role == Role::Default {
+                if self.emphasis.link {
+                    span.role = Role::Info;
+                } else if self.emphasis.bold {
+                    span.role = Role::Bright;
+                }
+            }
             if self.emphasis.struck {
                 // No strikethrough in the vocabulary, and one variant for
                 // one extension is not the bar: dimming says "this no
@@ -708,6 +725,45 @@ mod tests {
     }
 
     #[test]
+    fn each_kind_of_text_wears_the_role_of_what_it_is() {
+        let lines = rendered(
+            "## Steps\n\n- [x] call `reconcile` from [the guide](https://x.dev) **now**\n- [ ] then ship\n",
+        );
+        let spans: Vec<&Span> = lines.iter().flat_map(|line| &line.spans).collect();
+        let role_of = |text: &str| {
+            spans
+                .iter()
+                .find(|span| span.text.trim() == text)
+                .map(|span| span.role)
+                .unwrap_or_else(|| panic!("{text:?} is drawn: {spans:?}"))
+        };
+
+        assert_eq!(
+            role_of("Steps"),
+            Role::Bright,
+            "a section heading is bright, not the accent"
+        );
+        assert_eq!(role_of("reconcile"), Role::Info, "inline code classifies");
+        assert_eq!(
+            role_of("the guide"),
+            Role::Info,
+            "and so does a link's text"
+        );
+        assert_eq!(
+            role_of("now"),
+            Role::Bright,
+            "strong text is brighter as well as heavier"
+        );
+        assert_eq!(role_of("[x]"), Role::Success, "a done step is done");
+        assert_eq!(role_of("[ ]"), Role::Muted, "an open one waits");
+        assert_eq!(
+            role_of("•"),
+            Role::Muted,
+            "and the marker stays muted: the host hangs a wrapped item under it by that role"
+        );
+    }
+
+    #[test]
     fn emphasis_survives_as_weight_rather_than_as_punctuation() {
         let lines = rendered("Some **bold** and *thin* words.\n");
         let spans: Vec<&Span> = lines.iter().flat_map(|line| &line.spans).collect();
@@ -791,7 +847,7 @@ mod tests {
         assert!(
             row.spans
                 .iter()
-                .any(|span| span.text == "code" && span.role == Role::Accent),
+                .any(|span| span.text == "code" && span.role == Role::Info),
             "inline code is still quoted"
         );
         assert!(

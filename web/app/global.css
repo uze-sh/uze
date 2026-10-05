@@ -4,31 +4,31 @@
 @plugin 'tailwind-scrollbar';
 
 /*
-  uze — theme lifted from the TUI's own palette (src/ui.rs), not invented for
-  the web: near-black base, warm off-white text, one signature sage-green
-  accent doubling as the success/native/pass color everywhere. Structure
-  comes from hairline dividers, never filled surface slabs or boxed panels.
-  Light mode is the same system read in reverse (paper <-> ink swapped),
-  with the accent deepened enough to hold contrast on a light ground. Its
-  surface stays on the paper's own warm axis: the accent is the one green on a
-  light page, and a surface tinted toward it read as a cast over everything
-  rather than as a raised plane.
+  uze — black and white, the same as its terminal UI's default theme. The
+  accent is the ink itself: emphasis, focus and the primary action are drawn
+  in it, and no brand hue tints a ground. Colour is kept for what means
+  something, the way a terminal spends it: `success` (the TUI's green) on a
+  check or an addition, `warn` on something adapted or waiting, `danger` on
+  something removed. Structure comes from hairline dividers, never filled
+  surface slabs or boxed panels.
 */
 @theme {
   --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-ui-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-paper: #f2f0ea;
-  --color-ink: #0a0c0d;
-  --color-muted: #6b6864;
-  --color-line: #ddd8cd;
-  --color-surface: #eae7de;
-  --color-accent: #3d7a52;
-  /* The two states the illustrations mark beside the accent: something
-     adapted or waiting, and something removed. Darker on paper, where the
-     terminal's own amber and red would sit at 2:1. */
+  --color-paper: #ffffff;
+  --color-ink: #0a0a0a;
+  --color-muted: #6b6b70;
+  --color-line: #e4e4e7;
+  --color-surface: #f4f4f5;
+  --color-accent: var(--color-ink);
+  /* The states, darker on paper, where the terminal's own green, amber and
+     red would sit near 2:1. */
+  --color-success: #2f7a4a;
   --color-warn: #8a6100;
   --color-danger: #b3402f;
+  /* What the terminal's markdown draws code and links in. */
+  --color-info: #3d5a99;
 
   --color-fd-background: var(--color-paper);
   --color-fd-foreground: var(--color-ink);
@@ -50,14 +50,37 @@
 }
 
 .dark {
-  --color-paper: #0a0c0d;
-  --color-ink: #f2f0ea;
-  --color-muted: #a8a6a0;
-  --color-line: #1e1f20;
-  --color-surface: #161e1a;
-  --color-accent: #8fd19e;
+  --color-paper: #000000;
+  --color-ink: #f5f5f5;
+  --color-muted: #a1a1a8;
+  --color-line: #26262a;
+  --color-surface: #121213;
+  --color-accent: var(--color-ink);
+  --color-success: #8fd19e;
   --color-warn: #d4a72c;
   --color-danger: #d9776b;
+  --color-info: #7d97c9;
+
+  /* fumadocs' default-colors sheet gives `.dark` its own neutral #121212
+     ground and greys, which outrank the @theme mapping above in dark mode:
+     the page body drew in fumadocs' black instead of ours. Pointing them
+     back at the site tokens here keeps one palette in both themes. */
+  --color-fd-background: var(--color-paper);
+  --color-fd-foreground: var(--color-ink);
+  --color-fd-muted: var(--color-surface);
+  --color-fd-muted-foreground: var(--color-muted);
+  --color-fd-popover: var(--color-paper);
+  --color-fd-popover-foreground: var(--color-ink);
+  --color-fd-card: var(--color-surface);
+  --color-fd-card-foreground: var(--color-ink);
+  --color-fd-border: var(--color-line);
+  --color-fd-primary: var(--color-accent);
+  --color-fd-primary-foreground: var(--color-paper);
+  --color-fd-secondary: var(--color-surface);
+  --color-fd-secondary-foreground: var(--color-ink);
+  --color-fd-accent: var(--color-surface);
+  --color-fd-accent-foreground: var(--color-ink);
+  --color-fd-ring: var(--color-accent);
 }
 
 /*
@@ -167,4 +190,31 @@ html > body[data-scroll-locked] {
 .dark img[src$='/harnesses/codex.svg'],
 .dark img[src$='/harnesses/opencode.svg'] {
   filter: invert(1);
+}
+
+/*
+  The home page's terminal session: a block caret that blinks unless motion
+  is reduced, and scrollback that fades where it leaves the top instead of
+  being cut through a line.
+*/
+.session-caret {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+  background: var(--color-ink);
+  animation: session-blink 1.1s steps(1, end) infinite;
+}
+@keyframes session-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-caret {
+    animation: none;
+  }
+}
+.session-scrollback {
+  mask-image: linear-gradient(to bottom, transparent, #000 2.5rem);
 }

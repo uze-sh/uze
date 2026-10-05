@@ -1,13 +1,7 @@
 ---
-title: Extensions
-description: Spec, to read what a change intends, Architect, to see your project's diagrams, and Code, to read what an agent changed
+title: Spec
+description: "Read what a change intends: its proposal, design and tasks, from the spec-driven tool the project uses"
 ---
-
-Three tools are built into the workspace, in the order you read a change:
-what it intends, how the project is shaped, and what the code now is. Each
-opens where the selected tab is and closes with the same key.
-
-## Spec
 
 <Demo
   src="/uze-spec.gif"
@@ -38,7 +32,7 @@ are all done sits in **ready to archive** when its tool archives, and in
 `p` switches a document between preview and source. `Enter` opens it in Code,
 where you can edit it. `Tab` moves between the subjects.
 
-### Tasks in the sidebar
+## Tasks in the sidebar
 
 When the selected agent is working on a change, a **tasks** section sits in
 the sidebar above the timeline. Its header says how many of that work's tasks
@@ -46,7 +40,7 @@ are done out of all of them, even folded. Open, it lists each change with its
 own count, and clicking one opens Spec on it. Like the timeline, it is about
 the selected checkout only: the rest of the project's changes are in Spec.
 
-### Supported tools
+## Supported tools
 
 A tool is recognised by the directory it keeps in the checkout.
 
@@ -87,84 +81,7 @@ A checkout that keeps more than one lists them together, each change named with 
 tool. Contracts written as YAML, JSON, GraphQL or protobuf are listed beside
 the documents and shown as source.
 
-## Architect
-
-<Demo
-  src="/uze-architect.gif"
-  poster="/uze-architect-poster.png"
-  alt="The architect surface: a C4 diagram drawn in the terminal, a box selected, then a level walked into."
-  caption="Alt+A opens it; drag to move, click a box to see what it connects to."
-/>
-
-Your project's Mermaid diagrams, drawn right in the terminal. Click a box to
-light up what it connects to; `Enter` goes inside it, `Backspace` comes back
-out.
-
-Tell uze where the diagrams live, in `agents.yaml`:
-
-```yaml
-artifacts:
-  path: docs/architecture
-```
-
-### Ask an agent to draw them
-
-You don't have to write Mermaid. Ask any agent, with the `uze:architect` skill:
-
-```text
-/uze:architect draw a C4 container diagram of this project
-```
-
-```text
-/uze:architect add a sequence diagram of the login flow
-```
-
-The skill picks the right kind of diagram, writes it where the architect finds
-it (setting up `artifacts:` if the project has none yet), and checks that it
-draws. C4 views, sequence diagrams and flowcharts are supported.
-
-## Code
-
-<Demo
-  src="/uze-code.gif"
-  poster="/uze-code-poster.png"
-  alt="The code surface: an agent's changed files and a diff, then the file tree, then the checkout as a treemap."
-  caption="Alt+G opens the changes, Alt+E the files, m the map."
-/>
-
-Everything about the checkout the selected agent works in.
-
-| Key | Shows |
-| --- | --- |
-| `Alt+G` | What changed, with the diff |
-| `Alt+E` | The files. `p` switches a document between preview and source |
-| `m` | A map of the checkout: where its code is, and what changes most |
-
-The file you select stays selected when you switch between them. In the files,
-`e` edits a file and `Ctrl+S` saves.
-
-Right-click a changed file, or press `.`, for what you can do with the change:
-open the file, copy its path, or discard the change. Discarding asks once,
-then puts the file back the way the last commit has it. There is no stage or
-commit here: the checkout belongs to the agent working in it, and the agent
-commits its own work.
-
-## Turning one off
-
-All three are on until you say otherwise. Under management (`Ctrl+O`), on
-**Extensions**, select one and press `Enter` to switch it off or back on. The workspace follows at once: its button leaves
-the tab strip, its keys go to the program in the pane, it leaves the action
-index (`F1`), and its sidebar section is gone with it (the timeline for
-Code, the tasks for Spec).
-
-The choice is kept in `~/.uze/config.toml`, so you can also write it by hand:
-
-```toml
-[extensions]
-architect = false
-```
-
 <Cards>
-  <Card title="Skills" href="/docs/reference/skills" />
-  <Card title="Shortcuts" href="/docs/workspace/keys" />
+  <Card title="Architect" href="/docs/workspace/architect" />
+  <Card title="Code" href="/docs/workspace/code" />
 </Cards>

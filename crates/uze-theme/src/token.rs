@@ -69,15 +69,19 @@ vocabulary! {
         BorderFaint = "border.faint",
 
         // ── accent and state ───────────────────────────────────────────
-        /// The one signature hue.
+        /// What an accented element wears: focus, selection, a key, the
+        /// control that acts. In UZE's own monochrome default this is the
+        /// ink at full strength rather than a hue.
         Accent = "accent",
         /// [`Accent`](Self::Accent) at rest, for a control whose hue is what
         /// marks it as the one that acts: pulled back until the pointer
         /// asks, as [`StateSuccessMuted`](Self::StateSuccessMuted) is for a
         /// count.
         AccentMuted = "accent-muted",
-        /// Something worked. Aliases [`Accent`](Self::Accent) by default —
-        /// the design's own `levelColor` uses one colour for both.
+        /// Something worked: a done mark, a ready or installed state, a line
+        /// added. Its own colour, never an alias of
+        /// [`Accent`](Self::Accent), so a monochrome accent leaves success
+        /// green.
         StateSuccess = "state.success",
         /// [`StateSuccess`](Self::StateSuccess) at rest: the same meaning,
         /// held back until something asks for it. A count that is also a

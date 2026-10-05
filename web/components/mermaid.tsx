@@ -28,7 +28,7 @@ export function Mermaid({ chart }: { chart: string }) {
           primaryColor: cssVar('--color-surface', dark ? '#161e1a' : '#e5ece6'),
           primaryBorderColor: cssVar('--color-line', dark ? '#1e1f20' : '#ddd8cd'),
           primaryTextColor: cssVar('--color-ink', dark ? '#f2f0ea' : '#0a0c0d'),
-          lineColor: cssVar('--color-accent', dark ? '#8fd19e' : '#3d7a52'),
+          lineColor: cssVar('--color-accent', dark ? '#f5f5f5' : '#0a0a0a'),
           textColor: cssVar('--color-ink', dark ? '#f2f0ea' : '#0a0c0d'),
         },
       });

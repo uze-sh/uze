@@ -275,13 +275,13 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
         (
             Symbol::MarkNative,
             "Native",
-            Token::Accent,
+            Token::StateSuccess,
             "Works directly, no adaptation needed.",
         ),
         (
             Symbol::MarkNative,
             "Bridged",
-            Token::Accent,
+            Token::StateSuccess,
             "Routed through UZE's managed AGENTS.md bridge file.",
         ),
         (

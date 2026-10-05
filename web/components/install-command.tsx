@@ -28,7 +28,7 @@ export function InstallCommand({ command }: { command: string }) {
           is a thing to fight, and the copy button already removes the reason
           to select it by hand. */}
       <code className="flex-1 px-3 py-2.5 leading-6 text-ink whitespace-pre-wrap break-words">
-        <span className="text-accent select-none">$ </span>
+        <span className="text-muted select-none">$ </span>
         {command}
       </code>
       <button

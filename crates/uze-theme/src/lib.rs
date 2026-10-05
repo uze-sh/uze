@@ -22,7 +22,7 @@
 //!
 //! // Works before any theme is loaded — the built-in default needs no I/O.
 //! let accent = active().color(Token::Accent);
-//! assert_eq!((accent.0, accent.1, accent.2), (143, 209, 158));
+//! assert_eq!((accent.0, accent.1, accent.2), (255, 255, 255));
 //! ```
 
 #![forbid(unsafe_code)]

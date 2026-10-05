@@ -940,11 +940,13 @@ impl AgentTabStatus {
     }
 
     /// Idle is the only state drawn faint: the other three all report
-    /// something the user asked for or needs to notice.
+    /// something the user asked for or needs to notice. Completed is the
+    /// one that says something worked, so it alone wears success.
     pub(super) fn color(self) -> Color {
         match self {
             AgentTabStatus::Idle => theme::color(Token::TextFaint),
-            _ => theme::color(Token::Accent),
+            AgentTabStatus::Completed => theme::color(Token::StateSuccess),
+            AgentTabStatus::Working | AgentTabStatus::Selected => theme::color(Token::Accent),
         }
     }
 }

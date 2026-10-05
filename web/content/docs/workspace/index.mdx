@@ -21,10 +21,6 @@ in every agent it starts.
 uze workspace
 ```
 
-<Callout type="info">
-  The workspace is **experimental**. Its layout and shortcuts may still change.
-</Callout>
-
 ## Spaces, tabs, panes
 
 | | What it is |
@@ -63,6 +59,33 @@ uze config notification on      # ring the terminal bell when an agent finishes
 uze config notification silent  # never
 ```
 
+## Extensions
+
+Three tools are built into the workspace, in the order you read a change:
+what it intends, how the project is shaped, and what the code now is. Each
+opens where the selected tab is and closes with the same key.
+
+| | Key | Shows |
+| --- | --- | --- |
+| [Spec](/docs/workspace/spec) | `Alt+X` | The change the agent works from: proposal, design, tasks |
+| [Architect](/docs/workspace/architect) | `Alt+A` | The project's diagrams |
+| [Code](/docs/workspace/code) | `Alt+G` | What the agent changed, its files and a map of the checkout |
+
+### Turning one off
+
+All three are on until you say otherwise. Under management (`Ctrl+O`), on
+**Extensions**, select one and press `Enter` to switch it off or back on. The workspace follows at once: its button leaves
+the tab strip, its keys go to the program in the pane, it leaves the action
+index (`F1`), and its sidebar section is gone with it (the timeline for
+Code, the tasks for Spec).
+
+The choice is kept in `~/.uze/config.toml`, so you can also write it by hand:
+
+```toml
+[extensions]
+architect = false
+```
+
 ## Management
 
 `Ctrl+O` switches to management and back: your plugins, marketplaces, agents'
@@ -70,6 +93,6 @@ setup, appearance and shortcuts, all with the mouse.
 
 <Cards>
   <Card title="Running agents" href="/docs/workspace/agents" />
-  <Card title="Extensions" href="/docs/workspace/extensions" />
+  <Card title="Spec" href="/docs/workspace/spec" />
   <Card title="Shortcuts" href="/docs/workspace/keys" />
 </Cards>

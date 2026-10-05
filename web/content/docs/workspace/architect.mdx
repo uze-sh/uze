@@ -1,0 +1,43 @@
+---
+title: Architect
+description: See the project's Mermaid and C4 diagrams in the terminal, and ask an agent to draw them
+---
+
+<Demo
+  src="/uze-architect.gif"
+  poster="/uze-architect-poster.png"
+  alt="The architect surface: a C4 diagram drawn in the terminal, a box selected, then a level walked into."
+  caption="Alt+A opens it; drag to move, click a box to see what it connects to."
+/>
+
+Your project's Mermaid diagrams, drawn right in the terminal. Click a box to
+light up what it connects to; `Enter` goes inside it, `Backspace` comes back
+out.
+
+Tell uze where the diagrams live, in `agents.yaml`:
+
+```yaml
+artifacts:
+  path: docs/architecture
+```
+
+## Ask an agent to draw them
+
+You don't have to write Mermaid. Ask any agent, with the `uze:architect` skill:
+
+```text
+/uze:architect draw a C4 container diagram of this project
+```
+
+```text
+/uze:architect add a sequence diagram of the login flow
+```
+
+The skill picks the right kind of diagram, writes it where the architect finds
+it (setting up `artifacts:` if the project has none yet), and checks that it
+draws. C4 views, sequence diagrams and flowcharts are supported.
+
+<Cards>
+  <Card title="Code" href="/docs/workspace/code" />
+  <Card title="Skills" href="/docs/reference/skills" />
+</Cards>

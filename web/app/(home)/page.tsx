@@ -1,351 +1,203 @@
 import Link from 'next/link';
-import { Check } from 'lucide-react';
-import { InstallCommand } from '@/components/install-command';
+import { Plus } from 'lucide-react';
+import { InstallTabs } from '@/components/install-tabs';
+import { HarnessMark, harnessMarks, homepageOf } from '@/components/harness-marks';
 import { TrademarkNotice } from '@/components/trademark-notice';
-import matrix from '@/lib/harness-matrix.json';
-import { UzeMark } from '@/components/uze-mark';
-import { HeroIllustration } from '@/components/hero-illustration';
-import { WorkspaceIllustration } from '@/components/workspace-illustration';
-
-type Capability = 'context' | 'skills' | 'mcp' | 'agents' | 'hooks' | 'session' | 'package';
-
-const columns: [Capability, string][] = [
-  ['context', 'AGENTS.md'],
-  ['skills', 'Skills'],
-  ['mcp', 'MCP'],
-  ['agents', 'Agents'],
-  ['hooks', 'Hooks'],
-  ['session', 'Session'],
-  ['package', 'Plugin'],
-];
-
-// The question a reader is actually asking of this table is "does it work
-// here", so that is what the mark answers: every delivered route gets the
-// same check, and the route word beside it is the detail. Dimming `bridge`
-// and `adapted` against `native` answered a different question and made two
-// working routes look broken.
-function Route({ value }: { value: string }) {
-  if (value === 'none') {
-    return (
-      <span className="font-mono text-xs text-muted/60" title="not delivered through this route">
-        —
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-xs whitespace-nowrap text-ink">
-      <Check className="size-3.5 shrink-0 text-accent" aria-hidden strokeWidth={3} />
-      {value}
-    </span>
-  );
-}
-
-// Where a name links to: the vendor's own page, carried by the same
-// generated matrix the table below is built from (each integration declares
-// it — `IntegrationPort::homepage`), so the site never holds a second copy
-// of a URL only the integration knows.
-function homepageOf(name: string) {
-  return matrix.harnesses.find((harness) => harness.name === name)?.url;
-}
-
-// Icon sources: Claude Code, Codex and OpenCode are simple-icons paths, drawn
-// inline so they take the page's theme — an <image>-embedded SVG renders in its
-// own document and inherits no color from the page. Claude Code carries its own
-// brand orange instead, so it reads the same wherever it is drawn. Antigravity
-// has no distinct mark of its own; that is Google Antigravity's actual favicon,
-// fetched from the vendor's site (public/harnesses/, not redistributed by a
-// third party), at its real brand colors. Terms for all four: CREDITS.md.
-const CLAUDE_ORANGE = '#D97757';
-
-const harnesses = [
-  {
-    name: 'Claude Code',
-    icon: {
-      type: 'path' as const,
-      d: 'M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z',
-      fill: CLAUDE_ORANGE,
-    },
-  },
-  {
-    name: 'Codex',
-    icon: {
-      type: 'path' as const,
-      d: 'M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z',
-    },
-  },
-  {
-    name: 'OpenCode',
-    icon: { type: 'path' as const, d: 'M22 24H2V0h20zM17 4.8H7v14.4h10z' },
-  },
-  {
-    name: 'Antigravity',
-    icon: { type: 'image' as const, href: '/harnesses/antigravity.png' },
-  },
-];
-
-const pillars = [
-  {
-    title: 'One package, four native surfaces',
-    body: 'The Store owns a plugin’s bytes and writes nothing a harness reads. Each integration delivers them through the most native mechanism that harness has: a real plugin where one exists, a safe adapter only as a last resort.',
-    href: '/docs/concepts',
-    link: 'How delivery is decided',
-  },
-  {
-    title: 'Semantics survive the trip',
-    body: 'A skill’s invocation policy, a hook’s effect, an agent’s frontmatter: each is translated into the vendor’s own encoding, or reported as adapted. No route is claimed native without a passing real-harness scenario.',
-    href: '/docs/reference/plugin-format',
-    link: 'What travels, and how',
-  },
-  {
-    title: 'One project context',
-    body: 'AGENTS.md is the portable baseline. Every harness reads it natively or through the one bridge uze maintains, inside regions it owns, never four instruction files drifting apart.',
-    href: '/docs/plugins/context',
-    link: 'How context reaches each harness',
-  },
-  {
-    title: 'Agents that don’t collide',
-    body: 'Run several at once in one terminal. Each can take an isolated checkout on a branch of its own, readiness is read from Git rather than announced, and finished work comes home through a delivery you trigger, with the diff, the file tree and the project’s own diagrams a keystroke away.',
-    href: '/docs/workspace',
-    link: 'Inside the workspace',
-  },
-];
-
-// What the section below it pictures, said before it is shown: each
-// illustration is one module, and neither reads as that on its own.
-function SectionHeading({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) {
-  return (
-    <header className="text-center">
-      <p className="font-mono text-xs text-accent">{eyebrow}</p>
-      <h2 className="mt-3 font-mono text-2xl font-bold tracking-tight text-ink sm:text-3xl">{title}</h2>
-      <p className="mx-auto mt-3 max-w-[56ch] text-sm leading-relaxed text-muted sm:text-base">{body}</p>
-    </header>
-  );
-}
+import { faq } from '@/lib/home-content';
+import { ConsoleSession } from '@/components/home/session';
+import { SessionSummary } from '@/components/home/session-summary';
 
 export default function HomePage() {
   return (
-    <main className="flex flex-col items-center flex-1 px-6 font-sans">
-      {/* Hero. Holds the first screen on its own — the banner and the h-14
-          header are the only chrome above it — so the illustrations below are
-          something you arrive at by scrolling, not something competing with
-          the headline for the same view. */}
-      <section className="flex w-full max-w-5xl flex-col justify-center min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] py-14 text-center">
-        <h1 className="mx-auto max-w-[21ch] font-mono font-bold tracking-tight text-ink text-[2.25rem] leading-[1.04] sm:text-6xl lg:text-[4rem]">
-          The package manager and workspace
-          <br />
-          <span className="text-accent">for coding agents.</span>
-        </h1>
-        <p className="mx-auto mt-6 max-w-[56ch] text-lg leading-relaxed text-muted">
-          Give Claude Code, Codex, OpenCode and Antigravity the same plugins and one{' '}
-          <code className="font-mono text-ink">AGENTS.md</code>, each delivered natively. Then
-          run several agents at once, each in a checkout of its own. Agents come and go; your
-          work stays.
-        </p>
-
-        <div className="mx-auto mt-9 flex max-w-xl flex-col items-stretch gap-3 sm:flex-row">
-          <div className="flex-1 text-left">
-            <InstallCommand command="curl -fsSL https://uze.sh/i | sh" />
-          </div>
-          <Link
-            href="/docs"
-            className="inline-flex shrink-0 items-center justify-center border border-ink bg-ink px-5 py-2.5 font-mono text-[13px] text-paper transition-opacity hover:opacity-85"
-          >
-            Get started
-          </Link>
-        </div>
-        <p className="mt-3 text-xs text-muted">
-          Linux and macOS, x86_64 or aarch64, checksum verified.{' '}
-          <Link href="/docs/installation" className="text-ink underline underline-offset-4 hover:text-accent transition-colors">
-            Build from source
-          </Link>{' '}
-          on anything else.
-        </p>
-      </section>
-
-      {/* What uze does, drawn: a screen of its own, the same height as the
-          hero, so the illustration is never read against the headline or
-          the next one. It carries no ground of its own and follows the
-          theme. */}
-      <section className="flex w-full max-w-[1296px] min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-12">
-        <SectionHeading
-          eyebrow="Package manager"
-          title="One plugin, every agent."
-          body="Install it once. Its bytes stay in one Store, and each capability is delivered through the most native route each harness has."
-        />
-        {/* As wide as the column, and no wider than the height left under
-            the heading allows at the stage's 12:5, so the heading and the
-            picture share one screen on a short desktop too. */}
-        <div className="mx-auto mt-4 w-full" style={{ maxWidth: 'calc((100dvh - var(--uze-banner-height) - 3.5rem - 16rem) * 2.4)' }}>
-          <HeroIllustration />
-        </div>
-      </section>
-
-      {/* The workspace, drawn on the package illustration's stage so the two
-          modules read as one set; the recording lives in its docs. */}
-      <section className="flex w-full max-w-[1296px] min-h-[calc(100dvh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-12">
-        <SectionHeading
-          eyebrow="Workspace"
-          title="Several agents, one terminal."
-          body="Each agent works in a checkout of its own. Read what it plans, how the project is shaped and what it changed, then bring the work home."
-        />
-        <div className="mx-auto mt-4 w-full" style={{ maxWidth: 'calc((100dvh - var(--uze-banner-height) - 3.5rem - 16rem) * 2.4)' }}>
-          <WorkspaceIllustration />
-        </div>
-      </section>
-
-      {/* Who it delivers to. */}
-      <section className="w-full max-w-5xl border-t border-line py-20 sm:py-24">
-        <h2 className="text-center font-mono text-xs text-muted">Delivers natively to</h2>
-        <ul className="mt-10 grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4">
-          {harnesses.map((harness) => (
-            <li key={harness.name} className="text-center">
-              <a
-                href={homepageOf(harness.name)}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="flex flex-col items-center gap-2.5 text-ink transition-colors hover:text-accent"
-              >
-                <svg viewBox="0 0 24 24" className="size-7" aria-hidden>
-                  {harness.icon.type === 'path' ? (
-                    <path d={harness.icon.d} fill={harness.icon.fill ?? 'currentColor'} />
-                  ) : (
-                    <image href={harness.icon.href} width="24" height="24" />
-                  )}
-                </svg>
-                <span className="font-mono text-sm font-semibold">{harness.name}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* What it actually does. */}
-      <section className="w-full max-w-5xl border-t border-line py-20 sm:py-24">
-        <ul className="grid gap-x-16 gap-y-14 sm:grid-cols-2">
-          {pillars.map((pillar) => (
-            <li key={pillar.title}>
-              <h3 className="font-mono text-lg font-semibold leading-snug text-ink">{pillar.title}</h3>
-              <p className="mt-2.5 text-sm leading-relaxed text-muted">{pillar.body}</p>
+    <main className="flex flex-1 flex-col items-center px-4 font-sans">
+      {/* One grid with the header: fumadocs sizes its home layout by
+          `--fd-layout-width` and insets the header by `px-4`, so every section
+          takes that width less the same inset, and its edges meet the logo and
+          the header's last control at every screen size. */}
+      {/* Two columns: what uze is and how to get it on the left, the session
+          that shows it on the right, so the claim and the proof are read
+          side by side. The stream is the page's own terminal, with no window
+          drawn around it. */}
+      <section className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] lg:pt-20">
+        <div className="grid gap-x-14 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] lg:items-center">
+          {/* Below the two-column width the hero is a screen of its own:
+              the claim and the way to install it, with nothing competing
+              for the first view. */}
+          <div className="flex min-h-[calc(100svh_-_var(--uze-banner-height)_-_3.5rem)] flex-col justify-center py-16 lg:min-h-0 lg:py-0">
+            {/* Each sentence on a line of its own, so a break never lands
+                mid-thought. */}
+            <h1 className="text-[2.3rem] font-semibold leading-[0.98] tracking-[-0.045em] text-ink sm:text-[4rem] lg:text-[3.1rem]">
+              <span className="block text-balance">Agents come and go.</span>
+              <span className="block text-balance">Your work stays.</span>
+            </h1>
+            <p className="mt-7 max-w-[34rem] text-pretty text-[17px] leading-relaxed text-muted sm:text-[18px]">
+              A layer between you and your agents: the same plugins and{' '}
+              <code className="font-mono text-[0.95em] text-ink">AGENTS.md</code> in Claude Code,
+              Codex, OpenCode and Antigravity, and a terminal to run them side by side.
+            </p>
+            {/* One row for the one thing to do: the command, and the way into
+                the docs at its height. The source is a click away in the
+                header and at the foot of the page. */}
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-start">
+              <div className="min-w-0 flex-1">
+                <InstallTabs />
+              </div>
               <Link
-                href={pillar.href}
-                className="mt-3.5 inline-block border-b border-accent/50 pb-0.5 font-mono text-xs text-ink transition-colors hover:border-accent hover:text-accent"
+                href="/docs/quickstart"
+                className="inline-flex shrink-0 items-center justify-center px-5 py-2.5 font-mono text-[13px] font-semibold transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:mt-[30px] sm:h-[46px]"
+                style={{ background: 'var(--color-accent)', color: 'var(--color-paper)' }}
               >
-                {pillar.link}
+                Get started
               </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* What each harness receives. Generated from the integration code
-          (web/lib/harness-matrix.json) — the same source the docs matrix is
-          built from, so the landing page cannot claim a route the code
-          stopped taking. */}
-      <section className="w-full max-w-5xl border-t border-line py-20 sm:py-24">
-        <h2 className="font-mono font-semibold text-ink">What each harness receives</h2>
-        <p className="mt-1.5 max-w-[68ch] text-sm leading-relaxed text-muted">
-          A check means the capability is delivered. The word beside it is how:{' '}
-          <span className="text-ink">native</span> through the harness&apos;s own mechanism,{' '}
-          <span className="text-ink">bridge</span> or <span className="text-ink">adapted</span>{' '}
-          where uze preserves the semantics another way and reports that it did. Every route is
-          derived from the integration that implements it.
-        </p>
-
-        <div className="mt-10 overflow-x-auto">
-          <table className="w-full min-w-[38rem] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-line">
-                <th className="py-3 pe-4 font-mono text-xs font-normal text-muted">Harness</th>
-                {columns.map(([key, label]) => (
-                  <th key={key} className="px-3 py-3 font-mono text-xs font-normal text-muted">
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {matrix.harnesses.map((harness) => (
-                <tr key={harness.name} className="border-b border-line/70">
-                  <th scope="row" className="py-4 pe-4 font-normal">
-                    <a
-                      href={harness.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="flex items-center gap-2.5 text-ink transition-colors hover:text-accent"
-                    >
-                      {harness.icon ? (
-                        <img src={harness.icon} alt="" className="size-4 shrink-0 rounded-[2px]" />
-                      ) : null}
-                      <span className="font-mono text-sm font-semibold">{harness.name}</span>
-                    </a>
-                  </th>
-                  {columns.map(([key]) => (
-                    <td key={key} className="px-3 py-4">
-                      <Route value={harness[key]} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
+          {/* Stacked, the session is the next section rather than the
+              hero's tail: a rule and a heading of its own, so it reads as
+              "here is how it is used" and not as more of the same block. */}
+          <div className="min-w-0 border-t border-line py-20 lg:border-0 lg:py-0">
+            <h2 className="mb-10 text-[1.75rem] font-semibold tracking-tight text-ink lg:hidden">
+              Three commands.
+            </h2>
+            {/* Always the dark palette: uze's terminal has no light theme, so a
+                session drawn on the page's light ground showed a uze that
+                does not exist. `.dark` on the block re-points the tokens for
+                it alone. A plain panel, no window chrome. */}
+            <div className="dark hidden bg-paper px-5 py-1 text-ink md:block">
+              <ConsoleSession />
+            </div>
+            <div className="md:hidden">
+              <SessionSummary />
+            </div>
+          </div>
         </div>
 
-        <p className="mt-8 text-center text-sm text-muted">
-          A dash means that route does not exist for the harness, and the capability arrives another
-          way. {matrix.planned.join(', ')} are on the roadmap; cells appear when the integration
-          lands.{' '}
-          <Link
-            href="/docs/reference/harnesses"
-            className="text-ink underline underline-offset-4 hover:text-accent transition-colors"
-          >
-            The full matrix, per capability
-          </Link>
-          .
-        </p>
-      </section>
-
-      <section className="w-full max-w-5xl border-t border-line py-24 sm:py-28 text-center">
-        <h2 className="font-mono text-2xl font-bold tracking-tight text-ink">
-          Set it up once, on this machine.
-        </h2>
-        <p className="mx-auto mt-3 max-w-[52ch] text-sm leading-relaxed text-muted">
-          uze detects the coding agents you already have, provisions the ones you don&apos;t through
-          each vendor&apos;s own installer, and reports what it could not do rather than guessing.
-        </p>
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-4 font-mono text-xs">
-          <Link
-            href="/docs"
-            className="border border-ink bg-ink px-5 py-2.5 text-paper transition-opacity hover:opacity-85"
-          >
-            Get started
-          </Link>
-          <Link
-            href="/docs/plugins/creating"
-            className="border border-line px-5 py-2.5 text-ink transition-colors hover:bg-surface"
-          >
-            Write a plugin
-          </Link>
-          <Link
-            href="https://github.com/uze-sh/uze"
-            className="inline-flex items-center gap-2 border border-line px-5 py-2.5 text-ink transition-colors hover:bg-surface"
-          >
-            <svg viewBox="0 0 16 16" className="size-3.5" fill="currentColor" aria-hidden="true">
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-            </svg>
-            Browse the source
-          </Link>
+        {/* Under the session it describes, not under the whole hero, and
+            shaped like the chapter bar above it: the agents spread across the
+            session's width, so the session sits framed between the two. */}
+        {/* Only beside the full session: the stacked summary names the
+            agents in its own second step and links the matrix itself. */}
+        <div className="mt-6 hidden md:block lg:ml-[calc(30rem+3.5rem)]">
+          {/* "Works with", never "powered by": the marks are the agents uze
+              serves, not anything it is made of. */}
+          <ul className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5">
+            {harnessMarks.map((harness) => (
+              <li key={harness.name}>
+                <a
+                  href={homepageOf(harness.name)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="flex items-center gap-2 whitespace-nowrap text-ink transition-colors hover:text-muted"
+                >
+                  <HarnessMark icon={harness.icon} className="size-4" />
+                  <span className="font-mono text-[13px] font-semibold">{harness.name}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-5 border-t border-line px-5 pt-5 text-center text-sm leading-relaxed text-balance text-muted">
+            Every route the agents report above is read from the integration that implements it.{' '}
+            <Link
+              href="/docs/reference/harnesses"
+              className="text-ink underline decoration-line underline-offset-4 transition-colors hover:decoration-ink"
+            >
+              The full matrix, per capability
+            </Link>
+            .
+          </p>
         </div>
       </section>
 
-      <footer className="w-full max-w-5xl border-t border-line py-14 text-center">
-        <p className="text-[11px] font-mono text-muted">
-          <UzeMark className="mr-2 inline-block size-[0.85em] align-middle text-accent" />
-          Built with 🖤 by{' '}
-          <a href="https://hiukky.com" className="text-ink hover:text-accent transition-colors">
+      {/* One column: a question is read top to bottom. The answer that undoes
+          the misreading starts open, so a reader who only skims sees it. */}
+      <section id="faq" className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-20 sm:py-24 lg:mt-16">
+        <div className="grid gap-x-16 gap-y-8 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+          <header>
+            <h2 className="text-[1.75rem] font-semibold tracking-tight text-ink">
+              Questions people ask first
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted">
+              The short answers. The docs have the long ones.
+            </p>
+            <p className="mt-5 text-sm text-muted">
+              Something else?{' '}
+              <Link
+                href="/docs/reference/faq"
+                className="text-ink underline decoration-line underline-offset-4 transition-colors hover:decoration-ink"
+              >
+                Read the full FAQ
+              </Link>{' '}
+              or{' '}
+              <Link
+                href="https://github.com/uze-sh/uze/discussions"
+                className="text-ink underline decoration-line underline-offset-4 transition-colors hover:decoration-ink"
+              >
+                ask on GitHub
+              </Link>
+              .
+            </p>
+          </header>
+          {/* Spaced, not ruled: the section's own divider already says where
+              the list starts, and a hairline under every question stacked
+              into a ladder of lines on a phone. */}
+          <div className="space-y-1">
+            {faq.map((item, index) => (
+              <details key={item.q} open={index === 0} className="group">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-4 text-[15px] font-semibold text-ink transition-colors hover:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+                  {item.q}
+                  <Plus
+                    className="size-4 shrink-0 text-muted transition-transform duration-200 group-open:rotate-45 group-open:text-accent"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
+                </summary>
+                <div className="max-w-[65ch] pb-6 pe-10 text-[15px] leading-relaxed text-muted">{item.a}</div>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-20">
+        <div className="grid gap-x-16 gap-y-6 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-end">
+          <div className="max-w-[40rem]">
+            <h2 className="text-[1.75rem] font-semibold tracking-tight text-ink">
+              Set it up once, on this machine.
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted">
+              uze finds the coding agents you already have, installs any you want through the vendor&apos;s
+              own installer, and reports what it could not do rather than guessing. One Rust binary, open
+              source under the Apache License 2.0.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3 font-mono text-[13px]">
+              <Link
+                href="/docs/quickstart"
+                className="inline-flex items-center px-4 py-2 font-semibold transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                style={{ background: 'var(--color-accent)', color: 'var(--color-paper)' }}
+              >
+                Get started
+              </Link>
+              <Link
+                href="https://github.com/uze-sh/uze"
+                className="inline-flex items-center px-4 py-2 text-ink transition-colors hover:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                style={{ boxShadow: 'inset 0 0 0 1px var(--color-line)' }}
+              >
+                Source on GitHub
+              </Link>
+            </div>
+          </div>
+          <InstallTabs />
+        </div>
+      </section>
+
+      <footer className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-10">
+        <p className="font-mono text-[11px] text-muted">
+          Built by{' '}
+          <a href="https://hiukky.com" className="text-ink transition-colors hover:text-muted">
             Romullo (@hiukky)
           </a>
+          .
         </p>
-        <div className="mt-6">
+        <div className="mt-5 [&>p]:mx-0">
           <TrademarkNotice />
         </div>
       </footer>

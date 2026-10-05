@@ -35,7 +35,7 @@ def manifest(assets: Path, tag: str) -> dict:
         }
     return {
         "version": version,
-        "description": "The package manager and workspace for coding agents",
+        "description": "A layer between you and your coding agents: the same plugins in each, and a workspace to run them side by side",
         "homepage": "https://uze.sh",
         "license": "Apache-2.0",
         "notes": "uze needs Git for Windows: scoop install git",

@@ -1,8 +1,8 @@
 //! CLI presentation primitives.
 //!
 //! Text reports remain useful in a pipe, but an interactive terminal gets the
-//! same restrained hierarchy as the TUI: warm text, sage for healthy state,
-//! amber for attention, and red only for failures.
+//! same restrained hierarchy as the TUI: warm monochrome text, green for
+//! healthy state, amber for attention, and red only for failures.
 
 use std::{io::IsTerminal, sync::Mutex, time::Duration};
 
@@ -411,7 +411,7 @@ pub fn spinner(message: &str) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_spinner()
             .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-            .template("{spinner:.green} {msg}")
+            .template("{spinner:.bold} {msg}")
             .expect("valid progress template"),
     );
     if let Ok(mut drawing) = DRAWING.lock() {

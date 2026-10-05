@@ -1,12 +1,13 @@
 export const appName = 'uze';
-// What uze is, in the words a person arriving needs first: the category, the
-// way Bun or Next.js open. It is the site's title too: a browser tab reading
-// just "uze" says nothing to someone with twenty tabs open.
-export const appTagline = 'the package manager and workspace for coding agents';
-export const appDescription =
-  'Give Claude Code, Codex, OpenCode and Antigravity the same plugins and one AGENTS.md, each delivered natively. Then run several agents at once, each in a checkout of its own.';
-// Why uze exists, said after what it is: a principle, not a definition.
+// The site's title and its unfurl. The motto leads, the way the home page
+// does: the pain uze answers is being tied to one agent, and a category noun
+// ("package manager") put uze beside tools it only half resembles. The
+// description says literally what it is. A browser tab reading just "uze"
+// says nothing to someone with twenty tabs open.
 export const appMotto = 'Agents come and go. Your work stays.';
+export const appTagline = appMotto;
+export const appDescription =
+  'A layer between you and your coding agents: the same plugins and AGENTS.md in Claude Code, Codex, OpenCode and Antigravity, and a terminal to run them side by side.';
 // The production deployment sets NEXT_PUBLIC_SITE_URL; the fallback is the
 // same canonical domain, so a build without it never points unfurls and the
 // sitemap at an address that no longer answers.

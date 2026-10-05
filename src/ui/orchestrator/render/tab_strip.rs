@@ -3,7 +3,71 @@
 use super::*;
 
 pub(in crate::ui::orchestrator) fn agent_activity_frame(tick: usize) -> String {
-    theme::frame(Symbol::StatusWorking, tick)
+    let frames = theme::frames(Symbol::StatusWorking).len();
+    theme::frame(Symbol::StatusWorking, wandering_frame(tick, frames))
+}
+
+/// Which frame a working agent shows at `tick`: a walk over the frames
+/// rather than a loop through them. A fixed cycle reads as a machine
+/// waiting; an agent producing output is irregular, so the indicator heads
+/// for a new target picked from the tick every `frames - 1` ticks and moves
+/// one frame per tick toward it, then rests there. One frame at a time
+/// keeps it a pulse rather than a flicker, and the targets come from the
+/// tick alone, so the render stays stateless.
+fn wandering_frame(tick: usize, frames: usize) -> usize {
+    if frames < 2 {
+        return 0;
+    }
+    let leg = frames - 1;
+    let from = target(tick / leg, frames);
+    let to = target(tick / leg + 1, frames);
+    let steps = (tick % leg).min(from.abs_diff(to));
+    if to >= from {
+        from + steps
+    } else {
+        from - steps
+    }
+}
+
+/// A frame index drawn from `leg`: splitmix64, which spreads consecutive
+/// integers across the whole range.
+fn target(leg: usize, frames: usize) -> usize {
+    let mut z = (leg as u64).wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    (z % frames as u64) as usize
+}
+
+#[cfg(test)]
+mod wandering_tests {
+    use super::wandering_frame;
+
+    #[test]
+    fn a_working_agent_moves_at_most_one_frame_per_tick() {
+        for tick in 0..2_000 {
+            let now = wandering_frame(tick, 6);
+            let next = wandering_frame(tick + 1, 6);
+            assert!(now < 6);
+            assert!(now.abs_diff(next) <= 1, "tick {tick}: {now} -> {next}");
+        }
+    }
+
+    #[test]
+    fn a_working_agent_does_not_repeat_the_same_loop() {
+        let walk: Vec<usize> = (0..600).map(|tick| wandering_frame(tick, 6)).collect();
+        let loops_every_cycle = walk.windows(12).all(|window| window[..6] == window[6..]);
+        assert!(!loops_every_cycle);
+        assert!(
+            (0..6).all(|frame| walk.contains(&frame)),
+            "every frame is reached"
+        );
+    }
+
+    #[test]
+    fn a_single_frame_symbol_stays_put() {
+        assert_eq!(wandering_frame(42, 1), 0);
+    }
 }
 
 /// The horizontal tab strip above the pane: the *selected space's* shell
@@ -81,9 +145,11 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // Outside every zone, on the strip's own edge: it is not about this
     // checkout the way the other three are, and the one thing at the end
     // of a row is the one thing nothing else can push around. No fill —
-    // it wears the plain backdrop, white at rest and the accent under the
-    // pointer, so a single glyph out here never reads as a fourth zone of
-    // one button.
+    // it wears the plain backdrop, white at rest, so a single glyph out
+    // here never reads as a fourth zone of one button. Under the pointer
+    // it takes the hue the sidebar marks the selected agent's caption
+    // with: what it opens is that agent's context, and the accent said
+    // nothing on a theme whose accent is the text's own white.
     //
     // Its rect is what the dropdown hangs off, so it is measured before
     // it is drawn and the hit carries the same rectangle the glyph is
@@ -100,7 +166,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         let hit = WorkspaceHit::OpenAgentSupport(rect);
         let hue = match chip_state(model, Some(hit)) {
             ChipState::Resting => theme::color(Token::TextBright),
-            _ => theme::color(Token::Accent),
+            _ => super::sidebar::caption_color(true),
         };
         frame.render_widget(
             Paragraph::new(Line::from(vec![

@@ -3,6 +3,18 @@ title: FAQ
 description: Short answers to the questions people ask first
 ---
 
+## Is uze a coding agent?
+
+No. uze has no model and never calls one. It installs plugins into Claude Code,
+Codex, OpenCode and Antigravity, and runs those agents in the
+[workspace](/docs/workspace); you start and talk to each one exactly as you do
+today.
+
+## Do I need an API key?
+
+No. Each agent keeps its own login and subscription. uze never talks to a model
+provider.
+
 ## Why not a symlink or a script?
 
 A symlink works when every harness reads the same file in the same format. They
@@ -43,9 +55,10 @@ plugins you installed, which come back only by installing them again.
 
 ## Does it work on Windows?
 
-Not yet. Linux and macOS are supported, and Windows is planned. You can build
-from source on anything Rust targets. See
-[Installation](/docs/installation).
+Yes, natively. Windows 10 22H2 and Windows 11, x64 or Arm, install with
+`irm https://uze.sh/i | iex`. The binary is not signed yet, so Smart App
+Control can refuse it. WSL works with the Linux command too, and you can build
+from source on anything Rust targets. See [Installation](/docs/installation).
 
 ## How do I take it off?
 

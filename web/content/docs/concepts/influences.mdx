@@ -1,0 +1,56 @@
+---
+title: Influences
+description: The tools uze learned from, what it took from each, and what it does differently
+---
+
+Little in uze is new on its own. A plugin marketplace, a terminal that keeps
+agents running, a diff and a file tree beside them: each of these exists
+somewhere, usually as a tool of its own that you install, configure and keep
+in step with the others. What uze adds is the assembly. It is closer to a
+distribution than to a new kind of tool: the pieces an agent-heavy workflow
+needs, already wired together, in one binary that works on the first run.
+
+This page says where those pieces come from. The formats uze adopts as they
+are, rather than borrowing from, are on [Standards](/docs/concepts/standards).
+
+## Claude Code's plugin marketplaces
+
+**What uze took.** A marketplace is a Git repository, and a plugin is named
+`plugin@marketplace`. Authors already publish that way for
+[Claude Code](https://code.claude.com/docs/en/plugin-marketplaces), so a
+marketplace written for it is a marketplace uze can install from.
+
+**What is different.** The same plugin reaches Codex, OpenCode and
+Antigravity too, each through its own mechanism, and a project records what it
+installed in `agents.yaml` and `agents.lock`, so a teammate gets the same set
+with `uze install`. See [Marketplaces](/docs/plugins/marketplaces).
+
+## herdr
+
+**What uze took.** From [herdr](https://herdr.dev), a terminal where agents
+live rather than run once: you leave, they keep working, and you come back to
+them where they were. Each agent says whether it is working or waiting, so you
+do not hunt for the one that stopped.
+
+**What is different.** uze arranges agents by project: a space is a
+repository, and every agent in it works on a branch of its own in its own
+worktree, which uze creates, watches through Git and lands for you (a rebase,
+your checks, then a merge or a pull request). herdr goes further in other
+directions, such as reaching sessions on other machines over SSH and
+supporting more agent CLIs; if that is what you need, it is worth a look.
+See [the workspace](/docs/workspace).
+
+## An editor set up for agents
+
+**What uze took.** Developers who run agents all day tend to build the same
+room around them in [Neovim](https://neovim.io) or another editor: a diff of
+what changed, a file tree, a way to read the plan and the project's diagrams
+without leaving the terminal. It works, after a weekend of plugins and
+configuration.
+
+**What is different.** uze ships that room as three extensions inside the
+workspace, ready on the first run: **code** (changes, files, history and a
+map of the checkout), **spec** (the project's plans and their progress) and
+**arch** (the architecture diagrams the project keeps). Nothing to install or
+configure, and none of it edits code: the agents do that.
+See [Extensions](/docs/workspace#extensions).

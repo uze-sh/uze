@@ -1504,7 +1504,7 @@ pub(in crate::ui::orchestrator) fn task_mark(state: &WorkStateView) -> Option<(S
         // arrow — that arrow claims a delivery.
         WorkStateView::Running | WorkStateView::Closed => return None,
         WorkStateView::Uncommitted => (Symbol::PlusMinus, theme::color(Token::StateInfo)),
-        WorkStateView::Ready => (Symbol::TaskReady, theme::color(Token::Accent)),
+        WorkStateView::Ready => (Symbol::TaskReady, theme::color(Token::StateSuccess)),
         // The one mark that points away from UZE, because the work does:
         // it is on the forge, and what happens to it next happens there.
         // Muted for the same reason the button is — nothing is being asked

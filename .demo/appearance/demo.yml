@@ -387,11 +387,15 @@ fixtures:
 beats:
   - say: uze is open on a project
     pause: 1.2
+  # The modal's tab row is drawn whichever screen it opens on, so it proves
+  # the modal is open and nothing more; Settings is asked for next.
   - say: appearance lives in management
     key: C-o
-    expect: theme & notifications
+    expect: manage\s+1 Marketplace\s+2 Integrations
     expect_timeout: 8
     pause: 0.8
+  # The tab is the first "Settings" on the screen: the tab row sits above
+  # everything else the modal draws.
   - say: settings, where the themes are
     click: Settings
     in: screen
@@ -416,11 +420,14 @@ beats:
     expect: Drawing in catppuccin-mocha
     expect_timeout: 8
     pause: 1.8
-  # The glyph sets sit below the fold. A click on a card does not move the
-  # list's keyboard selection, so the keys only scroll; the choices are clicks.
+  # Settings is one grid now, glyph sets in view below the themes, and a
+  # click on a card moves the keyboard selection to it. So the keys walk on
+  # from catppuccin-mocha, past the two tokyo-night cards, to the first glyph
+  # set; the proof is the detail panel describing it, which nothing but that
+  # selection draws (the cards' own captions are always on screen).
   - say: the icons are a separate choice — down to the glyph sets
-    key: [Down, Down, Down, Down, Down, Down]
-    expect: needs a Nerd Font
+    key: [Down, Down, Down]
+    expect: 'What UZE ships with: Unicode'
     expect_timeout: 6
     pause: 0.8
   - say: plain ASCII, for a console with no Unicode
@@ -437,7 +444,7 @@ beats:
     pause: 1.6
   - say: back to the workspace, drawn in what was chosen
     key: C-o
-    refuse: theme & notifications
+    refuse: manage\s+1 Marketplace\s+2 Integrations
     pause: 2.6
   - say: and out
     end: C-q
