@@ -1,8 +1,3 @@
-## RENAMED Requirements
-
-- FROM: `### Requirement: Units are offered as three subjects`
-- TO: `### Requirement: Units are offered as four subjects`
-
 ## MODIFIED Requirements
 
 ### Requirement: A dialect is detected by the marker its own tool defines
@@ -76,37 +71,42 @@ contract, named by its capability path.
 - **WHEN** a change holds `proposal.md`, `design.md` and `adr/017-lock.md`, a decision record
 - **THEN** the record SHALL be listed after the design, as a decision, named by its title
 
-### Requirement: Units are offered as four subjects
-The surface SHALL offer up to four subjects: the **changes** in flight,
-the **specs** that outlive them, the **archive**, and the **decisions**
-the project keeps. A subject none of the detected tools keeps, or, for
-decisions, that no declared place holds, SHALL NOT be offered; one a tool keeps but that
-holds nothing yet SHALL be offered and say so. Changes SHALL be listed one
-group per unit, holding its artifacts. Specs SHALL be listed by capability
-path. The archive SHALL be listed newest first. Changes SHALL be the
-subject the surface opens on.
+### Requirement: Units are offered as three subjects
+The surface SHALL offer at most three subjects: the **changes**, the
+**specs** that outlive them, and the **decisions** the project keeps. What
+a tool puts away SHALL NOT be a subject of its own: archived changes SHALL
+be the last band of the changes, **archived**, newest first and folded
+until the viewer is put in it. A subject none of the detected tools keeps,
+or, for decisions, that no declared place holds, SHALL NOT be offered; one
+a tool keeps but that holds nothing yet SHALL be offered and say so.
+Changes SHALL be listed one group per unit, holding its artifacts. Specs
+SHALL be listed by capability path. Changes SHALL be the subject the
+surface opens on.
 
 #### Scenario: Opening the surface
 - **WHEN** the surface opens on an OpenSpec checkout
 - **THEN** it SHALL show the changes subject, one group per directory
-  under `openspec/changes/` other than `archive`
+  under `openspec/changes/` other than `archive`, and after them the
+  archived band, folded
 
 #### Scenario: Switching to the archive
-- **WHEN** the archive subject is chosen
+- **WHEN** the archived band is opened
 - **THEN** the archived changes SHALL be listed with the most recently
   archived first
 
 #### Scenario: A project with no changes in flight
 - **WHEN** `openspec/changes/` holds only `archive/`
-- **THEN** the changes subject SHALL say there is nothing in flight and
-  point at the archive and the specs
+- **THEN** the changes subject SHALL open on the archived band
+
+#### Scenario: Never more than three
+- **WHEN** a checkout carries every shipped tool's marker and its declared
+  places hold decisions
+- **THEN** exactly changes, specs and decisions SHALL be offered
 
 #### Scenario: Switching to the decisions
 - **WHEN** the decisions subject is chosen
 - **THEN** every decision in the declared places SHALL be listed, in the
   order their file names give, each with its status
-
-## ADDED Requirements
 
 ### Requirement: A decision is read the way the published ADR templates write it
 The surface SHALL look for decisions in every place `workspace.artifacts`

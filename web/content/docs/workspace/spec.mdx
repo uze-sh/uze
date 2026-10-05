@@ -16,19 +16,19 @@ are found on their own; there is nothing to declare.
 
 | Subject | Lists |
 | --- | --- |
-| Changes | What is in flight, with how many of its tasks are done |
+| Changes | What is in flight, with how many of its tasks are done, and last the changes the tool put away |
 | Specs | The requirements that outlive the changes |
-| Archive | Finished changes, newest first |
 | Decisions | The decision records (ADRs) the project keeps, each with its status |
 
-A subject appears only when the tool keeps it: Spec Kit and Superpowers
-archive nothing, so their projects have no Archive.
+There are never more than these three. Decisions appears only when the declared
+places hold one.
 
 Changes are grouped by where they stand. **This checkout** is the change the
 agent in the selected tab is working on, found from the files its branch
 touched, and it opens first. **In progress** comes next. A change whose tasks
 are all done sits in **ready to archive** when its tool archives, and in
-**done** when it does not; done opens folded, since it only grows.
+**done** when it does not. What the tool put away is the last band,
+**archived**, newest first. Done and archived open folded, since they only grow.
 
 `p` switches a document between preview and source. `Enter` opens it in Code,
 where you can edit it. The subjects take the workspace bar while Spec is open, in place
