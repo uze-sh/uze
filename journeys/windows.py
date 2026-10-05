@@ -148,7 +148,7 @@ def world_environment(root: Path, binary: Path) -> dict:
     ):
         directory.mkdir(parents=True, exist_ok=True)
     env = _environment(root, binary, home, temporary)
-    _carry_powershell_caches(root.parent, home / "AppData" / "Local", env)
+    env["PSModuleAnalysisCachePath"] = str(_seasoned_powershell(root.parent, env))
     return env
 
 
@@ -183,35 +183,24 @@ def _environment(root: Path, binary: Path, home: Path, temporary: Path) -> dict:
     return env
 
 
-# Where Windows PowerShell keeps what it learned about the modules on the
-# machine, relative to `LOCALAPPDATA`.
-POWERSHELL_CACHES = Path("Microsoft") / "Windows" / "PowerShell"
+def _seasoned_powershell(worlds: Path, env: dict) -> Path:
+    """The module cache every world's Windows PowerShell reads, built once
+    per run.
 
-
-def _carry_powershell_caches(worlds: Path, local: Path, env: dict) -> None:
-    """Gives a world's `LOCALAPPDATA` the module cache any machine that has
-    run PowerShell once already holds.
-
-    A world's `LOCALAPPDATA` is new, so the first command typed into a
-    pane's PowerShell had it walk every module on the machine to find the
-    one that command lives in. On an Arm runner that walk took most of a
-    30-second gesture, and `09-text-copied-from-a-pane` failed whenever it
-    took all of it. No person meets that walk on every shell they open, so
-    it is paid once per run, outside any gesture, and every world starts
-    from the result."""
-    seasoning = worlds / ".powershell"
-    if not seasoning.is_dir():
-        _season_powershell(seasoning, env)
-    if (seasoned := seasoning / POWERSHELL_CACHES).is_dir():
-        shutil.copytree(seasoned, local / POWERSHELL_CACHES, dirs_exist_ok=True)
-
-
-def _season_powershell(destination: Path, env: dict) -> None:
-    # Seasoned beside the destination and moved into place whole, so a run
-    # beside this one sees either nothing or a finished cache.
-    staging = destination.with_name(f"{destination.name}.{os.getpid()}")
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True)
+    The first command a PowerShell runs walks every module on the machine
+    to find the one that command lives in, and writes what it found to this
+    cache. Measured on the hosted runners, that walk is 33-40 seconds, and
+    it landed inside whichever journey first typed into a pane: on an Arm
+    runner it took most of `09-text-copied-from-a-pane`'s 30-second gesture,
+    and failed it whenever it took all of it. No person meets that walk on
+    every shell they open, so it is paid here, outside any gesture."""
+    cache = worlds / ".powershell" / "ModuleAnalysisCache"
+    if cache.is_file():
+        return cache
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    # Built beside the cache and moved into place whole, so a run beside
+    # this one reads either no cache or a finished one.
+    staging = cache.with_name(f"{cache.name}.{os.getpid()}")
     started = time.monotonic()
     subprocess.run(
         [
@@ -222,7 +211,7 @@ def _season_powershell(destination: Path, env: dict) -> None:
             "-Command",
             "echo seasoned | Out-Null",
         ],
-        env={**env, "LOCALAPPDATA": str(staging)},
+        env={**env, "PSModuleAnalysisCachePath": str(staging)},
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=600,
@@ -231,15 +220,14 @@ def _season_powershell(destination: Path, env: dict) -> None:
         f"journey: Windows PowerShell's module cache took {time.monotonic() - started:.1f}s to build",
         file=sys.stderr,
     )
-    if not (staging / POWERSHELL_CACHES).is_dir():
+    if staging.is_file():
+        os.replace(staging, cache)
+    else:
         print(
-            "journey: Windows PowerShell wrote no module cache; every world starts cold",
+            f"journey: Windows PowerShell wrote nothing to {staging}; the first pane to run a command builds it",
             file=sys.stderr,
         )
-    try:
-        os.replace(staging, destination)
-    except OSError:
-        shutil.rmtree(staging, ignore_errors=True)
+    return cache
 
 
 # ── the process table ────────────────────────────────────────────────────

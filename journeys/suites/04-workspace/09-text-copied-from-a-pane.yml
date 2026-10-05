@@ -30,7 +30,7 @@ scenes:
         # The command line says it once; the output is the second time. A
         # shell's first command is its slowest, and slowest of all in a
         # Windows PowerShell on an Arm runner — which is why `windows.py`
-        # starts every world with the module cache a used machine has.
+        # hands every world the module cache a used machine has.
         expect: '(?s)copy-me-please.*copy-me-please'
         expect_timeout: 30
       - drag: "copy-me-please"
