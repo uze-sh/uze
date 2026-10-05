@@ -636,11 +636,21 @@ jobs:
   # `skipped` is not a failure, deliberately: it is what lets `changes` turn
   # off an expensive tier without a documentation change sitting forever on a
   # check that will never report.
+  #
+  # `needs.*.result` is not the whole answer. A job inside a called workflow
+  # that GitHub cancels — a runner that was never acquired — leaves the call
+  # itself reporting success: the run went red while this check stayed green,
+  # with `Journeys / Plan the slices` cancelled and no journey performed. So
+  # the run's own jobs are read as well, and one that never finished its work
+  # fails the gate. A plain failure is still judged by `needs` alone, which is
+  # what honours `continue-on-error` on a leg that only reports.
   gate:
     name: Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: always()
+    permissions:
+      actions: read
     needs:
       - changes
       - fmt
@@ -662,6 +672,21 @@ jobs:
         run: |
           if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
             echo "::error::a job in this run failed or was cancelled"
+            exit 1
+          fi
+      - name: Every job this run started finished its work
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          unfinished="$(gh api --paginate "repos/${GH_REPO}/actions/runs/${{ github.run_id }}/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[]
+                  | select(.conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "startup_failure")
+                  | "\(.name): \(.conclusion)"')"
+          if [ -n "${unfinished}" ]; then
+            echo "${unfinished}"
+            echo "::error::a job in this run never finished its work — re-run the failed jobs"
             exit 1
           fi
           echo "the run is green"
