@@ -46,6 +46,7 @@ use crate::{
 use crate::shared::canvas::{Canvas, Frame, Glyphs};
 use crate::shared::checkout;
 use crate::shared::nearest;
+use crate::shared::places::{ArtifactRoot, ArtifactSource};
 use catalog::Catalog;
 
 pub use catalog::Artifact;
@@ -176,29 +177,6 @@ pub struct ArchitectPlace {
     picked: Option<String>,
     /// The levels entered, as the artifact left and the box left through.
     trail: Vec<(String, String)>,
-}
-
-/// Where the host found the project's artifacts to be declared. The
-/// host's to say, because only it may read the project's manifest.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ArtifactSource {
-    /// The project declares none.
-    Undeclared,
-    /// The declared directories, in the order the project wrote them, and
-    /// the project they were declared in.
-    Directories {
-        roots: Vec<ArtifactRoot>,
-        project: PathBuf,
-    },
-    /// Declared, and not something the host will follow.
-    Refused(String),
-}
-
-/// One declared directory, and how the project itself spells it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ArtifactRoot {
-    pub path: PathBuf,
-    pub declared: String,
 }
 
 /// How the project spells the directories it declared, for a sentence.

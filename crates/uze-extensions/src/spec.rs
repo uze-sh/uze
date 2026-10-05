@@ -30,6 +30,7 @@
 //! keep that rule.
 
 mod catalog;
+mod decision;
 mod dialect;
 mod ownership;
 mod progress;
@@ -44,7 +45,7 @@ use std::{
 };
 
 use crate::{
-    Host,
+    ArtifactSource, Host,
     registry::BuiltinExtension,
     shared::{checkout, highlight, markdown},
     view::{
@@ -54,6 +55,7 @@ use crate::{
 };
 
 pub use catalog::{Artifact, Found, Unit};
+pub use decision::Standing;
 pub use dialect::{Role, Subject};
 pub use progress::Progress;
 pub use summary::{ChangeSummary, Summary, summary, summary_section};
@@ -93,11 +95,18 @@ pub struct SpecAnswer {
     pub subjects: Vec<Subject>,
 }
 
-/// Reads `checkout` for the shipped dialects. `target` is the branch the
-/// checkout delivers to, when the host knows one; what the branch changed
-/// since it left it is part of what makes a unit this checkout's own.
-pub fn read_spec(host: &dyn Host, checkout: &Path, target: Option<&str>) -> SpecAnswer {
-    read_with(host, checkout, target, dialect::SHIPPED)
+/// Reads `checkout` for the shipped dialects, and `places` — where the
+/// project declares its artifacts — for the decisions it keeps. `target` is
+/// the branch the checkout delivers to, when the host knows one; what the
+/// branch changed since it left it is part of what makes a unit this
+/// checkout's own.
+pub fn read_spec(
+    host: &dyn Host,
+    checkout: &Path,
+    target: Option<&str>,
+    places: &ArtifactSource,
+) -> SpecAnswer {
+    read_with(host, checkout, target, dialect::SHIPPED, places)
 }
 
 fn read_with(
@@ -105,11 +114,24 @@ fn read_with(
     checkout: &Path,
     target: Option<&str>,
     dialects: &[dialect::Dialect],
+    places: &ArtifactSource,
 ) -> SpecAnswer {
     let root = host
         .repository_root(checkout)
         .unwrap_or_else(|_| checkout.to_path_buf());
     let mut found = catalog::read(host, &root, dialects);
+    let decisions = decision::read(host, &root, places);
+    if !decisions.is_empty() {
+        match &mut found {
+            Found::Units { units, .. } => units.extend(decisions),
+            Found::NoLayout => {
+                found = Found::Units {
+                    dialects: Vec::new(),
+                    units: decisions,
+                }
+            }
+        }
+    }
     let mut subjects = Vec::new();
     if let Found::Units {
         dialects: names,
@@ -119,11 +141,12 @@ fn read_with(
         mark_own(host, &root, target, units);
         subjects = Subject::ALL
             .into_iter()
-            .filter(|subject| {
-                dialects
+            .filter(|subject| match subject {
+                Subject::Decisions => units.iter().any(|unit| unit.subject == *subject),
+                _ => dialects
                     .iter()
                     .filter(|dialect| names.contains(&dialect.name))
-                    .any(|dialect| dialect.collections.iter().any(|c| c.subject == *subject))
+                    .any(|dialect| dialect.collections.iter().any(|c| c.subject == *subject)),
             })
             .collect();
     }
@@ -595,10 +618,11 @@ impl SpecView {
 
     fn lay_out(&self, width: Option<usize>) {
         let lines = match self.on_show() {
-            Some((_, artifact)) => match &artifact.text {
+            Some((unit, artifact)) => match &artifact.text {
                 Ok(text) => match self.showing {
                     Showing::Preview if catalog::is_markdown(&artifact.path) => {
-                        markdown::render(text, &self.theme, width.unwrap_or(usize::MAX))
+                        let text = with_standing(unit.standing.as_ref(), text);
+                        markdown::render(&text, &self.theme, width.unwrap_or(usize::MAX))
                     }
                     _ => source_lines(text, &artifact.path, &self.theme),
                 },
@@ -745,6 +769,7 @@ pub fn view(state: &SpecView, space: Size) -> View {
                         Subject::Changes => RowIcon::InFlight,
                         Subject::Specs => RowIcon::Contract,
                         Subject::Archive => RowIcon::Finished,
+                        Subject::Decisions => RowIcon::Decision,
                     },
                 })
                 .collect(),
@@ -817,7 +842,10 @@ fn navigator(state: &SpecView) -> Navigator {
                         id,
                         name: unit_record.name.clone(),
                         depth,
-                        marker: progress_marker(unit_record.progress),
+                        marker: match &unit_record.standing {
+                            Some(standing) => standing_marker(standing),
+                            None => progress_marker(unit_record.progress),
+                        },
                         marker_side: MarkerSide::Trailing,
                         detail: [
                             (unit_record.own && !state.banded()).then_some(Band::Own.label()),
@@ -856,6 +884,38 @@ fn navigator(state: &SpecView) -> Navigator {
     }
 }
 
+/// A decision's status as written, unless a later one took its place.
+fn standing_marker(standing: &Standing) -> Span {
+    if standing.superseded {
+        Span::new("superseded", Tone::Faint)
+    } else {
+        Span::new(
+            standing
+                .status
+                .as_deref()
+                .unwrap_or_default()
+                .to_lowercase(),
+            Tone::Muted,
+        )
+    }
+}
+
+/// A decision's relations, said above its own text: the record names what
+/// it replaced, and nothing in it can name what replaced it.
+fn with_standing(standing: Option<&Standing>, text: &str) -> String {
+    match standing {
+        Some(standing) if !standing.notes.is_empty() => {
+            let notes: Vec<String> = standing
+                .notes
+                .iter()
+                .map(|note| format!("> {note}"))
+                .collect();
+            format!("{}\n\n{text}", notes.join("\n>\n"))
+        }
+        _ => text.to_owned(),
+    }
+}
+
 fn progress_marker(progress: Option<Progress>) -> Span {
     match progress {
         Some(progress) => Span::new(
@@ -876,6 +936,7 @@ fn progress_marker(progress: Option<Progress>) -> Span {
 fn role_marker(role: Role) -> Span {
     match role {
         Role::Contract => Span::new("contract", Tone::Faint),
+        Role::Decision => Span::new("decision", Tone::Faint),
         Role::Other => Span::new("other", Tone::Faint),
         Role::Why | Role::How | Role::Steps => Span::new(String::new(), Tone::Faint),
     }
@@ -903,6 +964,7 @@ fn content(state: &SpecView, space: Size) -> Content {
             Subject::Changes => message("Nothing in flight", where_finished(&state.subjects())),
             Subject::Specs => message("No specs yet", None),
             Subject::Archive => message("Nothing archived yet", None),
+            Subject::Decisions => message("No decisions yet", None),
         };
     }
     let Some((unit, artifact)) = state.on_show() else {

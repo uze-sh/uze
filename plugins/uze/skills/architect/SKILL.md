@@ -17,7 +17,10 @@ workspace:
 ```
 
 Every `.mmd` or `.mermaid` file under those directories is one **artifact**;
-anything else there is ignored, so diagrams can live beside other docs.
+anything else there is ignored, so diagrams can live beside other docs. The
+same places are where the workspace's spec surface finds decision records
+(ADRs), by their shape, so a decision a diagram depends on can sit beside it
+in `docs/adr/` without anything else declared.
 `uze agent artifacts check` draws each one the way the workspace would and
 fails on one that does not draw, with or without the workspace running;
 the workspace's architect surface, when it is used, draws them in terminal

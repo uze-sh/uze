@@ -342,6 +342,8 @@ pub enum RowIcon {
     Contract,
     /// Work that was finished and put away.
     Finished,
+    /// A decision the project keeps.
+    Decision,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

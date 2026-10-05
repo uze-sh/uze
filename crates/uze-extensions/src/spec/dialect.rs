@@ -17,6 +17,9 @@ pub enum Role {
     Why,
     /// The design.
     How,
+    /// A decision record the unit carries, recognised by its shape rather
+    /// than by its name: listed after the design it came out of.
+    Decision,
     /// The work, as checkboxes.
     Steps,
     /// A requirement that outlives the unit that wrote it.
@@ -35,16 +38,26 @@ pub enum Subject {
     Specs,
     /// Units that were finished and put away.
     Archive,
+    /// The decisions the project keeps, in the places it declared. No
+    /// tool's: found by their shape, so a project with no spec tool at all
+    /// still has them.
+    Decisions,
 }
 
 impl Subject {
-    pub const ALL: [Subject; 3] = [Subject::Changes, Subject::Specs, Subject::Archive];
+    pub const ALL: [Subject; 4] = [
+        Subject::Changes,
+        Subject::Specs,
+        Subject::Archive,
+        Subject::Decisions,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             Subject::Changes => "Changes",
             Subject::Specs => "Specs",
             Subject::Archive => "Archive",
+            Subject::Decisions => "Decisions",
         }
     }
 }

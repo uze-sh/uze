@@ -54,6 +54,8 @@ mod shared;
 pub mod spec;
 pub mod view;
 
+pub use shared::places::{ArtifactRoot, ArtifactSource};
+
 /// Something a viewer did inside an extension's own surface, addressed to
 /// the extension that owns it.
 ///

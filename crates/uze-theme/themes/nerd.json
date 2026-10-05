@@ -148,6 +148,10 @@
       "glyph": "",
       "width": 1
     },
+    "decision": {
+      "glyph": "\uf0e3",
+      "width": 1
+    },
     "file.directory": {
       "glyph": "󰉋",
       "width": 1

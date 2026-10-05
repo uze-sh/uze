@@ -45,12 +45,12 @@ fn unreadable() -> Unreadable {
 /// Where this project declares its artifacts, read from its manifest.
 ///
 /// Beside the grant rather than at either caller because
-/// `uze_extensions::architect::ArtifactSource` says whose answer it is:
+/// `uze_extensions::ArtifactSource` says whose answer it is:
 /// the host's, since only the host may read the project's manifest. The
 /// client asks it on a thread and the CLI's check asks it directly, and
 /// neither should be able to answer it differently.
-pub fn artifacts_declared_in(project: &Path) -> uze_extensions::architect::ArtifactSource {
-    use uze_extensions::architect::ArtifactSource;
+pub fn artifacts_declared_in(project: &Path) -> uze_extensions::ArtifactSource {
+    use uze_extensions::ArtifactSource;
     match uze_application::project_artifacts(project) {
         uze_application::ProjectArtifacts::Undeclared => ArtifactSource::Undeclared,
         uze_application::ProjectArtifacts::Refused(reason) => ArtifactSource::Refused(reason),
@@ -60,7 +60,7 @@ pub fn artifacts_declared_in(project: &Path) -> uze_extensions::architect::Artif
         } => ArtifactSource::Directories {
             roots: directories
                 .into_iter()
-                .map(|directory| uze_extensions::architect::ArtifactRoot {
+                .map(|directory| uze_extensions::ArtifactRoot {
                     path: directory.directory,
                     declared: directory.declared.display().to_string(),
                 })

@@ -6,10 +6,10 @@ use super::{
     Found, SpecAnswer, SpecOutcome, SpecPlace, SpecView, Subject,
     catalog::Unit,
     dialect::{Dialect, GSD, OPENSPEC, Role, SHIPPED, SPEC_KIT, SUPERPOWERS},
-    handle_command, handle_mouse, read_with, view,
+    handle_command, handle_mouse, read_with, text, view,
 };
 use crate::{
-    DirEntry, Host,
+    ArtifactRoot, ArtifactSource, DirEntry, Host,
     shared::highlight::FALLBACK_SYNTAX_THEME,
     view::{Command, Content, NavigatorRow, Size, ViewHit},
 };
@@ -138,7 +138,13 @@ fn space() -> Size {
 #[test]
 fn an_openspec_checkout_lists_its_changes_specs_and_archive() {
     let dir = openspec_checkout("spec-reads-openspec");
-    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC]);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    );
     let units = units(&answer);
 
     assert_eq!(
@@ -171,7 +177,13 @@ fn a_nested_capability_is_one_spec_named_by_its_path() {
         "openspec/specs/identity/session-expiry/spec.md",
         "# expiry\n",
     );
-    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC]);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    );
 
     assert_eq!(
         names(units(&answer), Subject::Specs),
@@ -189,7 +201,13 @@ fn a_nested_capability_is_one_spec_named_by_its_path() {
 #[test]
 fn a_changes_artifacts_come_in_role_order_with_unnamed_files_last() {
     let dir = openspec_checkout("spec-role-order");
-    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC]);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    );
     let change = units(&answer)
         .iter()
         .find(|unit| unit.name == "b-change")
@@ -220,7 +238,13 @@ fn progress_is_counted_for_changes_in_flight_only() {
         "openspec/changes/archive/2026-09-01-old/tasks.md",
         "- [x] a\n",
     );
-    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC]);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    );
     let progress = |name: &str| {
         units(&answer)
             .iter()
@@ -245,7 +269,13 @@ fn a_schema_that_names_none_of_the_files_still_lists_every_document() {
         "openspec/changes/x/.openspec.yaml",
         "schema: other\n",
     );
-    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC]);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    );
     let change = &units(&answer)[0];
 
     assert_eq!(change.name, "x");
@@ -264,7 +294,14 @@ fn a_checkout_with_no_marker_has_no_layout() {
     write(dir.path(), "README.md", "hello\n");
 
     assert_eq!(
-        read_with(&DiskHost, dir.path(), None, &[OPENSPEC]).found,
+        read_with(
+            &DiskHost,
+            dir.path(),
+            None,
+            &[OPENSPEC],
+            &ArtifactSource::Undeclared
+        )
+        .found,
         Found::NoLayout
     );
 }
@@ -333,7 +370,13 @@ fn spec_kit_checkout(label: &str) -> TempDir {
 #[test]
 fn a_spec_kit_checkout_lists_its_features_and_its_constitution() {
     let dir = spec_kit_checkout("spec-kit-detect");
-    let answer = read_with(&DiskHost, dir.path(), None, &[OPENSPEC, SPEC_KIT]);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC, SPEC_KIT],
+        &ArtifactSource::Undeclared,
+    );
 
     let Found::Units { dialects, .. } = &answer.found else {
         panic!("expected Spec Kit to be detected");
@@ -368,7 +411,13 @@ fn a_spec_kit_checkout_lists_its_features_and_its_constitution() {
 fn a_unit_that_is_one_file_is_headed_by_where_it_lives() {
     let dir = spec_kit_checkout("spec-kit-constitution");
     let state = opened_at(
-        read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]),
+        read_with(
+            &DiskHost,
+            dir.path(),
+            None,
+            &[SPEC_KIT],
+            &ArtifactSource::Undeclared,
+        ),
         SpecPlace {
             subject: Subject::Specs,
             unit: "constitution".to_owned(),
@@ -385,7 +434,13 @@ fn a_unit_that_is_one_file_is_headed_by_where_it_lives() {
 fn a_contract_that_is_not_markdown_is_listed_and_shown_as_its_source() {
     let dir = spec_kit_checkout("spec-kit-openapi");
     let state = opened_at(
-        read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]),
+        read_with(
+            &DiskHost,
+            dir.path(),
+            None,
+            &[SPEC_KIT],
+            &ArtifactSource::Undeclared,
+        ),
         SpecPlace {
             subject: Subject::Changes,
             unit: "001-user-auth".to_owned(),
@@ -405,7 +460,13 @@ fn a_contract_that_is_not_markdown_is_listed_and_shown_as_its_source() {
 #[test]
 fn a_spec_kit_feature_reads_spec_then_plan_and_its_companions_then_tasks() {
     let dir = spec_kit_checkout("spec-kit-roles");
-    let answer = read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[SPEC_KIT],
+        &ArtifactSource::Undeclared,
+    );
     let feature = &units(&answer)[0];
 
     let listed: Vec<(Role, &str)> = feature
@@ -439,7 +500,13 @@ fn a_spec_kit_feature_reads_spec_then_plan_and_its_companions_then_tasks() {
 #[test]
 fn a_finished_feature_is_done_where_nothing_is_archived_and_done_opens_folded() {
     let dir = spec_kit_checkout("spec-kit-bands");
-    let state = opened(read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[SPEC_KIT],
+        &ArtifactSource::Undeclared,
+    ));
 
     assert_eq!(
         row_names(&state),
@@ -452,7 +519,13 @@ fn done_stays_open_when_it_is_where_the_viewer_lands() {
     let dir = TempDir::new("spec-kit-only-done");
     write(dir.path(), ".specify/memory/constitution.md", "# c\n");
     write(dir.path(), "specs/001-a/tasks.md", "- [x] T001 a\n");
-    let state = opened(read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[SPEC_KIT],
+        &ArtifactSource::Undeclared,
+    ));
 
     assert_eq!(row_names(&state), ["# done (1)", "  001-a"]);
 }
@@ -461,7 +534,13 @@ fn done_stays_open_when_it_is_where_the_viewer_lands() {
 fn nothing_in_flight_points_nowhere_when_there_is_nowhere_to_point() {
     let dir = TempDir::new("spec-kit-nothing-in-flight");
     write(dir.path(), ".specify/memory/constitution.md", "# c\n");
-    let state = opened(read_with(&DiskHost, dir.path(), None, &[SPEC_KIT]));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[SPEC_KIT],
+        &ArtifactSource::Undeclared,
+    ));
     let Content::Message { text, hint, .. } = view(&state, space()).content else {
         panic!("expected a message");
     };
@@ -479,7 +558,13 @@ fn a_checkout_with_two_tools_names_each_units_tool_and_only_then() {
     write(dir.path(), ".specify/memory/constitution.md", "# c\n");
     write(dir.path(), &format!("{feature}/spec.md"), "# s\n");
     let details = |dialects: &[Dialect]| -> Vec<(String, String)> {
-        let state = opened(read_with(&DiskHost, dir.path(), None, dialects));
+        let state = opened(read_with(
+            &DiskHost,
+            dir.path(),
+            None,
+            dialects,
+            &ArtifactSource::Undeclared,
+        ));
         view(&state, space())
             .navigator
             .expect("a navigator")
@@ -534,7 +619,13 @@ fn row_names(state: &SpecView) -> Vec<String> {
 #[test]
 fn changes_are_banded_by_where_they_stand() {
     let dir = openspec_checkout("spec-bands");
-    let state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
 
     assert_eq!(
         row_names(&state),
@@ -556,7 +647,13 @@ fn the_change_this_checkout_touched_comes_first_opened_on_its_first_document() {
     repository.commit_file("openspec/changes/a/proposal.md", "## Why\n");
     repository.commit_file("openspec/changes/b/proposal.md", "## Why\n\nMine.\n");
     write(&root, "openspec/changes/b/tasks.md", "- [ ] one\n");
-    let state = opened(read_with(&DiskHost, &root, None, &[OPENSPEC]));
+    let state = opened(read_with(
+        &DiskHost,
+        &root,
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
 
     assert_eq!(
         row_names(&state),
@@ -579,7 +676,13 @@ fn the_change_this_checkout_touched_comes_first_opened_on_its_first_document() {
 #[test]
 fn with_nothing_of_its_own_the_first_change_is_selected_and_shown() {
     let dir = openspec_checkout("spec-first-change");
-    let state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     let Content::Lines { heading, .. } = view(&state, space()).content else {
         panic!("expected a document on show");
     };
@@ -589,7 +692,13 @@ fn with_nothing_of_its_own_the_first_change_is_selected_and_shown() {
 #[test]
 fn activating_a_document_hands_it_to_the_code_surface() {
     let dir = openspec_checkout("spec-activate");
-    let mut state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let mut state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
 
     assert_eq!(
         handle_command(&mut state, Command::Activate, space()),
@@ -608,7 +717,13 @@ fn activating_a_document_hands_it_to_the_code_surface() {
 #[test]
 fn switching_to_the_archive_lists_it_newest_first() {
     let dir = openspec_checkout("spec-archive");
-    let mut state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let mut state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     handle_mouse(&mut state, Some(ViewHit::SelectSubject(2)), space());
 
     assert_eq!(row_names(&state), ["2026-09-20-newer", "2026-09-01-old"]);
@@ -617,7 +732,13 @@ fn switching_to_the_archive_lists_it_newest_first() {
 #[test]
 fn a_band_folds_from_its_heading() {
     let dir = openspec_checkout("spec-fold");
-    let mut state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let mut state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     handle_mouse(&mut state, Some(ViewHit::ToggleGroup(4)), space());
 
     assert_eq!(
@@ -642,7 +763,13 @@ fn nothing_in_flight_points_at_the_archive_and_the_specs() {
         "openspec/changes/archive/2026-01-01-x/proposal.md",
         "x\n",
     );
-    let state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     let Content::Message { text, hint, .. } = view(&state, space()).content else {
         panic!("expected a message");
     };
@@ -653,7 +780,13 @@ fn nothing_in_flight_points_at_the_archive_and_the_specs() {
 #[test]
 fn no_layout_lists_every_tool_it_reads_in_columns() {
     let dir = TempDir::new("spec-no-layout-view");
-    let state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     let shown = view(&state, space());
 
     assert!(shown.navigator.is_none());
@@ -682,7 +815,13 @@ fn no_layout_lists_every_tool_it_reads_in_columns() {
 #[test]
 fn a_place_is_restored_by_name_and_an_archived_one_is_not() {
     let dir = openspec_checkout("spec-place");
-    let mut state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let mut state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     handle_command(&mut state, Command::Expand, space());
     handle_command(&mut state, Command::SelectNext, space());
     handle_command(&mut state, Command::SelectNext, space());
@@ -690,7 +829,13 @@ fn a_place_is_restored_by_name_and_an_archived_one_is_not() {
 
     let back = {
         let mut back = SpecView::opening("~/project".to_owned()).resuming(place.clone());
-        back.absorb(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+        back.absorb(read_with(
+            &DiskHost,
+            dir.path(),
+            None,
+            &[OPENSPEC],
+            &ArtifactSource::Undeclared,
+        ));
         back
     };
     let Content::Lines { heading, .. } = view(&back, space()).content else {
@@ -704,7 +849,13 @@ fn a_place_is_restored_by_name_and_an_archived_one_is_not() {
     )
     .unwrap();
     let mut gone = SpecView::opening("~/project".to_owned()).resuming(place);
-    gone.absorb(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    gone.absorb(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     let Content::Lines { heading, .. } = view(&gone, space()).content else {
         panic!("expected a document");
     };
@@ -717,7 +868,13 @@ fn a_place_is_restored_by_name_and_an_archived_one_is_not() {
 #[test]
 fn the_source_mode_shows_the_markup_numbered() {
     let dir = openspec_checkout("spec-source");
-    let mut state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let mut state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     handle_command(&mut state, Command::TogglePreview, space());
     let Content::Lines { lines, total, .. } = view(&state, space()).content else {
         panic!("expected lines");
@@ -735,7 +892,13 @@ fn the_source_mode_shows_the_markup_numbered() {
 #[test]
 fn each_subject_is_marked_by_what_it_holds() {
     let dir = openspec_checkout("spec-subject-icons");
-    let state = opened(read_with(&DiskHost, dir.path(), None, &[OPENSPEC]));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    ));
     let icons: Vec<crate::view::RowIcon> = view(&state, space())
         .subjects
         .into_iter()
@@ -928,7 +1091,13 @@ fn done_of(unit: &Unit) -> Option<(usize, usize)> {
 #[test]
 fn a_superpowers_checkout_lists_each_plan_as_a_change_and_each_design_as_a_spec() {
     let dir = superpowers_checkout("spec-superpowers");
-    let answer = read_with(&DiskHost, dir.path(), None, SHIPPED);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        SHIPPED,
+        &ArtifactSource::Undeclared,
+    );
 
     let Found::Units { dialects, .. } = &answer.found else {
         panic!("expected Superpowers to be detected");
@@ -972,7 +1141,13 @@ fn a_superpowers_checkout_lists_each_plan_as_a_change_and_each_design_as_a_spec(
 #[test]
 fn a_finished_superpowers_plan_is_done_where_it_was_written() {
     let dir = superpowers_checkout("spec-superpowers-bands");
-    let state = opened(read_with(&DiskHost, dir.path(), None, SHIPPED));
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        SHIPPED,
+        &ArtifactSource::Undeclared,
+    ));
     assert_eq!(
         row_names(&state),
         [
@@ -988,7 +1163,13 @@ fn a_finished_superpowers_plan_is_done_where_it_was_written() {
 #[test]
 fn a_gsd_checkout_lists_phases_and_quick_tasks_the_project_documents_and_milestones() {
     let dir = gsd_checkout("spec-gsd");
-    let answer = read_with(&DiskHost, dir.path(), None, SHIPPED);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        SHIPPED,
+        &ArtifactSource::Undeclared,
+    );
 
     let Found::Units { dialects, .. } = &answer.found else {
         panic!("expected GSD to be detected");
@@ -1021,7 +1202,13 @@ fn a_gsd_checkout_lists_phases_and_quick_tasks_the_project_documents_and_milesto
 #[test]
 fn a_gsd_phase_reads_its_intent_then_research_then_plans_then_what_happened() {
     let dir = gsd_checkout("spec-gsd-roles");
-    let answer = read_with(&DiskHost, dir.path(), None, SHIPPED);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        SHIPPED,
+        &ArtifactSource::Undeclared,
+    );
 
     assert_eq!(
         listed(unit(&answer, Subject::Changes, "03-sync-engine")),
@@ -1060,7 +1247,13 @@ fn a_gsd_phase_reads_its_intent_then_research_then_plans_then_what_happened() {
 #[test]
 fn a_gsd_plan_is_done_once_its_summary_is_written() {
     let dir = gsd_checkout("spec-gsd-progress");
-    let answer = read_with(&DiskHost, dir.path(), None, SHIPPED);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        SHIPPED,
+        &ArtifactSource::Undeclared,
+    );
 
     assert_eq!(
         done_of(unit(&answer, Subject::Changes, "03-sync-engine")),
@@ -1093,7 +1286,13 @@ fn a_checkout_is_read_by_every_tool_whose_marker_it_holds() {
         "docs/superpowers/plans/2026-09-29-share-links.md",
         "- [ ] one\n",
     );
-    let answer = read_with(&DiskHost, dir.path(), None, &[GSD, SUPERPOWERS]);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[GSD, SUPERPOWERS],
+        &ArtifactSource::Undeclared,
+    );
     let Found::Units { dialects, .. } = &answer.found else {
         panic!("expected both to be detected");
     };
@@ -1104,13 +1303,25 @@ fn a_checkout_is_read_by_every_tool_whose_marker_it_holds() {
 fn the_change_on_show_is_named_only_while_a_change_is_on_show() {
     let dir = openspec_checkout("spec-change-on-show");
     let state = opened_at(
-        read_with(&DiskHost, dir.path(), None, &[OPENSPEC]),
+        read_with(
+            &DiskHost,
+            dir.path(),
+            None,
+            &[OPENSPEC],
+            &ArtifactSource::Undeclared,
+        ),
         SpecPlace::change("c-open"),
     );
     assert_eq!(state.change_on_show().as_deref(), Some("c-open"));
 
     let state = opened_at(
-        read_with(&DiskHost, dir.path(), None, &[OPENSPEC]),
+        read_with(
+            &DiskHost,
+            dir.path(),
+            None,
+            &[OPENSPEC],
+            &ArtifactSource::Undeclared,
+        ),
         SpecPlace {
             subject: Subject::Archive,
             unit: "2026-09-01-old".to_owned(),
@@ -1121,5 +1332,205 @@ fn the_change_on_show_is_named_only_while_a_change_is_on_show() {
         state.change_on_show(),
         None,
         "an archived change is not in flight"
+    );
+}
+
+// --- decisions ----------------------------------------------------------
+
+const NYGARD: &str = "# Keep one lock\n\nStatus: Accepted\n\n## Context\n\nx\n\n## Decision\n\ny\n";
+
+fn declared(root: &Path, places: &[&str]) -> ArtifactSource {
+    ArtifactSource::Directories {
+        roots: places
+            .iter()
+            .map(|place| ArtifactRoot {
+                path: root.join(place),
+                declared: (*place).to_owned(),
+            })
+            .collect(),
+        project: root.to_path_buf(),
+    }
+}
+
+/// Decisions are no tool's, so a checkout with no tool at all still has
+/// them, found by their shape wherever the project declared its places.
+#[test]
+fn decisions_are_found_by_their_shape_in_the_declared_places() {
+    let dir = TempDir::new("spec-decisions");
+    let root = dir.path();
+    write(root, "docs/adr/001-keep-one-lock.md", NYGARD);
+    write(
+        root,
+        "docs/adr/002-split-the-lock.md",
+        "---\nstatus: accepted\nsupersedes: 001-keep-one-lock.md\n---\n# Split the lock\n\n\
+         ## Decision\n\nz\n",
+    );
+    write(root, "docs/adr/README.md", "# Decisions\n\nAn index.\n");
+    write(root, "docs/guide.md", "# Guide\n\nHow to.\n");
+
+    let answer = read_with(&DiskHost, root, None, SHIPPED, &declared(root, &["docs"]));
+    assert_eq!(answer.subjects, vec![Subject::Decisions]);
+    assert_eq!(
+        names(units(&answer), Subject::Decisions),
+        vec!["001 Keep one lock", "002 Split the lock"],
+        "a guide and an index are passed over"
+    );
+
+    let replaced = unit(&answer, Subject::Decisions, "001 Keep one lock")
+        .standing
+        .clone()
+        .unwrap();
+    assert!(replaced.superseded, "a later record took its place");
+    assert_eq!(
+        replaced.status.as_deref(),
+        Some("Accepted"),
+        "its own words are kept"
+    );
+    assert_eq!(replaced.notes, vec!["Superseded by 002 Split the lock"]);
+    let replacing = unit(&answer, Subject::Decisions, "002 Split the lock")
+        .standing
+        .clone()
+        .unwrap();
+    assert_eq!(replacing.notes, vec!["Supersedes 001 Keep one lock"]);
+}
+
+#[test]
+fn nothing_declared_offers_no_decisions_even_where_they_exist() {
+    let dir = TempDir::new("spec-decisions-undeclared");
+    write(dir.path(), "docs/adr/001-keep-one-lock.md", NYGARD);
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        SHIPPED,
+        &ArtifactSource::Undeclared,
+    );
+    assert_eq!(answer.found, Found::NoLayout);
+}
+
+#[test]
+fn a_change_carrying_its_decision_lists_it_after_the_design() {
+    let dir = TempDir::new("spec-decisions-in-a-change");
+    let root = dir.path();
+    write(root, "openspec/changes/x/proposal.md", "## Why\n");
+    write(root, "openspec/changes/x/design.md", "## Context\n");
+    write(root, "openspec/changes/x/tasks.md", "- [ ] one\n");
+    write(root, "openspec/changes/x/adr/017-lock.md", NYGARD);
+
+    let answer = read_with(
+        &DiskHost,
+        root,
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    );
+    assert_eq!(
+        listed(unit(&answer, Subject::Changes, "x")),
+        vec![
+            (Role::Why, "proposal"),
+            (Role::How, "design"),
+            (Role::Decision, "Keep one lock"),
+            (Role::Steps, "tasks"),
+        ]
+    );
+}
+
+#[test]
+fn a_decisions_relations_are_said_above_it_and_its_status_beside_it() {
+    let dir = TempDir::new("spec-decisions-shown");
+    let root = dir.path();
+    write(root, "docs/adr/001-keep-one-lock.md", NYGARD);
+    write(
+        root,
+        "docs/adr/002-split-the-lock.md",
+        "# Split the lock\n\nStatus: Proposed\nSee [001](001-keep-one-lock.md)\n\n\
+         ## Decision\n\nz\n",
+    );
+    let mut state = opened(read_with(
+        &DiskHost,
+        root,
+        None,
+        SHIPPED,
+        &declared(root, &["docs"]),
+    ));
+    let rendered = view(&state, space());
+    let Some(navigator) = rendered.navigator else {
+        panic!("decisions are listed");
+    };
+    let markers: Vec<String> = navigator
+        .rows
+        .iter()
+        .filter_map(|row| match row {
+            NavigatorRow::Item { marker, .. } => Some(marker.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        markers,
+        vec!["accepted", "proposed"],
+        "a link says nothing about which record replaced which"
+    );
+
+    handle_command(&mut state, Command::SelectNext, space());
+    let shown = text(&state, 0..200).join("\n");
+    assert!(shown.contains("References 001 Keep one lock"), "{shown}");
+}
+
+/// The records this repository keeps are what the reader is for: every one
+/// under `docs/adr` reads as a decision, and a partial supersession leaves
+/// the older record standing, named by the newer one.
+#[test]
+fn this_repositorys_own_decisions_are_read() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let answer = read_with(&DiskHost, &root, None, &[], &declared(&root, &["docs/adr"]));
+    let decisions: Vec<&Unit> = units(&answer)
+        .iter()
+        .filter(|unit| unit.subject == Subject::Decisions)
+        .collect();
+    let records = std::fs::read_dir(root.join("docs/adr"))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(char::is_numeric)
+        })
+        .count();
+    assert_eq!(
+        decisions.len(),
+        records,
+        "every numbered record is a decision"
+    );
+    let without: Vec<&str> = decisions
+        .iter()
+        .filter(|unit| {
+            unit.standing
+                .as_ref()
+                .is_none_or(|standing| standing.status.as_deref() != Some("Accepted"))
+        })
+        .map(|unit| unit.name.as_str())
+        .collect();
+    assert!(
+        without.is_empty(),
+        "read without an accepted status: {without:?}"
+    );
+
+    let older = decisions
+        .iter()
+        .find(|unit| unit.name.starts_with("019 "))
+        .and_then(|unit| unit.standing.clone())
+        .unwrap();
+    assert!(
+        !older.superseded,
+        "only a record's front matter says it was replaced"
+    );
+    assert!(
+        older
+            .notes
+            .iter()
+            .any(|note| note.starts_with("Referenced by 054 ")),
+        "{:?}",
+        older.notes
     );
 }

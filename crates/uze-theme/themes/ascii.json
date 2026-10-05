@@ -80,6 +80,7 @@
     "in-flight": "",
     "contract": "",
     "finished": "",
+    "decision": "",
 
     "text.ellipsis": "...",
     "text.em-dash": "--",
