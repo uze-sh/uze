@@ -4247,13 +4247,12 @@ mod workspace_tests {
     }
 
     /// A tick on which the working spinner shows its fullest frame, the one
-    /// glyph no separator or caption shares: the spinner wanders rather than
-    /// cycles, so a fixed tick says nothing about which frame is drawn.
+    /// glyph no separator or caption shares.
     fn a_tick_showing_the_fullest_frame() -> usize {
         let fullest = theme::frame(theme::Symbol::StatusWorking, 3);
         (0..1_000)
             .find(|&tick| agent_activity_frame(tick) == fullest)
-            .expect("the walk reaches every frame")
+            .expect("the cycle reaches every frame")
     }
 
     /// The header carries work in flight and nothing else. It says so by
