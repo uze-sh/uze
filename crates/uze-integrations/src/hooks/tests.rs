@@ -161,9 +161,10 @@ fn a_group_that_could_never_fire_here_is_reported_not_delivered() {
         "{}",
         unbound.evidence
     );
+    // `agent.spawn` fires on every platform; Codex's Windows shell does not.
     let mixed = with(vec![
         HookMatcher::Portable("file.read".into()),
-        HookMatcher::Portable("shell".into()),
+        HookMatcher::Portable("agent.spawn".into()),
     ]);
     assert_ne!(
         mixed.route,
@@ -1229,7 +1230,7 @@ fn an_exec_form_script_nothing_starts_here_is_reported_not_delivered() {
         }];
         let mut resource = hook_resource(&package);
         resource.capability.payload = serde_json::to_vec(&group).unwrap();
-        hook_plan(&resource, crate::codex::HOOKS, false, "evidence.", |_| {
+        hook_plan(&resource, crate::claude::HOOKS, false, "evidence.", |_| {
             Some(ManagedArtifact::HookConfigEntry {
                 config_file: package.join("hooks.json"),
                 entry_name: "demo:protect-env".into(),

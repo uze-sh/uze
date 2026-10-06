@@ -279,6 +279,17 @@
         "opencode v2.0.24"
       ],
       "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "opencode",
+      "check": "context-project-agent-reaches-model",
+      "suite": "context",
+      "reason": "OpenCode reads no `.agents/agents`, and a launch cannot hand it one project's agents: its extra-configuration environment reaches only the background service a launch starts, which then serves them to every other project",
+      "measurement": "no request of the session offered the agent the project authored in .agents/agents",
+      "versions": [
+        "opencode v2.0.24"
+      ],
+      "observed_at": "2026-10-06"
     }
   ]
 }

@@ -167,6 +167,14 @@ fn decided(value: serde_json::Value) -> serde_json::Value {
         serde_json::Value::String(text) => {
             serde_json::Value::String(if text.starts_with("handler failed (exit ") {
                 "handler failed".to_owned()
+            } else if let Some(reason) = [
+                "handler did not write a JSON object",
+                "handler wrote more than",
+            ]
+            .into_iter()
+            .find(|reason| text.starts_with(reason))
+            {
+                reason.to_owned()
             } else if text.starts_with("handler timed out after ") {
                 text.split(": ").next().unwrap_or_default().to_owned()
             } else {

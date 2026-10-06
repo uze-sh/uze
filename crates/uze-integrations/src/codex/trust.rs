@@ -245,7 +245,7 @@ mod tests {
         let config = root.join("config.toml");
         let key = format!("{}:pre_tool_use:1:0", hooks.display());
         let state = trusted.map_or_else(String::new, |hash| {
-            format!("[hooks.state.\"{key}\"]\ntrusted_hash = \"{hash}\"\n")
+            format!("[hooks.state.'{key}']\ntrusted_hash = \"{hash}\"\n")
         });
         std::fs::write(&config, state).unwrap();
         (hooks, ours.to_string(), config)
@@ -294,7 +294,7 @@ mod tests {
             std::fs::write(
                 &config,
                 format!(
-                    "[projects.\"{}\"]\ntrust_level = \"{level}\"\n",
+                    "[projects.'{}']\ntrust_level = \"{level}\"\n",
                     project.display()
                 ),
             )
