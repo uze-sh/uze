@@ -94,6 +94,9 @@ pub(super) struct Attach<'a> {
     /// What the host terminal's keyboard can deliver, asked once at
     /// startup and handed to the modal's Keys screen on every opening.
     pub(super) keyboard: crate::ui::keys::KeyboardSupport,
+    /// The theme this client last drew in and told the server about, as
+    /// [`uze_theme::generation`] counts them.
+    pub(super) theme_generation: u64,
 }
 
 /// What a code door does when it is pressed.
@@ -127,6 +130,22 @@ pub(super) fn code_door(showing: Option<code::ContentMode>, wanted: code::Conten
 }
 
 impl Attach<'_> {
+    /// Draws in a theme put in force since the last frame — chosen in
+    /// Settings, or followed from the desktop — and tells the server, so a
+    /// pane's program asking for its colours hears the new ones.
+    fn follow_theme(&mut self) {
+        let generation = uze_theme::generation();
+        if generation == self.theme_generation {
+            return;
+        }
+        self.theme_generation = generation;
+        let _ = send_request(
+            &mut self.stream,
+            &uze_terminal::ClientRequest::SetPalette(super::active_palette()),
+        );
+        self.model.dirty = true;
+    }
+
     /// Routes one event to the half of the client that owns it.
     pub(super) fn handle(&mut self, event: Event, viewport: &Viewport) -> Flow {
         let _span = tracing::debug_span!(
@@ -216,6 +235,7 @@ impl Attach<'_> {
         {
             self.model.dirty = true;
         }
+        self.follow_theme();
         for request in adopt_task_names(&mut self.model) {
             let _ = send_request(&mut self.stream, &request);
         }

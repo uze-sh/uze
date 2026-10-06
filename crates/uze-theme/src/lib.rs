@@ -37,7 +37,7 @@ mod theme;
 mod token;
 mod vocab;
 
-pub use active::{active, set_active};
+pub use active::{active, generation, set_active};
 pub use color::{Rgb, contrast_ratio};
 pub use file::{CURRENT_VERSION, ColorValue, SymbolValue, SyntaxSection, ThemeFile};
 pub use load::{

@@ -927,3 +927,63 @@ fn not_unicode() -> std::ffi::OsString {
     use std::os::windows::ffi::OsStringExt as _;
     std::ffi::OsString::from_wide(&[0xd800])
 }
+
+/// `adaptive` is chosen with the theme for each background, every one
+/// loaded before anything is written, and the flags mean nothing beside a
+/// theme that does not adapt.
+#[test]
+fn an_adaptive_theme_records_both_halves_and_refuses_what_would_not_draw() {
+    let home = temporary_home("theme-adaptive");
+    std::fs::create_dir_all(&home).unwrap();
+    let config = || std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
+
+    let output = uze(&home)
+        .args([
+            "config",
+            "theme",
+            "set",
+            "adaptive",
+            "--light",
+            "tokyo-night-light",
+            "--dark",
+            "dracula",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let written = config();
+    for line in [
+        r#"theme = "adaptive""#,
+        r#"light = "tokyo-night-light""#,
+        r#"dark = "dracula""#,
+    ] {
+        assert!(written.contains(line), "{line} missing from:\n{written}");
+    }
+
+    for (arguments, said) in [
+        (vec!["dracula", "--light", "tokyo-night-light"], "adaptive"),
+        (vec!["adaptive", "--light", "nocturne"], "nocturne"),
+        (vec!["adaptive", "--dark", "adaptive"], "itself"),
+    ] {
+        let output = uze(&home)
+            .args(["config", "theme", "set"])
+            .args(&arguments)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "{arguments:?} was accepted");
+        assert!(stderr.contains(said), "{arguments:?}: {stderr}");
+        assert_eq!(config(), written, "{arguments:?} wrote something");
+    }
+
+    let listed = uze(&home)
+        .args(["config", "theme", "list"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&listed.stdout);
+    assert!(
+        stdout.contains("tokyo-night-light when light, dracula when dark"),
+        "{stdout}"
+    );
+    let _ = std::fs::remove_dir_all(home);
+}

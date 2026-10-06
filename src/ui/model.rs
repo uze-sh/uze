@@ -587,6 +587,8 @@ pub(crate) struct TuiModel {
     /// from here resolved to nothing drawable and shows no swatches, which
     /// is the honest answer for a file with a typo in it.
     pub(crate) settings_palettes: std::collections::BTreeMap<String, Vec<uze_theme::Rgb>>,
+    /// The two themes the adaptive selection draws in, light then dark.
+    pub(crate) settings_adaptive: Option<(String, String)>,
     /// Whether the two lists have been read this visit — true even when a
     /// read found nothing, so an empty machine is not asked again every
     /// frame.
@@ -851,6 +853,7 @@ impl TuiModel {
             settings_glyph_sets: Vec::new(),
             settings_chime: uze_application::Chime::default(),
             settings_palettes: std::collections::BTreeMap::new(),
+            settings_adaptive: None,
             settings_read: false,
             keys_capture: false,
             keys_problem: None,

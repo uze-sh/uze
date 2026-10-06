@@ -29,8 +29,18 @@
 //! nothing leaves the author staring at an unchanged screen with no idea
 //! which of the two possible mistakes they made.
 
-use uze_application::{Result, UzeApplication, UzeError, UzeHome};
+mod background;
+
+use uze_application::{ADAPTIVE, Background, Result, UzeApplication, UzeError, UzeHome};
 use uze_theme::{Loaded, ThemeFile};
+
+/// What the adaptive selection draws in while the system is dark, until the
+/// operator names their own.
+pub const ADAPTIVE_DARK: &str = "default";
+
+/// What it draws in while the system is light: the default's own
+/// monochrome, on paper.
+pub const ADAPTIVE_LIGHT: &str = "default-light";
 
 /// How deep a chain of variations may go before UZE stops following it.
 ///
@@ -54,6 +64,8 @@ pub fn resolve_with_layers(
     home: &UzeHome,
     id: &str,
 ) -> Result<(Loaded, Vec<String>)> {
+    let concrete = concrete(app, id)?;
+    let id = concrete.as_str();
     let mut ancestry: Vec<ThemeFile> = Vec::new();
     let mut chain: Vec<String> = Vec::new();
     let mut next = Some(id.to_owned());
@@ -134,6 +146,90 @@ pub fn resolve_with_layers(
             };
             unusable(format!("{source}: {error}"))
         })
+}
+
+/// The theme an id draws in: itself, or for the adaptive selection, the one
+/// chosen for the background the terminal was last seen with.
+pub fn concrete(app: &UzeApplication, id: &str) -> Result<String> {
+    if id == ADAPTIVE {
+        adaptive_half(app, app.themes().background())
+    } else {
+        Ok(id.to_owned())
+    }
+}
+
+/// The theme the adaptive selection draws in on this background.
+pub fn adaptive_half(app: &UzeApplication, background: Background) -> Result<String> {
+    Ok(app.themes().adaptive(background)?.unwrap_or_else(|| {
+        match background {
+            Background::Light => ADAPTIVE_LIGHT,
+            Background::Dark => ADAPTIVE_DARK,
+        }
+        .to_owned()
+    }))
+}
+
+/// How often the workspace looks at the desktop's setting again: a person
+/// flipping it expects the workspace to follow about as soon as their other
+/// windows do, and on WSL each look is a `reg.exe` of tens of milliseconds.
+const DESKTOP_LOOK: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Looks at whether the person wants light or dark, remembers it, and puts
+/// the chosen theme back in force when that changed.
+///
+/// The desktop's setting comes first, as a browser's `prefers-color-scheme`
+/// does. Where there is no desktop to ask (a session over SSH, a bare
+/// console) the terminal is asked for its background instead — and only
+/// here, before the workspace starts reading its input: a CLI command may be
+/// running under a program that reads the same terminal, which would take
+/// the reply as keystrokes, so the CLI draws by what the workspace last saw.
+pub fn observe_appearance(home: &UzeHome) {
+    use std::io::IsTerminal as _;
+    let background = desktop_background().or_else(|| {
+        (std::io::stdin().is_terminal() && std::io::stdout().is_terminal())
+            .then(background::ask)
+            .flatten()
+    });
+    if let Some(background) = background {
+        remember(home, background);
+    }
+}
+
+/// Follows the desktop's setting for as long as the process runs, while the
+/// adaptive selection is the one in force. The theme changes between frames
+/// like any other switch; the workspace sees it through
+/// [`uze_theme::generation`].
+pub fn follow_desktop(home: UzeHome) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(DESKTOP_LOOK);
+            let adaptive = UzeApplication::from_env(home.clone())
+                .ok()
+                .and_then(|app| app.themes().active().ok().flatten())
+                .is_some_and(|id| id == ADAPTIVE);
+            if adaptive && let Some(background) = desktop_background() {
+                remember(&home, background);
+            }
+        }
+    });
+}
+
+fn desktop_background() -> Option<Background> {
+    uze_platform::desktop::color_scheme().map(|scheme| match scheme {
+        uze_platform::desktop::ColorScheme::Light => Background::Light,
+        uze_platform::desktop::ColorScheme::Dark => Background::Dark,
+    })
+}
+
+fn remember(home: &UzeHome, background: Background) {
+    let Ok(app) = UzeApplication::from_env(home.clone()) else {
+        return;
+    };
+    if matches!(app.themes().observe_background(background), Ok(true)) {
+        // Anything stopping the theme from loading was reported when the
+        // command started, and is the same problem now.
+        let _ = install(home);
+    }
 }
 
 /// The layer this id contributes: the file the operator wrote for it, else a
@@ -290,6 +386,68 @@ mod tests {
             matches!(chosen(&home), Ok(None)),
             "nothing chosen is nothing to do"
         );
+    }
+
+    fn background_of(loaded: &Loaded) -> Background {
+        if loaded
+            .theme
+            .color(uze_theme::Token::SurfaceBackground)
+            .is_light()
+        {
+            Background::Light
+        } else {
+            Background::Dark
+        }
+    }
+
+    #[test]
+    fn adaptive_draws_in_the_theme_for_the_background_last_seen() {
+        let home = scratch("theme-adaptive-follows");
+        select(&home, ADAPTIVE);
+
+        // Nothing has asked the terminal yet: dark, as UZE always drew.
+        let loaded = chosen(&home).expect("resolves").expect("chosen");
+        assert_eq!(background_of(&loaded), Background::Dark);
+
+        app(&home)
+            .themes()
+            .observe_background(Background::Light)
+            .expect("observed");
+        let loaded = chosen(&home).expect("resolves").expect("chosen");
+        assert_eq!(background_of(&loaded), Background::Light);
+        assert_eq!(
+            concrete(&app(&home), ADAPTIVE).expect("concrete"),
+            ADAPTIVE_LIGHT
+        );
+    }
+
+    #[test]
+    fn adaptive_draws_in_the_themes_the_operator_named_for_each_background() {
+        let home = scratch("theme-adaptive-named");
+        let app = app(&home);
+        app.themes()
+            .set_adaptive(Background::Dark, "dracula")
+            .expect("named");
+        assert_eq!(concrete(&app, ADAPTIVE).expect("concrete"), "dracula");
+        assert_eq!(
+            adaptive_half(&app, Background::Light).expect("half"),
+            ADAPTIVE_LIGHT,
+            "a background left unnamed keeps its default"
+        );
+        assert_eq!(concrete(&app, "dracula").expect("concrete"), "dracula");
+    }
+
+    #[test]
+    fn both_default_halves_are_themes_uze_carries_and_read_as_their_background() {
+        let home = scratch("theme-adaptive-defaults");
+        let app = app(&home);
+        for (id, background) in [
+            (ADAPTIVE_LIGHT, Background::Light),
+            (ADAPTIVE_DARK, Background::Dark),
+        ] {
+            let loaded = resolve(&app, &home, id).expect("a default half resolves");
+            assert_eq!(background_of(&loaded), background, "{id}");
+        }
     }
 
     #[test]

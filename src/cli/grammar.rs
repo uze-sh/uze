@@ -510,8 +510,17 @@ pub(crate) enum ConfigThemeAction {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
-    /// Draw in this theme, from now on, in both the CLI and the TUI
-    Set { id: String },
+    /// Draw in this theme, from now on, in both the CLI and the TUI.
+    /// `adaptive` follows the system: light or dark, as the desktop is set
+    Set {
+        id: String,
+        /// With `adaptive`: the theme to draw in while the system is light
+        #[arg(long, value_name = "THEME")]
+        light: Option<String>,
+        /// With `adaptive`: the theme to draw in while the system is dark
+        #[arg(long, value_name = "THEME")]
+        dark: Option<String>,
+    },
     /// Show a theme's resolved colours and glyphs, and anything its file
     /// got wrong. The active one by default.
     Show {

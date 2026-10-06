@@ -265,6 +265,7 @@ fn render_row(frame: &mut ratatui::Frame<'_>, rect: Rect, model: &TuiModel, inde
                     || path.display().to_string(),
                     |name| name.to_string_lossy().into_owned(),
                 ),
+                None if id == uze_application::ADAPTIVE => "follows the system".to_owned(),
                 None => "built in".to_owned(),
             };
             render_card(
@@ -452,34 +453,44 @@ fn render_drawer(
     };
 
     let lines = match model.selected_settings_row() {
-        Some(SettingsRow::Theme { id, active, path }) => vec![
-            block("Theme"),
-            title(id),
-            prose(match &path {
-                Some(_) => "Yours.",
-                None => "A theme UZE carries.",
-            }),
-            Line::from(""),
-            block("Where"),
-            prose(&match path {
-                Some(path) => path.display().to_string(),
-                None => "built in — no file to edit".to_owned(),
-            }),
-            Line::from(""),
-            block("What it decides"),
-            prose(
-                "Colours. Whichever glyphs you chose stay chosen, unless \
-                 this theme deliberately claims a mark of its own — then it \
-                 decides that one.",
-            ),
-            Line::from(""),
-            block("In force"),
-            prose(if active {
-                "Yes — this is what UZE draws in."
-            } else {
-                "No. Enter to draw in it."
-            }),
-        ],
+        Some(SettingsRow::Theme { id, active, path }) => {
+            let adaptive = id == uze_application::ADAPTIVE;
+            vec![
+                block("Theme"),
+                title(id),
+                prose(&match (&path, &model.settings_adaptive) {
+                    (Some(_), _) => "Yours.".to_owned(),
+                    (None, Some((light, dark))) if adaptive => format!(
+                        "Light or dark, as your system is set, followed while the workspace runs: \
+                         {light} when light, {dark} when dark."
+                    ),
+                    (None, _) => "A theme UZE carries.".to_owned(),
+                }),
+                Line::from(""),
+                block("Where"),
+                prose(&match path {
+                    Some(path) => path.display().to_string(),
+                    None if adaptive => {
+                        "uze config theme set adaptive --light <theme> --dark <theme>".to_owned()
+                    }
+                    None => "built in — no file to edit".to_owned(),
+                }),
+                Line::from(""),
+                block("What it decides"),
+                prose(
+                    "Colours. Whichever glyphs you chose stay chosen, unless \
+                     this theme deliberately claims a mark of its own — then it \
+                     decides that one.",
+                ),
+                Line::from(""),
+                block("In force"),
+                prose(if active {
+                    "Yes — this is what UZE draws in."
+                } else {
+                    "No. Enter to draw in it."
+                }),
+            ]
+        }
         Some(SettingsRow::GlyphSet { id, active }) => vec![
             block("Glyphs"),
             title(id.clone()),

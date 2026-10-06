@@ -1,5 +1,6 @@
 //! The `[appearance]` section: which theme is active, which glyph set, and
-//! where a user's own themes live.
+//! where a user's own themes live — and whether the person was last seen
+//! wanting light or dark, which is what an adaptive selection is decided by.
 //!
 //! Only the *selection* lives here. What a theme is — tokens, symbols, the
 //! file format, how a partial one resolves — belongs to the design system,
@@ -21,6 +22,30 @@ use crate::{
 const SECTION: &str = "appearance";
 const THEME: &str = "theme";
 const GLYPHS: &str = "glyphs";
+const LIGHT: &str = "light";
+const DARK: &str = "dark";
+
+/// The selection that is no theme of its own: it draws in the theme chosen
+/// for light or the one chosen for dark, whichever the person was last seen
+/// wanting.
+pub const ADAPTIVE: &str = "adaptive";
+
+/// Light or dark: what the desktop asks for, or a terminal's background
+/// reads as.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Background {
+    Light,
+    Dark,
+}
+
+impl Background {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Light => LIGHT,
+            Self::Dark => DARK,
+        }
+    }
+}
 
 /// The theme the operator chose, or `None` while they have not chosen —
 /// which is not an error state: the built-in default is what a fresh
@@ -44,6 +69,43 @@ pub fn set_active(home: &UzeHome, id: &str) -> Result<()> {
 
 pub fn set_glyphs(home: &UzeHome, id: &str) -> Result<()> {
     config::set(home, SECTION, GLYPHS, id)
+}
+
+/// The theme an adaptive selection draws in on this background, or `None`
+/// while the operator has not said — which leaves the choice to whoever
+/// knows the themes.
+pub fn adaptive(home: &UzeHome, background: Background) -> Result<Option<String>> {
+    config::get(home, SECTION, background.as_str())
+}
+
+pub fn set_adaptive(home: &UzeHome, background: Background, id: &str) -> Result<()> {
+    config::set(home, SECTION, background.as_str(), id)
+}
+
+/// What was last observed, or `None` when nothing has looked yet. A cache that cannot be read is the same as none: it is observed
+/// again the next time the workspace opens.
+pub fn observed_background(home: &UzeHome) -> Option<Background> {
+    match fs::read_to_string(home.appearance_cache_path())
+        .ok()?
+        .trim()
+    {
+        LIGHT => Some(Background::Light),
+        DARK => Some(Background::Dark),
+        _ => None,
+    }
+}
+
+/// Remembers what was observed, and whether that differs from what was
+/// remembered before.
+pub fn observe_background(home: &UzeHome, background: Background) -> Result<bool> {
+    if observed_background(home) == Some(background) {
+        return Ok(false);
+    }
+    crate::persistence::write_atomic(
+        &home.appearance_cache_path(),
+        background.as_str().as_bytes(),
+    )?;
+    Ok(true)
 }
 
 /// The theme files the operator has written, as `(id, path)` sorted by id.
@@ -139,6 +201,38 @@ mod tests {
             Some("nocturne")
         );
         assert_eq!(glyphs(&home).expect("readable"), None);
+    }
+
+    #[test]
+    fn each_background_keeps_its_own_adaptive_theme() {
+        let home = home("theme-adaptive-pair");
+        set_adaptive(&home, Background::Light, "dawn").expect("written");
+        assert_eq!(
+            adaptive(&home, Background::Light)
+                .expect("readable")
+                .as_deref(),
+            Some("dawn")
+        );
+        assert_eq!(adaptive(&home, Background::Dark).expect("readable"), None);
+    }
+
+    #[test]
+    fn an_observed_background_is_remembered_and_a_repeat_changes_nothing() {
+        let home = home("theme-observed-background");
+        assert_eq!(observed_background(&home), None);
+        assert!(observe_background(&home, Background::Light).expect("written"));
+        assert!(!observe_background(&home, Background::Light).expect("written"));
+        assert_eq!(observed_background(&home), Some(Background::Light));
+        assert!(observe_background(&home, Background::Dark).expect("written"));
+        assert_eq!(observed_background(&home), Some(Background::Dark));
+    }
+
+    #[test]
+    fn an_unreadable_observation_is_no_observation() {
+        let home = home("theme-garbled-background");
+        fs::create_dir_all(home.cache_dir()).expect("cache dir");
+        fs::write(home.appearance_cache_path(), "mauve").expect("garbled");
+        assert_eq!(observed_background(&home), None);
     }
 
     #[test]

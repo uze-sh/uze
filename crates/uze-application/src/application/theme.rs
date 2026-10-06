@@ -7,7 +7,10 @@
 //! every token added later becomes a change to this crate.
 
 use serde::Serialize;
-use uze_core::{Result, appearance};
+use uze_core::{
+    Result,
+    appearance::{self, ADAPTIVE, Background},
+};
 
 use super::services::Themes;
 
@@ -33,16 +36,17 @@ pub struct GlyphSetSummary {
 }
 
 impl Themes<'_> {
-    /// Every theme this machine can load: the ones UZE carries, then the
-    /// ones the operator wrote. A file that shadows a built-in's name wins,
-    /// the way a local override should — and is listed once, as theirs.
+    /// Every theme this machine can load: the adaptive selection, the ones
+    /// UZE carries, then the ones the operator wrote. A file that shadows a
+    /// built-in's name wins, the way a local override should — and is listed
+    /// once, as theirs.
     #[tracing::instrument(name = "themes.list", skip_all, err)]
     pub fn list(&self, builtin: &[&str]) -> Result<Vec<ThemeSummary>> {
         let active = self.active()?;
         let written = appearance::available(&self.0.home)?;
         let shadowed: Vec<&str> = written.iter().map(|(id, _)| id.as_str()).collect();
-        let summaries = builtin
-            .iter()
+        let summaries = std::iter::once(&ADAPTIVE)
+            .chain(builtin)
             .filter(|id| !shadowed.contains(*id))
             .map(|id| ThemeSummary {
                 id: (*id).to_owned(),
@@ -107,6 +111,33 @@ impl Themes<'_> {
         appearance::glyphs(&self.0.home)
     }
 
+    /// The theme an adaptive selection draws in on this background, or
+    /// `None` while the operator has not said.
+    #[tracing::instrument(name = "themes.adaptive", skip_all, err)]
+    pub fn adaptive(&self, background: Background) -> Result<Option<String>> {
+        appearance::adaptive(&self.0.home, background)
+    }
+
+    /// Records the theme an adaptive selection draws in on this
+    /// background. Does not select it.
+    #[tracing::instrument(name = "themes.set_adaptive", skip_all, fields(id = %id), err)]
+    pub fn set_adaptive(&self, background: Background, id: &str) -> Result<()> {
+        appearance::set_adaptive(&self.0.home, background, id)
+    }
+
+    /// The background last observed, or dark while none has been: dark is
+    /// what every theme UZE drew before it could ask was made for.
+    #[tracing::instrument(name = "themes.background", skip_all)]
+    pub fn background(&self) -> Background {
+        appearance::observed_background(&self.0.home).unwrap_or(Background::Dark)
+    }
+
+    /// Remembers what was observed, and says whether it changed.
+    #[tracing::instrument(name = "themes.observe_background", skip_all, err)]
+    pub fn observe_background(&self, background: Background) -> Result<bool> {
+        appearance::observe_background(&self.0.home, background)
+    }
+
     /// Records the glyph set. Independent of [`Themes::select`] in both
     /// directions: neither call reads or writes the other's half.
     #[tracing::instrument(name = "themes.select_glyphs", skip_all, fields(id = %id), err)]
@@ -133,6 +164,11 @@ mod tests {
             .filter(|theme| theme.id == "default")
             .collect();
         assert_eq!(shadowed.len(), 1, "listed twice: {listed:?}");
+        assert_eq!(
+            listed[0].id,
+            super::ADAPTIVE,
+            "the adaptive selection leads"
+        );
         assert!(
             shadowed[0].path.is_some(),
             "the built-in won over their file"
