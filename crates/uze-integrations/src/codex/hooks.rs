@@ -54,55 +54,65 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
     },
 };
 
-/// The shell tool is `exec_command` with a `cmd` argument (0.150.1
-/// onwards); `Bash` stays in `also_matches` so an older payload still
-/// normalizes.
+/// Measured, never recalled: every native name and field here is the one a
+/// Lab census saw a call reach a hook with (`hook_tools` in
+/// `conformance/evidence/tools/codex.json`, codex-cli 0.160.1), and
+/// `hooks::measured_tests` fails on any that a later census contradicts.
+///
+/// Since code mode, the model calls nested tools through `exec`, and a
+/// hook sees them under names of their own: a shell command as `Bash` with
+/// `command` (not the `exec_command`/`cmd` the model is offered), a file
+/// write or edit as `apply_patch` with the whole patch in `command` and no
+/// path — so `file.*` cannot carry the `path` it promises and stays
+/// unbound, a guard on patches naming `native:apply_patch` — and a
+/// collaboration tool with its namespace run into its name. Code mode
+/// offers no tool to read or search files, nor the web, outside the shell.
 const TOOLS: &[ToolBinding] = &[
     ToolBinding {
         alias: "shell",
-        native_tool: Some("exec_command"),
-        also_matches: &["Bash"],
-        fields: &[("command", "cmd")],
+        native_tool: Some("Bash"),
+        also_matches: &[],
+        fields: &[("command", "command")],
     },
     ToolBinding {
         alias: "file.read",
-        native_tool: Some("Read"),
+        native_tool: UNBOUND,
         also_matches: &[],
         fields: &[("path", "file_path")],
     },
     ToolBinding {
         alias: "file.write",
-        native_tool: Some("Write"),
+        native_tool: UNBOUND,
         also_matches: &[],
         fields: &[("path", "file_path")],
     },
     ToolBinding {
         alias: "file.edit",
-        native_tool: Some("Edit"),
+        native_tool: UNBOUND,
         also_matches: &[],
         fields: &[("path", "file_path")],
     },
     ToolBinding {
         alias: "search.files",
-        native_tool: Some("Grep"),
+        native_tool: UNBOUND,
         also_matches: &[],
         fields: &[("query", "pattern")],
     },
     ToolBinding {
         alias: "search.web",
-        native_tool: Some("WebSearch"),
+        native_tool: UNBOUND,
         also_matches: &[],
         fields: &[("query", "query")],
     },
     ToolBinding {
         alias: "agent.spawn",
-        native_tool: UNBOUND,
+        native_tool: Some("collaborationspawn_agent"),
         also_matches: &[],
         fields: &[],
     },
     ToolBinding {
         alias: "agent.message",
-        native_tool: UNBOUND,
+        native_tool: Some("collaborationsend_message"),
         also_matches: &[],
         fields: &[],
     },

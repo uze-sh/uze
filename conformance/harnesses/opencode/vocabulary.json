@@ -1,0 +1,42 @@
+{
+  "events": ["pre_tool_use", "post_tool_use"],
+  "effects": ["observe", "allow"],
+  "aliases": {
+    "shell": {
+      "tools": ["shell"],
+      "fields": {"command": "command"},
+      "call": {"command": "mkdir -p {dir} && printf ran > {side} # {mark}"}
+    },
+    "file.read": {
+      "tools": ["read"],
+      "fields": {"path": "path"},
+      "call": {"path": "{project}/README.md"}
+    },
+    "file.write": {
+      "tools": ["write"],
+      "fields": {"path": "path"},
+      "call": {"path": "{side}", "content": "lab"}
+    },
+    "file.edit": {
+      "tools": ["edit"],
+      "fields": {"path": "path"},
+      "call": {"path": "{project}/README.md", "oldString": "lab project", "newString": "lab project, edited"}
+    },
+    "search.files": {
+      "tools": ["grep"],
+      "fields": {"query": "pattern"},
+      "call": {"pattern": "lab", "path": "{project}"}
+    },
+    "search.web": {
+      "tools": ["websearch"],
+      "fields": {"query": "query"},
+      "call": {"query": "lab"}
+    },
+    "agent.spawn": {
+      "tools": ["subagent"],
+      "fields": {},
+      "call": {"agent": "general", "description": "lab", "prompt": "lab subagent"}
+    },
+    "agent.message": null
+  }
+}

@@ -38,6 +38,18 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
                     .iter()
                     .map(|finding| finding.capability.as_str())
                     .collect();
+                // Held back is in place and waiting on the person, not
+                // broken: a warning, worded as the wait it is.
+                if group[0].kind == uze_application::application::DeliveryFindingKind::HeldBack {
+                    warnings.push(format!(
+                        "{}  {} of {} held back\n  {}",
+                        harness.display_name,
+                        names.join(", "),
+                        package.plugin,
+                        progress::label(&group[0].detail)
+                    ));
+                    continue;
+                }
                 let kind = format!("{:?}", group[0].kind).to_lowercase();
                 problems.push(format!(
                     "{}  {} of {} {kind}\n  {}",
@@ -471,6 +483,34 @@ pub(crate) fn render_machine_status(report: &MachineStatusReport, asked: Machine
         ));
     }
     text.push_str(&render_plugin_list(&report.packages));
+    text.push_str(&render_held_back(&report.held_back));
+    text
+}
+
+/// What a harness holds back until the person acts in it: one line per
+/// plugin on a harness, naming how many of its capabilities wait, and the
+/// action under it. Empty when nothing waits.
+pub(crate) fn render_held_back(notes: &[uze_application::application::HeldBackNote]) -> String {
+    if notes.is_empty() {
+        return String::new();
+    }
+    let mut text = format!("\n{}", progress::report_section("Waiting on you"));
+    for group in notes.chunk_by(|left, right| {
+        left.harness == right.harness && left.plugin == right.plugin && left.action == right.action
+    }) {
+        let one = &group[0];
+        let count = match group.len() {
+            1 => "1 capability".to_owned(),
+            n => format!("{n} capabilities"),
+        };
+        text.push_str(&format!(
+            "{} {}  {count} of {} held back\n  {}\n",
+            progress::warning_icon(),
+            one.harness,
+            one.plugin,
+            progress::label(&one.action)
+        ));
+    }
     text
 }
 
@@ -536,6 +576,7 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         ));
         text.push('\n');
     }
+    text.push_str(&render_held_back(&report.held_back));
     for issue in &report.issues {
         text.push_str(&format!("{} {issue}\n", progress::warning_icon()));
     }

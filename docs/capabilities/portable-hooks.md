@@ -76,7 +76,7 @@ exit code. It never parses a harness payload and never writes harness JSON.
 | `HOOK_EVENT` | `pre_tool_use` \| `post_tool_use` \| `stop` \| `session_start` |
 | `HOOK_SOURCE` | `session_start` only: `startup`, `resume` or `clear`, when the harness reports it; empty otherwise |
 | `HOOK_TOOL` | the portable alias that matched; empty for a tool the vocabulary does not bind, and on `stop` and `session_start`, which carry no tool |
-| `HOOK_TOOL_NATIVE` | the harness's own tool name (`Bash`, `exec_command`, `run_command`, `bash`) |
+| `HOOK_TOOL_NATIVE` | the harness's own tool name, as its hook system reports it (`Bash`, `run_command`, `shell`) |
 | `HOOK_CWD` | the workspace directory; may be empty |
 | `HOOK_INPUT` | the tool input, as JSON, for anything the alias does not name |
 | `PLUGIN_ROOT` | the package root the handler was delivered from |
@@ -141,27 +141,41 @@ compatibility verdicts.
 
 | Alias | Fields | Claude Code | Codex | Antigravity CLI | OpenCode |
 |---|---|---|---|---|---|
-| `shell` | `HOOK_COMMAND` | `Bash` / `command` | `exec_command` / `cmd` | `run_command` / `CommandLine` | `bash` / `command` |
-| `file.read` | `HOOK_PATH` | `Read` / `file_path` | `Read` / `file_path` | `view_file` / `AbsolutePath` | `read` / `filePath` |
-| `file.write` | `HOOK_PATH` | `Write` / `file_path` | `Write` / `file_path` | `write_to_file` / `TargetFile` | `write` / `filePath` |
-| `file.edit` | `HOOK_PATH` | `MultiEdit`, `Edit` / `file_path` | `Edit` / `file_path` | `replace_file_content` / `TargetFile` | `edit` / `filePath` |
-| `search.files` | `HOOK_QUERY` | `Grep` / `pattern` | `Grep` / `pattern` | `grep_search` / `Query` | `grep` / `pattern` |
-| `search.web` | `HOOK_QUERY` | `WebSearch` / `query` | `WebSearch` / `query` | `search_web` / `query` | `web_search` / `query` |
-| `agent.spawn` | — | `Task` | — | — | `task` |
-| `agent.message` | — | — | — | — | — |
+| `shell` | `HOOK_COMMAND` | `Bash` / `command` | `Bash` / `command` | `run_command` / `CommandLine` | `shell` / `command` |
+| `file.read` | `HOOK_PATH` | `Read` / `file_path` | — | `view_file` / `AbsolutePath` | `read` / `path` |
+| `file.write` | `HOOK_PATH` | `Write` / `file_path` | — ¹ | `write_to_file` / `TargetFile` | `write` / `path` |
+| `file.edit` | `HOOK_PATH` | `Edit` / `file_path` | — ¹ | `replace_file_content` / `TargetFile` | `edit` / `path` |
+| `search.files` | `HOOK_QUERY` | `Grep` / `pattern` ² | — | — | `grep` / `pattern` |
+| `search.web` | `HOOK_QUERY` | `WebSearch` / `query` | — | `search_web` / `query` | `websearch` / `query` |
+| `agent.spawn` | — | `Agent` | `collaborationspawn_agent` | — ³ | `subagent` |
+| `agent.message` | — | — | `collaborationsend_message` | `send_message` | — |
 
-Antigravity's and Codex's names come from the schemas those harnesses
-declare to the model, captured with the Lab's `--discovery` mode. A
+Every name is measured, never recalled: it is the name and the input
+field a real call reached a hook with, recorded by the Conformance Lab's
+census (`conformance/evidence/tools/<harness>.json`, Claude Code 2.1.290,
+codex-cli 0.160.1, Antigravity 1.2.17, OpenCode 2.0.23), and
+`cargo test` fails on a table entry a later census contradicts. A
 `native:<tool>` matcher bypasses the table entirely: the handler receives
-`HOOK_TOOL_NATIVE` and `HOOK_INPUT`, with `HOOK_TOOL` empty.
+`HOOK_TOOL_NATIVE` and `HOOK_INPUT`, with `HOOK_TOOL` empty. A group whose
+matchers name only aliases a harness has no tool for is reported
+unsupported there and not delivered.
+
+1. Codex writes and edits files through `apply_patch`, which reaches a hook
+   with the whole patch in `command` and no path field, so neither alias
+   can carry `HOOK_PATH`; a guard on patches matches `native:apply_patch`.
+2. Claude Code's native build searches through `Bash` and offers `Grep` to
+   the main model only on opt-in (`--allowedTools`/`--tools`) or to a
+   subagent whose tools name it.
+3. Antigravity offers `invoke_subagent` only to an agent whose definition
+   lists it.
 
 ## Delivery per harness
 
 | Harness | Delivered artifact | Route |
 |---|---|---|
 | Claude Code | one merged entry per group in `~/.claude/settings.json`, `command` = the generated `hooks/exec` with the group's arguments (exec form: no shell parsing) | native |
-| Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native |
-| Antigravity CLI | one named entry per group merged into the shared `~/.gemini/config/hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` — whose command is the shared `hooks/exec` wrapper by absolute path | native (shared vendor file); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures both the vendor's execution gate (`hooks > vendor`) and whether the harness loads what UZE delivered (`hooks > delivery`) live, every run |
+| Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native; held back until the person trusts it — Codex runs a hook from `hooks.json` only once its review recorded a hash for it (a TUI session asks; `codex exec` skips it in silence), and asks again after a change. `uze status`, `uze inspect`, `uze doctor` and the install report name every hook waiting on that review, read from Codex's own record and never written to it |
+| Antigravity CLI | one named entry per group merged into the shared `~/.gemini/config/hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` — whose command is the shared `hooks/exec` wrapper by absolute path | native (shared vendor file); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
 | OpenCode | one generated plugin module (the definition as its default export, no import), `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted (`observe`/`allow` only; `deny`/`ask` unsupported, `Stop` and `SessionStart` never claimed) |
 
 The `sh` wrapper is one file per harness, byte-identical for every package,

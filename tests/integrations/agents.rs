@@ -28,7 +28,7 @@ fn agent(root: &std::path::Path) -> Resource {
 }
 
 #[test]
-fn canonical_agent_routes_natively_for_every_harness() {
+fn canonical_agent_routes_natively_except_where_the_default_agent_cannot_reach_it() {
     let root = uze_testkit::temp::scratch("agent-routes");
     let home = UzeHome::at(root.join("uze"));
     let resource = agent(&root);
@@ -49,9 +49,15 @@ fn canonical_agent_routes_natively_for_every_harness() {
         opencode.exposure_plan(&resource).route,
         CompatibilityRoute::Native
     );
-    assert_eq!(
-        antigravity.exposure_plan(&resource).route,
-        CompatibilityRoute::Native
+    // Antigravity offers `invoke_subagent` only to an agent whose own
+    // definition lists it, so the agent a person starts on cannot dispatch
+    // the delivered one (Lab `agent-*-exposed`, 1.2.17).
+    let plan = antigravity.exposure_plan(&resource);
+    assert_eq!(plan.route, CompatibilityRoute::Degraded);
+    assert!(
+        plan.evidence.contains("invoke_subagent"),
+        "{}",
+        plan.evidence
     );
     assert_eq!(
         codex.exposure_plan(&resource).route,
@@ -168,7 +174,7 @@ fn opencode_receives_only_the_fields_it_reads_and_says_what_it_left() {
 
 /// An agent that tells each harness its own model, and names a root
 /// `model` only Claude spells this way.
-const PER_HARNESS: &[u8] = b"---\nname: reviewer\ndescription: Reviews\nmodel: haiku\nharness:\n  claude-code: { model: sonnet, permissionMode: plan }\n  codex: { model: gpt-6-luna, model_reasoning_effort: high, nickname: rev }\n  opencode: { model: anthropic/claude-haiku-4-5, tools: { read: true }, temperature: 0.1 }\n  agy: { model: gemini-3.1-flash-lite-preview }\n---\nReview.\n";
+const PER_HARNESS: &[u8] = b"---\nname: reviewer\ndescription: Reviews\nmodel: haiku\nharness:\n  claude-code: { model: sonnet, permissionMode: plan }\n  codex: { model: gpt-6-luna, model_reasoning_effort: high, nickname: rev }\n  opencode: { model: anthropic/claude-haiku-4-5, steps: 8, temperature: 0.1 }\n  agy: { model: gemini-3.1-flash-lite-preview }\n---\nReview.\n";
 
 fn agent_with(root: &std::path::Path, payload: &[u8]) -> Resource {
     let mut resource = agent(root);
@@ -223,7 +229,10 @@ fn each_harness_receives_its_own_block_and_never_the_block_itself() {
         "{opencode}"
     );
     assert!(opencode.contains("mode: subagent"), "{opencode}");
-    assert!(opencode.contains("temperature: 0.1"), "{opencode}");
+    assert!(opencode.contains("steps: 8"), "{opencode}");
+    // A V1 field would send the whole file down OpenCode V2's legacy path,
+    // where `temperature` is kept in a request body V2 never sends.
+    assert!(!opencode.contains("temperature"), "{opencode}");
     assert!(!opencode.contains("model: haiku"), "{opencode}");
 
     let antigravity = generated_content(

@@ -1,0 +1,162 @@
+{
+ "harness": "claude",
+ "harness_version": "2.1.291 (Claude Code)",
+ "recorded_at": "2026-10-06",
+ "tools": {
+  "Agent": [
+   "description",
+   "isolation",
+   "model",
+   "prompt",
+   "run_in_background",
+   "subagent_type"
+  ],
+  "Artifact": [
+   "action",
+   "as_level",
+   "capabilities",
+   "collection",
+   "contract",
+   "data",
+   "db_op",
+   "description",
+   "doc_id",
+   "favicon",
+   "file_path",
+   "force",
+   "icon",
+   "label",
+   "limit",
+   "out_dir",
+   "pin",
+   "prompt",
+   "query",
+   "scope",
+   "title",
+   "url",
+   "writes"
+  ],
+  "AskUserQuestion": [
+   "annotations",
+   "answers",
+   "metadata",
+   "questions"
+  ],
+  "Bash": [
+   "command",
+   "dangerouslyDisableSandbox",
+   "description",
+   "run_in_background",
+   "timeout"
+  ],
+  "DeferredToolPlaceholder": [],
+  "Edit": [
+   "file_path",
+   "new_string",
+   "old_string",
+   "replace_all"
+  ],
+  "Grep": [
+   "-A",
+   "-B",
+   "-C",
+   "-i",
+   "-n",
+   "-o",
+   "context",
+   "glob",
+   "head_limit",
+   "multiline",
+   "offset",
+   "output_mode",
+   "path",
+   "pattern",
+   "type"
+  ],
+  "ListAgents": [
+   "channel",
+   "q"
+  ],
+  "Read": [
+   "file_path",
+   "limit",
+   "offset",
+   "pages"
+  ],
+  "ReportFindings": [
+   "findings",
+   "level"
+  ],
+  "ScheduleWakeup": [
+   "delaySeconds",
+   "noop",
+   "prompt",
+   "reason",
+   "stop"
+  ],
+  "Skill": [
+   "args",
+   "skill"
+  ],
+  "SubagentHandback": [
+   "message"
+  ],
+  "ToolSearch": [
+   "max_results",
+   "query"
+  ],
+  "WebSearch": [
+   "allowed_domains",
+   "blocked_domains",
+   "query"
+  ],
+  "Workflow": [
+   "args",
+   "description",
+   "name",
+   "resumeFromRunId",
+   "script",
+   "scriptPath",
+   "title"
+  ],
+  "Write": [
+   "content",
+   "file_path"
+  ],
+  "mcp__plugin_uze-mcp-conformance_uze-conformance__uze_conformance": [
+   "unused"
+  ],
+  "web_search": []
+ },
+ "hook_tools": {
+  "Agent": [
+   "description",
+   "prompt",
+   "subagent_type"
+  ],
+  "Bash": [
+   "command",
+   "description"
+  ],
+  "Edit": [
+   "file_path",
+   "new_string",
+   "old_string",
+   "replace_all"
+  ],
+  "Read": [
+   "file_path"
+  ],
+  "ToolSearch": [
+   "max_results",
+   "query"
+  ],
+  "WebSearch": [
+   "query"
+  ],
+  "Write": [
+   "content",
+   "file_path"
+  ]
+ }
+}

@@ -1,0 +1,123 @@
+{
+  "events": [
+    "pre_tool_use",
+    "post_tool_use",
+    "stop"
+  ],
+  "effects": [
+    "observe",
+    "allow",
+    "ask",
+    "deny"
+  ],
+  "aliases": {
+    "shell": {
+      "tools": [
+        "run_command"
+      ],
+      "fields": {
+        "command": "CommandLine"
+      },
+      "call": {
+        "CommandLine": "mkdir -p {dir} && printf ran > {side} # {mark}",
+        "Cwd": "{project}",
+        "WaitMsBeforeAsync": 2000,
+        "toolSummary": "Lab command",
+        "toolAction": "Running command"
+      }
+    },
+    "file.read": {
+      "tools": [
+        "view_file"
+      ],
+      "fields": {
+        "path": "AbsolutePath"
+      },
+      "call": {
+        "AbsolutePath": "{project}/README.md",
+        "toolSummary": "Lab read",
+        "toolAction": "Reading file"
+      }
+    },
+    "file.write": {
+      "tools": [
+        "write_to_file"
+      ],
+      "fields": {
+        "path": "TargetFile"
+      },
+      "call": {
+        "TargetFile": "{side}",
+        "CodeContent": "lab",
+        "Description": "lab",
+        "Overwrite": true,
+        "toolSummary": "Lab write",
+        "toolAction": "Writing file"
+      }
+    },
+    "file.edit": {
+      "tools": [
+        "replace_file_content"
+      ],
+      "fields": {
+        "path": "TargetFile"
+      },
+      "call": {
+        "TargetFile": "{project}/README.md",
+        "TargetContent": "lab project",
+        "ReplacementContent": "lab project, edited",
+        "Instruction": "lab",
+        "Description": "lab",
+        "AllowMultiple": false,
+        "StartLine": 1,
+        "EndLine": 1,
+        "toolSummary": "Lab edit",
+        "toolAction": "Editing file"
+      }
+    },
+    "search.files": null,
+    "search.web": {
+      "tools": [
+        "search_web"
+      ],
+      "fields": {
+        "query": "query"
+      },
+      "call": {
+        "query": "lab",
+        "toolSummary": "Lab search",
+        "toolAction": "Searching the web"
+      }
+    },
+    "agent.spawn": {
+      "tools": [
+        "invoke_subagent"
+      ],
+      "fields": {},
+      "call": {
+        "Subagents": [
+          {
+            "TypeName": "flow:auditor",
+            "Role": "Lab",
+            "Prompt": "lab subagent"
+          }
+        ],
+        "toolSummary": "Lab dispatch",
+        "toolAction": "Dispatching agent"
+      },
+      "optional": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool (measured on 1.2.17, the Lab's own dispatcher agent having hidden it until then)"
+    },
+    "agent.message": {
+      "tools": [
+        "send_message"
+      ],
+      "fields": {},
+      "call": {
+        "Message": "lab",
+        "Recipient": "general",
+        "toolSummary": "Lab message",
+        "toolAction": "Sending message"
+      }
+    }
+  }
+}

@@ -2,10 +2,11 @@
 
 import json
 import shlex
+import subprocess
 import time
 
 from contract import continuity
-from contract.bindings import Bindings
+from contract.bindings import Bindings, hook_prelude
 from contract.tui import Tui
 
 from .scenarios import codex_container, drive_onboarding
@@ -13,6 +14,7 @@ from .scenarios import codex_container, drive_onboarding
 
 class CodexBindings(Bindings):
     harness = "codex"
+    display_name = "Codex"
     launch = "exec codex"
     #: The real prompt, not the splash. A marker loose enough to match
     #: onboarding passes every check against a screen that accepts no
@@ -40,10 +42,24 @@ class CodexBindings(Bindings):
         final = f"{prelude}\ncd {cwd} && {relaunch}"
         return Tui(cfg, codex_container(cfg, prov_ip, final), "codex-continuity")
 
+    #: The screen Codex opens on while delivered hooks await review
+    #: (0.160.1): "1. Review hooks  2. Trust all and continue  3. Continue
+    #: without trusting (hooks won't run)". Until a person answers it, no
+    #: hook UZE delivered runs.
+    HOOK_REVIEW = "Trust all and continue"
+
     def prepare(self, tui):
-        """Codex opens on an onboarding flow; the prompt only accepts input
-        once it is driven through."""
+        """Codex opens on an onboarding flow, and — when a package delivered
+        hooks — on their review; the prompt only accepts input once both are
+        answered, the review the way a person trusts what they installed."""
         _, plain = drive_onboarding(tui.child)
+        if self.HOOK_REVIEW.replace(" ", "") in plain.replace(" ", ""):
+            # Once: the screen a later read returns can still hold the
+            # menu's text, and answering it again types into the prompt.
+            tui.child.send("2")
+            time.sleep(0.5)
+            tui.submit()
+            plain, _ = tui.until(self.ready_markers, tries=6)
         tui.snapshot("ready", plain)
         return plain, "Ask Codex" in plain
 
@@ -91,7 +107,7 @@ class CodexBindings(Bindings):
         final = f"""{prelude}
 cd {cwd}
 set +e
-timeout 240 codex exec --skip-git-repo-check {shlex.quote(prompt)} 2>&1
+timeout 240 codex exec {shlex.quote(prompt)} 2>&1
 """
         return codex_container(cfg, prov_ip, final, plugins=plugins, tty=False)
 
@@ -123,6 +139,55 @@ timeout 240 codex exec --skip-git-repo-check {shlex.quote(prompt)} 2>&1
             "TOOL_SEQUENCE": json.dumps(sequence),
             "TOOL_TRIGGER": prompt,
         }
+
+    #: Codex asks before a command leaves its sandbox; answered on screen,
+    #: the way a person answers it. The hook review is `prepare`'s.
+    approval_prompts = ("Would you like to run", "Allow command")
+
+    #: Codex's provider answers the request after a scripted sequence with
+    #: its canned turn text.
+    final_markers = ("UZE_CONFORMANCE_OK",)
+
+    def hook_review_recorded(self, cfg):
+        """Codex records a person's trust as `[hooks.state."<key>"]` tables
+        in `~/.codex/config.toml` (measured, `experiments/codex/trust-store`)."""
+        config = subprocess.run(
+            [
+                "docker",
+                "exec",
+                cfg.harness_container,
+                "cat",
+                "/work/home/.codex/config.toml",
+            ],
+            capture_output=True,
+            text=True,
+            errors="replace",
+        ).stdout
+        return "[hooks.state." in config
+
+    def hook_session(self, cfg, prov_ip, plugin, tag, before=""):
+        final = f"{hook_prelude(self.hook_project)}\n{before}\ncd {self.hook_project} && {self.launch}"
+        return Tui(
+            cfg,
+            codex_container(cfg, prov_ip, final, plugins=plugin),
+            f"codex-hooks-{tag}",
+        )
+
+    def sequence(self, calls, trigger):
+        """Codex's provider scripts `{"name", "namespace", "args"}` steps,
+        with arguments as the JSON string the Responses API carries. A
+        namespaced tool is declared as `<namespace>.<name>`
+        (`capture.declared_tools`). A call whose input is text is a freeform
+        tool's — code mode's `exec` — and is scripted as one."""
+        steps = []
+        for c in calls:
+            namespace, _, name = c["tool"].rpartition(".")
+            custom = isinstance(c["args"], str)
+            args = c["args"] if custom else json.dumps(c["args"])
+            steps.append(
+                {"name": name, "namespace": namespace, "args": args, "custom": custom}
+            )
+        return "toolcall", {"TOOL_SEQUENCE": json.dumps(steps), "TOOL_TRIGGER": trigger}
 
     def unsupported(self, prop):
         """Codex documents no way to disable explicit `$skill` invocation, so

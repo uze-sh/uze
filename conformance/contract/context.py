@@ -24,9 +24,11 @@ the measured reason. Either way the checkout is the project's, so the
 scene also proves nothing appeared in it.
 """
 
+import json
 import os
 import subprocess
 
+from contract import declared
 from shared.common import (
     check,
     describe,
@@ -34,7 +36,13 @@ from shared.common import (
     provider_struct,
     start_provider,
 )
-from shared.markers import CONTEXT, CONTEXT_PROBE, PROJECT_AGENT, PROJECT_SKILL
+from shared.markers import (
+    CONTEXT,
+    CONTEXT_PROBE,
+    CONTEXT_TAIL,
+    PROJECT_AGENT,
+    PROJECT_SKILL,
+)
 
 PROJECT = "/work/context-project"
 AUTHORED_PROJECT = "/work/authored-project"
@@ -67,7 +75,77 @@ def assert_contract(cfg, prov_ip, bindings):
     with describe("context"):
         _assert_agents_md(cfg, bindings)
         _assert_project_directory(cfg, bindings)
+        _assert_long_agents_md(cfg, bindings)
     start_provider(cfg, "static")
+
+
+LONG_PROJECT = "/work/long-project"
+
+#: Printed around `uze status`'s answer once the turn has ended.
+STATUS_BEGIN = "UZE_STATUS_BEGIN"
+STATUS_END = "UZE_STATUS_END"
+
+#: An `AGENTS.md` of about 30 KB — past the 24,000 bytes Antigravity reads
+#: of a rules file — whose first line carries the house rule and whose last
+#: carries the tail marker.
+LONG_PRELUDE = f"""
+mkdir -p {LONG_PROJECT} && cd {LONG_PROJECT}
+git init -q -b main .
+{{
+  printf '# Lab project\\n\\nEvery answer follows the house rule {CONTEXT}.\\n\\n'
+  i=0; while [ $i -lt 600 ]; do printf 'Filler line %04d that only makes this file long enough.\\n' $i; i=$((i+1)); done
+  printf '\\nThe last rule of this project is {CONTEXT_TAIL}.\\n'
+}} > AGENTS.md
+printf '{{}}\\n' > agents.yaml
+uze install >/work/long-install.log 2>&1 || true
+trap 'echo {STATUS_BEGIN}; uze status --format json 2>/dev/null; echo {STATUS_END}' EXIT
+"""
+
+
+def _assert_long_agents_md(cfg, bindings):
+    """What UZE says about a long `AGENTS.md` agrees with what the harness
+    did with it: a harness that put the last line in front of the model is
+    reported as reading it, and one that did not is reported as not.
+
+    UZE's report is the subject; the harness's request is the measure."""
+    prov_ip = start_provider(cfg, "static")
+    prompt = f"{CONTEXT_PROBE} what is the last rule here?"
+    cmd = bindings.headless(cfg, prov_ip, LONG_PRELUDE, prompt, LONG_PROJECT)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, errors="replace", timeout=480
+    )
+    output = proc.stdout + proc.stderr
+    with open(os.path.join(cfg.outdir, "context-long.out"), "w") as f:
+        f.write(output)
+    seen = observed_markers(provider_struct(cfg), "context_markers")
+    head = seen.get(CONTEXT, False)
+    tail = seen.get(CONTEXT_TAIL, False)
+    start = output.rfind(STATUS_BEGIN)
+    end = output.rfind(STATUS_END)
+    try:
+        status = (
+            json.loads(output[start + len(STATUS_BEGIN) : end])
+            if 0 <= start < end
+            else None
+        )
+    except ValueError:
+        status = None
+    name = bindings.display_name
+    warned = status is not None and any(
+        issue.startswith(f"{name}:") and "AGENTS.md" in issue
+        for issue in status.get("issues", [])
+    )
+    check(
+        "context-long-head-reaches-model",
+        head,
+        "the first line of a long AGENTS.md reached the model",
+    )
+    check(
+        "context-long-report-agrees",
+        head and status is not None and warned == (not tail),
+        f"the harness {'read' if tail else 'did not read'} the last line, "
+        f"and UZE {'warned' if warned else 'did not warn'}",
+    )
 
 
 def _assert_agents_md(cfg, bindings):
@@ -209,11 +287,9 @@ def _assert_project_agent(bindings, seen):
     """The agent the project authored is offered to the model by every
     harness that is claimed to receive it."""
     name = "context-project-agent-reaches-model"
-    reason = bindings.unsupported(name)
-    if reason:
-        check(name, True, f"{bindings.harness} cannot: {reason}", kind="adapt")
-        return
-    check(
+    declared.presence(
+        bindings,
+        name,
         name,
         seen.get(PROJECT_AGENT, False),
         "the agent the project authored in .agents/agents is offered to the model",

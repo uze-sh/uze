@@ -58,7 +58,7 @@ fn vendor_aliases_are_explicit() {
     );
 }
 
-const TARGETS: [HookTarget; 4] = [
+pub(super) const TARGETS: [HookTarget; 4] = [
     crate::claude::HOOKS,
     crate::codex::HOOKS,
     crate::antigravity::HOOKS,
@@ -109,7 +109,7 @@ fn the_shell_alias_reads_each_harnesss_own_command_field() {
             .map(|(_, native)| *native)
     };
     assert_eq!(field(crate::claude::HOOKS), Some("command"));
-    assert_eq!(field(crate::codex::HOOKS), Some("cmd"));
+    assert_eq!(field(crate::codex::HOOKS), Some("command"));
     assert_eq!(field(crate::antigravity::HOOKS), Some("CommandLine"));
     assert_eq!(field(crate::opencode::HOOKS), Some("command"));
 }
@@ -117,16 +117,57 @@ fn the_shell_alias_reads_each_harnesss_own_command_field() {
 #[test]
 fn a_renamed_vendor_tool_still_normalizes_to_its_alias() {
     let alias = |native| {
-        vocabulary(crate::codex::HOOKS)
+        vocabulary(crate::claude::HOOKS)
             .binding_for_native(native)
             .map(|binding| binding.alias)
     };
-    assert_eq!(alias("exec_command"), Some("shell"));
     assert_eq!(alias("Bash"), Some("shell"));
+    assert_eq!(alias("PowerShell"), Some("shell"));
     assert_eq!(
-        tool_names(crate::codex::HOOKS, &HookMatcher::Portable("shell".into())),
-        ["exec_command", "Bash"],
+        tool_names(crate::claude::HOOKS, &HookMatcher::Portable("shell".into())),
+        ["Bash", "PowerShell"],
         "the matcher intercepts every name this harness's shell tool answers to"
+    );
+}
+
+/// A group naming only aliases a harness has no tool for would be
+/// delivered with a matcher that never fires; it is reported instead, and
+/// one that also names a tool the harness has is delivered as usual.
+#[test]
+fn a_group_that_could_never_fire_here_is_reported_not_delivered() {
+    let package = uze_testkit::temp::scratch("unbound-only");
+    fs::create_dir_all(&package).unwrap();
+    let with = |matchers: Vec<HookMatcher>| {
+        let mut group = hook();
+        group.matchers = matchers;
+        let mut resource = hook_resource(&package);
+        resource.capability.payload = serde_json::to_vec(&group).unwrap();
+        hook_plan(&resource, crate::codex::HOOKS, false, "evidence.", |_| {
+            Some(ManagedArtifact::HookConfigEntry {
+                config_file: package.join("hooks.json"),
+                entry_name: "demo:protect-env".into(),
+                event: HookEvent::PreToolUse,
+                expected: "{}".into(),
+                wrapper: package.join("exec"),
+            })
+        })
+    };
+    let unbound = with(vec![HookMatcher::Portable("file.read".into())]);
+    assert_eq!(unbound.route, CompatibilityRoute::Unsupported);
+    assert!(
+        unbound.evidence.contains("`file.read`"),
+        "{}",
+        unbound.evidence
+    );
+    let mixed = with(vec![
+        HookMatcher::Portable("file.read".into()),
+        HookMatcher::Portable("shell".into()),
+    ]);
+    assert_ne!(
+        mixed.route,
+        CompatibilityRoute::Unsupported,
+        "{}",
+        mixed.evidence
     );
 }
 
@@ -187,13 +228,9 @@ fn a_hook_that_cannot_be_delivered_is_reported_unsupported() {
     let package = uze_testkit::temp::scratch("undeliverable");
     fs::create_dir_all(&package).unwrap();
     let resource = hook_resource(&package);
-    let plan = hook_plan(
-        &resource,
-        &crate::claude::HOOKS.capabilities(),
-        false,
-        "evidence.",
-        |_| None,
-    );
+    let plan = hook_plan(&resource, crate::claude::HOOKS, false, "evidence.", |_| {
+        None
+    });
     assert_eq!(plan.route, CompatibilityRoute::Unsupported);
     assert!(
         matches!(
@@ -622,10 +659,10 @@ fn the_opencode_plugin_is_the_wrapper_with_the_packages_groups_as_data() {
         "the harness's embedded Bun runtime executes handlers"
     );
     assert!(plugin.contains("\"event\":\"pre_tool_use\""));
-    assert!(plugin.contains("\"matchers\":[\"bash\",\"Write\"]"));
+    assert!(plugin.contains("\"matchers\":[\"shell\",\"Write\"]"));
     assert!(plugin.contains("\"effect\":\"deny\""));
     assert!(
-        plugin.contains("bash: { tool: \"shell\", fields: (input) => ({ HOOK_COMMAND:"),
+        plugin.contains("shell: { tool: \"shell\", fields: (input) => ({ HOOK_COMMAND:"),
         "the alias table comes from the one vocabulary"
     );
     assert!(

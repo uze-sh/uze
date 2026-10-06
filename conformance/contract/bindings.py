@@ -7,16 +7,45 @@ contract has stopped being common and this file has become another
 vertical.
 
 `unsupported` is the one place a harness may decline part of a contract. It
-returns a reason, and the run records `Unsupported` in the evidence beside
-the passes. An omitted check is invisible; a declared one is reviewable —
-the same reason the exposure model treats `Unsupported` as a route rather
-than a gap.
+returns a reason; the contract still takes the measurement, and records it
+as a declaration (`contract/declared.py`) that the gate holds against the
+registry, pinned to the versions it was observed on. An omitted check is
+invisible, and a declaration that was never measured is a constant — the
+two ways a suite starts lying.
+"""
+
+import time
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Turn:
+    """What one hook-scene turn produced, as the person driving it saw it."""
+
+    plain: str
+    #: The final text arrived and the surface went quiet afterwards.
+    settled: bool
+    detail: str
+    #: The text of every approval the harness put on screen and the driver
+    #: accepted, in order.
+    approvals: list = field(default_factory=list)
+
+
+def hook_prelude(project):
+    """The project a hook scene opens: a Git repository with a README the
+    file aliases read, edit and search."""
+    return f"""mkdir -p {project} && cd {project}
+git init -q -b main .
+printf 'lab project\\n' > README.md
 """
 
 
 class Bindings:
     #: Registry id, matching the integration's own.
     harness = ""
+
+    #: The name UZE's reports give this harness (`display_name()`).
+    display_name = ""
 
     #: The name UZE's launcher is installed under for this harness, when it
     #: differs from the registry id (`shim_name()` on the integration).
@@ -71,8 +100,7 @@ class Bindings:
         Both launches go through UZE's own launcher, because that is where
         the resume-or-start decision is made, and the shell between them is
         `continuity.relaunch_command`, so every vertical announces the first
-        process's exit the same way. A harness that cannot be driven this
-        way declines through `unsupported("relaunch_in")`.
+        process's exit the same way.
         """
         raise NotImplementedError
 
@@ -182,10 +210,112 @@ class Bindings:
         declared that tool."""
         raise NotImplementedError
 
+    #: Where a hook scene's session runs: a project of the person's, which
+    #: is a Git repository like every project a person opens.
+    hook_project = "/work/project"
+
+    #: Text this harness's approval prompts carry. A hook scene accepts
+    #: each one the way a person does (`approve`) — never by a flag that
+    #: stops the harness from asking.
+    approval_prompts = ()
+
+    #: Text the final answer of a scripted turn carries.
+    final_markers = ("UZE_CONFORMANCE_PASS",)
+
+    def hook_session(self, cfg, prov_ip, plugin, tag, before=""):
+        """A live TUI in `hook_project` with `plugin` installed, after
+        `before` — a shell line — ran once the install was done."""
+        raise NotImplementedError
+
+    def hook_review_recorded(self, cfg):
+        """Whether this harness has recorded the person's trust in the
+        delivered hooks, read from its own state in the running container;
+        `None` for a harness that runs delivered hooks without a review."""
+        return None
+
+    def sequence(self, calls, trigger):
+        """The provider mode and environment that make the next turn — the
+        one whose prompt carries `trigger` — call each of `calls`
+        (`{"tool", "args"}`) in order, one per model step, in the shape this
+        harness's provider scripts them."""
+        raise NotImplementedError
+
+    def call(self, template, mark="", side="lab-side/call"):
+        """A tool's input, from the Lab's template for it (`vocabulary.json`
+        `call`): `{project}` is the hook project, `{side}` the file the call
+        leaves behind, `{dir}` that file's directory, `{mark}` text the
+        effect guards look for."""
+        path = f"{self.hook_project}/{side}"
+        values = {
+            "project": self.hook_project,
+            "side": path,
+            "dir": path.rsplit("/", 1)[0],
+            "mark": mark,
+        }
+
+        def render(value):
+            if isinstance(value, str):
+                for key, text in values.items():
+                    value = value.replace("{" + key + "}", text)
+                return value
+            if isinstance(value, dict):
+                return {k: render(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [render(v) for v in value]
+            return value
+
+        return render(template)
+
+    def approve(self, tui, prompt):
+        """Accepts the approval on screen — the one `prompt` matched — as a
+        person would."""
+        tui.submit()
+
+    def hook_turn(self, tui, prompt, tries=40):
+        """Sends `prompt` and drives the turn to its end, accepting every
+        approval the harness asks for on the way."""
+        time.sleep(self.warmup)
+        tui.type(prompt)
+        tui.submit()
+        seen, approvals, matched = "", [], None
+        targets = list(self.final_markers) + list(self.approval_prompts)
+        for _ in range(tries):
+            _, plain, matched = tui.wait_for(
+                targets, tries=2, stop_on_death=True, squash_spaces=True
+            )
+            seen += plain
+            if matched in self.approval_prompts:
+                approvals.append(plain)
+                self.approve(tui, matched)
+                continue
+            if matched in self.final_markers:
+                break
+        settled = matched in self.final_markers and tui.quiet()
+        seen = tui.transcript() or seen
+        detail = (
+            f"the turn ended after {len(approvals)} approvals"
+            if settled
+            else f"the turn never ended: {seen[-160:]}".replace("\n", " ")
+        )
+        return Turn(seen, settled, detail, approvals)
+
+    def mcp_calls(self):
+        """The scripted calls that run the delivered server's tool in this
+        harness, loading it first where the harness defers MCP tools; `None`
+        while the vertical proves execution in a phase of its own."""
+        return None
+
+    def hook_error(self, plain):
+        """Whether the harness reported a hook as having failed, rather
+        than as having decided."""
+        return "hook error" in plain.lower()
+
     def unsupported(self, capability):
         """A reason this harness cannot express `capability`, or `None`.
 
-        Answering with a reason is a result. Answering `None` when the
-        harness in fact cannot is how a suite starts lying.
+        Answering with a reason does not skip the check: the measurement
+        runs, and a harness that turns out to have the control fails the
+        declaration as escalated. Answering `None` when the harness in fact
+        cannot is a failed check, which is the honest outcome too.
         """
         return None

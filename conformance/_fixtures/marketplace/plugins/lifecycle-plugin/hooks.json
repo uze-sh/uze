@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "id": "lifecycle-session",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe lifecycle-v1 allow",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

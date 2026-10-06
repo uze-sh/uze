@@ -27,13 +27,13 @@ function Allow-Native {
   if ($hookEvent -ne 'pre_tool_use') { [Console]::Out.Write('{}') }
 }
 
-function Deny-Native([string]$reason) {
+function Deny-Native([string]$reason, [string]$decision = 'deny') {
   [Console]::Error.WriteLine($reason)
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
   if ($hookEvent -eq 'session_start') { Allow-Native; exit 0 }
   $reasonJson = $json.Serialize($reason)
-  [Console]::Out.Write('{"decision":"deny","reason":' + $reasonJson + '}')
+  [Console]::Out.Write('{"decision":"' + $decision + '","reason":' + $reasonJson + '}')
   exit 0
 }
 
@@ -92,8 +92,8 @@ switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {  # the portable vocabulary
   'view_file' { $env:HOOK_TOOL = 'file.read'; $env:HOOK_PATH = Text (Pick $toolInput @('AbsolutePath')) }
   'write_to_file' { $env:HOOK_TOOL = 'file.write'; $env:HOOK_PATH = Text (Pick $toolInput @('TargetFile')) }
   'replace_file_content' { $env:HOOK_TOOL = 'file.edit'; $env:HOOK_PATH = Text (Pick $toolInput @('TargetFile')) }
-  'grep_search' { $env:HOOK_TOOL = 'search.files'; $env:HOOK_QUERY = Text (Pick $toolInput @('Query')) }
   'search_web' { $env:HOOK_TOOL = 'search.web'; $env:HOOK_QUERY = Text (Pick $toolInput @('query')) }
+  'send_message' { $env:HOOK_TOOL = 'agent.message' }
 }
 
 # --- the handlers, in order; the first denial stops the rest --------------
@@ -151,7 +151,12 @@ foreach ($entry in $handlers) {
   if ($errors.Wait(1000)) { $reason = $errors.Result.Trim() }
   if ($reason.Length -gt 4096) { $reason = $reason.Substring(0, 4096) }
   switch ($status) {
-    3 { if ($reason) { Deny-Native $reason } else { Deny-Native "$handler denied the operation" } }
+    3 {
+      # A handler's own denial in an `ask` group asks the person; only a
+      # failure falls back to denying.
+      $decision = if ($effect -eq 'ask') { 'ask' } else { 'deny' }
+      if ($reason) { Deny-Native $reason $decision } else { Deny-Native "$handler denied the operation" $decision }
+    }
     124 { Fail "handler timed out after ${seconds}s: $handler" }
     default { if ($reason) { Fail "handler failed (exit $status): $handler — $reason" } else { Fail "handler failed (exit $status): $handler" } }
   }

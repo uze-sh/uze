@@ -52,6 +52,75 @@ TOOL_ARGS = json.loads(os.environ.get("TOOL_ARGS", "{}"))
 #: When set, the call is scripted only for a request carrying this text: a
 #: subagent's first request is a user turn too.
 TOOL_TRIGGER = os.environ.get("TOOL_TRIGGER", "")
+#: Several calls, one per model step, as a JSON list of `{"name", "args"}`.
+#: Step N+1 answers the request that carries step N's `tool_result`, so one
+#: turn can drive every tool a hook scene intercepts.
+TOOL_SEQUENCE = json.loads(os.environ.get("TOOL_SEQUENCE", "null") or "null") or [
+    {"name": TOOL_NAME, "args": TOOL_ARGS}
+]
+
+
+#: Auto mode, Claude Code's default permission mode since 2.1.290, asks a
+#: model whether each tool call should be blocked before it runs: a
+#: tool-less request whose system prompt opens "You are a security
+#: monitor", asked without streaming, whose answer must begin `<block>` and
+#: which stops at `</block>` (measured, `--discovery`). A real model allows
+#: the Lab's commands — a file under the project, a `printf` — so the
+#: synthetic one does too. Answering it any other way is what the harness
+#: reports as "Classifier unavailable", denying every call.
+CLASSIFIER_ALLOW = "<block>no"
+
+
+#: The model a response names when the request named none. A response
+#: otherwise names the model its request asked for, as the API does.
+DEFAULT_MODEL = "claude-opus-5"
+
+
+def message(text, stop_sequence=None, model=None):
+    """A whole Messages API response, for a request that did not ask to
+    stream — the classifier's does not, and an event stream handed to it is
+    a response it cannot read."""
+    return {
+        "id": "msg_uze_classifier",
+        "type": "message",
+        "role": "assistant",
+        "model": model or DEFAULT_MODEL,
+        "content": [{"type": "text", "text": text}],
+        "stop_reason": "stop_sequence" if stop_sequence else "end_turn",
+        "stop_sequence": stop_sequence,
+        "usage": {"input_tokens": 10, "output_tokens": 3},
+    }
+
+
+def is_permission_classifier(body):
+    system = json.dumps(body.get("system") or "")
+    return "You are a security monitor" in system and not body.get("tools")
+
+
+def tool_use_id(step):
+    return f"toolu_uze_{step + 1}"
+
+
+def scripted_step(messages):
+    """The index of the call this request is answered with, or None.
+
+    A request carrying the result of step N is answered with step N+1; one
+    carrying the last step's result, or any result not of this sequence, is
+    answered with the final text. A user turn with no result yet starts the
+    sequence.
+    """
+    for step in range(len(TOOL_SEQUENCE) - 1, -1, -1):
+        if f'"tool_use_id": "{tool_use_id(step)}"' in messages:
+            following = step + 1
+            return following if following < len(TOOL_SEQUENCE) else None
+    if "tool_result" in messages:
+        return None
+    if MODE != "toolcall" or '"type": "text"' not in messages:
+        return None
+    if TOOL_TRIGGER and TOOL_TRIGGER not in messages:
+        return None
+    return 0
+
 
 ISOLATION_MARKERS = ["already isolated", "UZE_CONFORMANCE_REBASE"]
 #: One turn each. A single request carrying both is what proves a relaunched
@@ -62,9 +131,6 @@ CONTINUITY_MARKERS = ["UZE_CONFORMANCE_ACORN", "UZE_CONFORMANCE_WALNUT"]
 SKILL_MARKERS = [
     "flow:commit",
     "flow:review",
-    "commit",
-    "review",
-    "init",
     # A Skill's *body* reaches the model only when the Skill was
     # invoked — a listing carries name and description alone. These are
     # what tell an invocation from an offer.
@@ -120,7 +186,7 @@ def sse(events):
     return "".join(f"event: {e}\ndata: {json.dumps(d)}\n\n" for e, d in events).encode()
 
 
-def text_events(text):
+def text_events(text, stop_sequence=None, model=None):
     return [
         (
             "message_start",
@@ -130,7 +196,7 @@ def text_events(text):
                     "id": "msg_uze_1",
                     "type": "message",
                     "role": "assistant",
-                    "model": "claude-opus-5",
+                    "model": model or DEFAULT_MODEL,
                     "content": [],
                     "stop_reason": None,
                     "usage": {"input_tokens": 10, "output_tokens": 1},
@@ -158,7 +224,10 @@ def text_events(text):
             "message_delta",
             {
                 "type": "message_delta",
-                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "delta": {
+                    "stop_reason": "stop_sequence" if stop_sequence else "end_turn",
+                    "stop_sequence": stop_sequence,
+                },
                 "usage": {"output_tokens": 3},
             },
         ),
@@ -166,7 +235,8 @@ def text_events(text):
     ]
 
 
-def tool_use_events():
+def tool_use_events(step, model=None):
+    call = TOOL_SEQUENCE[step]
     return [
         (
             "message_start",
@@ -176,7 +246,7 @@ def tool_use_events():
                     "id": "msg_uze_2",
                     "type": "message",
                     "role": "assistant",
-                    "model": "claude-opus-5",
+                    "model": model or DEFAULT_MODEL,
                     "content": [],
                     "stop_reason": None,
                     "usage": {"input_tokens": 10, "output_tokens": 1},
@@ -195,8 +265,8 @@ def tool_use_events():
                 "index": 0,
                 "content_block": {
                     "type": "tool_use",
-                    "id": "toolu_1",
-                    "name": TOOL_NAME,
+                    "id": tool_use_id(step),
+                    "name": call["name"],
                     "input": {},
                 },
             },
@@ -208,7 +278,7 @@ def tool_use_events():
                 "index": 0,
                 "delta": {
                     "type": "input_json_delta",
-                    "partial_json": json.dumps(TOOL_ARGS),
+                    "partial_json": json.dumps(call["args"]),
                 },
             },
         ),
@@ -261,16 +331,26 @@ class H(BaseHTTPRequestHandler):
         if self.path.startswith("/v1/messages"):
             b = json.loads(body) if body else {}
             msgs = json.dumps(b.get("messages", []))
-            if "tool_result" in msgs:
-                payload = sse(text_events(FINAL_TEXT))
-            elif (
-                MODE == "toolcall"
-                and '"type": "text"' in msgs
-                and (not TOOL_TRIGGER or TOOL_TRIGGER in msgs)
-            ):
-                payload = sse(tool_use_events())
+            if is_permission_classifier(b):
+                payload = json.dumps(
+                    message(
+                        CLASSIFIER_ALLOW, stop_sequence="</block>", model=b.get("model")
+                    )
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            due = scripted_step(msgs)
+            step = capture.next_scriptable(body, TOOL_SEQUENCE, due)
+            if step is not None:
+                payload = sse(tool_use_events(step, model=b.get("model")))
+            elif due is not None or "tool_result" in msgs:
+                payload = sse(text_events(FINAL_TEXT, model=b.get("model")))
             else:
-                payload = sse(text_events(RESPONSE_TEXT))
+                payload = sse(text_events(RESPONSE_TEXT, model=b.get("model")))
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
         else:

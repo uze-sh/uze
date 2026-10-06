@@ -201,11 +201,6 @@ def phase_tui(cfg, prov_ip):
         if "Opus" in joined or "APIUsageBilling" in joined
         else p[-120:].replace("\n", " "),
     )
-    check(
-        "synthetic-credential",
-        "APIUsageBilling" in joined,
-        "billing row shows API usage (API key mode)",
-    )
 
     # /plugin
     for ch in "/plugin":
@@ -265,34 +260,34 @@ def phase_tui(cfg, prov_ip):
     struct = provider_struct(cfg)
     with open(f"{cfg.outdir}/04_provider_struct.json", "w") as f:
         json.dump(struct, f, indent=1)
-    if struct:
-        # The model-facing contract is the PRIMARY request (the one carrying
-        # the Skill tool). Auxiliary no-tools calls (title/context) may
-        # include the full skill listing — a documented secondary leak, never
-        # the primary contract.
-        primary = [
-            r for r in struct if "Skill" in r.get("summary", {}).get("tools", [])
-        ]
-        base = primary or struct
-        markers = common.observed_markers(base, "skill_markers")
-        check(
-            "model-visible-skill-present",
-            any(markers.get(m) for m in ("flow:commit", "commit")),
-            "flow:commit in the primary request claude sent to its provider",
-        )
-        check(
-            "user-only-skill-hidden",
-            not any(markers.get(m) for m in ("flow:review", "Review code")),
-            "flow:review absent from the primary model request (disable-model-invocation preserved)",
-        )
-        check(
-            "provider-request-captured",
-            any(r.get("summary", {}).get("tools") for r in struct),
-            "request body structurally recorded (tools/skill markers)",
-        )
-    else:
-        check("model-visible-skill-present", False, "no provider request captured")
-        check("provider-request-captured", False, "provider never contacted")
+    # The model-facing contract is the PRIMARY request (the one carrying
+    # the Skill tool). Auxiliary no-tools calls (title/context) may include
+    # the full skill listing — a documented secondary leak, never the
+    # primary contract.
+    primary = [r for r in struct if "Skill" in r.get("summary", {}).get("tools", [])]
+    check(
+        "provider-request-captured",
+        bool(primary),
+        "the primary request was structurally recorded (tools/skill markers)"
+        if primary
+        else f"no request offering the Skill tool among {len(struct)} recorded",
+    )
+    markers = common.observed_markers(primary, "skill_markers")
+    # The namespaced label only: a bare `commit` is in every request.
+    visible = bool(markers.get("flow:commit"))
+    check(
+        "model-visible-skill-present",
+        visible,
+        "flow:commit in the primary request claude sent to its provider",
+    )
+    common.check_absence(
+        "user-only-skill-hidden",
+        not markers.get("flow:review"),
+        "UZE_CONFORMANCE_OK" in p3,
+        proof=visible,
+        detail="flow:review absent from the primary request that listed "
+        "flow:commit (disable-model-invocation preserved)",
+    )
 
     # MCP execution inside the conversation: PARTIAL — claude defers MCP tools
     # behind ToolSearch (deferred-tool protocol); a direct mcp__ tool_use fails
@@ -305,184 +300,13 @@ def phase_tui(cfg, prov_ip):
     child.close(force=True)
 
 
-def phase_hooks(cfg, prov_ip, kind):
-    """Portable-hook evidence inside the REAL Claude Code TUI (ADR-033).
-
-    The provider scripts a `Bash` tool_use whose input the hook guard
-    examines; `kind` selects the scenario:
-
-      deny  : input contains `secrets` -> the hook denies (reason
-              "blocked by protect-env") and the second handler never runs;
-              the Bash command itself never executes.
-      allow : input is a plain echo -> the hook allows, the real Bash runs.
-      order : a two-handler group whose first handler always denies -> the
-              second handler's marker must never appear (first-deny-wins).
-
-    Evidence = what the REAL harness relayed: hook marker presence/absence
-    in the provider-observed conversation plus the TUI denial surface.
-
-    Two vacuities hid here until 2026-09-02, and both are why the presence
-    check `hooks-*-denial-relayed` gates the absence checks: the provider
-    once put the tool input on `content_block_start`, which Claude Code
-    ignores in favour of `input_json_delta`, so every scripted `Bash` call
-    was rejected as `Invalid tool parameters` before a hook ran; and the
-    marker aggregation was last-write-wins over every provider request, so
-    a trailing telemetry batch erased the denial the model call carried.
-    """
-    scenarios = {
-        "deny": {
-            "plugin": "hook-plugin",
-            "args": '{"command":"echo API secrets"}',
-            "prompt": "run the API check",
-            "tui_markers": ["blocked by protect-env"],
-            "deny_present": "blocked by protect-env",
-            "deny_absent": ["second-handler-reached"],
-            # The vocabulary row the harness delivered: the guard echoes the
-            # portable alias it was handed, so the relayed reason proves the
-            # handler read `shell` and this harness's own command field.
-            "context_present": "tool=shell",
-        },
-        "allow": {
-            "plugin": "hook-allow-plugin",
-            "args": '{"command":"echo plain output"}',
-            "prompt": "run the API check",
-            "tui_markers": [],
-            "deny_present": None,
-            "deny_absent": ["blocked by protect-env"],
-        },
-        "order": {
-            "plugin": "hook-order-plugin",
-            "args": '{"command":"echo any"}',
-            "prompt": "run the API check",
-            "tui_markers": ["first-handler-denied"],
-            "deny_present": "first-handler-denied",
-            "deny_absent": ["second-handler-ran"],
-        },
-    }
-    spec = scenarios[kind]
-    common.start_provider(
-        cfg, "toolcall", {"TOOL_NAME": "Bash", "TOOL_ARGS": spec["args"]}
-    )
-    time.sleep(1)
-    cmd = claude_container(
-        cfg,
-        prov_ip,
-        "exec claude",
-        plugins=f"flow {spec['plugin']}",
-    )
-    child = pexpect.spawn(
-        cmd[0], cmd[1:], encoding="utf-8", codec_errors="replace", timeout=300
-    )
-    child.setwinsize(50, 160)
-    try:
-        child.logfile_read = common.CastRecorder(cfg.outdir, f"tui-hooks-{kind}")
-    except Exception:
-        pass
-    screen = make_screen(child)
-    wait_for = make_waiter(screen)
-
-    t, p, m = drive_onboarding(child)
-    for ch in spec["prompt"]:
-        child.send(ch)
-        time.sleep(0.06)
-    child.send("\r")
-    t3, p3, m3 = wait_for(
-        ["UZE_CONFORMANCE_PASS"] + spec["tui_markers"],
-        tries=24,
-        gap=2.5,
-        squash_spaces=True,
-    )
-    # Absence checks below may only evaluate once the turn settled AND the
-    # TUI went quiet (ADR-035): "never appeared" is not provable while the
-    # surface can still be rendering.
-    settled = m3 is not None and common.settle_and_quiet(screen)
-    snap = f"{cfg.outdir}/hooks_{kind}.raw"
-    with open(snap, "w") as f:
-        f.write(t3)
-    check(
-        f"hooks-{kind}-turn-settled",
-        m3 is not None,
-        "the turn settled (final text or hook denial rendered)"
-        if m3 is not None
-        else p3[-160:].replace("\n", " "),
-    )
-
-    struct = provider_struct(cfg)
-    with open(f"{cfg.outdir}/hooks_{kind}_struct.json", "w") as f:
-        json.dump(struct, f, indent=1)
-    markers = common.observed_markers(struct, "hook_markers")
-    has_output = bool(markers.get("plain output"))
-    has_tool_result = any(r.get("summary", {}).get("has_tool_result") for r in struct)
-    if spec["deny_present"]:
-        # The denial reason relayed to the model is the evidence that the
-        # hook ran and Claude honored it. Without it the absence checks
-        # below hold for a turn where no hook ran at all.
-        relayed = bool(markers.get(spec["deny_present"]))
-        check(
-            f"hooks-{kind}-denial-relayed",
-            relayed,
-            f"`{spec['deny_present']}` reached the conversation as the tool outcome"
-            if relayed
-            else ", ".join(f"{m}={markers.get(m)}" for m in sorted(markers)),
-        )
-        common.check_absence(
-            f"hooks-{kind}-denial-blocks-tool",
-            relayed and not has_output,
-            settled,
-            "the intercepted tool never executed — the native denial blocked it"
-            if not has_output
-            else "the tool executed despite the deny — blocking is broken",
-        )
-    if spec.get("context_present"):
-        carried = bool(markers.get(spec["context_present"]))
-        check(
-            f"hooks-{kind}-context-relayed",
-            carried,
-            f"the handler read the portable vocabulary (`{spec['context_present']}`) "
-            f"from this harness's own payload"
-            if carried
-            else ", ".join(f"{m}={markers.get(m)}" for m in sorted(markers)),
-        )
-    for absent in spec["deny_absent"]:
-        common.check_absence(
-            f"hooks-{kind}-marker-absent-{absent}",
-            not markers.get(absent, False),
-            settled,
-            f"`{absent}` never reached the conversation (first-deny-wins)",
-        )
-    if kind == "allow":
-        # A tool_result alone is not execution: a rejected call or a hook
-        # error answers with one too. Only the command's own stdout marker
-        # in the conversation proves Bash ran.
-        check(
-            "hooks-allow-tool-executed",
-            has_output,
-            "the Bash tool actually executed after the hook allowed it"
-            if has_output
-            else "no tool_result observed"
-            if not has_tool_result
-            else "a tool_result arrived without the command's stdout",
-        )
-    child.send("\x03")
-    time.sleep(0.6)
-    child.send("\x03")
-    time.sleep(0.6)
-    child.close(force=True)
-
-
 def run(cfg, prov_ip):
     with describe("tui"):
         phase_tui(cfg, prov_ip)
-    with describe("hooks"):
-        for kind in ("deny", "allow", "order"):
-            with describe(kind):
-                phase_hooks(cfg, prov_ip, kind)
-    # Promoted from `experiments/claude/{session-start,parity}` (ADR-035).
-    # Imported here: both import this module for its container helpers.
+    # Promoted from `experiments/claude/parity` (ADR-035). Imported here: it
+    # imports this module for its container helpers. Hooks, session start
+    # included, are the hooks contract's (`contract/hooks.py`).
     from experiments.claude import parity
-    from experiments.session_start_probe import run as session_start
 
-    with describe("session-start"):
-        session_start(cfg, prov_ip)
     with describe("parity"):
         parity.run(cfg, prov_ip)

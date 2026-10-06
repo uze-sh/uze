@@ -22,7 +22,8 @@ HOOK_HARNESS=codex
 export PLUGIN_ROOT HOOK_EVENT HOOK_HARNESS
 
 # --- this harness's decision dialect ------------------------------------
-deny_native() {                                  # $1 reason, plain text
+deny_native() {                 # $1 reason, plain text; $2 decision (deny)
+  decision=${2:-deny}
   printf '%s\n' "$1" >&2
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
@@ -72,13 +73,9 @@ HOOK_SOURCE=
   && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '.source // empty')
 HOOK_TOOL= HOOK_COMMAND= HOOK_PATH= HOOK_QUERY=
 case "$HOOK_TOOL_NATIVE" in                       # the portable vocabulary
-    exec_command) HOOK_TOOL=shell; HOOK_COMMAND=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.cmd // empty'); ;;
-    Bash) HOOK_TOOL=shell; HOOK_COMMAND=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.cmd // empty'); ;;
-    Read) HOOK_TOOL=file.read; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.file_path // empty'); ;;
-    Write) HOOK_TOOL=file.write; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.file_path // empty'); ;;
-    Edit) HOOK_TOOL=file.edit; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.file_path // empty'); ;;
-    Grep) HOOK_TOOL=search.files; HOOK_QUERY=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.pattern // empty'); ;;
-    WebSearch) HOOK_TOOL=search.web; HOOK_QUERY=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.query // empty'); ;;
+    Bash) HOOK_TOOL=shell; HOOK_COMMAND=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.command // empty'); ;;
+    collaborationspawn_agent) HOOK_TOOL=agent.spawn; ;;
+    collaborationsend_message) HOOK_TOOL=agent.message; ;;
 esac
 export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
 
@@ -171,7 +168,9 @@ for entry in "$@"; do
   [ "$status" = 0 ] && continue                   # allowed; on to the next
   reason=$(head -c 4096 "$reasons" 2>/dev/null)
   case $status in
-    3) deny_native "${reason:-$handler denied the operation}" ;;
+    # A handler's own denial in an `ask` group asks the person; only a
+    # failure falls back to denying.
+    3) deny_native "${reason:-$handler denied the operation}" "$( [ "$effect" = ask ] && echo ask || echo deny )" ;;
     124) fail "handler timed out after ${seconds}s: $handler" ;;
     *) fail "handler failed (exit $status): $handler${reason:+ — $reason}" ;;
   esac

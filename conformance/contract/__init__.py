@@ -20,13 +20,37 @@ for months survived because the assertion lived in one vertical and nothing
 contradicted it.
 """
 
-from . import agent, context, continuity, isolation, mcp, skill
+from . import (
+    agent,
+    context,
+    continuity,
+    first_session,
+    hooks,
+    isolation,
+    lifecycle,
+    mcp,
+    skill,
+)
 
 #: Every capability contract, in the order a run exercises them.
-CONTRACTS = (skill, mcp, agent, context, isolation, continuity)
+CONTRACTS = (
+    first_session,
+    skill,
+    mcp,
+    agent,
+    hooks,
+    lifecycle,
+    context,
+    isolation,
+    continuity,
+)
 
 
-def run(cfg, prov_ip, bindings):
-    """Runs every capability contract against one harness."""
+def run(cfg, prov_ip, bindings, only=None):
+    """Runs every capability contract against one harness, or only the one
+    named (`lab.py --contract`), which is how a contract is iterated on
+    without paying for the rest."""
     for contract in CONTRACTS:
+        if only and contract.__name__.rsplit(".", 1)[-1] != only:
+            continue
         contract.assert_contract(cfg, prov_ip, bindings)

@@ -29,6 +29,7 @@ import pexpect
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import shared.common as common
+from contract.bindings import hook_prelude
 from shared.common import (
     check,
     describe,
@@ -50,11 +51,8 @@ export OPENAI_API_KEY=uze-conformance-invalid-by-design
 export CODEX_CA_CERTIFICATES=/app/ca.crt
 export SSL_CERT_FILE=/app/ca.crt
 mkdir -p /work/home/.codex /work/home/.agents
+# decision: synthetic-credentials
 cp /app/fixtures/auth.json /work/home/.codex/auth.json
-cat > /work/home/.codex/config.toml <<'TOML'
-[features]
-hooks = true
-TOML
 {materialize_marketplace(cfg)}
 uze market add /work/market >/dev/null 2>&1
 for p in {plugins}; do uze install $p@uze-lab -m >/dev/null 2>&1; done
@@ -183,7 +181,6 @@ def phase_tui(cfg, prov_ip):
         if "Ask Codex" in p
         else p[-120:].replace("\n", " "),
     )
-    check("synthetic-credential", "Ask Codex" in p, "dummy key mode (no login screen)")
 
     # /skills
     for ch in "/skills":
@@ -276,43 +273,36 @@ def phase_tui(cfg, prov_ip):
     struct = provider_struct(cfg)
     with open(f"{cfg.outdir}/04_provider_struct.json", "w") as f:
         json.dump(struct, f, indent=1)
-    if struct:
-        markers = common.observed_markers(struct, "skill_markers")
-        has_catalog = any(
-            r.get("summary", {}).get("has_available_skills") for r in struct
-        )
-        check(
-            "provider-request-captured", bool(struct), "requests structurally recorded"
-        )
-        check(
-            "skills-instructions-in-request",
-            bool(has_catalog),
-            "the model request carries the skills catalog section",
-        )
-        default_listed = bool(markers.get("flow:commit"))
-        check(
-            "model-visible-skill-present",
-            default_listed,
-            "flow:commit in the request codex sent to its provider"
-            if default_listed
-            else ", ".join(f"{m}={markers.get(m)}" for m in sorted(markers)),
-        )
-        check(
-            "model-only-skill-present",
-            bool(markers.get("flow:analyze")),
-            "flow:analyze (model-only, delivered individually) in the request",
-        )
-        # Only meaningful once the catalog is proven to carry this plugin's
-        # skills: an empty catalog would hide `flow:review` for free.
-        check(
-            "user-only-skill-hidden-from-model",
-            default_listed and not markers.get("flow:review"),
-            "flow:review absent from the request while flow:commit is present"
-            if default_listed
-            else "not proven: the catalog carries no flow skill at all",
-        )
-    else:
-        check("provider-request-captured", False, "no provider request captured")
+    markers = common.observed_markers(struct, "skill_markers")
+    has_catalog = any(r.get("summary", {}).get("has_available_skills") for r in struct)
+    check("provider-request-captured", bool(struct), "requests structurally recorded")
+    check(
+        "skills-instructions-in-request",
+        has_catalog,
+        "the model request carries the skills catalog section",
+    )
+    default_listed = bool(markers.get("flow:commit"))
+    check(
+        "model-visible-skill-present",
+        default_listed,
+        "flow:commit in the request codex sent to its provider"
+        if default_listed
+        else ", ".join(f"{m}={markers.get(m)}" for m in sorted(markers)),
+    )
+    check(
+        "model-only-skill-present",
+        bool(markers.get("flow:analyze")),
+        "flow:analyze (model-only, delivered individually) in the request",
+    )
+    # Only meaningful once the catalog is proven to carry this plugin's
+    # skills: an empty catalog would hide `flow:review` for free.
+    common.check_absence(
+        "user-only-skill-hidden-from-model",
+        not markers.get("flow:review"),
+        has_catalog,
+        proof=default_listed,
+        detail="flow:review absent from the request that listed flow:commit",
+    )
 
     child.send("\x03")
     time.sleep(0.5)
@@ -346,198 +336,6 @@ codex plugin list 2>&1
         "flow@uze-store" in out and "installed, enabled" in out,
         "codex plugin list reports the UZE plugins installed + enabled",
     )
-
-
-def phase_hooks(cfg, prov_ip, kind):
-    """Portable-hook evidence inside the REAL Codex TUI (ADR-033).
-
-    The provider scripts a `Bash` function call whose arguments the hook
-    `guard` examines (delivered through ~/.codex/hooks.json); `kind` selects
-    the scenario with the same semantics as the claude/antigravity/opencode
-    verticals:
-
-      deny  : arguments contain `secrets` -> the hook denies (reason
-              "blocked by protect-env") and the second handler never runs;
-              Bash itself never executes.
-      allow : plain echo arguments -> the hook allows, Bash runs.
-      order : a two-handler group whose first handler always denies -> the
-              second handler's marker must never appear (first-deny-wins).
-
-    NOTE: Codex's approval gate may intercept tool use before or in addition
-    to the hook (the MCP vertical documents the same gate); the phase asserts
-    the hook evidence that is observable either way and records the vendor
-    limitation honestly when the gate wins.
-    """
-    scenarios = {
-        "deny": {
-            "plugin": "hook-plugin",
-            # codex 0.150.1's shell tool is `exec_command` with a `cmd`
-            # argument (the Bash/command pair died on this channel); the
-            # other harnesses still receive the Bash tool.
-            "args": '{"cmd":"echo API secrets"}',
-            "deny_present": "blocked by protect-env",
-            "deny_absent": ["second-handler-reached"],
-            # The vocabulary row the harness delivered: the guard echoes the
-            # portable alias it was handed, so the relayed reason proves the
-            # handler read `shell` and this harness's own command field.
-            "context_present": "tool=shell",
-        },
-        "allow": {
-            "plugin": "hook-allow-plugin",
-            "args": '{"cmd":"echo plain output"}',
-            "deny_present": None,
-            "deny_absent": ["blocked by protect-env"],
-            # The allow path asserts only that no denial reached the
-            # conversation. Whether exec_command then actually ran is NOT
-            # asserted: locally it does (`plain output` returns, exit 0),
-            # but under GitHub-hosted Docker Codex's bubblewrap sandbox
-            # fails before the command (`bwrap: Failed to make / slave:
-            # Permission denied`, exit 1) — an environment gap, not hook
-            # evidence, and an asserted check would flip between the two.
-        },
-        "order": {
-            "plugin": "hook-order-plugin",
-            "args": '{"cmd":"echo any"}',
-            "deny_present": "first-handler-denied",
-            "deny_absent": ["second-handler-ran"],
-        },
-    }
-    spec = scenarios[kind]
-    common.start_provider(
-        cfg,
-        "toolcall",
-        {"TOOL_NAME": "exec_command", "TOOL_ARGS": spec["args"]},
-    )
-    time.sleep(1)
-    cmd = codex_container(
-        cfg,
-        prov_ip,
-        "exec codex --dangerously-bypass-hook-trust",
-        plugins=f"flow {spec['plugin']}",
-    )
-    child = pexpect.spawn(
-        cmd[0], cmd[1:], encoding="utf-8", codec_errors="replace", timeout=300
-    )
-    child.setwinsize(50, 160)
-    try:
-        child.logfile_read = common.CastRecorder(cfg.outdir, f"tui-hooks-{kind}")
-    except Exception:
-        pass
-    screen = make_screen(child)
-    wait_for = make_waiter(screen)
-
-    t, p = drive_onboarding(child)
-
-    # codex 0.150.1 shows a startup hooks-review screen ("3 hooks need
-    # review... Press t to trust all") whenever ~/.codex/hooks.json carries
-    # entries, capturing the whole keyboard. The official automation path
-    # for self-vetted sources is the CLI flag (no persisted trust needed);
-    # drive the hooks phases with it — the lab vets exactly its own
-    # fixtures, and the flag's DANGEROUS warning is our documented
-    # acceptance of that automation contract.
-    def type_with_echo(text, tries=10, gap=1.5):
-        # codex renders input chars at absolute cursor columns and echoes
-        # spaces only as cursor moves — the plain text carries
-        # "runtheAPIcheck" while the user read "run the API check"; compare
-        # space-stripped so a real echo with per-char redraws still matches.
-        needle = text.replace(" ", "")
-        for attempt in range(tries):
-            if attempt > 0:
-                child.send("\x15")  # Ctrl-U: clear any partial line
-                time.sleep(0.5)
-            for ch in text:
-                child.send(ch)
-                time.sleep(0.08)
-            time.sleep(2.0)
-            _t, p = screen(gap)
-            if needle in p.replace(" ", ""):
-                return True
-            print(f"    … input not echoed yet (try {attempt + 1}/{tries})", flush=True)
-        return False
-
-    typed = type_with_echo("run the API check")
-    check(
-        "hooks-input-echoed",
-        typed,
-        "the prompt text was accepted by the TUI"
-        if typed
-        else "typed input was lost — the TUI never echoed it",
-    )
-    child.send("\r")
-    t3, p3, m3 = wait_for(
-        [
-            "UZE_CONFORMANCE_PASS",
-            "UZE_CONFORMANCE_OK",
-            "blocked by protect-env",
-            "Denied by UZE hook",
-            "denied",
-            "Sandbox mode",
-        ],
-        tries=24,
-        gap=2.5,
-    )
-    with open(f"{cfg.outdir}/hooks_{kind}.raw", "w") as f:
-        f.write(t3)
-    # Absence checks may only evaluate once the turn settled and the TUI
-    # went quiet (ADR-035).
-    settled = m3 is not None and common.settle_and_quiet(screen)
-
-    struct = provider_struct(cfg)
-    with open(f"{cfg.outdir}/hooks_{kind}_struct.json", "w") as f:
-        json.dump(struct, f, indent=1)
-    check(
-        f"hooks-{kind}-turn-requested",
-        bool(struct) or m3 is not None,
-        "the turn reached the provider or a stable marker"
-        if struct or m3 is not None
-        else p3[-160:].replace("\n", " "),
-    )
-    markers = common.observed_markers(struct, "hook_markers")
-    has_output = bool(markers.get("plain output"))
-    if spec["deny_present"]:
-        # The denial reason in the function_call_output is the evidence that
-        # the hook ran and Codex relayed its decision instead of the tool's
-        # output. Without it the absence checks below hold for a turn where
-        # no hook ran at all.
-        relayed = bool(markers.get(spec["deny_present"]))
-        check(
-            f"hooks-{kind}-denial-relayed",
-            relayed,
-            f"`{spec['deny_present']}` reached the conversation as the tool outcome"
-            if relayed
-            else ", ".join(f"{m}={markers.get(m)}" for m in sorted(markers)),
-        )
-        common.check_absence(
-            f"hooks-{kind}-denial-blocks-tool",
-            relayed and not has_output,
-            settled,
-            "the intercepted tool never executed — the native denial blocked it"
-            if not has_output
-            else "the tool executed despite the deny — blocking is broken",
-        )
-    if spec.get("context_present"):
-        carried = bool(markers.get(spec["context_present"]))
-        check(
-            f"hooks-{kind}-context-relayed",
-            carried,
-            f"the handler read the portable vocabulary (`{spec['context_present']}`) "
-            f"from this harness's own payload"
-            if carried
-            else ", ".join(f"{m}={markers.get(m)}" for m in sorted(markers)),
-        )
-    for absent in spec["deny_absent"]:
-        common.check_absence(
-            f"hooks-{kind}-marker-absent-{absent}",
-            not markers.get(absent, False),
-            settled,
-            f"`{absent}` never reached the conversation (first-deny-wins)",
-        )
-
-    child.send("\x03")
-    time.sleep(0.5)
-    child.send("\x03")
-    time.sleep(0.5)
-    child.close(force=True)
 
 
 def listed_skills(prompt_input):
@@ -612,11 +410,6 @@ codex debug prompt-input 2>&1
     offered_without_policy = listed_skills(without_policy)
 
     check(
-        "policy-sidecar-delivered",
-        "/generated/flow@uze-lab/skills/review/agents/openai.yaml" in envelope_section,
-        "UZE writes the invocation-policy sidecar into the generated envelope",
-    )
-    check(
         "policy-sidecar-ingested",
         "/plugins/cache/uze-store/flow/" in cache_section
         and "/skills/review/agents/openai.yaml" in cache_section,
@@ -654,6 +447,56 @@ codex debug prompt-input 2>&1
     )
 
 
+def phase_explicit_route(cfg, prov_ip, log=""):
+    """A package shipping Codex's own envelope beside an Agent Plugins root
+    manifest, which Codex reads first (0.147.0 onwards): each capability
+    must load once. Read from Codex's own config and its own MCP listing,
+    never from UZE's report; whether code mode then offers the tool to the
+    model is the MCP contract's execution scene."""
+    common.start_provider(cfg, "static")
+    final = f"""{hook_prelude("/work/project")}
+cd /work/project
+echo ===== config.toml =====
+cat /work/home/.codex/config.toml
+echo ===== mcp =====
+codex mcp list 2>&1
+echo ===== turn =====
+{log} timeout 240 codex exec 'which probe does this machine keep?' 2>&1 | tail -{400 if log else 5}
+"""
+    setup = codex_setup(cfg, prov_ip, final, plugins="route-explicit")
+    cmd = docker_base(cfg, prov_ip, setup, tty=False)
+    ca_crt, _, _ = generate_certs(cfg)
+    i = cmd.index(common.HARNESS_IMAGE)
+    cmd = (
+        cmd[:i]
+        + ["-v", f"{ca_crt}:/app/ca.crt:ro", "-e", "CODEX_HOME=/work/home/.codex"]
+        + cmd[i:]
+    )
+    out = subprocess.run(cmd, capture_output=True, text=True, errors="replace").stdout
+    with open(f"{cfg.outdir}/07_explicit_route.txt", "w") as f:
+        f.write(out)
+    config = out.split("===== config.toml =====", 1)[-1].split("===== turn =====", 1)[0]
+    registered = "[mcp_servers." in config and "route-probe" in config
+    listing = out.split("===== mcp =====", 1)[-1].split("===== turn =====", 1)[0]
+    rows = [
+        line for line in listing.splitlines() if line.split()[:1] == ["route-probe"]
+    ]
+    check(
+        "explicit-route-mcp-not-registered-twice",
+        not registered,
+        "the server the plugin carries is not also registered in config.toml"
+        if not registered
+        else "config.toml registers the server the plugin already carries",
+    )
+    check(
+        "explicit-route-mcp-loaded-once",
+        len(rows) == 1,
+        "`codex mcp list` names the plugin's server once"
+        if len(rows) == 1
+        else f"`codex mcp list` names it {len(rows)} times: {listing[-300:]!r}",
+    )
+
+
 def run(cfg, prov_ip):
     with describe("tui"):
         phase_tui(cfg, prov_ip)
@@ -661,13 +504,7 @@ def run(cfg, prov_ip):
         phase_plugin_cli(cfg, prov_ip)
     with describe("skill-invocation-policy"):
         phase_skill_invocation_policy(cfg, prov_ip)
-    with describe("hooks"):
-        for kind in ("deny", "allow", "order"):
-            with describe(kind):
-                phase_hooks(cfg, prov_ip, kind)
-    # Promoted from `experiments/codex/session-start` (ADR-035); imported
-    # here because the probe imports this module for its container helper.
-    from experiments.session_start_probe import run as session_start
-
-    with describe("session-start"):
-        session_start(cfg, prov_ip)
+    with describe("explicit-route"):
+        phase_explicit_route(cfg, prov_ip)
+    # Hooks, session start included, are the hooks contract's
+    # (`contract/hooks.py`).

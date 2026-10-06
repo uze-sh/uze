@@ -34,7 +34,11 @@ import time
 
 import pexpect
 
-from harnesses.antigravity.scenarios import PERMISSION_PROMPTS, agy_setup
+from harnesses.antigravity.scenarios import (
+    PERMISSION_PROMPTS,
+    agy_setup,
+    answer_first_run,
+)
 from shared import common
 
 ARGS = (
@@ -148,6 +152,7 @@ echo '===== inspect ====='
 
 def run_print(cfg, prov_ip):
     final = f"""{prelude()}
+# decision: experiment-isolation
 agy --print "run the API check" --output-format stream-json \\
   --dangerously-skip-permissions --print-timeout 90s --log-file /work/agy.log 2>&1 | tail -c 2500
 echo '===== inspect ====='
@@ -186,8 +191,7 @@ def run_tui(cfg, prov_ip):
     cmd = common.docker_base(cfg, prov_ip, setup)
     # Named so the vendor's log can be read from outside while the session
     # is alive — the container dies with the TUI.
-    name = f"signed-in-{os.getpid()}"
-    cmd[2:2] = ["--name", name]
+    name = cfg.harness_container
     child = pexpect.spawn(
         cmd[0], cmd[1:], encoding="utf-8", codec_errors="replace", timeout=300
     )
@@ -195,14 +199,7 @@ def run_tui(cfg, prov_ip):
     child.logfile_read = common.CastRecorder(cfg.outdir, "tui-signed-in")
     screen = common.make_screen(child)
 
-    child.expect("Choose your color scheme", timeout=150)
-    child.send("\r")
-    time.sleep(3)
-    child.send("\t\t")
-    time.sleep(0.7)
-    child.send("\r")
-    time.sleep(5)
-    _, first = screen(3)
+    first = answer_first_run(child, screen) or ""
     with open(f"{cfg.outdir}/signed_in_prompt.raw", "w") as f:
         f.write(first)
     print("----- prompt -----\n" + first[-2500:], flush=True)
@@ -246,7 +243,6 @@ def run_tui(cfg, prov_ip):
         "the vendor permission prompt appeared before any hook decision"
         if prompted
         else "no permission prompt",
-        kind="observe",
     )
     return seen
 

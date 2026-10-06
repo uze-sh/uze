@@ -84,7 +84,8 @@ HOOK_HARNESS={harness}
 export PLUGIN_ROOT HOOK_EVENT HOOK_HARNESS
 
 # --- this harness's decision dialect ------------------------------------
-deny_native() {{                                  # $1 reason, plain text
+deny_native() {{                 # $1 reason, plain text; $2 decision (deny)
+  decision=${{2:-deny}}
   printf '%s\n' "$1" >&2
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
@@ -226,7 +227,9 @@ for entry in "$@"; do
   [ "$status" = 0 ] && continue                   # allowed; on to the next
   reason=$(head -c {reason_limit} "$reasons" 2>/dev/null)
   case $status in
-    {deny_exit_code}) deny_native "${{reason:-$handler denied the operation}}" ;;
+    # A handler's own denial in an `ask` group asks the person; only a
+    # failure falls back to denying.
+    {deny_exit_code}) deny_native "${{reason:-$handler denied the operation}}" "$( [ "$effect" = ask ] && echo ask || echo deny )" ;;
     124) fail "handler timed out after ${{seconds}}s: $handler" ;;
     *) fail "handler failed (exit $status): $handler${{reason:+ — $reason}}" ;;
   esac

@@ -114,6 +114,7 @@ echo '=== store'
 find /work/home/.uze/store/plugins -maxdepth 3 2>&1 | sort
 cd /work/proj
 echo '=== turn'
+# decision: experiment-isolation
 timeout 150 claude -p {json.dumps(prompt)} --permission-mode bypassPermissions --output-format json 2>&1
 echo "=== turn-exit $?"
 """
@@ -159,12 +160,13 @@ def results(bodies):
 
 
 def run(cfg, prov_ip):
-    if not MARKET or not os.path.isfile(os.path.join(MARKET, "marketplace.json")):
-        common.check(
-            "proof-market-given",
-            False,
-            f"PROOF_MARKET={MARKET!r} has no marketplace.json",
-        )
+    given = bool(MARKET) and os.path.isfile(os.path.join(MARKET, "marketplace.json"))
+    common.check(
+        "proof-market-given",
+        given,
+        f"PROOF_MARKET={MARKET!r}" + ("" if given else " has no marketplace.json"),
+    )
+    if not given:
         return
     manifest, skills, agents, servers = expected()
 

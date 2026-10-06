@@ -9,8 +9,10 @@ from clean state. Evidence goes under AGY_OUTDIR (default
 /tmp/harness-conformance/<harness>/run<N>).
 
 Gate (ADR-035): every canonical run is adjudicated against
-`conformance/evidence/expected.json` — an unregistered ADAPTED result
-fails, a registered ADAPTED that starts passing fails (escalate), the real
+`conformance/evidence/expected.json` — a declared limitation must be
+registered, pinned to measured versions and measured in the run; one that
+stops reproducing fails (escalate), one that reproduces on a new version
+passes and publishes the re-pinned registry (`expected.next.json`), the real
 harness version is probed into the run manifest (drift is an explicit
 event), and absence assertions require a settled, quiet turn.
 `--write-summary` records the in-repo per-harness evidence summary;
@@ -39,7 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import contract
 import contract.bindings
 import gate
-from shared import common
+from shared import common, vocabulary
 from shared.common import sh
 
 
@@ -67,6 +69,16 @@ def parse_args(argv):
         "--write-summary",
         action="store_true",
         help="write conformance/evidence/<harness>.json (in-repo evidence trail)",
+    )
+    parser.add_argument(
+        "--contract",
+        metavar="NAME",
+        help="run only this contract (skill, mcp, agent, hooks, ...); implies --part contract",
+    )
+    parser.add_argument(
+        "--record-vocabulary",
+        action="store_true",
+        help="write conformance/evidence/tools/<harness>.json from this run's declared tools",
     )
     parser.add_argument(
         "--retry-once",
@@ -179,7 +191,15 @@ def load_bindings(harness):
 PARTS = ("contract", "vendor")
 
 
-def run_once(cfg, scenario, variation=None, discovery=False, part=None):
+def run_once(
+    cfg,
+    scenario,
+    variation=None,
+    discovery=False,
+    part=None,
+    record_vocabulary=False,
+    only=None,
+):
     """One full vertical: provision, run, adjudicate. Returns the outcome
     dict plus the run manifest; `outcome["crash"]` records a run-level
     crash (never an assertion failure — those are verdict entries)."""
@@ -196,8 +216,8 @@ def run_once(cfg, scenario, variation=None, discovery=False, part=None):
         # failure is the product; a vertical failure is one harness.
         bindings = load_bindings(cfg.harness)
         if bindings is not None and part in (None, "contract"):
-            contract.run(cfg, prov_ip, bindings)
-        if part in (None, "vendor"):
+            contract.run(cfg, prov_ip, bindings, only=only)
+        if part in (None, "vendor") and not only:
             scenario.run(cfg, prov_ip)
         # A half that asserted nothing would read as a clean pass; a harness
         # with no bindings yet has no contract half to run.
@@ -207,6 +227,32 @@ def run_once(cfg, scenario, variation=None, discovery=False, part=None):
         crash = f"{type(exc).__name__}: {exc}"
 
     harness_version = common.probe_harness_version(cfg)
+    # Measured last, over every phase's capture: which tools a harness
+    # declares depends on what each phase installed into its world.
+    common.pull_declared_tools(cfg)
+    declared = common.read_declared_tools(cfg)
+    hooked = vocabulary.read_hooked(cfg.outdir)
+    refused = common.read_undeclared_calls(cfg)
+    with common.describe("vocabulary"):
+        vocabulary.evaluate(
+            cfg.harness,
+            declared,
+            hooked,
+            common.check,
+            common.declare,
+            refused=frozenset(call["tool"] for call in refused),
+        )
+        vocabulary.evaluate_calls(cfg.harness, refused, common.check)
+    if record_vocabulary and declared:
+        path = vocabulary.record_snapshot(
+            cfg.harness, harness_version, declared, hooked
+        )
+        print(f"[lab] recorded {path}", flush=True)
+    elif record_vocabulary:
+        print(
+            "[lab] not recording a vocabulary snapshot: nothing was captured",
+            flush=True,
+        )
     for result in common.results:
         result.setdefault("harness", cfg.harness)
         result["harness_version"] = harness_version
@@ -215,6 +261,13 @@ def run_once(cfg, scenario, variation=None, discovery=False, part=None):
     # registry must fail loudly, never default to green.
     registry = gate.load_registry()
     results = gate.evaluate(cfg.harness, common.results, registry)
+    repinned = gate.next_registry(results)
+    if repinned is not None:
+        # Published with the run's evidence (a CI artifact), for a
+        # maintainer to review and commit — the run never edits the repo.
+        with open(os.path.join(cfg.outdir, "expected.next.json"), "w") as f:
+            json.dump(repinned, f, indent=2, ensure_ascii=False)
+            f.write("\n")
     passed = sum(1 for r in results if r["pass"])
     failures = [r for r in results if not r["pass"]]
     manifest = common.run_manifest(cfg, harness_version, started_at, crash=crash)
@@ -231,8 +284,10 @@ def run_once(cfg, scenario, variation=None, discovery=False, part=None):
     return {
         "passed": passed,
         "total": len(results),
-        "known_adapted": sum(
-            1 for r in results if r.get("gate", {}).get("adjudication") == "known_adapt"
+        "declared": sum(
+            1
+            for r in results
+            if r.get("gate", {}).get("adjudication") in ("known_declared", "repin")
         ),
         "failures": failures,
         "crash": crash,
@@ -242,9 +297,9 @@ def run_once(cfg, scenario, variation=None, discovery=False, part=None):
 
 def print_summary(outcome):
     passed, total = outcome["passed"], outcome["total"]
-    adapted = outcome["known_adapted"]
+    declared = outcome["declared"]
     print(
-        f"\n=== {passed}/{total} asserted PASS, {adapted} ADAPTED (gate) ===",
+        f"\n=== {passed}/{total} asserted PASS, {declared} DECLARED (gate) ===",
         flush=True,
     )
     if outcome["crash"]:
@@ -295,6 +350,8 @@ def run_canonical(cfg, scenario, args):
             variation=args.variation,
             discovery=args.discovery,
             part=args.part,
+            record_vocabulary=args.record_vocabulary,
+            only=args.contract,
         )
         # Assertion failures and gate failures return normally — never
         # retried. Only a crash may trigger the retry budget.

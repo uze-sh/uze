@@ -274,8 +274,11 @@ mod tests {
     #[test]
     fn a_vendor_switch_reaches_the_child_on_top_of_the_inherited_environment() {
         let _interrupts = uze_testkit::process::interrupts();
+        // The shell is named by its path: other tests in this binary point
+        // `PATH` at a directory of shims while they run, and a `sh` looked
+        // up then is not found.
         let check = ProcessSpec::new(
-            "sh",
+            "/bin/sh",
             ["-c", r#"test "$UZE_PROBE_SWITCH" = 1 && test -n "$PATH""#],
         );
         assert!(!SystemProcessRunner.run(&check).unwrap().success);

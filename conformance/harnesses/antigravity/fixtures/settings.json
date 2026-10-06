@@ -1,6 +1,1 @@
-{
-  "trustedWorkspaces": ["/work"],
-  "permissions": {
-    "allow": ["mcp(*)"]
-  }
-}
+{}

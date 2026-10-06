@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "id": "post-guard",
+        "matcher": "shell",
+        "effect": "deny",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe post-guard deny-marked",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

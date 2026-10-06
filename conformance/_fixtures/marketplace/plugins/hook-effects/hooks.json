@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "effect-guard",
+        "matcher": "shell",
+        "effect": "deny",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe effect-guard deny-marked",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe effect-after allow",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

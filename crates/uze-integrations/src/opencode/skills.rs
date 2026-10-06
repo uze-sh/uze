@@ -10,27 +10,21 @@
 //!   activatable by ID (model=false preserved — documented, and this
 //!   wrapper's exact syntax is the documented `metadata: { opencode/autoinvoke: <bool> }`
 //!   shape);
-//! - `slash: false` hides the skill from the `/` command catalog — which
-//!   is *not* the whole of user invocation on V2, see below.
+//! - nothing hides a Skill from the person: V2 removed `slash` from the
+//!   skill contract (anomalyco/opencode 199aabe9e, 2026-09-13), see below.
 //!
 //! A canonical user-only Skill is projected as an OpenCode **Skill**,
 //! never as a vendor Command — the vendor Command primitive remains a
 //! projection detail UZE does not need for this harness (ADR-030 §9).
 //!
-//! # `invoke.user: false` degrades, and says so (measured 2026-09-06)
+//! # `invoke.user: false` is not carried (measured 2026-10-06)
 //!
-//! V2 has two explicit-invocation paths, and `slash` gates one of them.
-//! A Skill is `/id` when `slash === true`, and `@id` — a mention —
-//! always: the picker renders every discovered Skill as `"@" + id`, and
-//! `SessionPrompt.prepare` expands a mentioned Skill's body into the user
-//! message whatever its `slash` value. So `slash: false` removes a Skill
-//! from the `/` catalog and leaves it invocable by mention.
-//!
-//! This was `Native` here until the Lab learned to *invoke* rather than to
-//! read a catalog: `skill-model-only-is-not-invocable` types `@flow:analyze`
-//! and finds its body in the request. The claim was never wrong on purpose
-//! — nothing measured it. It is now Adaptable, with the degradation
-//! stated, and the Lab holds it there.
+//! V2's skill contract carries `autoinvoke` and nothing for the person's
+//! side: its `/skills` browser lists every delivered Skill and a mention
+//! (`@id`) expands any of them. So a model-only Skill is delivered for the
+//! model's half and reported Degraded for the person's, as on Codex — and
+//! no field V2 does not define is written into it. The Lab's
+//! `skill-model-only-is-*` declarations measure that it stays so.
 //!
 //! Each Skill is delivered as a directory of its own: a SKILL.md carrying
 //! the stable qualified label as its `name` (OpenCode shows `name`, so the
@@ -78,9 +72,6 @@ pub(super) fn rendered_skill(uze_home: &UzeHome, resource: &Resource) -> String 
     });
     let policy = resource.skill_invocation();
     let mut markers = Vec::new();
-    if !policy.user {
-        markers.push("slash: false");
-    }
     if !policy.model {
         markers.extend(["metadata:", "  opencode/autoinvoke: false"]);
     }
@@ -136,21 +127,19 @@ impl OpenCodeIntegration {
             "OpenCode natively discovers Skills in its own ~/.config/opencode/skills. UZE delivers each as a directory there: a SKILL.md carrying the stable qualified label as its `name` with the canonical description and body, and the canonical supporting files copied, so OpenCode lists them. The canonical Store bytes are never rewritten.",
         );
         let mut route = CompatibilityRoute::Native;
-        if !policy.is_default() {
+        if !policy.model {
             evidence.push_str(
-                " A non-default policy is translated into OpenCode's own SKILL.md fields on a generated wrapper (metadata.opencode/autoinvoke: false for model=false; slash: false for user=false) without touching the canonical Store bytes.",
+                " model=false is translated into OpenCode's own SKILL.md field on a generated wrapper (metadata.opencode/autoinvoke: false) without touching the canonical Store bytes.",
             );
         }
         if !policy.user {
-            // Measured, not assumed: `slash: false` removes the Skill from
-            // the `/` catalog, and a mention (`@id`) still expands its body —
-            // V2's picker offers every discovered Skill that way. Half the
-            // policy is carried; half is not.
-            // The loss leads, so a report that shows one sentence shows it.
-            route = CompatibilityRoute::Adaptable;
+            // OpenCode V2 defines no field for the person's half: `/skills`
+            // lists every Skill and a mention expands any. The loss leads,
+            // so a report that shows one sentence shows it.
+            route = CompatibilityRoute::Degraded;
             evidence.insert_str(
                 0,
-                "A user can still invoke it with a mention (`@<label>`). invoke.user=false degrades on OpenCode V2: `slash: false` withholds the Skill from the `/` catalog, but a mention still invokes it — ADAPTED per ADR-030, reported rather than claimed. ",
+                "A user can still invoke it from `/skills` or with a mention (`@<label>`): OpenCode V2 defines no field that withholds a Skill from the person (`slash` was removed), so invoke.user=false cannot be enforced. ",
             );
         }
         ExposurePlan {

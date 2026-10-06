@@ -5,7 +5,7 @@ import shlex
 import time
 
 from contract import continuity
-from contract.bindings import Bindings
+from contract.bindings import Bindings, hook_prelude
 from contract.tui import Tui
 
 from .scenarios import opencode_container
@@ -13,11 +13,14 @@ from .scenarios import opencode_container
 
 class OpenCodeBindings(Bindings):
     harness = "opencode"
+    display_name = "OpenCode"
     #: Started as its own binary, the way a person who only uses the
     #: package manager starts it: the plugins must reach it with no shim on
     #: `PATH`. What only the workspace's launch carries is the continuity
     #: contract's, which relaunches through the launcher on purpose.
-    launch = "UZE_HOME=/usr/local/.uze exec opencode --standalone"
+    #: `--standalone` is decision `opencode-standalone`: this container has
+    #: no background service for a TUI to attach to.
+    launch = "exec opencode --standalone"
     ready_markers = ("Ask anything",)
     #: One interrupt ends it — measured (`experiments/relaunch_probe`). A
     #: second would not be spare: the process is already gone by then, so
@@ -149,25 +152,30 @@ timeout 240 opencode run {shlex.quote(prompt)} 2>&1
             "TOOL_TRIGGER": prompt,
         }
 
+    def hook_session(self, cfg, prov_ip, plugin, tag, before=""):
+        final = f"{hook_prelude(self.hook_project)}\n{before}\ncd {self.hook_project} && {self.launch}"
+        return Tui(
+            cfg,
+            opencode_container(cfg, prov_ip, final, plugins=plugin),
+            f"opencode-hooks-{tag}",
+        )
+
+    def sequence(self, calls, trigger):
+        """OpenCode's provider scripts `{"name", "args"}` steps, with
+        arguments as the JSON string chat completions carry."""
+        steps = [{"name": c["tool"], "args": json.dumps(c["args"])} for c in calls]
+        return "toolcall", {"TOOL_SEQUENCE": json.dumps(steps), "TOOL_TRIGGER": trigger}
+
     def unsupported(self, prop):
-        """`/skills` lists every delivered Skill, whatever `slash` says.
+        """What OpenCode V2 cannot express, each re-measured by the run.
 
-        Re-asked at beta-19192 (2026-09-06). The old reason — "no
-        documented control hides a Skill from explicit invocation" — is
-        false: the skill parser reads `metadata."opencode/slash"` falling
-        back to a top-level `slash`, and two catalog builders filter with
-        `skills.filter((s) => s.slash !== false)`. UZE writes that control,
-        and its own routing calls this Native.
-
-        What is still true is narrower and was measured, not assumed:
-        the surface this vertical reads renders `flow:analyze` alongside
-        the others, so the property cannot be observed *here*. Removing
-        the declaration made the check fail on exactly that.
-
-        What would retire this: reading the surface those two filters
-        build — the `/` invocation palette — rather than the `/skills`
-        browser, and proving on the same capture that a default Skill is
-        listed there while the model-only one is not.
+        V2 removed `slash` from the skill contract (anomalyco/opencode
+        199aabe9e, 2026-09-13; the docs dropped it in 3ddb0cb1d), leaving
+        `autoinvoke` as the only control a Skill carries. Nothing hides a
+        Skill from the person: the `/skills` browser lists every delivered
+        one and a mention (`@id`) expands any of them. Both declarations
+        below are measured on that, not on the `slash` behaviour the
+        previous reason described.
         """
         if prop == "context-project-agent-reaches-model":
             # Measured, `experiments/opencode/project-agents`: the project
@@ -183,22 +191,14 @@ timeout 240 opencode run {shlex.quote(prompt)} 2>&1
             )
         if prop == "model-only-is-not-user-invocable":
             return (
-                "OpenCode honours `slash: false` in its `/` palette builders but "
-                "its `/skills` browser lists every delivered Skill regardless; "
-                "the property is not observable on the surface read here"
+                "OpenCode V2 defines no field that hides a Skill from the "
+                "person (`slash` was removed): its `/skills` browser lists "
+                "every delivered Skill"
             )
         if prop == "model-only-is-not-invocable":
-            # Measured, not assumed: the invocation check typed
-            # `@flow:analyze` and its body reached the model. V2 has two
-            # explicit paths and `slash` gates only one — the picker offers
-            # every discovered Skill as `@id`, and `SessionPrompt.prepare`
-            # expands a mentioned Skill whatever its `slash` value. UZE's
-            # own route for `invoke.user: false` was moved to Adaptable on
-            # the same evidence.
             return (
-                "OpenCode V2 invokes a Skill by mention (`@id`) as well as by "
-                "`/id`, and `slash: false` gates only the second: a Skill "
-                "withheld from the `/` catalog is still invocable by mention"
+                "OpenCode V2 expands any Skill a person mentions (`@id`), "
+                "whatever its policy: no field it defines withholds one"
             )
         return None
 

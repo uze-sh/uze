@@ -34,9 +34,11 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 cwd: ".workspacePaths[0] // empty",
             },
             // Only the pre-tool event carries a decision; the others answer
-            // with the empty object the vendor's contract requires.
+            // with the empty object the vendor's contract requires. A
+            // handler's denial in an `ask` group is answered `ask`, which
+            // the harness puts to the person; any other closing is `deny`.
             posix: Decisions {
-                deny: "printf '{\"decision\":\"deny\",\"reason\":%s}' \"$reason_json\"",
+                deny: "printf '{\"decision\":\"%s\",\"reason\":%s}' \"$decision\" \"$reason_json\"",
                 allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
                 unfired: &[],
             },
@@ -46,7 +48,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             // writing nothing, `{}` reading as a denial. The entry's line is
             // sealed against `cmd`'s quoting (`sealed_wrapper_command_line`).
             powershell: Some(Decisions {
-                deny: "[Console]::Out.Write('{\"decision\":\"deny\",\"reason\":' + $reasonJson + '}')",
+                deny: "[Console]::Out.Write('{\"decision\":\"' + $decision + '\",\"reason\":' + $reasonJson + '}')",
                 allow: "if ($hookEvent -ne 'pre_tool_use') { [Console]::Out.Write('{}') }",
                 unfired: &[],
             }),
@@ -60,10 +62,11 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
     },
 };
 
-/// Read off the harness's own `parametersJsonSchema` with the Lab's
-/// `--discovery` mode: `run_command`/`CommandLine`+`Cwd`,
-/// `write_to_file`/`TargetFile`, `view_file`/`AbsolutePath`,
-/// `grep_search`/`Query` and `search_web`/`query`.
+/// Measured, never recalled: every native name and field here is the one a
+/// Lab census saw a call reach a hook with (`hook_tools` in
+/// `conformance/evidence/tools/antigravity.json`, 1.2.17), and
+/// `hooks::measured_tests` fails on any that a later census contradicts.
+/// 1.2.17 offers no `grep_search`, so `search.files` stays unbound.
 const TOOLS: &[ToolBinding] = &[
     ToolBinding {
         alias: "shell",
@@ -91,7 +94,7 @@ const TOOLS: &[ToolBinding] = &[
     },
     ToolBinding {
         alias: "search.files",
-        native_tool: Some("grep_search"),
+        native_tool: UNBOUND,
         also_matches: &[],
         fields: &[("query", "Query")],
     },
@@ -109,7 +112,7 @@ const TOOLS: &[ToolBinding] = &[
     },
     ToolBinding {
         alias: "agent.message",
-        native_tool: UNBOUND,
+        native_tool: Some("send_message"),
         also_matches: &[],
         fields: &[],
     },

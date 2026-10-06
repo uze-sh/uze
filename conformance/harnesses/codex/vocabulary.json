@@ -1,0 +1,71 @@
+{
+  "events": [
+    "pre_tool_use",
+    "post_tool_use",
+    "stop",
+    "session_start"
+  ],
+  "effects": [
+    "observe",
+    "allow",
+    "deny"
+  ],
+  "aliases": {
+    "shell": {
+      "tools": [
+        "Bash"
+      ],
+      "fields": {
+        "command": "command"
+      },
+      "call_tool": "functions.exec",
+      "call": "await tools.exec_command({cmd: \"mkdir -p {dir} && printf ran > {side} # {mark}\"});\ntext(\"done\");",
+      "values": {
+        "command": "mkdir -p {dir} && printf ran > {side} # {mark}"
+      }
+    },
+    "file.read": null,
+    "file.write": {
+      "tools": [
+        "apply_patch"
+      ],
+      "fields": {},
+      "call_tool": "functions.exec",
+      "call": "await tools.apply_patch(\"*** Begin Patch\\n*** Add File: {side}\\n+lab\\n*** End Patch\\n\");\ntext(\"done\");",
+      "unsupported": "Codex 0.160 writes and edits files through `apply_patch`, which reaches a hook with the whole patch in `command` and no path field (measured by the census), so the alias cannot carry the `path` it promises; a guard on patches matches `native:apply_patch`"
+    },
+    "file.edit": {
+      "tools": [
+        "apply_patch"
+      ],
+      "fields": {},
+      "call_tool": "functions.exec",
+      "call": "await tools.apply_patch(\"*** Begin Patch\\n*** Update File: {project}/README.md\\n@@\\n-lab project\\n+lab project, edited\\n*** End Patch\\n\");\ntext(\"done\");",
+      "unsupported": "Codex 0.160 writes and edits files through `apply_patch`, which reaches a hook with the whole patch in `command` and no path field (measured by the census), so the alias cannot carry the `path` it promises; a guard on patches matches `native:apply_patch`"
+    },
+    "search.files": null,
+    "search.web": null,
+    "agent.spawn": {
+      "tools": [
+        "collaborationspawn_agent"
+      ],
+      "fields": {},
+      "call_tool": "collaboration.spawn_agent",
+      "call": {
+        "message": "lab subagent",
+        "task_name": "lab"
+      }
+    },
+    "agent.message": {
+      "tools": [
+        "collaborationsend_message"
+      ],
+      "fields": {},
+      "call_tool": "collaboration.send_message",
+      "call": {
+        "message": "lab",
+        "target": "lab"
+      }
+    }
+  }
+}

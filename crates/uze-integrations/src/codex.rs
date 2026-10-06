@@ -42,6 +42,7 @@ mod preferences;
 mod runtime;
 mod session;
 mod skills;
+mod trust;
 
 pub(crate) use hooks::HOOKS;
 pub use mcp::detach_mcp_entry;
@@ -413,6 +414,55 @@ impl IntegrationPort for CodexIntegration {
         marketplace::publication::<CodexMarketplace>(&self.uze_home, packages)
     }
 
+    /// Codex skips a project's `AGENTS.md` only when the person marked the
+    /// project untrusted (`[projects."<root>"] trust_level = "untrusted"`
+    /// in `config.toml`, codex-rs `core/src/agents_md.rs`, 0.160.1); an
+    /// unset level still reads it. It reads at most `project_doc_max_bytes`
+    /// of it (32 KiB unless `config.toml` says otherwise), and the rest
+    /// never reaches the model (measured, `context-long-report-agrees`).
+    fn context_unread(&self, project_root: &Path, instructions: &Path) -> Option<String> {
+        let config = self.config_toml_path();
+        if trust::project_untrusted(&config, project_root) {
+            return Some(
+                "Codex will not read this project's AGENTS.md: the project is marked untrusted. \
+                 Trust it in Codex (open Codex here and accept the folder trust)"
+                    .to_owned(),
+            );
+        }
+        let size = std::fs::metadata(instructions).ok()?.len();
+        let limit = trust::project_doc_max_bytes(&config);
+        (size > limit).then(|| {
+            format!(
+                "Codex reads the first {limit} bytes of AGENTS.md ({size} here) and drops the \
+                 rest; raise `project_doc_max_bytes` in ~/.codex/config.toml or shorten the file"
+            )
+        })
+    }
+
+    fn held_back(
+        &self,
+        _package: &StoredPackage,
+        receipt: &AttachmentReceipt,
+        served: &[&uze_core::capability::Resource],
+    ) -> Vec<uze_core::integration::HeldBack> {
+        let Some(entry) = HookEntry::recorded(&receipt.artifact) else {
+            return Vec::new();
+        };
+        let Some(action) = trust::review(&self.config_toml_path(), &entry)
+            .as_ref()
+            .and_then(trust::Review::action)
+        else {
+            return Vec::new();
+        };
+        served
+            .iter()
+            .map(|resource| uze_core::integration::HeldBack {
+                capability: resource.identity(),
+                action: action.to_owned(),
+            })
+            .collect()
+    }
+
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
         match &receipt.artifact {
             artifact @ ManagedArtifact::VendorConfigEntry { .. } => {
@@ -677,9 +727,10 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "hooks",
-        fact: "fires `SessionStart` once per new session, with its source",
-        measured_on: VERSION,
-        proven_by: "experiments/session_start_probe.py::run",
+        fact: "runs a delivered `SessionStart`, `PostToolUse` and `Stop` group, each \
+               naming its event",
+        measured_on: "0.160.1",
+        proven_by: "contract/hooks.py::_events",
     },
 ];
 /// The version the facts above were measured on.

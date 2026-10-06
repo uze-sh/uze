@@ -759,9 +759,10 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "hooks",
-        fact: "fires `SessionStart` once per new session, with its source",
-        measured_on: VERSION,
-        proven_by: "experiments/session_start_probe.py::run",
+        fact: "runs a delivered `SessionStart`, `PostToolUse` and `Stop` group, each \
+               naming its event",
+        measured_on: "2.1.290",
+        proven_by: "contract/hooks.py::_events",
     },
 ];
 /// The version the facts above were measured on.

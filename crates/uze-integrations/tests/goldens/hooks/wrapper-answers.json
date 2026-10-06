@@ -10,7 +10,7 @@
         "audit"
       ],
       "command": "cat .env",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -36,12 +36,48 @@
     {
       "harness": "claude",
       "event": "pre_tool_use",
+      "effect": "ask",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat .env",
+      "exit": 0,
+      "stdout": {
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "blocked: cat .env (tool=shell cwd=/repo)"
+        }
+      },
+      "stderr": "blocked: cat .env (tool=shell cwd=/repo)"
+    },
+    {
+      "harness": "claude",
+      "event": "pre_tool_use",
+      "effect": "ask",
+      "handlers": [
+        "absent"
+      ],
+      "command": "ls",
+      "exit": 0,
+      "stdout": {
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
+        }
+      },
+      "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
+    },
+    {
+      "harness": "claude",
+      "event": "pre_tool_use",
       "effect": "deny",
       "handlers": [
         "absent"
       ],
       "command": "ls",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -72,7 +108,7 @@
         "audit"
       ],
       "command": "cat .env",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -103,7 +139,7 @@
         "scripts/guard"
       ],
       "command": "cat .env",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -182,7 +218,7 @@
         "stall"
       ],
       "command": "ls",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -213,7 +249,7 @@
       ],
       "command": "cat .env",
       "payload": "malformed",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -245,7 +281,7 @@
       ],
       "command": "ls",
       "package_root": "missing",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -276,7 +312,7 @@
         "absent"
       ],
       "command": "ls",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -294,7 +330,7 @@
         "guard"
       ],
       "command": "cat café/.env",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -313,7 +349,7 @@
       ],
       "command": "cat .env",
       "payload": "large",
-      "exit": 2,
+      "exit": 0,
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
@@ -353,6 +389,40 @@
       "exit": 0,
       "stdout": null,
       "stderr": ""
+    },
+    {
+      "harness": "codex",
+      "event": "pre_tool_use",
+      "effect": "ask",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat .env",
+      "exit": 2,
+      "stdout": {
+        "hookSpecificOutput": {
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "blocked: cat .env (tool=shell cwd=/repo)"
+        }
+      },
+      "stderr": "blocked: cat .env (tool=shell cwd=/repo)"
+    },
+    {
+      "harness": "codex",
+      "event": "pre_tool_use",
+      "effect": "ask",
+      "handlers": [
+        "absent"
+      ],
+      "command": "ls",
+      "exit": 2,
+      "stdout": {
+        "hookSpecificOutput": {
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
+        }
+      },
+      "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
     },
     {
       "harness": "codex",
@@ -663,6 +733,36 @@
       "exit": 0,
       "stdout": null,
       "stderr": ""
+    },
+    {
+      "harness": "antigravity",
+      "event": "pre_tool_use",
+      "effect": "ask",
+      "handlers": [
+        "guard"
+      ],
+      "command": "cat .env",
+      "exit": 0,
+      "stdout": {
+        "decision": "ask",
+        "reason": "blocked: cat .env (tool=shell cwd=/repo)"
+      },
+      "stderr": "blocked: cat .env (tool=shell cwd=/repo)"
+    },
+    {
+      "harness": "antigravity",
+      "event": "pre_tool_use",
+      "effect": "ask",
+      "handlers": [
+        "absent"
+      ],
+      "command": "ls",
+      "exit": 0,
+      "stdout": {
+        "decision": "deny",
+        "reason": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
+      },
+      "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
     },
     {
       "harness": "antigravity",

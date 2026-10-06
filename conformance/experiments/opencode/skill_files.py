@@ -45,6 +45,7 @@ def run(cfg, prov_ip):
         )
         or prov_ip
     )
+    # decision: headless-permissions
     turn = f"cd /work && timeout 150 opencode run --standalone --auto '{TRIGGER}' 2>&1 | tail -20"
     cmd = opencode_container(cfg, prov_ip, turn, plugins="flow", tty=False)
     proc = subprocess.run(

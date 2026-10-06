@@ -1,0 +1,64 @@
+{
+ "harness": "codex",
+ "harness_version": "codex-cli 0.160.1",
+ "recorded_at": "2026-10-06",
+ "tools": {
+  "clock.sleep": [
+   "duration_ms"
+  ],
+  "collaboration.followup_task": [
+   "message",
+   "target"
+  ],
+  "collaboration.interrupt_agent": [
+   "target"
+  ],
+  "collaboration.list_agents": [
+   "path_prefix"
+  ],
+  "collaboration.send_message": [
+   "message",
+   "target"
+  ],
+  "collaboration.spawn_agent": [
+   "agent_type",
+   "fork_turns",
+   "message",
+   "model",
+   "reasoning_effort",
+   "task_name"
+  ],
+  "collaboration.wait_agent": [
+   "timeout_ms"
+  ],
+  "functions.exec": [],
+  "functions.request_user_input": [
+   "questions"
+  ],
+  "functions.request_user_input_async": [
+   "questions"
+  ],
+  "functions.wait": [
+   "cell_id",
+   "max_tokens",
+   "terminate",
+   "yield_time_ms"
+  ]
+ },
+ "hook_tools": {
+  "Bash": [
+   "command"
+  ],
+  "apply_patch": [
+   "command"
+  ],
+  "collaborationsend_message": [
+   "message",
+   "target"
+  ],
+  "collaborationspawn_agent": [
+   "message",
+   "task_name"
+  ]
+ }
+}

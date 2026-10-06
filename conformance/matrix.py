@@ -6,7 +6,7 @@ Turns a variant manifest — overlays on `_fixtures/marketplace/` (hooks.json
 shapes, invoke policies, AGENTS.md forms) — into measured compatibility
 evidence: each (variant × harness) cell runs the harness's canonical
 vertical against the overlaid market and lands in a single report of
-PASS/ADAPTED/FAIL with evidence links. Trade-offs are measured, never
+PASS/DECLARED/FAIL with evidence links. Trade-offs are measured, never
 assumed; cells are independent runs (no cross-cell state).
 
 Run: python3 conformance/lab.py --matrix variants.json
@@ -88,7 +88,7 @@ def run_cell(
         "variant": variant["id"],
         "passed": outcome["passed"],
         "total": outcome["total"],
-        "known_adapted": outcome["known_adapted"],
+        "declared": outcome["declared"],
         "crash": outcome["crash"],
         "failures": [
             {
@@ -103,7 +103,7 @@ def run_cell(
 
 
 def render_table(cells: list[dict[str, Any]]) -> str:
-    """A readable PASS/ADAPTED/FAIL grid (variant × harness)."""
+    """A readable PASS/DECLARED/FAIL grid (variant × harness)."""
     harnesses = sorted({c["harness"] for c in cells})
     variants = sorted({c["variant"] for c in cells})
     rows = [
@@ -121,7 +121,7 @@ def render_table(cells: list[dict[str, Any]]) -> str:
                 row.append("CRASH")
             elif cell["passed"] == cell["total"]:
                 row.append(f"{cell['passed']}/{cell['total']} ✓")
-            elif cell["known_adapted"] or any(
+            elif cell["declared"] or any(
                 f["adjudication"] != "asserted" for f in cell["failures"]
             ):
                 row.append(f"{cell['passed']}/{cell['total']} !")

@@ -27,15 +27,18 @@ function Allow-Native {
   
 }
 
-function Deny-Native([string]$reason) {
+function Deny-Native([string]$reason, [string]$decision = 'deny') {
   [Console]::Error.WriteLine($reason)
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
   if ($hookEvent -eq 'session_start') { Allow-Native; exit 0 }
   $reasonJson = $json.Serialize($reason)
-  $name = @{ pre_tool_use = 'PreToolUse'; post_tool_use = 'PostToolUse'; stop = 'Stop' }[$hookEvent]
-  [Console]::Out.Write('{"hookSpecificOutput":{"hookEventName":"' + $name + '","permissionDecision":"deny","permissionDecisionReason":' + $reasonJson + '}}')
-  exit 2
+  if ($hookEvent -eq 'pre_tool_use') {
+    [Console]::Out.Write('{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":' + $reasonJson + '}}')
+  } else {
+    [Console]::Out.Write('{"decision":"block","reason":' + $reasonJson + '}')
+  }
+  exit 0
 }
 
 # fail-closed effects: a guard that cannot be evaluated denies.
@@ -93,11 +96,10 @@ switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {  # the portable vocabulary
   'PowerShell' { $env:HOOK_TOOL = 'shell'; $env:HOOK_COMMAND = Text (Pick $toolInput @('command')) }
   'Read' { $env:HOOK_TOOL = 'file.read'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
   'Write' { $env:HOOK_TOOL = 'file.write'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
-  'MultiEdit' { $env:HOOK_TOOL = 'file.edit'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
   'Edit' { $env:HOOK_TOOL = 'file.edit'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
   'Grep' { $env:HOOK_TOOL = 'search.files'; $env:HOOK_QUERY = Text (Pick $toolInput @('pattern')) }
   'WebSearch' { $env:HOOK_TOOL = 'search.web'; $env:HOOK_QUERY = Text (Pick $toolInput @('query')) }
-  'Task' { $env:HOOK_TOOL = 'agent.spawn' }
+  'Agent' { $env:HOOK_TOOL = 'agent.spawn' }
 }
 
 # --- the handlers, in order; the first denial stops the rest --------------
@@ -155,7 +157,12 @@ foreach ($entry in $handlers) {
   if ($errors.Wait(1000)) { $reason = $errors.Result.Trim() }
   if ($reason.Length -gt 4096) { $reason = $reason.Substring(0, 4096) }
   switch ($status) {
-    3 { if ($reason) { Deny-Native $reason } else { Deny-Native "$handler denied the operation" } }
+    3 {
+      # A handler's own denial in an `ask` group asks the person; only a
+      # failure falls back to denying.
+      $decision = if ($effect -eq 'ask') { 'ask' } else { 'deny' }
+      if ($reason) { Deny-Native $reason $decision } else { Deny-Native "$handler denied the operation" $decision }
+    }
     124 { Fail "handler timed out after ${seconds}s: $handler" }
     default { if ($reason) { Fail "handler failed (exit $status): $handler — $reason" } else { Fail "handler failed (exit $status): $handler" } }
   }

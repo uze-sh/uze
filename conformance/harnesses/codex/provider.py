@@ -55,9 +55,6 @@ SKILL_MARKERS = [
     "flow:commit",
     "flow:review",
     "flow:analyze",
-    "commit",
-    "review",
-    "init",
     "North Star",
     "Review code",
     # A Skill's *body* reaches the model only when the Skill was
@@ -105,6 +102,25 @@ def call_id(step):
     return f"fc_uze_{step + 1}"
 
 
+def declared_name(step):
+    """The step's tool as a declaration names it: namespaced tools are
+    declared inside their namespace (`capture.declared_tools`)."""
+    call = TOOL_SEQUENCE[step]
+    namespace = call.get("namespace") or ""
+    return f"{namespace}.{call['name']}" if namespace else call["name"]
+
+
+def answered_step(body):
+    """The scripted step this request is answered with: the one due, or the
+    next whose tool the harness declared (`capture.next_scriptable`); None
+    for text. A follow-up sent with `previous_response_id` carries only the
+    new output, so it leans on what the session already declared."""
+    named = [{"name": declared_name(step)} for step in range(len(TOOL_SEQUENCE))]
+    return capture.next_scriptable(
+        body, named, scripted_step(body), continuation=lambda step: step > 0
+    )
+
+
 def scripted_step(body):
     """The index of the scripted call `body` is answered with, or None."""
     has_turn = '"input"' in body or '"inputs"' in body
@@ -114,7 +130,7 @@ def scripted_step(body):
         if f'"call_id":"{call_id(step)}"' in body.replace(" ", ""):
             following = step + 1
             return following if following < len(TOOL_SEQUENCE) else None
-    if '"function_call_output"' in body:
+    if '"function_call_output"' in body or '"custom_tool_call_output"' in body:
         return None
     if TOOL_TRIGGER and TOOL_TRIGGER not in body:
         return None
@@ -174,7 +190,21 @@ def structural_summary(body_text):
     }
 
 
-def text_events(text):
+#: The model a response names when the request named none; the models
+#: listing offers it. A response otherwise names the model its request asked
+#: for, as the API does.
+DEFAULT_MODEL = "gpt-5.6-sol"
+
+
+def requested_model(body):
+    """The `model` a Responses request names, or `None`."""
+    try:
+        return json.loads(body).get("model")
+    except (ValueError, AttributeError):
+        return None
+
+
+def text_events(text, model=None):
     rid, mid = "resp_uze_1", "msg_uze_1"
     evs = [
         (
@@ -186,7 +216,7 @@ def text_events(text):
                     "object": "response",
                     "created_at": 1750000000,
                     "status": "in_progress",
-                    "model": "gpt-5.6-sol",
+                    "model": model or DEFAULT_MODEL,
                     "output": [],
                     "usage": None,
                 },
@@ -261,7 +291,7 @@ def text_events(text):
                     "object": "response",
                     "created_at": 1750000000,
                     "status": "completed",
-                    "model": "gpt-5.6-sol",
+                    "model": model or DEFAULT_MODEL,
                     "output": [
                         {
                             "type": "message",
@@ -289,31 +319,42 @@ def sse_bytes(evs):
     return "".join(f"event: {e}\ndata: {json.dumps(d)}\n\n" for e, d in evs).encode()
 
 
-def responses_sse(text):
-    return sse_bytes(text_events(text))
+def responses_sse(text, model=None):
+    return sse_bytes(text_events(text, model))
 
 
-def function_call_events(step=0):
-    """A tool-call response's event list (Responses API): one `function_call`
-    output item naming the step's tool with its arguments (TOOL_NAME with
-    TOOL_ARGS unless a TOOL_SEQUENCE says otherwise). The harness executes
-    the tool (through the UZE hook wrapper); the follow-up request carries
-    the `function_call_output`, which the handler answers with the next
-    step, or with the final text."""
+def function_call_events(step=0, model=None):
+    """A tool-call response's event list (Responses API): one output item
+    naming the step's tool with its input (TOOL_NAME with TOOL_ARGS unless a
+    TOOL_SEQUENCE says otherwise). The harness executes the tool (through
+    the UZE hook wrapper); the follow-up request carries the call's output,
+    which the handler answers with the next step, or with the final text.
+
+    A step marked `custom` is a freeform tool's call — a `custom_tool_call`
+    whose `input` is raw text — which is how Codex's code-mode `exec` is
+    called since 0.160: its input is JavaScript that calls the nested tools
+    (`await tools.exec_command({cmd})`), measured with `--discovery`.
+    """
     call = TOOL_SEQUENCE[step]
-    args = call["args"] if isinstance(call["args"], str) else json.dumps(call["args"])
+    custom = bool(call.get("custom"))
+    payload = (
+        call["args"] if isinstance(call["args"], str) else json.dumps(call["args"])
+    )
     rid, fid = f"resp_uze_{step + 2}", call_id(step)
     item = {
-        "type": "function_call",
+        "type": "custom_tool_call" if custom else "function_call",
         "id": fid,
         "call_id": fid,
         "name": call["name"],
-        "arguments": "",
         "status": "in_progress",
     }
+    key = "input" if custom else "arguments"
+    item[key] = ""
     if call.get("namespace"):
         item["namespace"] = call["namespace"]
-    evs = [
+    stream = "custom_tool_call_input" if custom else "function_call_arguments"
+    done = {**item, key: payload, "status": "completed"}
+    return [
         (
             "response.created",
             {
@@ -323,7 +364,7 @@ def function_call_events(step=0):
                     "object": "response",
                     "created_at": 1750000000,
                     "status": "in_progress",
-                    "model": "gpt-5.6-sol",
+                    "model": model or DEFAULT_MODEL,
                     "output": [],
                     "usage": None,
                 },
@@ -334,30 +375,26 @@ def function_call_events(step=0):
             {"type": "response.output_item.added", "output_index": 0, "item": item},
         ),
         (
-            "response.function_call_arguments.delta",
+            f"response.{stream}.delta",
             {
-                "type": "response.function_call_arguments.delta",
+                "type": f"response.{stream}.delta",
                 "item_id": fid,
                 "output_index": 0,
-                "delta": args,
+                "delta": payload,
             },
         ),
         (
-            "response.function_call_arguments.done",
+            f"response.{stream}.done",
             {
-                "type": "response.function_call_arguments.done",
+                "type": f"response.{stream}.done",
                 "item_id": fid,
                 "output_index": 0,
-                "arguments": args,
+                key: payload,
             },
         ),
         (
             "response.output_item.done",
-            {
-                "type": "response.output_item.done",
-                "output_index": 0,
-                "item": {**item, "arguments": args, "status": "completed"},
-            },
+            {"type": "response.output_item.done", "output_index": 0, "item": done},
         ),
         (
             "response.completed",
@@ -368,8 +405,8 @@ def function_call_events(step=0):
                     "object": "response",
                     "created_at": 1750000000,
                     "status": "completed",
-                    "model": "gpt-5.6-sol",
-                    "output": [{**item, "arguments": args, "status": "completed"}],
+                    "model": model or DEFAULT_MODEL,
+                    "output": [done],
                     "usage": {
                         "input_tokens": 10,
                         "output_tokens": 3,
@@ -379,11 +416,10 @@ def function_call_events(step=0):
             },
         ),
     ]
-    return evs
 
 
-def function_call_sse(step=0):
-    return sse_bytes(function_call_events(step))
+def function_call_sse(step=0, model=None):
+    return sse_bytes(function_call_events(step, model))
 
 
 #: What a schema-constrained side call is answered with. Deliberately not
@@ -426,18 +462,18 @@ def respond(body, path):
         # and answering that with a function call hangs its model load.
         side_call = schema_answer(body)
         if side_call is not None:
-            return responses_sse(side_call)
-        step = scripted_step(body)
+            return responses_sse(side_call, requested_model(body))
+        step = answered_step(body)
         if step is not None:
-            return function_call_sse(step)
-        return responses_sse(RESPONSE_TEXT)
+            return function_call_sse(step, requested_model(body))
+        return responses_sse(RESPONSE_TEXT, requested_model(body))
     if path.startswith("/v1/models"):
         return json.dumps(
             {
                 "object": "list",
                 "data": [
                     {
-                        "id": "gpt-5.6-sol",
+                        "id": DEFAULT_MODEL,
                         "object": "model",
                         "created_at": 1750000000,
                         "owned_by": "openai",
@@ -497,13 +533,15 @@ def ws_loop(conn, path):
             except OSError:
                 pass
         record(text, path, "WS")
+        capture.record_declared_tools(text)
         side_call = schema_answer(text)
+        step = answered_step(text) if side_call is None else None
         if side_call is not None:
-            events = text_events(side_call)
-        elif scripted_step(text) is not None:
-            events = function_call_events(scripted_step(text))
+            events = text_events(side_call, requested_model(text))
+        elif step is not None:
+            events = function_call_events(step, requested_model(text))
         else:
-            events = text_events(RESPONSE_TEXT)
+            events = text_events(RESPONSE_TEXT, requested_model(text))
         for _name, payload in events:
             websocket.send_text(conn, json.dumps(payload).encode())
         return None

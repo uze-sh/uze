@@ -99,6 +99,31 @@ for p in {plugins}; do uze install $p@uze-lab -m >/dev/null 2>&1; done
 """
 
 
+def answer_first_run(child, screen):
+    """What a person answers the first time agy opens in a directory, on
+    screen: the colour scheme, the terms, and — in a directory it has not
+    seen, which every fresh world is — the folder trust, whose "Yes, I trust
+    this folder" is preselected. Text typed while any of them is up goes to
+    the dialog, never to the prompt. Returns the screen after them, or
+    `None` when the onboarding never appeared."""
+    try:
+        child.expect("Choose your color scheme", timeout=150)
+    except Exception:
+        return None
+    child.send("\r")
+    time.sleep(3)
+    child.send("\t\t")
+    time.sleep(0.7)
+    child.send("\r")
+    time.sleep(5)
+    _, plain = screen(3)
+    if "trust the contents" in plain:
+        child.send("\r")
+        time.sleep(5)
+        _, plain = screen(3)
+    return plain
+
+
 def phase_tui(cfg, prov_ip):
     setup = agy_setup(cfg, prov_ip, include_mcp=True, final_cmd="exec agy")
     cmd = docker_base(cfg, prov_ip, setup)
@@ -117,34 +142,26 @@ def phase_tui(cfg, prov_ip):
         with open(f"{cfg.outdir}/{tag}.raw", "w") as f:
             f.write(t)
 
-    try:
-        child.expect("Choose your color scheme", timeout=150)
-    except Exception as e:
-        check("tui-started", False, f"onboarding never appeared: {e}")
+    first = answer_first_run(child, screen)
+    started = first is not None
+    check(
+        "tui-started",
+        started,
+        "the onboarding appeared" if started else "onboarding never appeared",
+    )
+    if not started:
         child.close(force=True)
         return
 
-    child.send("\r")  # color scheme
-    time.sleep(3)
-    child.send("\t\t")  # ToS -> Done
-    time.sleep(0.7)
-    child.send("\r")
-    time.sleep(5)
-
     t1, p1 = screen(3)
-    snap("01_prompt", t1)
+    # The first-run answers read the screen up to the prompt; what arrives
+    # after them is only what changed since.
+    p1 = f"{first}\n{p1}"
+    snap("01_prompt", p1)
     check(
         "tui-reached-prompt",
         "Antigravity CLI" in p1 and ">" in p1,
         "header visible" if "Antigravity CLI" in p1 else "no header",
-    )
-    check(
-        "synthetic-credential",
-        "conformance@uze.invalid" in p1,
-        "the signed-in account row is the Lab's synthetic identity, "
-        "never a personal account"
-        if "conformance@uze.invalid" in p1
-        else p1[-200:].replace("\n", " "),
     )
 
     # /skills
@@ -245,41 +262,39 @@ def phase_tui(cfg, prov_ip):
     struct = provider_struct(cfg)
     with open(f"{cfg.outdir}/04_provider_struct.json", "w") as f:
         json.dump(struct, f, indent=1)
-    if struct:
-        summaries = [entry.get("summary", {}) for entry in struct]
-        markers = [summary.get("skill_markers", {}) for summary in summaries]
-        # The qualified label only. A marker is a substring test over the
-        # whole request body, so a bare `review`/`commit`/`analyze` also
-        # matches the word in any prose the harness sends — `init` shows up
-        # for exactly that reason and is no skill of UZE's. `flow:<name>`
-        # is the delivered identity and the only marker that discriminates.
-        model_visible = any(marker.get("flow:commit") for marker in markers)
-        check(
-            "model-visible-skill-present",
-            model_visible,
-            "flow:commit in the request the harness sent to its provider",
-        )
-        # Gated on the presence above: "the policy worked" and "nothing was
-        # delivered" are the same observation otherwise (DECISIONS.md).
-        common.check_absence(
-            "user-only-skill-hidden",
-            not any(marker.get("flow:review") for marker in markers),
-            model_visible,
-            "flow:review absent from the request (disable-model-invocation preserved)",
-        )
-        check(
-            "model-only-skill-present",
-            any(marker.get("flow:analyze") for marker in markers),
-            "flow:analyze present in the request while absent from /skills",
-        )
-        check(
-            "provider-request-captured",
-            any(summary.get("tools") for summary in summaries),
-            "request body structurally recorded (tools/skills/markers)",
-        )
-    else:
-        check("model-visible-skill-present", False, "no provider request captured")
-        check("provider-request-captured", False, "provider never contacted")
+    summaries = [entry.get("summary", {}) for entry in struct]
+    markers = [summary.get("skill_markers", {}) for summary in summaries]
+    # The qualified label only. A marker is a substring test over the
+    # whole request body, so a bare `review`/`commit`/`analyze` also
+    # matches the word in any prose the harness sends — `init` shows up
+    # for exactly that reason and is no skill of UZE's. `flow:<name>`
+    # is the delivered identity and the only marker that discriminates.
+    model_visible = any(marker.get("flow:commit") for marker in markers)
+    check(
+        "model-visible-skill-present",
+        model_visible,
+        "flow:commit in the request the harness sent to its provider",
+    )
+    # Gated on the presence above: "the policy worked" and "nothing was
+    # delivered" are the same observation otherwise (DECISIONS.md).
+    common.check_absence(
+        "user-only-skill-hidden",
+        not any(marker.get("flow:review") for marker in markers),
+        "UZE_CONFORMANCE_OK" in p3,
+        proof=model_visible,
+        detail="flow:review absent from the request that listed flow:commit "
+        "(disable-model-invocation preserved)",
+    )
+    check(
+        "model-only-skill-present",
+        any(marker.get("flow:analyze") for marker in markers),
+        "flow:analyze present in the request while absent from /skills",
+    )
+    check(
+        "provider-request-captured",
+        any(summary.get("tools") for summary in summaries),
+        "request body structurally recorded (tools/skills/markers)",
+    )
 
     # MCP invocation inside the interactive TUI conversation
     time.sleep(2)
@@ -301,6 +316,11 @@ def phase_tui(cfg, prov_ip):
     p4 = f"{plain4}\n{common.render_screen(raw4)}"
     tries = 0
     while "UZE_CONFORMANCE_PASS" not in p4 and tries < 14 and child.isalive():
+        # A person approves the server's tool when agy asks, with the
+        # preselected "Yes".
+        if any(prompt in chunk for prompt in PERMISSION_PROMPTS):
+            child.send("\r")
+            time.sleep(1.0)
         t4, chunk = screen(2.0)
         raw4 += t4
         plain4 += chunk
@@ -311,6 +331,8 @@ def phase_tui(cfg, prov_ip):
         "mcp-tool-invoked-via-tui",
         "UZE_CONFORMANCE_PASS" in p4
         and "Agent execution terminated due to error" not in p4,
+        # The final text is served after any function response; that the
+        # server ran is `mcp-tool-executed-in-tui`'s, which reads its proof.
         "MCP tool call executed and final rendered in the interactive TUI"
         if "UZE_CONFORMANCE_PASS" in p4
         else p4[-160:].replace("\n", " "),
@@ -318,24 +340,21 @@ def phase_tui(cfg, prov_ip):
     struct2 = provider_struct(cfg)
     with open(f"{cfg.outdir}/04b_mcp_invoke_struct.json", "w") as f:
         json.dump(struct2, f, indent=1)
-    if struct2:
-        # The proof rides in the request that carries the functionResponse;
-        # the harness's side requests (a lighter model, no tools) come
-        # after it, so the last request is not the one to read.
-        executed = any(
-            r.get("summary", {}).get("has_function_response")
-            and r.get("summary", {}).get("mcp_proof_present")
-            for r in struct2
-        )
-        check(
-            "mcp-tool-executed-in-tui",
-            executed,
-            "the REAL AGY executed the MCP server inside the TUI turn (proof returned)"
-            if executed
-            else "a functionResponse without the proof, or none at all",
-        )
-    else:
-        check("mcp-tool-executed-in-tui", False, "no MCP request captured")
+    # The proof rides in the request that carries the functionResponse; the
+    # harness's side requests (a lighter model, no tools) come after it, so
+    # the last request is not the one to read.
+    executed = any(
+        r.get("summary", {}).get("has_function_response")
+        and r.get("summary", {}).get("mcp_proof_present")
+        for r in struct2
+    )
+    check(
+        "mcp-tool-executed-in-tui",
+        executed,
+        "the REAL AGY executed the MCP server inside the TUI turn (proof returned)"
+        if executed
+        else "a functionResponse without the proof, or none at all",
+    )
 
     child.send("\x03")
     time.sleep(0.5)
@@ -380,7 +399,11 @@ HOOK_DENIAL_MARKERS = ("blocked by protect-env", "Denied by UZE hook")
 #: made it say what is being approved ("Run this command?", "Allow access
 #: to this URL?", "Allow calling this tool?" — its changelog), so the match
 #: is on the header above them all rather than on any one question.
-PERMISSION_PROMPTS = ("Do you want to proceed", "Requesting permission for:")
+#: What agy shows when it asks before a call: every permission menu —
+#: a command's, an edit's, an MCP tool's ("Allow calling this tool?") —
+#: carries the same navigation line under it, with "Yes" preselected; the
+#: headers above differ.
+PERMISSION_PROMPTS = ("Navigate · tab Amend", "Do you want to proceed")
 
 
 def hook_turn(cfg, prov_ip, tag, args, plugins, prelude="", auth="consumer"):
@@ -412,19 +435,16 @@ def hook_turn(cfg, prov_ip, tag, args, plugins, prelude="", auth="consumer"):
     screen = make_screen(child)
     wait_for = make_waiter(screen)
 
-    try:
-        child.expect("Choose your color scheme", timeout=150)
-    except Exception as e:
-        check(f"hooks-{tag}-tui-started", False, f"onboarding never appeared: {e}")
+    p1 = answer_first_run(child, screen)
+    started = p1 is not None
+    check(
+        f"hooks-{tag}-tui-started",
+        started,
+        "the onboarding appeared" if started else "onboarding never appeared",
+    )
+    if not started:
         child.close(force=True)
         return None
-    child.send("\r")
-    time.sleep(3)
-    child.send("\t\t")
-    time.sleep(0.7)
-    child.send("\r")
-    time.sleep(5)
-    _, p1 = screen(3)
     if ">" not in p1:
         wait_for([">"], tries=6, stop_on_death=True)
 
@@ -519,14 +539,12 @@ def phase_hooks_gate(cfg, prov_ip):
         plugins="flow",
         prelude=VENDOR_CONTROL_HOOK,
     )
-    if outcome is None:
-        return False
-    executes = bool(outcome["markers"].get("blocked by protect-env"))
-    # A closed gate is a declared vendor limitation (ADAPTED, registered
-    # per version), never a failure of UZE's — and never a silent pass.
+    executes = bool(outcome and outcome["markers"].get("blocked by protect-env"))
+    # A closed gate would leave every hook UZE delivers here inert, so it
+    # fails: the hooks contract's results mean nothing without it.
     check(
         "hooks-vendor-hook-executes",
-        True,
+        executes,
         "a vendor-format deny hook at ~/.gemini/config/hooks.json denied run_command"
         if executes
         else (
@@ -538,79 +556,8 @@ def phase_hooks_gate(cfg, prov_ip):
                 else ""
             )
         ),
-        kind="assert" if executes else "adapted",
     )
     return executes
-
-
-HOOKS_LOADED_PATTERN = "loaded [0-9]* named hooks from [0-9]* hooks.json file(s)"
-
-
-def phase_hooks_delivery(cfg, prov_ip):
-    """Whether the harness loads the hooks UZE delivers — the second live
-    precondition, and the cheap one: the harness's own log says how many
-    `hooks.json` files it read, so a headless start answers it.
-
-    This is the check that decided the delivery route. UZE used to write
-    Antigravity's hooks into the generated native plugin, which is what the
-    vendor's shipped plugin guide documents ("Hooks defined in
-    `plugins/<name>/hooks.json` are registered and run during the agent's
-    lifecycle"). On 1.1.24 they are not: `agy plugin validate` counted the
-    plugin's three hooks, the plugin was listed with a `hooks` component and
-    enabled in `config.json`, and the session still reported `loaded 0 named
-    hooks from 0 hooks.json file(s)` — it never opened the file. UZE now
-    merges its named entries into the shared `~/.gemini/config/hooks.json`,
-    where the same session reports `loaded 3 named hooks from 1 hooks.json
-    file(s)` and the handlers run.
-
-    It stays measured every run rather than retired with the move: it is
-    what proves the route still works, and what would say a later build
-    started reading plugin hooks — at which point moving back is a measured
-    decision, not a guess.
-    """
-    final = (
-        """
-agy --print "hi" --print-timeout 30s --log-file /work/agy.log >/dev/null 2>&1 || true
-echo '===== hooks_manager ====='
-grep -o '%s' /work/agy.log | head -2 || true
-echo '===== plugin validate ====='
-agy plugin validate /work/home/.gemini/config/plugins/hook-plugin 2>&1 \
-  | sed 's/\\x1b\\[[0-9;]*m//g' | head -10 || true
-echo '===== hooks.json present ====='
-ls -la /work/home/.gemini/config/plugins/hook-plugin/hooks.json || true
-"""
-        % HOOKS_LOADED_PATTERN
-    )
-    setup = agy_setup(
-        cfg, prov_ip, include_mcp=False, final_cmd=final, plugins="flow hook-plugin"
-    )
-    proc = subprocess.run(
-        docker_base(cfg, prov_ip, setup, tty=False), capture_output=True, text=True
-    )
-    out = proc.stdout + proc.stderr
-    with open(f"{cfg.outdir}/hooks_delivery.txt", "w") as f:
-        f.write(out)
-    loaded = any(
-        line.startswith("loaded ") and not line.startswith("loaded 0 ")
-        for line in out.splitlines()
-    )
-    # A shut vendor gate is a declaration (ADAPTED, registered per version),
-    # never a failure of UZE's — and the gate escalates it the day it opens.
-    check(
-        "hooks-delivered-hooks-loaded",
-        True,
-        "the harness loaded the hooks UZE merged into its shared "
-        "~/.gemini/config/hooks.json"
-        if loaded
-        else (
-            "the harness read none of the hooks UZE delivered: the session "
-            "reports `loaded 0 named hooks from 0 hooks.json file(s)` while "
-            "the entries are in place — the delivery route no longer reaches "
-            "this build"
-        ),
-        kind="assert" if loaded else "adapted",
-    )
-    return loaded
 
 
 def phase_hooks_api_key_mode(cfg, prov_ip):
@@ -655,146 +602,6 @@ def phase_hooks_api_key_mode(cfg, prov_ip):
     )
 
 
-def phase_hooks(cfg, prov_ip, kind, blocked):
-    """Portable-hook evidence inside the REAL Antigravity CLI TUI (ADR-033).
-
-    The provider scripts a `run_command` functionCall whose arguments the
-    plugin's `guard` handler examines (delivered through UZE's generated
-    named-entry plugin); `kind` selects the scenario, identical semantics to
-    the claude/codex/opencode verticals:
-
-      deny  : arguments contain `secrets` -> the hook denies (reason
-              "blocked by protect-env") and the second handler never runs;
-              run_command itself never executes.
-      allow : plain echo arguments -> the hook allows, run_command runs.
-      order : a two-handler group whose first handler always denies -> the
-              second handler's marker must never appear (first-deny-wins).
-
-    Evidence = what the REAL harness relayed: hook marker presence/absence
-    in the provider-observed conversation plus the TUI denial surface.
-
-    Two vacuities hid here until 2026-09-02, and both are why the presence
-    check `hooks-*-denial-relayed` gates the absence checks: the provider
-    answered the harness's first request with the functionCall, which on
-    1.1.24 is a side call to a lighter model with no tools declared, so the
-    user's turn never saw a tool; and the call carried `command`, not the
-    `CommandLine`/`Cwd`/`WaitMsBeforeAsync`/`toolSummary`/`toolAction` the
-    tool declares, which the harness rejects as invalid arguments before a
-    hook runs. The generated plugin `hooks.json` also had its named entries
-    wrapped under a `hooks` key the vendor reads as one dead hook.
-
-    `blocked` carries the reason a live precondition gave for not judging
-    UZE's delivery this run (the vendor runs no hook at all, or it never
-    loads the one UZE delivered). Every check here is then recorded as a
-    declaration carrying that reason — the turn would only re-measure a
-    precondition that already answered.
-    """
-    scenarios = {
-        "deny": {
-            "plugin": "hook-plugin",
-            "args": RUN_COMMAND_ARGS % "echo API secrets",
-            "deny_present": "blocked by protect-env",
-            # The portable vocabulary row: AGY's own shell tool is
-            # `run_command`, so a handler that echoes `tool=shell` proves the
-            # translation happened rather than the native name leaking.
-            "context_present": "tool=shell",
-            "deny_absent": ["second-handler-reached"],
-        },
-        "allow": {
-            "plugin": "hook-allow-plugin",
-            "args": RUN_COMMAND_ARGS % "echo plain output",
-            "deny_present": None,
-            "deny_absent": ["blocked by protect-env"],
-        },
-        "order": {
-            "plugin": "hook-order-plugin",
-            "args": RUN_COMMAND_ARGS % "echo any",
-            "deny_present": "first-handler-denied",
-            "deny_absent": ["second-handler-ran"],
-        },
-    }
-    spec = scenarios[kind]
-    if blocked:
-        reason = blocked
-        declared = []
-        if spec["deny_present"]:
-            declared += [
-                f"hooks-{kind}-denial-relayed",
-                f"hooks-{kind}-denial-blocks-tool",
-            ]
-        if spec.get("context_present"):
-            declared.append(f"hooks-{kind}-context-relayed")
-        declared += [
-            f"hooks-{kind}-marker-absent-{absent}" for absent in spec["deny_absent"]
-        ]
-        if kind == "allow":
-            declared.append("hooks-allow-tool-executed")
-        for name in declared:
-            check(name, True, reason, kind="adapted")
-        return
-
-    outcome = hook_turn(
-        cfg, prov_ip, kind, spec["args"], plugins=f"flow {spec['plugin']}"
-    )
-    if outcome is None:
-        return
-    check(
-        f"hooks-{kind}-turn-settled",
-        outcome["turn_settled"],
-        "the turn settled (final text or hook denial rendered)"
-        if outcome["turn_settled"]
-        else outcome["tail"],
-    )
-    markers = outcome["markers"]
-    settled = outcome["settled"]
-    has_output = bool(markers.get("plain output"))
-    if spec["deny_present"]:
-        # The denial reason relayed to the model is the evidence that the
-        # hook ran and AGY honored it. Without it the absence checks below
-        # hold for a turn where no hook ran at all.
-        relayed = bool(markers.get(spec["deny_present"]))
-        check(
-            f"hooks-{kind}-denial-relayed",
-            relayed,
-            f"`{spec['deny_present']}` reached the conversation as the tool outcome"
-            if relayed
-            else ", ".join(f"{m}={markers.get(m)}" for m in sorted(markers)),
-        )
-        common.check_absence(
-            f"hooks-{kind}-denial-blocks-tool",
-            relayed and not has_output,
-            settled,
-            "the intercepted tool never executed — the native denial blocked it"
-            if not has_output
-            else "the tool executed despite the deny — blocking is broken",
-        )
-    if spec.get("context_present"):
-        carried = bool(markers.get(spec["context_present"]))
-        check(
-            f"hooks-{kind}-context-relayed",
-            carried,
-            f"the handler read the portable vocabulary (`{spec['context_present']}`) "
-            f"from this harness's own payload"
-            if carried
-            else ", ".join(f"{m}={markers.get(m)}" for m in sorted(markers)),
-        )
-    for absent in spec["deny_absent"]:
-        common.check_absence(
-            f"hooks-{kind}-marker-absent-{absent}",
-            not markers.get(absent, False),
-            settled,
-            f"`{absent}` never reached the conversation (first-deny-wins)",
-        )
-    if kind == "allow":
-        check(
-            "hooks-allow-tool-executed",
-            has_output,
-            "run_command actually executed after the hook allowed it"
-            if has_output
-            else "the command's stdout never reached the conversation",
-        )
-
-
 def phase_mcp_registration(cfg, prov_ip):
     final = """
 echo '===== S1 plugin list ====='
@@ -813,14 +620,6 @@ cat /work/home/.gemini/config/plugins/uze-mcp-conformance/mcp_config.json 2>&1
         '"mcpServers"' in out and "uze-mcp-conformance" in out,
         "S1: plugin list shows the MCP plugin with an mcpServers component",
     )
-    check(
-        "mcp-server-configured",
-        "uze-conformance" in out
-        and cfg.mcp_proof in out
-        and "/scripts/server" in out
-        and "${PLUGIN_ROOT}" not in out,
-        "S2: staged mcp_config.json declares the server, its package root resolved, + proof arg",
-    )
 
 
 def run(cfg, prov_ip):
@@ -829,30 +628,10 @@ def run(cfg, prov_ip):
     with describe("cli.state"):
         phase_mcp_registration(cfg, prov_ip)
     with describe("hooks"):
-        # Two live preconditions, in the order a failure should be read:
-        # does this harness run `hooks.json` hooks at all, and does it load
-        # the ones UZE delivered? Only with both answered yes is UZE's
-        # delivery what the scenarios below measure.
+        # Whether this harness runs `hooks.json` hooks at all, in either auth
+        # mode — the vendor's own format, no UZE in the loop. UZE's hooks
+        # are the hooks contract's (`contract/hooks.py`).
         with describe("vendor"):
-            vendor_executes = phase_hooks_gate(cfg, prov_ip)
-        with describe("delivery"):
-            delivered_loaded = phase_hooks_delivery(cfg, prov_ip)
-        blocked = None
-        if not vendor_executes:
-            blocked = (
-                "declared: this AGY executes no hooks.json hook in the Lab "
-                "session (see hooks-vendor-hook-executes), so the UZE plugin "
-                "hook cannot be observed here"
-            )
-        elif not delivered_loaded:
-            blocked = (
-                "declared: this AGY executes hooks.json hooks (see "
-                "hooks-vendor-hook-executes) but read none of the ones UZE "
-                "delivered (see hooks-delivered-hooks-loaded), so nothing of "
-                "UZE's reaches the session to be observed"
-            )
-        for kind in ("deny", "allow", "order"):
-            with describe(kind):
-                phase_hooks(cfg, prov_ip, kind, blocked)
+            phase_hooks_gate(cfg, prov_ip)
         with describe("api-key"):
             phase_hooks_api_key_mode(cfg, prov_ip)

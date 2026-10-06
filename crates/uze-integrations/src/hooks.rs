@@ -218,7 +218,7 @@ impl HookTarget {
                 "this machine's shell refuses the hook's wrapper: {refusal}"
             ));
         }
-        hook_plan(resource, &self.capabilities(), false, evidence, |hook| {
+        hook_plan(resource, self, false, evidence, |hook| {
             if !self.deliverable() {
                 return None;
             }
@@ -347,12 +347,34 @@ pub(crate) fn groups_with_ids(
 /// Parses a hook resource's payload into its portable group and computes the
 /// per-resource plan: semantic compatibility from the vendor profile —
 /// `bridged` when UZE's own generated runner carries the hook — and the
+/// The aliases of a group that names nothing but portable aliases this
+/// harness binds to no tool, spelled for a report; `None` when any matcher
+/// can fire here (a bound alias, a `native:` name) or the group matches
+/// every tool.
+fn unbound_only(target: HookTarget, hook: &PortableHook) -> Option<String> {
+    let vocabulary = tools::vocabulary(target);
+    let mut aliases = Vec::new();
+    for matcher in &hook.matchers {
+        let HookMatcher::Portable(alias) = matcher else {
+            return None;
+        };
+        if vocabulary
+            .binding(alias)
+            .is_some_and(|binding| binding.native_tool.is_some())
+        {
+            return None;
+        }
+        aliases.push(format!("`{alias}`"));
+    }
+    (!aliases.is_empty()).then(|| aliases.join(", "))
+}
+
 /// artifact `deliver` renders for it. A `degraded` or `unsupported` route
 /// never attaches, and neither does a group `deliver` has no artifact for
 /// on this platform: the mechanism carries the diagnostic instead.
 pub(crate) fn hook_plan(
     resource: &Resource,
-    capabilities: &HookCapabilities,
+    target: HookTarget,
     bridged: bool,
     evidence: &str,
     deliver: impl FnOnce(&PortableHook) -> Option<ManagedArtifact>,
@@ -360,7 +382,16 @@ pub(crate) fn hook_plan(
     let Ok(hook) = serde_json::from_slice::<PortableHook>(&resource.capability.payload) else {
         return unsupported("hook resource payload is not a valid portable hook group");
     };
-    let compatibility = uze_core::hook::assess(&hook, capabilities, bridged);
+    // A group that names only aliases this harness has no tool for would be
+    // delivered with a matcher that never fires: said, never attached.
+    if let Some(aliases) = unbound_only(target, &hook) {
+        return unsupported(format!(
+            "hook `{}` matches only {aliases}, which {} offers no tool for, so it is not delivered here",
+            hook.id,
+            target.key()
+        ));
+    }
+    let compatibility = uze_core::hook::assess(&hook, &target.capabilities(), bridged);
     // What the route cannot carry leads, so a report showing one sentence
     // shows the reason; the mechanism follows.
     let with_compatibility =
@@ -428,6 +459,10 @@ pub(crate) fn hook_entry_name(resource: &Resource, hook: &PortableHook) -> Strin
 
 #[cfg(test)]
 mod tests;
+
+/// The binding tables, held against the tools each real harness declared.
+#[cfg(test)]
+mod measured_tests;
 
 /// The wrapper this platform's harnesses run, on its own platform.
 #[cfg(test)]

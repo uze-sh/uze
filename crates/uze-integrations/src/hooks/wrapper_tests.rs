@@ -155,16 +155,13 @@ fn run(execution: Run<'_>) -> Answer {
     }
 }
 
-/// What a denial exits with, per harness. Claude and Codex document
-/// exit 2 as the block signal; Antigravity reads the decision from
-/// stdout and logs any non-zero exit as a *failed* hook, so a denial
-/// there exits 0 (measured on 1.1.24).
+/// What a denial exits with, per harness, each measured: Codex blocks on
+/// exit 2; Antigravity reads the decision from stdout and logs any
+/// non-zero exit as a *failed* hook (1.1.24); Claude reads stdout only on
+/// exit 0 and renders exit 2 as "hook error" however intentional the
+/// denial (2.1.290, the Lab's `hooks-deny-not-reported-as-error`).
 fn block_exit(target: HookTarget) -> i32 {
-    if target == crate::antigravity::HOOKS {
-        0
-    } else {
-        2
-    }
+    if target == crate::codex::HOOKS { 2 } else { 0 }
 }
 
 #[test]

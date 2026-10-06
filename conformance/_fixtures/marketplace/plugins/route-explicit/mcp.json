@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "route-probe": {
+      "type": "stdio",
+      "command": "./scripts/server",
+      "args": ["--proof", "__UZE_MCP_CONFORMANCE_PROOF__"]
+    }
+  }
+}

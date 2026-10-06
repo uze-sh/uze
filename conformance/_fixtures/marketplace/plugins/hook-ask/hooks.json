@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "effect-ask",
+        "matcher": "shell",
+        "effect": "ask",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe effect-ask deny-marked",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

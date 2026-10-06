@@ -75,7 +75,7 @@ fn a_handler_whose_child_holds_stderr_is_still_stopped_at_its_deadline() {
     let reported = drive(
         &root,
         &observing("sleep 8 & sleep 8", 1),
-        r#"await hooks["execute.before"]({ tool: "bash", input: { command: "ls" } });"#,
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "ls" } });"#,
     );
     assert!(
         started.elapsed() < std::time::Duration::from_secs(6),
@@ -102,7 +102,7 @@ fn the_reason_the_plugin_reports_is_bounded() {
     let reported = drive(
         &root,
         &observing("head -c 200000 /dev/zero | tr '\\0' x >&2; exit 1", 10),
-        r#"await hooks["execute.before"]({ tool: "bash", input: { command: "ls" } });"#,
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "ls" } });"#,
     );
     let reason = reported
         .iter()
@@ -160,9 +160,9 @@ fn the_plugin_runs_the_handlers_on_the_harnesss_own_runtime() {
     let reported = drive(
         &root,
         &hook,
-        r#"await hooks["execute.before"]({ tool: "bash", input: { command: "cat .env" } });
-await hooks["execute.before"]({ tool: "bash", input: { command: "ls -la" } });
-await hooks["execute.before"]({ tool: "read", input: { filePath: "/x" } });"#,
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "cat .env" } });
+await hooks["execute.before"]({ tool: "shell", input: { command: "ls -la" } });
+await hooks["execute.before"]({ tool: "read", input: { path: "/x" } });"#,
     );
     assert!(
         reported

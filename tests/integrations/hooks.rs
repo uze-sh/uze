@@ -110,10 +110,6 @@ fn entry_words(handler: &serde_json::Value) -> Vec<String> {
 
 /// A guard on file writes, which every harness fires its pre-tool event
 /// for on every platform: what a test about an entry's mechanics guards.
-fn file_write_guard() -> &'static str {
-    r#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"file.write","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/scripts/check","timeout":10}]}]}}"#
-}
-
 fn deny_group() -> &'static str {
     r#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/scripts/check","timeout":10}]}]}}"#
 }
@@ -711,7 +707,7 @@ fn reinstalling_replaces_a_previous_packager_entry_and_leaves_foreign_ones() {
 
 #[test]
 fn codex_writes_its_own_hooks_json_command_form() {
-    let (root, resources) = hook_package("codex-hooks", file_write_guard());
+    let (root, resources) = hook_package("codex-hooks", deny_group());
     let protect = hook_resource(&resources, "protect-env");
     let home = UzeHome::at(root.join("uze"));
     let codex = CodexIntegration::new(root.join("agents"), home);
@@ -774,7 +770,7 @@ fn codex_writes_its_own_hooks_json_command_form() {
 
 #[test]
 fn foreign_codex_hooks_survive_attach_and_detach() {
-    let (root, resources) = hook_package("codex-foreign", file_write_guard());
+    let (root, resources) = hook_package("codex-foreign", deny_group());
     let protect = hook_resource(&resources, "protect-env");
     let home = UzeHome::at(root.join("uze"));
     let codex = CodexIntegration::new(root.join("agents"), home);
@@ -928,7 +924,7 @@ fn opencode_bridge_lifecycle_preserves_foreign_plugins_in_the_directory() {
     assert!(source.contains("Plugin.define"));
     assert!(source.contains("tool.hook"));
     assert!(source.contains("\"effect\":\"observe\""));
-    assert!(source.contains("\"matchers\":[\"bash\"]"));
+    assert!(source.contains("\"matchers\":[\"shell\"]"));
 
     assert_eq!(
         integration.inspect_receipt(&receipt).state,

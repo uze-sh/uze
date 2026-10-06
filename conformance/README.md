@@ -60,56 +60,65 @@ credentials):
 real uze → real harness → real TUI → synthetic provider → deterministic result
 ```
 
-Run (3x clean is the gate):
+Run (3x clean is the gate): `python3 lab.py --harness <h>`, both legs, or
+`--part contract|vendor`, or one contract with `--contract <name>`.
 
-```bash
-python3 lab.py --harness antigravity   # 16/16 PASS + 1 ADAPTED (pre-hooks baseline)
-python3 lab.py --harness claude        # 8/8 PASS (pre-hooks baseline)
-python3 lab.py --harness codex         # 11/11 PASS (pre-hooks baseline)
-python3 lab.py --harness opencode      # 14/14 PASS + 1 ADAPTED (pre-hooks baseline)
-```
+What a run proves, and how it is kept honest:
 
-Every vertical additionally runs the **portable-hooks phase** (ADR-033,
-ADR-040): three TUI-first scenarios — `deny` (a real tool call blocked by a
-portable hook, whose relayed reason also carries the portable vocabulary row
-the handler was handed), `allow` (a guard with nothing behind it lets the
-real tool execute, proven by the tool's own output reaching the
-conversation), and `order` (first-deny-wins: the second handler's marker
-must never appear). What the harness runs is the generated `hooks/exec`
-wrapper, not the `uze` binary. Runs are grouped
-`describe`/`test`-style (tui, cli.state, hooks > deny/allow/order) so a
-growing suite stays interpretable, and every wait aborts immediately when
-the harness process dies instead of burning its try budget.
+- **The vocabulary is measured, not recalled** (`shared/vocabulary.py`).
+  Every provider records the tools the harness declares to its model, and
+  the hooks contract's census group records the name and input every call
+  reaches a hook with. The Lab's own expectation
+  (`harnesses/<h>/vocabulary.json`) is checked against both; UZE's binding
+  tables are checked against the committed snapshot
+  (`evidence/tools/<h>.json`) by `cargo test` (`hooks::measured_tests`). A
+  provider refuses to script a tool the harness never declared, and the run
+  fails on it.
+- **Every claimed hook cell is exercised** (`contract/hooks.py`): every
+  bound alias, every claimed event and effect, first-deny-wins and
+  fail-closed, in the harness's TUI. A fixture handler (`scripts/probe`)
+  writes a record of every `HOOK_*` value it received inside the harness
+  container; that record, not a relayed text or an absent side effect, is
+  what proves a hook ran.
+- **No verdict without an observation.** An absence needs a presence proof
+  (`check_absence(..., proof=)`), a limitation is a measurement
+  (`declare(name, holds, ...)`), and `tests/test_lint.py` refuses a literal
+  verdict, a proofless absence, a marker the scripted call already carries
+  and a common-word marker.
+- **The Lab answers no prompt a person meets** except on screen, the way a
+  person does: folder trust, Codex's hook review, Claude's auto-mode notice
+  and every tool approval are answered through the harness's interface.
+  The few answers outside UZE's scope are entries under "Prompts the Lab
+  answers" in `DECISIONS.md`, and the lint fails on one that names none.
+- **Update and removal are exercised** (`contract/lifecycle.py`) from what
+  the model is offered and what is left on disk.
 
-Latest evidence per harness (run-by-run, recorded honestly — including the
-ADAPTED vendor-limitation records and any pre-existing base-phase failure):
-
-```bash
-python3 lab.py --harness claude        # 27/27 PASS (hooks deny/allow/order proven, plus the portable vocabulary row)
-python3 lab.py --harness codex         # 39/39 PASS
-python3 lab.py --harness antigravity   # 31/31 PASS + 10 ADAPTED (hook execution gated by the vendor, measured live)
-python3 lab.py --harness opencode      # 33/33 PASS + 6 ADAPTED (MCP tool not exposed on the V2 beta channel — recorded, never fabricated)
-python3 lab.py --harness uze           # 4/4 PASS
-```
+What the harness runs is the generated `hooks/exec` wrapper, not the `uze`
+binary. Runs are grouped `describe`/`test`-style so a growing suite stays
+interpretable, and every wait aborts when the harness process dies instead
+of burning its try budget.
 
 Evidence JSON goes under `AGY_OUTDIR` (default
 `/tmp/harness-conformance/<harness>/run<N>`). The exit code is 0 only when
-every asserted check passed (ADAPTED counts as passing — it is an honest
-vendor-limitation record, never a rewrite).
+every check passed the gate (a declared limitation passes only when it was
+measured reproducing on a registered version, or on a new one — see below).
 
 ## Gate semantics and evidence integrity (ADR-035)
 
 Every run is adjudicated against `conformance/evidence/expected.json`, the
-**adaptive-result registry** — the anti-false-positive contract:
+**declared-limitation registry** — the anti-false-positive contract
+(`gate.py`):
 
-- an **ADAPTED result without a registry entry** fails the run (a harness
-  losing a capability can never pass silently);
-- a **registered ADAPTED check that starts passing** fails with an
-  *escalate* verdict until the scenario is promoted to an asserted check
-  and the entry removed;
-- entries record a reason and observed harness versions (`*` covers any;
-  pin versions once probed runs establish them) — a vendor bump that
-  changes the meaning of a registered adaptation fails visibly.
+- a **declaration without a registry entry** fails the run;
+- an entry naming `*` or no version fails: versions are where the
+  limitation was measured;
+- a declaration whose **measurement did not run** fails as unproven;
+- a declaration whose measurement **found the control** fails as
+  *escalated*, as does a registered check that records an ordinary pass,
+  until the check is promoted and the entry removed;
+- a declaration that **reproduced on a version the entry does not name**
+  passes, and the run writes `expected.next.json` beside its evidence with
+  the version added, for a maintainer to review and commit.
 
 Every run also records **version provenance**: the real harness version is
 probed with the vendor's own `--version` flag (`claude --version`,
@@ -119,10 +128,11 @@ carries harness/uze versions, fixture revision, image id, and timestamps. A
 harness version change vs. the previous committed summary is reported as an
 explicit `VERSION DRIFT` event.
 
-**Absence assertions** (a marker that must never appear) evaluate only after
-the turn settled and the TUI went quiet (`settle_and_quiet` + `check_absence`
-in `shared/common.py`); an unsettled turn fails the check instead of passing
-by accident. Both windows are timed on `time.monotonic`: a wall clock that a
+**Absence assertions** (a marker that must never appear) evaluate only
+beside a presence proof from the same turn, and after the turn settled and
+the TUI went quiet (`settle_and_quiet` + `check_absence` in
+`shared/common.py`); an unproven or unsettled absence fails instead of
+passing by accident. Both windows are timed on `time.monotonic`: a wall clock that a
 WSL guest re-syncs under the run stepped the budget past its deadline on the
 first comparison and failed two claude `hooks > order` checks on a turn that
 had settled correctly. `conformance/tests/test_settle.py` holds that, and

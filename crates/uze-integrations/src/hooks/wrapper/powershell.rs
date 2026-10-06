@@ -83,7 +83,7 @@ function Allow-Native {{
   {allow_document}
 }}
 
-function Deny-Native([string]$reason) {{
+function Deny-Native([string]$reason, [string]$decision = 'deny') {{
   [Console]::Error.WriteLine($reason)
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
@@ -198,7 +198,12 @@ foreach ($entry in $handlers) {{
   if ($errors.Wait(1000)) {{ $reason = $errors.Result.Trim() }}
   if ($reason.Length -gt {reason_limit}) {{ $reason = $reason.Substring(0, {reason_limit}) }}
   switch ($status) {{
-    {deny_exit_code} {{ if ($reason) {{ Deny-Native $reason }} else {{ Deny-Native "$handler denied the operation" }} }}
+    {deny_exit_code} {{
+      # A handler's own denial in an `ask` group asks the person; only a
+      # failure falls back to denying.
+      $decision = if ($effect -eq 'ask') {{ 'ask' }} else {{ 'deny' }}
+      if ($reason) {{ Deny-Native $reason $decision }} else {{ Deny-Native "$handler denied the operation" $decision }}
+    }}
     124 {{ Fail "handler timed out after ${{seconds}}s: $handler" }}
     default {{ if ($reason) {{ Fail "handler failed (exit $status): $handler — $reason" }} else {{ Fail "handler failed (exit $status): $handler" }} }}
   }}

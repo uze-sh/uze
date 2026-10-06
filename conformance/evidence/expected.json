@@ -1,55 +1,258 @@
 {
-  "_comment": "Adaptive-result registry (ADR-035): every check that may legitimately record ADAPTED. An ADAPTED verdict without an entry fails the run; a registered entry that starts passing fails (escalate) until promoted. `versions` pins observed harness versions; `*` covers any (bootstrap state \u2014 pin after the first probed runs). Update `observed_at` on any touch.",
+  "_comment": "Declared-limitation registry (ADR-035, gate.py): every check that may record a declared limitation, with the measurement that shows it and the harness versions it was measured on. A declaration is re-measured on every run: one that stops reproducing fails as escalated, one that reproduces on a version not listed here passes and the run publishes this file with the version added (expected.next.json). `*` is refused.",
   "adaptive": [
     {
-      "harness": "opencode",
-      "check": "hooks-deny-v2-limitation",
-      "suite": "hooks > deny",
-      "reason": "OpenCode V2 exposes no input-based block (spec: the action-level deny lives in the permission hook, which carries no tool input); the guard handler runs via the owned bridge and the tool still executes.",
+      "harness": "codex",
+      "check": "skill-model-only-is-not-user-invocable",
+      "suite": "skill",
+      "reason": "Codex has no documented way to disable explicit `$skill` invocation; `allow_implicit_invocation: false` leaves it invocable by the person",
+      "measurement": "the model-only Skill is listed in the person's skill catalog",
       "versions": [
-        "*"
+        "codex-cli 0.160.1"
       ],
-      "observed_at": "2026-09-02"
+      "observed_at": "2026-10-05"
+    },
+    {
+      "harness": "codex",
+      "check": "skill-model-only-is-not-invocable",
+      "suite": "skill",
+      "reason": "Codex has no documented way to disable explicit `$skill` invocation",
+      "measurement": "typing `$flow:analyze` put the model-only Skill's body in the model request",
+      "versions": [
+        "codex-cli 0.160.1"
+      ],
+      "observed_at": "2026-10-05"
     },
     {
       "harness": "opencode",
-      "check": "hooks-order-v2-limitation",
-      "suite": "hooks > order",
-      "reason": "OpenCode V2 exposes no input-based block, so a first-deny cannot stop later handlers observably; both handlers run and neither marker reaches the conversation.",
+      "check": "skill-model-only-is-not-user-invocable",
+      "suite": "skill",
+      "reason": "OpenCode V2 defines no field that hides a Skill from the person (`slash` was removed)",
+      "measurement": "the model-only Skill is listed in the `/skills` browser",
       "versions": [
-        "*"
+        "opencode v2.0.23"
       ],
-      "observed_at": "2026-09-02"
+      "observed_at": "2026-10-05"
     },
     {
       "harness": "opencode",
-      "check": "hooks-deny-tool-executed",
-      "suite": "hooks > deny",
-      "reason": "The delivered MCP tool is not exposed on this channel, so handler execution through the bridge is not observable \u2014 the turn and marker semantics are the real harness evidence.",
+      "check": "skill-model-only-is-not-invocable",
+      "suite": "skill",
+      "reason": "OpenCode V2 expands any Skill a person mentions (`@id`)",
+      "measurement": "mentioning `@flow:analyze` put the model-only Skill's body in the model request",
       "versions": [
-        "*"
+        "opencode v2.0.23"
       ],
-      "observed_at": "2026-09-02"
+      "observed_at": "2026-10-05"
     },
     {
-      "harness": "opencode",
-      "check": "hooks-order-tool-executed",
-      "suite": "hooks > order",
-      "reason": "The delivered MCP tool is not exposed on this channel, so handler execution through the bridge is not observable \u2014 the turn and marker semantics are the real harness evidence.",
+      "harness": "antigravity",
+      "check": "agent-vendor-fields-block-model",
+      "suite": "agent",
+      "reason": "Antigravity drops an agent that carries `model`, so UZE leaves the field out and the agent runs on the session's model",
+      "measurement": "the dispatched agent's request names the session's model, not the block's",
       "versions": [
-        "*"
+        "1.2.17"
       ],
-      "observed_at": "2026-09-02"
+      "observed_at": "2026-10-05"
     },
     {
-      "harness": "opencode",
-      "check": "hooks-allow-tool-executed",
-      "suite": "hooks > allow",
-      "reason": "The scripted call is answered `Unknown tool` by the runtime (the delivered MCP tool is not exposed at execution time on this channel), so handler execution through the bridge is not observable \u2014 the turn and marker semantics are the real harness evidence. Observed after the model-exposed escalation (the tool reached the request, execution did not).",
+      "harness": "claude",
+      "check": "vocabulary-search.files-scriptable",
+      "suite": "vocabulary",
+      "reason": "Claude Code's native build searches through Bash (`grep` is its bundled ugrep) and offers `Grep` to the main model only on opt-in (`--allowedTools`/`--tools`) or to a subagent whose tools name it without Bash",
+      "measurement": "the main session's request declares no `Grep`",
       "versions": [
-        "*"
+        "2.1.290 (Claude Code)"
       ],
-      "observed_at": "2026-09-02"
+      "observed_at": "2026-10-05"
+    },
+    {
+      "harness": "claude",
+      "check": "hooks-row-search.files",
+      "suite": "hooks > rows",
+      "reason": "Claude Code's native build searches through Bash (`grep` is its bundled ugrep) and offers `Grep` to the main model only on opt-in (`--allowedTools`/`--tools`) or to a subagent whose tools name it without Bash",
+      "measurement": "the session did not offer `Grep`, so no search reached the `search.files` group",
+      "versions": [
+        "2.1.290 (Claude Code)"
+      ],
+      "observed_at": "2026-10-05"
+    },
+    {
+      "harness": "codex",
+      "check": "hooks-row-file.write",
+      "suite": "hooks > rows",
+      "reason": "Codex 0.160 writes and edits files through `apply_patch`, which reaches a hook with the whole patch in `command` and no path field, so the alias cannot carry the `path` it promises; UZE leaves it unbound",
+      "measurement": "the census saw the call reach hooks as `apply_patch` with `{\"command\"}` alone, and no group ran with the alias",
+      "versions": [
+        "codex-cli 0.160.1"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "codex",
+      "check": "hooks-row-file.edit",
+      "suite": "hooks > rows",
+      "reason": "Codex 0.160 writes and edits files through `apply_patch`, which reaches a hook with the whole patch in `command` and no path field, so the alias cannot carry the `path` it promises; UZE leaves it unbound",
+      "measurement": "the census saw the call reach hooks as `apply_patch` with `{\"command\"}` alone, and no group ran with the alias",
+      "versions": [
+        "codex-cli 0.160.1"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "vocabulary-agent.spawn-scriptable",
+      "suite": "vocabulary",
+      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
+      "measurement": "the default session's requests declare no `invoke_subagent`",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "hooks-row-agent.spawn",
+      "suite": "hooks > rows",
+      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
+      "measurement": "the session did not offer `invoke_subagent`, so no dispatch reached the `agent.spawn` group",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-flat-dispatch-delivers-body",
+      "suite": "agent",
+      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
+      "measurement": "dispatching the agent from the default session put its body in no request",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-nested-dispatch-delivers-body",
+      "suite": "agent",
+      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
+      "measurement": "dispatching the agent from the default session put its body in no request",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-renamed-dispatch-delivers-body",
+      "suite": "agent",
+      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
+      "measurement": "dispatching the agent from the default session put its body in no request",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-vendor-fields-dispatch-delivers-body",
+      "suite": "agent",
+      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
+      "measurement": "dispatching the agent from the default session put its body in no request",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "claude",
+      "check": "hooks-deny-not-reported-as-error",
+      "suite": "hooks",
+      "reason": "Claude Code renders every PreToolUse denial as `PreToolUse:<tool> hook error: <reason>`, the documented `permissionDecision: deny` JSON on exit 0 included; a hand-written hook with no UZE in it shows the same (experiments/claude/deny-render)",
+      "measurement": "the turn that a delivered guard denied shows `hook error` beside the denial's reason",
+      "versions": [
+        "2.1.290 (Claude Code)"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-flat-exposed",
+      "suite": "agent",
+      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
+      "measurement": "no request of the default session offered `flow:auditor` to the model",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-nested-exposed",
+      "suite": "agent",
+      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
+      "measurement": "no request of the default session offered `flow:checks:security` to the model",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-renamed-exposed",
+      "suite": "agent",
+      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
+      "measurement": "no request of the default session offered `flow:linter` to the model",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "agent-vendor-fields-exposed",
+      "suite": "agent",
+      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
+      "measurement": "no request of the default session offered `flow:scout` to the model",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "lifecycle-update-agent-reaches-model",
+      "suite": "lifecycle",
+      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
+      "measurement": "no request of the default session carried the updated agent",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "lifecycle-update-agent-replaced",
+      "suite": "lifecycle",
+      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
+      "measurement": "no request of the default session carried either version of the agent",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "antigravity",
+      "check": "context-project-agent-reaches-model",
+      "suite": "context",
+      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
+      "measurement": "no request of the default session offered the agent the project authored in .agents/agents",
+      "versions": [
+        "1.2.17"
+      ],
+      "observed_at": "2026-10-06"
     }
   ]
 }

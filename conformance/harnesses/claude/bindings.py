@@ -5,7 +5,7 @@ import shlex
 import time
 
 from contract import continuity
-from contract.bindings import Bindings
+from contract.bindings import Bindings, hook_prelude
 from contract.tui import Tui
 
 from .scenarios import claude_container, drive_onboarding
@@ -13,6 +13,7 @@ from .scenarios import claude_container, drive_onboarding
 
 class ClaudeBindings(Bindings):
     harness = "claude"
+    display_name = "Claude Code"
     launch = "exec claude"
     ready_markers = ("Opus", "API Usage Billing", "❯")
     warmup = 6.0
@@ -86,6 +87,7 @@ class ClaudeBindings(Bindings):
         final = f"""{prelude}
 cd {cwd}
 set +e
+# decision: headless-permissions
 timeout 240 claude -p {shlex.quote(prompt)} --permission-mode bypassPermissions \\
   --output-format json 2>&1
 """
@@ -105,9 +107,62 @@ timeout 240 claude -p {shlex.quote(prompt)} --permission-mode bypassPermissions 
             "TOOL_TRIGGER": prompt,
         }
 
+    #: What Claude puts in front of a person during a turn, each answered
+    #: with Enter as a person does: a tool's approval ("Do you want to
+    #: proceed?", "... create", "... make this edit"), whose highlighted
+    #: option is "Yes"; and, since auto mode became the default permission
+    #: mode (2.1.290), its notice about classifier billing ("Enter to
+    #: continue"), which the Lab never saw while it ran with
+    #: `--permission-mode bypassPermissions`.
+    approval_prompts = ("Do you want to", "Enter to continue")
+
+    def hook_session(self, cfg, prov_ip, plugin, tag, before=""):
+        final = f"{hook_prelude(self.hook_project)}\n{before}\ncd {self.hook_project} && {self.launch}"
+        return Tui(
+            cfg,
+            claude_container(cfg, prov_ip, final, plugins=plugin),
+            f"claude-hooks-{tag}",
+        )
+
+    def sequence(self, calls, trigger):
+        """Claude's provider scripts `{"name", "args"}` steps; the trigger
+        keeps a dispatched subagent's own first request from starting the
+        sequence again."""
+        steps = [{"name": c["tool"], "args": c["args"]} for c in calls]
+        return "toolcall", {"TOOL_SEQUENCE": json.dumps(steps), "TOOL_TRIGGER": trigger}
+
+    #: Claude names a plugin's MCP tool `mcp__plugin_<plugin>_<server>__<tool>`
+    #: (`/mcp` lists it as `plugin:uze-mcp-conformance:uze-conformance`) and
+    #: defers it: the model loads it with `ToolSearch` before calling it
+    #: (2.1.290).
+    MCP_TOOL = "mcp__plugin_uze-mcp-conformance_uze-conformance__uze_conformance"
+
+    def mcp_calls(self):
+        return [
+            {
+                "tool": "ToolSearch",
+                "args": {"query": f"select:{self.MCP_TOOL}", "max_results": 1},
+            },
+            {"tool": self.MCP_TOOL, "args": {}},
+        ]
+
     def unsupported(self, prop):
         """Claude Code documents both halves of the invocation policy:
         `disable-model-invocation: true` and `user-invocable: false` (the
         latter hides a Skill from the `/` menu and refuses `/name`), and UZE
-        emits both — nothing to declare."""
+        emits both — nothing to declare there.
+
+        What it does not offer is a way to show a hook's denial as a
+        decision: 2.1.290 renders every `PreToolUse` denial as
+        `PreToolUse:<tool> hook error: <reason>`, the documented
+        `permissionDecision: deny` on stdout with exit 0 as much as exit 2,
+        and from a hand-written hook with no UZE in it
+        (`experiments/claude/deny-render`). UZE answers in the JSON dialect,
+        which at least shows the reason without the handler's path."""
+        if prop == "hooks.deny-rendered-as-decision":
+            return (
+                "Claude Code renders every PreToolUse denial as a hook error, "
+                "the documented JSON decision included (measured with a "
+                "hand-written hook, experiments/claude/deny-render)"
+            )
         return None

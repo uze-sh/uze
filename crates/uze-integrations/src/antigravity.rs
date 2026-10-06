@@ -115,14 +115,17 @@ pub const ID: &str = "antigravity";
 /// Official Unix installer, invoked exactly as the vendor documents:
 /// `curl -fsSL https://antigravity.google/cli/install.sh | bash`.
 ///
-/// Note: the live installer (verified against the current script) accepts
-/// only `-d/--dir` — the docs' `--skip-aliases`/`--skip-path` flags are
-/// **rejected** by the script ("Unknown parameter"), so UZE cannot use
-/// them. The installer therefore appends its own PATH export to the user's
-/// shell profiles (`~/.bashrc`/`~/.zshrc`/`~/.profile`) — vendor behavior
-/// surfaced in its own output, unavoidable in this version. Documented
+/// Note: the script accepts only `-d/--dir` (`--skip-aliases`/`--skip-path`
+/// are "Unknown parameter" to it, 1.2.17) and ends by running the binary's
+/// own `agy install`, which does accept both. Reaching them would mean
+/// downloading the binary and running `agy install --skip-path` ourselves,
+/// which leaves the documented route; so the installer appends its PATH
+/// export to the user's shell profiles (`~/.bashrc`/`~/.zshrc`/`~/.profile`)
+/// — vendor behavior surfaced in its own output. Documented
 /// destination: `~/.local/bin/agy`.
 const INSTALLER_URL: &str = "https://antigravity.google/cli/install.sh";
+/// The most of one rules file Antigravity reads (1.2.7).
+const RULES_FILE_LIMIT: u64 = 24_000;
 /// The PowerShell installer the vendor documents for Windows.
 const WINDOWS_INSTALLER_URL: &str = "https://antigravity.google/cli/install.ps1";
 
@@ -257,6 +260,19 @@ impl IntegrationPort for AntigravityIntegration {
     /// Reads the shared `AGENTS.md` natively (official docs: identical
     /// workspace context rules) plus the legacy `GEMINI.md` global-rules
     /// file, which is observed for portability reporting only.
+    /// Antigravity reads at most 24,000 bytes of a rules file and points at
+    /// the rest by path (1.2.7 release notes; the built-in rules doc), so an
+    /// `AGENTS.md` past that is only partly in front of the model.
+    fn context_unread(&self, _project_root: &Path, instructions: &Path) -> Option<String> {
+        let size = std::fs::metadata(instructions).ok()?.len();
+        (size > RULES_FILE_LIMIT).then(|| {
+            format!(
+                "Antigravity reads the first {RULES_FILE_LIMIT} bytes of AGENTS.md ({size} here) \
+                 and points at the rest by path"
+            )
+        })
+    }
+
     fn context_delivery(&self) -> ContextDelivery {
         ContextDelivery::Native {
             files: &["GEMINI.md"],
@@ -340,9 +356,8 @@ impl IntegrationPort for AntigravityIntegration {
     fn provision(&self, runner: &dyn ProcessRunner) -> Result<ProvisioningResult> {
         // Install: the documented official Unix installer (curl | bash).
         // The installer appends its own PATH export to the user's shell
-        // profiles — vendor behavior; the docs' `--skip-aliases`/
-        // `--skip-path` flags are rejected by the current script (see
-        // INSTALLER_URL). Update: the installer exits early when the
+        // profiles — vendor behavior; only the binary's own `agy install`
+        // takes `--skip-path`, not the script (see INSTALLER_URL). Update: the installer exits early when the
         // binary already exists ("agy automatically self-updates in the
         // background"), so the update verb is the official `agy update`
         // subcommand (present in 1.1.19's `--help`).
@@ -671,16 +686,21 @@ impl AntigravityIntegration {
             .unwrap_or_default();
         let label = agent_label(&self.uze_home, resource);
         let content = markdown_agent(&label, resource, &ANTIGRAVITY_AGENT, &self.harness_keys());
-        agent_file_plan(
-            &self.agents_dir,
-            &label,
-            "md",
-            content,
-            projection_route(
-                "Antigravity CLI natively discovers Markdown custom agents from its global agents directory and names each by its frontmatter `name`; UZE writes the definition there under the agent's label, receipt-owned by its content.",
-                &not_carried,
+        let (_, evidence) = projection_route(
+            "Antigravity CLI natively discovers Markdown custom agents from its global agents directory and names each by its frontmatter `name`; UZE writes the definition there under the agent's label, receipt-owned by its content.",
+            &not_carried,
+        );
+        // Delivered and listed, but out of reach of the agent a person
+        // starts on: 1.2.17 offers `invoke_subagent` only to an agent whose
+        // own definition lists it (Lab `agent-*-exposed`).
+        let route = (
+            CompatibilityRoute::Degraded,
+            format!(
+                "The default agent cannot dispatch it: Antigravity offers `invoke_subagent` only \
+                 to an agent whose definition lists it. {evidence}"
             ),
-        )
+        );
+        agent_file_plan(&self.agents_dir, &label, "md", content, route)
     }
 
     /// A Hook resource's delivery: one named entry merged into the shared
@@ -721,8 +741,9 @@ impl PreferencePort for AntigravityIntegration {
 const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "agents",
-        fact: "offers an agent from its global agents directory by its frontmatter `name`",
-        measured_on: VERSION,
+        fact: "offers a delivered agent, by its frontmatter `name`, only to an agent whose \
+               definition lists `invoke_subagent`; the default agent is not given the tool",
+        measured_on: "1.2.17",
         proven_by: "contract/agent.py::_assert_dispatch",
     },
     HarnessFact {
@@ -739,9 +760,10 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "hooks",
-        fact: "reads hooks from its shared `hooks.json`, never from a plugin's",
-        measured_on: VERSION,
-        proven_by: "harnesses/antigravity/scenarios.py::phase_hooks_delivery",
+        fact: "runs each group UZE merges into its shared `hooks.json`, relaying the \
+               tool's own name and input",
+        measured_on: "1.2.17",
+        proven_by: "contract/hooks.py::_rows",
     },
 ];
 /// The version the facts above were measured on.

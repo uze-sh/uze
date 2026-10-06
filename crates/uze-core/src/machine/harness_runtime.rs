@@ -129,7 +129,7 @@ pub fn resolve_harness_executable(
         })
 }
 
-fn resolve_real_executable_in(
+pub(crate) fn resolve_real_executable_in(
     search_path: impl IntoIterator<Item = PathBuf>,
     names: &[&str],
     shims_dir: &Path,
@@ -418,7 +418,6 @@ mod tests {
     // Its stand-in programs are POSIX scripts (`make_executable`).
     #[cfg(unix)]
     fn resolves_real_executable_skipping_shims_dir_even_when_it_is_first_on_path() {
-        let mut env = uze_testkit::env::scope();
         let root = uze_testkit::temp::scratch("resolve");
         let shims_dir = root.join("shims");
         let real_bin_dir = root.join("real-bin");
@@ -431,12 +430,12 @@ mod tests {
         make_executable(&shims_dir.join("claude"));
         make_executable(&real_bin_dir.join("claude"));
 
-        env.set(
-            "PATH",
-            std::env::join_paths([&shims_dir, &real_bin_dir]).unwrap(),
-        );
-
-        let resolved = resolve_real_executable(&["claude"], &shims_dir).expect("resolved");
+        let resolved = resolve_real_executable_in(
+            [shims_dir.clone(), real_bin_dir.clone()],
+            &["claude"],
+            &shims_dir,
+        )
+        .expect("resolved");
         assert_eq!(resolved, real_bin_dir.join("claude").canonical().unwrap());
     }
 
@@ -444,7 +443,6 @@ mod tests {
     // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     fn a_path_entry_that_links_into_the_shims_dir_is_skipped_too() {
-        let mut env = uze_testkit::env::scope();
         let root = uze_testkit::temp::scratch("resolve-linked");
         let shims_dir = root.join("shims");
         let aliased_dir = root.join("aliased");
@@ -459,13 +457,12 @@ mod tests {
         std::os::unix::fs::symlink(shims_dir.join("claude"), linked_bin_dir.join("claude"))
             .unwrap();
 
-        env.set(
-            "PATH",
-            std::env::join_paths([&aliased_dir, &linked_bin_dir, &real_bin_dir]).unwrap(),
-        );
-
         assert_eq!(
-            resolve_real_executable(&["claude"], &shims_dir),
+            resolve_real_executable_in(
+                [aliased_dir, linked_bin_dir, real_bin_dir.clone()],
+                &["claude"],
+                &shims_dir
+            ),
             Some(real_bin_dir.join("claude").canonical().unwrap())
         );
     }
@@ -474,7 +471,6 @@ mod tests {
     // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     fn the_running_executable_is_never_resolved_as_the_harness() {
-        let mut env = uze_testkit::env::scope();
         let root = uze_testkit::temp::scratch("resolve-self");
         let shims_dir = root.join("shims");
         let linked_bin_dir = root.join("local-bin");
@@ -486,24 +482,25 @@ mod tests {
         )
         .unwrap();
 
-        env.set("PATH", std::env::join_paths([&linked_bin_dir]).unwrap());
-
-        assert_eq!(resolve_real_executable(&["claude"], &shims_dir), None);
+        assert_eq!(
+            resolve_real_executable_in([linked_bin_dir], &["claude"], &shims_dir),
+            None
+        );
     }
 
     #[test]
     // Its stand-in programs are POSIX scripts (`make_executable`).
     #[cfg(unix)]
     fn no_real_executable_on_path_resolves_to_none_not_the_shim() {
-        let mut env = uze_testkit::env::scope();
         let root = uze_testkit::temp::scratch("resolve-none");
         let shims_dir = root.join("shims");
         fs::create_dir_all(&shims_dir).unwrap();
         make_executable(&shims_dir.join("claude"));
 
-        env.set("PATH", std::env::join_paths([&shims_dir]).unwrap());
-
-        assert_eq!(resolve_real_executable(&["claude"], &shims_dir), None);
+        assert_eq!(
+            resolve_real_executable_in([shims_dir.clone()], &["claude"], &shims_dir),
+            None
+        );
     }
 
     /// A project root that exists, with a projection already prepared for

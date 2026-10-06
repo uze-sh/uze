@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-post-deny",
+  "description": "Conformance deny after a shell call: the guard denies a command carrying `lab-deny` once it ran, so the reason must reach the model in the harness's own dialect."
+}

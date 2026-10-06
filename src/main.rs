@@ -837,6 +837,7 @@ mod status_output_tests {
             project_lock: ProjectLockStatus::Absent,
             drift: EnvironmentDrift::default(),
             issues: Vec::new(),
+            held_back: Vec::new(),
         };
         ProjectStatus {
             report,

@@ -67,7 +67,7 @@ pub(super) fn handler_entry(hook: &PortableHook, invocation: &HookInvocation) ->
 pub(crate) const NO_WRAPPER_TEMPLATE: &str =
     "no wrapper template for this platform, so the hook is not delivered";
 
-pub(super) const fn hook_event_name(event: HookEvent) -> &'static str {
+pub(crate) const fn hook_event_name(event: HookEvent) -> &'static str {
     match event {
         HookEvent::PreToolUse => "PreToolUse",
         HookEvent::PostToolUse => "PostToolUse",

@@ -27,7 +27,7 @@ function Allow-Native {
   if ($hookEvent -eq 'stop') { [Console]::Out.Write('{}') }
 }
 
-function Deny-Native([string]$reason) {
+function Deny-Native([string]$reason, [string]$decision = 'deny') {
   [Console]::Error.WriteLine($reason)
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
@@ -88,13 +88,9 @@ $env:HOOK_COMMAND = ''
 $env:HOOK_PATH = ''
 $env:HOOK_QUERY = ''
 switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {  # the portable vocabulary
-  'exec_command' { $env:HOOK_TOOL = 'shell'; $env:HOOK_COMMAND = Text (Pick $toolInput @('cmd')) }
-  'Bash' { $env:HOOK_TOOL = 'shell'; $env:HOOK_COMMAND = Text (Pick $toolInput @('cmd')) }
-  'Read' { $env:HOOK_TOOL = 'file.read'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
-  'Write' { $env:HOOK_TOOL = 'file.write'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
-  'Edit' { $env:HOOK_TOOL = 'file.edit'; $env:HOOK_PATH = Text (Pick $toolInput @('file_path')) }
-  'Grep' { $env:HOOK_TOOL = 'search.files'; $env:HOOK_QUERY = Text (Pick $toolInput @('pattern')) }
-  'WebSearch' { $env:HOOK_TOOL = 'search.web'; $env:HOOK_QUERY = Text (Pick $toolInput @('query')) }
+  'Bash' { $env:HOOK_TOOL = 'shell'; $env:HOOK_COMMAND = Text (Pick $toolInput @('command')) }
+  'collaborationspawn_agent' { $env:HOOK_TOOL = 'agent.spawn' }
+  'collaborationsend_message' { $env:HOOK_TOOL = 'agent.message' }
 }
 
 # --- the handlers, in order; the first denial stops the rest --------------
@@ -152,7 +148,12 @@ foreach ($entry in $handlers) {
   if ($errors.Wait(1000)) { $reason = $errors.Result.Trim() }
   if ($reason.Length -gt 4096) { $reason = $reason.Substring(0, 4096) }
   switch ($status) {
-    3 { if ($reason) { Deny-Native $reason } else { Deny-Native "$handler denied the operation" } }
+    3 {
+      # A handler's own denial in an `ask` group asks the person; only a
+      # failure falls back to denying.
+      $decision = if ($effect -eq 'ask') { 'ask' } else { 'deny' }
+      if ($reason) { Deny-Native $reason $decision } else { Deny-Native "$handler denied the operation" $decision }
+    }
     124 { Fail "handler timed out after ${seconds}s: $handler" }
     default { if ($reason) { Fail "handler failed (exit $status): $handler — $reason" } else { Fail "handler failed (exit $status): $handler" } }
   }
