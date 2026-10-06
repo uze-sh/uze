@@ -284,7 +284,8 @@ mod tests {
     }
 
     /// A command that fails until its third run: each run appends a line,
-    /// and the third finds two already there.
+    /// and the third finds two already there. A POSIX shell script, like
+    /// every stand-in program here.
     #[cfg(unix)]
     fn failing_twice(attempts: &std::path::Path) -> ProcessSpec {
         let script = format!(
@@ -294,6 +295,7 @@ mod tests {
         ProcessSpec::new("sh", ["-c", script.as_str()])
     }
 
+    // Only the POSIX tests above read their stand-in's record.
     #[cfg(unix)]
     fn runs(attempts: &std::path::Path) -> usize {
         std::fs::read_to_string(attempts).unwrap().lines().count()
