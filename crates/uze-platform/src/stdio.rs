@@ -1,5 +1,7 @@
 //! The process's own standard streams.
 
+use std::time::{Duration, Instant};
+
 /// Makes a write to a reader that went away end the process quietly, as a
 /// command piped into `head` is expected to. Called only on paths that print
 /// a report: a server writing to a peer that hung up must see the error,
@@ -21,6 +23,23 @@ pub fn terminal() -> Option<(std::fs::File, std::fs::File)> {
     imp::terminal()
 }
 
+/// Asks the terminal a question in its own escape-sequence language and
+/// collects what it writes back, until `answered` says the reply is whole.
+/// `None` where there is no terminal to ask, or it had not finished
+/// answering when `patience` ran out.
+///
+/// Its input is taken out of line editing and echo for the exchange only,
+/// since a reply arrives as input: echoed it lands on the screen, and line
+/// buffered it waits for a newline that never comes. Ask before anything
+/// else starts reading that input, or the reply is read as keystrokes.
+pub fn ask_terminal(
+    question: &[u8],
+    answered: &dyn Fn(&[u8]) -> bool,
+    patience: Duration,
+) -> Option<Vec<u8>> {
+    imp::ask_terminal(question, answered, Instant::now() + patience)
+}
+
 /// Whether escape sequences written to stdout reach a terminal that draws
 /// them as styling: stdout is a terminal, and on Unix one that names itself
 /// something other than `dumb`; on Windows a console, in which processing
@@ -40,6 +59,109 @@ pub fn silence_stdout() {
 #[cfg(unix)]
 mod imp {
     use std::os::fd::AsRawFd;
+
+    use super::{Duration, Instant};
+
+    pub(super) fn ask_terminal(
+        question: &[u8],
+        answered: &dyn Fn(&[u8]) -> bool,
+        deadline: Instant,
+    ) -> Option<Vec<u8>> {
+        let mut tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .ok()?;
+        ask_on(&mut tty, question, answered, deadline)
+    }
+
+    fn ask_on(
+        tty: &mut std::fs::File,
+        question: &[u8],
+        answered: &dyn Fn(&[u8]) -> bool,
+        deadline: Instant,
+    ) -> Option<Vec<u8>> {
+        let fd = tty.as_raw_fd();
+        // Safety: `termios` is plain data, filled in whole by `tcgetattr`.
+        let mut saved: libc::termios = unsafe { std::mem::zeroed() };
+        // Safety: `fd` is open for the life of `tty`.
+        if unsafe { libc::tcgetattr(fd, &mut saved) } != 0 {
+            return None;
+        }
+        let mut quiet = saved;
+        quiet.c_lflag &= !(libc::ICANON | libc::ECHO);
+        // Safety: as above.
+        if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &quiet) } != 0 {
+            return None;
+        }
+        let reply = exchange(tty, question, answered, deadline);
+        // Safety: as above; puts back exactly what was read.
+        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &saved) };
+        reply
+    }
+
+    fn exchange(
+        tty: &mut std::fs::File,
+        question: &[u8],
+        answered: &dyn Fn(&[u8]) -> bool,
+        deadline: Instant,
+    ) -> Option<Vec<u8>> {
+        use std::io::{ErrorKind, Read as _, Write as _};
+        tty.write_all(question).ok()?;
+        let mut reply = Vec::new();
+        let mut chunk = [0u8; 256];
+        while !answered(&reply) {
+            let left = deadline.checked_duration_since(Instant::now())?;
+            match readable_within(tty.as_raw_fd(), left) {
+                Readiness::Ready => {}
+                Readiness::Interrupted => continue,
+                Readiness::TimedOut => return None,
+            }
+            match tty.read(&mut chunk) {
+                Ok(0) => return None,
+                Ok(read) => reply.extend_from_slice(&chunk[..read]),
+                Err(error) if error.kind() == ErrorKind::Interrupted => {}
+                Err(_) => return None,
+            }
+        }
+        Some(reply)
+    }
+
+    enum Readiness {
+        Ready,
+        Interrupted,
+        TimedOut,
+    }
+
+    /// `select` rather than `poll`, because macOS's `poll` refuses a
+    /// terminal device.
+    fn readable_within(fd: std::os::fd::RawFd, wait: Duration) -> Readiness {
+        // Safety: `fd_set` and `timeval` are plain data, and `select` only
+        // reads and writes the two passed by reference.
+        unsafe {
+            let mut readable: libc::fd_set = std::mem::zeroed();
+            libc::FD_ZERO(&mut readable);
+            libc::FD_SET(fd, &mut readable);
+            let mut timeout = libc::timeval {
+                tv_sec: wait.as_secs() as libc::time_t,
+                tv_usec: wait.subsec_micros() as libc::suseconds_t,
+            };
+            match libc::select(
+                fd + 1,
+                &mut readable,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut timeout,
+            ) {
+                ready if ready > 0 => Readiness::Ready,
+                0 => Readiness::TimedOut,
+                _ if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted => {
+                    Readiness::Interrupted
+                }
+                _ => Readiness::TimedOut,
+            }
+        }
+    }
 
     pub(super) fn terminal() -> Option<(std::fs::File, std::fs::File)> {
         let open = |write: bool| {
@@ -69,15 +191,209 @@ mod imp {
             unsafe { libc::dup2(null.as_raw_fd(), libc::STDOUT_FILENO) };
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use std::{
+            io::{Read as _, Write as _},
+            os::fd::FromRawFd as _,
+            thread,
+        };
+
+        use super::*;
+
+        const QUESTION: &[u8] = b"\x1b]11;?\x1b\\\x1b[c";
+
+        /// A pseudoterminal: the end a terminal emulator holds, and the
+        /// end a program asks on.
+        fn pseudoterminal() -> (std::fs::File, std::fs::File) {
+            let (mut terminal, mut program) = (0, 0);
+            // Safety: both descriptors are written by `openpty` and owned
+            // by the files made from them; the optional arguments are null.
+            unsafe {
+                assert_eq!(
+                    libc::openpty(
+                        &mut terminal,
+                        &mut program,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                    ),
+                    0,
+                    "openpty"
+                );
+                (
+                    std::fs::File::from_raw_fd(terminal),
+                    std::fs::File::from_raw_fd(program),
+                )
+            }
+        }
+
+        fn ends_with_device_attributes(reply: &[u8]) -> bool {
+            reply.ends_with(b"c")
+        }
+
+        fn local_modes(tty: &std::fs::File) -> libc::tcflag_t {
+            // Safety: as in `ask_on`.
+            let mut modes: libc::termios = unsafe { std::mem::zeroed() };
+            assert_eq!(unsafe { libc::tcgetattr(tty.as_raw_fd(), &mut modes) }, 0);
+            modes.c_lflag
+        }
+
+        #[test]
+        fn the_reply_is_read_until_it_is_whole_and_the_question_reaches_the_terminal() {
+            let (mut terminal, mut program) = pseudoterminal();
+            let emulator = thread::spawn(move || {
+                let mut asked = vec![0u8; QUESTION.len()];
+                terminal.read_exact(&mut asked).expect("the question");
+                // In two writes, as a reply crossing a connection arrives.
+                terminal.write_all(b"\x1b]11;rgb:ffff/").expect("reply");
+                thread::sleep(Duration::from_millis(20));
+                terminal
+                    .write_all(b"ffff/ffff\x07\x1b[?62c")
+                    .expect("reply");
+                (asked, terminal)
+            });
+            let reply = ask_on(
+                &mut program,
+                QUESTION,
+                &ends_with_device_attributes,
+                Instant::now() + Duration::from_secs(5),
+            );
+            let (asked, _terminal) = emulator.join().expect("emulator");
+            assert_eq!(asked, QUESTION);
+            assert_eq!(
+                reply.as_deref(),
+                Some(&b"\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?62c"[..])
+            );
+        }
+
+        #[test]
+        fn a_terminal_that_never_answers_is_given_up_on_at_the_deadline() {
+            let (_terminal, mut program) = pseudoterminal();
+            let started = Instant::now();
+            let reply = ask_on(
+                &mut program,
+                QUESTION,
+                &ends_with_device_attributes,
+                Instant::now() + Duration::from_millis(100),
+            );
+            assert_eq!(reply, None);
+            assert!(started.elapsed() < Duration::from_secs(2));
+        }
+
+        #[test]
+        fn the_terminal_is_handed_back_editing_and_echoing_as_it_was() {
+            let (_terminal, mut program) = pseudoterminal();
+            let before = local_modes(&program);
+            assert_ne!(before & libc::ICANON, 0, "a fresh terminal edits lines");
+            let _ = ask_on(
+                &mut program,
+                QUESTION,
+                &ends_with_device_attributes,
+                Instant::now() + Duration::from_millis(50),
+            );
+            assert_eq!(local_modes(&program), before);
+        }
+    }
 }
 
 #[cfg(windows)]
 mod imp {
     use std::os::windows::io::IntoRawHandle;
+
+    use super::Instant;
     use windows_sys::Win32::System::Console::{
         ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_OUTPUT_HANDLE,
         SetConsoleMode, SetStdHandle,
     };
+
+    /// The reply arrives as key events carrying its characters, once the
+    /// console is asked for input as escape sequences
+    /// (`ENABLE_VIRTUAL_TERMINAL_INPUT`), which is also what takes line
+    /// editing and echo away for the exchange.
+    pub(super) fn ask_terminal(
+        question: &[u8],
+        answered: &dyn Fn(&[u8]) -> bool,
+        deadline: Instant,
+    ) -> Option<Vec<u8>> {
+        use windows_sys::Win32::System::Console::{
+            ENABLE_VIRTUAL_TERMINAL_INPUT, STD_INPUT_HANDLE,
+        };
+        if !escapes_reach_the_terminal() {
+            return None;
+        }
+        // SAFETY: a standard handle is this process's for its lifetime;
+        // both calls read or write only the mode passed by reference.
+        unsafe {
+            let input = GetStdHandle(STD_INPUT_HANDLE);
+            let mut saved = 0;
+            if GetConsoleMode(input, &mut saved) == 0
+                || SetConsoleMode(input, ENABLE_VIRTUAL_TERMINAL_INPUT) == 0
+            {
+                return None;
+            }
+            let reply = exchange(input, question, answered, deadline);
+            SetConsoleMode(input, saved);
+            reply
+        }
+    }
+
+    fn exchange(
+        input: windows_sys::Win32::Foundation::HANDLE,
+        question: &[u8],
+        answered: &dyn Fn(&[u8]) -> bool,
+        deadline: Instant,
+    ) -> Option<Vec<u8>> {
+        use std::io::Write as _;
+        use windows_sys::Win32::{
+            Foundation::WAIT_OBJECT_0,
+            System::{
+                Console::{INPUT_RECORD, KEY_EVENT, ReadConsoleInputW},
+                Threading::WaitForSingleObject,
+            },
+        };
+        let mut stdout = std::io::stdout().lock();
+        stdout.write_all(question).ok()?;
+        stdout.flush().ok()?;
+        let mut reply = Vec::new();
+        while !answered(&reply) {
+            let left = deadline.checked_duration_since(Instant::now())?;
+            let millis = u32::try_from(left.as_millis()).unwrap_or(u32::MAX).max(1);
+            // SAFETY: `input` is this process's console input handle.
+            if unsafe { WaitForSingleObject(input, millis) } != WAIT_OBJECT_0 {
+                return None;
+            }
+            // SAFETY: `INPUT_RECORD` is plain data, and the console writes
+            // at most `records.len()` of them, saying how many in `read`.
+            let mut records: [INPUT_RECORD; 64] = unsafe { std::mem::zeroed() };
+            let mut read = 0u32;
+            if unsafe {
+                ReadConsoleInputW(input, records.as_mut_ptr(), records.len() as u32, &mut read)
+            } == 0
+            {
+                return None;
+            }
+            for record in &records[..read as usize] {
+                if u32::from(record.EventType) != KEY_EVENT {
+                    continue;
+                }
+                // SAFETY: `EventType` says which member of the union is live.
+                let key = unsafe { record.Event.KeyEvent };
+                // SAFETY: both members of `uChar` are plain data.
+                let unit = unsafe { key.uChar.UnicodeChar };
+                // A reply is ASCII; anything wider is a keystroke that
+                // raced it, and nothing a reply could be made of.
+                if key.bKeyDown != 0
+                    && let Ok(byte) = u8::try_from(unit)
+                    && byte != 0
+                {
+                    reply.push(byte);
+                }
+            }
+        }
+        Some(reply)
+    }
 
     /// A console's mode is the console's, not this process's: setting it
     /// on stdout is what every program that draws in colour does, and it
