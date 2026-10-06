@@ -82,10 +82,13 @@ LIFECYCLE = {
 HOOK_DENIALS = (
     *(
         f"lab-hook-denied:{label}"
-        for label in ("effect-guard", "effect-ask", "post-guard")
+        for label in ("effect-guard", "effect-ask", "post-guard", "exec-guard")
     ),
-    # The wrapper's own reason when a guard cannot run (fail-closed).
+    # The wrapper's own reason when a guard cannot run (fail-closed): its
+    # shell's exit, or, where a handler is spawned from its words with no
+    # shell between (OpenCode's bridge), the spawn that never started.
     "handler failed (exit",
+    "handler failed to start",
 )
 
 _ROOT_REF = re.compile(r"UZE_ROOT_REF=([^\s\"'\\`]+)")

@@ -370,6 +370,7 @@ def validate_marketplace(cfg):
         "hook-rows": "./plugins/hook-rows",
         "hook-effects": "./plugins/hook-effects",
         "hook-exec": "./plugins/hook-exec",
+        "hook-needs-python": "./plugins/hook-needs-python",
         "hook-events": "./plugins/hook-events",
         "hook-ask": "./plugins/hook-ask",
         "hook-post-deny": "./plugins/hook-post-deny",
@@ -424,6 +425,9 @@ def validate_marketplace(cfg):
         "plugins/hook-exec/hooks.json",
         "plugins/hook-exec/plugin.json",
         "plugins/hook-exec/scripts/probe.js",
+        "plugins/hook-needs-python/hooks.json",
+        "plugins/hook-needs-python/plugin.json",
+        "plugins/hook-needs-python/scripts/guard.py",
     )
     for relative_path in required:
         path = os.path.join(cfg.marketplace_source, relative_path)

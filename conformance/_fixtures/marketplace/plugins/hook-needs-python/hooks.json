@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "needs-python",
+        "matcher": "shell",
+        "effect": "deny",
+        "hooks": [
+          { "type": "command", "command": "scripts/guard.py", "args": [], "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}

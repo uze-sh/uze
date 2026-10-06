@@ -43,6 +43,10 @@
       "source": "./plugins/hook-exec"
     },
     {
+      "name": "hook-needs-python",
+      "source": "./plugins/hook-needs-python"
+    },
+    {
       "name": "hook-events",
       "source": "./plugins/hook-events"
     },

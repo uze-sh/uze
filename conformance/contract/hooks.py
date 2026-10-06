@@ -26,6 +26,7 @@ accepted through its own keys (`bindings.hook_turn`), never by a flag.
 """
 
 import json
+import subprocess
 
 from contract import declared
 from shared import common, vocabulary
@@ -50,6 +51,7 @@ def assert_contract(cfg, prov_ip, bindings):
             _deny(cfg, bindings, expected)
             _fail_closed(cfg, bindings, expected)
             _exec_form(cfg, bindings, expected)
+            _unmet_requirement(cfg, bindings, expected)
         if "ask" in effects:
             _ask(cfg, bindings, expected)
         if "transform" in effects:
@@ -89,10 +91,11 @@ def relayed(cfg, text):
 PROMPT = "run the lab checks"
 
 
-def _scene(cfg, bindings, tag, plugin, calls, prompt=PROMPT):
+def _scene(cfg, bindings, tag, plugin, calls, prompt=PROMPT, probe=None):
     """Runs one turn in which the model makes `calls`, with `plugin`
     installed. Returns (records, side effects, turn) read while the harness
-    is still alive."""
+    is still alive; with `probe`, what `probe(cfg)` answered then too, as a
+    fourth element."""
     mode, env = bindings.sequence(calls, prompt)
     prov_ip = common.start_provider(cfg, mode, env)
     with bindings.hook_session(cfg, prov_ip, plugin, tag) as tui:
@@ -105,10 +108,11 @@ def _scene(cfg, bindings, tag, plugin, calls, prompt=PROMPT):
             else plain[-160:].replace("\n", " "),
         )
         if not ready:
-            return {}, set(), None
+            return ({}, set(), None, None) if probe else ({}, set(), None)
         turn = bindings.hook_turn(tui, prompt)
         tui.snapshot(f"hooks-{tag}", turn.plain)
-        return records(cfg), side_effects(cfg, bindings), turn
+        found = records(cfg), side_effects(cfg, bindings), turn
+        return (*found, probe(cfg)) if probe else found
 
 
 def _rows(cfg, bindings, expected):
@@ -390,6 +394,91 @@ def _exec_form(cfg, bindings, expected):
             settled,
             proof=bool(guard) and reason,
             detail="the denied command never ran" if "denied" not in side else "it ran",
+        )
+
+
+def _machine(cfg):
+    """What the harness's machine has, and what `uze status -m` says it
+    lacks, both asked inside the running harness container."""
+
+    def run(command):
+        return subprocess.run(
+            [
+                "docker",
+                "exec",
+                cfg.harness_container,
+                "sh",
+                "-c",
+                "HOME=/work/home UZE_HOME=/work/home/.uze "
+                "PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/.local/bin " + command,
+            ],
+            capture_output=True,
+            text=True,
+            errors="replace",
+        )
+
+    python = run("command -v python3").returncode == 0
+    try:
+        status = json.loads(run("uze status -m --format json").stdout)
+    except ValueError:
+        status = None
+    return {"python3": python, "status": status}
+
+
+def _unmet_requirement(cfg, bindings, expected):
+    """A guard whose interpreter the machine lacks: the Lab image carries no
+    python3, so the requirement report must name it as what the guard needs
+    and say the guard denies until it exists, and the guard must deny."""
+    shell = expected["aliases"]["shell"]
+    call = bindings.call(shell["call"], side=f"{SIDE}/unmet")
+    with describe("unmet requirement"):
+        _, side, turn, machine = _scene(
+            cfg,
+            bindings,
+            "unmet",
+            "hook-needs-python",
+            [{"tool": vocabulary.call_tool(shell), "args": call}],
+            probe=_machine,
+        )
+        machine = machine or {}
+        absent = machine.get("python3") is False
+        check(
+            "hooks-unmet-python-absent",
+            absent,
+            "the machine has no python3" if absent else f"machine: {machine}",
+        )
+        gaps = [
+            gap
+            for package in (machine.get("status") or {}).get("packages", [])
+            if package.get("id", "").startswith("hook-needs-python")
+            for gap in package.get("requirement_gaps", [])
+        ]
+        named = [
+            gap
+            for gap in gaps
+            if gap.get("executable") == "python3"
+            and "needs-python" in gap.get("denies_while_unmet", [])
+        ]
+        check(
+            "hooks-unmet-reported",
+            absent and bool(named),
+            "uze status names python3 as what the guard needs, and that it denies"
+            if named
+            else f"gaps: {gaps}",
+        )
+        # A wrapper's shell exits 127; a bridge spawning the words directly
+        # never starts the program. Either is the guard failing closed.
+        reason = relayed(cfg, "handler failed (exit") or relayed(
+            cfg, "handler failed to start"
+        )
+        check_absence(
+            "hooks-unmet-tool-blocked",
+            "unmet" not in side,
+            turn is not None and turn.settled,
+            proof=reason,
+            detail="the call never ran while its guard could not start"
+            if "unmet" not in side
+            else "it ran",
         )
 
 
