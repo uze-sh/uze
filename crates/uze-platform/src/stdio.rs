@@ -25,8 +25,8 @@ pub fn terminal() -> Option<(std::fs::File, std::fs::File)> {
 
 /// Asks the terminal a question in its own escape-sequence language and
 /// collects what it writes back, until `answered` says the reply is whole.
-/// `None` where there is no terminal to ask, or it had not finished
-/// answering when `patience` ran out.
+/// `None` where there is no terminal to ask, where it had not finished
+/// answering when `patience` ran out, and on Windows, which does not ask.
 ///
 /// Its input is taken out of line editing and echo for the exchange only,
 /// since a reply arrives as input: echoed it lands on the screen, and line
@@ -308,91 +308,16 @@ mod imp {
         SetConsoleMode, SetStdHandle,
     };
 
-    /// The reply arrives as key events carrying its characters, once the
-    /// console is asked for input as escape sequences
-    /// (`ENABLE_VIRTUAL_TERMINAL_INPUT`), which is also what takes line
-    /// editing and echo away for the exchange.
+    /// Unknown on Windows: the desktop's own setting always answers there
+    /// (`desktop::color_scheme`), so nothing has had to ask a console, and
+    /// a console's input is not a byte stream a reply can simply be read
+    /// back from.
     pub(super) fn ask_terminal(
-        question: &[u8],
-        answered: &dyn Fn(&[u8]) -> bool,
-        deadline: Instant,
+        _question: &[u8],
+        _answered: &dyn Fn(&[u8]) -> bool,
+        _deadline: Instant,
     ) -> Option<Vec<u8>> {
-        use windows_sys::Win32::System::Console::{
-            ENABLE_VIRTUAL_TERMINAL_INPUT, STD_INPUT_HANDLE,
-        };
-        if !escapes_reach_the_terminal() {
-            return None;
-        }
-        // SAFETY: a standard handle is this process's for its lifetime;
-        // both calls read or write only the mode passed by reference.
-        unsafe {
-            let input = GetStdHandle(STD_INPUT_HANDLE);
-            let mut saved = 0;
-            if GetConsoleMode(input, &mut saved) == 0
-                || SetConsoleMode(input, ENABLE_VIRTUAL_TERMINAL_INPUT) == 0
-            {
-                return None;
-            }
-            let reply = exchange(input, question, answered, deadline);
-            SetConsoleMode(input, saved);
-            reply
-        }
-    }
-
-    fn exchange(
-        input: windows_sys::Win32::Foundation::HANDLE,
-        question: &[u8],
-        answered: &dyn Fn(&[u8]) -> bool,
-        deadline: Instant,
-    ) -> Option<Vec<u8>> {
-        use std::io::Write as _;
-        use windows_sys::Win32::{
-            Foundation::WAIT_OBJECT_0,
-            System::{
-                Console::{INPUT_RECORD, KEY_EVENT, ReadConsoleInputW},
-                Threading::WaitForSingleObject,
-            },
-        };
-        let mut stdout = std::io::stdout().lock();
-        stdout.write_all(question).ok()?;
-        stdout.flush().ok()?;
-        let mut reply = Vec::new();
-        while !answered(&reply) {
-            let left = deadline.checked_duration_since(Instant::now())?;
-            let millis = u32::try_from(left.as_millis()).unwrap_or(u32::MAX).max(1);
-            // SAFETY: `input` is this process's console input handle.
-            if unsafe { WaitForSingleObject(input, millis) } != WAIT_OBJECT_0 {
-                return None;
-            }
-            // SAFETY: `INPUT_RECORD` is plain data, and the console writes
-            // at most `records.len()` of them, saying how many in `read`.
-            let mut records: [INPUT_RECORD; 64] = unsafe { std::mem::zeroed() };
-            let mut read = 0u32;
-            if unsafe {
-                ReadConsoleInputW(input, records.as_mut_ptr(), records.len() as u32, &mut read)
-            } == 0
-            {
-                return None;
-            }
-            for record in &records[..read as usize] {
-                if u32::from(record.EventType) != KEY_EVENT {
-                    continue;
-                }
-                // SAFETY: `EventType` says which member of the union is live.
-                let key = unsafe { record.Event.KeyEvent };
-                // SAFETY: both members of `uChar` are plain data.
-                let unit = unsafe { key.uChar.UnicodeChar };
-                // A reply is ASCII; anything wider is a keystroke that
-                // raced it, and nothing a reply could be made of.
-                if key.bKeyDown != 0
-                    && let Ok(byte) = u8::try_from(unit)
-                    && byte != 0
-                {
-                    reply.push(byte);
-                }
-            }
-        }
-        Some(reply)
+        None
     }
 
     /// A console's mode is the console's, not this process's: setting it
