@@ -95,7 +95,7 @@ mod imp {
         ["reg.exe", "/mnt/c/Windows/System32/reg.exe"]
             .into_iter()
             .find_map(|program| {
-                let output = quiet(Command::new(program).args([
+                let output = quiet(crate::tools::system(program).args([
                     "query",
                     PERSONALIZE,
                     "/v",

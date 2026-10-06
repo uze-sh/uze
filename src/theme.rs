@@ -149,7 +149,7 @@ pub fn resolve_with_layers(
 }
 
 /// The theme an id draws in: itself, or for the adaptive selection, the one
-/// chosen for the background the terminal was last seen with.
+/// chosen for the background last observed.
 pub fn concrete(app: &UzeApplication, id: &str) -> Result<String> {
     if id == ADAPTIVE {
         adaptive_half(app, app.themes().background())
@@ -422,7 +422,7 @@ mod tests {
         let home = scratch("theme-adaptive-follows");
         select(&home, ADAPTIVE);
 
-        // Nothing has asked the terminal yet: dark, as UZE always drew.
+        // Nothing has been observed yet: dark, as UZE always drew.
         let loaded = chosen(&home).expect("resolves").expect("chosen");
         assert_eq!(background_of(&loaded), Background::Dark);
 
