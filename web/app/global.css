@@ -122,6 +122,28 @@ html > body[data-scroll-locked] {
   gap: 6px;
   white-space: nowrap;
 }
+/*
+  The tables inside a harness's tab keep the same columns from one tab to the
+  next: sized by content, they jumped as the reader switched harness.
+*/
+.harness-capabilities table,
+.harness-facts table {
+  table-layout: fixed;
+  width: 100%;
+}
+.harness-capabilities th:nth-child(1) {
+  width: 30%;
+}
+.harness-capabilities th:nth-child(2) {
+  width: 3.25rem;
+}
+.harness-facts th:nth-child(1) {
+  width: 22%;
+}
+.harness-facts th:nth-child(3) {
+  width: 7.5rem;
+}
+
 .harness-table-icon {
   width: 14px;
   height: 14px;

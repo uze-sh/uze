@@ -1,0 +1,5 @@
+The generated plugin is served from a marketplace UZE manages; a skill the plugin does not cover
+gets a directory of its own in `~/.claude/skills`. Project context arrives through the `CLAUDE.md`
+bridge (`@AGENTS.md`), the only bridge UZE maintains. Hooks merge into Claude Code's own
+user-scope hook configuration. Its prompt renders every hook denial as a "hook error", even
+one that worked as intended.

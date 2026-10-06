@@ -743,7 +743,7 @@ const FACTS: &[HarnessFact] = &[
         subject: "agents",
         fact: "offers a delivered agent, by its frontmatter `name`, only to an agent whose \
                definition lists `invoke_subagent`; the default agent is not given the tool",
-        measured_on: "1.2.17",
+        measured_on: VERSION,
         proven_by: "contract/agent.py::_assert_dispatch",
     },
     HarnessFact {
@@ -762,22 +762,22 @@ const FACTS: &[HarnessFact] = &[
         subject: "hooks",
         fact: "runs each group UZE merges into its shared `hooks.json`, relaying the \
                tool's own name and input",
-        measured_on: "1.2.17",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_rows",
     },
     HarnessFact {
         subject: "hooks",
         fact: "runs a flat `SessionStart` entry its docs do not list, once per new \
                conversation at its first model call, never on `--continue`",
-        measured_on: "1.2.17",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_events",
     },
     HarnessFact {
         subject: "hooks",
         fact: "runs the args a PreToolUse hook hands back as `overwrite` beside `allow`, a field its docs do not list",
-        measured_on: "1.3.0",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_transform",
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "1.2.12";
+const VERSION: &str = "1.3.0";

@@ -1,0 +1,8 @@
+OpenCode has no plugin envelope UZE can hand a package to, so UZE delivers each capability
+itself: skills and agents to OpenCode's own directories, MCP to its global config, and hooks
+through a plugin UZE owns and regenerates, since OpenCode has no declarative hook surface. That
+plugin rides OpenCode's plugin API, so every event and effect reaches it; its permission prompt
+shows the call but not a hook's reason for asking. A skill is invoked as a mention, not a slash
+command, and since OpenCode has no control that hides a skill from the person, a model-only
+skill is reported degraded. Its binary is detected as `opencode`, with the legacy `opencode2`
+alias still resolved.

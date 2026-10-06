@@ -764,7 +764,7 @@ const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "project agents",
         fact: "reads no `./.agents/agents`, and its extra-configuration environment reaches only the shared service a launch starts, which serves it to every project",
-        measured_on: VERSION,
+        measured_on: "2.0.18",
         proven_by: "experiments/opencode/project-agents.py::run",
     },
     HarnessFact {
@@ -776,7 +776,7 @@ const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "skills",
         fact: "lists a skill's supporting files only when its directory is not a link",
-        measured_on: VERSION,
+        measured_on: "2.0.18",
         proven_by: "experiments/opencode/skill_files.py::run",
     },
     HarnessFact {
@@ -789,7 +789,7 @@ const FACTS: &[HarnessFact] = &[
         subject: "hooks",
         fact: "runs a delivered tool hook through the bridge plugin, relaying the V2 \
                tool's own name and input, before and after the call",
-        measured_on: "2.0.24",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_rows",
     },
     HarnessFact {
@@ -797,18 +797,18 @@ const FACTS: &[HarnessFact] = &[
         fact: "refuses or asks about a call through `permission.evaluate`, announces a new \
                session and the end of a turn on its event bus, and continues a session \
                given synthetic input",
-        measured_on: "2.0.24",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_deny",
     },
     HarnessFact {
         subject: "hooks",
         fact: "runs the input a plugin assigns to `execute.before`'s `input`",
-        measured_on: "2.0.24",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_transform",
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "2.0.18";
+const VERSION: &str = "2.0.24";
 
 #[cfg(test)]
 mod lifecycle_tests {

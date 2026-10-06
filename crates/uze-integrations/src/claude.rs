@@ -742,7 +742,7 @@ const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "plugins",
         fact: "reads a directory-marketplace plugin live from its source; its cache copy drops linked files",
-        measured_on: VERSION,
+        measured_on: "2.1.283",
         proven_by: "experiments/claude/parity.py::observed",
     },
     HarnessFact {
@@ -761,25 +761,25 @@ const FACTS: &[HarnessFact] = &[
         subject: "hooks",
         fact: "runs a delivered `SessionStart`, `PostToolUse` and `Stop` group, each \
                naming its event",
-        measured_on: "2.1.290",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_events",
     },
     HarnessFact {
         subject: "hooks",
         fact: "puts a call a hook answers with `permissionDecision: ask` to the person, \
                showing the hook's reason, and runs it once approved",
-        measured_on: "2.1.291",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_ask",
     },
     HarnessFact {
         subject: "hooks",
         fact: "runs the input a PreToolUse hook hands back as `updatedInput` beside `allow`",
-        measured_on: "2.1.291",
+        measured_on: VERSION,
         proven_by: "contract/hooks.py::_transform",
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "2.1.283";
+const VERSION: &str = "2.1.291";
 
 #[cfg(test)]
 mod lifecycle_tests {
