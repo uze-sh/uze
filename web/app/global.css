@@ -144,6 +144,56 @@ html > body[data-scroll-locked] {
   width: 7.5rem;
 }
 
+/* components/support.tsx: a support level as a mark, in the theme's tokens. */
+.support {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+}
+.support svg {
+  flex-shrink: 0;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.support[data-level='native'] .support-fill {
+  fill: var(--color-success);
+}
+.support .support-check-on-fill {
+  stroke: var(--color-paper);
+  stroke-width: 2.5;
+}
+.support[data-level='uze'] .support-ring,
+.support[data-level='uze'] .support-check {
+  stroke: var(--color-success);
+}
+.support[data-level='partial'] .support-ring,
+.support[data-level='partial'] .support-check {
+  stroke: var(--color-warn);
+}
+.support .support-dash,
+.support[data-level='experimental'] .support-ring {
+  stroke: var(--color-muted);
+}
+.support .support-ring-dashed {
+  stroke-dasharray: 3 3;
+}
+.support[data-level='planned'] .support-fill {
+  fill: var(--color-muted);
+}
+.support-label {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+.support-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 1rem 0;
+}
+
 .harness-table-icon {
   width: 14px;
   height: 14px;
