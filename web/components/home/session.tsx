@@ -84,9 +84,9 @@ const yaml = (key: string, value?: string, indent = 0): Row =>
 
 // This repository's own agents.yaml, trimmed to the keys the page talks about.
 const manifest: Row[] = [
-  yaml('worktrees'),
-  yaml('default', 'isolated', 2),
-  yaml('completion', 'pr', 2),
+  yaml('workspace'),
+  yaml('worktree', 'always', 2),
+  yaml('delivery', 'pr', 2),
   yaml('branch', 'conventional', 2),
   [],
   yaml('marketplaces'),
