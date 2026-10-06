@@ -2857,3 +2857,48 @@ fn a_file_reads_as_it_is_and_the_map_as_nothing() {
     view.content = ContentMode::Map;
     assert!(text(&view, 0..2).is_empty());
 }
+
+/// What the viewer folded stays folded when they come back — a compact
+/// row included, which used to reopen because only its deepest directory
+/// was folded and the chain's head carried the opening down again.
+#[test]
+fn a_folded_directory_stays_folded_when_the_surface_is_opened_again() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_file("/w/src/main.rs", "fn main() {}\n")
+        .with_directory("/w/deep")
+        .with_directory("/w/deep/er")
+        .with_file("/w/deep/er/x.rs", "\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    for path in ["/w/src", "/w/deep"] {
+        view.select(PathBuf::from(path));
+        press(&mut view, Command::Activate);
+        settle(&mut view, &machine);
+    }
+    assert_eq!(
+        item_names_of_tree(&view),
+        ["src", "main.rs", "deep/er", "x.rs", "README.md"]
+    );
+    for path in ["/w/src", "/w/deep/er"] {
+        view.select(PathBuf::from(path));
+        press(&mut view, Command::Activate);
+        settle(&mut view, &machine);
+    }
+    let folded = ["src", "deep", "README.md"];
+    assert_eq!(item_names_of_tree(&view), folded);
+
+    let mut back = files_at("/w").resuming(view.place());
+    settle(&mut back, &machine);
+    assert_eq!(item_names_of_tree(&back), folded);
+
+    // And opening the chain again is still one press.
+    back.select(PathBuf::from("/w/deep"));
+    press(&mut back, Command::Activate);
+    settle(&mut back, &machine);
+    assert_eq!(
+        item_names_of_tree(&back),
+        ["src", "deep/er", "x.rs", "README.md"]
+    );
+}

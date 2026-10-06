@@ -1190,6 +1190,17 @@ impl CodeView {
         }
     }
 
+    /// Opens a directory the viewer asked to open, down its chain of only
+    /// children. Already listed, the chain is opened here; otherwise the
+    /// listing's own answer does it.
+    fn unfold(&mut self, path: PathBuf) {
+        let listed = self.files.listings.contains_key(&path);
+        self.expand(path.clone());
+        if listed {
+            self.open_chain_below(&path);
+        }
+    }
+
     /// Opens a directory, reading it the first time it is opened.
     fn expand(&mut self, path: PathBuf) {
         // Neither read nor already asked for: a directory opened twice
@@ -1521,7 +1532,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
                 .and_then(|path| view.files.row_at(&view.root, &path))
                 .filter(|row| row.directory)
             {
-                view.expand(row.path);
+                view.unfold(row.path);
             }
         }
         Command::Activate if view.focus == Focus::Navigator => activate_selection(view),
@@ -1643,7 +1654,7 @@ fn fold_tree_row(view: &mut CodeView) {
         return;
     };
     if row.directory && row.expanded {
-        view.files.expanded.remove(&row.path);
+        view.files.fold(&view.root, &row.path);
     } else if let Some(parent) = view.files.enclosing_row(&view.root, &row.path) {
         view.selected = Some(parent);
     }
@@ -1668,9 +1679,9 @@ fn activate_selection(view: &mut CodeView) {
             };
             if row.directory {
                 if row.expanded {
-                    view.files.expanded.remove(&row.path);
+                    view.files.fold(&view.root, &row.path);
                 } else {
-                    view.expand(row.path);
+                    view.unfold(row.path);
                 }
                 return;
             }
@@ -1732,9 +1743,9 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(row) {
                     view.selected = Some(row.path.clone());
                     if row.expanded {
-                        view.files.expanded.remove(&row.path);
+                        view.files.fold(&view.root, &row.path);
                     } else {
-                        view.expand(row.path);
+                        view.unfold(row.path);
                     }
                 }
             }

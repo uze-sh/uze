@@ -103,6 +103,26 @@ impl Files {
         }
     }
 
+    /// Folds the row drawn at `path`, and every directory drawn in it.
+    ///
+    /// A compact row (see [`row_for`]) stands for a chain, and folding
+    /// only its deepest directory left the rest of the chain open — so
+    /// the first listing of the chain's head after the surface was opened
+    /// again carried the opening down it, and the row came back unfolded.
+    pub(super) fn fold(&mut self, root: &Path, path: &Path) {
+        let chain: Vec<PathBuf> = path
+            .ancestors()
+            .skip(1)
+            .take_while(|ancestor| *ancestor != root && self.row_at(root, ancestor).is_none())
+            .filter(|ancestor| self.expanded.contains(*ancestor))
+            .map(Path::to_path_buf)
+            .collect();
+        self.expanded.remove(path);
+        for directory in chain {
+            self.expanded.remove(&directory);
+        }
+    }
+
     /// The row a viewer steps out to from `path`: the nearest drawn
     /// directory holding it. Not simply the parent, which is not drawn
     /// when it is folded into a compact row.
