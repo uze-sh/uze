@@ -833,6 +833,7 @@ fn a_surfaces_question_is_drawn_as_the_products_dialog() {
             body: "Puts the file back.".to_owned(),
             confirm: "Discard".to_owned(),
             on_confirm: false,
+            field: None,
         }),
         modes: Vec::new(),
         subjects: Vec::new(),
@@ -1911,6 +1912,7 @@ fn a_question_over_the_content_leaves_no_text_to_mark() {
             body: "The edits are lost.".to_owned(),
             confirm: "Discard".to_owned(),
             on_confirm: false,
+            field: None,
         }),
         ..sample()
     };

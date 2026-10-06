@@ -143,9 +143,10 @@ impl PartialOrd for DirEntry {
 /// ships today actually needs, and a wider surface would be speculation
 /// about one that does not exist yet.
 ///
-/// Four of them write ([`Host::write_file`], [`Host::delete_file`],
-/// [`Host::restore_to_head`], and the directory listing that makes the
-/// first two reachable), which is a
+/// Five of them write ([`Host::write_file`], [`Host::delete_file`],
+/// [`Host::delete_dir`], [`Host::rename_path`] and
+/// [`Host::restore_to_head`]), reached through the directory listing,
+/// which is a
 /// widening of what this trait once granted and the reason it is worth
 /// stating plainly: an extension that edits a file needs to be *given*
 /// that, and a grant nobody can name is a grant nobody can withhold.
@@ -201,9 +202,24 @@ pub trait Host {
     fn write_file(&self, path: &std::path::Path, contents: &str) -> Result<(), String>;
 
     /// Removes `path`. Files only — a directory removal is recursive by
-    /// nature, and "delete this" meaning "delete these four hundred" is
-    /// not a gesture a single keystroke should be able to make.
+    /// nature, and is [`Host::delete_dir`], a grant of its own.
     fn delete_file(&self, path: &std::path::Path) -> Result<(), String>;
+
+    /// Removes the directory `path` and everything in it. Its own grant
+    /// rather than a flag on [`Host::delete_file`], because "delete this"
+    /// meaning "delete these four hundred" is a different thing to hand
+    /// over. Refused by default: a host grants it by saying so.
+    fn delete_dir(&self, path: &std::path::Path) -> Result<(), String> {
+        Err(format!("{} cannot be deleted here", path.display()))
+    }
+
+    /// Gives `from` the name `to`, which must sit in the same directory
+    /// and must not exist: this renames, it neither moves nor overwrites.
+    /// Refused by default, for the reason [`Host::delete_dir`] is.
+    fn rename_path(&self, from: &std::path::Path, to: &std::path::Path) -> Result<(), String> {
+        let _ = to;
+        Err(format!("{} cannot be renamed here", from.display()))
+    }
 
     /// Puts each of `paths` back the way `root`'s last commit has it, in
     /// the index and on disk alike: restored where the commit has the

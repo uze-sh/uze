@@ -71,19 +71,21 @@ use crate::{
     view::{Caret, Command, ContentLine, Role, ScrollDirection, Size, Span, ViewHit},
 };
 
-mod change_menu;
 mod changes;
 mod diff;
 mod editor;
+mod exclude;
 mod files;
 mod history;
 mod map;
 mod render;
 mod request;
+mod row_menu;
 mod treemap;
 
 pub use crate::shared::markdown::render as markdown;
 pub use changes::{ChangeSummary, change_summary};
+pub use exclude::Exclusions;
 pub use history::{Commit, CommitDetail, Timeline, commit_detail, timeline, timeline_section};
 pub use map::{FileMeasure, Measure, measure};
 pub use render::view;
@@ -255,9 +257,11 @@ pub struct CodeView {
     /// Closing with unsaved changes, waiting for its second Esc.
     confirming_discard: bool,
     /// The actions open on a changed file, if any.
-    menu: Option<change_menu::ChangeMenu>,
+    menu: Option<row_menu::FileMenu>,
     /// A discard asked for and not yet answered.
-    discarding: Option<change_menu::Discarding>,
+    discarding: Option<row_menu::Discarding>,
+    /// A new name being typed for a file or a directory.
+    renaming: Option<row_menu::Renaming>,
 }
 
 /// Where a viewer was on a checkout's code surface, so that opening it
@@ -362,6 +366,7 @@ impl CodeView {
             confirming_discard: false,
             menu: None,
             discarding: None,
+            renaming: None,
         };
         if view.navigator() == NavigatorMode::Files {
             view.expand(view.root.clone());
@@ -466,6 +471,12 @@ impl CodeView {
                 .open
                 .as_ref()
                 .is_some_and(|open| open.editing && open.error.is_none())
+    }
+
+    /// Whether a letter is text here rather than a shortcut: a file open
+    /// for typing, or a new name being typed for one.
+    pub fn typing(&self) -> bool {
+        self.editing() || self.renaming.is_some()
     }
 
     /// The path the cursor stands on, whichever half it is in.
@@ -633,12 +644,12 @@ impl CodeView {
                 entries,
                 chain,
             } => match entries {
-                Ok(mut entries) => {
-                    entries.retain(files::is_shown);
-                    let first_read = self.files.listings.insert(path.clone(), entries).is_none();
-                    for (directory, mut listed) in chain {
-                        listed.retain(files::is_shown);
-                        self.files.listings.entry(directory).or_insert(listed);
+                Ok(entries) => {
+                    let first_read = self.files.install(&self.root, path.clone(), entries);
+                    for (directory, listed) in chain {
+                        if !self.files.listings.contains_key(&directory) {
+                            self.files.install(&self.root, directory, listed);
+                        }
                     }
                     // A directory opened onto a single directory is drawn
                     // as one row with it (see `files::row_for`), so the
@@ -670,6 +681,21 @@ impl CodeView {
                     self.notice = Some(Span::new(message, Role::Danger));
                 }
             },
+            FileAnswer::Excluded(answer) => {
+                // Settings that cannot be read hide nothing, and say so:
+                // a tree held back on them would be no tree at all.
+                let exclusions = answer.unwrap_or_else(|message| {
+                    self.notice = Some(Span::new(message, Role::Warning));
+                    Exclusions::default()
+                });
+                if self.files.exclude(&self.root, exclusions) {
+                    let listed: Vec<PathBuf> = self.files.listings.keys().cloned().collect();
+                    self.queue.extend(listed.into_iter().map(FileRequest::List));
+                }
+                for directory in self.files.expanded.clone() {
+                    self.expand(directory);
+                }
+            }
             FileAnswer::Read { path, file } => {
                 let Some(open) = self.open.as_mut().filter(|open| open.path == path) else {
                     return;
@@ -711,6 +737,17 @@ impl CodeView {
                 open.place_caret(wanted);
             }
             FileAnswer::Saved { path, outcome } => {
+                // The settings the tree is pruned by were just edited
+                // here, and the tree should say so now.
+                if outcome.is_ok()
+                    && path
+                        == self
+                            .root
+                            .join(exclude::SETTINGS_DIRECTORY)
+                            .join(exclude::SETTINGS_FILE)
+                {
+                    self.ask_for_exclusions();
+                }
                 let open = self.open.as_mut().filter(|open| open.path == path);
                 let written = open.and_then(|open| {
                     let revision = open.saving.pop_front()?;
@@ -773,13 +810,62 @@ impl CodeView {
                         format!("deleted {}", file_name(&path)),
                         Role::Success,
                     ));
-                    if self.open.as_ref().is_some_and(|open| open.path == path) {
+                    // A directory takes everything under it along.
+                    if self
+                        .open
+                        .as_ref()
+                        .is_some_and(|open| open.path.starts_with(&path))
+                    {
                         self.open = None;
                     }
-                    if self.selected.as_ref() == Some(&path) {
-                        self.selected = None;
+                    if self
+                        .selected
+                        .as_ref()
+                        .is_some_and(|selected| selected.starts_with(&path))
+                    {
+                        self.selected = path.parent().map(Path::to_path_buf);
                     }
+                    self.files.forget(&path);
                     if let Some(parent) = path.parent() {
+                        self.queue
+                            .push_back(FileRequest::List(parent.to_path_buf()));
+                    }
+                }
+                Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
+            },
+            FileAnswer::Renamed { from, to, outcome } => match outcome {
+                Ok(()) => {
+                    self.notice = Some(Span::new(
+                        format!("renamed {} to {}", file_name(&from), file_name(&to)),
+                        Role::Success,
+                    ));
+                    self.files.carry(&from, &to);
+                    let reopened: Vec<PathBuf> = self
+                        .files
+                        .expanded
+                        .iter()
+                        .filter(|open| open.starts_with(&to))
+                        .cloned()
+                        .collect();
+                    for directory in reopened {
+                        self.expand(directory);
+                    }
+                    let moved =
+                        |path: &Path| path.strip_prefix(&from).ok().map(|rest| to.join(rest));
+                    if let Some(selected) = self.selected.as_deref().and_then(moved) {
+                        self.selected = Some(selected);
+                    }
+                    // The open file is read again under its new name; an
+                    // unsaved buffer stays where it is rather than be
+                    // dropped, and its save then says the old path is gone.
+                    if let Some(open) = self.open.as_ref().filter(|open| !open.modified)
+                        && let Some(path) = moved(&open.path)
+                    {
+                        self.open = None;
+                        self.selected = Some(path);
+                        self.load_selection(None);
+                    }
+                    if let Some(parent) = to.parent() {
                         self.queue
                             .push_back(FileRequest::List(parent.to_path_buf()));
                     }
@@ -1162,6 +1248,17 @@ impl CodeView {
         }
     }
 
+    /// Opens a directory the viewer asked to open, down its chain of only
+    /// children. Already listed, the chain is opened here; otherwise the
+    /// listing's own answer does it.
+    fn unfold(&mut self, path: PathBuf) {
+        let listed = self.files.listings.contains_key(&path);
+        self.expand(path.clone());
+        if listed {
+            self.open_chain_below(&path);
+        }
+    }
+
     /// Opens a directory, reading it the first time it is opened.
     fn expand(&mut self, path: PathBuf) {
         // Neither read nor already asked for: a directory opened twice
@@ -1172,9 +1269,24 @@ impl CodeView {
             .iter()
             .any(|request| matches!(request, FileRequest::List(queued) if *queued == path));
         if !asked && !self.files.listings.contains_key(&path) {
-            self.queue.push_back(FileRequest::List(path.clone()));
+            match self.files.exclusions {
+                Some(_) => self.queue.push_back(FileRequest::List(path.clone())),
+                // Listed once they land (see `Files::exclusions`).
+                None => self.ask_for_exclusions(),
+            }
         }
         self.files.expanded.insert(path);
+    }
+
+    fn ask_for_exclusions(&mut self) {
+        let asked = self
+            .queue
+            .iter()
+            .any(|request| matches!(request, FileRequest::Exclusions(_)));
+        if !asked {
+            self.queue
+                .push_back(FileRequest::Exclusions(self.root.clone()));
+        }
     }
 
     /// Moves the selection one row in whichever list is showing.
@@ -1232,7 +1344,7 @@ impl CodeView {
             .filter(|open| open.editing && open.error.is_none())
         {
             open.insert_text(text);
-            self.follow_caret(space.height);
+            self.follow_caret(crate::view::text_height(space));
         }
     }
 
@@ -1397,7 +1509,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
     // answer, plus the two that leave typing.
     if view.editing() {
         let outcome = edit_command(view, command, space);
-        view.follow_caret(space.height);
+        view.follow_caret(crate::view::text_height(space));
         return outcome;
     }
 
@@ -1408,12 +1520,16 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         return map_command(view, command, space);
     }
 
+    if view.renaming.is_some() {
+        row_menu::rename_command(view, command);
+        return CodeOutcome::Stay;
+    }
     if view.discarding.is_some() {
-        change_menu::answer_command(view, command);
+        row_menu::answer_command(view, command);
         return CodeOutcome::Stay;
     }
     if view.menu.is_some() {
-        return change_menu::command(view, command);
+        return row_menu::command(view, command);
     }
 
     // Answered the way the discard question is: the keyboard moves
@@ -1478,7 +1594,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
                 .and_then(|path| view.files.row_at(&view.root, &path))
                 .filter(|row| row.directory)
             {
-                view.expand(row.path);
+                view.unfold(row.path);
             }
         }
         Command::Activate if view.focus == Focus::Navigator => activate_selection(view),
@@ -1486,13 +1602,22 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         Command::ScrollPageDown => view.scroll = view.scroll.saturating_add(space.height.max(1)),
         // The move the whole surface is for: from a line of the diff into
         // that line of the file, ready to change it.
-        Command::OpenMenu => {
-            if view.navigator() == NavigatorMode::Changes
-                && let Some(index) = view.selected_change()
-            {
-                change_menu::open(view, index);
+        Command::OpenMenu => match view.navigator() {
+            NavigatorMode::Changes => {
+                if let Some(index) = view.selected_change() {
+                    row_menu::open(view, index);
+                }
             }
-        }
+            NavigatorMode::Files => {
+                if let Some(row) = view
+                    .selected
+                    .clone()
+                    .and_then(|path| view.files.row_at(&view.root, &path))
+                {
+                    row_menu::open_in_tree(view, row.path, row.directory);
+                }
+            }
+        },
         // A change is reviewed, kept or thrown away here; the file itself
         // is edited and deleted in the files half, where it is the subject.
         Command::Edit | Command::Delete if view.navigator() == NavigatorMode::Changes => {}
@@ -1517,21 +1642,16 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         }
         Command::ToggleMap => view.toggle_map(),
         Command::Delete => {
-            match view.selected.clone().filter(|path| {
-                !view
+            if let Some(path) = view.selected.clone() {
+                let directory = view
                     .files
-                    .row_at(&view.root, path)
-                    .is_some_and(|row| row.directory)
-            }) {
-                Some(path) => {
-                    view.confirming_delete = Some(Deleting {
-                        path,
-                        on_confirm: false,
-                    });
-                }
-                None => {
-                    view.notice = Some(Span::new("only files are deletable", Role::Warning));
-                }
+                    .row_at(&view.root, &path)
+                    .is_some_and(|row| row.directory);
+                view.confirming_delete = Some(Deleting {
+                    path,
+                    directory,
+                    on_confirm: false,
+                });
             }
         }
         _ => {}
@@ -1539,10 +1659,11 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
     CodeOutcome::Stay
 }
 
-/// A file asked about before it is deleted, and which answer the
-/// keyboard is on — the way out until it is moved.
+/// A file or a directory asked about before it is deleted, and which
+/// answer the keyboard is on — the way out until it is moved.
 struct Deleting {
     path: PathBuf,
+    directory: bool,
     on_confirm: bool,
 }
 
@@ -1551,7 +1672,10 @@ fn answer_delete(view: &mut CodeView, yes: bool) {
         return;
     };
     match yes {
-        true => view.queue.push_back(FileRequest::Delete(deleting.path)),
+        true => view.queue.push_back(match deleting.directory {
+            true => FileRequest::DeleteDirectory(deleting.path),
+            false => FileRequest::Delete(deleting.path),
+        }),
         false => view.notice = Some(Span::new("delete cancelled", Role::Muted)),
     }
 }
@@ -1572,8 +1696,8 @@ fn edit_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutco
         Command::Close => open.editing = false,
         Command::Newline => open.split_line(),
         Command::Indent => open.indent(),
-        Command::ScrollPageUp => open.page(usize::from(space.height), false),
-        Command::ScrollPageDown => open.page(usize::from(space.height), true),
+        Command::ScrollPageUp => open.page(usize::from(crate::view::text_height(space)), false),
+        Command::ScrollPageDown => open.page(usize::from(crate::view::text_height(space)), true),
         Command::EraseBack => open.backspace(),
         Command::EraseForward => open.delete_forward(),
         Command::Type(character) => open.insert(character),
@@ -1600,7 +1724,7 @@ fn fold_tree_row(view: &mut CodeView) {
         return;
     };
     if row.directory && row.expanded {
-        view.files.expanded.remove(&row.path);
+        view.files.fold(&view.root, &row.path);
     } else if let Some(parent) = view.files.enclosing_row(&view.root, &row.path) {
         view.selected = Some(parent);
     }
@@ -1625,9 +1749,9 @@ fn activate_selection(view: &mut CodeView) {
             };
             if row.directory {
                 if row.expanded {
-                    view.files.expanded.remove(&row.path);
+                    view.files.fold(&view.root, &row.path);
                 } else {
-                    view.expand(row.path);
+                    view.unfold(row.path);
                 }
                 return;
             }
@@ -1641,7 +1765,7 @@ fn activate_selection(view: &mut CodeView) {
 /// The pointer moved over the surface, without pressing anything.
 /// Answers whether the frame has to be drawn again.
 pub fn handle_hover(view: &mut CodeView, hit: Option<ViewHit>) -> bool {
-    change_menu::hover(view, hit)
+    row_menu::hover(view, hit)
 }
 
 pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> CodeOutcome {
@@ -1656,17 +1780,26 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
     if view.content == ContentMode::Map {
         return map_mouse(view, hit, space);
     }
+    if view.renaming.is_some() {
+        row_menu::rename_mouse(view, hit);
+        return CodeOutcome::Stay;
+    }
     if view.discarding.is_some() {
-        change_menu::answer_mouse(view, hit);
+        row_menu::answer_mouse(view, hit);
         return CodeOutcome::Stay;
     }
     if view.menu.is_some() {
-        return change_menu::mouse(view, hit);
+        return row_menu::mouse(view, hit);
     }
     match hit {
-        Some(ViewHit::OpenMenu(index)) if view.navigator() == NavigatorMode::Changes => {
-            change_menu::open(view, index);
-        }
+        Some(ViewHit::OpenMenu(index)) => match view.navigator() {
+            NavigatorMode::Changes => row_menu::open(view, index),
+            NavigatorMode::Files => {
+                if let Some(row) = view.files.rows(&view.root).into_iter().nth(index) {
+                    row_menu::open_in_tree(view, row.path, row.directory);
+                }
+            }
+        },
         Some(ViewHit::SelectItem(index)) => match view.navigator() {
             NavigatorMode::Changes => {
                 if let Some(file) = view.changes.files.get(index) {
@@ -1689,9 +1822,9 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(row) {
                     view.selected = Some(row.path.clone());
                     if row.expanded {
-                        view.files.expanded.remove(&row.path);
+                        view.files.fold(&view.root, &row.path);
                     } else {
-                        view.expand(row.path);
+                        view.unfold(row.path);
                     }
                 }
             }

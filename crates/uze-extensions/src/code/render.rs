@@ -87,7 +87,9 @@ pub fn view(code: &CodeView, space: Size) -> View {
         },
         footer,
         notice: notice(code),
-        confirm: super::change_menu::confirm(code).or_else(|| delete_confirm(code)),
+        confirm: super::row_menu::confirm(code)
+            .or_else(|| super::row_menu::rename_confirm(code))
+            .or_else(|| delete_confirm(code)),
         modes: modes(code),
         subjects: subjects(code),
         layout: Layout::Sidebar,
@@ -234,18 +236,28 @@ fn mode_label(showing: Showing) -> String {
 /// other such question is, naming the file.
 fn delete_confirm(code: &CodeView) -> Option<Confirm> {
     let deleting = code.confirming_delete.as_ref()?;
+    let (title, body) = match deleting.directory {
+        true => (
+            "Delete folder",
+            "Removes it and everything in it from the checkout. Anything Git has not recorded of them is lost.",
+        ),
+        false => (
+            "Delete file",
+            "Removes it from the checkout. Anything Git has not recorded of it is lost.",
+        ),
+    };
     Some(Confirm {
-        title: "Delete file".to_owned(),
+        title: title.to_owned(),
         subject: deleting
             .path
             .strip_prefix(&code.root)
             .unwrap_or(&deleting.path)
             .display()
             .to_string(),
-        body: "Removes it from the checkout. Anything Git has not recorded of it is lost."
-            .to_owned(),
+        body: body.to_owned(),
         confirm: "Delete".to_owned(),
         on_confirm: deleting.on_confirm,
+        field: None,
     })
 }
 
@@ -272,7 +284,7 @@ fn notice(code: &CodeView) -> Option<Span> {
 fn footer(code: &CodeView) -> Vec<Command> {
     // A question names its own keys in its border, by what each does now;
     // the footer would name enter by what it does on a row.
-    if code.confirming_delete.is_some() || code.discarding.is_some() {
+    if code.confirming_delete.is_some() || code.discarding.is_some() || code.renaming.is_some() {
         return Vec::new();
     }
     if code.confirming_discard {
@@ -312,7 +324,12 @@ fn footer(code: &CodeView) -> Vec<Command> {
         }
         NavigatorMode::Changes => {}
         NavigatorMode::Files if code.selected_is_a_file() => {
+            commands.push(Command::OpenMenu);
             commands.push(Command::Edit);
+            commands.push(Command::Delete);
+        }
+        NavigatorMode::Files if code.selected.is_some() => {
+            commands.push(Command::OpenMenu);
             commands.push(Command::Delete);
         }
         NavigatorMode::Files => {}
@@ -390,7 +407,11 @@ fn files_navigator(code: &CodeView) -> Navigator {
         focused: code.focus == Focus::Navigator,
         anchor,
         choosing: None,
-        menu: None,
+        menu: code.menu.as_ref().and_then(|menu| {
+            rows.iter()
+                .position(|row| row.path == menu.path())
+                .map(|row| menu.describe(row))
+        }),
         rows: rows
             .iter()
             .enumerate()

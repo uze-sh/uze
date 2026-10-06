@@ -280,6 +280,11 @@ pub struct Confirm {
     pub confirm: String,
     /// Whether the keyboard is on the affirmative rather than the way out.
     pub on_confirm: bool,
+    /// The text being typed as the answer, when the question asks for
+    /// one — a new name. `None` for a yes-or-no. A question that takes
+    /// text is not one about something that cannot be undone, and the
+    /// host draws it in a calmer tone.
+    pub field: Option<String>,
 }
 
 /// A short list of what can be done to one navigator row, opened on it.
@@ -706,6 +711,22 @@ pub const PROSE_INSET: u16 = 2;
 /// The columns prose is drawn in, within a content area `space` wide.
 pub fn prose_width(space: Size) -> usize {
     usize::from(space.width.saturating_sub(PROSE_INSET.saturating_mul(2)))
+}
+
+/// Blank rows above and below text content, so its first line does not
+/// sit against the heading and its last against the footer. Text only: a
+/// drawing is laid out in the whole room it is given.
+///
+/// A contract because an extension that keeps a caret in view has to
+/// know how many rows the host will draw it in.
+pub const TEXT_PADDING: u16 = 1;
+
+/// The rows text is drawn in, within a content area `space` tall: less
+/// the heading's row and the padding on either side.
+pub fn text_height(space: Size) -> u16 {
+    space
+        .height
+        .saturating_sub(1 + TEXT_PADDING.saturating_mul(2))
 }
 
 /// Something the host asks an extension's own surface to do.

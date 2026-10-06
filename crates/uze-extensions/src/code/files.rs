@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::exclude::Exclusions;
 use crate::{DirEntry, view::RowIcon};
 
 /// The checkout's own tree, as far as it has been listed.
@@ -24,9 +25,47 @@ use crate::{DirEntry, view::RowIcon};
 pub(super) struct Files {
     pub(super) listings: BTreeMap<PathBuf, Vec<DirEntry>>,
     pub(super) expanded: BTreeSet<PathBuf>,
+    /// What the checkout's settings hide. Absent until they have been
+    /// read, and nothing is listed before then: a tree drawn first and
+    /// pruned after shows the viewer, for a frame, exactly what the
+    /// project asked not to be shown — and may land the cursor on it.
+    pub(super) exclusions: Option<Exclusions>,
 }
 
 impl Files {
+    /// Installs `entries` as the listing of `directory`, without what the
+    /// tree never shows. Whether it is the directory's first listing.
+    pub(super) fn install(
+        &mut self,
+        root: &Path,
+        directory: PathBuf,
+        mut entries: Vec<DirEntry>,
+    ) -> bool {
+        entries.retain(is_shown);
+        if let Some(exclusions) = &self.exclusions {
+            exclusions.retain(root, &directory, &mut entries);
+        }
+        self.listings.insert(directory, entries).is_none()
+    }
+
+    /// Takes on a checkout's exclusions, applying them to what is already
+    /// listed. Whether a directory has to be read again: one the previous
+    /// rules hid has nothing left here to bring back.
+    pub(super) fn exclude(&mut self, root: &Path, exclusions: Exclusions) -> bool {
+        if self.exclusions.as_ref() == Some(&exclusions) {
+            return false;
+        }
+        let relist = self
+            .exclusions
+            .as_ref()
+            .is_some_and(|known| !known.is_empty());
+        for (directory, entries) in &mut self.listings {
+            exclusions.retain(root, directory, entries);
+        }
+        self.exclusions = Some(exclusions);
+        relist
+    }
+
     pub(super) fn rows(&self, root: &Path) -> Vec<TreeRow> {
         flatten(root, &self.listings, &self.expanded)
     }
@@ -62,6 +101,48 @@ impl Files {
             at = row.path;
             depth += 1;
         }
+    }
+
+    /// Folds the row drawn at `path`, and every directory drawn in it.
+    ///
+    /// A compact row (see [`row_for`]) stands for a chain, and folding
+    /// only its deepest directory left the rest of the chain open — so
+    /// the first listing of the chain's head after the surface was opened
+    /// again carried the opening down it, and the row came back unfolded.
+    pub(super) fn fold(&mut self, root: &Path, path: &Path) {
+        let chain: Vec<PathBuf> = path
+            .ancestors()
+            .skip(1)
+            .take_while(|ancestor| *ancestor != root && self.row_at(root, ancestor).is_none())
+            .filter(|ancestor| self.expanded.contains(*ancestor))
+            .map(Path::to_path_buf)
+            .collect();
+        self.expanded.remove(path);
+        for directory in chain {
+            self.expanded.remove(&directory);
+        }
+    }
+
+    /// Drops everything known at and under `path`, which is gone.
+    pub(super) fn forget(&mut self, path: &Path) {
+        self.listings.retain(|listed, _| !listed.starts_with(path));
+        self.expanded.retain(|open| !open.starts_with(path));
+    }
+
+    /// Carries what was open at and under `from` over to `to`, its new
+    /// name, so a renamed directory stays as open as it was. The
+    /// listings are not carried: they are read again under the new name.
+    pub(super) fn carry(&mut self, from: &Path, to: &Path) {
+        let carried: Vec<PathBuf> = self
+            .expanded
+            .iter()
+            .filter_map(|open| open.strip_prefix(from).ok().map(|rest| to.join(rest)))
+            .collect();
+        self.forget(from);
+        for directory in &carried {
+            self.listings.remove(directory);
+        }
+        self.expanded.extend(carried);
     }
 
     /// The row a viewer steps out to from `path`: the nearest drawn

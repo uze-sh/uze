@@ -212,6 +212,7 @@ fn a_changed_file_offers_its_actions_on_its_row() {
             vec![
                 "Open file".to_owned(),
                 "Copy path".to_owned(),
+                "Copy relative path".to_owned(),
                 "Discard changes…".to_owned()
             ],
             0
@@ -293,29 +294,231 @@ fn a_deleted_file_is_not_offered_to_open() {
     );
     press(&mut view, Command::OpenMenu);
     let (_, entries, _) = menu_of(&view).expect("the menu opened");
-    assert_eq!(entries, ["Copy path", "Discard changes…"]);
+    assert_eq!(
+        entries,
+        ["Copy path", "Copy relative path", "Discard changes…"]
+    );
 }
 
-/// The path goes to the host's clipboard, relative to the checkout, the
-/// way a reviewer pastes it anywhere else.
+/// "Copy path" hands the host's clipboard the path as the machine spells
+/// it, for a tool outside the checkout.
 #[test]
-fn copying_a_path_hands_the_host_the_checkouts_own_spelling() {
+fn copying_a_path_hands_the_host_the_machines_spelling() {
     let mut view = flat_fixture();
     press(&mut view, Command::OpenMenu);
     press(&mut view, Command::SelectNext);
     assert_eq!(
         press(&mut view, Command::Activate),
-        CodeOutcome::Copy("src/ui/git_diff.rs".to_owned())
+        CodeOutcome::Copy(spelled(Path::new("/repo").join("src/ui/git_diff.rs")))
     );
     assert!(menu_of(&view).is_none());
+}
+
+/// And relative to the checkout, the way a reviewer pastes it into a
+/// review or a prompt.
+#[test]
+fn copying_the_relative_path_hands_the_host_the_checkouts_own_spelling() {
+    let mut view = flat_fixture();
+    press(&mut view, Command::OpenMenu);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectNext);
+    assert_eq!(
+        press(&mut view, Command::Activate),
+        CodeOutcome::Copy("src/ui/git_diff.rs".to_owned())
+    );
 }
 
 /// Picks "Discard changes…" from the selected file's menu.
 fn ask_to_discard(view: &mut CodeView) {
     press(view, Command::OpenMenu);
-    press(view, Command::SelectNext);
-    press(view, Command::SelectNext);
+    for _ in 0..3 {
+        press(view, Command::SelectNext);
+    }
     press(view, Command::Activate);
+}
+
+/// A row of the tree offers its own actions — its path both ways, a
+/// rename, and a delete that asks first — a directory as much as a file.
+#[test]
+fn a_row_of_the_tree_offers_its_actions() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_file("/w/src/main.rs", "fn main() {}\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/src"));
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+
+    handle_mouse(&mut view, Some(ViewHit::OpenMenu(0)), space());
+    let menu = navigator_of_tree(&view).menu.expect("a directory has one");
+    assert_eq!(menu.row, 0);
+    press(&mut view, Command::Close);
+
+    handle_mouse(&mut view, Some(ViewHit::OpenMenu(1)), space());
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src/main.rs")));
+    let menu = navigator_of_tree(&view).menu.expect("the menu opened");
+    assert_eq!(menu.row, 1, "drawn on the row it was opened on");
+    assert_eq!(
+        menu.entries,
+        ["Copy path", "Copy relative path", "Rename…", "Delete…"]
+    );
+    assert_eq!(
+        press(&mut view, Command::Activate),
+        CodeOutcome::Copy(spelled(Path::new("/w").join("src").join("main.rs")))
+    );
+
+    pick_from_menu(&mut view, 1);
+    // The pick above returned the copy; asked again to see it.
+    press(&mut view, Command::OpenMenu);
+    press(&mut view, Command::SelectNext);
+    assert_eq!(
+        press(&mut view, Command::Activate),
+        CodeOutcome::Copy(spelled(Path::new("src").join("main.rs")))
+    );
+
+    pick_from_menu(&mut view, 3);
+    let asked = super::view(&view, space()).confirm.expect("a question");
+    assert_eq!(asked.title, "Delete file");
+    assert!(
+        view.peek_request().is_none(),
+        "nothing is deleted before a yes"
+    );
+    handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
+    assert_eq!(
+        view.take_request(),
+        Some(FileRequest::Delete(PathBuf::from("/w/src/main.rs")))
+    );
+}
+
+/// A path as the machine spells it, which is what reaches the clipboard:
+/// the separator a join puts in is the platform's own.
+fn spelled(path: PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// Opens the selection's menu and picks its entry `index`.
+fn pick_from_menu(view: &mut CodeView, index: usize) -> CodeOutcome {
+    press(view, Command::OpenMenu);
+    for _ in 0..index {
+        press(view, Command::SelectNext);
+    }
+    press(view, Command::Activate)
+}
+
+/// A directory is deleted with everything in it, after a question that
+/// says so, and the tree lets go of all of it.
+#[test]
+fn a_directory_is_deleted_whole_after_asking() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_directory("/w/src/ui")
+        .with_file("/w/src/ui/app.rs", "\n")
+        .with_file("/w/src/main.rs", "\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/src"));
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+
+    pick_from_menu(&mut view, 3);
+    let asked = super::view(&view, space()).confirm.expect("a question");
+    assert_eq!(asked.title, "Delete folder");
+    assert!(asked.body.contains("everything in it"), "{}", asked.body);
+    handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
+    assert_eq!(
+        view.peek_request(),
+        Some(&FileRequest::DeleteDirectory(PathBuf::from("/w/src")))
+    );
+    settle(&mut view, &machine);
+
+    assert_eq!(item_names_of_tree(&view), ["README.md"]);
+    assert!(!view.files.expanded.contains(Path::new("/w/src")));
+    assert!(
+        machine
+            .files
+            .borrow()
+            .keys()
+            .all(|file| !file.starts_with("/w/src"))
+    );
+}
+
+/// A rename is typed in a dialog that starts from the current name, and
+/// a renamed directory stays as open as it was, with the selection on it.
+#[test]
+fn renaming_a_directory_keeps_it_open_under_its_new_name() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_directory("/w/src/ui")
+        .with_file("/w/src/ui/app.rs", "\n")
+        .with_file("/w/src/main.rs", "\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/src"));
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/src/ui"));
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+
+    pick_from_menu(&mut view, 2);
+    assert!(view.typing(), "letters are text while the name is typed");
+    let asked = super::view(&view, space()).confirm.expect("the dialog");
+    assert_eq!(asked.field.as_deref(), Some("ui"));
+    press(&mut view, Command::EraseBack);
+    press(&mut view, Command::EraseBack);
+    for character in "view".chars() {
+        press(&mut view, Command::Type(character));
+    }
+    press(&mut view, Command::Newline);
+    assert!(!view.typing());
+    assert_eq!(
+        view.peek_request(),
+        Some(&FileRequest::Rename {
+            from: PathBuf::from("/w/src/ui"),
+            to: PathBuf::from("/w/src/view"),
+        })
+    );
+    settle(&mut view, &machine);
+
+    assert_eq!(
+        item_names_of_tree(&view),
+        ["src", "view", "app.rs", "main.rs", "README.md"]
+    );
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src/view")));
+}
+
+/// A name that is no name, or a path, is refused where it is typed, and
+/// the dialog stays open for it to be corrected; escape leaves it.
+#[test]
+fn a_rename_refuses_what_is_not_a_name() {
+    let machine = FakeMachine::default().with_file("/w/main.rs", "\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/main.rs"));
+
+    pick_from_menu(&mut view, 2);
+    press(&mut view, Command::Type('/'));
+    press(&mut view, Command::Newline);
+    assert!(view.typing(), "still open");
+    assert_eq!(
+        view.notice.as_ref().map(|notice| notice.role),
+        Some(Role::Warning)
+    );
+    assert!(view.peek_request().is_none());
+
+    press(&mut view, Command::Close);
+    assert!(!view.typing());
+    assert!(view.peek_request().is_none(), "escape renames nothing");
+}
+
+fn navigator_of_tree(view: &CodeView) -> crate::view::Navigator {
+    super::view(view, space())
+        .navigator
+        .expect("the tree is beside the content")
 }
 
 /// Throwing a change away cannot be undone, so it is asked as a dialog,
@@ -803,20 +1006,36 @@ fn a_refresh_from_before_the_selection_moved_keeps_the_new_diff() {
 /// surface's own behaviour rather than a temp directory's.
 #[derive(Default)]
 struct FakeMachine {
-    directories: BTreeMap<PathBuf, Vec<DirEntry>>,
+    directories: RefCell<BTreeMap<PathBuf, Vec<DirEntry>>>,
     files: RefCell<BTreeMap<PathBuf, String>>,
     restored: RefCell<Vec<PathBuf>>,
 }
 
 impl FakeMachine {
+    /// Takes `path` out of its parent's listing.
+    fn unlist(&self, path: &Path) {
+        let name = path.file_name().unwrap().to_string_lossy();
+        if let Some(entries) = self
+            .directories
+            .borrow_mut()
+            .get_mut(path.parent().unwrap())
+        {
+            entries.retain(|entry| entry.name != name);
+        }
+    }
+
     fn with_file(mut self, path: &str, contents: &str) -> Self {
         let path = PathBuf::from(path);
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let parent = path.parent().unwrap().to_path_buf();
-        self.directories.entry(parent).or_default().push(DirEntry {
-            directory: false,
-            name,
-        });
+        self.directories
+            .get_mut()
+            .entry(parent)
+            .or_default()
+            .push(DirEntry {
+                directory: false,
+                name,
+            });
         self.files.borrow_mut().insert(path, contents.to_owned());
         self
     }
@@ -825,11 +1044,15 @@ impl FakeMachine {
         let path = PathBuf::from(path);
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let parent = path.parent().unwrap().to_path_buf();
-        self.directories.entry(parent).or_default().push(DirEntry {
-            directory: true,
-            name,
-        });
-        self.directories.entry(path).or_default();
+        self.directories
+            .get_mut()
+            .entry(parent)
+            .or_default()
+            .push(DirEntry {
+                directory: true,
+                name,
+            });
+        self.directories.get_mut().entry(path).or_default();
         self
     }
 }
@@ -853,6 +1076,7 @@ impl Host for FakeMachine {
 
     fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>, String> {
         self.directories
+            .borrow()
             .get(path)
             .cloned()
             .ok_or_else(|| format!("no such directory: {}", path.display()))
@@ -867,6 +1091,47 @@ impl Host for FakeMachine {
 
     fn delete_file(&self, path: &Path) -> Result<(), String> {
         self.files.borrow_mut().remove(path);
+        Ok(())
+    }
+
+    fn delete_dir(&self, path: &Path) -> Result<(), String> {
+        self.directories
+            .borrow_mut()
+            .retain(|listed, _| !listed.starts_with(path));
+        self.files
+            .borrow_mut()
+            .retain(|file, _| !file.starts_with(path));
+        self.unlist(path);
+        Ok(())
+    }
+
+    fn rename_path(&self, from: &Path, to: &Path) -> Result<(), String> {
+        let moved = |path: &Path| match path.strip_prefix(from) {
+            Ok(rest) => to.join(rest),
+            Err(_) => path.to_path_buf(),
+        };
+        let directories = std::mem::take(&mut *self.directories.borrow_mut());
+        *self.directories.borrow_mut() = directories
+            .into_iter()
+            .map(|(path, entries)| (moved(&path), entries))
+            .collect();
+        let files = std::mem::take(&mut *self.files.borrow_mut());
+        *self.files.borrow_mut() = files
+            .into_iter()
+            .map(|(path, text)| (moved(&path), text))
+            .collect();
+        let name = to.file_name().unwrap().to_string_lossy().into_owned();
+        let old = from.file_name().unwrap().to_string_lossy();
+        if let Some(entries) = self
+            .directories
+            .borrow_mut()
+            .get_mut(from.parent().unwrap())
+        {
+            for entry in entries.iter_mut().filter(|entry| entry.name == old) {
+                entry.name = name.clone();
+            }
+            entries.sort();
+        }
         Ok(())
     }
 
@@ -979,6 +1244,82 @@ fn the_tree_shows_every_dotfile_but_the_repository_itself() {
     let mut view = files_at("/w");
     settle(&mut view, &worktree);
     assert_eq!(item_names_of_tree(&view), ["main.rs"]);
+}
+
+/// What the project told its editor to hide, the tree hides too — from
+/// the first frame, not after a flash of it — and editing the setting
+/// from this surface brings back what it no longer hides.
+#[test]
+fn the_tree_hides_what_the_editor_settings_exclude() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/.vscode")
+        .with_file(
+            "/w/.vscode/settings.json",
+            r#"{ "files.exclude": { "**/node_modules": true, "target": true } }"#,
+        )
+        .with_directory("/w/node_modules")
+        .with_directory("/w/target")
+        .with_directory("/w/web")
+        .with_directory("/w/web/node_modules")
+        .with_file("/w/web/index.ts", "export {}\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+
+    let first = view.take_request().expect("the settings are asked for");
+    assert!(matches!(first, FileRequest::Exclusions(_)));
+    assert!(
+        view.take_request().is_none(),
+        "and nothing is listed before them"
+    );
+    view.absorb(fulfill(&machine, first));
+    settle(&mut view, &machine);
+    assert_eq!(item_names_of_tree(&view), [".vscode", "web", "README.md"]);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/.vscode")));
+
+    view.select(PathBuf::from("/w/web"));
+    press(&mut view, Command::Expand);
+    settle(&mut view, &machine);
+    assert_eq!(
+        item_names_of_tree(&view),
+        [".vscode", "web", "index.ts", "README.md"]
+    );
+
+    let settings = PathBuf::from("/w/.vscode/settings.json");
+    machine.files.borrow_mut().insert(
+        settings.clone(),
+        r#"{ "files.exclude": { "target": true } }"#.to_owned(),
+    );
+    view.absorb(FileAnswer::Saved {
+        path: settings,
+        outcome: Ok(()),
+    });
+    settle(&mut view, &machine);
+    assert_eq!(
+        item_names_of_tree(&view),
+        [
+            ".vscode",
+            "node_modules",
+            "web",
+            "node_modules",
+            "index.ts",
+            "README.md"
+        ]
+    );
+}
+
+/// Settings that do not parse hide nothing — and say why, rather than
+/// leaving the viewer to wonder why their exclusions stopped working.
+#[test]
+fn unreadable_editor_settings_hide_nothing_and_say_so() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/.vscode")
+        .with_file("/w/.vscode/settings.json", "{ not json")
+        .with_directory("/w/node_modules");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    assert_eq!(item_names_of_tree(&view), [".vscode", "node_modules"]);
+    let notice = view.notice.as_ref().expect("the failure is said");
+    assert_eq!(notice.role, Role::Warning);
 }
 
 fn item_names_of_tree(view: &CodeView) -> Vec<String> {
@@ -1211,19 +1552,22 @@ fn page_keys_move_the_caret_a_screen_at_a_time() {
     let machine = FakeMachine::default().with_file("/w/long.txt", &text);
     let mut view = editing(&machine, "/w/long.txt");
 
+    // A screen is the rows text is drawn in, not the room the surface
+    // was given: the heading and the padding take the rest.
+    let screen = crate::view::text_height(space());
     press(&mut view, Command::ScrollPageDown);
     press(&mut view, Command::ScrollPageDown);
     let line = view.open.as_ref().expect("open").caret.line;
-    assert_eq!(line, usize::from(space().height) * 2);
+    assert_eq!(line, usize::from(screen) * 2);
     assert!(
-        (view.scroll..view.scroll + space().height).contains(&u16::try_from(line).unwrap()),
+        (view.scroll..view.scroll + screen).contains(&u16::try_from(line).unwrap()),
         "the caret stays on screen"
     );
 
     press(&mut view, Command::ScrollPageUp);
     assert_eq!(
         view.open.as_ref().expect("open").caret.line,
-        usize::from(space().height)
+        usize::from(screen)
     );
 }
 
@@ -1425,18 +1769,21 @@ fn deleting_is_asked_in_the_confirm_dialog() {
     );
 }
 
+/// The delete key asks about a directory too, and says it is one: what
+/// goes is everything in it.
 #[test]
-fn a_directory_is_never_deletable() {
-    let machine = FakeMachine::default().with_directory("/w/src");
+fn the_delete_key_asks_about_a_directory_as_a_folder() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_file("/w/README.md", "# hi\n");
     let mut view = files_at("/w");
     settle(&mut view, &machine);
 
     press(&mut view, Command::Delete);
-    assert!(view.confirming_delete.is_none());
-    assert_eq!(
-        view.notice.as_ref().map(|notice| notice.text.as_str()),
-        Some("only files are deletable")
-    );
+    let asked = super::view(&view, space()).confirm.expect("a question");
+    assert_eq!(asked.title, "Delete folder");
+    press(&mut view, Command::Close);
+    assert!(view.peek_request().is_none(), "no is no");
 }
 
 #[test]
@@ -1553,7 +1900,7 @@ fn editing_a_crlf_file_keeps_every_other_line_crlf() {
 #[test]
 fn a_file_that_is_not_text_is_an_empty_state_where_its_contents_would_be() {
     let mut machine = FakeMachine::default();
-    machine.directories.insert(
+    machine.directories.get_mut().insert(
         PathBuf::from("/w"),
         vec![DirEntry {
             directory: false,
@@ -2777,4 +3124,49 @@ fn a_file_reads_as_it_is_and_the_map_as_nothing() {
     );
     view.content = ContentMode::Map;
     assert!(text(&view, 0..2).is_empty());
+}
+
+/// What the viewer folded stays folded when they come back — a compact
+/// row included, which used to reopen because only its deepest directory
+/// was folded and the chain's head carried the opening down again.
+#[test]
+fn a_folded_directory_stays_folded_when_the_surface_is_opened_again() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_file("/w/src/main.rs", "fn main() {}\n")
+        .with_directory("/w/deep")
+        .with_directory("/w/deep/er")
+        .with_file("/w/deep/er/x.rs", "\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    for path in ["/w/src", "/w/deep"] {
+        view.select(PathBuf::from(path));
+        press(&mut view, Command::Activate);
+        settle(&mut view, &machine);
+    }
+    assert_eq!(
+        item_names_of_tree(&view),
+        ["src", "main.rs", "deep/er", "x.rs", "README.md"]
+    );
+    for path in ["/w/src", "/w/deep/er"] {
+        view.select(PathBuf::from(path));
+        press(&mut view, Command::Activate);
+        settle(&mut view, &machine);
+    }
+    let folded = ["src", "deep", "README.md"];
+    assert_eq!(item_names_of_tree(&view), folded);
+
+    let mut back = files_at("/w").resuming(view.place());
+    settle(&mut back, &machine);
+    assert_eq!(item_names_of_tree(&back), folded);
+
+    // And opening the chain again is still one press.
+    back.select(PathBuf::from("/w/deep"));
+    press(&mut back, Command::Activate);
+    settle(&mut back, &machine);
+    assert_eq!(
+        item_names_of_tree(&back),
+        ["src", "deep/er", "x.rs", "README.md"]
+    );
 }

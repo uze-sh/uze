@@ -10,6 +10,8 @@ publish = false
 
 [dependencies]
 unicode-width = "0.2"
+# `.vscode/settings.json`, for the code surface's `files.exclude`.
+serde_json = "1"
 # CommonMark, for the markdown preview. `pulldown-cmark` is what rustdoc
 # itself parses with (pulldown-cmark org, MIT); with default features off
 # it drops the HTML writer and the CLI, leaving one crate the workspace

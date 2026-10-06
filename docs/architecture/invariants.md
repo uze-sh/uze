@@ -2045,11 +2045,20 @@ and that is exactly why it is worth stating where the writing happens.
 `Host::write_file` refuses a path that is not already a file, so a save
 can only ever mean "save this file" and never "create whatever this string
 names"; `Host::delete_file` refuses a directory, because a recursive
-removal is a different act from the one a single keystroke describes. Both
-live in `src/ui/extension_host.rs` and nowhere else.
+removal is a different act from the one a single keystroke describes, and
+is `Host::delete_dir`, a grant of its own that refuses anything but a real
+directory, so a link is never followed into what it points at.
+`Host::rename_path` gives a new name and nothing more: it refuses a target
+in another directory and one that already exists, since `rename(2)` would
+replace it without a word. Each refusal is the host's, behind the
+surface's own confirmation, and all of them live in
+`src/ui/extension_host.rs` and nowhere else.
 
 > `tests/architecture/layering.rs::architecture_rules_hold`
 > `src/ui/extension_host.rs::the_write_grant_is_narrower_than_the_filesystem`
+> `src/ui/extension_host.rs::a_rename_neither_moves_nor_overwrites`
+> `src/ui/extension_host.rs::a_directory_is_deleted_whole_by_its_own_grant`
+> `src/ui/extension_host.rs::deleting_a_directory_never_follows_a_link_into_its_target`
 
 ### Git's exit code is reported, never classified by the transport
 

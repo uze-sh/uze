@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
+use super::exclude::{Exclusions, SETTINGS_DIRECTORY, SETTINGS_FILE};
 use crate::{DirEntry, Host, Unreadable, view::Rgb};
 
 /// How much of a file is coloured before it is shown.
@@ -35,6 +36,9 @@ pub enum FileRequest {
     /// Read a directory's entries — on opening it, and again after a
     /// delete, so the tree says what is there rather than what was.
     List(PathBuf),
+    /// Read what the checkout at this root asks its editor not to show
+    /// (see [`super::exclude`]).
+    Exclusions(PathBuf),
     /// Read a file, colouring a glance's worth of it.
     Read(PathBuf),
     /// Colour all of one already read — the rest of the work
@@ -46,6 +50,14 @@ pub enum FileRequest {
         contents: String,
     },
     Delete(PathBuf),
+    /// Remove a directory and everything in it. Answered as
+    /// [`FileAnswer::Deleted`], like a file.
+    DeleteDirectory(PathBuf),
+    /// Give `from` the name `to`, in the same directory.
+    Rename {
+        from: PathBuf,
+        to: PathBuf,
+    },
     /// Throw away what changed at `paths`, putting each back as `root`'s
     /// last commit has it.
     Restore {
@@ -67,6 +79,7 @@ pub enum FileAnswer {
         /// directories, read in the same answer (see [`only_children_below`]).
         chain: Vec<(PathBuf, Vec<DirEntry>)>,
     },
+    Excluded(Result<Exclusions, String>),
     Read {
         path: PathBuf,
         file: Result<LoadedFile, Unreadable>,
@@ -93,6 +106,11 @@ pub enum FileAnswer {
     },
     Restored {
         paths: Vec<PathBuf>,
+        outcome: Result<(), String>,
+    },
+    Renamed {
+        from: PathBuf,
+        to: PathBuf,
         outcome: Result<(), String>,
     },
 }
@@ -132,6 +150,7 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
             entries: Err(reason.to_owned()),
             chain: Vec::new(),
         },
+        FileRequest::Exclusions(_) => FileAnswer::Excluded(Err(reason.to_owned())),
         FileRequest::Read(path) => FileAnswer::Read {
             path: path.clone(),
             file: Err(Unreadable::Failed(reason.to_owned())),
@@ -144,8 +163,13 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
             path: path.clone(),
             outcome: Err(reason.to_owned()),
         },
-        FileRequest::Delete(path) => FileAnswer::Deleted {
+        FileRequest::Delete(path) | FileRequest::DeleteDirectory(path) => FileAnswer::Deleted {
             path: path.clone(),
+            outcome: Err(reason.to_owned()),
+        },
+        FileRequest::Rename { from, to } => FileAnswer::Renamed {
+            from: from.clone(),
+            to: to.clone(),
             outcome: Err(reason.to_owned()),
         },
         FileRequest::Restore { paths, .. } => FileAnswer::Restored {
@@ -174,6 +198,7 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
                 chain,
             }
         }
+        FileRequest::Exclusions(root) => FileAnswer::Excluded(read_exclusions(host, &root)),
         FileRequest::Read(path) => {
             // A document opens as the document it is (see
             // `CodeView::read_selection_as_what_it_is`), and the preview
@@ -199,11 +224,39 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
             outcome: host.delete_file(&path),
             path,
         },
+        FileRequest::DeleteDirectory(path) => FileAnswer::Deleted {
+            outcome: host.delete_dir(&path),
+            path,
+        },
+        FileRequest::Rename { from, to } => FileAnswer::Renamed {
+            outcome: host.rename_path(&from, &to),
+            from,
+            to,
+        },
         FileRequest::Restore { root, paths } => FileAnswer::Restored {
             outcome: host.restore_to_head(&root, &paths),
             paths,
         },
     }
+}
+
+/// The checkout's `files.exclude`. Its directory is listed first, so a
+/// checkout with no settings — most of them — is no exclusion rather than
+/// a read that failed.
+fn read_exclusions(host: &dyn Host, root: &Path) -> Result<Exclusions, String> {
+    let directory = root.join(SETTINGS_DIRECTORY);
+    let present = host.list_dir(&directory).is_ok_and(|entries| {
+        entries
+            .iter()
+            .any(|e| !e.directory && e.name == SETTINGS_FILE)
+    });
+    if !present {
+        return Ok(Exclusions::default());
+    }
+    let text = host
+        .read_file(&directory.join(SETTINGS_FILE))
+        .map_err(|unreadable| format!("{SETTINGS_DIRECTORY}/{SETTINGS_FILE}: {unreadable}"))?;
+    Exclusions::from_settings(&text)
 }
 
 /// How far down a chain of only-child directories one listing reads.
