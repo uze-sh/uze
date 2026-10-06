@@ -119,10 +119,130 @@ pub struct CommandHook {
     #[serde(rename = "type")]
     pub handler_type: CommandHandlerType,
     /// One POSIX line, or a `posix`/`windows` pair: each platform runs only
-    /// the spelling written for it.
+    /// the spelling written for it. With `args` beside it, the exec form: the
+    /// path of a script inside the package, relative to its root, which UZE
+    /// starts with the launcher the platform calls for
+    /// ([`crate::launcher`]).
     pub command: crate::shell::ShellCommand,
+    /// The exec form's words, each reaching the script as written: never
+    /// read by a shell, so the author never quotes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    /// The exec form's own launcher, replacing the extension table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interpreter: Option<Vec<String>>,
     #[serde(default = "default_timeout")]
     pub timeout: u16,
+}
+
+/// How a handler runs on one platform.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Invocation {
+    /// A line in the platform's shell, as the author wrote it.
+    Line(String),
+    /// The words to start, and the executable they ask of the machine
+    /// beyond what every machine of the platform carries.
+    Argv {
+        argv: Vec<String>,
+        needs: Option<String>,
+    },
+    /// Why nothing runs this handler here.
+    Unrunnable(String),
+}
+
+impl CommandHook {
+    /// A shell-line handler.
+    pub fn line(command: impl Into<crate::shell::ShellCommand>) -> Self {
+        Self {
+            handler_type: CommandHandlerType::Command,
+            command: command.into(),
+            args: None,
+            interpreter: None,
+            timeout: DEFAULT_TIMEOUT_SECONDS,
+        }
+    }
+
+    /// The script an exec-form handler names, relative to the package root.
+    pub fn script(&self) -> Option<&str> {
+        match (&self.args, &self.command) {
+            (Some(_), crate::shell::ShellCommand::Line(path)) => Some(path),
+            _ => None,
+        }
+    }
+
+    /// How this handler runs on `family`'s platform. `store_root` is where
+    /// the package's bytes are read (an exec-form script's execute bit);
+    /// `delivered_root` is where the harness runs them, which the script's
+    /// path is resolved against. `python_answers` is asked only for a
+    /// Windows `.py` script ([`crate::launcher::launch`]).
+    pub fn invocation(
+        &self,
+        store_root: &Path,
+        delivered_root: &Path,
+        family: crate::shell::Family,
+        python_answers: &dyn Fn(&[&str]) -> bool,
+    ) -> Invocation {
+        let Some(script) = self.script() else {
+            return match self.command.spelling(family) {
+                Some(line) => Invocation::Line(line.to_owned()),
+                None => Invocation::Unrunnable(format!(
+                    "`{}` has no `{}` spelling",
+                    self.command.describe(),
+                    family_key(family)
+                )),
+            };
+        };
+        let executable = family == crate::shell::Family::Posix
+            && uze_platform::executable::is_marked_runnable(&store_root.join(script))
+            && store_root.join(script).is_file();
+        let path = delivered_root.join(script);
+        match crate::launcher::launch(
+            &crate::launcher::Script {
+                path: &path,
+                executable,
+                interpreter: self.interpreter.as_deref(),
+                args: self.args.as_deref().unwrap_or_default(),
+            },
+            family,
+            python_answers,
+        ) {
+            crate::launcher::Launch::Argv { argv, needs } => Invocation::Argv { argv, needs },
+            crate::launcher::Launch::Unplaceable { reason } => Invocation::Unrunnable(reason),
+        }
+    }
+
+    /// Whether this handler can run on `family`'s platform at all, without
+    /// asking the machine anything (a Windows `.py` always has a launcher).
+    pub fn runs_on(&self, store_root: &Path, family: crate::shell::Family) -> bool {
+        !matches!(
+            self.invocation(store_root, store_root, family, &|_| false),
+            Invocation::Unrunnable(_)
+        )
+    }
+
+    /// The handler as a person approving it reads it: the line or lines,
+    /// or the script with its words and any launcher the author chose.
+    pub fn describe(&self) -> String {
+        match self.script() {
+            None => self.command.describe(),
+            Some(script) => self
+                .interpreter
+                .iter()
+                .flatten()
+                .map(String::as_str)
+                .chain(std::iter::once(script))
+                .chain(self.args.iter().flatten().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" "),
+        }
+    }
+}
+
+fn family_key(family: crate::shell::Family) -> &'static str {
+    match family {
+        crate::shell::Family::Posix => "posix",
+        crate::shell::Family::PowerShell => "windows",
+    }
 }
 
 const fn default_timeout() -> u16 {
@@ -146,12 +266,13 @@ pub struct PortableHook {
 }
 
 impl PortableHook {
-    /// Whether a handler of this group has no spelling for this platform's
-    /// shell, so the group cannot run here as its author wrote it.
-    pub fn unspelled_here(&self) -> bool {
+    /// Whether a handler of this group has nothing that runs it on this
+    /// platform (no spelling for its shell, or an exec-form script with no
+    /// launcher), so the group cannot run here as its author wrote it.
+    pub fn unspelled_here(&self, store_root: &Path) -> bool {
         self.handlers
             .iter()
-            .any(|handler| handler.command.here().is_none())
+            .any(|handler| !handler.runs_on(store_root, uze_platform::shell::FAMILY))
     }
 }
 
@@ -166,7 +287,7 @@ pub fn guards_unspelled_here(package_root: &Path) -> Result<Vec<String>> {
     };
     Ok(parse_manifest(&manifest_path, &bytes)?
         .into_iter()
-        .filter(|hook| hook.effect.fails_closed() && hook.unspelled_here())
+        .filter(|hook| hook.effect.fails_closed() && hook.unspelled_here(package_root))
         .map(|hook| hook.id)
         .collect())
 }
@@ -452,6 +573,45 @@ pub fn group_timeout_bound(handlers: &[CommandHook]) -> u32 {
         .saturating_add(1)
 }
 
+/// What makes a handler's exec form unreadable, if anything: a script that
+/// is not one relative path inside the package, or a launcher with no
+/// words.
+fn exec_form_defect(handler: &CommandHook) -> Option<String> {
+    if handler.args.is_none() {
+        return handler
+            .interpreter
+            .is_some()
+            .then(|| "names an `interpreter` without `args`; the exec form needs both".to_owned());
+    }
+    let Some(script) = handler.script() else {
+        return Some(
+            "gives `args` beside a `posix`/`windows` pair; the exec form takes one script path"
+                .to_owned(),
+        );
+    };
+    let path = Path::new(script);
+    let escapes = path.is_absolute()
+        || script.starts_with('/')
+        || script.starts_with('\\')
+        || script.contains("${")
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)));
+    if escapes {
+        return Some(format!(
+            "runs `{script}`, which is not a path inside the package; the exec form names its script relative to the package root"
+        ));
+    }
+    if handler
+        .interpreter
+        .as_ref()
+        .is_some_and(|words| words.is_empty() || words.iter().any(|word| word.trim().is_empty()))
+    {
+        return Some("names an empty `interpreter`".to_owned());
+    }
+    None
+}
+
 /// Parses and validates one package/project `hooks.json`. The returned order
 /// is deterministic: semantic event order then source group order.
 pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
@@ -512,6 +672,9 @@ pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
             for handler in &group.hooks {
                 if handler.command.is_empty() {
                     return invalid(path, &format!("hook `{id}` has an empty command"));
+                }
+                if let Some(reason) = exec_form_defect(handler) {
+                    return invalid(path, &format!("hook `{id}` {reason}"));
                 }
                 if !(1..=MAX_TIMEOUT_SECONDS).contains(&handler.timeout) {
                     return invalid(
@@ -577,6 +740,86 @@ mod tests {
         )
         .unwrap();
         assert_eq!(guards_unspelled_here(&root).unwrap(), ["elsewhere"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn exec_manifest(handler: &str) -> String {
+        format!(
+            r#"{{"hooks":{{"PreToolUse":[{{"id":"guard","matcher":"shell","effect":"deny","hooks":[{handler}]}}]}}}}"#
+        )
+    }
+
+    #[test]
+    fn an_exec_form_handler_keeps_its_script_and_words() {
+        let hooks = parse_manifest(
+            Path::new("hooks.json"),
+            exec_manifest(
+                r#"{"type":"command","command":"hooks/guard.py","args":["--strict","it's"]}"#,
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        let handler = &hooks[0].handlers[0];
+        assert_eq!(handler.script(), Some("hooks/guard.py"));
+        assert_eq!(handler.describe(), "hooks/guard.py --strict it's");
+    }
+
+    #[test]
+    fn an_exec_form_that_cannot_name_one_script_inside_the_package_is_refused() {
+        for (handler, says) in [
+            (
+                r#"{"type":"command","command":{"posix":"a.py","windows":"a.py"},"args":[]}"#,
+                "beside a `posix`/`windows` pair",
+            ),
+            (
+                r#"{"type":"command","command":"/etc/guard.py","args":[]}"#,
+                "not a path inside the package",
+            ),
+            (
+                r#"{"type":"command","command":"../guard.py","args":[]}"#,
+                "not a path inside the package",
+            ),
+            (
+                r#"{"type":"command","command":"${PLUGIN_ROOT}/guard.py","args":[]}"#,
+                "not a path inside the package",
+            ),
+            (
+                r#"{"type":"command","command":"guard.py","interpreter":["uv"]}"#,
+                "without `args`",
+            ),
+            (
+                r#"{"type":"command","command":"guard.py","args":[],"interpreter":[]}"#,
+                "empty `interpreter`",
+            ),
+        ] {
+            let error = parse_manifest(Path::new("hooks.json"), exec_manifest(handler).as_bytes())
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(says), "{handler}: {error}");
+        }
+    }
+
+    /// A guard whose exec-form script nothing starts here is refused like
+    /// one with no spelling here: a `.sh` script has no Windows launcher,
+    /// and a script that is neither executable nor placed by its extension
+    /// has no POSIX one.
+    #[test]
+    fn a_guard_whose_script_no_launcher_starts_here_is_named() {
+        let root = uze_testkit::temp::scratch("guards-unlaunched");
+        std::fs::create_dir_all(root.join("hooks")).unwrap();
+        std::fs::write(root.join("hooks").join("guard"), "#!/bin/sh\nexit 0\n").unwrap();
+        let unplaced = uze_platform::shell::spelling("hooks/guard", "hooks/guard.sh");
+        std::fs::write(
+            root.join(HOOKS_FILE_NAME),
+            format!(
+                r#"{{"hooks":{{"PreToolUse":[
+                    {{"id":"unplaced","matcher":"shell","effect":"deny","hooks":[{{"type":"command","command":"{unplaced}","args":[]}}]}},
+                    {{"id":"placed","matcher":"shell","effect":"deny","hooks":[{{"type":"command","command":"hooks/guard.py","args":[]}}]}}
+                ]}}}}"#
+            ),
+        )
+        .unwrap();
+        assert_eq!(guards_unspelled_here(&root).unwrap(), ["unplaced"]);
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -680,6 +923,8 @@ mod tests {
             handlers: vec![CommandHook {
                 handler_type: CommandHandlerType::Command,
                 command: "check".into(),
+                args: None,
+                interpreter: None,
                 timeout: 1,
             }],
             effect: HookEffect::Observe,
@@ -758,6 +1003,8 @@ mod tests {
             handlers: vec![CommandHook {
                 handler_type: CommandHandlerType::Command,
                 command: "check".into(),
+                args: None,
+                interpreter: None,
                 timeout: 1,
             }],
             effect: HookEffect::Deny,
@@ -779,6 +1026,8 @@ mod tests {
             handlers: vec![CommandHook {
                 handler_type: CommandHandlerType::Command,
                 command: "check".into(),
+                args: None,
+                interpreter: None,
                 timeout: 1,
             }],
             effect: HookEffect::Deny,

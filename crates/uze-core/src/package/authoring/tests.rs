@@ -851,3 +851,46 @@ fn check_names_a_handler_with_no_windows_spelling() {
     );
     let _ = fs::remove_dir_all(market);
 }
+
+/// An exec-form script is checked against both launcher tables before
+/// anything is installed: a `.sh` script starts nowhere on Windows, and a
+/// `.py` one starts everywhere.
+#[test]
+fn check_names_an_exec_form_script_a_platform_cannot_start() {
+    let plugin = scratch("check-exec-form").join("plugins/guarded");
+    fs::create_dir_all(plugin.join("hooks")).unwrap();
+    fs::write(
+        plugin.join("plugin.json"),
+        r#"{"name":"guarded","version":"1.0.0","description":"Guarded"}"#,
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("hooks.json"),
+        r#"{"hooks":{"PreToolUse":[
+            {"id":"shell-script","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"hooks/guard.sh","args":[]}]},
+            {"id":"python-script","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"hooks/guard.py","args":["--strict"]}]}
+        ]}}"#,
+    )
+    .unwrap();
+
+    let report = check_plugin(&plugin).unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("hook `shell-script`")
+                && warning.contains("cannot run on Windows")
+                && warning.contains("installing the package is refused there")),
+        "{:?}",
+        report.warnings
+    );
+    assert!(
+        !report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("hook `python-script`")),
+        "{:?}",
+        report.warnings
+    );
+    let _ = fs::remove_dir_all(plugin.parent().unwrap().parent().unwrap());
+}

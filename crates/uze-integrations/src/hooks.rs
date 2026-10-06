@@ -27,7 +27,7 @@ use uze_core::{
     home::UzeHome,
     hook::{
         CommandHook, HOOKS_FILE_NAME, HarnessToolVocabulary, HookCapabilities, HookEffect,
-        HookEvent, HookMatcher, PortableHook, ToolBinding,
+        HookEvent, HookMatcher, Invocation, PortableHook, ToolBinding,
     },
     integration::{AttachmentInspection, AttachmentState},
     router::CompatibilityRoute,
@@ -395,6 +395,32 @@ fn unannounced_sources(target: HookTarget, hook: &PortableHook) -> Option<String
     Some(sources.join(", "))
 }
 
+/// The line a generated wrapper runs for `handler` on this platform: the
+/// author's own line with `${PLUGIN_ROOT}` resolved, or an exec-form
+/// script's launcher and words quoted for this shell. Empty for a handler
+/// nothing runs here, which the plan never delivers.
+pub(crate) fn handler_line(
+    handler: &CommandHook,
+    store_root: &Path,
+    delivered_root: &Path,
+) -> String {
+    match handler.invocation(
+        store_root,
+        delivered_root,
+        uze_platform::shell::FAMILY,
+        &uze_core::launcher::python_answers,
+    ) {
+        Invocation::Line(line) => {
+            line.replace("${PLUGIN_ROOT}", &delivered_root.display().to_string())
+        }
+        Invocation::Argv { argv, .. } => match argv.split_first() {
+            Some((program, arguments)) => uze_platform::shell::command_line(program, arguments),
+            None => String::new(),
+        },
+        Invocation::Unrunnable(_) => String::new(),
+    }
+}
+
 /// artifact `deliver` renders for it. A `degraded` or `unsupported` route
 /// never attaches, and neither does a group `deliver` has no artifact for
 /// on this platform: the mechanism carries the diagnostic instead.
@@ -449,18 +475,24 @@ pub(crate) fn hook_plan(
                 .map_or_else(|| evidence.to_owned(), with_compatibility),
         };
     }
-    // A handler is never run in a shell it was not written for, so a group
-    // with one that has no spelling here delivers nothing here.
-    if let Some(unspelled) = hook
-        .handlers
-        .iter()
-        .find(|handler| handler.command.here().is_none())
-    {
+    // A handler is never run in a shell it was not written for, nor an
+    // exec-form script with no launcher here, so a group with one delivers
+    // nothing here.
+    let unrunnable = hook.handlers.iter().find_map(|handler| {
+        match handler.invocation(
+            &resource.package_root,
+            &resource.package_root,
+            uze_platform::shell::FAMILY,
+            &|_| false,
+        ) {
+            Invocation::Unrunnable(reason) => Some(reason),
+            _ => None,
+        }
+    });
+    if let Some(reason) = unrunnable {
         return unsupported(format!(
-            "hook `{}` has no {} spelling for `{}`, so it is not delivered on this platform",
+            "hook `{}`: {reason}, so it is not delivered on this platform",
             hook.id,
-            uze_core::shell::ShellCommand::platform(),
-            unspelled.command
         ));
     }
     match deliver(&hook) {

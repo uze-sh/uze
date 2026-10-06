@@ -23,6 +23,7 @@ pub(super) fn bridge_hooks(
     hooks: &[&PortableHook],
     package_root: &Path,
 ) -> serde_json::Value {
+    let store_root = package_root;
     let package_root = &crate::shared::package_root::delivered(package_root);
     serde_json::Value::Array(
         hooks
@@ -33,19 +34,68 @@ pub(super) fn bridge_hooks(
                     "event": hook.event.abi_name(),
                     "effect": hook.effect.abi_name(),
                     "matchers": hook.matchers.iter().flat_map(|m| tool_names(target, m)).collect::<Vec<_>>(),
-                    "handlers": hook.handlers.iter().map(|handler| serde_json::json!({
-                        "command": uze_platform::shell::script_text(
-                            &handler.command.here().unwrap_or_default().replace(
-                                "${PLUGIN_ROOT}",
-                                &package_root.display().to_string(),
-                            ),
-                        ),
-                        "timeout": handler.timeout,
-                    })).collect::<Vec<_>>(),
+                    "handlers": hook.handlers.iter().map(|handler| bridged_handler(handler, store_root, package_root)).collect::<Vec<_>>(),
                 })
             })
             .collect(),
     )
+}
+
+/// The extensions OpenCode's embedded Bun runs as they are, with no
+/// interpreter asked of the machine.
+const OWN_RUNTIME: &[&str] = &["js", "mjs", "cjs", "ts"];
+
+/// One handler as the bridge spawns it: a shell line as the author wrote
+/// it; an exec-form script from its words, with no shell between; or a
+/// JavaScript one in OpenCode's own Bun (`process.execPath`, which is a
+/// `bun build --compile` executable that acts as `bun` under `BUN_BE_BUN`).
+fn bridged_handler(
+    handler: &uze_core::hook::CommandHook,
+    store_root: &Path,
+    delivered_root: &Path,
+) -> serde_json::Value {
+    let own_runtime = handler.interpreter.is_none()
+        && handler.script().is_some_and(|script| {
+            Path::new(script)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    OWN_RUNTIME.contains(&extension.to_ascii_lowercase().as_str())
+                })
+        });
+    if own_runtime && let Some(script) = handler.script() {
+        let argv: Vec<String> = std::iter::once(delivered_root.join(script).display().to_string())
+            .chain(handler.args.iter().flatten().cloned())
+            .collect();
+        return serde_json::json!({
+            "command": handler.describe(),
+            "argv": argv,
+            "bun": true,
+            "timeout": handler.timeout,
+        });
+    }
+    match handler.invocation(
+        store_root,
+        delivered_root,
+        uze_platform::shell::FAMILY,
+        &uze_core::launcher::python_answers,
+    ) {
+        uze_core::hook::Invocation::Argv { argv, .. } => serde_json::json!({
+            "command": handler.describe(),
+            "argv": argv,
+            "timeout": handler.timeout,
+        }),
+        uze_core::hook::Invocation::Line(line) => serde_json::json!({
+            "command": uze_platform::shell::script_text(
+                &line.replace("${PLUGIN_ROOT}", &delivered_root.display().to_string()),
+            ),
+            "timeout": handler.timeout,
+        }),
+        uze_core::hook::Invocation::Unrunnable(_) => serde_json::json!({
+            "command": handler.describe(),
+            "timeout": handler.timeout,
+        }),
+    }
 }
 
 /// The alias table this harness's plugin reads, generated from the one
@@ -204,12 +254,18 @@ async function collect(stream) {{
 // One handler: null when it allowed, otherwise the reason it answered with.
 // A `transform` handler's stdout is kept: `rewrite` receives it when it
 // allowed with something to say.
-async function handler(command, timeout, env, rewrite) {{
+async function handler(entry, timeout, env, rewrite) {{
+  const command = entry.command;
+  const argv = !entry.argv
+    ? [...SHELL, command]
+    : entry.bun
+      ? [process.execPath, ...entry.argv]
+      : entry.argv;
   let proc;
   try {{
-    proc = Bun.spawn([...SHELL, command], {{
+    proc = Bun.spawn(argv, {{
       cwd: ROOT,
-      env,
+      env: entry.bun ? {{ ...env, BUN_BE_BUN: "1" }} : env,
       stdin: "ignore",
       stdout: rewrite ? "pipe" : "ignore",
       stderr: "pipe",
@@ -262,7 +318,7 @@ async function handler(command, timeout, env, rewrite) {{
 async function run(group, native, input, source) {{
   const env = environment(group, native, input, source);
   for (const entry of group.handlers) {{
-    const answer = await handler(entry.command, entry.timeout, env);
+    const answer = await handler(entry, entry.timeout, env);
     if (answer === null) continue;
     if (answer.failed && !closed(group.effect)) {{
       console.error(`[hooks:${{group.id}}]`, answer.reason);
@@ -297,7 +353,7 @@ async function transform(group, native, input) {{
   let current = input;
   for (const entry of group.handlers) {{
     const env = environment(group, native, current);
-    const answer = await handler(entry.command, entry.timeout, env, (rewritten) => {{
+    const answer = await handler(entry, entry.timeout, env, (rewritten) => {{
       current = rewritten;
     }});
     if (answer !== null) return {{ reason: answer.reason }};

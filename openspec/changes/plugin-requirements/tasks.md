@@ -6,7 +6,7 @@
 
 ## 2. Detection (read-only)
 
-- [ ] 2.1 Implement detection in `uze-core::machine`: `PATH` lookup plus a version probe with a per-executable table (flag and parse format); unknown format reports "present, version unknown"
+- [ ] 2.1 Implement detection in `uze-core::machine`: `PATH` lookup plus a version probe with a per-executable table (flag and parse format) and a deadline; only an executable that answers is present (Windows App Execution Aliases and the macOS `python3` stub are missing); unknown format reports "present, version unknown"
 - [ ] 2.2 Requirement status read model per package: met / too old / missing, with the closing command when an installer is known
 - [ ] 2.3 `uze plugin list` shows requirement status per package; `uze doctor` re-verifies every installed package's effective set and reports unmet/drifted requirements and orphaned UZE-installed tools
 - [ ] 2.4 Tests with a fake `PATH` (present, absent, too old); classify any new CLI leaf in `command_performance.rs`
@@ -22,6 +22,7 @@
 ## 4. Integrations contribute their requirements
 
 - [ ] 4.1 Integrations declare the requirements of the artifacts they generate; the `sh` hook wrapper (from `native-first-hooks`) contributes `jq` attributed to the wrapper
+- [ ] 4.3 Exec-form hook handlers contribute their launcher's interpreter attributed to the hook (`hook-exec-form`); a fail-closed source escalates the report line
 - [ ] 4.2 Test: a package with hooks and no declared requirements shows `jq` as required by the wrapper on Claude/Codex/Antigravity and nothing on OpenCode
 
 ## 5. Conformance and docs

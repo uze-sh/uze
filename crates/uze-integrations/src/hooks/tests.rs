@@ -15,6 +15,8 @@ fn hook() -> PortableHook {
                 "${PLUGIN_ROOT}/check",
                 "& \"${PLUGIN_ROOT}/check.ps1\"",
             ),
+            args: None,
+            interpreter: None,
             timeout: 10,
         }],
         effect: HookEffect::Deny,
@@ -1205,4 +1207,52 @@ fn codex_s_windows_shell_gap_is_declared_by_the_windows_template_alone() {
     );
     assert!(PosixWrapper::unfired(crate::codex::HOOKS).is_empty());
     assert!(PowerShellWrapper::unfired(crate::claude::HOOKS).is_empty());
+}
+
+/// An exec-form handler whose script nothing starts here is never
+/// delivered, and the plan says why: a script that is neither executable
+/// nor placed by its extension on POSIX, a `.sh` one on Windows. One the
+/// table places is delivered as usual.
+#[test]
+fn an_exec_form_script_nothing_starts_here_is_reported_not_delivered() {
+    let package = uze_testkit::temp::scratch("exec-form-plan");
+    fs::create_dir_all(package.join("hooks")).unwrap();
+    fs::write(package.join("hooks").join("guard"), "exit 0\n").unwrap();
+    let with = |script: &str| {
+        let mut group = hook();
+        group.handlers = vec![CommandHook {
+            handler_type: CommandHandlerType::Command,
+            command: script.into(),
+            args: Some(Vec::new()),
+            interpreter: None,
+            timeout: 10,
+        }];
+        let mut resource = hook_resource(&package);
+        resource.capability.payload = serde_json::to_vec(&group).unwrap();
+        hook_plan(&resource, crate::codex::HOOKS, false, "evidence.", |_| {
+            Some(ManagedArtifact::HookConfigEntry {
+                config_file: package.join("hooks.json"),
+                entry_name: "demo:protect-env".into(),
+                event: HookEvent::PreToolUse,
+                expected: "{}".into(),
+                wrapper: package.join("exec"),
+            })
+        })
+    };
+    let unplaced = with(uze_platform::shell::spelling(
+        "hooks/guard",
+        "hooks/guard.sh",
+    ));
+    assert_eq!(unplaced.route, CompatibilityRoute::Unsupported);
+    assert!(
+        unplaced.evidence.contains("not delivered on this platform"),
+        "{}",
+        unplaced.evidence
+    );
+    assert_ne!(
+        with("hooks/guard.py").route,
+        CompatibilityRoute::Unsupported,
+        "a script the table places is delivered"
+    );
+    let _ = fs::remove_dir_all(package);
 }

@@ -69,6 +69,8 @@ fn group_at(event: HookEvent, effect: HookEffect, handlers: &[&str], timeout: u1
             .map(|spec| CommandHook {
                 handler_type: CommandHandlerType::Command,
                 command: handler_command(spec).into(),
+                args: None,
+                interpreter: None,
                 timeout,
             })
             .collect(),
@@ -875,5 +877,59 @@ fn the_wrapper_answers_every_fixture_as_recorded() {
             "{}/{} answered differently than recorded",
             recorded["harness"], recorded["event"]
         );
+    }
+}
+
+/// The exec form, end to end: a Python guard written once, named by its
+/// path and given words no shell may read, in a package whose root has a
+/// space in it. The script is not executable, so its extension picks the
+/// launcher, and every word reaches it intact.
+#[test]
+fn an_exec_form_python_guard_receives_its_words_and_denies() {
+    for target in TARGETS {
+        let root = uze_testkit::temp::scratch(&format!("wrapper-exec-{target}")).join("with space");
+        fs::create_dir_all(root.join("hooks")).unwrap();
+        fs::write(
+            root.join("hooks").join("guard.py"),
+            "import os, sys\n\
+             open(os.path.join(os.environ['PLUGIN_ROOT'], 'argv.txt'), 'w').write('\\n'.join(sys.argv[1:]))\n\
+             if '.env' in os.environ.get('HOOK_COMMAND', ''):\n\
+             \x20   sys.stderr.write('blocked by python')\n\
+             \x20   sys.exit(3)\n",
+        )
+        .unwrap();
+        let word = r#"it's "$HOME" `x`"#;
+        let hook = PortableHook {
+            id: "exec-guard".into(),
+            event: HookEvent::PreToolUse,
+            matchers: vec![HookMatcher::Portable("shell".into())],
+            handlers: vec![CommandHook {
+                handler_type: CommandHandlerType::Command,
+                command: "hooks/guard.py".into(),
+                args: Some(vec!["--strict".into(), word.into()]),
+                interpreter: None,
+                timeout: 10,
+            }],
+            effect: HookEffect::Deny,
+            order: 0,
+        };
+        let answer = run_wrapper(target, &root, &hook, &payload(target, "cat .env"), None);
+        assert_eq!(
+            answer.exit,
+            block_exit(target),
+            "{target}: the guard denied ({})",
+            answer.stderr
+        );
+        assert!(
+            answer.stderr.contains("blocked by python"),
+            "{target}: {}",
+            answer.stderr
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("argv.txt")).unwrap(),
+            format!("--strict\n{word}"),
+            "{target}: every word arrived as written"
+        );
+        let _ = fs::remove_dir_all(root.parent().unwrap());
     }
 }

@@ -90,6 +90,8 @@ fn answered(target: HookTarget, index: usize, fixture: &Fixture) -> serde_json::
             .map(|handler| CommandHook {
                 handler_type: CommandHandlerType::Command,
                 command: spelled(handler),
+                args: None,
+                interpreter: None,
                 timeout: fixture.timeout,
             })
             .collect(),

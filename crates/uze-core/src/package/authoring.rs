@@ -615,7 +615,7 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
                         &resource.capability.payload,
                     )
                 {
-                    warnings.extend(spelling_warnings(&hook));
+                    warnings.extend(spelling_warnings(&hook, root));
                 }
                 delivers.push(resource.identity());
             }
@@ -631,22 +631,27 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
     })
 }
 
-/// What a hook group's handlers leave out of Windows.
-fn spelling_warnings(hook: &crate::hook::PortableHook) -> Vec<String> {
+/// What a hook group's handlers leave out of a platform: a line with no
+/// `windows` spelling, or an exec-form script no launcher can start there.
+fn spelling_warnings(hook: &crate::hook::PortableHook, root: &Path) -> Vec<String> {
+    use crate::shell::Family;
+
+    let consequence = if hook.effect.fails_closed() {
+        "installing the package is refused there, since the guard could not run"
+    } else {
+        "the group is not delivered there"
+    };
     let mut warnings = Vec::new();
     for handler in &hook.handlers {
-        let command = &handler.command;
-        if command.spelling(crate::shell::Family::PowerShell).is_none() {
-            let consequence = if hook.effect.fails_closed() {
-                "installing the package is refused there, since the guard could not run"
-            } else {
-                "the group is not delivered there"
-            };
-            warnings.push(format!(
-                "hook `{}`: `{}` has no `windows` spelling — {consequence}",
-                hook.id,
-                command.describe()
-            ));
+        for (family, platform) in [(Family::PowerShell, "Windows"), (Family::Posix, "POSIX")] {
+            if let crate::hook::Invocation::Unrunnable(reason) =
+                handler.invocation(root, root, family, &|_| false)
+            {
+                warnings.push(format!(
+                    "hook `{}`: {reason}, so it cannot run on {platform}; {consequence}",
+                    hook.id
+                ));
+            }
         }
     }
     warnings.dedup();

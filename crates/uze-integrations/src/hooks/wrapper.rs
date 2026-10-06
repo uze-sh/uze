@@ -260,10 +260,10 @@ pub(super) fn entry_is_attached(
 /// generation time, so the native entry reads as what will run.
 pub(crate) fn wrapper_arguments(
     hook: &PortableHook,
-    package_root: &Path,
+    store_root: &Path,
     handlers: &[CommandHook],
 ) -> Vec<String> {
-    let package_root = &crate::shared::package_root::delivered(package_root);
+    let package_root = &crate::shared::package_root::delivered(store_root);
     let mut arguments = vec![
         package_root.display().to_string(),
         hook.event.abi_name().to_owned(),
@@ -273,11 +273,7 @@ pub(crate) fn wrapper_arguments(
         arguments.push(format!(
             "{}:{}",
             handler.timeout,
-            handler
-                .command
-                .here()
-                .unwrap_or_default()
-                .replace("${PLUGIN_ROOT}", &package_root.display().to_string())
+            super::handler_line(handler, store_root, package_root)
         ));
     }
     arguments

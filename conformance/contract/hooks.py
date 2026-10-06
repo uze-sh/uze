@@ -25,6 +25,8 @@ answers them: every permission or review the harness puts on screen is
 accepted through its own keys (`bindings.hook_turn`), never by a flag.
 """
 
+import json
+
 from contract import declared
 from shared import common, vocabulary
 from shared.common import check, check_absence, declare, describe, provider_struct
@@ -47,6 +49,7 @@ def assert_contract(cfg, prov_ip, bindings):
         if "deny" in effects:
             _deny(cfg, bindings, expected)
             _fail_closed(cfg, bindings, expected)
+            _exec_form(cfg, bindings, expected)
         if "ask" in effects:
             _ask(cfg, bindings, expected)
         if "transform" in effects:
@@ -335,6 +338,58 @@ def _ask(cfg, bindings, expected):
             "approving it ran the command"
             if "asked" in side
             else f"side: {sorted(side)}",
+        )
+
+
+#: The word `hook-exec` hands its guard: quotes, `$` and backticks, which
+#: arrive as written only if nothing between the manifest and the script
+#: read them as shell.
+EXEC_WORD = 'it\'s "$HOME" `x`'
+
+
+def _exec_form(cfg, bindings, expected):
+    """A guard named by its path and its words (the exec form) runs with the
+    launcher its platform calls for and denies like any other: its words
+    arrive intact and the denied tool never runs."""
+    shell = expected["aliases"]["shell"]
+    denied = bindings.call(shell["call"], mark=MARKED, side=f"{SIDE}/denied")
+    calls = [{"tool": vocabulary.call_tool(shell), "args": denied}]
+    with describe("exec form"):
+        found, side, turn = _scene(cfg, bindings, "exec", "hook-exec", calls)
+        settled = turn is not None and turn.settled
+        guard = [
+            r
+            for r in found.get("exec-guard", [])
+            if MARKED in r.get("HOOK_COMMAND", "")
+        ]
+        check(
+            "hooks-exec-guard-ran",
+            bool(guard),
+            "the exec-form guard ran on the marked command"
+            if guard
+            else f"records: {found.get('exec-guard', [])}",
+        )
+        words = [r.get("LAB_WORDS") for r in guard]
+        intact = bool(words) and all(w == json.dumps([EXEC_WORD]) for w in words)
+        check(
+            "hooks-exec-words-intact",
+            intact,
+            "every word reached the guard as written" if intact else f"words: {words}",
+        )
+        reason = relayed(cfg, f"{DENIED}exec-guard")
+        check(
+            "hooks-exec-reason-relayed",
+            reason,
+            "the denial reached the conversation"
+            if reason
+            else "no request carried it",
+        )
+        check_absence(
+            "hooks-exec-tool-blocked",
+            "denied" not in side,
+            settled,
+            proof=bool(guard) and reason,
+            detail="the denied command never ran" if "denied" not in side else "it ran",
         )
 
 

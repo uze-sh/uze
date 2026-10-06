@@ -169,9 +169,7 @@ fn hook_executions(resource: &Resource) -> Vec<ExecutableCapability> {
             .handlers
             .into_iter()
             .enumerate()
-            .map(|(index, handler)| {
-                execution(format!("{}#{index}", hook.id), handler.command.describe())
-            })
+            .map(|(index, handler)| execution(format!("{}#{index}", hook.id), handler.describe()))
             .collect(),
         Err(error) => vec![execution(
             resource.name(),
@@ -278,6 +276,8 @@ mod tests {
                     handlers: vec![crate::hook::CommandHook {
                         handler_type: crate::hook::CommandHandlerType::Command,
                         command: "scripts/check".into(),
+                        args: None,
+                        interpreter: None,
                         timeout: 10,
                     }],
                     effect: crate::hook::HookEffect::Deny,
@@ -315,6 +315,8 @@ mod tests {
                 handlers: vec![crate::hook::CommandHook {
                     handler_type: crate::hook::CommandHandlerType::Command,
                     command,
+                    args: None,
+                    interpreter: None,
                     timeout: 10,
                 }],
                 effect: crate::hook::HookEffect::Deny,

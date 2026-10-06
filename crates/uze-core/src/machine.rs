@@ -14,6 +14,7 @@ pub mod detection_cache;
 pub mod features;
 pub mod harness_runtime;
 pub mod home;
+pub mod launcher;
 pub mod path;
 pub mod process_cwd;
 pub mod provisioning;

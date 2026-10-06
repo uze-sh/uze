@@ -48,6 +48,8 @@ fn group(effect: HookEffect, handler: &str) -> PortableHook {
                 format!("${{PLUGIN_ROOT}}/scripts/{handler}"),
                 format!("& \"${{PLUGIN_ROOT}}/scripts/{handler}.ps1\""),
             ),
+            args: None,
+            interpreter: None,
             timeout: 10,
         }],
         effect,

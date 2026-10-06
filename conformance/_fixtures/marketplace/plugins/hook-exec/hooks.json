@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "exec-guard",
+        "matcher": "shell",
+        "effect": "deny",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/probe.js",
+            "args": ["exec-guard", "deny-marked", "it's \"$HOME\" `x`"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
