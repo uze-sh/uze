@@ -309,7 +309,7 @@ fn copying_a_path_hands_the_host_the_machines_spelling() {
     press(&mut view, Command::SelectNext);
     assert_eq!(
         press(&mut view, Command::Activate),
-        CodeOutcome::Copy("/repo/src/ui/git_diff.rs".to_owned())
+        CodeOutcome::Copy(spelled(Path::new("/repo").join("src/ui/git_diff.rs")))
     );
     assert!(menu_of(&view).is_none());
 }
@@ -366,7 +366,7 @@ fn a_row_of_the_tree_offers_its_actions() {
     );
     assert_eq!(
         press(&mut view, Command::Activate),
-        CodeOutcome::Copy("/w/src/main.rs".to_owned())
+        CodeOutcome::Copy(spelled(Path::new("/w").join("src").join("main.rs")))
     );
 
     pick_from_menu(&mut view, 1);
@@ -375,7 +375,7 @@ fn a_row_of_the_tree_offers_its_actions() {
     press(&mut view, Command::SelectNext);
     assert_eq!(
         press(&mut view, Command::Activate),
-        CodeOutcome::Copy("src/main.rs".to_owned())
+        CodeOutcome::Copy(spelled(Path::new("src").join("main.rs")))
     );
 
     pick_from_menu(&mut view, 3);
@@ -390,6 +390,12 @@ fn a_row_of_the_tree_offers_its_actions() {
         view.take_request(),
         Some(FileRequest::Delete(PathBuf::from("/w/src/main.rs")))
     );
+}
+
+/// A path as the machine spells it, which is what reaches the clipboard:
+/// the separator a join puts in is the platform's own.
+fn spelled(path: PathBuf) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 /// Opens the selection's menu and picks its entry `index`.
