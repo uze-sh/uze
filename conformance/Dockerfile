@@ -10,7 +10,11 @@ COPY . .
 # Two invocations, not one: the fixture is behind `--features dev-servers`,
 # which carries rmcp/tokio/schemars — and the `uze` the Lab drives has to be
 # the binary a user gets, linking none of them.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
+# The rustup home is one of them because `rust-toolchain.toml` names a
+# channel, not the image's own 1.97: without it every build downloaded and
+# unpacked that toolchain again, ~0.7 GB of cache per rebuild.
+RUN --mount=type=cache,target=/usr/local/rustup \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --locked --release --bin uze \
     && cargo build --locked --release --features dev-servers --bin uze-mcp-conformance-fixture \
@@ -35,9 +39,11 @@ FROM node:22-bookworm-slim AS harness-lab
 # only a slim image does not.
 RUN apt-get update \
     && apt-get install --no-install-recommends -y ca-certificates curl git jq ripgrep tini bubblewrap procps \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /work \
+    && chown node:node /work
 
-COPY --from=uze-build /out/uze /usr/local/bin/uze
+COPY --from=uze-build --chown=node:node /out/uze /usr/local/bin/uze
 
 # UZE is its own provisioner: `uze setup` installs the primary V0 harnesses
 # (Claude Code, Codex, OpenCode, Antigravity CLI) through each vendor's
@@ -47,20 +53,20 @@ COPY --from=uze-build /out/uze /usr/local/bin/uze
 # `HOME=/usr/local` pins the vendor default install location (~/.local/bin)
 # into the image, reachable by the runtime user; the PATH below carries it.
 ENV PATH="/usr/local/.local/bin:/usr/local/.opencode/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-RUN HOME=/usr/local /usr/local/bin/uze setup
+#
+# The harness trees are handed to `node` in the same layer that installs
+# them: a `chown -R` in a later layer copies every file it touches into that
+# layer, which kept a second ~0.7 GB of the same binaries in the image and in
+# the build cache of every rebuild.
+RUN HOME=/usr/local /usr/local/bin/uze setup \
+    && chown -R node:node /usr/local/.local /usr/local/.opencode
 
-COPY --from=uze-build /out/uze-mcp-conformance-fixture /usr/local/bin/uze-mcp-conformance-fixture
+COPY --from=uze-build --chown=node:node /out/uze-mcp-conformance-fixture /usr/local/bin/uze-mcp-conformance-fixture
 # The Lab owns a complete, isolated marketplace fixture. It represents the
 # final resources exercised by real harnesses; unit/integration fixtures stay
 # under tests/_fixtures and remain independent.
-COPY conformance/_fixtures /opt/uze-conformance-fixtures
-COPY conformance/entrypoint.sh /usr/local/bin/uze-harness-entrypoint
-
-RUN chmod 0755 /usr/local/bin/uze-harness-entrypoint \
-    && mkdir -p /work \
-    && chown -R node:node /opt/uze-conformance-fixtures /usr/local/.local /usr/local/.opencode \
-    && chown node:node /work /usr/local/bin/uze \
-    && chown -R node:node /usr/local/bin/uze-mcp-conformance-fixture
+COPY --chown=node:node conformance/_fixtures /opt/uze-conformance-fixtures
+COPY --chmod=0755 conformance/entrypoint.sh /usr/local/bin/uze-harness-entrypoint
 
 # Rootless runtime: `node` (UID 1000) owns every writable tree — HOME,
 # UZE_HOME, fixture cache, package-manager home, harness installs (vendors
