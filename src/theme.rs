@@ -169,10 +169,10 @@ pub fn adaptive_half(app: &UzeApplication, background: Background) -> Result<Str
     }))
 }
 
-/// How often the workspace looks at the desktop's setting again: a person
-/// flipping it expects the workspace to follow about as soon as their other
-/// windows do, and on WSL each look is a `reg.exe` of tens of milliseconds.
-const DESKTOP_LOOK: std::time::Duration = std::time::Duration::from_secs(3);
+/// How often the workspace looks at the selection while adaptive is not
+/// it: a read of `config.toml`, so that choosing adaptive starts the desktop
+/// being followed without a restart.
+const SELECTION_LOOK: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Looks at whether the person wants light or dark, remembers it, and puts
 /// the chosen theme back in force when that changed — while the adaptive
@@ -202,30 +202,22 @@ pub fn observe_appearance(home: &UzeHome) {
     }
 }
 
-/// Follows the desktop's setting for as long as the process runs, while the
-/// adaptive selection is the one in force. The theme changes between frames
-/// like any other switch; the workspace sees it through
+/// Follows the desktop's setting for as long as the process runs, once the
+/// adaptive selection has been chosen — not before, since on WSL and macOS
+/// following it costs a process every few seconds
+/// ([`uze_platform::desktop::color_scheme_changes`]). The theme changes
+/// between frames like any other switch; the workspace sees it through
 /// [`uze_theme::generation`].
 pub fn follow_desktop(home: UzeHome) {
     std::thread::spawn(move || {
         let Ok(app) = UzeApplication::from_env(home.clone()) else {
             return;
         };
-        let mut last_seen = None;
-        loop {
-            std::thread::sleep(DESKTOP_LOOK);
-            if !adaptive_in_force(&app) {
-                // Selecting it again must look afresh, whatever was seen
-                // before it was left.
-                last_seen = None;
-                continue;
-            }
-            if let Some(seen) = desktop_background()
-                && last_seen != Some(seen)
-            {
-                last_seen = Some(seen);
-                remember(&app, &home, seen);
-            }
+        while !adaptive_in_force(&app) {
+            std::thread::sleep(SELECTION_LOOK);
+        }
+        for scheme in uze_platform::desktop::color_scheme_changes() {
+            remember(&app, &home, background_of(scheme));
         }
     });
 }
@@ -235,14 +227,21 @@ fn adaptive_in_force(app: &UzeApplication) -> bool {
 }
 
 fn desktop_background() -> Option<Background> {
-    uze_platform::desktop::color_scheme().map(|scheme| match scheme {
-        uze_platform::desktop::ColorScheme::Light => Background::Light,
-        uze_platform::desktop::ColorScheme::Dark => Background::Dark,
-    })
+    uze_platform::desktop::color_scheme().map(background_of)
 }
 
+fn background_of(scheme: uze_platform::desktop::ColorScheme) -> Background {
+    match scheme {
+        uze_platform::desktop::ColorScheme::Light => Background::Light,
+        uze_platform::desktop::ColorScheme::Dark => Background::Dark,
+    }
+}
+
+/// Keeps the observation current whatever is selected, so choosing adaptive
+/// again draws in the right half at once; the theme is only put back in
+/// force while adaptive is the one deciding it.
 fn remember(app: &UzeApplication, home: &UzeHome, background: Background) {
-    if matches!(app.themes().observe_background(background), Ok(true)) {
+    if matches!(app.themes().observe_background(background), Ok(true)) && adaptive_in_force(app) {
         // Anything stopping the theme from loading was reported when the
         // command started, and is the same problem now.
         let _ = install(home);
@@ -405,7 +404,7 @@ mod tests {
         );
     }
 
-    fn background_of(loaded: &Loaded) -> Background {
+    fn background_drawn(loaded: &Loaded) -> Background {
         if loaded
             .theme
             .color(uze_theme::Token::SurfaceBackground)
@@ -424,14 +423,14 @@ mod tests {
 
         // Nothing has been observed yet: dark, as UZE always drew.
         let loaded = chosen(&home).expect("resolves").expect("chosen");
-        assert_eq!(background_of(&loaded), Background::Dark);
+        assert_eq!(background_drawn(&loaded), Background::Dark);
 
         app(&home)
             .themes()
             .observe_background(Background::Light)
             .expect("observed");
         let loaded = chosen(&home).expect("resolves").expect("chosen");
-        assert_eq!(background_of(&loaded), Background::Light);
+        assert_eq!(background_drawn(&loaded), Background::Light);
         assert_eq!(
             concrete(&app(&home), ADAPTIVE).expect("concrete"),
             ADAPTIVE_LIGHT
@@ -463,7 +462,7 @@ mod tests {
             (ADAPTIVE_DARK, Background::Dark),
         ] {
             let loaded = resolve(&app, &home, id).expect("a default half resolves");
-            assert_eq!(background_of(&loaded), background, "{id}");
+            assert_eq!(background_drawn(&loaded), background, "{id}");
         }
     }
 

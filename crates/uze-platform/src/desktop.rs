@@ -22,12 +22,113 @@ pub fn color_scheme() -> Option<ColorScheme> {
     imp::color_scheme()
 }
 
+/// Every change to the desktop's light-or-dark setting, starting with the
+/// setting as it is now. Blocks between changes, so it belongs on a thread
+/// of its own; ends where there is no desktop to watch.
+///
+/// Each platform is watched the cheapest way it allows. Windows signals a
+/// change to the registry key and the freedesktop portal emits one, so
+/// neither is asked again until something changed. macOS and WSL offer
+/// nothing this process can wait on — one needs a Cocoa run loop, the other
+/// a Windows process of its own — so they are asked every few seconds.
+pub fn color_scheme_changes() -> ColorSchemeChanges {
+    ColorSchemeChanges {
+        settings: imp::settings(),
+        last: None,
+    }
+}
+
+/// See [`color_scheme_changes`].
+pub struct ColorSchemeChanges {
+    settings: imp::Settings,
+    last: Option<ColorScheme>,
+}
+
+impl Iterator for ColorSchemeChanges {
+    type Item = ColorScheme;
+
+    fn next(&mut self) -> Option<ColorScheme> {
+        distinct(&mut self.settings, &mut self.last)
+    }
+}
+
+/// The next setting unlike the last one handed out. A watch wakes on any
+/// write to where the setting lives and a poll on a clock; neither is a
+/// change by itself.
+fn distinct(
+    settings: &mut impl Iterator<Item = ColorScheme>,
+    last: &mut Option<ColorScheme>,
+) -> Option<ColorScheme> {
+    let next = settings.find(|setting| Some(*setting) != *last)?;
+    *last = Some(next);
+    Some(next)
+}
+
+/// Asking a desktop that cannot say when it changed, on a clock.
+#[cfg(unix)]
+mod polling {
+    use std::time::Duration;
+
+    use super::ColorScheme;
+
+    /// About as soon as a person who flipped the setting looks back, and
+    /// rarely enough that a process every few seconds costs nothing.
+    const EVERY: Duration = Duration::from_secs(5);
+
+    pub(super) struct Polling {
+        asked_yet: bool,
+    }
+
+    impl Polling {
+        pub(super) fn now() -> Self {
+            Self { asked_yet: false }
+        }
+    }
+
+    impl Iterator for Polling {
+        type Item = ColorScheme;
+
+        fn next(&mut self) -> Option<ColorScheme> {
+            loop {
+                if self.asked_yet {
+                    std::thread::sleep(EVERY);
+                }
+                self.asked_yet = true;
+                if let Some(setting) = super::color_scheme() {
+                    return Some(setting);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_change_is_handed_out() {
+        use ColorScheme::{Dark, Light};
+        let mut seen = [Dark, Dark, Light, Light, Light, Dark].into_iter();
+        let mut last = None;
+        let changes: Vec<ColorScheme> =
+            std::iter::from_fn(|| distinct(&mut seen, &mut last)).collect();
+        assert_eq!(changes, [Dark, Light, Dark]);
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use super::ColorScheme;
 
     /// `open` is the one opener there.
     pub(super) const URL_OPENERS: &[&str] = &["open"];
+
+    pub(super) type Settings = super::polling::Polling;
+
+    pub(super) fn settings() -> Settings {
+        Settings::now()
+    }
 
     /// `AppleInterfaceStyle` is `Dark` while the desktop is dark, the
     /// automatic setting included, and absent while it is light.
@@ -68,7 +169,7 @@ mod imp {
 mod imp {
     use std::process::{Command, Stdio};
 
-    use super::ColorScheme;
+    use super::{ColorScheme, polling::Polling};
 
     /// `explorer.exe` is how WSL reaches the Windows browser.
     pub(super) const URL_OPENERS: &[&str] = &["xdg-open", "sensible-browser", "explorer.exe"];
@@ -80,13 +181,139 @@ mod imp {
     /// environment answers for its own setting, then GNOME's key for one
     /// running without the portal. With no display there is no desktop.
     pub(super) fn color_scheme() -> Option<ColorScheme> {
-        if std::env::var_os("WSL_DISTRO_NAME").is_some() {
+        if under_wsl() {
             return windows_setting();
         }
-        if std::env::var_os("WAYLAND_DISPLAY").is_none() && std::env::var_os("DISPLAY").is_none() {
+        if !has_display() {
             return None;
         }
         portal_setting().or_else(gnome_setting)
+    }
+
+    fn under_wsl() -> bool {
+        std::env::var_os("WSL_DISTRO_NAME").is_some()
+    }
+
+    fn has_display() -> bool {
+        std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some()
+    }
+
+    pub(super) enum Settings {
+        Nothing,
+        Polling(Polling),
+        Portal { monitor: Monitor, asked_yet: bool },
+    }
+
+    /// The portal's signal where a desktop runs one; WSL's Windows and a
+    /// desktop with no `gdbus` on a clock; nothing without a display.
+    pub(super) fn settings() -> Settings {
+        if under_wsl() {
+            return Settings::Polling(Polling::now());
+        }
+        if !has_display() {
+            return Settings::Nothing;
+        }
+        match Monitor::start() {
+            Some(monitor) => Settings::Portal {
+                monitor,
+                asked_yet: false,
+            },
+            None => Settings::Polling(Polling::now()),
+        }
+    }
+
+    impl Iterator for Settings {
+        type Item = ColorScheme;
+
+        fn next(&mut self) -> Option<ColorScheme> {
+            match self {
+                Self::Nothing => None,
+                Self::Polling(polling) => polling.next(),
+                Self::Portal { monitor, asked_yet } => {
+                    // The monitor is started before the first read, so a
+                    // change between the two is heard rather than missed.
+                    if !*asked_yet {
+                        *asked_yet = true;
+                        if let Some(setting) = color_scheme() {
+                            return Some(setting);
+                        }
+                    }
+                    if let Some(setting) = monitor.next_change() {
+                        return Some(setting);
+                    }
+                    // The monitor went away: the desktop is still there to
+                    // be asked, on a clock.
+                    *self = Self::Polling(Polling::now());
+                    self.next()
+                }
+            }
+        }
+    }
+
+    /// `gdbus monitor` on the portal: one process waiting on the session
+    /// bus, rather than one started every few seconds.
+    pub(super) struct Monitor {
+        child: std::process::Child,
+        lines: std::io::Lines<std::io::BufReader<std::process::ChildStdout>>,
+    }
+
+    impl Monitor {
+        fn start() -> Option<Self> {
+            use std::{io::BufRead as _, os::unix::process::CommandExt as _};
+            let mut command = crate::tools::system("gdbus");
+            command
+                .args([
+                    "monitor",
+                    "--session",
+                    "--dest",
+                    "org.freedesktop.portal.Desktop",
+                    "--object-path",
+                    "/org/freedesktop/portal/desktop",
+                ])
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .stdout(Stdio::piped());
+            // Safety: `prctl` is async-signal-safe, which is all a
+            // `pre_exec` hook may call between fork and exec. The monitor
+            // ends with the thread that started it, which is the watching
+            // thread, which lives as long as the process: it never outlives
+            // UZE waiting on a bus nobody reads.
+            unsafe {
+                command.pre_exec(|| {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                    Ok(())
+                });
+            }
+            let mut child = command.spawn().ok()?;
+            let stdout = child.stdout.take()?;
+            Some(Self {
+                child,
+                lines: std::io::BufReader::new(stdout).lines(),
+            })
+        }
+
+        fn next_change(&mut self) -> Option<ColorScheme> {
+            self.lines
+                .by_ref()
+                .map_while(Result::ok)
+                .find_map(|line| setting_changed(&line))
+        }
+    }
+
+    impl Drop for Monitor {
+        fn drop(&mut self) {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+
+    /// `/org/freedesktop/portal/desktop: org.freedesktop.portal.Settings.SettingChanged
+    /// ('org.freedesktop.appearance', 'color-scheme', <uint32 1>)`.
+    fn setting_changed(line: &str) -> Option<ColorScheme> {
+        (line.contains(".SettingChanged ")
+            && line.contains("'org.freedesktop.appearance', 'color-scheme'"))
+        .then(|| portal_color_scheme(line))
+        .flatten()
     }
 
     fn windows_setting() -> Option<ColorScheme> {
@@ -220,6 +447,36 @@ mod imp {
         }
 
         #[test]
+        fn only_the_portals_color_scheme_signal_is_a_change() {
+            let signal = |namespace: &str, key: &str, value: &str| {
+                format!(
+                    "/org/freedesktop/portal/desktop: org.freedesktop.portal.Settings.SettingChanged \
+                     ('{namespace}', '{key}', <uint32 {value}>)"
+                )
+            };
+            assert_eq!(
+                setting_changed(&signal("org.freedesktop.appearance", "color-scheme", "2")),
+                Some(ColorScheme::Light)
+            );
+            assert_eq!(
+                setting_changed(&signal("org.freedesktop.appearance", "color-scheme", "1")),
+                Some(ColorScheme::Dark)
+            );
+            assert_eq!(
+                setting_changed(&signal("org.freedesktop.appearance", "accent-color", "1")),
+                None
+            );
+            assert_eq!(
+                setting_changed(&signal("org.gnome.desktop.interface", "color-scheme", "1")),
+                None
+            );
+            assert_eq!(
+                setting_changed("The name :1.42 is now owned by :1.42"),
+                None
+            );
+        }
+
+        #[test]
         fn gnome_default_is_no_preference() {
             assert_eq!(
                 gnome_color_scheme("'prefer-dark'\n"),
@@ -236,25 +493,89 @@ mod imp {
 
 #[cfg(windows)]
 mod imp {
-    use windows_sys::Win32::System::Registry::HKEY_CURRENT_USER;
+    use std::ffi::OsStr;
+
+    use windows_sys::Win32::System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, REG_NOTIFY_CHANGE_LAST_SET, RegCloseKey,
+        RegNotifyChangeKeyValue, RegOpenKeyExW,
+    };
 
     use super::ColorScheme;
-    use crate::win::registry_dword;
+    use crate::win::{registry_dword, wide};
 
     /// `explorer.exe` hands an address to the default browser, with none of
     /// the `cmd /C start` parsing that splits one at its `&`.
     pub(super) const URL_OPENERS: &[&str] = &["explorer.exe"];
 
+    const PERSONALIZE: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+
     /// The setting Settings → Personalization → Colors writes for apps.
     pub(super) fn color_scheme() -> Option<ColorScheme> {
-        match registry_dword(
-            HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            "AppsUseLightTheme",
-        )? {
+        match registry_dword(HKEY_CURRENT_USER, PERSONALIZE, "AppsUseLightTheme")? {
             0 => Some(ColorScheme::Dark),
             1 => Some(ColorScheme::Light),
             _ => None,
+        }
+    }
+
+    /// The key that setting lives in, opened to be told when it is written.
+    pub(super) struct Settings {
+        key: Option<HKEY>,
+        asked_yet: bool,
+    }
+
+    // SAFETY: a registry key handle is usable from any thread.
+    unsafe impl Send for Settings {}
+
+    pub(super) fn settings() -> Settings {
+        let path = wide(OsStr::new(PERSONALIZE));
+        let mut key: HKEY = std::ptr::null_mut();
+        // SAFETY: `path` is NUL-terminated; `key` is written on success.
+        let opened =
+            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, path.as_ptr(), 0, KEY_NOTIFY, &mut key) };
+        Settings {
+            key: (opened == 0).then_some(key),
+            asked_yet: false,
+        }
+    }
+
+    impl Iterator for Settings {
+        type Item = ColorScheme;
+
+        fn next(&mut self) -> Option<ColorScheme> {
+            let key = self.key?;
+            loop {
+                if self.asked_yet {
+                    // Blocks until a value under the key is written; the
+                    // watch is one-shot, so it is asked for again each time.
+                    // SAFETY: `key` is open for the life of `self`.
+                    let status = unsafe {
+                        RegNotifyChangeKeyValue(
+                            key,
+                            0,
+                            REG_NOTIFY_CHANGE_LAST_SET,
+                            std::ptr::null_mut(),
+                            0,
+                        )
+                    };
+                    if status != 0 {
+                        return None;
+                    }
+                }
+                self.asked_yet = true;
+                if let Some(setting) = color_scheme() {
+                    return Some(setting);
+                }
+            }
+        }
+    }
+
+    impl Drop for Settings {
+        fn drop(&mut self) {
+            if let Some(key) = self.key {
+                // SAFETY: opened by `settings`, closed once.
+                unsafe { RegCloseKey(key) };
+            }
         }
     }
 }

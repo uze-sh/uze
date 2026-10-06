@@ -36,8 +36,9 @@ uze config theme set adaptive --light tokyo-night-light --dark dracula
 ```
 
 The workspace reads the setting from Windows (also under WSL), macOS, or your
-Linux desktop, and switches within a few seconds of you changing it, without
-restarting. With no desktop to ask, as over SSH, it asks the terminal for its
+Linux desktop, and switches when you change it, without restarting: at once on
+Windows and on a Linux desktop, within five seconds under WSL and on macOS,
+which have no way to announce the change. With no desktop to ask, as over SSH, it asks the terminal for its
 background when it opens instead. CLI commands draw in whatever the workspace
 saw last, and the dark theme until it has seen anything.
 
