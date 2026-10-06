@@ -88,7 +88,7 @@ mod tests {
         // The ASCII glyphs are a *set* layered over the default, not a theme
         // of their own — assembling the stack here is what a selection does.
         let ascii = resolve_stack(
-            &Identity::from_file("default", default_theme_file()),
+            &Identity::from_file(crate::DEFAULT_THEME, default_theme_file()),
             &[
                 default_theme_file(),
                 glyph_set_file("ascii").expect("bundled"),

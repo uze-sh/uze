@@ -147,7 +147,7 @@ mod tests {
         // than a schema could. So what is worth checking is that UZE's own
         // themes stay inside what it tells authors is allowed.
         for source in [
-            include_str!("../themes/default.json"),
+            include_str!("../themes/dark.json"),
             include_str!("../themes/ascii.json"),
         ] {
             let file: ThemeFile = serde_json::from_str(source).expect("bundled theme parses");

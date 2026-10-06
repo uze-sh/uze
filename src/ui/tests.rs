@@ -4614,7 +4614,7 @@ fn the_adaptive_card_says_it_follows_the_system_and_names_both_themes() {
         active: true,
         path: None,
     }];
-    model.settings_adaptive = Some(("default-light".to_owned(), "dracula".to_owned()));
+    model.settings_adaptive = Some(("light".to_owned(), "dracula".to_owned()));
     model.settle_settings_selection();
 
     let mut terminal = Terminal::new(TestBackend::new(160, 30)).unwrap();
@@ -4626,7 +4626,7 @@ fn the_adaptive_card_says_it_follows_the_system_and_names_both_themes() {
         .unwrap();
     let rows = buffer_rows(&terminal).join("\n");
     assert!(rows.contains("follows the system"), "{rows}");
-    assert!(rows.contains("default-light"), "{rows}");
+    assert!(rows.contains("light"), "{rows}");
     assert!(rows.contains("dracula"), "{rows}");
     assert!(!rows.contains("built in"), "{rows}");
 }

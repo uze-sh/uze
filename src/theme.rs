@@ -36,11 +36,11 @@ use uze_theme::{Loaded, ThemeFile};
 
 /// What the adaptive selection draws in while the system is dark, until the
 /// operator names their own.
-pub const ADAPTIVE_DARK: &str = "default";
+pub const ADAPTIVE_DARK: &str = uze_theme::DEFAULT_THEME;
 
 /// What it draws in while the system is light: the default's own
 /// monochrome, on paper.
-pub const ADAPTIVE_LIGHT: &str = "default-light";
+pub const ADAPTIVE_LIGHT: &str = "light";
 
 /// How deep a chain of variations may go before UZE stops following it.
 ///
@@ -275,7 +275,7 @@ fn written(
         return Err(unusable(format!(
             "`{id}` is a glyph set now, not a theme — glyphs are chosen apart from \
              the palette. Run `uze config icons {id}` to keep those glyphs, and \
-             `uze config theme set default` to put the palette back"
+             `uze config theme set dark` to put the palette back"
         )));
     }
     Err(unusable(format!(
@@ -359,7 +359,7 @@ fn chosen(home: &UzeHome) -> std::result::Result<Option<Loaded>, String> {
     // case that has to say so every time until it is fixed.
     let id = match app.themes().active() {
         Ok(Some(id)) => id,
-        Ok(None) if has_opinion(&app) => "default".to_owned(),
+        Ok(None) if has_opinion(&app) => uze_theme::DEFAULT_THEME.to_owned(),
         Ok(None) => return Ok(None),
         Err(error) => return Err(error.to_string()),
     };
@@ -550,7 +550,7 @@ mod tests {
         write_theme(
             &home,
             "mine",
-            r##"{ "extends": "default", "colors": { "accent": "#aabbcc" } }"##,
+            r##"{ "extends": "dark", "colors": { "accent": "#aabbcc" } }"##,
         );
         let loaded = resolve(&app(&home), &home, "mine").expect("resolves");
         assert_eq!(

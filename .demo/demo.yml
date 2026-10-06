@@ -176,7 +176,7 @@ sandbox:
       LAYOUT
     # The appearance demo shares this home and ends on another theme: every
     # take starts from the default, the one the site's own palette matches.
-    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set default >/dev/null
+    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set dark >/dev/null
   clear:
     # The rewind removes the checkouts but leaves the directory that held
     # them, and the `clean` above deliberately spares it — so an empty
