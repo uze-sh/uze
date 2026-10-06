@@ -14,6 +14,7 @@ harness has recorded no trust, and stop once it has.
 
 import json
 import subprocess
+import time
 
 from shared.common import check, describe, start_provider
 
@@ -23,8 +24,12 @@ PLUGIN = "hook-rows"
 
 STATUS_BEFORE = "/work/uze-status-before.json"
 
-#: Printed once the status before the harness opened is on disk.
-BEFORE_DONE = "UZE_FIRST_SESSION_STATUS_TAKEN"
+#: Left by the shell once `uze status -m` has answered and before the harness
+#: starts. Polled in the container, never read from the terminal: a read
+#: there consumes what it reads, and on a slow runner the harness's first
+#: onboarding frame arrived in the same read as a printed marker, so the
+#: onboarding was taken off the screen before anything could answer it.
+BEFORE_DONE = "/work/uze-status-before.done"
 
 
 def assert_contract(cfg, prov_ip, bindings):
@@ -64,6 +69,21 @@ def _stderr(cfg):
     ).stdout[-200:]
 
 
+def _status_taken(cfg, seconds=60):
+    """Waits for the shell to say `uze status -m` has answered, without
+    touching the harness's terminal."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        taken = subprocess.run(
+            ["docker", "exec", cfg.harness_container, "test", "-e", BEFORE_DONE],
+            capture_output=True,
+        )
+        if taken.returncode == 0:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def _held(report, harness):
     """What UZE says this harness holds back of the plugin; the image
     carries every harness, so the machine's report names the others too."""
@@ -78,12 +98,12 @@ def _assert_first_session(cfg, bindings):
     prov_ip = start_provider(cfg, "static")
     before_cmd = (
         f"uze status -m --format json > {STATUS_BEFORE} 2>/work/uze-status-before.err; "
-        f"echo {BEFORE_DONE}"
+        f"touch {BEFORE_DONE}"
     )
     with bindings.hook_session(cfg, prov_ip, PLUGIN, "first", before=before_cmd) as tui:
         # The status is taken by the shell before the harness starts; the
         # harness cannot have recorded anything a person answers yet.
-        tui.wait_for([BEFORE_DONE], tries=30)
+        _status_taken(cfg)
         read = subprocess.run(
             ["docker", "exec", cfg.harness_container, "cat", STATUS_BEFORE],
             capture_output=True,
