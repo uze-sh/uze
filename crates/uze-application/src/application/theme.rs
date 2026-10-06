@@ -66,7 +66,10 @@ impl Themes<'_> {
     }
 
     /// The selected theme's id, or `None` while the operator has not chosen.
-    #[tracing::instrument(name = "themes.active", skip_all, err)]
+    // At debug: the workspace reads it every few seconds while it follows
+    // the desktop, and an `info` span each time fills the journal. A failure
+    // is still recorded, at error.
+    #[tracing::instrument(name = "themes.active", level = "debug", skip_all, err)]
     pub fn active(&self) -> Result<Option<String>> {
         appearance::active(&self.0.home)
     }
@@ -127,13 +130,13 @@ impl Themes<'_> {
 
     /// The background last observed, or dark while none has been: dark is
     /// what every theme UZE drew before it could ask was made for.
-    #[tracing::instrument(name = "themes.background", skip_all)]
+    #[tracing::instrument(name = "themes.background", level = "debug", skip_all)]
     pub fn background(&self) -> Background {
         appearance::observed_background(&self.0.home).unwrap_or(Background::Dark)
     }
 
     /// Remembers what was observed, and says whether it changed.
-    #[tracing::instrument(name = "themes.observe_background", skip_all, err)]
+    #[tracing::instrument(name = "themes.observe_background", level = "debug", skip_all, err)]
     pub fn observe_background(&self, background: Background) -> Result<bool> {
         appearance::observe_background(&self.0.home, background)
     }
