@@ -22,6 +22,7 @@ impl WorkspaceModel {
             }
             ClientEvent::SessionUpdated { session } => {
                 self.session = Some(session);
+                self.note_typing_target();
                 self.note_launcher_bypass();
                 self.note_strip_selection(identities);
                 self.close_extension_left_behind();
@@ -49,6 +50,34 @@ impl WorkspaceModel {
             ClientEvent::Detached | ClientEvent::Stopped => {}
         }
     }
+    /// Every pane the session holds, across its spaces.
+    pub(super) fn pane_ids(&self) -> std::collections::BTreeSet<PaneId> {
+        self.session
+            .iter()
+            .flat_map(|session| session.workspace.spaces.iter())
+            .flat_map(|space| space.tabs.iter())
+            .map(|tab| tab.pane.id)
+            .collect()
+    }
+
+    /// Hands a waiting line to the shell it was waiting for, once the
+    /// session reports a pane that was not there when it was asked.
+    fn note_typing_target(&mut self) {
+        let Some(typing) = self.typing.as_ref() else {
+            return;
+        };
+        let Some(pane) = self
+            .pane_ids()
+            .into_iter()
+            .find(|pane| !typing.known.contains(pane))
+        else {
+            return;
+        };
+        if let Some(typing) = self.typing.take() {
+            self.typed = Some((pane, typing.text.into_bytes()));
+        }
+    }
+
     /// Folds a pane's damage into its snapshot, answering whether anything
     /// on screen changed: only the focused pane is drawn, so a background
     /// pane's paint is a frame for nobody unless it changed what the

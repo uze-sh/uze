@@ -5655,3 +5655,79 @@ fn the_panel_action_has_a_row_of_air_above_it() {
         "the row above the button: {above:?}"
     );
 }
+
+/// What the machine lacks for an installed plugin reads on its row and in
+/// its panel, and the panel's line hands the command that installs it to
+/// a shell rather than running it; a gap with no known installer says to
+/// install it by hand and hands nothing over.
+#[test]
+fn a_missing_requirement_reads_on_the_plugin_and_hands_its_install_to_a_shell() {
+    use uze_application::application::{RequirementLine, RequirementStatus};
+    let gap = |executable: &str, install: Option<&str>, denies: &[&str]| RequirementLine {
+        executable: executable.to_owned(),
+        minimum: None,
+        purpose: None,
+        needed_by: vec!["hook `secret-guard`".to_owned()],
+        denies_while_unmet: denies.iter().map(|hook| (*hook).to_owned()).collect(),
+        status: RequirementStatus::Missing,
+        install_command: install.map(str::to_owned),
+    };
+    let mut model = model_with_plugins(&["flow@uze-official"]);
+    model.remembered.plugins[0].requirement_gaps = vec![
+        gap(
+            "python3",
+            Some("sudo apt-get install -y python3"),
+            &["secret-guard"],
+        ),
+        gap("uze-lab-tool", None, &[]),
+    ];
+    model.remembered.marketplace_plugins = vec![MarketplacePluginSummary {
+        marketplace: "uze-official".to_owned(),
+        name: "flow".to_owned(),
+        description: Some("A flow plugin".to_owned()),
+        keywords: Vec::new(),
+        category: None,
+        installed: true,
+        freshness: up_to_date(),
+        installed_at_unix: None,
+        is_default: true,
+    }];
+    model.select_plugin_row(0, None);
+    let (terminal, hits) = drawn_at(&model, 200, 40);
+    model.hits = hits;
+    let rows = buffer_rows(&terminal);
+
+    assert!(
+        rows.iter().any(|row| row.contains("needs python3")),
+        "the row's status names what is missing: {rows:#?}"
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("python3 missing") && row.contains("`secret-guard` denies")),
+        "the panel says what the gap costs: {rows:#?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.contains("uze-lab-tool missing"))
+            && rows.iter().any(|row| row.contains("by hand")),
+        "{rows:#?}"
+    );
+    let rect = model
+        .hits
+        .iter()
+        .find(|(_, hit)| matches!(hit, Hit::TypeInShell(_)))
+        .map(|(rect, _)| *rect)
+        .expect("the gap with an installer is a target");
+    assert_eq!(
+        model.click(rect.x, rect.y),
+        Intent::TypeInShell("sudo apt-get install -y python3".to_owned()),
+    );
+    assert_eq!(
+        model
+            .hits
+            .iter()
+            .filter(|(_, hit)| matches!(hit, Hit::TypeInShell(_)))
+            .count(),
+        1,
+        "a gap installed by hand hands nothing over"
+    );
+}

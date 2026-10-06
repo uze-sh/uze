@@ -406,6 +406,69 @@ fn the_hook_wrapper_contributes_its_own_requirement_where_it_runs() {
     );
 }
 
+/// An exec-form handler asks the machine for what its launcher needs,
+/// attributed to its hook and marked when the hook fails closed: a Python
+/// guard needs `python3` and a JavaScript observer `node` where a wrapper
+/// runs them, while OpenCode runs the JavaScript in its own runtime and
+/// asks only for Python.
+#[test]
+fn an_exec_form_handler_requires_the_interpreter_its_launcher_names() {
+    use uze_core::requirement::{Requirement, RequirementSource};
+    // The launcher's words are the POSIX table's; the Windows one, and its
+    // Python probe, are proved by the launcher's own tests on every host.
+    if uze_core::shell::ShellCommand::platform() != "posix" {
+        return;
+    }
+    let root = temp("exec-form-requirements");
+    let pkg = root.join("pkg");
+    fs::create_dir_all(pkg.join("hooks")).unwrap();
+    fs::write(
+        pkg.join("plugin.json"),
+        r#"{"name":"hook-demo","version":"1.0.0","description":"Hooks fixture"}"#,
+    )
+    .unwrap();
+    fs::write(pkg.join("hooks").join("guard.py"), "import sys\n").unwrap();
+    fs::write(pkg.join("hooks").join("watch.js"), "\n").unwrap();
+    fs::write(
+        pkg.join("hooks.json"),
+        r#"{"hooks":{"PreToolUse":[
+            {"id":"py-guard","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"hooks/guard.py","args":[]}]},
+            {"id":"js-watch","matcher":"shell","hooks":[{"type":"command","command":"hooks/watch.js","args":["--quiet"]}]}
+        ]}}"#,
+    )
+    .unwrap();
+    let home = UzeHome::at(root.join("uze"));
+    ingest_package(&home, &pkg);
+    let package = uze_core::store::UzeStore::new(home.clone())
+        .package(&PackageId::from_plugin_name("hook-demo", Path::new("plugin.json")).unwrap())
+        .unwrap();
+    let resources = stored_resources(&home, "hook-demo");
+    let resources: Vec<&Resource> = resources.iter().collect();
+    let python = (
+        Requirement::named("python3").with_purpose("starts the hook's script"),
+        RequirementSource::Hook {
+            id: "py-guard".to_owned(),
+            fails_closed: true,
+        },
+    );
+    let node = (
+        Requirement::named("node").with_purpose("starts the hook's script"),
+        RequirementSource::Hook {
+            id: "js-watch".to_owned(),
+            fails_closed: false,
+        },
+    );
+    let claude = ClaudeIntegration::new(root.join("claude"), home.clone());
+    let needed = claude.generated_requirements(&package, &resources);
+    assert!(needed.contains(&python), "{needed:?}");
+    assert!(needed.contains(&node), "{needed:?}");
+    assert_eq!(
+        opencode(&root).generated_requirements(&package, &resources),
+        vec![python],
+        "OpenCode's own runtime runs the JavaScript"
+    );
+}
+
 // ============================================================================
 // Claude: settings.json event-array merge, content-identity receipts
 // ============================================================================

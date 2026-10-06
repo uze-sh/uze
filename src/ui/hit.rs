@@ -27,6 +27,9 @@ pub(crate) enum Hit {
     /// never disagree — the URL is resolved from the same read model the
     /// card printed it from.
     OpenLink(String),
+    /// A requirement the machine lacks, in the detail panel: types the
+    /// command that installs it into a new shell, for the person to run.
+    TypeInShell(String),
     ExtensionRow(usize),
     HarnessRow(usize),
     /// A harness's row in the profile preview: opens or closes it.
@@ -192,6 +195,7 @@ impl TuiModel {
                 .find(|entry| entry.name == marketplace)
                 .and_then(|entry| entry.homepage.clone())
                 .map_or(Intent::None, Intent::OpenLink),
+            Hit::TypeInShell(command) => Intent::TypeInShell(command),
             Hit::ExtensionRow(index) => {
                 // No intent: the drawer's content is static catalog
                 // metadata, nothing to fetch.

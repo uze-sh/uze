@@ -58,12 +58,32 @@ binary is removed.
 Malformed, duplicate, or unsafe declarations are rejected before any
 attachment; nothing is projected silently.
 
-> **Commands are shell command lines.** A handler's `command` is executed
-> as a user would type it — `${PLUGIN_ROOT}/scripts/check` therefore
-> requires the script to be executable, or the command must say so
-> (`sh ${PLUGIN_ROOT}/scripts/check`). A non-executable script fails the
-> handler and follows the declared effect's fail-open/fail-closed rule — a
-> `deny` hook that cannot run denies.
+### Two ways to name a handler
+
+- **Exec form**: `command` plus `args` (a list, possibly empty). `command`
+  is then the path of a script inside the package, relative to its root,
+  and each word of `args` reaches it as written: nothing between the
+  manifest and the script reads them as shell, so the author never quotes
+  and `${PLUGIN_ROOT}` is not needed. UZE chooses the program that starts
+  the script when it delivers the hook (`uze_core::launcher`): on POSIX an
+  executable file starts itself, so its shebang decides; otherwise, and on
+  Windows, the extension picks from a fixed table (`.py`, `.js`/`.mjs`/
+  `.cjs`, `.ps1`, `.sh`, `.exe`), and on Windows the Python is the one that
+  answers `--version` (`py -3`, `python`, `python3`), never a Store alias.
+  `interpreter`, a list of words, replaces the table for one handler. On
+  OpenCode a JavaScript or TypeScript script runs in OpenCode's own Bun.
+  The program the launcher needs joins the package's requirements,
+  attributed to the hook, so `uze install`, `uze status -m` and
+  `uze doctor` name it when it is missing.
+  A script no launcher can start on a platform is treated there like a
+  line with no spelling for it.
+- **Shell line**: `command` alone, one POSIX line or a `posix`/`windows`
+  pair, executed as a user would type it. `${PLUGIN_ROOT}/scripts/check`
+  therefore requires the script to be executable, or the line must say so
+  (`sh ${PLUGIN_ROOT}/scripts/check`).
+
+A handler that cannot start fails and follows the declared effect's
+fail-open/fail-closed rule: a `deny` hook that cannot run denies.
 
 ## Handler contract
 
@@ -253,7 +273,7 @@ stated) · **—** = not expressible.
 |---|---|---|---|---|
 | wrapper runtime | `sh` + `jq` | `sh` + `jq` | `sh` + `jq` | Bun (embedded) |
 | plugin root | absolute path | absolute path | absolute path (cwd is the `hooks.json` directory) | `import.meta.url` |
-| exec form (no shell parsing) | yes (`command` + `args`) | no (shell line) | no (shell line) | n/a |
+| native entry in exec form (no shell parsing) | yes (`command` + `args`) | no (shell line) | no (shell line) | n/a |
 | matcher | native, regex on the tool name | native | native, regex (`"*"` matches all) | in-plugin |
 | a group's handlers | run **in parallel** natively → sequential inside `exec` | sequential inside `exec` | sequential inside `exec` | sequential inside the plugin |
 | `PreToolUse` observe/allow | native | native | native (signed-in session) | native (`execute.before`) |

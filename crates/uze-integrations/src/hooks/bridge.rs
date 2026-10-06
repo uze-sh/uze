@@ -45,6 +45,21 @@ pub(super) fn bridge_hooks(
 /// interpreter asked of the machine.
 const OWN_RUNTIME: &[&str] = &["js", "mjs", "cjs", "ts"];
 
+/// Whether the bridge runs `handler` in OpenCode's own Bun, asking nothing
+/// of the machine: an exec-form JavaScript or TypeScript script with no
+/// launcher of the author's.
+pub(super) fn runs_in_own_runtime(handler: &uze_core::hook::CommandHook) -> bool {
+    handler.interpreter.is_none()
+        && handler.script().is_some_and(|script| {
+            Path::new(script)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    OWN_RUNTIME.contains(&extension.to_ascii_lowercase().as_str())
+                })
+        })
+}
+
 /// One handler as the bridge spawns it: a shell line as the author wrote
 /// it; an exec-form script from its words, with no shell between; or a
 /// JavaScript one in OpenCode's own Bun (`process.execPath`, which is a
@@ -54,16 +69,9 @@ fn bridged_handler(
     store_root: &Path,
     delivered_root: &Path,
 ) -> serde_json::Value {
-    let own_runtime = handler.interpreter.is_none()
-        && handler.script().is_some_and(|script| {
-            Path::new(script)
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| {
-                    OWN_RUNTIME.contains(&extension.to_ascii_lowercase().as_str())
-                })
-        });
-    if own_runtime && let Some(script) = handler.script() {
+    if runs_in_own_runtime(handler)
+        && let Some(script) = handler.script()
+    {
         let argv: Vec<String> = std::iter::once(delivered_root.join(script).display().to_string())
             .chain(handler.args.iter().flatten().cloned())
             .collect();

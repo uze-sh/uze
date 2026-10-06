@@ -203,7 +203,13 @@ impl Attach<'_> {
         }
         loop {
             match events.try_recv() {
-                Ok(event) => self.model.apply(event, &self.identities),
+                Ok(event) => {
+                    self.model.apply(event, &self.identities);
+                    if let Some((pane, bytes)) = self.model.typed.take() {
+                        let _ =
+                            send_request(&mut self.stream, &ClientRequest::Input { pane, bytes });
+                    }
+                }
                 Err(mpsc::TryRecvError::Empty) => break,
                 // The reader thread drops its sender only when the socket
                 // stopped answering: the server exited, was replaced, or

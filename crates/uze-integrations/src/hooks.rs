@@ -147,8 +147,9 @@ impl<'a> HookEntry<'a> {
 
 /// What the hook artifacts `integration` generates for `resources` need
 /// from the machine: the wrapper's own programs, once any hook group is
-/// actually delivered through it. A harness whose runner is UZE's plugin
-/// runs in the harness's own runtime and needs nothing.
+/// actually delivered through it, and the interpreter each exec-form
+/// handler's launcher asks for, attributed to its hook. A script the
+/// harness's own runtime runs (OpenCode's Bun) asks for nothing.
 pub(crate) fn generated_requirements(
     integration: &dyn uze_core::integration::IntegrationPort,
     target: HookTarget,
@@ -157,31 +158,59 @@ pub(crate) fn generated_requirements(
     uze_core::requirement::Requirement,
     uze_core::requirement::RequirementSource,
 )> {
-    if !matches!(target.runner, HookRunner::Wrapper { .. }) {
-        return Vec::new();
-    }
-    let delivers_a_hook = resources.iter().any(|resource| {
-        resource.capability.kind == uze_core::capability::CapabilityKind::Hook
-            && !matches!(
-                integration.exposure_plan(resource).mechanism,
-                ExposureMechanism::Unsupported { .. }
-            )
-    });
-    if !delivers_a_hook {
-        return Vec::new();
-    }
-    wrapper::dependencies_here()
+    use uze_core::requirement::{Requirement, RequirementSource};
+
+    let delivered: Vec<&Resource> = resources
         .iter()
-        .map(|program| {
+        .copied()
+        .filter(|resource| {
+            resource.capability.kind == uze_core::capability::CapabilityKind::Hook
+                && !matches!(
+                    integration.exposure_plan(resource).mechanism,
+                    ExposureMechanism::Unsupported { .. }
+                )
+        })
+        .collect();
+    let mut needed = Vec::new();
+    if matches!(target.runner, HookRunner::Wrapper { .. }) && !delivered.is_empty() {
+        needed.extend(wrapper::dependencies_here().iter().map(|program| {
             (
-                uze_core::requirement::Requirement::named(*program)
+                Requirement::named(*program)
                     .with_purpose("the hook wrapper reads the harness's payload with it"),
-                uze_core::requirement::RequirementSource::Artifact {
+                RequirementSource::Artifact {
                     what: "hook wrapper".to_owned(),
                 },
             )
-        })
-        .collect()
+        }));
+    }
+    for resource in delivered {
+        let Ok(hook) = serde_json::from_slice::<PortableHook>(&resource.capability.payload) else {
+            continue;
+        };
+        for handler in &hook.handlers {
+            if matches!(target.runner, HookRunner::Bridge) && runs_in_own_runtime(handler) {
+                continue;
+            }
+            if let Invocation::Argv {
+                needs: Some(program),
+                ..
+            } = handler.invocation(
+                &resource.package_root,
+                &resource.package_root,
+                uze_platform::shell::FAMILY,
+                &uze_core::launcher::python_answers,
+            ) {
+                needed.push((
+                    Requirement::named(program).with_purpose("starts the hook's script"),
+                    RequirementSource::Hook {
+                        id: hook.id.clone(),
+                        fails_closed: hook.effect.fails_closed(),
+                    },
+                ));
+            }
+        }
+    }
+    needed
 }
 
 impl HookTarget {

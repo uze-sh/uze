@@ -86,6 +86,10 @@ pub(crate) enum Intent {
     /// it spawns a process, which is not something the render thread
     /// should be doing.
     OpenLink(String),
+    /// Type `command` into a new shell of the workspace, not run: what
+    /// installs a requirement the machine lacks, which UZE never runs
+    /// itself. The workspace answers it, so it never reaches a worker.
+    TypeInShell(String),
     /// Read the notes of this release for the modal already open on it —
     /// off the render thread, since reading them may reach the network.
     ReadReleaseNotes(String),
@@ -139,6 +143,7 @@ impl Intent {
             Self::AddMarketplace(_) => "add_marketplace",
             Self::RemoveMarketplace(_) => "remove_marketplace",
             Self::OpenLink(_) => "open_link",
+            Self::TypeInShell(_) => "type_in_shell",
             Self::ReadReleaseNotes(_) => "read_release_notes",
             Self::ContextAnalyze(_) => "context_analyze",
             Self::ContextApply(_) => "context_apply",
@@ -222,7 +227,7 @@ pub(crate) fn dispatch(
     // parent, so a refresh's spans belong to the press that asked for it.
     let _span = tracing::info_span!("tui.intent", intent = intent.name()).entered();
     match intent {
-        Intent::None | Intent::Quit | Intent::CloseModal => {}
+        Intent::None | Intent::Quit | Intent::CloseModal | Intent::TypeInShell(_) => {}
         Intent::SelectTheme(id) => match select_theme(home, &id) {
             Ok(()) => {
                 model.status = Status::Success(format!("Drawing in {id}"));

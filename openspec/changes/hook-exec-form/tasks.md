@@ -9,11 +9,11 @@
 - [x] 2.1 The `sh` and PowerShell wrappers run the rendered, quoted line for an exec-form handler
 - [x] 2.2 The OpenCode bridge spawns an exec-form handler from its argv, and a JavaScript one in its own Bun (`process.execPath`, `BUN_BE_BUN=1`)
 - [x] 2.3 A handler with no launcher here is reported Unsupported with the reason, under the same fail-closed rule as an unspelled one
-- [ ] 2.4 Hooks contribute their interpreters to the package's effective requirements (`plugin-requirements`)
+- [x] 2.4 Hooks contribute their interpreters to the package's effective requirements (`plugin-requirements`)
 
 ## 3. Authoring, docs, proof
 
 - [x] 3.1 `uze agent plugin check` warns on an exec-form script with no launcher on some platform, and on a POSIX script that is neither executable nor placeable by its extension
 - [x] 3.2 Tests: launcher tables per family, quoting with spaces, quotes and `$`, the bridge's argv and Bun paths, the plan's Unsupported reason
-- [ ] 3.3 Docs: `plugin-format.mdx` describes the exec form and the `posix`/`windows` pair; `portable-hooks.md` drops the stale Windows limitation and states the exec form
-- [ ] 3.4 Lab: `hook-exec`, a deny group whose guard is a non-executable `.js` named in exec form with a word full of quotes, `$` and backticks, proves on every harness that the launcher starts it (`node`, or OpenCode's own Bun), the word arrives intact and the denied tool never runs
+- [x] 3.3 Docs: `plugin-format.mdx` describes the exec form and the `posix`/`windows` pair; `portable-hooks.md` drops the stale Windows limitation and states the exec form
+- [x] 3.4 Lab: `hook-exec`, a deny group whose guard is a non-executable `.js` named in exec form with a word full of quotes, `$` and backticks, proves on every harness that the launcher starts it (`node`, or OpenCode's own Bun), the word arrives intact and the denied tool never runs

@@ -484,6 +484,28 @@ pub(super) fn dispatch_menu_action<W: io::Write>(
     }
 }
 
+/// Opens a shell of `space`'s own, sized as a pane is.
+pub(super) fn open_shell_in<W: io::Write>(
+    stream: &mut W,
+    model: &WorkspaceModel,
+    identities: &[AgentIdentity],
+    space: &Space,
+) {
+    let (columns, rows) = model.last_size;
+    let _ = send_request(
+        stream,
+        &ClientRequest::CreateTab {
+            label: next_shell_label(model, identities),
+            agent: None,
+            columns,
+            rows,
+            cwd: Some(space_cwd(space, identities)),
+            command: None,
+            env: Vec::new(),
+        },
+    );
+}
+
 /// Closes `tab` — and, when it is an agent, the shells opened alongside it,
 /// which the server removes with it — first opening a shell of the space's
 /// own in its place when closing it would leave the space with none: the

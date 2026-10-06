@@ -16,17 +16,17 @@
 - [x] 3.1 Suggestion in `uze-core::machine`: package-manager detection in preference order (user-level manager in use → `brew` → system manager → `winget`), executable → package-name table per manager, rendered command with `sudo` where the manager needs it, manual-fallback text when no row applies; nothing is executed
 - [x] 3.2 Requirement report read model from install/update/doctor: per package, each requirement met / too old / missing with purpose and suggested command
 - [x] 3.3 CLI: print the report after `install`/`update` (gaps only), in `status -m`, `inspect` and `doctor`
-- [ ] 3.4 TUI: show unmet requirements as an issue on the package in the manage view; "open in shell" opens a terminal tab through the terminal runtime with the command pre-filled and not executed; re-check on tab close/refresh and clear the issue when the executable is found
-- [ ] 3.5 Tests: suggestion table per manager; report rendering; install completes with the gap reported; TUI view/handoff through the extension host with no domain reach (architecture suite stays zero-debt)
+- [x] 3.4 TUI: show unmet requirements as an issue on the package in the manage view; "open in shell" opens a terminal tab through the terminal runtime with the command pre-filled and not executed; re-check on tab close/refresh and clear the issue when the executable is found
+- [x] 3.5 Tests: suggestion table per manager; report rendering; install completes with the gap reported; TUI view/handoff through the extension host with no domain reach (architecture suite stays zero-debt)
 
 ## 4. Integrations contribute their requirements
 
 - [x] 4.1 Integrations declare the requirements of the artifacts they generate; the `sh` hook wrapper (from `native-first-hooks`) contributes `jq` attributed to the wrapper
-- [ ] 4.3 Exec-form hook handlers contribute their launcher's interpreter attributed to the hook (`hook-exec-form`); a fail-closed source escalates the report line
+- [x] 4.3 Exec-form hook handlers contribute their launcher's interpreter attributed to the hook (`hook-exec-form`); a fail-closed source escalates the report line
 - [x] 4.2 Test: a package with hooks and no declared requirements shows `jq` as required by the wrapper on Claude/Codex/Antigravity and nothing on OpenCode
 
 ## 5. Conformance and docs
 
-- [ ] 5.1 Fixture: a marketplace plugin declaring a requirement; one vertical proves the unmet report when the tool is absent and the hook wrapper's fail-closed behaviour in that state
+- [x] 5.1 Fixture: a marketplace plugin declaring a requirement; one vertical proves the unmet report when the tool is absent and the hook wrapper's fail-closed behaviour in that state
 - [x] 5.2 Docs: `docs/capabilities/portable-hooks.md` `jq` note points to requirements; plugin authoring docs describe `requirements`; `uze doctor` docs list the new report
 - [ ] 5.3 Full gate: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --no-fail-fast`, `openspec validate --all --strict`
