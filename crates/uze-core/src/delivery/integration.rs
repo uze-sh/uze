@@ -501,6 +501,22 @@ pub trait IntegrationPort: Send + Sync {
         None
     }
 
+    /// What the artifacts this integration generates for `package` need
+    /// from the machine, each attributed to what needs it: the program a
+    /// generated hook wrapper reads its payload with, an interpreter a
+    /// hook's launcher starts. Joins what the package declares to make its
+    /// effective requirements. Empty by default.
+    fn generated_requirements(
+        &self,
+        _package: &StoredPackage,
+        _resources: &[&crate::capability::Resource],
+    ) -> Vec<(
+        crate::requirement::Requirement,
+        crate::requirement::RequirementSource,
+    )> {
+        Vec::new()
+    }
+
     /// What the harness holds back of a delivery whose receipt still
     /// inspects as matched, until the operator acts in the harness: a hook
     /// awaiting the harness's review, read from the harness's own record of

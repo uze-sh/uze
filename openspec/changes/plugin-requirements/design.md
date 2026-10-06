@@ -33,7 +33,7 @@ Each integration contributes the requirements of the artifacts it generates (the
 Detection runs the executable: `PATH` lookup, then a `--version` probe with a short deadline and a small per-executable table for the flag/format. Only an executable that answers counts as present: a clean Windows carries `python.exe`/`python3.exe` App Execution Aliases that pass a lookup and then exit 9009 or open the Store, and macOS's `/usr/bin/python3` without the Command Line Tools opens an install dialog instead of answering; both are reported missing. The probe runs in the installing shell's environment, which is not necessarily the harness's (a harness launched from a GUI on macOS has no `/opt/homebrew/bin`); the report says so rather than claiming more than it checked. The suggestion picks a package manager from what the machine has (a user-level manager already in use such as `mise`; then `brew`; then the system manager `apt`/`dnf`/`pacman`/`apk`; `winget` on Windows) and renders the exact command from an executable → package-name table owned by `uze-core::machine`, with `sudo` where the manager needs it. UZE does not execute it. Alternatives: running it with confirmation (puts UZE in the credential and sandbox path — privileges, `sudo` prompts, CI semantics, receipts for tools — for a command the person can paste); downloading binaries ourselves (a second, unauditable distribution channel).
 
 ### D4 — The gap is a read model, surfaced in three places
-Install/update/doctor produce a requirement report (met / too old / missing, purpose, suggested command). CLI prints it after install and in `plugin list`/`doctor`; the TUI shows it as an issue on the package in the manage view. No new action runs processes.
+Install/update/doctor produce a requirement report (met / too old / missing, purpose, suggested command). CLI prints it after install and in `status -m`, `inspect` and `doctor`; the TUI shows it as an issue on the package in the manage view. No new action runs processes.
 
 ### D5 — The TUI hands the command to a shell tab
 Acting on the issue in the TUI opens a terminal tab (the terminal runtime already exists) with the command pre-filled, not executed. The person runs it, closes the tab, and the requirement is re-checked. This keeps the person's shell, PATH and privileges in charge, and gives the TUI the same one-step fix the CLI gives by printing the command.
@@ -50,7 +50,7 @@ A package with unmet requirements installs; the gap is carried on the read model
 
 ## Migration Plan
 
-1. Manifest field + effective-set derivation + detection: `plugin list`/`doctor`/install report gaps with the command.
+1. Manifest field + effective-set derivation + detection: `status -m`/`inspect`/`doctor`/install report gaps with the command.
 2. TUI issue on the package and the shell-tab handoff.
 3. `native-first-hooks` wrapper contributes `jq`.
 Rollback: the field is optional and everything is read-only; the report can be hidden without touching the machine.

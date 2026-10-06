@@ -73,6 +73,12 @@ uze doctor                  # diagnose, repair what is safe, and check each plug
 uze upgrade                 # install the latest uze
 ```
 
+`uze doctor` also checks every program an installed plugin needs (see
+[Requirements](/docs/reference/plugin-format#requirements)) and names each
+one that is missing or too old, with the command that installs it. A
+missing program that keeps a guard hook denying calls is reported as a
+failure; any other is a warning.
+
 ## Configuration
 
 ```bash

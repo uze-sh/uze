@@ -41,7 +41,43 @@ listed: the plugins screen, `uze market inspect` and the JSON reports. The
 standard also allows `version`, `author` (`name`, `email`, `url`),
 `homepage`, `repository`, `license` and `extensions`, and nothing else at
 the top level. Settings for one tool go under `extensions`, keyed by that
-tool's namespace; uze's is `sh.uze`, which holds no settings yet.
+tool's namespace; uze's is `sh.uze`.
+
+### Requirements
+
+A plugin whose scripts need a program on the machine says so under
+`extensions["sh.uze"].requirements`:
+
+```json
+{
+  "name": "flow",
+  "extensions": {
+    "sh.uze": {
+      "requirements": [
+        { "executable": "python3", "version": ">=3.10", "purpose": "the commit guard is Python" }
+      ]
+    }
+  }
+}
+```
+
+Each entry names an `executable` looked up on `PATH`, and may give a minimum
+`version` (`>=3.10` or `3.10`) and a `purpose`. A malformed entry stops the
+install before anything is stored. A missing or too old program does not:
+the plugin installs, and `uze install`, `uze status -m`, `uze inspect` and
+`uze doctor` name what is missing, who needs it, and the command that
+installs it with a package manager the machine has. uze never runs that
+command; you do.
+
+A program only counts when it answers. Asked its version, a Windows
+`python3` that only opens the Microsoft Store, or the macOS `python3` that
+asks to install the developer tools, is reported missing.
+
+You declare only what your own scripts use. What uze generates declares its
+own needs: a hook delivered through the shell wrapper needs `jq`, and shows
+up as needed by the hook wrapper. The check runs in the shell that ran the
+command, so a harness started from a desktop launcher, with a shorter
+`PATH`, may still miss a program that check found.
 
 ## Agent Plugins 1.0
 

@@ -22,7 +22,7 @@ A package manifest MAY declare `requirements`: a list of executables the package
 At install and on demand, the system SHALL check every effective requirement against the machine. For each missing or too-old executable it SHALL show the executable, its purpose, and the exact command that installs it, suggested from the package managers the machine provides. The system SHALL NOT run that command or any installer; the person runs it in their own shell with their own privileges.
 
 #### Scenario: Missing requirement is explained in the CLI
-- **WHEN** `uze plugin install` finds `jq` missing and `apt` is available
+- **WHEN** `uze install` finds `jq` missing and `apt` is available
 - **THEN** the output lists `jq — hook handlers parse JSON` with the command `sudo apt-get install -y jq`
 - **AND** no process is started for it; the install completes with `jq` reported unmet
 
@@ -36,11 +36,11 @@ At install and on demand, the system SHALL check every effective requirement aga
 - **AND** the requirement is re-checked when the tab closes or the person refreshes, and the issue clears once the executable is found
 
 ### Requirement: Unmet requirements keep the package installed and the gap visible
-A package whose effective requirements are unmet SHALL still install; the capabilities that depend on the missing executable SHALL be delivered with the requirement reported unmet, and `uze plugin list` and the TUI manage view SHALL show the gap with the command that closes it until the executable is found.
+A package whose effective requirements are unmet SHALL still install; the capabilities that depend on the missing executable SHALL be delivered with the requirement reported unmet, and `uze status -m`, `uze inspect` and the TUI manage view SHALL show the gap with the command that closes it until the executable is found.
 
 #### Scenario: Unmet requirement is visible after install
 - **WHEN** `jq` is missing when a package needing it is installed
-- **THEN** the package appears in `uze plugin list` and the TUI manage view with `jq` marked unmet and the install command shown
+- **THEN** the package appears in `uze status -m` and the TUI manage view with `jq` marked unmet and the install command shown
 - **AND** the delivered hook wrapper applies its own rule for the missing dependency (deny groups deny, observe groups proceed)
 
 ### Requirement: Requirements are re-verified and never owned

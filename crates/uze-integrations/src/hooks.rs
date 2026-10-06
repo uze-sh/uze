@@ -145,6 +145,45 @@ impl<'a> HookEntry<'a> {
     }
 }
 
+/// What the hook artifacts `integration` generates for `resources` need
+/// from the machine: the wrapper's own programs, once any hook group is
+/// actually delivered through it. A harness whose runner is UZE's plugin
+/// runs in the harness's own runtime and needs nothing.
+pub(crate) fn generated_requirements(
+    integration: &dyn uze_core::integration::IntegrationPort,
+    target: HookTarget,
+    resources: &[&Resource],
+) -> Vec<(
+    uze_core::requirement::Requirement,
+    uze_core::requirement::RequirementSource,
+)> {
+    if !matches!(target.runner, HookRunner::Wrapper { .. }) {
+        return Vec::new();
+    }
+    let delivers_a_hook = resources.iter().any(|resource| {
+        resource.capability.kind == uze_core::capability::CapabilityKind::Hook
+            && !matches!(
+                integration.exposure_plan(resource).mechanism,
+                ExposureMechanism::Unsupported { .. }
+            )
+    });
+    if !delivers_a_hook {
+        return Vec::new();
+    }
+    wrapper::dependencies_here()
+        .iter()
+        .map(|program| {
+            (
+                uze_core::requirement::Requirement::named(*program)
+                    .with_purpose("the hook wrapper reads the harness's payload with it"),
+                uze_core::requirement::RequirementSource::Artifact {
+                    what: "hook wrapper".to_owned(),
+                },
+            )
+        })
+        .collect()
+}
+
 impl HookTarget {
     /// The harness's name in UZE's own state and in `HOOK_HARNESS`.
     pub(crate) const fn key(self) -> &'static str {

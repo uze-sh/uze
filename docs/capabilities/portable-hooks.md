@@ -300,25 +300,30 @@ runs exactly once for a new headless session, with `HOOK_SOURCE=startup`.
   migrated in place, and a receipt-owned entry from a previous release is
   replaced, never duplicated.
 - `uze inspect <plugin>` lists hooks with their per-harness delivery;
-  `uze doctor` reports attachment health, the route each hook took, and a
-  delivered wrapper whose `jq` is missing; the TUI harness matrix shows the
-  per-harness verdict.
+  `uze doctor` reports attachment health, the route each hook took, and
+  every requirement a delivered hook is missing (the wrapper's `jq` among
+  them); the TUI harness matrix shows the per-harness verdict.
 
 ## Known limitations
 
 - **A rewrite is in the harness's own shape.** A `transform` handler that
   must run on several harnesses reads `HOOK_TOOL_NATIVE` to know which shape
   it is answering in; the portable fields are inputs only.
-- **`jq` is the shell wrapper's dependency.** It is not declarable by a
-  package yet (plugin `requirements` is its own change); `uze doctor`
-  reports it missing, and until it is installed a `deny` group denies while
-  an `observe` group proceeds and reports.
-- **Windows has no wrapper template, so Windows has no hooks.** A PowerShell
-  wrapper is future work; until it exists a hook there is reported
-  Unsupported with that reason and nothing is attached. There is no second
-  route to fall back to, by design: an entry running something other than
-  the wrapper would be a second implementation of the contract, and the
-  first thing two implementations do is disagree.
+- **`jq` is the shell wrapper's dependency.** It joins the package's
+  requirements as one the wrapper introduced, so the author never declares
+  it: `uze install`, `uze status -m`, `uze inspect` and `uze doctor` name it
+  when it is missing, with the command that installs it, and UZE never runs
+  that command. Until it is installed a `deny` group denies while an
+  `observe` group proceeds and reports. What a package's own scripts need
+  is declared by the author the same way (`extensions["sh.uze"].requirements`
+  in `plugin.json`, see the plugin format reference).
+- **On Windows the wrapper is a Windows PowerShell 5.1 script.** It reads
+  the payload with the .NET reader every Windows carries, so it needs no
+  `jq`. A Group Policy execution policy that forbids local scripts, or a
+  language mode short of `FullLanguage`, stops it; `uze doctor` reports
+  either as a shell refusal. A handler still runs only the spelling written
+  for this platform: a guard with no `windows` spelling keeps its package
+  from installing there, since the guard could not run.
 - **Antigravity ran delivered hooks only in a signed-in session through
   1.1.24.** Its hook entries load and list correctly in either mode
   (`hooks_manager: loaded N named hooks`), but the executor reads

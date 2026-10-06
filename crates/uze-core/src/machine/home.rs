@@ -331,6 +331,13 @@ impl UzeHome {
         self.cache_dir().join("harness_detection.json")
     }
 
+    /// What each requirement's executable answered when it was last asked
+    /// its version (see `requirement_check`), keyed by the file it
+    /// resolved to: observed again once that file changes or goes.
+    pub fn requirement_probe_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("requirements.json")
+    }
+
     /// What this machine's shell was last observed to refuse (see
     /// `shell::refusal`): observed again when gone or stale.
     pub fn shell_observation_cache_path(&self) -> PathBuf {

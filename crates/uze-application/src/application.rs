@@ -54,6 +54,7 @@ mod overview;
 mod profile;
 mod project_environment;
 mod read_models;
+mod requirements;
 mod runtime_shim;
 pub mod services;
 mod setup;
@@ -62,6 +63,7 @@ mod theme;
 pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason};
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;
+pub use requirements::{PackageRequirements, RequirementLine, RequirementStatus};
 pub use setup::ProvisionRoute;
 pub use theme::{GlyphSetSummary, ThemeSummary};
 
@@ -237,6 +239,12 @@ impl UzeApplication {
             capability_count: resources.len(),
             freshness: self.freshness_of(package),
             installed_at_unix: package.written_at_unix(),
+            requirement_gaps: self
+                .requirement_check()
+                .of(package)?
+                .gaps()
+                .cloned()
+                .collect(),
             undelivered: state::undelivered(&self.home, package.id.as_str())?
                 .into_iter()
                 .map(|(integration, error)| UndeliveredHarness {

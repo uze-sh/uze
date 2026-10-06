@@ -18,5 +18,6 @@ pub mod launcher;
 pub mod path;
 pub mod process_cwd;
 pub mod provisioning;
+pub mod requirement_check;
 pub mod shell;
 pub mod subprocess;

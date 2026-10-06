@@ -350,6 +350,62 @@ fn transform_is_delivered_where_the_harness_takes_a_rewrite() {
     );
 }
 
+/// The packager declares what it generates: a hook delivered through the
+/// `sh` wrapper needs `jq`, attributed to the wrapper rather than to the
+/// author; OpenCode's hooks run in its own runtime and need nothing; and a
+/// package with no hook needs nothing from any harness.
+#[test]
+fn the_hook_wrapper_contributes_its_own_requirement_where_it_runs() {
+    use uze_core::requirement::{Requirement, RequirementSource};
+    let (root, _) = hook_package("generated-requirements", deny_group());
+    let home = UzeHome::at(root.join("uze"));
+    ingest_package(&home, &root.join("pkg"));
+    let package = uze_core::store::UzeStore::new(home.clone())
+        .package(&PackageId::from_plugin_name("hook-demo", Path::new("plugin.json")).unwrap())
+        .unwrap();
+    let resources = stored_resources(&home, "hook-demo");
+    let resources: Vec<&Resource> = resources.iter().collect();
+    let wrapper_needs: Vec<(Requirement, RequirementSource)> =
+        if uze_core::shell::ShellCommand::platform() == "posix" {
+            vec![(
+                Requirement::named(uze_core::hook::WRAPPER_DEPENDENCY)
+                    .with_purpose("the hook wrapper reads the harness's payload with it"),
+                RequirementSource::Artifact {
+                    what: "hook wrapper".to_owned(),
+                },
+            )]
+        } else {
+            Vec::new()
+        };
+    let integrations: Vec<Box<dyn IntegrationPort>> = vec![
+        Box::new(ClaudeIntegration::new(root.join("claude"), home.clone())),
+        Box::new(CodexIntegration::new(root.join("agents"), home.clone())),
+        Box::new(AntigravityIntegration::new(
+            root.join("agents"),
+            home.clone(),
+        )),
+    ];
+    for integration in &integrations {
+        assert_eq!(
+            integration.generated_requirements(&package, &resources),
+            wrapper_needs,
+            "{}",
+            integration.id()
+        );
+        assert!(
+            integration.generated_requirements(&package, &[]).is_empty(),
+            "{} needs nothing for a package with no hook",
+            integration.id()
+        );
+    }
+    assert!(
+        opencode(&root)
+            .generated_requirements(&package, &resources)
+            .is_empty(),
+        "OpenCode runs hooks in its own runtime"
+    );
+}
+
 // ============================================================================
 // Claude: settings.json event-array merge, content-identity receipts
 // ============================================================================

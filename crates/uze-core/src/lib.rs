@@ -70,9 +70,9 @@ pub use delivery::{
 };
 pub use machine::{
     detection_cache, features, harness_runtime, home, launcher, path, process_cwd, provisioning,
-    shell, subprocess,
+    requirement_check, shell, subprocess,
 };
-pub use package::{acquisition, authoring, hosts, naming, store, trust};
+pub use package::{acquisition, authoring, hosts, naming, requirement, store, trust};
 pub use project::{
     anchor, context, manifest, project_context, project_lock, project_root, record, text_region,
 };

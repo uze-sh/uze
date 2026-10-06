@@ -444,6 +444,17 @@ impl IntegrationPort for AntigravityIntegration {
         default_exposure_name_candidates(resource)
     }
 
+    fn generated_requirements(
+        &self,
+        _package: &StoredPackage,
+        resources: &[&Resource],
+    ) -> Vec<(
+        uze_core::requirement::Requirement,
+        uze_core::requirement::RequirementSource,
+    )> {
+        crate::hooks::generated_requirements(self, HOOKS, resources)
+    }
+
     fn exposure_plan(&self, resource: &Resource) -> ExposurePlan {
         match resource.capability.kind {
             CapabilityKind::AgentSkill => self.skill_exposure_plan(resource),

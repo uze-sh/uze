@@ -249,6 +249,75 @@ pub(crate) fn add_installs_portable_package_without_invoking_absent_harnesses() 
     fs::remove_dir_all(root).unwrap();
 }
 
+/// A package needing an executable the machine lacks installs anyway, and
+/// the gap is carried on the listing with nothing run to close it; a
+/// malformed declaration is refused before the Store holds a byte.
+#[test]
+pub(crate) fn a_missing_requirement_installs_with_the_gap_reported() {
+    let root = uze_testkit::temp::scratch("requirement-gap");
+    let package = root.join("pkg");
+    fs::create_dir_all(package.join("skills/hello")).unwrap();
+    fs::write(
+        package.join("skills/hello/SKILL.md"),
+        "---\nname: hello\ndescription: Says hello.\n---\n\nHello.\n",
+    )
+    .unwrap();
+    let manifest = |requirements: &str| {
+        format!(
+            r#"{{"name":"needs-tools","extensions":{{"sh.uze":{{"requirements":{requirements}}}}}}}"#
+        )
+    };
+    fs::write(
+        package.join("plugin.json"),
+        manifest(r#"[{"executable":"uze-tool-no-machine-has","purpose":"the guard"}]"#),
+    )
+    .unwrap();
+    let app = UzeApplication::new(UzeHome::at(root.join("uze")), Vec::new());
+    app.plugins()
+        .add(
+            uze_core::PackageSource::local(package.clone()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+
+    let listed = app.plugins().list().unwrap();
+    let gaps = &listed[0].requirement_gaps;
+    assert_eq!(gaps.len(), 1);
+    assert_eq!(gaps[0].executable, "uze-tool-no-machine-has");
+    assert_eq!(gaps[0].status, RequirementStatus::Missing);
+    assert_eq!(gaps[0].needed_by, vec!["the plugin".to_owned()]);
+    assert_eq!(gaps[0].purpose.as_deref(), Some("the guard"));
+    assert_eq!(
+        gaps[0].install_command, None,
+        "no package manager is guessed for a program no table knows"
+    );
+    assert_eq!(
+        app.plugins()
+            .requirements("needs-tools")
+            .unwrap()
+            .gaps()
+            .count(),
+        1
+    );
+
+    fs::write(
+        package.join("plugin.json"),
+        manifest(r#"[{"executable":"jq","version":"latest"}]"#),
+    )
+    .unwrap();
+    let refused = UzeApplication::new(UzeHome::at(root.join("refused")), Vec::new());
+    let error = refused
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(package),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("latest"), "{error}");
+    assert!(refused.plugins().list().unwrap().is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A package whose guard has no spelling for this platform is refused
 /// whole, before the Store holds a byte of it: delivered without its guard
 /// it would let through every operation the guard checks.

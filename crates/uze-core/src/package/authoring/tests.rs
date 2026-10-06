@@ -747,7 +747,7 @@ fn check_names_what_keeps_a_package_from_agent_plugins_without_refusing_it() -> 
     fs::create_dir_all(plugin.join("skills/review/deep/nested")).unwrap();
     fs::write(
         plugin.join("plugin.json"),
-        r#"{"name":"legacy","author":"me","skills":"./skills","extensions":{"sh.uze":{"future":true}}}"#,
+        r#"{"name":"legacy","author":"me","skills":"./skills","extensions":{"sh.uze":{"future":true,"requirements":[{"executable":"jq"}]}}}"#,
     )
     .unwrap();
     fs::write(
@@ -790,6 +790,14 @@ fn check_names_what_keeps_a_package_from_agent_plugins_without_refusing_it() -> 
             standard.divergences
         );
     }
+    assert!(
+        !report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("requirements")),
+        "`requirements` is a setting uze reads: {:?}",
+        report.warnings
+    );
     for expected in [
         "`extensions[\"sh.uze\"].future` is not a setting uze reads",
         "uze does not provide `${PLUGIN_DATA}` yet",

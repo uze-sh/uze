@@ -131,6 +131,16 @@ pub(crate) fn transforms_here(target: HookTarget) -> bool {
     })
 }
 
+/// The system programs this platform's wrapper runs beside the shell: the
+/// `sh` wrapper reads the harness's payload with `jq`; the PowerShell one
+/// uses the .NET reader every Windows carries.
+pub(crate) fn dependencies_here() -> &'static [&'static str] {
+    match shell::FAMILY {
+        Family::Posix => &[uze_core::hook::WRAPPER_DEPENDENCY],
+        Family::PowerShell => &[],
+    }
+}
+
 /// What this platform's harness never fires an event for.
 pub(crate) fn unfired_here(target: HookTarget) -> &'static [Unfired] {
     match shell::FAMILY {

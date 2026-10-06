@@ -31,6 +31,7 @@ fn plugin(id: &str) -> PluginSummary {
         freshness: uze_application::application::Freshness::not_checked(),
         installed_at_unix: None,
         undelivered: Vec::new(),
+        requirement_gaps: Vec::new(),
     }
 }
 

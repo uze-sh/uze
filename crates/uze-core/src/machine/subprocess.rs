@@ -218,6 +218,45 @@ pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool,
     (status.success(), captured.trim().to_owned())
 }
 
+/// What a program said when it was run to completion or to its deadline.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Captured {
+    /// The exit code, absent when the process was ended by a signal or by
+    /// the deadline.
+    pub code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub timed_out: bool,
+}
+
+/// Runs `program` with `arguments` directly, no shell between, bounded in
+/// time and output; `None` when it could not be started at all.
+pub fn run_program_bounded(
+    program: &Path,
+    arguments: &[&str],
+    timeout: Duration,
+) -> Option<Captured> {
+    let mut invocation = Command::new(program);
+    invocation
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let (mut child, tree) = spawn_tree(&mut invocation, Seat::OwnGroup).ok()?;
+    let stdout = drain_on_thread(child.stdout.take().expect("piped"));
+    let stderr = drain_on_thread(child.stderr.take().expect("piped"));
+    let (status, timed_out) = wait_with_timeout(&mut child, &tree, timeout).ok()?;
+    let mut swept = false;
+    let stdout = stdout.collect(&tree, &mut swept);
+    let stderr = stderr.collect(&tree, &mut swept);
+    Some(Captured {
+        code: (!timed_out).then(|| status.code()).flatten(),
+        stdout: String::from_utf8_lossy(stdout.bytes()).into_owned(),
+        stderr: String::from_utf8_lossy(stderr.bytes()).into_owned(),
+        timed_out,
+    })
+}
+
 /// One stream's reader: the thread draining it, and the channel it answers
 /// through so the caller can bound how long it waits.
 struct Drain {

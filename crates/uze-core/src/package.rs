@@ -16,5 +16,6 @@ pub mod acquisition;
 pub mod authoring;
 pub mod hosts;
 pub mod naming;
+pub mod requirement;
 pub mod store;
 pub mod trust;

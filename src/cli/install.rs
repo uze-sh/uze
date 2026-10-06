@@ -203,6 +203,12 @@ pub(crate) fn install_package(app: &UzeApplication, install: PackageInstall<'_>)
     if !text || install.verbose {
         warn_blocked(&report, app);
     }
+    if text {
+        print!(
+            "{}",
+            render_requirement_gaps(std::slice::from_ref(&report.plugin))
+        );
+    }
     let package = report.plugin.id.clone();
     match undelivered_failure(
         report

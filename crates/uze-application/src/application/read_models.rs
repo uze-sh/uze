@@ -25,6 +25,14 @@ impl Plugins<'_> {
             .collect()
     }
 
+    /// Every requirement of the installed plugin named `id`, met or not,
+    /// checked against this machine now.
+    #[tracing::instrument(name = "plugins.requirements", skip_all, fields(id = %id), err)]
+    pub fn requirements(&self, id: &str) -> Result<super::PackageRequirements> {
+        let package = self.0.package_by_name(id)?;
+        self.0.requirement_check().of(&package)
+    }
+
     #[tracing::instrument(name = "plugins.inspect", skip_all, fields(id = %id), err)]
     pub fn inspect(&self, id: &str) -> Result<PluginInspection> {
         self.inspect_on(id, None)
@@ -116,6 +124,9 @@ pub struct PluginSummary {
     /// Every harness the package is installed for and could not be
     /// delivered to. Empty for a package every harness received.
     pub undelivered: Vec<UndeliveredHarness>,
+    /// What the package needs from the machine and the machine lacks, each
+    /// with the command that installs it. Empty when nothing is missing.
+    pub requirement_gaps: Vec<super::RequirementLine>,
 }
 
 /// One harness a package stayed installed without reaching, and the error
