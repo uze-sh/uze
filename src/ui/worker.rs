@@ -1429,6 +1429,13 @@ fn load_settings(home: &UzeHome, model: &mut TuiModel) {
             .collect();
         model.settings_themes = themes;
     }
+    model.settings_adaptive =
+        crate::theme::adaptive_half(&application, uze_application::Background::Light)
+            .and_then(|light| {
+                crate::theme::adaptive_half(&application, uze_application::Background::Dark)
+                    .map(|dark| (light, dark))
+            })
+            .ok();
     if let Ok(sets) = application.themes().glyph_sets(uze_theme::glyph_sets()) {
         model.settings_glyph_sets = sets;
     }

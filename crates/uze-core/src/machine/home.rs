@@ -345,6 +345,15 @@ impl UzeHome {
         self.cache_dir().join("inspection.json")
     }
 
+    /// Whether the person last wanted light or dark, as the workspace saw
+    /// it: from the desktop's setting, or the terminal's background where
+    /// the desktop says nothing. Observed again while the workspace runs, so
+    /// a cache; it is what the CLI, which never asks, draws an adaptive
+    /// theme by.
+    pub fn appearance_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("appearance")
+    }
+
     /// The changelog of the release the updater last installed, as published
     /// at that release's tag. Observed again whenever it is missing, so it is
     /// a cache and never a record.
@@ -563,6 +572,7 @@ mod tests {
             home.inspection_cache_path(),
             home.marketplace_cache_dir(),
             home.release_notes_cache_path(),
+            home.appearance_cache_path(),
             home.logs_dir(),
             home.generated_attachments_dir("claude"),
             home.runtime_project_dir("abc"),

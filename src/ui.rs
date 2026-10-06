@@ -107,6 +107,10 @@ pub fn run(home: UzeHome) -> Result<()> {
     // Once per process rather than per attach: attaching again is not a
     // reason to ask GitHub again, and both surfaces read the one answer.
     crate::self_update::watch(home.clone());
+    // Before the session starts reading input, which would take the
+    // terminal's reply for keystrokes.
+    crate::theme::observe_appearance(&home);
+    crate::theme::follow_desktop(home.clone());
     let mut terminal = TerminalSession::start()?;
     // Immediately after the screen is entered and before anything draws
     // into it: from here on, a panic on this thread leaves a terminal a

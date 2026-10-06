@@ -12,7 +12,10 @@
 //! `$UZE_HOME` is resolved — [`active`] answers with the built-in default,
 //! which needs no I/O.
 
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{
+    Arc, OnceLock, RwLock,
+    atomic::{AtomicU64, Ordering},
+};
 
 use crate::{Theme, load::default_theme};
 
@@ -31,6 +34,8 @@ pub fn active() -> Arc<Theme> {
     }
 }
 
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Puts a theme in force. Every surface drawn after this uses it.
 pub fn set_active(theme: Theme) {
     let theme = Arc::new(theme);
@@ -38,6 +43,14 @@ pub fn set_active(theme: Theme) {
         Ok(mut active) => *active = theme,
         Err(poisoned) => *poisoned.into_inner() = theme,
     }
+    GENERATION.fetch_add(1, Ordering::Release);
+}
+
+/// Counts the themes put in force, so a screen that drew in one can tell
+/// another arrived without comparing colours: the theme can change from a
+/// thread that follows the desktop, between any two frames.
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::Acquire)
 }
 
 #[cfg(test)]
@@ -75,7 +88,7 @@ mod tests {
         // The ASCII glyphs are a *set* layered over the default, not a theme
         // of their own — assembling the stack here is what a selection does.
         let ascii = resolve_stack(
-            &Identity::from_file("default", default_theme_file()),
+            &Identity::from_file(crate::DEFAULT_THEME, default_theme_file()),
             &[
                 default_theme_file(),
                 glyph_set_file("ascii").expect("bundled"),
@@ -83,7 +96,9 @@ mod tests {
         )
         .expect("the bundled ascii set resolves over the default")
         .theme;
+        let before = generation();
         set_active(ascii);
+        assert!(generation() > before, "a swap is counted");
         assert_eq!(active().glyph(crate::Symbol::StatusIdle), ".");
         // Put the default back: the active theme is process-wide, and a test
         // that leaves it changed is a test that breaks its neighbours.

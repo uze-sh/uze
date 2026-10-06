@@ -85,7 +85,7 @@ sandbox:
       }
       LAYOUT
     # The appearance demo shares this sandbox and ends in another theme.
-    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set default >/dev/null
+    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set dark >/dev/null
     - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config icons nerd >/dev/null
     # A take rebinds a key; the next one must find the defaults again. Here
     # and not under `clear`, which removes directories and passes over a

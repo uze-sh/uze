@@ -8661,6 +8661,34 @@ mod workspace_tests {
         }
     }
 
+    /// A theme put in force from elsewhere — the desktop turning light, or
+    /// Settings — is drawn on the next frame, and the server hears the
+    /// colours a pane's program will be told when it asks. Once.
+    #[test]
+    fn a_theme_put_in_force_elsewhere_is_drawn_and_told_to_the_server_once() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-follows-theme"));
+        let (model, _first, _second) = two_agents_with_shells();
+        let mut driven = driven(model, &home);
+        let _ = driven.pump();
+        let _ = driven.sent();
+        driven.attach.model.dirty = false;
+
+        // As if another theme had been put in force since this client drew,
+        // without swapping the process-wide one under its neighbours.
+        driven.attach.theme_generation = uze_theme::generation().wrapping_sub(1);
+        let _ = driven.pump();
+        assert!(driven.attach.model.dirty, "the new theme is drawn");
+        let palettes = |sent: Vec<ClientRequest>| {
+            sent.iter()
+                .filter(|request| matches!(request, ClientRequest::SetPalette(_)))
+                .count()
+        };
+        assert_eq!(palettes(driven.sent()), 1);
+
+        let _ = driven.pump();
+        assert_eq!(palettes(driven.sent()), 0, "told once, not every frame");
+    }
+
     /// The picker offers only harnesses set up on this machine, so a test
     /// that launches one sets them up first.
     fn set_up_every_harness(home: &UzeHome) {
@@ -8712,6 +8740,7 @@ mod workspace_tests {
                     crate::ui::management::ManagementMemory::unresolved(),
                 )),
                 keyboard: crate::ui::keys::KeyboardSupport::default(),
+                theme_generation: uze_theme::generation(),
             },
             server,
             events: events_rx,

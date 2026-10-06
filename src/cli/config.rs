@@ -48,9 +48,13 @@ pub(crate) fn run_config(
         }) {
             ConfigThemeAction::List { format } => {
                 let themes = app.themes().list(uze_theme::builtin_names())?;
-                emit(format, &themes, |themes| render_theme_list(themes));
+                let adaptive = adaptive_caption(app)?;
+                emit(format, &themes, |themes| {
+                    render_theme_list(themes, &adaptive)
+                });
             }
-            ConfigThemeAction::Set { id } => {
+            ConfigThemeAction::Set { id, light, dark } => {
+                choose_adaptive_halves(app, home, &id, light, dark)?;
                 // Load it before recording the choice: a theme that will not
                 // resolve should be refused here, where the operator is
                 // looking, rather than accepted and complained about on
@@ -339,7 +343,57 @@ pub(crate) fn preview_of(id: &str) -> String {
         .join(" ")
 }
 
-pub(crate) fn render_theme_list(themes: &[uze_application::application::ThemeSummary]) -> String {
+/// Records the themes `adaptive` draws in, every one of them loaded first so
+/// a typo is refused before anything is written.
+fn choose_adaptive_halves(
+    app: &UzeApplication,
+    home: &UzeHome,
+    id: &str,
+    light: Option<String>,
+    dark: Option<String>,
+) -> Result<()> {
+    use uze_application::{ADAPTIVE, Background};
+    let halves: Vec<(Background, String)> = [(Background::Light, light), (Background::Dark, dark)]
+        .into_iter()
+        .filter_map(|(background, half)| half.map(|half| (background, half)))
+        .collect();
+    if halves.is_empty() {
+        return Ok(());
+    }
+    if id != ADAPTIVE {
+        return Err(uze_application::UzeError::UnusableTheme(format!(
+            "--light and --dark choose what `{ADAPTIVE}` draws in, and `{id}` is one theme \
+             whatever the terminal is; run `uze config theme set {ADAPTIVE}` with them"
+        )));
+    }
+    for (_, half) in &halves {
+        if half == ADAPTIVE {
+            return Err(uze_application::UzeError::UnusableTheme(format!(
+                "`{ADAPTIVE}` cannot draw in itself; name a theme for each background"
+            )));
+        }
+        uze::theme::resolve(app, home, half)?;
+    }
+    for (background, half) in &halves {
+        app.themes().set_adaptive(*background, half)?;
+    }
+    Ok(())
+}
+
+/// What `adaptive` stands for on this machine, as the theme list shows it.
+fn adaptive_caption(app: &UzeApplication) -> Result<String> {
+    use uze_application::Background;
+    Ok(format!(
+        "{} when light, {} when dark",
+        uze::theme::adaptive_half(app, Background::Light)?,
+        uze::theme::adaptive_half(app, Background::Dark)?
+    ))
+}
+
+pub(crate) fn render_theme_list(
+    themes: &[uze_application::application::ThemeSummary],
+    adaptive: &str,
+) -> String {
     // No theme chosen is the default theme in force, and the list says so.
     let none_chosen = !themes.iter().any(|theme| theme.active);
     let rows = themes
@@ -348,6 +402,7 @@ pub(crate) fn render_theme_list(themes: &[uze_application::application::ThemeSum
             let active = theme.active || (none_chosen && theme.id == uze_theme::builtin_names()[0]);
             let source = match &theme.path {
                 Some(path) => progress::label(progress::path(path)),
+                None if theme.id == uze_application::ADAPTIVE => progress::label(adaptive),
                 None => progress::label("built in"),
             };
             vec![chosen_mark(active, &theme.id), source]

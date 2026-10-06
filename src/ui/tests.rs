@@ -4602,6 +4602,35 @@ fn the_chime_is_chosen_on_the_settings_screen_and_marks_the_one_in_force() {
     );
 }
 
+/// The adaptive card is no theme of its own, so it says what it follows
+/// and, in the drawer, which theme it draws in on each background.
+#[test]
+fn the_adaptive_card_says_it_follows_the_system_and_names_both_themes() {
+    let mut model = model_with_data();
+    model.set_route(Route::Settings);
+    model.focus = Focus::Content;
+    model.settings_themes = vec![uze_application::application::ThemeSummary {
+        id: uze_application::ADAPTIVE.to_owned(),
+        active: true,
+        path: None,
+    }];
+    model.settings_adaptive = Some(("light".to_owned(), "dracula".to_owned()));
+    model.settle_settings_selection();
+
+    let mut terminal = Terminal::new(TestBackend::new(160, 30)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
+        .unwrap();
+    let rows = buffer_rows(&terminal).join("\n");
+    assert!(rows.contains("follows the system"), "{rows}");
+    assert!(rows.contains("light"), "{rows}");
+    assert!(rows.contains("dracula"), "{rows}");
+    assert!(!rows.contains("built in"), "{rows}");
+}
+
 /// The list opens with a heading, so moving up from the first choice has
 /// nowhere to go: it stays put. It used to step past the heading forever,
 /// clamping back onto it at every step, and freeze the whole client.

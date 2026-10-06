@@ -591,7 +591,8 @@ fn theme_selection_meets_the_budget() {
             .expect("sets");
         let active = app.themes().active().expect("active");
         let path = app.themes().path_of("theme-7").expect("path");
-        assert_eq!(listed.len(), 33);
+        // The adaptive selection, the one built-in, and the 32 written.
+        assert_eq!(listed.len(), 34);
         assert_eq!(sets.len(), 3);
         assert_eq!(active.as_deref(), Some("theme-7"));
         assert!(path.is_some());

@@ -577,6 +577,7 @@ pub(crate) fn attach_workspace(
         asked_for_a_tab: false,
         manage_memory: manage,
         keyboard: terminal.keyboard(),
+        theme_generation: uze_theme::generation(),
     };
     // Every way out of the loop — a quit, a runtime gone, an error — must
     // hand the model's memory back, so the loop runs inside one call whose

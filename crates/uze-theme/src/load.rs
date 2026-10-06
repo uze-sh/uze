@@ -28,13 +28,15 @@ use crate::{
 
 /// The themes UZE carries with it. Their bytes are the worked examples for
 /// the format — the same loader reads them and reads yours.
-const BUILTIN_DEFAULT: &str = include_str!("../themes/default.json");
+const BUILTIN_DEFAULT: &str = include_str!("../themes/dark.json");
 
-/// The third-party palettes UZE carries, by id. Each is a partial theme over
-/// the built-in default — the same shape as a file someone writes, which is
-/// what lets one of theirs `extends` one of these. Where each palette comes
-/// from and the terms it comes under is recorded in `about.hbs`.
+/// The palettes UZE carries beyond its default (`dark`), by id: its own `light`,
+/// then third-party ones. Each is a partial theme over the built-in default
+/// — the same shape as a file someone writes, which is what lets one of
+/// theirs `extends` one of these. Where each third-party palette comes from
+/// and the terms it comes under is recorded in `about.hbs`.
 const BUNDLED_PALETTES: &[(&str, &str)] = &[
+    ("light", include_str!("../themes/light.json")),
     ("dracula", include_str!("../themes/dracula.json")),
     (
         "catppuccin-mocha",
@@ -168,18 +170,22 @@ pub struct Loaded {
     pub warnings: Vec<Warning>,
 }
 
-/// The built-in themes, by the id a user selects them with. `default` comes
-/// first: it is what an unset selection means.
+/// The id the built-in default theme is selected by. Named for what it
+/// looks like rather than for being the default, since `light` sits beside it.
+pub const DEFAULT_THEME: &str = "dark";
+
+/// The built-in themes, by the id a user selects them with. [`DEFAULT_THEME`]
+/// comes first: it is what an unset selection means.
 pub fn builtin_names() -> &'static [&'static str] {
     static NAMES: OnceLock<Vec<&'static str>> = OnceLock::new();
-    NAMES.get_or_init(|| default_then(BUNDLED_PALETTES))
+    NAMES.get_or_init(|| first_then(DEFAULT_THEME, BUNDLED_PALETTES))
 }
 
-/// A theme UZE carries, resolved. `default` is the one every other theme is
+/// A theme UZE carries, resolved. [`DEFAULT_THEME`] is the one every other theme is
 /// resolved on top of, so it is the only one required to be complete.
 pub fn builtin(id: &str) -> Option<&'static Theme> {
     static PALETTES: OnceLock<Vec<Theme>> = OnceLock::new();
-    if id == "default" {
+    if id == DEFAULT_THEME {
         return Some(default_theme());
     }
     let index = palette_index(id)?;
@@ -217,11 +223,11 @@ fn index_in(table: &[(&str, &str)], id: &str) -> Option<usize> {
     table.iter().position(|(candidate, _)| *candidate == id)
 }
 
-/// `default`, then every id of a bundled table in its order — the order a
-/// picker lists them in, `default` first because it is what an unset
+/// `first`, then every id of a bundled table in its order — the order a
+/// picker lists them in, the default first because it is what an unset
 /// selection means.
-fn default_then(table: &[(&'static str, &str)]) -> Vec<&'static str> {
-    std::iter::once("default")
+fn first_then(first: &'static str, table: &[(&'static str, &str)]) -> Vec<&'static str> {
+    std::iter::once(first)
         .chain(table.iter().map(|(id, _)| *id))
         .collect()
 }
@@ -245,7 +251,7 @@ fn parse_bundled(table: &[(&str, &str)]) -> Vec<ThemeFile> {
 /// the other.
 pub fn glyph_sets() -> &'static [&'static str] {
     static SETS: OnceLock<Vec<&'static str>> = OnceLock::new();
-    SETS.get_or_init(|| default_then(BUNDLED_GLYPH_SETS))
+    SETS.get_or_init(|| first_then("default", BUNDLED_GLYPH_SETS))
 }
 
 /// The layer a selected glyph set contributes, or `None` for the default.
@@ -266,7 +272,7 @@ pub fn default_theme() -> &'static Theme {
     static DEFAULT: OnceLock<Theme> = OnceLock::new();
     DEFAULT.get_or_init(|| {
         resolve_stack(
-            &Identity::from_file("default", default_file()),
+            &Identity::from_file(DEFAULT_THEME, default_file()),
             &[default_file()],
         )
         .expect("the bundled default theme resolves and is complete")
@@ -1297,7 +1303,7 @@ mod tests {
         }
         assert!(builtin("nocturne").is_none());
         assert!(
-            builtin_file("default").is_none(),
+            builtin_file(DEFAULT_THEME).is_none(),
             "the default is the bottom of every stack, not a layer on it"
         );
     }

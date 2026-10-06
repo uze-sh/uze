@@ -24,6 +24,8 @@ pub use uze_core::{
     UzeError,
     UzeHome, // The authoring surface's check report: vocabulary a read model is
     anchor::anchor_root_or_self,
+    // An adaptive theme selection, and the observation it is decided by.
+    appearance::{ADAPTIVE, Background},
     // made of, so the CLI answers the same thing a `check` verb asks.
     authoring::{ScaffoldCapabilities, ValidationReport},
     capability::CapabilityKind,

@@ -7,7 +7,10 @@
 //! every token added later becomes a change to this crate.
 
 use serde::Serialize;
-use uze_core::{Result, appearance};
+use uze_core::{
+    Result,
+    appearance::{self, ADAPTIVE, Background},
+};
 
 use super::services::Themes;
 
@@ -33,16 +36,19 @@ pub struct GlyphSetSummary {
 }
 
 impl Themes<'_> {
-    /// Every theme this machine can load: the ones UZE carries, then the
-    /// ones the operator wrote. A file that shadows a built-in's name wins,
-    /// the way a local override should — and is listed once, as theirs.
+    /// Every theme this machine can load: the adaptive selection, the ones
+    /// UZE carries, then the ones the operator wrote. A file that shadows a
+    /// built-in's name wins, the way a local override should — and is listed
+    /// once, as theirs. One named `adaptive` is left out: that name selects
+    /// the adaptive behaviour, so the file could never be drawn in.
     #[tracing::instrument(name = "themes.list", skip_all, err)]
     pub fn list(&self, builtin: &[&str]) -> Result<Vec<ThemeSummary>> {
         let active = self.active()?;
-        let written = appearance::available(&self.0.home)?;
+        let mut written = appearance::available(&self.0.home)?;
+        written.retain(|(id, _)| id != ADAPTIVE);
         let shadowed: Vec<&str> = written.iter().map(|(id, _)| id.as_str()).collect();
-        let summaries = builtin
-            .iter()
+        let summaries = std::iter::once(&ADAPTIVE)
+            .chain(builtin)
             .filter(|id| !shadowed.contains(*id))
             .map(|id| ThemeSummary {
                 id: (*id).to_owned(),
@@ -62,7 +68,10 @@ impl Themes<'_> {
     }
 
     /// The selected theme's id, or `None` while the operator has not chosen.
-    #[tracing::instrument(name = "themes.active", skip_all, err)]
+    // At debug: the workspace reads it every few seconds while it follows
+    // the desktop, and an `info` span each time fills the journal. A failure
+    // is still recorded, at error.
+    #[tracing::instrument(name = "themes.active", level = "debug", skip_all, err)]
     pub fn active(&self) -> Result<Option<String>> {
         appearance::active(&self.0.home)
     }
@@ -107,6 +116,33 @@ impl Themes<'_> {
         appearance::glyphs(&self.0.home)
     }
 
+    /// The theme an adaptive selection draws in on this background, or
+    /// `None` while the operator has not said.
+    #[tracing::instrument(name = "themes.adaptive", skip_all, err)]
+    pub fn adaptive(&self, background: Background) -> Result<Option<String>> {
+        appearance::adaptive(&self.0.home, background)
+    }
+
+    /// Records the theme an adaptive selection draws in on this
+    /// background. Does not select it.
+    #[tracing::instrument(name = "themes.set_adaptive", skip_all, fields(id = %id), err)]
+    pub fn set_adaptive(&self, background: Background, id: &str) -> Result<()> {
+        appearance::set_adaptive(&self.0.home, background, id)
+    }
+
+    /// The background last observed, or dark while none has been: dark is
+    /// what every theme UZE drew before it could ask was made for.
+    #[tracing::instrument(name = "themes.background", level = "debug", skip_all)]
+    pub fn background(&self) -> Background {
+        appearance::observed_background(&self.0.home).unwrap_or(Background::Dark)
+    }
+
+    /// Remembers what was observed, and says whether it changed.
+    #[tracing::instrument(name = "themes.observe_background", level = "debug", skip_all, err)]
+    pub fn observe_background(&self, background: Background) -> Result<bool> {
+        appearance::observe_background(&self.0.home, background)
+    }
+
     /// Records the glyph set. Independent of [`Themes::select`] in both
     /// directions: neither call reads or writes the other's half.
     #[tracing::instrument(name = "themes.select_glyphs", skip_all, fields(id = %id), err)]
@@ -118,6 +154,26 @@ impl Themes<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{UzeApplication, UzeHome};
+
+    /// `adaptive` is a selection, not a file: a theme written under that
+    /// name could never be drawn in, so it neither replaces the selection
+    /// in the list nor appears as a second entry.
+    #[test]
+    fn a_theme_written_as_adaptive_does_not_take_the_selections_place() {
+        let root = uze_testkit::temp::scratch("theme-adaptive-reserved");
+        let home = UzeHome::at(&root);
+        std::fs::create_dir_all(home.themes_dir()).expect("themes dir");
+        std::fs::write(home.themes_dir().join("adaptive.json"), "{}").expect("theme file");
+        let app = UzeApplication::new(home, Vec::new());
+
+        let listed = app.themes().list(&["default"]).expect("listed");
+        let adaptive: Vec<&super::ThemeSummary> = listed
+            .iter()
+            .filter(|theme| theme.id == super::ADAPTIVE)
+            .collect();
+        assert_eq!(adaptive.len(), 1, "{listed:?}");
+        assert_eq!(adaptive[0].path, None, "the selection, not the file");
+    }
 
     #[test]
     fn a_theme_the_operator_wrote_shadows_a_builtin_of_the_same_name() {
@@ -133,6 +189,11 @@ mod tests {
             .filter(|theme| theme.id == "default")
             .collect();
         assert_eq!(shadowed.len(), 1, "listed twice: {listed:?}");
+        assert_eq!(
+            listed[0].id,
+            super::ADAPTIVE,
+            "the adaptive selection leads"
+        );
         assert!(
             shadowed[0].path.is_some(),
             "the built-in won over their file"

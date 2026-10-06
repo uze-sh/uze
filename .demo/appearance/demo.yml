@@ -86,7 +86,7 @@ sandbox:
       LAYOUT
     # Every take starts from the look the other demos are recorded in, and
     # the last take's choice would otherwise open this one already changed.
-    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set default >/dev/null
+    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set dark >/dev/null
     - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config icons nerd >/dev/null
   clear:
     # The rewind removes the checkouts but leaves the directory that held
