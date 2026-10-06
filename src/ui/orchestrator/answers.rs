@@ -209,7 +209,9 @@ impl WorkspaceModel {
     /// they arrive in bulk — opening a surface back where it was left
     /// asks for every directory that was open. One per pass made that a
     /// frame each: a third of a second of a tree filling in one row at a
-    /// time, for a tenth of a millisecond of actual work.
+    /// time, for a tenth of a millisecond of actual work. The read of the
+    /// checkout's `files.exclude` is off it for the same reason: it is
+    /// what the first listing waits on.
     pub(super) fn schedule_file_request(&mut self, sender: &mpsc::Sender<FileResolution>) {
         let Some(view) = self.code.as_mut() else {
             return;
@@ -220,7 +222,11 @@ impl WorkspaceModel {
                 // A second colouring pass is off the chain too: it is the
                 // slowest request there is, and a file opened after it
                 // must not wait for the colour of one being left.
-                Some(code::FileRequest::List(_) | code::FileRequest::Colour(_)) => true,
+                Some(
+                    code::FileRequest::List(_)
+                    | code::FileRequest::Exclusions(_)
+                    | code::FileRequest::Colour(_),
+                ) => true,
                 // The chain is busy, and the queue is in the order the
                 // surface asked: stopping here rather than looking past
                 // it is what keeps a save ahead of the read that follows
@@ -288,7 +294,9 @@ impl WorkspaceModel {
         // read alongside the read it has to follow.
         if !matches!(
             resolution.answer,
-            code::FileAnswer::Listed { .. } | code::FileAnswer::Coloured { .. }
+            code::FileAnswer::Listed { .. }
+                | code::FileAnswer::Excluded(_)
+                | code::FileAnswer::Coloured { .. }
         ) {
             self.code_request_pending = false;
         }

@@ -75,6 +75,7 @@ mod change_menu;
 mod changes;
 mod diff;
 mod editor;
+mod exclude;
 mod files;
 mod history;
 mod map;
@@ -84,6 +85,7 @@ mod treemap;
 
 pub use crate::shared::markdown::render as markdown;
 pub use changes::{ChangeSummary, change_summary};
+pub use exclude::Exclusions;
 pub use history::{Commit, CommitDetail, Timeline, commit_detail, timeline, timeline_section};
 pub use map::{FileMeasure, Measure, measure};
 pub use render::view;
@@ -633,12 +635,12 @@ impl CodeView {
                 entries,
                 chain,
             } => match entries {
-                Ok(mut entries) => {
-                    entries.retain(files::is_shown);
-                    let first_read = self.files.listings.insert(path.clone(), entries).is_none();
-                    for (directory, mut listed) in chain {
-                        listed.retain(files::is_shown);
-                        self.files.listings.entry(directory).or_insert(listed);
+                Ok(entries) => {
+                    let first_read = self.files.install(&self.root, path.clone(), entries);
+                    for (directory, listed) in chain {
+                        if !self.files.listings.contains_key(&directory) {
+                            self.files.install(&self.root, directory, listed);
+                        }
                     }
                     // A directory opened onto a single directory is drawn
                     // as one row with it (see `files::row_for`), so the
@@ -670,6 +672,21 @@ impl CodeView {
                     self.notice = Some(Span::new(message, Role::Danger));
                 }
             },
+            FileAnswer::Excluded(answer) => {
+                // Settings that cannot be read hide nothing, and say so:
+                // a tree held back on them would be no tree at all.
+                let exclusions = answer.unwrap_or_else(|message| {
+                    self.notice = Some(Span::new(message, Role::Warning));
+                    Exclusions::default()
+                });
+                if self.files.exclude(&self.root, exclusions) {
+                    let listed: Vec<PathBuf> = self.files.listings.keys().cloned().collect();
+                    self.queue.extend(listed.into_iter().map(FileRequest::List));
+                }
+                for directory in self.files.expanded.clone() {
+                    self.expand(directory);
+                }
+            }
             FileAnswer::Read { path, file } => {
                 let Some(open) = self.open.as_mut().filter(|open| open.path == path) else {
                     return;
@@ -711,6 +728,17 @@ impl CodeView {
                 open.place_caret(wanted);
             }
             FileAnswer::Saved { path, outcome } => {
+                // The settings the tree is pruned by were just edited
+                // here, and the tree should say so now.
+                if outcome.is_ok()
+                    && path
+                        == self
+                            .root
+                            .join(exclude::SETTINGS_DIRECTORY)
+                            .join(exclude::SETTINGS_FILE)
+                {
+                    self.ask_for_exclusions();
+                }
                 let open = self.open.as_mut().filter(|open| open.path == path);
                 let written = open.and_then(|open| {
                     let revision = open.saving.pop_front()?;
@@ -1172,9 +1200,24 @@ impl CodeView {
             .iter()
             .any(|request| matches!(request, FileRequest::List(queued) if *queued == path));
         if !asked && !self.files.listings.contains_key(&path) {
-            self.queue.push_back(FileRequest::List(path.clone()));
+            match self.files.exclusions {
+                Some(_) => self.queue.push_back(FileRequest::List(path.clone())),
+                // Listed once they land (see `Files::exclusions`).
+                None => self.ask_for_exclusions(),
+            }
         }
         self.files.expanded.insert(path);
+    }
+
+    fn ask_for_exclusions(&mut self) {
+        let asked = self
+            .queue
+            .iter()
+            .any(|request| matches!(request, FileRequest::Exclusions(_)));
+        if !asked {
+            self.queue
+                .push_back(FileRequest::Exclusions(self.root.clone()));
+        }
     }
 
     /// Moves the selection one row in whichever list is showing.
@@ -1232,7 +1275,7 @@ impl CodeView {
             .filter(|open| open.editing && open.error.is_none())
         {
             open.insert_text(text);
-            self.follow_caret(space.height);
+            self.follow_caret(crate::view::text_height(space));
         }
     }
 
@@ -1397,7 +1440,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
     // answer, plus the two that leave typing.
     if view.editing() {
         let outcome = edit_command(view, command, space);
-        view.follow_caret(space.height);
+        view.follow_caret(crate::view::text_height(space));
         return outcome;
     }
 
@@ -1572,8 +1615,8 @@ fn edit_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutco
         Command::Close => open.editing = false,
         Command::Newline => open.split_line(),
         Command::Indent => open.indent(),
-        Command::ScrollPageUp => open.page(usize::from(space.height), false),
-        Command::ScrollPageDown => open.page(usize::from(space.height), true),
+        Command::ScrollPageUp => open.page(usize::from(crate::view::text_height(space)), false),
+        Command::ScrollPageDown => open.page(usize::from(crate::view::text_height(space)), true),
         Command::EraseBack => open.backspace(),
         Command::EraseForward => open.delete_forward(),
         Command::Type(character) => open.insert(character),

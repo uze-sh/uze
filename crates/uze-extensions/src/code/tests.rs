@@ -981,6 +981,82 @@ fn the_tree_shows_every_dotfile_but_the_repository_itself() {
     assert_eq!(item_names_of_tree(&view), ["main.rs"]);
 }
 
+/// What the project told its editor to hide, the tree hides too — from
+/// the first frame, not after a flash of it — and editing the setting
+/// from this surface brings back what it no longer hides.
+#[test]
+fn the_tree_hides_what_the_editor_settings_exclude() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/.vscode")
+        .with_file(
+            "/w/.vscode/settings.json",
+            r#"{ "files.exclude": { "**/node_modules": true, "target": true } }"#,
+        )
+        .with_directory("/w/node_modules")
+        .with_directory("/w/target")
+        .with_directory("/w/web")
+        .with_directory("/w/web/node_modules")
+        .with_file("/w/web/index.ts", "export {}\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+
+    let first = view.take_request().expect("the settings are asked for");
+    assert!(matches!(first, FileRequest::Exclusions(_)));
+    assert!(
+        view.take_request().is_none(),
+        "and nothing is listed before them"
+    );
+    view.absorb(fulfill(&machine, first));
+    settle(&mut view, &machine);
+    assert_eq!(item_names_of_tree(&view), [".vscode", "web", "README.md"]);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/.vscode")));
+
+    view.select(PathBuf::from("/w/web"));
+    press(&mut view, Command::Expand);
+    settle(&mut view, &machine);
+    assert_eq!(
+        item_names_of_tree(&view),
+        [".vscode", "web", "index.ts", "README.md"]
+    );
+
+    let settings = PathBuf::from("/w/.vscode/settings.json");
+    machine.files.borrow_mut().insert(
+        settings.clone(),
+        r#"{ "files.exclude": { "target": true } }"#.to_owned(),
+    );
+    view.absorb(FileAnswer::Saved {
+        path: settings,
+        outcome: Ok(()),
+    });
+    settle(&mut view, &machine);
+    assert_eq!(
+        item_names_of_tree(&view),
+        [
+            ".vscode",
+            "node_modules",
+            "web",
+            "node_modules",
+            "index.ts",
+            "README.md"
+        ]
+    );
+}
+
+/// Settings that do not parse hide nothing — and say why, rather than
+/// leaving the viewer to wonder why their exclusions stopped working.
+#[test]
+fn unreadable_editor_settings_hide_nothing_and_say_so() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/.vscode")
+        .with_file("/w/.vscode/settings.json", "{ not json")
+        .with_directory("/w/node_modules");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    assert_eq!(item_names_of_tree(&view), [".vscode", "node_modules"]);
+    let notice = view.notice.as_ref().expect("the failure is said");
+    assert_eq!(notice.role, Role::Warning);
+}
+
 fn item_names_of_tree(view: &CodeView) -> Vec<String> {
     view.files
         .rows(&view.root)
@@ -1211,19 +1287,22 @@ fn page_keys_move_the_caret_a_screen_at_a_time() {
     let machine = FakeMachine::default().with_file("/w/long.txt", &text);
     let mut view = editing(&machine, "/w/long.txt");
 
+    // A screen is the rows text is drawn in, not the room the surface
+    // was given: the heading and the padding take the rest.
+    let screen = crate::view::text_height(space());
     press(&mut view, Command::ScrollPageDown);
     press(&mut view, Command::ScrollPageDown);
     let line = view.open.as_ref().expect("open").caret.line;
-    assert_eq!(line, usize::from(space().height) * 2);
+    assert_eq!(line, usize::from(screen) * 2);
     assert!(
-        (view.scroll..view.scroll + space().height).contains(&u16::try_from(line).unwrap()),
+        (view.scroll..view.scroll + screen).contains(&u16::try_from(line).unwrap()),
         "the caret stays on screen"
     );
 
     press(&mut view, Command::ScrollPageUp);
     assert_eq!(
         view.open.as_ref().expect("open").caret.line,
-        usize::from(space().height)
+        usize::from(screen)
     );
 }
 

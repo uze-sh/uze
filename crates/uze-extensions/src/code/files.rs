@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::exclude::Exclusions;
 use crate::{DirEntry, view::RowIcon};
 
 /// The checkout's own tree, as far as it has been listed.
@@ -24,9 +25,47 @@ use crate::{DirEntry, view::RowIcon};
 pub(super) struct Files {
     pub(super) listings: BTreeMap<PathBuf, Vec<DirEntry>>,
     pub(super) expanded: BTreeSet<PathBuf>,
+    /// What the checkout's settings hide. Absent until they have been
+    /// read, and nothing is listed before then: a tree drawn first and
+    /// pruned after shows the viewer, for a frame, exactly what the
+    /// project asked not to be shown — and may land the cursor on it.
+    pub(super) exclusions: Option<Exclusions>,
 }
 
 impl Files {
+    /// Installs `entries` as the listing of `directory`, without what the
+    /// tree never shows. Whether it is the directory's first listing.
+    pub(super) fn install(
+        &mut self,
+        root: &Path,
+        directory: PathBuf,
+        mut entries: Vec<DirEntry>,
+    ) -> bool {
+        entries.retain(is_shown);
+        if let Some(exclusions) = &self.exclusions {
+            exclusions.retain(root, &directory, &mut entries);
+        }
+        self.listings.insert(directory, entries).is_none()
+    }
+
+    /// Takes on a checkout's exclusions, applying them to what is already
+    /// listed. Whether a directory has to be read again: one the previous
+    /// rules hid has nothing left here to bring back.
+    pub(super) fn exclude(&mut self, root: &Path, exclusions: Exclusions) -> bool {
+        if self.exclusions.as_ref() == Some(&exclusions) {
+            return false;
+        }
+        let relist = self
+            .exclusions
+            .as_ref()
+            .is_some_and(|known| !known.is_empty());
+        for (directory, entries) in &mut self.listings {
+            exclusions.retain(root, directory, entries);
+        }
+        self.exclusions = Some(exclusions);
+        relist
+    }
+
     pub(super) fn rows(&self, root: &Path) -> Vec<TreeRow> {
         flatten(root, &self.listings, &self.expanded)
     }

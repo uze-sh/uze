@@ -69,25 +69,35 @@ pub(super) fn render_lines(
     // navigator's groove sits in its panel's: flush against the edge
     // rather than a column short of it, and the content keeps its full
     // width because that column was never the content's.
-    let bar = Scrollbar::measure(
-        Rect::new(body.right(), body.y, Scrollbar::width(), body.height),
-        body.height as usize,
-        total,
-    );
     let gutter = gutter_width(lines);
     // Unnumbered content is prose, and prose is the case the gutter was
     // silently paying for everywhere else.
     let inset = if gutter == 0 { PROSE_INSET } else { 0 };
-    let content = if body.width > inset.saturating_mul(2) {
+    let padding = match medium {
+        Medium::Text if body.height > TEXT_PADDING.saturating_mul(2) => TEXT_PADDING,
+        _ => 0,
+    };
+    let padded = Rect::new(
+        body.x,
+        body.y.saturating_add(padding),
+        body.width,
+        body.height.saturating_sub(padding.saturating_mul(2)),
+    );
+    let content = if padded.width > inset.saturating_mul(2) {
         Rect::new(
-            body.x.saturating_add(inset),
-            body.y,
-            body.width.saturating_sub(inset.saturating_mul(2)),
-            body.height,
+            padded.x.saturating_add(inset),
+            padded.y,
+            padded.width.saturating_sub(inset.saturating_mul(2)),
+            padded.height,
         )
     } else {
-        body
+        padded
     };
+    let bar = Scrollbar::measure(
+        Rect::new(body.right(), body.y, Scrollbar::width(), body.height),
+        content.height as usize,
+        total,
+    );
     let text_width = text_width(content.width, gutter);
     let mut y = content.y;
     let mut at_end = true;

@@ -3239,6 +3239,7 @@ name = "uze-extensions"
 version = "1.0.0-beta.12"
 dependencies = [
  "pulldown-cmark",
+ "serde_json",
  "syntect",
  "two-face",
  "unicode-width",
