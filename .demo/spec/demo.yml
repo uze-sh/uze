@@ -225,9 +225,7 @@ fixtures:
               delivery: handoff
               branch: conventional
               slots: 3
-
-            artifacts:
-              path: docs/architecture
+              artifacts: docs/architecture
       - message: 'docs(architecture): draw the context, the containers and the lifecycle'
         days_ago: 2
         files:
@@ -456,16 +454,23 @@ beats:
   - say: the rest of the project's work, by where it stands
     key: Left
     expect: READY TO ARCHIVE
+    # Left folds the change back to its row; its documents leaving the
+    # list is what proves the key landed.
+    refuse: rate-limi… contract
+    expect_timeout: 6
+    pause: 2.4
+  - say: and what was finished and put away
+    # The archive is the last band of changes, folded until asked for.
+    click: ARCHIVED
+    in: pane
+    expect: 2026-09-18-add-heal
     expect_timeout: 6
     pause: 2.4
   - say: the specs that outlive the changes
-    key: Tab
-    expect: routing
-    expect_timeout: 6
-    pause: 2.0
-  - say: and what was finished and put away
-    key: Tab
-    expect: 2026-09-18-add-health-endpoint
+    # The subjects sit in the tab strip while a surface is open.
+    click: specs
+    in: strip
+    expect: health/spec\.md
     expect_timeout: 6
     pause: 2.4
   - say: and out — the cut stops here, before the screen blanks

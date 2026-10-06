@@ -185,9 +185,7 @@ fixtures:
               delivery: handoff
               branch: conventional
               slots: 3
-
-            artifacts:
-              path: docs/architecture
+              artifacts: docs/architecture
       - message: 'docs(architecture): draw the context, the containers and the lifecycle'
         days_ago: 2
         files:

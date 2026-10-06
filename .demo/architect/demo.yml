@@ -219,9 +219,7 @@ fixtures:
               delivery: handoff
               branch: conventional
               slots: 3
-
-            artifacts:
-              path: docs/architecture
+              artifacts: docs/architecture
       - message: 'docs(architecture): draw the context, the containers and the lifecycle'
         days_ago: 2
         files:
@@ -453,8 +451,10 @@ beats:
     refuse: backspace level up
     pause: 1.8
   - say: the diagrams are grouped by what they are
+    # The board's selector sits in the tab strip while a surface is open;
+    # the list it opens drops into the pane.
     click: C4
-    in: pane
+    in: strip
     expect: Flowchart
     expect_timeout: 6
     pause: 1.4
