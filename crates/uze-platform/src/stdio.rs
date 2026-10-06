@@ -62,6 +62,12 @@ mod imp {
 
     use super::{Duration, Instant};
 
+    /// The most of a terminal's reply `ask_terminal` collects before giving
+    /// up on it. Replies to the questions UZE asks are tens of bytes; one
+    /// that runs past this is not one of them, and is not held in memory
+    /// until the deadline.
+    const MOST_A_REPLY_TAKES: usize = 1024;
+
     pub(super) fn ask_terminal(
         question: &[u8],
         answered: &dyn Fn(&[u8]) -> bool,
@@ -119,6 +125,7 @@ mod imp {
             }
             match tty.read(&mut chunk) {
                 Ok(0) => return None,
+                Ok(read) if reply.len() + read > MOST_A_REPLY_TAKES => return None,
                 Ok(read) => reply.extend_from_slice(&chunk[..read]),
                 Err(error) if error.kind() == ErrorKind::Interrupted => {}
                 Err(_) => return None,
@@ -265,6 +272,30 @@ mod imp {
             assert_eq!(
                 reply.as_deref(),
                 Some(&b"\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?62c"[..])
+            );
+        }
+
+        #[test]
+        fn a_reply_that_never_ends_is_given_up_on_before_the_deadline() {
+            let (mut terminal, mut program) = pseudoterminal();
+            let emulator = thread::spawn(move || {
+                let mut asked = vec![0u8; QUESTION.len()];
+                terminal.read_exact(&mut asked).expect("the question");
+                let _ = terminal.write_all(&[b'x'; 4096]);
+                terminal
+            });
+            let started = Instant::now();
+            let reply = ask_on(
+                &mut program,
+                QUESTION,
+                &ends_with_device_attributes,
+                Instant::now() + Duration::from_secs(5),
+            );
+            let _terminal = emulator.join().expect("emulator");
+            assert_eq!(reply, None);
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "not held to the deadline"
             );
         }
 
