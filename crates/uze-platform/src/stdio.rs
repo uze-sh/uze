@@ -240,11 +240,14 @@ mod imp {
             reply.ends_with(b"c")
         }
 
+        /// The local modes as settings. `PENDIN` is left out: it is the
+        /// kernel's own state, which a BSD kernel (macOS) sets whenever a
+        /// terminal returns to line editing, not something anyone chose.
         fn local_modes(tty: &std::fs::File) -> libc::tcflag_t {
             // Safety: as in `ask_on`.
             let mut modes: libc::termios = unsafe { std::mem::zeroed() };
             assert_eq!(unsafe { libc::tcgetattr(tty.as_raw_fd(), &mut modes) }, 0);
-            modes.c_lflag
+            modes.c_lflag & !libc::PENDIN
         }
 
         #[test]
