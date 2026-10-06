@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "name": "uze light",
+  "description": "UZE's own look on paper: the same monochrome as the default, inverted the way the docs are. A white page, near-black ink that is also the accent, greys for everything recessed; hue only where it means something, deepened to read on white.",
+  "colors": {
+    "surface.background": "#ffffff",
+
+    "text.bright": "#0a0a0a",
+    "text.primary": "#1c1c1e",
+    "text.tertiary": "#36363a",
+    "text.secondary": "#4f4f54",
+    "text.inactive": "#5f5f64",
+    "text.muted": "#6b6b70",
+    "text.dim": "#86868c",
+    "text.faint": "#b8b8bd",
+    "text.code": "#2e6a78",
+
+    "accent": "#0a0a0a",
+    "state.success": "#2f7a4a",
+    "state.warning": "#8a6100",
+    "state.danger": "#b3402f",
+    "state.info": "#3d5a99",
+    "state.in-flight": "#1f6f75",
+    "state.landed": "#6a4c9c",
+    "state.published": "#5a6273",
+
+    "ansi.0": "@text.bright",
+    "ansi.1": "#b3402f",
+    "ansi.2": "#2f7a4a",
+    "ansi.3": "#8a6100",
+    "ansi.4": "#3d5a99",
+    "ansi.5": "#6a4c9c",
+    "ansi.6": "#1f6f75",
+    "ansi.7": "@text.muted",
+    "ansi.8": "@text.secondary",
+    "ansi.9": "#c8573f",
+    "ansi.10": "#3a8f5a",
+    "ansi.11": "#a37509",
+    "ansi.12": "#5070b0",
+    "ansi.13": "#8060b4",
+    "ansi.14": "#2a8790",
+    "ansi.15": "@text.dim"
+  },
+  "syntax": { "theme": "InspiredGitHub" }
+}

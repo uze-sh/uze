@@ -30,11 +30,16 @@ use crate::{
 /// the format — the same loader reads them and reads yours.
 const BUILTIN_DEFAULT: &str = include_str!("../themes/default.json");
 
-/// The third-party palettes UZE carries, by id. Each is a partial theme over
-/// the built-in default — the same shape as a file someone writes, which is
-/// what lets one of theirs `extends` one of these. Where each palette comes
-/// from and the terms it comes under is recorded in `about.hbs`.
+/// The palettes UZE carries beyond its default, by id: its own light one,
+/// then third-party ones. Each is a partial theme over the built-in default
+/// — the same shape as a file someone writes, which is what lets one of
+/// theirs `extends` one of these. Where each third-party palette comes from
+/// and the terms it comes under is recorded in `about.hbs`.
 const BUNDLED_PALETTES: &[(&str, &str)] = &[
+    (
+        "default-light",
+        include_str!("../themes/default-light.json"),
+    ),
     ("dracula", include_str!("../themes/dracula.json")),
     (
         "catppuccin-mocha",
