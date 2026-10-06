@@ -53,6 +53,13 @@ export SSL_CERT_FILE=/app/ca.crt
 mkdir -p /work/home/.codex /work/home/.agents
 # decision: synthetic-credentials
 cp /app/fixtures/auth.json /work/home/.codex/auth.json
+# decision: the container is the sandbox. Codex's own needs the host
+# kernel's Landlock, which GitHub's runners do not provide consistently:
+# where it is missing, a command fails inside it and the turn ends with the
+# tool never run, so the same run passed and failed by runner. Written
+# before `uze install`, which keeps it, since a top-level key must precede
+# the tables UZE adds.
+printf 'sandbox_mode = "danger-full-access"\n' > /work/home/.codex/config.toml
 {materialize_marketplace(cfg)}
 uze market add /work/market >/dev/null 2>&1
 for p in {plugins}; do uze install $p@uze-lab -m >/dev/null 2>&1; done
