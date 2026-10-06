@@ -21,12 +21,14 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
     ],
     effects: &[HookEffect::Observe, HookEffect::Allow, HookEffect::Deny],
     tools: TOOLS,
+    session_sources: uze_core::hook::SESSION_SOURCES,
     runner: HookRunner::Wrapper {
         dialect: WrapperDialect {
             payload: PayloadPaths {
                 tool: ".tool_name // empty",
                 input: ".tool_input // {}",
                 cwd: ".cwd // .context.cwd // empty",
+                implied_source: None,
             },
             // A decision is JSON on stdout with exit 0: Claude reads
             // stdout only then, and renders exit 2 as a failed hook ("hook

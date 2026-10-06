@@ -318,8 +318,10 @@ def _ask(cfg, bindings, expected):
             DENIED in common.squash(approval) for approval in turn.approvals
         )
         check("hooks-ask-guard-ran", ran, f"records: {found.get('effect-ask')}")
-        check(
+        declared.presence(
+            bindings,
             "hooks-ask-prompted-with-reason",
+            "hooks.ask-shows-reason",
             prompted,
             "the harness asked, naming the handler's reason"
             if prompted

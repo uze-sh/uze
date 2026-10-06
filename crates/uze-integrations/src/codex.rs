@@ -732,6 +732,14 @@ const FACTS: &[HarnessFact] = &[
         measured_on: "0.160.1",
         proven_by: "contract/hooks.py::_events",
     },
+    HarnessFact {
+        subject: "mcp",
+        fact: "offers a delivered MCP server's tool in code mode as a deferred nested tool, \
+               absent from `exec`'s description but on `tools` and in `ALL_TOOLS`, and runs \
+               it once the person allows the call",
+        measured_on: "0.160.1",
+        proven_by: "contract/mcp.py::_assert_execution",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "0.158.0";

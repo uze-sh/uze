@@ -83,6 +83,7 @@ $env:HOOK_CWD = Text (First @((Pick $payload @('workspacePaths', 0)), $null))
 $toolInput = (First @((Pick $payload @('toolCall', 'args')), @{}))
 $env:HOOK_INPUT = if ($null -eq $toolInput) { '{}' } else { $json.Serialize($toolInput) }
 $env:HOOK_SOURCE = if ($hookEvent -eq 'session_start') { Text (Pick $payload @('source')) } else { '' }
+if ($hookEvent -eq 'session_start' -and -not $env:HOOK_SOURCE) { $env:HOOK_SOURCE = 'startup' }
 $env:HOOK_TOOL = ''
 $env:HOOK_COMMAND = ''
 $env:HOOK_PATH = ''

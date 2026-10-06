@@ -7,17 +7,19 @@ use crate::hooks::{
 };
 
 /// Antigravity CLI's named hooks carry camelCase payloads and native
-/// `allow`/`ask`/`deny` decisions. It has no session-start event
-/// (1.2.x fires `PreToolUse`, `PostToolUse`, `PreInvocation`,
-/// `PostInvocation`, `Stop`); `PreInvocation` fires on every turn, and
-/// telling the first from the rest would need per-session state the
-/// stateless wrapper does not keep, so `SessionStart` is not claimed.
+/// `allow`/`ask`/`deny` decisions. Beside the documented events it reads a
+/// `SessionStart` key the docs do not list (the binary's
+/// `CallSessionStartHook`, measured on 1.2.17): flat like `Stop`, run once
+/// for a new conversation at its first model call, and never for one
+/// resumed with `--continue`, so its only source is `startup`. Being
+/// undocumented, the Lab measures it every run (`hooks > events`).
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "antigravity",
     events: &[
         HookEvent::PreToolUse,
         HookEvent::PostToolUse,
         HookEvent::Stop,
+        HookEvent::SessionStart,
     ],
     effects: &[
         HookEffect::Observe,
@@ -26,12 +28,16 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
         HookEffect::Deny,
     ],
     tools: TOOLS,
+    session_sources: &["startup"],
     runner: HookRunner::Wrapper {
         dialect: WrapperDialect {
             payload: PayloadPaths {
                 tool: ".toolCall.name // empty",
                 input: ".toolCall.args // {}",
                 cwd: ".workspacePaths[0] // empty",
+                // Its session-start hook (undocumented, measured on 1.2.17)
+                // fires for a new conversation only and carries no source.
+                implied_source: Some("startup"),
             },
             // Only the pre-tool event carries a decision; the others answer
             // with the empty object the vendor's contract requires. A

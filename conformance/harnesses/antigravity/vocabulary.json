@@ -2,7 +2,8 @@
   "events": [
     "pre_tool_use",
     "post_tool_use",
-    "stop"
+    "stop",
+    "session_start"
   ],
   "effects": [
     "observe",

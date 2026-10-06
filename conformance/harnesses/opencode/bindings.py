@@ -14,6 +14,11 @@ from .scenarios import opencode_container
 class OpenCodeBindings(Bindings):
     harness = "opencode"
     display_name = "OpenCode"
+    #: What OpenCode V2 puts in front of a person before a call a plugin
+    #: asks about ("△ Permission required", then "Allow once", "Always
+    #: allow", "Reject"), answered with Enter on the preselected "Allow
+    #: once" (2.0.24).
+    approval_prompts = ("Permission required",)
     #: Started as its own binary, the way a person who only uses the
     #: package manager starts it: the plugins must reach it with no shim on
     #: `PATH`. What only the workspace's launch carries is the continuity
@@ -177,6 +182,12 @@ timeout 240 opencode run {shlex.quote(prompt)} 2>&1
         below are measured on that, not on the `slash` behaviour the
         previous reason described.
         """
+        if prop == "hooks.ask-shows-reason":
+            return (
+                "OpenCode V2 asks the person, but its permission prompt shows the "
+                "call and never the request's message (tui/src/routes/session/"
+                "permission.tsx), so the handler's reason is not on screen"
+            )
         if prop == "context-project-agent-reaches-model":
             # Measured, `experiments/opencode/project-agents`: the project
             # roots are inside the checkout, `OPENCODE_CONFIG_DIR` replaces

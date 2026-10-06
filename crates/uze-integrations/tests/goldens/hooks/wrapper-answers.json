@@ -874,6 +874,30 @@
     },
     {
       "harness": "antigravity",
+      "event": "session_start",
+      "effect": "observe",
+      "handlers": [
+        "refuse"
+      ],
+      "command": null,
+      "exit": 0,
+      "stdout": {},
+      "stderr": "refused on session_start from startup"
+    },
+    {
+      "harness": "antigravity",
+      "event": "session_start",
+      "effect": "observe",
+      "handlers": [
+        "absent"
+      ],
+      "command": null,
+      "exit": 0,
+      "stdout": {},
+      "stderr_prefix": "handler failed (exit 127): ${PLUGIN_ROOT}/scripts/absent"
+    },
+    {
+      "harness": "antigravity",
       "event": "pre_tool_use",
       "effect": "deny",
       "handlers": [

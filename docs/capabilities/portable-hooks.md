@@ -175,8 +175,8 @@ unsupported there and not delivered.
 |---|---|---|
 | Claude Code | one merged entry per group in `~/.claude/settings.json`, `command` = the generated `hooks/exec` with the group's arguments (exec form: no shell parsing) | native |
 | Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native; held back until the person trusts it — Codex runs a hook from `hooks.json` only once its review recorded a hash for it (a TUI session asks; `codex exec` skips it in silence), and asks again after a change. `uze status`, `uze inspect`, `uze doctor` and the install report name every hook waiting on that review, read from Codex's own record and never written to it |
-| Antigravity CLI | one named entry per group merged into the shared `~/.gemini/config/hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` — whose command is the shared `hooks/exec` wrapper by absolute path | native (shared vendor file); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
-| OpenCode | one generated plugin module (the definition as its default export, no import), `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted (`observe`/`allow` only; `deny`/`ask` unsupported, `Stop` and `SessionStart` never claimed) |
+| Antigravity CLI | one named entry per group merged into the shared `~/.gemini/config/hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` and `SessionStart` — whose command is the shared `hooks/exec` wrapper by absolute path | native (shared vendor file); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
+| OpenCode | one generated plugin module (the definition as its default export, no import), `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted: every event and effect rides OpenCode's own plugin API (tool hooks, `permission.evaluate`, the `session.created` and `session.execution.succeeded` bus events); `SessionStart` reports `startup` only |
 
 The `sh` wrapper is one file per harness, byte-identical for every package,
 and depends on `sh` and `jq`. Claude, Codex and Antigravity each keep one
@@ -213,10 +213,16 @@ callback, and a `SessionStart` hook is never a per-turn callback. The group
 is reported Unsupported on that harness with the reason stated (in `uze
 doctor`, one row per group and harness), and it is not attached; the
 package's other groups are delivered there as usual, and the manifest is
-not refused for it. `deny`/`ask` are Unsupported on OpenCode V2
-— its tool hooks see the input but cannot block, and its only decision point
-(`permission.evaluate`) carries the action's resources rather than the tool
-input — so they are never fabricated.
+not refused for it. A `SessionStart` group that waits only for a start the
+harness never announces (a resume or a clear, on a harness that announces
+only a new session) is reported Unsupported the same way.
+
+On OpenCode V2 the decisions ride two halves of its plugin API: the tool
+hook sees the input but cannot refuse, and `permission.evaluate` can refuse
+or ask but carries no input, so the bridge keeps the input by call id
+between the two. Its permission prompt shows the call and not the request's
+message, so a handler's reason for asking is not on screen there (the
+reason for a denial reaches the model as on every harness).
 
 ## Compatibility matrix
 
@@ -232,14 +238,14 @@ stated) · **—** = not expressible.
 | matcher | native, regex on the tool name | native | native, regex (`"*"` matches all) | in-plugin |
 | a group's handlers | run **in parallel** natively → sequential inside `exec` | sequential inside `exec` | sequential inside `exec` | sequential inside the plugin |
 | `PreToolUse` observe/allow | native | native | native (signed-in session) | native (`execute.before`) |
-| `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`, signed-in session) | — |
-| `PreToolUse` ask | native (`permissionDecision: ask`) | rendered as a denial | native (signed-in session) | — |
+| `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`, signed-in session) | native (`permission.evaluate` → `deny`, input kept from `execute.before`) |
+| `PreToolUse` ask | native (`permissionDecision: ask`) | rendered as a denial | native (`decision: ask`, signed-in session) | native (`permission.evaluate` → `ask`; the prompt does not show the reason) |
 | `PreToolUse` transform | — (needs a stdout convention) | — | — | — |
-| `PostToolUse` | native, observe only | native, observe only | native (`{}`), signed-in session | native (`execute.after`) |
-| `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native, signed-in session | — |
-| `SessionStart` (observe) | native, matcher on the source | native, matcher on the source (a hook is reviewed before it runs) | — (no session-start event; `PreInvocation` fires every turn and is not used) | — (the plugin event stream carries no `session.created` for a new session, 2.0.18) |
+| `PostToolUse` | native, observe only | native, observe only | native (`{}`), signed-in session | native (`execute.after`; a denial reaches the model as synthetic input) |
+| `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native, signed-in session | native (`session.execution.succeeded`; a denial continues the session with synthetic input, as OpenCode's own plan plugin does) |
+| `SessionStart` (observe) | native, matcher on the source | native, matcher on the source (a hook is reviewed before it runs) | native through the undocumented `SessionStart` key (flat; once per new conversation, at its first model call; `startup` only — a `--continue` announces nothing), measured every run | native (`session.created` of a top-level session; `startup` only — a resumed session announces nothing) |
 | a denial's exit status | 2 (the documented block signal) | 2 | **0** — the decision is the stdout document, and any non-zero exit is logged as a *failed* hook | n/a |
-| fail-closed on handler failure | via `exec` (natively, exit ≠ 2 **runs the tool**) | via `exec` | via `exec` | via the plugin |
+| fail-closed on handler failure | via `exec` (natively, exit ≠ 2 **runs the tool**) | via `exec` | via `exec` | via the plugin (`permission.evaluate`) |
 | handler context | `HOOK_*` environment | `HOOK_*` environment | `HOOK_*` environment | `HOOK_*` environment |
 
 ### Session start

@@ -142,7 +142,28 @@ timeout 240 codex exec {shlex.quote(prompt)} 2>&1
 
     #: Codex asks before a command leaves its sandbox; answered on screen,
     #: the way a person answers it. The hook review is `prepare`'s.
-    approval_prompts = ("Would you like to run", "Allow command")
+    #: What Codex asks before a call, each answered with Enter on its
+    #: preselected "Allow": a command's approval, and an MCP tool's ("Allow
+    #: the <server> MCP server to run tool …?", 0.160.1).
+    approval_prompts = (
+        "Would you like to run",
+        "Allow command",
+        "MCP server to run tool",
+    )
+
+    def mcp_calls(self):
+        """The model's default mode is code mode, where an MCP server's tool
+        is a deferred nested tool: left out of `exec`'s description, but on
+        the global `tools` object and listed in `ALL_TOOLS` (0.160.1,
+        `experiments/codex/mcp-offer`). A model finds it there and calls it
+        inside `exec`, as this script does."""
+        script = (
+            'const found = ALL_TOOLS.find((tool) => tool.name.includes("uze_conformance"));\n'
+            'if (!found) { text("no uze_conformance in ALL_TOOLS"); exit(); }\n'
+            "const result = await tools[found.name]({});\n"
+            "text(JSON.stringify(result));"
+        )
+        return [{"tool": "functions.exec", "args": script}]
 
     #: Codex's provider answers the request after a scripted sequence with
     #: its canned turn text.

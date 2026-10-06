@@ -171,6 +171,56 @@ fn a_group_that_could_never_fire_here_is_reported_not_delivered() {
     );
 }
 
+/// A harness that announces only a new session never runs a group that
+/// waits for a resume or a clear: it is reported, not delivered, while a
+/// group that also waits for a new session is delivered as usual.
+#[test]
+fn a_session_start_the_harness_never_announces_is_reported_not_delivered() {
+    let package = uze_testkit::temp::scratch("unannounced-source");
+    fs::create_dir_all(&package).unwrap();
+    let with = |target: HookTarget, sources: &[&str]| {
+        let mut group = hook();
+        group.event = HookEvent::SessionStart;
+        group.effect = uze_core::hook::HookEffect::Observe;
+        group.matchers = sources
+            .iter()
+            .map(|source| HookMatcher::Source((*source).to_owned()))
+            .collect();
+        let mut resource = hook_resource(&package);
+        resource.capability.payload = serde_json::to_vec(&group).unwrap();
+        hook_plan(&resource, target, false, "evidence.", |_| {
+            Some(ManagedArtifact::HookConfigEntry {
+                config_file: package.join("hooks.json"),
+                entry_name: "demo:protect-env".into(),
+                event: HookEvent::SessionStart,
+                expected: "{}".into(),
+                wrapper: package.join("exec"),
+            })
+        })
+    };
+    let resume_only = with(crate::antigravity::HOOKS, &["resume"]);
+    assert_eq!(resume_only.route, CompatibilityRoute::Unsupported);
+    assert!(
+        resume_only.evidence.contains("`resume`"),
+        "{}",
+        resume_only.evidence
+    );
+    let with_startup = with(crate::antigravity::HOOKS, &["resume", "startup"]);
+    assert_ne!(
+        with_startup.route,
+        CompatibilityRoute::Unsupported,
+        "{}",
+        with_startup.evidence
+    );
+    let resume_on_claude = with(crate::claude::HOOKS, &["resume"]);
+    assert_ne!(
+        resume_on_claude.route,
+        CompatibilityRoute::Unsupported,
+        "{}",
+        resume_on_claude.evidence
+    );
+}
+
 /// A platform the `sh` template does not cover gets no hook, and the
 /// plan says so. The wrapper is the only implementation of the
 /// contract, so a delivery that cannot write one has nothing honest to

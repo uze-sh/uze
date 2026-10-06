@@ -112,10 +112,14 @@ pub(crate) fn bridge_carries_groups(
 /// groups as data. JavaScript valid as TypeScript (no build step), no
 /// dependencies, deterministic — and naming nothing but the hook contract.
 ///
-/// The V2 tool hooks see the tool input but cannot block, and the only
-/// decision point (`permission.evaluate`) carries the action and its
-/// resources rather than the tool input; deny/ask are therefore diagnosed
-/// before attach and never fabricated here.
+/// Every event and effect rides OpenCode V2's own plugin API (anomalyco/
+/// opencode `v2`, measured on 2.0.24): the tool hooks for observing, and
+/// `permission.evaluate` for deciding — the tool hooks see the input but
+/// cannot refuse, and the permission hook can refuse or ask but carries no
+/// input, so the input is kept by call id between the two. A session's
+/// start and the end of its turn are bus events (`session.created`,
+/// `session.execution.succeeded`); a denied stop is answered the way the
+/// harness's own plan plugin keeps a session going, with synthetic input.
 pub(crate) fn opencode_bridge(
     target: HookTarget,
     hooks: &[&PortableHook],
@@ -160,7 +164,7 @@ const ALIASES = {{
 
 const closed = (effect) => effect === "deny" || effect === "ask";
 
-function environment(group, native, input) {{
+function environment(group, native, input, source) {{
   const alias = ALIASES[native];
   return {{
     ...process.env,
@@ -168,9 +172,10 @@ function environment(group, native, input) {{
     HOOK_HARNESS: "opencode",
     HOOK_EVENT: group.event,
     HOOK_TOOL: alias?.tool ?? "",
-    HOOK_TOOL_NATIVE: native,
+    HOOK_TOOL_NATIVE: native ?? "",
     HOOK_CWD: process.cwd(),
     HOOK_INPUT: JSON.stringify(input ?? {{}}),
+    HOOK_SOURCE: source ?? "",
     ...(alias ? alias.fields(input ?? {{}}) : {{}}),
   }};
 }}
@@ -234,8 +239,8 @@ async function handler(command, timeout, env) {{
 
 // Handlers in manifest order; the first denial stops the rest. A failure
 // denies for a fail-closed group and is reported for the others.
-async function run(group, native, input) {{
-  const env = environment(group, native, input);
+async function run(group, native, input, source) {{
+  const env = environment(group, native, input, source);
   for (const entry of group.handlers) {{
     const answer = await handler(entry.command, entry.timeout, env);
     if (answer === null) continue;
@@ -255,23 +260,101 @@ function matches(group, event, native) {{
   );
 }}
 
+// Groups on `event` for `native`, the observing ones and the deciding ones.
+const observing = (event, native) =>
+  GROUPS.filter((group) => matches(group, event, native) && !closed(group.effect));
+const deciding = (event, native) =>
+  GROUPS.filter((group) => matches(group, event, native) && closed(group.effect));
+
+// A tool call's name and input, kept from `execute.before` until the
+// permission check of the same call decides on it.
+const CALLS = new Map();
+
+// Sessions a subagent runs in: their turns are the parent's work, not a
+// person's session starting or stopping.
+const CHILDREN = new Set();
+
+async function decide(groups, native, input) {{
+  for (const group of groups) {{
+    const reason = await run(group, native, input);
+    if (reason) return {{ group, reason }};
+  }}
+  return null;
+}}
+
+async function follow(ctx) {{
+  for await (const event of ctx.event.subscribe()) {{
+    const data = event.data ?? {{}};
+    if (event.type === "session.created") {{
+      if (data.parentID) {{
+        CHILDREN.add(data.sessionID);
+        continue;
+      }}
+      // A new session is the only start OpenCode announces; a resumed one
+      // publishes nothing, so its groups never run here.
+      for (const group of GROUPS) {{
+        if (!matches(group, "session_start", "startup")) continue;
+        const reason = await run(group, undefined, undefined, "startup");
+        if (reason) console.error(`[hooks:${{group.id}}]`, reason);
+      }}
+    }} else if (event.type === "session.execution.succeeded") {{
+      if (CHILDREN.has(data.sessionID)) continue;
+      for (const group of observing("stop", undefined)) {{
+        const reason = await run(group, undefined, undefined);
+        if (reason) console.error(`[hooks:${{group.id}}]`, reason);
+      }}
+      const denied = await decide(deciding("stop", undefined), undefined, undefined);
+      // A denied stop keeps the session going, told why.
+      if (denied) {{
+        await ctx.session.synthetic({{
+          sessionID: data.sessionID,
+          text: denied.reason,
+          resume: true,
+        }});
+      }}
+    }}
+  }}
+}}
+
 export default {{
   id: "hooks-{package_id}",
   async setup(ctx) {{
     await ctx.tool.hook("execute.before", async (event) => {{
-      for (const group of GROUPS) {{
-        if (!matches(group, "pre_tool_use", event.tool)) continue;
+      CALLS.set(event.id, {{ tool: event.tool, input: event.input }});
+      for (const group of observing("pre_tool_use", event.tool)) {{
         const reason = await run(group, event.tool, event.input);
         if (reason) console.error(`[hooks:${{group.id}}]`, reason);
       }}
+    }});
+    // OpenCode asks every tool that touches the machine for permission
+    // before it runs; this is where a deciding group refuses or asks.
+    await ctx.permission.hook("evaluate", async (event) => {{
+      if (event.source?.type !== "tool") return;
+      const call = CALLS.get(event.source.id);
+      if (!call || call.decided) return;
+      call.decided = true;
+      const denied = await decide(deciding("pre_tool_use", call.tool), call.tool, call.input);
+      if (!denied) return;
+      event.effect = denied.group.effect === "ask" ? "ask" : "deny";
+      event.message = denied.reason;
     }});
     await ctx.tool.hook("execute.after", async (event) => {{
-      for (const group of GROUPS) {{
-        if (!matches(group, "post_tool_use", event.tool)) continue;
+      CALLS.delete(event.id);
+      for (const group of observing("post_tool_use", event.tool)) {{
         const reason = await run(group, event.tool, event.input);
         if (reason) console.error(`[hooks:${{group.id}}]`, reason);
       }}
+      const denied = await decide(deciding("post_tool_use", event.tool), event.tool, event.input);
+      // The tool already ran; what a denial can still do is tell the model.
+      if (denied) {{
+        await ctx.session.synthetic({{
+          sessionID: event.sessionID,
+          text: denied.reason,
+          resume: false,
+        }});
+      }}
     }});
+    follow(ctx).catch((error) => console.error("[hooks]", error));
   }},
 }};
 "#

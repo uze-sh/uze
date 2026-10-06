@@ -60,6 +60,9 @@ pub(crate) struct HookTarget {
     /// The harness's binding of the portable tool vocabulary: the single
     /// source the matchers, the generated wrapper and the bridge all read.
     pub tools: &'static [ToolBinding],
+    /// How a session can begin here, as `SessionStart` reports it: a
+    /// harness that announces only a new session reports only `startup`.
+    pub session_sources: &'static [&'static str],
     pub runner: HookRunner,
 }
 
@@ -369,6 +372,26 @@ fn unbound_only(target: HookTarget, hook: &PortableHook) -> Option<String> {
     (!aliases.is_empty()).then(|| aliases.join(", "))
 }
 
+/// The sources a `SessionStart` group waits for, spelled for a report, when
+/// none of them is one this harness announces; `None` when any is, or the
+/// group waits for every start.
+fn unannounced_sources(target: HookTarget, hook: &PortableHook) -> Option<String> {
+    if hook.event != HookEvent::SessionStart || hook.matchers.is_empty() {
+        return None;
+    }
+    let mut sources = Vec::new();
+    for matcher in &hook.matchers {
+        let HookMatcher::Source(source) = matcher else {
+            return None;
+        };
+        if target.session_sources.contains(&source.as_str()) {
+            return None;
+        }
+        sources.push(format!("`{source}`"));
+    }
+    Some(sources.join(", "))
+}
+
 /// artifact `deliver` renders for it. A `degraded` or `unsupported` route
 /// never attaches, and neither does a group `deliver` has no artifact for
 /// on this platform: the mechanism carries the diagnostic instead.
@@ -387,6 +410,15 @@ pub(crate) fn hook_plan(
     if let Some(aliases) = unbound_only(target, &hook) {
         return unsupported(format!(
             "hook `{}` matches only {aliases}, which {} offers no tool for, so it is not delivered here",
+            hook.id,
+            target.key()
+        ));
+    }
+    // A session-start group that waits only for a start this harness never
+    // announces (a resume, a clear) would be delivered and never run.
+    if let Some(sources) = unannounced_sources(target, &hook) {
+        return unsupported(format!(
+            "hook `{}` runs only when a session begins by {sources}, which {} never announces, so it is not delivered here",
             hook.id,
             target.key()
         ));

@@ -714,7 +714,7 @@ impl AntigravityIntegration {
             &self.uze_home,
             resource,
             self.hooks_config_path(),
-            "Antigravity CLI reads named hooks from its shared `~/.gemini/config/hooks.json`: UZE merges one named entry per canonical hook (`<package>:<group-id>`, matcher and timeout preserved, grouped for the tool events and flat for Stop; it fires no session-start event, so a SessionStart group is reported Unsupported and never emulated on PreInvocation) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps that exact entry receipt-owned. The generated plugin carries no hooks.json: the harness never reads one from a plugin directory (Conformance Lab, `hooks > delivery`).",
+            "Antigravity CLI reads named hooks from its shared `~/.gemini/config/hooks.json`: UZE merges one named entry per canonical hook (`<package>:<group-id>`, matcher and timeout preserved, grouped for the tool events and flat for Stop; its undocumented `SessionStart` key runs once for a new conversation, flat like Stop, so a group waiting only for a resume or a clear is reported Unsupported) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps that exact entry receipt-owned. The generated plugin carries no hooks.json: the harness never reads one from a plugin directory (Conformance Lab, `hooks > delivery`).",
         )
     }
 }
@@ -764,6 +764,13 @@ const FACTS: &[HarnessFact] = &[
                tool's own name and input",
         measured_on: "1.2.17",
         proven_by: "contract/hooks.py::_rows",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs a flat `SessionStart` entry its docs do not list, once per new \
+               conversation at its first model call, never on `--continue`",
+        measured_on: "1.2.17",
+        proven_by: "contract/hooks.py::_events",
     },
 ];
 /// The version the facts above were measured on.

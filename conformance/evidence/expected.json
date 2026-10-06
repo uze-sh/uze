@@ -253,6 +253,17 @@
         "1.2.17"
       ],
       "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "opencode",
+      "check": "hooks-ask-prompted-with-reason",
+      "suite": "hooks",
+      "reason": "OpenCode V2's permission prompt renders the call and never the request's message, so the handler's reason is not shown when it asks (tui/src/routes/session/permission.tsx)",
+      "measurement": "the prompt OpenCode showed for the asked call did not carry the handler's reason",
+      "versions": [
+        "opencode v2.0.24"
+      ],
+      "observed_at": "2026-10-06"
     }
   ]
 }

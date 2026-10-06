@@ -37,6 +37,9 @@ pub(crate) struct PayloadPaths {
     pub(crate) input: &'static str,
     /// The workspace directory.
     pub(crate) cwd: &'static str,
+    /// How a session began when the harness's session-start payload does
+    /// not say: a harness that announces only a new session implies it.
+    pub(crate) implied_source: Option<&'static str>,
 }
 
 /// What the wrapper writes on stdout to deny, and when nothing is denied, in

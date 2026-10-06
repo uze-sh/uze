@@ -4,22 +4,31 @@ use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
 use crate::hooks::{HookRunner, HookTarget, UNBOUND};
 
-/// OpenCode's plugin API supplies pre/post tool callbacks that see the
-/// tool input but cannot block it; there is no declarative hook file, so
-/// UZE generates an owned, rebuildable plugin instead. `Stop` has no
-/// OpenCode equivalent and is never claimed, and neither is
-/// `SessionStart`: a plugin's event stream (2.0.18) never carries
-/// `session.created` for a new session, and nothing in it tells a new
-/// session from a continued one (Lab experiment `opencode/session-start`). `deny`/`ask` live only on
-/// `permission.evaluate`, which carries the action and its resources
-/// rather than the tool input, so they are Unsupported until the Lab
-/// proves otherwise. `transform` needs a channel for the handler to
-/// answer on, which the exit-code contract does not have.
+/// OpenCode V2 has no declarative hook file, so UZE generates an owned,
+/// rebuildable plugin (the bridge) that rides the plugin API: the tool
+/// hooks observe a call, `permission.evaluate` decides on it (deny or ask,
+/// with the input the tool hook kept by call id), and the bus events
+/// `session.created` and `session.execution.succeeded` are a new session
+/// and the end of a turn (anomalyco/opencode `v2`, 2.0.24). A resumed
+/// session announces nothing, so `startup` is the only source. `transform`
+/// needs a channel for the handler to answer on, which the exit-code
+/// contract does not have.
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "opencode",
-    events: &[HookEvent::PreToolUse, HookEvent::PostToolUse],
-    effects: &[HookEffect::Observe, HookEffect::Allow],
+    events: &[
+        HookEvent::PreToolUse,
+        HookEvent::PostToolUse,
+        HookEvent::Stop,
+        HookEvent::SessionStart,
+    ],
+    effects: &[
+        HookEffect::Observe,
+        HookEffect::Allow,
+        HookEffect::Ask,
+        HookEffect::Deny,
+    ],
     tools: TOOLS,
+    session_sources: &["startup"],
     runner: HookRunner::Bridge,
 };
 

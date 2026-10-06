@@ -792,6 +792,14 @@ const FACTS: &[HarnessFact] = &[
         measured_on: "2.0.24",
         proven_by: "contract/hooks.py::_rows",
     },
+    HarnessFact {
+        subject: "hooks",
+        fact: "refuses or asks about a call through `permission.evaluate`, announces a new \
+               session and the end of a turn on its event bus, and continues a session \
+               given synthetic input",
+        measured_on: "2.0.24",
+        proven_by: "contract/hooks.py::_deny",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "2.0.18";

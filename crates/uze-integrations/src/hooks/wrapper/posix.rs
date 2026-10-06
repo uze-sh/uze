@@ -50,6 +50,7 @@ impl WrapperTemplate for PosixWrapper {
                     tool: tool_filter,
                     input: input_filter,
                     cwd: cwd_filter,
+                    implied_source,
                 },
             posix:
                 Decisions {
@@ -60,6 +61,10 @@ impl WrapperTemplate for PosixWrapper {
             deny_exit,
             ..
         } = dialect;
+        let source_filter = implied_source.map_or_else(
+            || ".source // empty".to_owned(),
+            |source| format!(".source // \"{source}\""),
+        );
         Some(format!(
             r#"{HEADER}, one per harness. The harness runs
 # this; it runs the author's handlers. The handlers never see a harness
@@ -132,7 +137,7 @@ HOOK_CWD=$(printf '%s' "$payload" | "$JQ" -r '{cwd_filter}')
 HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '{input_filter}')
 HOOK_SOURCE=
 [ "$HOOK_EVENT" = session_start ] \
-  && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '.source // empty')
+  && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '{source_filter}')
 HOOK_TOOL= {field_defaults}
 case "$HOOK_TOOL_NATIVE" in                       # the portable vocabulary
 {aliases}esac

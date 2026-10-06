@@ -181,6 +181,7 @@ def structural_summary(body_text):
         "isolation_markers": {m: (m in body) for m in ISOLATION_MARKERS},
         "continuity_markers": {m: (m in body) for m in CONTINUITY_MARKERS},
         "custom_tools": tools,
+        "mcp_proof_present": MCP_PROOF in body,
         "preview": body[:900],
         "has_available_skills": "### Available skills" in body,
         "has_user_text": '"role": "user"' in body or '"input"' in body,
@@ -193,6 +194,10 @@ def structural_summary(body_text):
 #: The model a response names when the request named none; the models
 #: listing offers it. A response otherwise names the model its request asked
 #: for, as the API does.
+#: What the delivered MCP server answers with, read back from the request
+#: that carries its result.
+MCP_PROOF = os.environ.get("MCP_PROOF", "UZE_MCP_CONFORMANCE_PROOF_1")
+
 DEFAULT_MODEL = "gpt-5.6-sol"
 
 

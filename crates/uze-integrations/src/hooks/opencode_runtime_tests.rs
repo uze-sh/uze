@@ -22,7 +22,12 @@ fn drive(root: &Path, hook: &PortableHook, calls: &str) -> Vec<String> {
         format!(
             r#"import plugin from "./hooks-demo.ts";
 const hooks = {{}};
-await plugin.setup({{ tool: {{ hook: async (name, fn) => {{ hooks[name] = fn; }} }} }});
+await plugin.setup({{
+  tool: {{ hook: async (name, fn) => {{ hooks[name] = fn; }} }},
+  permission: {{ hook: async (name, fn) => {{ hooks[`permission.${{name}}`] = fn; }} }},
+  event: {{ subscribe: () => ({{ [Symbol.asyncIterator]: () => ({{ next: () => new Promise(() => {{}}) }}) }}) }},
+  session: {{ synthetic: async () => {{}} }},
+}});
 const errors = [];
 console.error = (...parts) => errors.push(parts.join(" "));
 {calls}

@@ -35,6 +35,11 @@ impl WrapperTemplate for PowerShellWrapper {
         let tool = powershell_filter(dialect.payload.tool, "$payload")?;
         let cwd = powershell_filter(dialect.payload.cwd, "$payload")?;
         let input = powershell_filter(dialect.payload.input, "$payload")?;
+        let implied_source = dialect.payload.implied_source.map_or_else(String::new, |source| {
+            format!(
+                "if ($hookEvent -eq 'session_start' -and -not $env:HOOK_SOURCE) {{ $env:HOOK_SOURCE = '{source}' }}\n"
+            )
+        });
         let field_defaults: String = wrapper_field_variables(target)
             .iter()
             .map(|name| format!("$env:{name} = ''\n"))
@@ -139,7 +144,7 @@ $env:HOOK_CWD = Text {cwd}
 $toolInput = {input}
 $env:HOOK_INPUT = if ($null -eq $toolInput) {{ '{{}}' }} else {{ $json.Serialize($toolInput) }}
 $env:HOOK_SOURCE = if ($hookEvent -eq 'session_start') {{ Text (Pick $payload @('source')) }} else {{ '' }}
-$env:HOOK_TOOL = ''
+{implied_source}$env:HOOK_TOOL = ''
 {field_defaults}switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {{  # the portable vocabulary
 {aliases}}}
 

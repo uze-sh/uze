@@ -70,7 +70,7 @@ HOOK_CWD=$(printf '%s' "$payload" | "$JQ" -r '.workspacePaths[0] // empty')
 HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '.toolCall.args // {}')
 HOOK_SOURCE=
 [ "$HOOK_EVENT" = session_start ] \
-  && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '.source // empty')
+  && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '.source // "startup"')
 HOOK_TOOL= HOOK_COMMAND= HOOK_PATH= HOOK_QUERY=
 case "$HOOK_TOOL_NATIVE" in                       # the portable vocabulary
     run_command) HOOK_TOOL=shell; HOOK_COMMAND=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.CommandLine // empty'); ;;
