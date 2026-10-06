@@ -39,11 +39,13 @@ impl Themes<'_> {
     /// Every theme this machine can load: the adaptive selection, the ones
     /// UZE carries, then the ones the operator wrote. A file that shadows a
     /// built-in's name wins, the way a local override should — and is listed
-    /// once, as theirs.
+    /// once, as theirs. One named `adaptive` is left out: that name selects
+    /// the adaptive behaviour, so the file could never be drawn in.
     #[tracing::instrument(name = "themes.list", skip_all, err)]
     pub fn list(&self, builtin: &[&str]) -> Result<Vec<ThemeSummary>> {
         let active = self.active()?;
-        let written = appearance::available(&self.0.home)?;
+        let mut written = appearance::available(&self.0.home)?;
+        written.retain(|(id, _)| id != ADAPTIVE);
         let shadowed: Vec<&str> = written.iter().map(|(id, _)| id.as_str()).collect();
         let summaries = std::iter::once(&ADAPTIVE)
             .chain(builtin)
@@ -152,6 +154,26 @@ impl Themes<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{UzeApplication, UzeHome};
+
+    /// `adaptive` is a selection, not a file: a theme written under that
+    /// name could never be drawn in, so it neither replaces the selection
+    /// in the list nor appears as a second entry.
+    #[test]
+    fn a_theme_written_as_adaptive_does_not_take_the_selections_place() {
+        let root = uze_testkit::temp::scratch("theme-adaptive-reserved");
+        let home = UzeHome::at(&root);
+        std::fs::create_dir_all(home.themes_dir()).expect("themes dir");
+        std::fs::write(home.themes_dir().join("adaptive.json"), "{}").expect("theme file");
+        let app = UzeApplication::new(home, Vec::new());
+
+        let listed = app.themes().list(&["default"]).expect("listed");
+        let adaptive: Vec<&super::ThemeSummary> = listed
+            .iter()
+            .filter(|theme| theme.id == super::ADAPTIVE)
+            .collect();
+        assert_eq!(adaptive.len(), 1, "{listed:?}");
+        assert_eq!(adaptive[0].path, None, "the selection, not the file");
+    }
 
     #[test]
     fn a_theme_the_operator_wrote_shadows_a_builtin_of_the_same_name() {
