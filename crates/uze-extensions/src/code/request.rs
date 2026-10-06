@@ -50,6 +50,14 @@ pub enum FileRequest {
         contents: String,
     },
     Delete(PathBuf),
+    /// Remove a directory and everything in it. Answered as
+    /// [`FileAnswer::Deleted`], like a file.
+    DeleteDirectory(PathBuf),
+    /// Give `from` the name `to`, in the same directory.
+    Rename {
+        from: PathBuf,
+        to: PathBuf,
+    },
     /// Throw away what changed at `paths`, putting each back as `root`'s
     /// last commit has it.
     Restore {
@@ -98,6 +106,11 @@ pub enum FileAnswer {
     },
     Restored {
         paths: Vec<PathBuf>,
+        outcome: Result<(), String>,
+    },
+    Renamed {
+        from: PathBuf,
+        to: PathBuf,
         outcome: Result<(), String>,
     },
 }
@@ -150,8 +163,13 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
             path: path.clone(),
             outcome: Err(reason.to_owned()),
         },
-        FileRequest::Delete(path) => FileAnswer::Deleted {
+        FileRequest::Delete(path) | FileRequest::DeleteDirectory(path) => FileAnswer::Deleted {
             path: path.clone(),
+            outcome: Err(reason.to_owned()),
+        },
+        FileRequest::Rename { from, to } => FileAnswer::Renamed {
+            from: from.clone(),
+            to: to.clone(),
             outcome: Err(reason.to_owned()),
         },
         FileRequest::Restore { paths, .. } => FileAnswer::Restored {
@@ -205,6 +223,15 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
         FileRequest::Delete(path) => FileAnswer::Deleted {
             outcome: host.delete_file(&path),
             path,
+        },
+        FileRequest::DeleteDirectory(path) => FileAnswer::Deleted {
+            outcome: host.delete_dir(&path),
+            path,
+        },
+        FileRequest::Rename { from, to } => FileAnswer::Renamed {
+            outcome: host.rename_path(&from, &to),
+            from,
+            to,
         },
         FileRequest::Restore { root, paths } => FileAnswer::Restored {
             outcome: host.restore_to_head(&root, &paths),

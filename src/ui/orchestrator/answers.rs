@@ -324,6 +324,11 @@ impl WorkspaceModel {
                 path,
                 outcome: Err(message),
             } => ("delete failed", path, message),
+            code::FileAnswer::Renamed {
+                from,
+                outcome: Err(message),
+                ..
+            } => ("rename failed", from, message),
             _ => return false,
         };
         self.raise_toast(

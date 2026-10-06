@@ -34,14 +34,10 @@ impl Attach<'_> {
             Scope::Work
         } else if self.model.context_menu.is_some() {
             Scope::ContextMenu
-        } else if self
-            .model
-            .code
-            .as_ref()
-            .is_some_and(code::CodeView::editing)
-        {
-            // A file taking text seals everything behind it, the same way
-            // the action index does: nothing else may answer a letter.
+        } else if self.model.code.as_ref().is_some_and(code::CodeView::typing) {
+            // A file or a new name taking text seals everything behind
+            // it, the same way the action index does: nothing else may
+            // answer a letter.
             Scope::CodeEditing
         } else if self.model.architect.is_some() {
             Scope::Architect

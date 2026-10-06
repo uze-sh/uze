@@ -274,7 +274,9 @@ pub(crate) fn render_row_menu(
     };
     let Some(row) = hits
         .iter()
-        .find(|(_, hit)| *hit == ViewHit::SelectItem(menu.row))
+        .find(|(_, hit)| {
+            *hit == ViewHit::SelectItem(menu.row) || *hit == ViewHit::ToggleGroup(menu.row)
+        })
         .map(|(rect, _)| *rect)
     else {
         return;
@@ -301,8 +303,12 @@ pub(crate) fn render_confirm(
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
     let dialog = widget::dialog::Dialog {
-        // Asked only before what cannot be undone.
-        tone: widget::dialog::Tone::Danger,
+        // A yes-or-no is asked only before what cannot be undone; a
+        // question that takes text is asking for a name.
+        tone: match confirm.field {
+            Some(_) => widget::dialog::Tone::Neutral,
+            None => widget::dialog::Tone::Danger,
+        },
         title: &confirm.title,
         subject: Some(Line::from(confirm.subject.clone())),
         body: vec![confirm.body.clone()],
@@ -311,7 +317,10 @@ pub(crate) fn render_confirm(
             true => 1,
             false => widget::dialog::CANCEL,
         }),
-        field: None,
+        field: confirm
+            .field
+            .as_deref()
+            .map(|text| widget::field::Field::new(text, "")),
     };
     let answers = widget::dialog::render(
         frame,

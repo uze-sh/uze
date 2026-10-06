@@ -123,6 +123,28 @@ impl Files {
         }
     }
 
+    /// Drops everything known at and under `path`, which is gone.
+    pub(super) fn forget(&mut self, path: &Path) {
+        self.listings.retain(|listed, _| !listed.starts_with(path));
+        self.expanded.retain(|open| !open.starts_with(path));
+    }
+
+    /// Carries what was open at and under `from` over to `to`, its new
+    /// name, so a renamed directory stays as open as it was. The
+    /// listings are not carried: they are read again under the new name.
+    pub(super) fn carry(&mut self, from: &Path, to: &Path) {
+        let carried: Vec<PathBuf> = self
+            .expanded
+            .iter()
+            .filter_map(|open| open.strip_prefix(from).ok().map(|rest| to.join(rest)))
+            .collect();
+        self.forget(from);
+        for directory in &carried {
+            self.listings.remove(directory);
+        }
+        self.expanded.extend(carried);
+    }
+
     /// The row a viewer steps out to from `path`: the nearest drawn
     /// directory holding it. Not simply the parent, which is not drawn
     /// when it is folded into a compact row.

@@ -181,6 +181,32 @@ impl uze_extensions::Host for WorkspaceHost {
         std::fs::remove_file(path).map_err(|error| error.to_string())
     }
 
+    fn delete_dir(&self, path: &Path) -> Result<(), String> {
+        // `symlink_metadata`, so a link to a directory is not followed
+        // into deleting what it points at.
+        if !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir()) {
+            return Err(format!("{} is not a directory", path.display()));
+        }
+        forget_statuses_around(path);
+        std::fs::remove_dir_all(path).map_err(|error| error.to_string())
+    }
+
+    /// Checked before the rename rather than left to it, because
+    /// `rename(2)` replaces an existing file without a word.
+    fn rename_path(&self, from: &Path, to: &Path) -> Result<(), String> {
+        if from.parent() != to.parent() {
+            return Err(format!(
+                "{} would move out of its directory",
+                from.display()
+            ));
+        }
+        if std::fs::symlink_metadata(to).is_ok() {
+            return Err(format!("{} already exists", to.display()));
+        }
+        forget_statuses_around(from);
+        std::fs::rename(from, to).map_err(|error| error.to_string())
+    }
+
     /// Through `uze-git`'s write path, under the repository lock, one path
     /// at a time: a path the last commit has is restored in the index and
     /// the tree together, and one it lacks — added, untracked, a rename's
@@ -651,6 +677,73 @@ mod tests {
         assert!(WorkspaceHost.delete_file(&file).is_ok());
         assert!(!file.exists());
         std::fs::remove_dir_all(&directory).ok();
+    }
+
+    /// A rename gives a new name and nothing more: it never moves a path
+    /// to another directory and never replaces what is already there.
+    #[test]
+    fn a_rename_neither_moves_nor_overwrites() {
+        let directory = scratch("uze-rename-grant");
+        let nested = directory.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        let file = directory.join("a.txt");
+        std::fs::write(&file, "a\n").unwrap();
+        let taken = directory.join("b.txt");
+        std::fs::write(&taken, "b\n").unwrap();
+
+        assert!(WorkspaceHost.rename_path(&file, &taken).is_err());
+        assert_eq!(std::fs::read_to_string(&taken).unwrap(), "b\n");
+        assert!(
+            WorkspaceHost
+                .rename_path(&file, &nested.join("a.txt"))
+                .is_err(),
+            "a rename is not a move"
+        );
+
+        let renamed = directory.join("c.txt");
+        assert!(WorkspaceHost.rename_path(&file, &renamed).is_ok());
+        assert!(!file.exists() && renamed.is_file());
+        assert!(
+            WorkspaceHost
+                .rename_path(&nested, &directory.join("moved"))
+                .is_ok()
+        );
+        assert!(directory.join("moved").is_dir());
+        std::fs::remove_dir_all(&directory).ok();
+    }
+
+    #[test]
+    fn a_directory_is_deleted_whole_by_its_own_grant() {
+        let directory = scratch("uze-delete-dir");
+        let nested = directory.join("nested");
+        std::fs::create_dir_all(nested.join("deeper")).unwrap();
+        std::fs::write(nested.join("deeper/file.txt"), "x\n").unwrap();
+        let file = directory.join("a.txt");
+        std::fs::write(&file, "a\n").unwrap();
+
+        assert!(
+            WorkspaceHost.delete_dir(&file).is_err(),
+            "a file is not a directory"
+        );
+        assert!(WorkspaceHost.delete_dir(&nested).is_ok());
+        assert!(!nested.exists() && file.is_file());
+        std::fs::remove_dir_all(&directory).ok();
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn deleting_a_directory_never_follows_a_link_into_its_target() {
+        let directory = scratch("uze-delete-dir-link");
+        let outside = scratch("uze-delete-dir-link-outside");
+        std::fs::write(outside.join("kept"), "x\n").unwrap();
+        let link = directory.join("innocent");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+
+        assert!(WorkspaceHost.delete_dir(&link).is_err());
+        assert!(outside.join("kept").is_file());
+        std::fs::remove_dir_all(&directory).ok();
+        std::fs::remove_dir_all(&outside).ok();
     }
 
     // A symbolic link, which Windows lets an ordinary account make only in developer mode.

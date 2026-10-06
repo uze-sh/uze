@@ -736,8 +736,9 @@ impl Attach<'_> {
     pub(super) fn open_context_menu(&mut self, mouse: MouseEvent) -> Flow {
         // A row of the code surface asks the surface for its actions: the
         // menu is the extension's, and only the gesture is the host's.
-        if let Some(WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::SelectItem(row)))) =
-            self.model.hit_at(mouse.column, mouse.row)
+        if let Some(WorkspaceHit::Extension(ExtensionHit::Code(
+            ViewHit::SelectItem(row) | ViewHit::ToggleGroup(row),
+        ))) = self.model.hit_at(mouse.column, mouse.row)
         {
             self.model.code_menu_at = Some(Rect::new(mouse.column, mouse.row, 1, 1));
             let space = self.code_space();

@@ -280,6 +280,11 @@ pub struct Confirm {
     pub confirm: String,
     /// Whether the keyboard is on the affirmative rather than the way out.
     pub on_confirm: bool,
+    /// The text being typed as the answer, when the question asks for
+    /// one — a new name. `None` for a yes-or-no. A question that takes
+    /// text is not one about something that cannot be undone, and the
+    /// host draws it in a calmer tone.
+    pub field: Option<String>,
 }
 
 /// A short list of what can be done to one navigator row, opened on it.
