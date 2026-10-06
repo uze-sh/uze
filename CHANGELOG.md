@@ -4,6 +4,23 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.12](https://github.com/uze-sh/uze/compare/v1.0.0-beta.11...v1.0.0-beta.12) - 2026-10-06
+
+### Features
+
+- **theme:** Adopt a monochrome default across the TUI, CLI and site ([#193](https://github.com/uze-sh/uze/pull/193)) ([ed42e59](https://github.com/uze-sh/uze/commit/ed42e5979478d5c4b5a75b5cb8c6da9f358fa51b))
+- **ui:** Share one drawer width across the management screens ([#195](https://github.com/uze-sh/uze/pull/195)) ([15d0e32](https://github.com/uze-sh/uze/commit/15d0e322eae8849eb91d2fe2edfd8b6eb70555b0))
+- **manifest:** Move agents.yaml workspace keys under `workspace:` ([#196](https://github.com/uze-sh/uze/pull/196)) [**breaking**] ([7965baf](https://github.com/uze-sh/uze/commit/7965bafa9c2ffba3c07f374ce85c08b607ea622b))
+- **spec:** List ADRs from `workspace.artifacts` as a Decisions subject ([#197](https://github.com/uze-sh/uze/pull/197)) ([3bf25bc](https://github.com/uze-sh/uze/commit/3bf25bc54708c8f6948af63200fc39069af6ede7))
+- **ui:** Render backtick-quoted spans in toasts as inline code ([#199](https://github.com/uze-sh/uze/pull/199)) ([9b7d720](https://github.com/uze-sh/uze/commit/9b7d720df5253d53652ddd8868cf3dcad7e2130e))
+- **ui:** Draw an open surface's navigation in the tab strip's leading slot ([#198](https://github.com/uze-sh/uze/pull/198)) ([bf23993](https://github.com/uze-sh/uze/commit/bf2399324949ed7146ff0de88722c4a92d856cd8))
+- **site:** Pin the home hero and hand off to the session on scroll ([#201](https://github.com/uze-sh/uze/pull/201)) ([a7c5e85](https://github.com/uze-sh/uze/commit/a7c5e85d84337d23eabfdc7ddb281492f33a37cd))
+
+### CI
+
+- Fail the Gate on jobs cancelled without a runner ([#194](https://github.com/uze-sh/uze/pull/194)) ([5f89998](https://github.com/uze-sh/uze/commit/5f8999863b043e024a4e05f9cd93a61b16bca091))
+- **test:** Run the workspace suite with cargo-nextest ([#200](https://github.com/uze-sh/uze/pull/200)) ([35c92fd](https://github.com/uze-sh/uze/commit/35c92fd21f5734d2b9f8cbc7227922db75ab485a))
+
 ## [1.0.0-beta.11](https://github.com/uze-sh/uze/compare/v1.0.0-beta.10...v1.0.0-beta.11) - 2026-10-05
 
 ### Features
