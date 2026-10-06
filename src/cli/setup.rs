@@ -428,49 +428,54 @@ impl uze_application::ProcessRunner for CapturingRunner {
             timed_out = tracing::field::Empty
         );
         let _entered = span.enter();
-        let mut command = Command::new(&spec.program);
-        match spec.output {
-            uze_application::ProcessOutput::Quiet => {
-                command.stdout(Stdio::null()).stderr(Stdio::null());
-            }
-            uze_application::ProcessOutput::Inherit => {
-                if let Ok(mut f) = OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&self.log_path)
-                {
-                    use std::io::Write;
-                    let _ = writeln!(
-                        f,
-                        "\n--- run: {} {} (timeout {:?}) ---",
-                        spec.program,
-                        spec.arguments.join(" "),
-                        spec.timeout
-                    );
+        // Built per attempt: a retried installer appends to the same log,
+        // each run under a header of its own.
+        let command = || {
+            let mut command = Command::new(&spec.program);
+            match spec.output {
+                uze_application::ProcessOutput::Quiet => {
+                    command.stdout(Stdio::null()).stderr(Stdio::null());
                 }
-                let file = OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&self.log_path)
-                    .map_err(|source| uze_application::UzeError::Write {
-                        path: self.log_path.clone(),
-                        source,
-                    })?;
-                let stdout =
-                    file.try_clone()
+                uze_application::ProcessOutput::Inherit => {
+                    if let Ok(mut f) = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&self.log_path)
+                    {
+                        use std::io::Write;
+                        let _ = writeln!(
+                            f,
+                            "\n--- run: {} {} (timeout {:?}) ---",
+                            spec.program,
+                            spec.arguments.join(" "),
+                            spec.timeout
+                        );
+                    }
+                    let file = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&self.log_path)
                         .map_err(|source| uze_application::UzeError::Write {
                             path: self.log_path.clone(),
                             source,
                         })?;
-                let stderr = file;
-                command
-                    .stdout(Stdio::from(stdout))
-                    .stderr(Stdio::from(stderr));
-                if self.verbose {
-                    eprintln!("  │ run: {} {}", spec.program, spec.arguments.join(" "));
+                    let stdout =
+                        file.try_clone()
+                            .map_err(|source| uze_application::UzeError::Write {
+                                path: self.log_path.clone(),
+                                source,
+                            })?;
+                    let stderr = file;
+                    command
+                        .stdout(Stdio::from(stdout))
+                        .stderr(Stdio::from(stderr));
+                    if self.verbose {
+                        eprintln!("  │ run: {} {}", spec.program, spec.arguments.join(" "));
+                    }
                 }
             }
-        }
+            Ok(command)
+        };
         let result = uze_application::run_provisioning(command, spec)?;
         span.record("success", result.success);
         span.record("timed_out", result.timed_out);

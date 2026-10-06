@@ -29,6 +29,9 @@ pub struct ProcessSpec {
     pub output: ProcessOutput,
     /// Set on top of the inherited environment.
     pub environment: Vec<(String, String)>,
+    /// How long to wait before each further attempt after an unsuccessful
+    /// exit; empty for a single attempt. A timeout is never attempted again.
+    pub retry_pauses: &'static [Duration],
 }
 
 impl ProcessSpec {
@@ -42,6 +45,7 @@ impl ProcessSpec {
             timeout: Duration::from_secs(300),
             output: ProcessOutput::Quiet,
             environment: Vec::new(),
+            retry_pauses: &[],
         }
     }
 
@@ -55,6 +59,16 @@ impl ProcessSpec {
     /// probes remain quiet by default, and neither mode persists output.
     pub fn with_inherited_output(mut self) -> Self {
         self.output = ProcessOutput::Inherit;
+        self
+    }
+}
+
+impl ProcessSpec {
+    /// Runs the command again after each of `pauses` while it exits
+    /// unsuccessfully: for a command that fetches over the network and is
+    /// safe to repeat, where one transient failure is the common case.
+    pub fn with_retries(mut self, pauses: &'static [Duration]) -> Self {
+        self.retry_pauses = pauses;
         self
     }
 }
@@ -95,15 +109,18 @@ impl ProcessRunner for SystemProcessRunner {
             timed_out = tracing::field::Empty
         );
         let _entered = span.enter();
-        let mut command = Command::new(&spec.program);
-        match spec.output {
-            ProcessOutput::Quiet => {
-                command.stdout(Stdio::null()).stderr(Stdio::null());
+        let command = || {
+            let mut command = Command::new(&spec.program);
+            match spec.output {
+                ProcessOutput::Quiet => {
+                    command.stdout(Stdio::null()).stderr(Stdio::null());
+                }
+                ProcessOutput::Inherit => {
+                    command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+                }
             }
-            ProcessOutput::Inherit => {
-                command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
-            }
-        }
+            Ok(command)
+        };
         let result = run_provisioning(command, spec)?;
         span.record("success", result.success);
         span.record("timed_out", result.timed_out);
@@ -111,12 +128,32 @@ impl ProcessRunner for SystemProcessRunner {
     }
 }
 
-/// Runs `spec` through `command`, whose output the caller has already
-/// directed. The child gets no terminal of its own (see
+/// Runs `spec` through the command `command` builds, whose output the
+/// caller has already directed; one is built per attempt, since a spawned
+/// `Command` carries the session it asked for into the next spawn. The child gets no terminal of its own (see
 /// [`Seat::NoTerminal`]), so the Ctrl-C the terminal no longer
 /// delivers to it is forwarded here: its whole tree is killed, then `uze`
 /// takes the interrupt as it would have.
-pub fn run_provisioning(mut command: Command, spec: &ProcessSpec) -> Result<ProcessResult> {
+///
+/// A spec with retry pauses runs again after each one while it exits
+/// unsuccessfully; a timeout or an interrupt ends it at once.
+pub fn run_provisioning(
+    command: impl Fn() -> Result<Command>,
+    spec: &ProcessSpec,
+) -> Result<ProcessResult> {
+    let mut result = run_once(command()?, spec)?;
+    for pause in spec.retry_pauses {
+        if result.success || result.timed_out {
+            break;
+        }
+        tracing::warn!(program = %spec.program, "exited unsuccessfully; running it again");
+        std::thread::sleep(*pause);
+        result = run_once(command()?, spec)?;
+    }
+    Ok(result)
+}
+
+fn run_once(mut command: Command, spec: &ProcessSpec) -> Result<ProcessResult> {
     command
         .args(&spec.arguments)
         .envs(spec.environment.iter().map(|(key, value)| (key, value)))
@@ -244,6 +281,66 @@ mod tests {
         assert!(!SystemProcessRunner.run(&check).unwrap().success);
         let switched = check.with_env("UZE_PROBE_SWITCH", "1");
         assert!(SystemProcessRunner.run(&switched).unwrap().success);
+    }
+
+    /// A command that fails until its third run: each run appends a line,
+    /// and the third finds two already there.
+    #[cfg(unix)]
+    fn failing_twice(attempts: &std::path::Path) -> ProcessSpec {
+        let script = format!(
+            r#"echo run >> '{0}'; test "$(wc -l < '{0}')" -ge 3"#,
+            attempts.display()
+        );
+        ProcessSpec::new("sh", ["-c", script.as_str()])
+    }
+
+    #[cfg(unix)]
+    fn runs(attempts: &std::path::Path) -> usize {
+        std::fs::read_to_string(attempts).unwrap().lines().count()
+    }
+
+    // Its stand-in programs are POSIX shell scripts.
+    #[cfg(unix)]
+    #[test]
+    fn a_retried_command_runs_again_after_each_unsuccessful_exit() {
+        let _interrupts = uze_testkit::process::interrupts();
+        let root = uze_testkit::temp::scratch("provisioning-retries");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let once = root.join("once");
+        assert!(
+            !SystemProcessRunner
+                .run(&failing_twice(&once))
+                .unwrap()
+                .success
+        );
+        assert_eq!(runs(&once), 1, "a spec without pauses runs once");
+
+        let retried = root.join("retried");
+        let spec = failing_twice(&retried).with_retries(&[Duration::ZERO; 2]);
+        assert!(SystemProcessRunner.run(&spec).unwrap().success);
+        assert_eq!(runs(&retried), 3);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // Its stand-in program is a POSIX shell script.
+    #[cfg(unix)]
+    #[test]
+    fn a_command_that_timed_out_is_not_run_again() {
+        let _interrupts = uze_testkit::process::interrupts();
+        let root = uze_testkit::temp::scratch("provisioning-retry-timeout");
+        std::fs::create_dir_all(&root).unwrap();
+        let attempts = root.join("attempts");
+        let script = format!("echo run >> '{}'; sleep 1", attempts.display());
+        let mut spec =
+            ProcessSpec::new("sh", ["-c", script.as_str()]).with_retries(&[Duration::ZERO; 2]);
+        spec.timeout = Duration::from_millis(200);
+
+        assert!(SystemProcessRunner.run(&spec).unwrap().timed_out);
+        assert_eq!(runs(&attempts), 1);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Linux, not `unix`: the property under test is portable — `setsid`

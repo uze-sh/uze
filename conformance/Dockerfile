@@ -58,8 +58,13 @@ ENV PATH="/usr/local/.local/bin:/usr/local/.opencode/bin:/usr/local/bin:/usr/sbi
 # them: a `chown -R` in a later layer copies every file it touches into that
 # layer, which kept a second ~0.7 GB of the same binaries in the image and in
 # the build cache of every rebuild.
+#
+# A failed setup prints the vendors' own logs: they are written inside the
+# layer that failed, which is discarded, and the report alone only says
+# which installer exited unsuccessfully, never why.
 RUN HOME=/usr/local /usr/local/bin/uze setup \
-    && chown -R node:node /usr/local/.local /usr/local/.opencode
+    || { tail -n 50 /usr/local/.uze/cache/logs/setup-*.log; exit 1; }; \
+    chown -R node:node /usr/local/.local /usr/local/.opencode
 
 COPY --from=uze-build --chown=node:node /out/uze-mcp-conformance-fixture /usr/local/bin/uze-mcp-conformance-fixture
 # The Lab owns a complete, isolated marketplace fixture. It represents the
