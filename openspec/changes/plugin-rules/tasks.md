@@ -2,7 +2,7 @@
 
 - [ ] 1.1 Measure with real `agy` sessions whether a rule in a subdirectory of `.agents/rules/` is applied (try `<name>@<market>/ui.md`, including the `@`). Decide D3's namespace form from the result
 - [ ] 1.2 Measure whether `agy` applies a rule whose file name carries the flat prefix form (`<plugin>@<market>--ui.md`), as the fallback
-- [ ] 1.3 Confirm that Claude Code's and Codex's plugin formats have no rules directory of their own a package could leak through. Record the versions measured
+- [ ] 1.3 Confirm that Codex's plugin format has no rules directory of its own a package could leak through. Record the version measured. Claude Code is answered by its plugins reference (2026-10-06): a plugin ships skills, commands, agents, hooks, MCP, LSP, output styles, workflows, themes, monitors, `bin/` and `settings.json`, and no rules. A `CLAUDE.md` at the plugin root is not loaded and `claude plugin validate` warns on it. Re-check only if that reference gains a rules component
 
 ## 2. Package capability
 
