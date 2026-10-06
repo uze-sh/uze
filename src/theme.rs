@@ -175,7 +175,8 @@ pub fn adaptive_half(app: &UzeApplication, background: Background) -> Result<Str
 const DESKTOP_LOOK: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Looks at whether the person wants light or dark, remembers it, and puts
-/// the chosen theme back in force when that changed.
+/// the chosen theme back in force when that changed — while the adaptive
+/// selection is the one in force, since nothing else reads the answer.
 ///
 /// The desktop's setting comes first, as a browser's `prefers-color-scheme`
 /// does. Where there is no desktop to ask (a session over SSH, a bare
@@ -185,13 +186,19 @@ const DESKTOP_LOOK: std::time::Duration = std::time::Duration::from_secs(3);
 /// the reply as keystrokes, so the CLI draws by what the workspace last saw.
 pub fn observe_appearance(home: &UzeHome) {
     use std::io::IsTerminal as _;
+    let Ok(app) = UzeApplication::from_env(home.clone()) else {
+        return;
+    };
+    if !adaptive_in_force(&app) {
+        return;
+    }
     let background = desktop_background().or_else(|| {
         (std::io::stdin().is_terminal() && std::io::stdout().is_terminal())
             .then(background::ask)
             .flatten()
     });
     if let Some(background) = background {
-        remember(home, background);
+        remember(&app, home, background);
     }
 }
 
@@ -201,17 +208,30 @@ pub fn observe_appearance(home: &UzeHome) {
 /// [`uze_theme::generation`].
 pub fn follow_desktop(home: UzeHome) {
     std::thread::spawn(move || {
+        let Ok(app) = UzeApplication::from_env(home.clone()) else {
+            return;
+        };
+        let mut last_seen = None;
         loop {
             std::thread::sleep(DESKTOP_LOOK);
-            let adaptive = UzeApplication::from_env(home.clone())
-                .ok()
-                .and_then(|app| app.themes().active().ok().flatten())
-                .is_some_and(|id| id == ADAPTIVE);
-            if adaptive && let Some(background) = desktop_background() {
-                remember(&home, background);
+            if !adaptive_in_force(&app) {
+                // Selecting it again must look afresh, whatever was seen
+                // before it was left.
+                last_seen = None;
+                continue;
+            }
+            if let Some(seen) = desktop_background()
+                && last_seen != Some(seen)
+            {
+                last_seen = Some(seen);
+                remember(&app, &home, seen);
             }
         }
     });
+}
+
+fn adaptive_in_force(app: &UzeApplication) -> bool {
+    matches!(app.themes().active(), Ok(Some(id)) if id == ADAPTIVE)
 }
 
 fn desktop_background() -> Option<Background> {
@@ -221,10 +241,7 @@ fn desktop_background() -> Option<Background> {
     })
 }
 
-fn remember(home: &UzeHome, background: Background) {
-    let Ok(app) = UzeApplication::from_env(home.clone()) else {
-        return;
-    };
+fn remember(app: &UzeApplication, home: &UzeHome, background: Background) {
     if matches!(app.themes().observe_background(background), Ok(true)) {
         // Anything stopping the theme from loading was reported when the
         // command started, and is the same problem now.
