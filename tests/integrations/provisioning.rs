@@ -86,6 +86,10 @@ fn every_registered_harness_installs_through_its_documented_official_route() {
             ProcessOutput::Inherit,
             "{id}: an explicit install shows the vendor's progress"
         );
+        assert!(
+            !install.retry_pauses.is_empty(),
+            "{id}: a vendor installer that fails transiently is run again"
+        );
         assert_eq!(result.action, ProvisionAction::Install, "{id}");
         assert_eq!(result.status, ProvisionStatus::Failed, "{id}");
     }

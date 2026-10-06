@@ -11,7 +11,10 @@
 //! to diverge in real, load-bearing ways — not merely different constants —
 //! so it was not folded in here.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use uze_core::{
     Result,
@@ -57,10 +60,19 @@ pub(crate) fn official_installer(
     })
 }
 
+/// The pauses before running an installer again after it exited
+/// unsuccessfully. Every vendor installer fetches in several requests, so a
+/// transient network failure is the common case of a failed install, and
+/// running it again is what the person would do: each is documented as safe
+/// to re-run.
+const INSTALLER_RETRY_PAUSES: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(10)];
+
 /// The process that runs an installer `line` in this platform's shell.
 pub(crate) fn installer_process(line: &str) -> ProcessSpec {
     let (program, arguments) = uze_platform::shell::invocation(line);
-    ProcessSpec::new(program, arguments).with_inherited_output()
+    ProcessSpec::new(program, arguments)
+        .with_inherited_output()
+        .with_retries(&INSTALLER_RETRY_PAUSES)
 }
 
 /// One harness's documented provisioning route, as its integration knows
