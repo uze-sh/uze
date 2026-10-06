@@ -45,7 +45,9 @@ scenes:
         say: place a Claude agent
         row_offset: 1
         offset: 3
-        expect: agent 1
+        # The tab, not the header's `agent 1: preparing`: the tab opens
+        # once the checkout exists, and the checks below read it.
+        expect: 'agent 1(?!: preparing)'
         expect_timeout: 90
         pause: 1.5
       - shell: |
@@ -87,7 +89,9 @@ scenes:
         say: place a second agent — the gesture that used to be refused
         row_offset: 1
         offset: 3
-        expect: agent 2
+        # The tab, not the header's `agent 2: preparing`: the tab opens
+        # once the checkout exists, and the checks below read it.
+        expect: 'agent 2(?!: preparing)'
         expect_timeout: 90
         pause: 2.0
     then:

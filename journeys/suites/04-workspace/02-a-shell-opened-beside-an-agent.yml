@@ -47,7 +47,9 @@ scenes:
         # UZE's own drawing, not the stand-in's banner: a gate on a
         # harness's first line of stdout is what timed this scene out on a
         # loaded runner. That the agent's process started is a `then:`.
-        expect: agent 1
+        # The tab, not the header's `agent 1: preparing`: the tab opens
+        # once the checkout exists, and the checks below read it.
+        expect: 'agent 1(?!: preparing)'
         expect_timeout: 90
         pause: 1.5
       - click: "+"

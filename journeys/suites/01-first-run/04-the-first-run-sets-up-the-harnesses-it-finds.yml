@@ -51,7 +51,9 @@ scenes:
         say: pick the first harness it offers
         row_offset: 1
         offset: 3
-        expect: agent 1
+        # The tab, not the header's `agent 1: preparing`: the tab opens
+        # once the checkout exists, and the checks below read it.
+        expect: 'agent 1(?!: preparing)'
         expect_timeout: 90
         pause: 1.5
     then:
