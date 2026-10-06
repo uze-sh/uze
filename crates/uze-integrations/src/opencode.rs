@@ -273,10 +273,14 @@ impl IntegrationPort for OpenCodeIntegration {
     }
 
     fn check_capability(&self, resource: &Resource) -> Findings {
-        if resource.capability.kind == CapabilityKind::Agent {
-            opencode_agent_findings(&self.harness_keys(), resource)
-        } else {
-            Findings::default()
+        match resource.capability.kind {
+            CapabilityKind::Agent => opencode_agent_findings(&self.harness_keys(), resource),
+            // `slash` is V1's, which V2 no longer reads; `autoinvoke` is
+            // what UZE writes from `invoke.model`.
+            _ => crate::shared::skill::hand_written_controls(
+                resource,
+                &[&["slash"], &["metadata", "opencode/autoinvoke"]],
+            ),
         }
     }
 

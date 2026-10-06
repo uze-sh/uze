@@ -384,7 +384,10 @@ impl IntegrationPort for ClaudeIntegration {
     /// agent that declares one reaches it without that part.
     fn check_capability(&self, resource: &Resource) -> Findings {
         if resource.capability.kind != CapabilityKind::Agent {
-            return Findings::default();
+            return crate::shared::skill::hand_written_controls(
+                resource,
+                &[&["disable-model-invocation"], &["user-invocable"]],
+            );
         }
         let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
             return Findings::default();

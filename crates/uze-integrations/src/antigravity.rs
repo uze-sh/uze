@@ -400,7 +400,10 @@ impl IntegrationPort for AntigravityIntegration {
 
     fn check_capability(&self, resource: &Resource) -> Findings {
         if resource.capability.kind != CapabilityKind::Agent {
-            return Findings::default();
+            return crate::shared::skill::hand_written_controls(
+                resource,
+                &[&["disable-model-invocation"], &["disable-slash-command"]],
+            );
         }
         let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
             return Findings::default();
