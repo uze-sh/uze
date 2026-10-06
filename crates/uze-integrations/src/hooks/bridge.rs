@@ -136,6 +136,7 @@ pub(crate) fn opencode_bridge(
     let shell = serde_json::to_string(uze_platform::shell::ARGV).expect("shell words serialize");
     let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
     let reason_limit = HANDLER_REASON_LIMIT;
+    let output_limit = wrapper::TRANSFORM_OUTPUT_LIMIT;
     format!(
         r#"{BRIDGE_HEADER}
 // OpenCode V2 (opencode.ai/v2/docs/build/plugins) has no hooks.json: the
@@ -201,14 +202,16 @@ async function collect(stream) {{
 }}
 
 // One handler: null when it allowed, otherwise the reason it answered with.
-async function handler(command, timeout, env) {{
+// A `transform` handler's stdout is kept: `rewrite` receives it when it
+// allowed with something to say.
+async function handler(command, timeout, env, rewrite) {{
   let proc;
   try {{
     proc = Bun.spawn([...SHELL, command], {{
       cwd: ROOT,
       env,
       stdin: "ignore",
-      stdout: "ignore",
+      stdout: rewrite ? "pipe" : "ignore",
       stderr: "pipe",
     }});
   }} catch (error) {{
@@ -223,7 +226,8 @@ async function handler(command, timeout, env) {{
     timer = setTimeout(() => resolve("expired"), timeout * 1000);
   }});
   const stream = proc.stderr.getReader();
-  const answer = Promise.all([collect(stream), proc.exited]);
+  const output = rewrite ? new Response(proc.stdout).text() : Promise.resolve("");
+  const answer = Promise.all([collect(stream), proc.exited, output]);
   const outcome = await Promise.race([answer, deadline]);
   clearTimeout(timer);
   if (outcome === "expired") {{
@@ -231,8 +235,24 @@ async function handler(command, timeout, env) {{
     stream.cancel().catch(() => {{}});
     return {{ failed: true, reason: `handler timed out after ${{timeout}}s: ${{command}}` }};
   }}
-  const [stderr, code] = outcome;
-  if (code === 0) return null;
+  const [stderr, code, stdout] = outcome;
+  if (code === 0) {{
+    if (!rewrite || stdout.trim() === "") return null;
+    if (stdout.length > {output_limit}) {{
+      return {{ failed: true, reason: `handler wrote more than {output_limit} bytes: ${{command}}` }};
+    }}
+    let rewritten;
+    try {{
+      rewritten = JSON.parse(stdout);
+    }} catch {{
+      rewritten = undefined;
+    }}
+    if (rewritten === null || typeof rewritten !== "object" || Array.isArray(rewritten)) {{
+      return {{ failed: true, reason: `handler did not write a JSON object: ${{command}}` }};
+    }}
+    rewrite(rewritten);
+    return null;
+  }}
   if (code === {deny_exit_code}) return {{ failed: false, reason: stderr || `${{command}} denied the operation` }};
   return {{ failed: true, reason: `handler failed (exit ${{code}}): ${{command}}${{stderr ? " — " + stderr : ""}}` }};
 }}
@@ -260,11 +280,30 @@ function matches(group, event, native) {{
   );
 }}
 
-// Groups on `event` for `native`, the observing ones and the deciding ones.
+// Groups on `event` for `native`: the observing ones, the deciding ones and
+// the rewriting ones.
 const observing = (event, native) =>
   GROUPS.filter((group) => matches(group, event, native) && !closed(group.effect));
 const deciding = (event, native) =>
-  GROUPS.filter((group) => matches(group, event, native) && closed(group.effect));
+  GROUPS.filter(
+    (group) => matches(group, event, native) && closed(group.effect) && group.effect !== "transform",
+  );
+const rewriting = (event, native) =>
+  GROUPS.filter((group) => matches(group, event, native) && group.effect === "transform");
+
+// A transform group's handlers in order, each reading the input the one
+// before it wrote; the first denial or failure stops it and closes the call.
+async function transform(group, native, input) {{
+  let current = input;
+  for (const entry of group.handlers) {{
+    const env = environment(group, native, current);
+    const answer = await handler(entry.command, entry.timeout, env, (rewritten) => {{
+      current = rewritten;
+    }});
+    if (answer !== null) return {{ reason: answer.reason }};
+  }}
+  return {{ input: current }};
+}}
 
 // A tool call's name and input, kept from `execute.before` until the
 // permission check of the same call decides on it.
@@ -320,7 +359,20 @@ export default {{
   id: "hooks-{package_id}",
   async setup(ctx) {{
     await ctx.tool.hook("execute.before", async (event) => {{
-      CALLS.set(event.id, {{ tool: event.tool, input: event.input }});
+      const call = {{ tool: event.tool, input: event.input }};
+      CALLS.set(event.id, call);
+      // A rewrite is what the tool then runs, as OpenCode's own input
+      // repair does it; a group that cannot rewrite closes the call, which
+      // the permission check refuses.
+      for (const group of rewriting("pre_tool_use", event.tool)) {{
+        const result = await transform(group, event.tool, call.input);
+        if (result.reason) {{
+          call.refused = result.reason;
+          break;
+        }}
+        call.input = result.input;
+        event.input = result.input;
+      }}
       for (const group of observing("pre_tool_use", event.tool)) {{
         const reason = await run(group, event.tool, event.input);
         if (reason) console.error(`[hooks:${{group.id}}]`, reason);
@@ -333,6 +385,11 @@ export default {{
       const call = CALLS.get(event.source.id);
       if (!call || call.decided) return;
       call.decided = true;
+      if (call.refused) {{
+        event.effect = "deny";
+        event.message = call.refused;
+        return;
+      }}
       const denied = await decide(deciding("pre_tool_use", call.tool), call.tool, call.input);
       if (!denied) return;
       event.effect = denied.group.effect === "ask" ? "ask" : "deny";

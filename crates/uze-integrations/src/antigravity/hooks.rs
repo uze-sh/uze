@@ -26,11 +26,12 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
         HookEffect::Allow,
         HookEffect::Ask,
         HookEffect::Deny,
+        HookEffect::Transform,
     ],
     tools: TOOLS,
     session_sources: &["startup"],
     runner: HookRunner::Wrapper {
-        dialect: WrapperDialect {
+        dialect: &WrapperDialect {
             payload: PayloadPaths {
                 tool: ".toolCall.name // empty",
                 input: ".toolCall.args // {}",
@@ -46,6 +47,12 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             posix: Decisions {
                 deny: "printf '{\"decision\":\"%s\",\"reason\":%s}' \"$decision\" \"$reason_json\"",
                 allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
+                // A rewrite is `overwrite` (the tool call's whole args) beside
+                // `allow`: the hook result's field the docs do not list
+                // (`PreToolHookResult.overwrite`, 1.3.0), measured by the Lab.
+                transform: Some(
+                    "printf '{\"decision\":\"allow\",\"overwrite\":%s}' \"$updated_json\"",
+                ),
                 unfired: &[],
             },
             // Measured on 1.2.16 on Windows: the entry is run as
@@ -56,6 +63,9 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             powershell: Some(Decisions {
                 deny: "[Console]::Out.Write('{\"decision\":\"' + $decision + '\",\"reason\":' + $reasonJson + '}')",
                 allow: "if ($hookEvent -ne 'pre_tool_use') { [Console]::Out.Write('{}') }",
+                transform: Some(
+                    "[Console]::Out.Write('{\"decision\":\"allow\",\"overwrite\":' + $updatedJson + '}')",
+                ),
                 unfired: &[],
             }),
             // The decision is the stdout document; a non-zero exit is a

@@ -7,8 +7,9 @@ use crate::hooks::{
 };
 
 /// Claude Code documents `PreToolUse`/`PostToolUse`/`Stop` command hooks
-/// with per-group matchers: observations, approvals and denials are
-/// expressible. Input rewriting is not yet claimed — a `transform` effect
+/// with per-group matchers: observations, approvals, denials and asks
+/// (`permissionDecision: ask`, which puts the call to the person with the
+/// reason) are expressible. Input rewriting is not yet claimed — a `transform` effect
 /// therefore degrades instead of silently attaching without its rewrite.
 /// `SessionStart` also fires natively, matched on the session's source.
 pub(crate) const HOOKS: HookTarget = HookTarget {
@@ -19,11 +20,17 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
         HookEvent::Stop,
         HookEvent::SessionStart,
     ],
-    effects: &[HookEffect::Observe, HookEffect::Allow, HookEffect::Deny],
+    effects: &[
+        HookEffect::Observe,
+        HookEffect::Allow,
+        HookEffect::Ask,
+        HookEffect::Deny,
+        HookEffect::Transform,
+    ],
     tools: TOOLS,
     session_sources: uze_core::hook::SESSION_SOURCES,
     runner: HookRunner::Wrapper {
-        dialect: WrapperDialect {
+        dialect: &WrapperDialect {
             payload: PayloadPaths {
                 tool: ".tool_name // empty",
                 input: ".tool_input // {}",
@@ -40,22 +47,29 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             posix: Decisions {
                 deny: concat!(
                     "case $HOOK_EVENT in\n",
-                    "    pre_tool_use) printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$reason_json\" ;;\n",
+                    "    pre_tool_use) printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"%s\",\"permissionDecisionReason\":%s}}' \"$decision\" \"$reason_json\" ;;\n",
                     "    *) printf '{\"decision\":\"block\",\"reason\":%s}' \"$reason_json\" ;;\n",
                     "  esac",
                 ),
                 allow: ":",
+                // A rewrite is `updatedInput` (the whole input) beside `allow`.
+                transform: Some(
+                    "printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":%s}}' \"$updated_json\"",
+                ),
                 unfired: &[],
             },
             powershell: Some(Decisions {
                 deny: concat!(
                     "if ($hookEvent -eq 'pre_tool_use') {\n",
-                    "    [Console]::Out.Write('{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":' + $reasonJson + '}}')\n",
+                    "    [Console]::Out.Write('{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"' + $decision + '\",\"permissionDecisionReason\":' + $reasonJson + '}}')\n",
                     "  } else {\n",
                     "    [Console]::Out.Write('{\"decision\":\"block\",\"reason\":' + $reasonJson + '}')\n",
                     "  }",
                 ),
                 allow: "",
+                transform: Some(
+                    "[Console]::Out.Write('{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":' + $updatedJson + '}}')",
+                ),
                 unfired: &[],
             }),
             deny_exit: "0",

@@ -109,6 +109,18 @@ pub(super) fn fixtures() -> Vec<Fixture> {
     vec![
         case(pre, HookEffect::Deny, &["guard", "audit"], Some("cat .env")),
         case(pre, HookEffect::Deny, &["guard", "audit"], Some("ls -la")),
+        // A transform hands the harness the rewritten input, read by every
+        // handler after it; an answer that is not an input closes the call.
+        case(
+            pre,
+            HookEffect::Transform,
+            &["rewrite", "audit"],
+            Some("cat .env"),
+        ),
+        Fixture {
+            wrapper_owns_the_whole_reason: false,
+            ..case(pre, HookEffect::Transform, &["garble"], Some("ls"))
+        },
         // A guard's own denial in an `ask` group asks the person where the
         // harness can; a guard that fails still closes with a denial.
         case(pre, HookEffect::Ask, &["guard"], Some("cat .env")),

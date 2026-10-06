@@ -158,28 +158,26 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     assert_eq!(codex.exposure_plan(protect).route, CODEX_GUARDS_SHELL);
     assert_eq!(
         opencode.exposure_plan(protect).route,
-        // OpenCode V2 exposes no input-based block (spec:
-        // opencode.ai/v2/docs/build/plugins — the action-level deny lives in
-        // the permission hook, which carries no tool input), so deny is
-        // diagnosed Unsupported, never fabricated.
-        CompatibilityRoute::Unsupported
+        // OpenCode V2 decides in `permission.evaluate`, which carries no
+        // tool input; the bridge keeps the input `execute.before` saw by
+        // call id, so the deny is carried — through UZE's adapter.
+        CompatibilityRoute::Adaptable
     );
     assert_eq!(
         antigravity.exposure_plan(protect).route,
         CompatibilityRoute::Native
     );
 
-    // Stop must never claim an OpenCode equivalence (spec scenario).
+    // Stop is OpenCode's end-of-turn bus event, carried by the bridge; it
+    // is never a tool callback.
     let (_root_stop, stop_resources) = hook_package(
         "compat-stop",
         &manifest_with(r#""Stop":[{"id":"archive","hooks":[{"type":"command","command":"log"}]}]"#),
     );
     let archive = hook_resource(&stop_resources, "archive");
-    let opencode_plan = opencode.exposure_plan(archive);
-    assert_eq!(opencode_plan.route, CompatibilityRoute::Unsupported);
-    assert!(
-        opencode_plan.evidence.contains("no `stop` semantic event"),
-        "the opencode plan must state the exact semantic loss"
+    assert_eq!(
+        opencode.exposure_plan(archive).route,
+        CompatibilityRoute::Adaptable
     );
     assert_eq!(
         claude.exposure_plan(archive).route,
@@ -191,8 +189,10 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
         CompatibilityRoute::Native
     );
 
-    // Ask cannot be enforced on Claude (not in its declared effect set) and
-    // must never silently become an observation — Unsupported, not Degraded.
+    // Ask is carried where the harness puts a call to the person (Claude's
+    // `permissionDecision: ask`, OpenCode's permission prompt, Antigravity's
+    // `decision: ask`) and never silently becomes an observation where it
+    // cannot be: Codex rejects `ask` from a PreToolUse hook.
     let (_root_ask, ask_resources) = hook_package(
         "compat-ask",
         &manifest_with(
@@ -202,7 +202,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     let prompt = hook_resource(&ask_resources, "prompt");
     assert_eq!(
         claude.exposure_plan(prompt).route,
-        CompatibilityRoute::Unsupported
+        CompatibilityRoute::Native
     );
     assert_eq!(
         codex.exposure_plan(prompt).route,
@@ -210,8 +210,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     assert_eq!(
         opencode.exposure_plan(prompt).route,
-        CompatibilityRoute::Unsupported,
-        "ask is a hard denial in the bridge, never a faithful ask"
+        CompatibilityRoute::Adaptable
     );
     assert_eq!(
         antigravity.exposure_plan(prompt).route,
@@ -220,10 +219,11 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
 }
 
-/// A session start is delivered where the harness fires one and reported
-/// Unsupported where it does not — per harness, beside the package's other
-/// groups, never as a reason to refuse the manifest (spec: "An event a
-/// harness lacks does not block the package").
+/// A session start is delivered wherever the harness announces one — and a
+/// group waiting for a start the harness never announces is reported
+/// Unsupported there, beside the package's other groups, never as a reason
+/// to refuse the manifest (spec: "An event a harness lacks does not block
+/// the package").
 #[test]
 fn session_start_is_native_where_fired_and_unsupported_where_not() {
     let (root, resources) = hook_package(
@@ -265,12 +265,21 @@ fn session_start_is_native_where_fired_and_unsupported_where_not() {
         );
     }
 
+    // Antigravity's undocumented `SessionStart` key: a flat entry, no
+    // matcher, run for a new conversation only.
     let plan = antigravity.exposure_plan(started);
-    assert_eq!(plan.route, CompatibilityRoute::Unsupported);
+    assert_eq!(plan.route, CompatibilityRoute::Native, "{}", plan.evidence);
+    let uze_core::exposure::ExposureMechanism::Managed(ManagedArtifact::HookConfigEntry {
+        expected,
+        ..
+    }) = &plan.mechanism
+    else {
+        panic!("a session start is a named entry on Antigravity");
+    };
+    let entry: serde_json::Value = serde_json::from_str(expected).unwrap();
     assert!(
-        plan.evidence.contains("no `session_start` semantic event"),
-        "the report says why: {}",
-        plan.evidence
+        entry["SessionStart"][0]["command"].is_string(),
+        "flat, like Stop: a grouped entry poisons the whole file: {entry}"
     );
     assert_eq!(
         antigravity.exposure_plan(watch).route,
@@ -279,16 +288,37 @@ fn session_start_is_native_where_fired_and_unsupported_where_not() {
     );
     assert_eq!(
         opencode.exposure_plan(started).route,
-        CompatibilityRoute::Unsupported
+        CompatibilityRoute::Adaptable
     );
+    // A start neither of them announces is reported, never delivered.
+    let (_resume_root, resume_resources) = hook_package(
+        "compat-session-resume",
+        &manifest_with(
+            r#""SessionStart":[{"id":"on-resume","matcher":"resume","hooks":[{"type":"command","command":"resumed"}]}]"#,
+        ),
+    );
+    let on_resume = hook_resource(&resume_resources, "on-resume");
+    for (harness, plan) in [
+        ("antigravity", antigravity.exposure_plan(on_resume)),
+        ("opencode", opencode.exposure_plan(on_resume)),
+    ] {
+        assert_eq!(plan.route, CompatibilityRoute::Unsupported, "{harness}");
+        assert!(
+            plan.evidence.contains("`resume`"),
+            "{harness}: {}",
+            plan.evidence
+        );
+    }
     let _ = fs::remove_dir_all(root);
 }
 
-/// `transform` needs a channel for the handler to answer on, which the
-/// exit-code contract does not have; it is deferred to its own change and
-/// must degrade everywhere until then rather than attach as an observation.
+/// A `transform` handler answers with the rewritten input on stdout, and
+/// every harness takes a rewrite (Claude and Codex `updatedInput`,
+/// Antigravity `overwrite`, OpenCode's `execute.before` input), so the group
+/// is delivered — natively through a wrapper, adapted through the bridge.
+/// Where its alias has no tool, nothing is delivered that could never run.
 #[test]
-fn transform_degrades_on_every_harness_while_it_has_no_answer_channel() {
+fn transform_is_delivered_where_the_harness_takes_a_rewrite() {
     let (_root, resources) = hook_package(
         "compat-transform",
         &manifest_with(
@@ -298,6 +328,7 @@ fn transform_degrades_on_every_harness_while_it_has_no_answer_channel() {
     let sandbox = hook_resource(&resources, "sandbox");
     let home = UzeHome::at(temp("compat-transform-home").join("uze"));
     let claude = ClaudeIntegration::new(temp("compat-transform-home").join("claude"), home.clone());
+    let codex = CodexIntegration::new(temp("compat-transform-home").join("agents"), home.clone());
     let opencode = OpenCodeIntegration::new(
         temp("compat-transform-home").join("agents"),
         temp("compat-transform-home").join("config/opencode.json"),
@@ -305,13 +336,17 @@ fn transform_degrades_on_every_harness_while_it_has_no_answer_channel() {
     );
     assert_eq!(
         claude.exposure_plan(sandbox).route,
-        CompatibilityRoute::Degraded,
-        "an input rewrite Claude cannot enforce must degrade, never attach silently"
+        CompatibilityRoute::Native
     );
     assert_eq!(
         opencode.exposure_plan(sandbox).route,
-        CompatibilityRoute::Degraded,
-        "a rewrite the delivered plugin cannot carry must degrade, never attach silently"
+        CompatibilityRoute::Adaptable
+    );
+    // Codex reports a write as `apply_patch` with no path, so `file.write`
+    // binds no tool there.
+    assert_eq!(
+        codex.exposure_plan(sandbox).route,
+        CompatibilityRoute::Unsupported
     );
 }
 
@@ -1120,7 +1155,7 @@ fn an_opencode_bridge_an_earlier_build_wrote_still_removes() {
 }
 
 #[test]
-fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_never_bridged() {
+fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_bridged_as_end_of_turn() {
     let (_root, resources) = hook_package(
         "opencode-nomatcher",
         &manifest_with(
@@ -1132,14 +1167,15 @@ fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_never_bridged() {
     let integration = opencode(&_root);
 
     let plan = integration.exposure_plan(stop);
-    assert_eq!(plan.route, CompatibilityRoute::Unsupported);
-    assert!(matches!(
-        plan.mechanism,
-        uze_core::exposure::ExposureMechanism::Unsupported { .. }
-    ));
+    assert_eq!(plan.route, CompatibilityRoute::Adaptable);
+    let stop_receipt = integration.attach_receipt(stop).unwrap().unwrap();
+    let ManagedArtifact::ManagedHookFile { path } = &stop_receipt.artifact else {
+        unreachable!();
+    };
+    let bridge = fs::read_to_string(path).unwrap();
     assert!(
-        integration.attach_receipt(stop).unwrap().is_none(),
-        "a degraded hook never attaches on OpenCode"
+        bridge.contains("session.execution.succeeded") && bridge.contains("\"event\":\"stop\""),
+        "a Stop group runs at the end of a turn, never as a tool callback"
     );
 
     let receipt = integration.attach_receipt(all_tools).unwrap().unwrap();

@@ -28,6 +28,13 @@ fn package(label: &str) -> PathBuf {
         &scripts.join("refuse"),
         "echo \"refused on $HOOK_EVENT from $HOOK_SOURCE\" >&2\nexit 3",
     );
+    // A transform: the whole input back, in the harness's own shape, with
+    // the command made harmless.
+    write_script(
+        &scripts.join("rewrite"),
+        "printf '%s' \"$HOOK_INPUT\" | jq -c 'if has(\"CommandLine\") then .CommandLine = \"echo rewritten\" else .command = \"echo rewritten\" end'",
+    );
+    write_script(&scripts.join("garble"), "echo 'not an input'");
     root
 }
 
@@ -292,6 +299,36 @@ fn a_denial_is_relayed_in_each_harnesss_own_dialect() {
         assert!(
             !root.join("audit.log").exists(),
             "{target}: the denial stopped the second handler"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+/// A transform hands the harness the rewritten input in its own dialect,
+/// and every handler after the rewriting one reads the rewrite.
+#[test]
+fn a_rewrite_reaches_the_next_handler_and_the_harness() {
+    for target in TARGETS {
+        let root = package(&format!("wrapper-transform-{target}"));
+        let hook = group(HookEffect::Transform, &["rewrite", "audit"]);
+        let answer = run_wrapper(target, &root, &hook, &payload(target, "cat .env"), None);
+        assert_eq!(answer.exit, 0, "{target}: a rewrite allows the call");
+        let document: serde_json::Value = serde_json::from_str(answer.stdout.trim()).unwrap();
+        let rewritten = if target == crate::antigravity::HOOKS {
+            assert_eq!(document["decision"], "allow");
+            &document["overwrite"]["CommandLine"]
+        } else {
+            assert_eq!(
+                document["hookSpecificOutput"]["permissionDecision"],
+                "allow"
+            );
+            &document["hookSpecificOutput"]["updatedInput"]["command"]
+        };
+        assert_eq!(*rewritten, "echo rewritten", "{target}: {document}");
+        let audit = fs::read_to_string(root.join("audit.log")).unwrap();
+        assert!(
+            audit.contains("echo rewritten") && !audit.contains(".env"),
+            "{target}: the next handler read the rewrite: {audit}"
         );
         let _ = fs::remove_dir_all(root);
     }

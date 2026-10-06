@@ -182,3 +182,49 @@ await hooks["execute.before"]({ tool: "read", input: { path: "/x" } });"#,
     );
     let _ = fs::remove_dir_all(root);
 }
+
+/// A transform group's rewrite is what the tool runs: `execute.before`'s
+/// input is replaced, as OpenCode's own input repair does it; an answer
+/// that is not an input refuses the call at the permission check.
+#[test]
+fn a_rewrite_replaces_the_input_the_tool_runs() {
+    if !bun_available() {
+        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-transform");
+    fs::create_dir_all(&root).unwrap();
+    let rewriting = |command: &str| PortableHook {
+        effect: HookEffect::Transform,
+        ..observing(command, 10)
+    };
+    let rewritten = drive(
+        &root,
+        &rewriting(r#"printf '{"command":"echo rewritten"}'"#),
+        r#"const event = { id: "call-1", tool: "shell", input: { command: "cat .env" } };
+await hooks["execute.before"](event);
+console.error(`input ${JSON.stringify(event.input)}`);"#,
+    );
+    assert!(
+        rewritten
+            .iter()
+            .any(|line| line == r#"input {"command":"echo rewritten"}"#),
+        "{rewritten:?}"
+    );
+    let refused = drive(
+        &root,
+        &rewriting("echo not-an-input"),
+        r#"const event = { id: "call-2", tool: "shell", input: { command: "ls" } };
+await hooks["execute.before"](event);
+const check = { source: { type: "tool", id: "call-2" }, effect: "allow" };
+await hooks["permission.evaluate"](check);
+console.error(`decision ${check.effect}: ${check.message}`);"#,
+    );
+    assert!(
+        refused
+            .iter()
+            .any(|line| line.starts_with("decision deny: handler did not write a JSON object")),
+        "{refused:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}

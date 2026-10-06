@@ -42,12 +42,21 @@ pub(crate) struct PayloadPaths {
     pub(crate) implied_source: Option<&'static str>,
 }
 
+/// The most a `transform` handler may write as the rewritten input; past
+/// it the handler has failed, and the group closes.
+pub(crate) const TRANSFORM_OUTPUT_LIMIT: usize = 64 * 1024;
+
 /// What the wrapper writes on stdout to deny, and when nothing is denied, in
 /// one template's language.
 #[derive(Clone, Copy)]
 pub(crate) struct Decisions {
     pub(crate) deny: &'static str,
     pub(crate) allow: &'static str,
+    /// The harness's document for a call a `transform` group rewrote, read
+    /// from the rewritten input as JSON (`$updated_json` in `sh`,
+    /// `$updatedJson` in PowerShell); `None` where the harness takes no
+    /// rewritten input, which keeps `transform` from being claimed there.
+    pub(crate) transform: Option<&'static str>,
     /// What the harness never fires an event for under this template's
     /// platform.
     pub(crate) unfired: &'static [Unfired],
@@ -110,6 +119,16 @@ pub(crate) fn wrapper_source(target: HookTarget) -> Option<String> {
         Family::Posix => PosixWrapper::source(target),
         Family::PowerShell => PowerShellWrapper::source(target),
     }
+}
+
+/// Whether this platform's wrapper can hand the harness a rewritten input.
+pub(crate) fn transforms_here(target: HookTarget) -> bool {
+    target.dialect().is_some_and(|dialect| match shell::FAMILY {
+        Family::Posix => dialect.posix.transform.is_some(),
+        Family::PowerShell => dialect
+            .powershell
+            .is_some_and(|decisions| decisions.transform.is_some()),
+    })
 }
 
 /// What this platform's harness never fires an event for.

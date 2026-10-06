@@ -26,6 +26,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
         HookEffect::Allow,
         HookEffect::Ask,
         HookEffect::Deny,
+        HookEffect::Transform,
     ],
     tools: TOOLS,
     session_sources: &["startup"],

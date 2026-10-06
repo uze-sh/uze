@@ -920,12 +920,23 @@ granting, even for the official marketplace.
 
 ### Hook semantics are assessed per event/effect, never by event names alone
 
-A `Stop` hook is never represented as an OpenCode tool callback and an
-`ask`/`transform` effect never attaches where the target cannot preserve it;
-a degraded or unsupported route states the exact loss.
+A `Stop` hook is never represented as a tool callback (on OpenCode it is the
+end-of-turn bus event), and an `ask`/`transform` effect never attaches where
+the target cannot preserve it (Codex takes no `ask`); a degraded or
+unsupported route states the exact loss.
 
 > `tests/integrations/hooks.rs::compatibility_is_semantic_and_never_fabricates_a_stop_equivalence`
-> `tests/integrations/hooks.rs::transform_degrades_on_every_harness_while_it_has_no_answer_channel`
+> `tests/integrations/hooks.rs::transform_is_delivered_where_the_harness_takes_a_rewrite`
+
+### A rewrite is the complete input, chained, and closes when it fails
+
+A `transform` handler answers with the call's complete input on stdout; the
+next handler of the group reads that rewrite, the harness receives the last
+one in its own dialect, and an answer that is not one JSON object closes the
+call like a `deny`.
+
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_rewrite_reaches_the_next_handler_and_the_harness`
+> `crates/uze-integrations/src/hooks/opencode_runtime_tests.rs::a_rewrite_replaces_the_input_the_tool_runs`
 
 ### A delivered hook runs without the packager
 

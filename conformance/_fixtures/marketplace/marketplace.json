@@ -57,6 +57,10 @@
     {
       "name": "route-explicit",
       "source": "./plugins/route-explicit"
+    },
+    {
+      "name": "hook-transform",
+      "source": "./plugins/hook-transform"
     }
   ]
 }

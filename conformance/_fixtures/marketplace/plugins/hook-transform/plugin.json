@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-transform",
+  "description": "Conformance hook transform effect on the shell alias: the guard rewrites every `lab-side/from` in the call's input to `lab-side/to`."
+}

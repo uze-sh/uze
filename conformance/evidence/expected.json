@@ -30,7 +30,8 @@
       "reason": "OpenCode V2 defines no field that hides a Skill from the person (`slash` was removed)",
       "measurement": "the model-only Skill is listed in the `/skills` browser",
       "versions": [
-        "opencode v2.0.23"
+        "opencode v2.0.23",
+        "opencode v2.0.24"
       ],
       "observed_at": "2026-10-05"
     },
@@ -41,7 +42,8 @@
       "reason": "OpenCode V2 expands any Skill a person mentions (`@id`)",
       "measurement": "mentioning `@flow:analyze` put the model-only Skill's body in the model request",
       "versions": [
-        "opencode v2.0.23"
+        "opencode v2.0.23",
+        "opencode v2.0.24"
       ],
       "observed_at": "2026-10-05"
     },
@@ -107,7 +109,8 @@
       "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
       "measurement": "the default session's requests declare no `invoke_subagent`",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -118,7 +121,8 @@
       "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
       "measurement": "the session did not offer `invoke_subagent`, so no dispatch reached the `agent.spawn` group",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -129,7 +133,8 @@
       "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
       "measurement": "dispatching the agent from the default session put its body in no request",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -140,7 +145,8 @@
       "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
       "measurement": "dispatching the agent from the default session put its body in no request",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -151,7 +157,8 @@
       "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
       "measurement": "dispatching the agent from the default session put its body in no request",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -162,7 +169,8 @@
       "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
       "measurement": "dispatching the agent from the default session put its body in no request",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -184,7 +192,8 @@
       "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
       "measurement": "no request of the default session offered `flow:auditor` to the model",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -195,7 +204,8 @@
       "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
       "measurement": "no request of the default session offered `flow:checks:security` to the model",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -206,7 +216,8 @@
       "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
       "measurement": "no request of the default session offered `flow:linter` to the model",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -217,7 +228,8 @@
       "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
       "measurement": "no request of the default session offered `flow:scout` to the model",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -228,7 +240,8 @@
       "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
       "measurement": "no request of the default session carried the updated agent",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -239,7 +252,8 @@
       "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
       "measurement": "no request of the default session carried either version of the agent",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -250,7 +264,8 @@
       "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
       "measurement": "no request of the default session offered the agent the project authored in .agents/agents",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },

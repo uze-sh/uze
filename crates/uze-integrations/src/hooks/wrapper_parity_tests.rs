@@ -48,6 +48,16 @@ fn package(label: &str) -> std::path::PathBuf {
         "echo \"refused on $HOOK_EVENT from $HOOK_SOURCE\" >&2\nexit 3",
         "[Console]::Error.WriteLine(\"refused on $env:HOOK_EVENT from $env:HOOK_SOURCE\")\nexit 3\n",
     );
+    install(
+        "rewrite",
+        "printf '%s' \"$HOOK_INPUT\" | jq -c 'if has(\"CommandLine\") then .CommandLine = \"echo rewritten\" else .command = \"echo rewritten\" end'",
+        "$input = $env:HOOK_INPUT | ConvertFrom-Json\nif ($input.PSObject.Properties['CommandLine']) { $input.CommandLine = 'echo rewritten' } else { $input.command = 'echo rewritten' }\n[Console]::Out.Write(($input | ConvertTo-Json -Compress))\nexit 0\n",
+    );
+    install(
+        "garble",
+        "echo 'not an input'",
+        "[Console]::Out.Write('not an input')\nexit 0\n",
+    );
     root
 }
 

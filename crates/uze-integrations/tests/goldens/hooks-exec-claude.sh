@@ -30,7 +30,7 @@ deny_native() {                 # $1 reason, plain text; $2 decision (deny)
   [ "$HOOK_EVENT" = session_start ] && { allow_native; exit 0; }
   reason_json=$(json_string "$1")
   case $HOOK_EVENT in
-    pre_tool_use) printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s}}' "$reason_json" ;;
+    pre_tool_use) printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"%s","permissionDecisionReason":%s}}' "$decision" "$reason_json" ;;
     *) printf '{"decision":"block","reason":%s}' "$reason_json" ;;
   esac
   exit 0                                # this harness's block signal
@@ -38,6 +38,12 @@ deny_native() {                 # $1 reason, plain text; $2 decision (deny)
 
 allow_native() {
   :
+}
+
+transform_native() {                             # the rewritten input
+  updated_json=$HOOK_INPUT
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":%s}}' "$updated_json"
+  exit 0
 }
 
 # fail-closed effects: a guard that cannot be evaluated denies. `transform`
@@ -74,8 +80,10 @@ HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '.tool_input // {}')
 HOOK_SOURCE=
 [ "$HOOK_EVENT" = session_start ] \
   && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '.source // empty')
-HOOK_TOOL= HOOK_COMMAND= HOOK_PATH= HOOK_QUERY=
-case "$HOOK_TOOL_NATIVE" in                       # the portable vocabulary
+# The portable fields are read from the input, so a rewrite reads them again.
+portable_fields() {
+  HOOK_TOOL= HOOK_COMMAND= HOOK_PATH= HOOK_QUERY=
+  case "$HOOK_TOOL_NATIVE" in                     # the portable vocabulary
     Bash) HOOK_TOOL=shell; HOOK_COMMAND=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.command // empty'); ;;
     PowerShell) HOOK_TOOL=shell; HOOK_COMMAND=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.command // empty'); ;;
     Read) HOOK_TOOL=file.read; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.file_path // empty'); ;;
@@ -84,8 +92,10 @@ case "$HOOK_TOOL_NATIVE" in                       # the portable vocabulary
     Grep) HOOK_TOOL=search.files; HOOK_QUERY=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.pattern // empty'); ;;
     WebSearch) HOOK_TOOL=search.web; HOOK_QUERY=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.query // empty'); ;;
     Agent) HOOK_TOOL=agent.spawn; ;;
-esac
-export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
+  esac
+  export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
+}
+portable_fields
 
 # --- one handler, under its own deadline ---------------------------------
 # There is no portable `timeout(1)` (macOS ships none) and no job control in
@@ -116,21 +126,31 @@ family() {                                       # $1 pid -> $1 and its issue
 # rather than the hook.
 reasons=${TMPDIR:-/tmp}/hooks-exec.$$
 (set -C; : > "$reasons") 2>/dev/null || reasons=/dev/null
-discard_reasons() { [ "$reasons" = /dev/null ] || rm -f "$reasons"; }
+# A transform handler answers with the rewritten input on stdout; nowhere
+# to keep it is a failure, never an unchanged call.
+rewrites=/dev/null
+if [ "$effect" = transform ]; then
+  rewrites=${TMPDIR:-/tmp}/hooks-exec-out.$$
+  (set -C; : > "$rewrites") 2>/dev/null || fail "hooks/exec: nowhere to read a rewritten input"
+fi
+discard_reasons() {
+  [ "$reasons" = /dev/null ] || rm -f "$reasons"
+  [ "$rewrites" = /dev/null ] || rm -f "$rewrites"
+}
 trap discard_reasons EXIT
 # A signal ends the wrapper. A trap that only cleaned up would return into
 # the loop and run the next handler for a harness that has stopped waiting.
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# $1 seconds, $2 command. Leaves what the handler wrote on stderr in
-# $reasons and answers with its exit status — or 124, the conventional
+# $1 seconds, $2 command, $3 where its stdout goes. Leaves what the handler
+# wrote on stderr in $reasons and answers with its exit status — or 124, the conventional
 # timeout status, when the deadline stopped it. A handler that exits 124 of
 # its own accord therefore reads as a timeout; `timeout(1)` carries the
 # same ambiguity.
 guarded() {
   (
-    sh -c "$2" </dev/null >/dev/null 2>"$reasons" &
+    sh -c "$2" </dev/null >"$3" 2>"$reasons" &
     child=$!
     (
       napper= fired=
@@ -172,7 +192,19 @@ for entry in "$@"; do
   case $seconds in
     ''|*[!0-9]*) fail "malformed handler argument: $entry" ;;
   esac
-  guarded "$seconds" "$handler"; status=$?
+  [ "$rewrites" = /dev/null ] || : > "$rewrites"
+  guarded "$seconds" "$handler" "$rewrites"; status=$?
+  if [ "$status" = 0 ] && [ -s "$rewrites" ]; then
+    # A rewrite: the complete input, as one JSON object. The next handler
+    # reads it as its HOOK_INPUT, and the last one is what the tool runs.
+    [ "$(wc -c < "$rewrites")" -le 65536 ] \
+      || fail "handler wrote more than 65536 bytes: $handler"
+    updated=$("$JQ" -ce 'if type == "object" then . else error end' < "$rewrites" 2>/dev/null) \
+      || fail "handler did not write a JSON object: $handler"
+    HOOK_INPUT=$updated
+    rewritten=1
+    portable_fields
+  fi
   [ "$status" = 0 ] && continue                   # allowed; on to the next
   reason=$(head -c 4096 "$reasons" 2>/dev/null)
   case $status in
@@ -183,5 +215,6 @@ for entry in "$@"; do
     *) fail "handler failed (exit $status): $handler${reason:+ — $reason}" ;;
   esac
 done
+[ -n "${rewritten:-}" ] && transform_native
 allow_native
 exit 0

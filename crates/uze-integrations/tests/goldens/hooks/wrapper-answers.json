@@ -36,6 +36,45 @@
     {
       "harness": "claude",
       "event": "pre_tool_use",
+      "effect": "transform",
+      "handlers": [
+        "rewrite",
+        "audit"
+      ],
+      "command": "cat .env",
+      "exit": 0,
+      "stdout": {
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": "allow",
+          "updatedInput": {
+            "command": "echo rewritten"
+          }
+        }
+      },
+      "stderr": ""
+    },
+    {
+      "harness": "claude",
+      "event": "pre_tool_use",
+      "effect": "transform",
+      "handlers": [
+        "garble"
+      ],
+      "command": "ls",
+      "exit": 0,
+      "stdout": {
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "handler did not write a JSON object: ${PLUGIN_ROOT}/scripts/garble"
+        }
+      },
+      "stderr_prefix": "handler did not write a JSON object: ${PLUGIN_ROOT}/scripts/garble"
+    },
+    {
+      "harness": "claude",
+      "event": "pre_tool_use",
       "effect": "ask",
       "handlers": [
         "guard"
@@ -45,7 +84,7 @@
       "stdout": {
         "hookSpecificOutput": {
           "hookEventName": "PreToolUse",
-          "permissionDecision": "deny",
+          "permissionDecision": "ask",
           "permissionDecisionReason": "blocked: cat .env (tool=shell cwd=/repo)"
         }
       },
@@ -389,6 +428,44 @@
       "exit": 0,
       "stdout": null,
       "stderr": ""
+    },
+    {
+      "harness": "codex",
+      "event": "pre_tool_use",
+      "effect": "transform",
+      "handlers": [
+        "rewrite",
+        "audit"
+      ],
+      "command": "cat .env",
+      "exit": 0,
+      "stdout": {
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": "allow",
+          "updatedInput": {
+            "command": "echo rewritten"
+          }
+        }
+      },
+      "stderr": ""
+    },
+    {
+      "harness": "codex",
+      "event": "pre_tool_use",
+      "effect": "transform",
+      "handlers": [
+        "garble"
+      ],
+      "command": "ls",
+      "exit": 2,
+      "stdout": {
+        "hookSpecificOutput": {
+          "permissionDecision": "deny",
+          "permissionDecisionReason": "handler did not write a JSON object: ${PLUGIN_ROOT}/scripts/garble"
+        }
+      },
+      "stderr_prefix": "handler did not write a JSON object: ${PLUGIN_ROOT}/scripts/garble"
     },
     {
       "harness": "codex",
@@ -733,6 +810,40 @@
       "exit": 0,
       "stdout": null,
       "stderr": ""
+    },
+    {
+      "harness": "antigravity",
+      "event": "pre_tool_use",
+      "effect": "transform",
+      "handlers": [
+        "rewrite",
+        "audit"
+      ],
+      "command": "cat .env",
+      "exit": 0,
+      "stdout": {
+        "decision": "allow",
+        "overwrite": {
+          "CommandLine": "echo rewritten",
+          "Cwd": "/repo"
+        }
+      },
+      "stderr": ""
+    },
+    {
+      "harness": "antigravity",
+      "event": "pre_tool_use",
+      "effect": "transform",
+      "handlers": [
+        "garble"
+      ],
+      "command": "ls",
+      "exit": 0,
+      "stdout": {
+        "decision": "deny",
+        "reason": "handler did not write a JSON object: ${PLUGIN_ROOT}/scripts/garble"
+      },
+      "stderr_prefix": "handler did not write a JSON object: ${PLUGIN_ROOT}/scripts/garble"
     },
     {
       "harness": "antigravity",

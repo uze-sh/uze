@@ -235,6 +235,12 @@ Phases 1–4.
 - **Held back by the harness as a delivery report.** It changes what
   "delivered" means to a person across status, inspect, doctor and the
   install report, without changing what a receipt means to removal.
+- **A portable `transform`: the handler answers with the rewritten input.**
+  It extends ADR-040's exit-code contract with one channel: on exit 0 a
+  `transform` handler may write the call's complete input to stdout, in the
+  harness's own shape; handlers chain, each reading the previous rewrite.
+  Measured native on all four harnesses (Claude and Codex `updatedInput`,
+  Antigravity's undocumented `overwrite`, OpenCode's `execute.before`).
 - **Codex: a UZE package is a native Codex plugin** (if Phase 5 measures
   it). It would change the Codex route precedence of ADR-040 and its
   successors.

@@ -9,7 +9,8 @@
     "observe",
     "allow",
     "ask",
-    "deny"
+    "deny",
+    "transform"
   ],
   "aliases": {
     "shell": {

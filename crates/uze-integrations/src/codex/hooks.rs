@@ -19,11 +19,16 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
         HookEvent::Stop,
         HookEvent::SessionStart,
     ],
-    effects: &[HookEffect::Observe, HookEffect::Allow, HookEffect::Deny],
+    effects: &[
+        HookEffect::Observe,
+        HookEffect::Allow,
+        HookEffect::Deny,
+        HookEffect::Transform,
+    ],
     tools: TOOLS,
     session_sources: uze_core::hook::SESSION_SOURCES,
     runner: HookRunner::Wrapper {
-        dialect: WrapperDialect {
+        dialect: &WrapperDialect {
             payload: PayloadPaths {
                 tool: ".tool_name // empty",
                 input: ".tool_input // {}",
@@ -35,6 +40,14 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             posix: Decisions {
                 deny: "printf '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":%s}}' \"$reason_json\"",
                 allow: "[ \"$HOOK_EVENT\" = stop ] && printf '{}'",
+                // A rewrite is `updatedInput` beside `allow`, the only decision it
+                // goes with, and `hookEventName` is required in this document
+                // (codex-rs `hooks/src/schema.rs`, `output_parser.rs`):
+                // without it Codex reports the hook failed and runs the call
+                // as asked.
+                transform: Some(
+                    "printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":%s}}' \"$updated_json\"",
+                ),
                 unfired: &[],
             },
             powershell: Some(Decisions {
@@ -42,6 +55,9 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 allow: "if ($hookEvent -eq 'stop') { [Console]::Out.Write('{}') }",
                 // Measured and reported upstream: a Windows shell command runs
                 // as `command_execution`, which fires no PreToolUse hook.
+                transform: Some(
+                    "[Console]::Out.Write('{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":' + $updatedJson + '}}')",
+                ),
                 unfired: &[Unfired {
                     event: HookEvent::PreToolUse,
                     tool: "shell",

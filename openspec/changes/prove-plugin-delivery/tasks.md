@@ -147,6 +147,10 @@
 - [x] 8.10 OpenCode preferences: measure what V2 reads for autonomy and sandbox. Measured from source (`v2` at b78d10cd7): `config/normalize.ts` still reads `opencode.json`'s top-level `permission` map and turns it into V2 rules (`bash` becomes `shell`, `write`/`patch` become `edit`), and V2's own `permissions.mdx` documents `permission` as the configuration; every action UZE writes (`edit`, `bash`, `webfetch`, `websearch`, `external_directory`) is one V2 evaluates. The legacy note belongs to an agent's frontmatter (8.3), not to the configuration, so the preferences are left as they are.
 - [ ] 8.11 A Lab scene that a preference changes what OpenCode asks: a profile set through the workspace's profile editor (the only place a person applies one) denies the shell, and a scripted shell call is refused before it runs.
 
+- [x] 8.12 `ask` on Claude: the dialect answers `permissionDecision: ask` with the reason (`hooks-ask-*` green on 2.1.291). Codex 0.160.1 rejects `ask` from PreToolUse and its PermissionRequest hook takes allow/deny only (codex-rs `hooks/src/engine/output_parser.rs`), so it stays Unsupported there.
+- [x] 8.13 `transform`: the handler answers with the rewritten input on stdout (complete, native shape, chained across the group, 64 KiB bound, fail-closed); the POSIX and PowerShell wrappers and the OpenCode bridge carry it, and `hooks-transform-*` proves it on all four harnesses (Claude, Codex, OpenCode, Antigravity 1.3.0 `overwrite`).
+- [x] 8.14 OpenCode hooks beyond observe: `Stop`, `SessionStart` (startup only), `deny`, `ask` through the V2 plugin API; Antigravity `SessionStart` through its undocumented flat key. A SessionStart group waiting only for an unannounced source is reported Unsupported.
+
 ## 9. Climb toward native, measured first
 
 - [ ] 9.1 Antigravity: experiment with a receipt-owned `~/.gemini/config/plugins.json` entry pointing at UZE's generated directory. If skills, MCP and hooks load in place, replace the staging copy and import-manifest dependency. Otherwise record the measurement.

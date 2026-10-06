@@ -72,7 +72,7 @@ pub(crate) enum HookRunner {
     /// A command hook in the harness's shared config file, starting the
     /// generated wrapper.
     Wrapper {
-        dialect: WrapperDialect,
+        dialect: &'static WrapperDialect,
         entry: EntryShape,
     },
     /// UZE's generated plugin is the runner: the harness has no command
@@ -158,6 +158,10 @@ impl HookTarget {
             effects: self.effects.iter().copied().collect(),
             supports_native_matchers: true,
             executes_handlers_in_order: true,
+            // The bridge rewrites `execute.before`'s input itself; a
+            // wrapper needs the harness's document for a rewrite.
+            supports_input_transform: matches!(self.runner, HookRunner::Bridge)
+                || wrapper::transforms_here(self),
             unfired: wrapper::unfired_here(self)
                 .iter()
                 .map(|unfired| uze_core::hook::UnfiredTool {
@@ -166,7 +170,6 @@ impl HookTarget {
                     why: unfired.why.to_owned(),
                 })
                 .collect(),
-            ..HookCapabilities::default()
         }
     }
 
@@ -174,7 +177,7 @@ impl HookTarget {
     /// where UZE's generated plugin is its own runner.
     pub(super) const fn dialect(self) -> Option<WrapperDialect> {
         match self.runner {
-            HookRunner::Wrapper { dialect, .. } => Some(dialect),
+            HookRunner::Wrapper { dialect, .. } => Some(*dialect),
             HookRunner::Bridge => None,
         }
     }

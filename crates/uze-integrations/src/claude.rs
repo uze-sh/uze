@@ -764,6 +764,19 @@ const FACTS: &[HarnessFact] = &[
         measured_on: "2.1.290",
         proven_by: "contract/hooks.py::_events",
     },
+    HarnessFact {
+        subject: "hooks",
+        fact: "puts a call a hook answers with `permissionDecision: ask` to the person, \
+               showing the hook's reason, and runs it once approved",
+        measured_on: "2.1.291",
+        proven_by: "contract/hooks.py::_ask",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs the input a PreToolUse hook hands back as `updatedInput` beside `allow`",
+        measured_on: "2.1.291",
+        proven_by: "contract/hooks.py::_transform",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "2.1.283";

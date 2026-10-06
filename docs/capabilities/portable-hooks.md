@@ -37,8 +37,8 @@ binary is removed.
   `startup`, `resume`, `clear`, or several joined by `|`. Omitting it
   matches all three.
 - **Effect**: `observe` (default), `allow`, `ask`, `deny`, or `transform`.
-  `transform` is only valid on `PreToolUse`, and is not deliverable today
-  (see [Known limitations](#known-limitations)). `SessionStart` takes
+  `transform` is only valid on `PreToolUse`, and rewrites the call before
+  it runs (see [Rewriting a call](#rewriting-a-call)). `SessionStart` takes
   `observe` only: a session has nothing to allow or deny, and a manifest
   declaring any other effect there is refused at `uze agent plugin check`
   and at install, naming the group.
@@ -91,6 +91,25 @@ exit code. It never parses a harness payload and never writes harness JSON.
 Only the first 4096 bytes of a handler's stderr become the reason; a handler
 that writes megabytes is still a decision, not a document the harness has to
 parse.
+
+### Rewriting a call
+
+A handler in a `transform` group answers the same way, plus one thing: on
+exit `0` it may write the call's **complete** input to stdout, as one JSON
+object in the harness's own shape: what it read from `HOOK_INPUT`, changed.
+Nothing on stdout leaves the input as it was. The handlers of the group run
+in order, and each one reads the rewrite before it as its `HOOK_INPUT` (and
+its portable fields); the last rewrite is what the tool runs. Stdout that is
+not one JSON object, or that is longer than 64 KiB, is a handler failure.
+The input is the harness's own because a rewrite in portable terms could not
+be mapped back: a portable `command` is `command` on one harness and
+`CommandLine` on another.
+
+```sh
+#!/bin/sh
+# Every `rm -rf` the model asks for becomes a dry run.
+printf '%s' "$HOOK_INPUT" | jq -c 'walk(if type == "string" then sub("rm -rf "; "echo would remove ") else . end)'
+```
 
 A handler failure is **fail-open** for `observe`/`allow` (the tool proceeds
 and the failure is reported) and **fail-closed** for `deny`/`ask`/`transform`
@@ -239,8 +258,8 @@ stated) · **—** = not expressible.
 | a group's handlers | run **in parallel** natively → sequential inside `exec` | sequential inside `exec` | sequential inside `exec` | sequential inside the plugin |
 | `PreToolUse` observe/allow | native | native | native (signed-in session) | native (`execute.before`) |
 | `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`, signed-in session) | native (`permission.evaluate` → `deny`, input kept from `execute.before`) |
-| `PreToolUse` ask | native (`permissionDecision: ask`) | rendered as a denial | native (`decision: ask`, signed-in session) | native (`permission.evaluate` → `ask`; the prompt does not show the reason) |
-| `PreToolUse` transform | — (needs a stdout convention) | — | — | — |
+| `PreToolUse` ask | native (`permissionDecision: ask`; the prompt shows the reason) | — (0.160.1 rejects `permissionDecision: ask` in `PreToolUse`, and its `PermissionRequest` hook takes `allow`/`deny` only: codex-rs `hooks/src/engine/output_parser.rs`) | native (`decision: ask`, signed-in session) | native (`permission.evaluate` → `ask`; the prompt does not show the reason) |
+| `PreToolUse` transform | native (`allow` + `updatedInput`) | native (`allow` + `updatedInput`, `hookEventName` required; only `command` is read for a shell call) | native (`allow` + `overwrite`, a hook result field the docs do not list, measured every run) | native (`execute.before`'s input reassigned, as OpenCode's own input repair does; a failed rewrite is refused at `permission.evaluate`) |
 | `PostToolUse` | native, observe only | native, observe only | native (`{}`), signed-in session | native (`execute.after`; a denial reaches the model as synthetic input) |
 | `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native, signed-in session | native (`session.execution.succeeded`; a denial continues the session with synthetic input, as OpenCode's own plan plugin does) |
 | `SessionStart` (observe) | native, matcher on the source | native, matcher on the source (a hook is reviewed before it runs) | native through the undocumented `SessionStart` key (flat; once per new conversation, at its first model call; `startup` only — a `--continue` announces nothing), measured every run | native (`session.created` of a top-level session; `startup` only — a resumed session announces nothing) |
@@ -287,12 +306,9 @@ runs exactly once for a new headless session, with `HOOK_SOURCE=startup`.
 
 ## Known limitations
 
-- **`transform` is not deliverable.** Rewriting the tool input needs a
-  channel for the handler to answer on, which an exit code is not. A
-  `transform` group is degraded on every harness — stated, never a silent
-  claim — until its own change defines that channel. Delivered degraded, it
-  is fail-closed like `deny`/`ask`: a rewrite that did not happen must not
-  let the original input through as if it had.
+- **A rewrite is in the harness's own shape.** A `transform` handler that
+  must run on several harnesses reads `HOOK_TOOL_NATIVE` to know which shape
+  it is answering in; the portable fields are inputs only.
 - **`jq` is the shell wrapper's dependency.** It is not declarable by a
   package yet (plugin `requirements` is its own change); `uze doctor`
   reports it missing, and until it is installed a `deny` group denies while

@@ -2580,12 +2580,13 @@ fn inspect_names_the_servers_and_hooks_a_harness_receives() {
     let _ = std::fs::remove_dir_all(fake_bin);
 }
 
-/// Antigravity CLI fires no session start: the install reports that
-/// group Unsupported there, with why, and still delivers the package's
-/// other hook to it — through the POSIX wrapper, the only one it takes.
+/// Antigravity CLI runs a session start through its undocumented flat
+/// `SessionStart` key: the install delivers that group beside the package's
+/// other hook — through the POSIX wrapper, the only one it takes — and
+/// reports no shortfall for it.
 #[cfg(unix)]
 #[test]
-fn antigravity_reports_a_session_start_hook_unsupported_and_takes_the_rest() {
+fn antigravity_takes_a_session_start_hook_beside_the_rest() {
     let home = temporary_home("cli-antigravity-session-start");
     let fake_bin = fake_harness_bin_dir("cli-antigravity-session-start-bin");
     let path = uze_testkit::process::path_with(&[&fake_bin]);
@@ -2609,18 +2610,23 @@ fn antigravity_reports_a_session_start_hook_unsupported_and_takes_the_rest() {
         .unwrap_or_else(|| panic!("Antigravity CLI is delivered to: {report}"));
 
     assert!(
-        antigravity["shortfalls"].as_array().unwrap().iter().any(
-            |shortfall| shortfall["capability"]
+        !antigravity["shortfalls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|shortfall| shortfall["capability"]
                 .as_str()
                 .unwrap()
-                .contains("ensure-ui")
-                && shortfall["route"] == "UNSUPPORTED"
-                && shortfall["evidence"]
-                    .as_str()
-                    .unwrap()
-                    .contains("session_start")
-        ),
+                .contains("ensure-ui")),
         "{antigravity}"
+    );
+    assert!(
+        antigravity["attachments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|location| location.as_str().unwrap().ends_with(":ensure-ui")),
+        "the session start reaches Antigravity CLI: {antigravity}"
     );
     assert!(
         antigravity["attachments"]

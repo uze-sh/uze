@@ -374,6 +374,7 @@ def validate_marketplace(cfg):
         "hook-post-deny": "./plugins/hook-post-deny",
         "lifecycle-plugin": "./plugins/lifecycle-plugin",
         "route-explicit": "./plugins/route-explicit",
+        "hook-transform": "./plugins/hook-transform",
     }
     if plugins != expected:
         raise RuntimeError(f"invalid conformance marketplace inventory: {plugins}")

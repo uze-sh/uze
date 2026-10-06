@@ -800,6 +800,12 @@ const FACTS: &[HarnessFact] = &[
         measured_on: "2.0.24",
         proven_by: "contract/hooks.py::_deny",
     },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs the input a plugin assigns to `execute.before`'s `input`",
+        measured_on: "2.0.24",
+        proven_by: "contract/hooks.py::_transform",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "2.0.18";

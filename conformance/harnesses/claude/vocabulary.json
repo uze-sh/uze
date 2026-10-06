@@ -8,7 +8,9 @@
   "effects": [
     "observe",
     "allow",
-    "deny"
+    "ask",
+    "deny",
+    "transform"
   ],
   "aliases": {
     "shell": {

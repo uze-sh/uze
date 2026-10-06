@@ -772,6 +772,12 @@ const FACTS: &[HarnessFact] = &[
         measured_on: "1.2.17",
         proven_by: "contract/hooks.py::_events",
     },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs the args a PreToolUse hook hands back as `overwrite` beside `allow`, a field its docs do not list",
+        measured_on: "1.3.0",
+        proven_by: "contract/hooks.py::_transform",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "1.2.12";

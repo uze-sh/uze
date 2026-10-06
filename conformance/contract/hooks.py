@@ -49,6 +49,8 @@ def assert_contract(cfg, prov_ip, bindings):
             _fail_closed(cfg, bindings, expected)
         if "ask" in effects:
             _ask(cfg, bindings, expected)
+        if "transform" in effects:
+            _transform(cfg, bindings, expected)
         events = set(expected["events"])
         if events - {"pre_tool_use"}:
             _events(cfg, bindings, expected, events)
@@ -332,6 +334,44 @@ def _ask(cfg, bindings, expected):
             "asked" in side,
             "approving it ran the command"
             if "asked" in side
+            else f"side: {sorted(side)}",
+        )
+
+
+def _transform(cfg, bindings, expected):
+    """A `transform` group rewrites the call before it runs: the tool does
+    what the rewrite says and never what the model asked for. Read from the
+    disk, where only the command that actually ran can leave its file."""
+    shell = expected["aliases"]["shell"]
+    asked = bindings.call(shell["call"], side=f"{SIDE}/from")
+    with describe("transform"):
+        found, side, turn = _scene(
+            cfg,
+            bindings,
+            "transform",
+            "hook-transform",
+            [{"tool": vocabulary.call_tool(shell), "args": asked}],
+        )
+        ran = bool(found.get("effect-transform"))
+        check(
+            "hooks-transform-guard-ran",
+            ran,
+            f"records: {found.get('effect-transform')}",
+        )
+        check_absence(
+            "hooks-transform-original-not-run",
+            "from" not in side,
+            turn is not None and turn.settled,
+            proof=ran and "to" in side,
+            detail="the command the model asked for never ran"
+            if "from" not in side
+            else "it ran as asked",
+        )
+        check(
+            "hooks-transform-rewrite-ran",
+            "to" in side,
+            "the rewritten command left its file"
+            if "to" in side
             else f"side: {sorted(side)}",
         )
 

@@ -740,6 +740,12 @@ const FACTS: &[HarnessFact] = &[
         measured_on: "0.160.1",
         proven_by: "contract/mcp.py::_assert_execution",
     },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs the input a PreToolUse hook hands back as `updatedInput` beside `allow`, and only with `hookEventName` in the document",
+        measured_on: "0.160.1",
+        proven_by: "contract/hooks.py::_transform",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "0.158.0";
