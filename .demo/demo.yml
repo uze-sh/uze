@@ -305,9 +305,7 @@ fixtures:
               delivery: handoff
               branch: conventional
               slots: 3
-
-            artifacts:
-              path: docs/architecture
+              artifacts: docs/architecture
       - message: 'docs(architecture): draw the context, the containers and the lifecycle'
         days_ago: 2
         files:
@@ -672,14 +670,19 @@ beats:
     expect: add-rate-limiting/tasks\.md
     expect_timeout: 6
     pause: 2.8
-  - say: the specs that outlive the changes
-    key: Tab
-    expect: health/spec\.md
+  # The archive is the last band of changes, folded until asked for, and
+  # the subjects sit in the tab strip while a surface is open — so the
+  # archive comes first, while changes is the subject on show.
+  - say: what was finished and put away
+    click: ARCHIVED
+    in: pane
+    expect: 2026-09-18-add-heal
     expect_timeout: 6
     pause: 2.2
-  - say: and what was finished and put away
-    key: Tab
-    expect: 2026-09-18-add-health-endpoint/proposal\.md
+  - say: and the specs that outlive the changes
+    click: specs
+    in: strip
+    expect: health/spec\.md
     expect_timeout: 6
     pause: 2.2
   # The surface remembers where it was left — but a take opens it exactly

@@ -84,9 +84,9 @@ const yaml = (key: string, value?: string, indent = 0): Row =>
 
 // This repository's own agents.yaml, trimmed to the keys the page talks about.
 const manifest: Row[] = [
-  yaml('worktrees'),
-  yaml('default', 'isolated', 2),
-  yaml('completion', 'pr', 2),
+  yaml('workspace'),
+  yaml('worktree', 'always', 2),
+  yaml('delivery', 'pr', 2),
   yaml('branch', 'conventional', 2),
   [],
   yaml('marketplaces'),
@@ -385,7 +385,7 @@ export function ConsoleSession() {
         ) : (
           <div
             ref={stream}
-            className="session-scrollback h-full overflow-hidden py-4 text-[12.5px] leading-[1.6] sm:text-[13.5px]"
+            className="session-scrollback h-full overflow-hidden py-4 text-[12.5px] leading-[20px] sm:text-[13.5px] sm:leading-[22px]"
           >
             <Scrollback t={t} />
           </div>
