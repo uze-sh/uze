@@ -5,6 +5,8 @@ import type { ReactNode } from 'react';
 // each about the selected agent's checkout: the change it is working on, the
 // diagram the project keeps, and the diff it left. `step` is the one gesture
 // each takes on screen: a document picked, a box selected, a file picked.
+// What a surface navigates by is drawn in the tab strip, by the workspace
+// (`SurfaceNavigation`); inside it only its modes remain.
 
 export type Surface = 'spec' | 'arch' | 'code';
 
@@ -22,28 +24,53 @@ function Hints({ items, trailing }: { items: [string, string][]; trailing?: stri
   );
 }
 
-function Tabs({ tabs, active, right }: { tabs: string[]; active: string; right: [string[], string] }) {
+function Modes({ modes, active }: { modes: string[]; active: string }) {
   return (
-    <div className="flex shrink-0 items-center gap-1 pb-2">
-      {tabs.map((tab) => (
-        <span
-          key={tab}
-          className={`px-2 py-0.5 ${tab === active ? 'bg-surface font-semibold text-ink' : 'text-muted'}`}
-        >
-          {tab}
+    <span className="ml-auto flex shrink-0 items-center gap-1 pl-3 max-md:hidden">
+      {modes.map((mode) => (
+        <span key={mode} className={`px-2 py-0.5 ${mode === active ? 'bg-surface font-semibold text-ink' : 'text-muted'}`}>
+          {mode}
         </span>
       ))}
-      <span className="ml-auto flex items-center gap-1 max-md:hidden">
-        {right[0].map((mode) => (
-          <span
-            key={mode}
-            className={`px-2 py-0.5 ${mode === right[1] ? 'bg-surface font-semibold text-ink' : 'text-muted'}`}
-          >
-            {mode}
-          </span>
-        ))}
+    </span>
+  );
+}
+
+function Subjects({ subjects, active }: { subjects: string[]; active: string }) {
+  return (
+    <>
+      {subjects.map((subject) => (
+        <span
+          key={subject}
+          className={`px-2 py-0.5 ${subject === active ? 'bg-surface font-semibold text-ink' : 'text-muted'}`}
+        >
+          {subject}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * What an open surface puts in the tab strip's leading slot, where the
+ * agent's tabs stand otherwise: its subjects, or on a board the selector
+ * and the level trail.
+ */
+export function SurfaceNavigation({ surface }: { surface: Surface }) {
+  if (surface === 'arch') {
+    return (
+      <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+        <span className="bg-surface px-2 py-0.5 font-semibold text-ink">C4 ▾</span>
+        <span className="text-muted">/</span>
+        <span className="bg-surface px-2 py-0.5 font-semibold text-ink">System context</span>
+        <span className="truncate text-muted max-md:hidden">› Containers › Router components</span>
       </span>
-    </div>
+    );
+  }
+  return surface === 'spec' ? (
+    <Subjects subjects={['changes', 'specs']} active="changes" />
+  ) : (
+    <Subjects subjects={['files', 'map', 'changes']} active="changes" />
   );
 }
 
@@ -51,11 +78,11 @@ function Inline({ children }: { children: ReactNode }) {
   return <span className="text-info">{children}</span>;
 }
 
-function Group({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+function Group({ title, count, children }: { title: string; count: number; children?: ReactNode }) {
   return (
     <div className="mb-3">
       <div className="truncate font-semibold text-muted">
-        <span className="mr-1.5">▾</span>
+        <span className="mr-1.5">{children ? '▾' : '▸'}</span>
         {title} <span className="font-normal">{count}</span>
       </div>
       {children}
@@ -88,7 +115,6 @@ function Entry({
 function Spec({ step }: { step: boolean }) {
   return (
     <>
-      <Tabs tabs={['Changes', 'Specs', 'Archive']} active="Changes" right={[['Preview', 'Source'], 'Preview']} />
       <div className="flex min-h-0 flex-1">
         <div className="w-[42%] max-w-52 shrink-0 overflow-hidden border-r border-line pr-2">
           <Group title="this checkout" count={1}>
@@ -106,9 +132,14 @@ function Spec({ step }: { step: boolean }) {
           <Group title="ready to archive" count={1}>
             <Entry trailing={<span className="text-success">3/3</span>}>add-health-route</Entry>
           </Group>
+          {/* The archive is the last band, folded until asked for. */}
+          <Group title="archived" count={1} />
         </div>
         <div className="min-w-0 flex-1 overflow-hidden pl-3 text-ink">
-          <div className="truncate text-muted">add-not-found/{step ? 'tasks.md' : 'proposal.md'}</div>
+          <div className="flex items-center">
+            <span className="truncate text-muted">add-not-found/{step ? 'tasks.md' : 'proposal.md'}</span>
+            <Modes modes={['Preview', 'Source']} active="Preview" />
+          </div>
           {step ? (
             <div className="mt-2 space-y-1">
               <div className="font-semibold">1. Router</div>
@@ -170,6 +201,7 @@ function Spec({ step }: { step: boolean }) {
           ['→', 'expand'],
           ['enter', 'open'],
           ['p', 'preview'],
+          ['tab', 'next pane'],
           ['esc', 'close'],
         ]}
       />
@@ -221,16 +253,8 @@ function Edge({ label, lit, at }: { label: string; lit: boolean; at: string }) {
 function Arch({ step }: { step: boolean }) {
   return (
     <>
-      <div className="flex shrink-0 items-center gap-2 pb-2 whitespace-nowrap">
-        <span className="bg-surface px-2 py-0.5 font-semibold text-ink">C4 ▾</span>
-        <span className="text-muted">/</span>
-        <span className="bg-surface px-2 py-0.5 font-semibold text-ink">System context</span>
-        <span className="truncate text-muted">› Containers › Router components</span>
-        <span className="ml-auto flex items-center gap-1 max-md:hidden">
-          <span className="bg-surface px-2 py-0.5 font-semibold text-ink">Unicode</span>
-          <span className="px-2 py-0.5 text-muted">ASCII</span>
-          <span className="px-2 py-0.5 text-muted">Source</span>
-        </span>
+      <div className="flex shrink-0 pb-2">
+        <Modes modes={['Unicode', 'ASCII', 'Source']} active="Unicode" />
       </div>
       {/* The canvas's dot grid, the same the terminal draws under a diagram. */}
       <div
@@ -261,6 +285,7 @@ function Arch({ step }: { step: boolean }) {
         items={[
           ['esc', 'close'],
           ['o', 'artifacts'],
+          ['tab', 'next artifact'],
           ['g', 'rendering'],
         ]}
         trailing="3 boxes · 2 edges · system-context.mmd"
@@ -295,7 +320,6 @@ function Changes({ step }: { step: boolean }) {
   const lines = step ? ROUTER : NOT_FOUND;
   return (
     <>
-      <Tabs tabs={['Files', 'Map', 'Changes']} active="Changes" right={[[], '']} />
       <div className="flex min-h-0 flex-1">
         <div className="w-[38%] max-w-48 shrink-0 overflow-hidden border-r border-line pr-2">
           <Entry trailing={<span className="text-warn">M</span>}>README.md</Entry>

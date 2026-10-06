@@ -40,10 +40,12 @@ export function HeroStage({ hero, session }: { hero: ReactNode; session: ReactNo
       const stageHeight = window.innerHeight - top;
       // Centred once it has arrived, but never pushed under the header on a
       // screen too short to centre it.
-      const rest = Math.max(24, (stageHeight - frameEl.offsetHeight) / 2);
+      // Whole pixels: a frame resting on a half pixel draws every filled row
+      // with a seam along its edge.
+      const rest = Math.max(24, Math.round((stageHeight - frameEl.offsetHeight) / 2));
       trackEl.style.setProperty('--stage-top', `${top}px`);
       trackEl.style.setProperty('--stage-h', `${stageHeight}px`);
-      trackEl.style.setProperty('--peek', `${stageHeight / 2}px`);
+      trackEl.style.setProperty('--peek', `${Math.round(stageHeight / 2)}px`);
       trackEl.style.setProperty('--rest', `${rest}px`);
       trackEl.style.setProperty('--handoff', `${window.innerHeight * HANDOFF}px`);
     };

@@ -385,7 +385,7 @@ export function ConsoleSession() {
         ) : (
           <div
             ref={stream}
-            className="session-scrollback h-full overflow-hidden py-4 text-[12.5px] leading-[1.6] sm:text-[13.5px]"
+            className="session-scrollback h-full overflow-hidden py-4 text-[12.5px] leading-[20px] sm:text-[13.5px] sm:leading-[22px]"
           >
             <Scrollback t={t} />
           </div>

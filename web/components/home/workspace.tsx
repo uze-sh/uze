@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ExtensionSurface, type Surface } from '@/components/home/extensions';
+import { ExtensionSurface, type Surface, SurfaceNavigation } from '@/components/home/extensions';
 
 // The workspace as `uze workspace` draws it, after the recorded frame in
 // web/public/uze-demo-poster.png: spaces down the side, each holding its
@@ -105,24 +105,40 @@ export function Workspace({ t }: { t: number }) {
   const pane = placed > SELECTED;
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-[12px] leading-[1.5] sm:text-[12.5px]">
-      {/* The bar: the sidebar's own head, then the selected agent's tab, a
-          new one, and the extensions. */}
+    <div className="flex h-full min-h-0 flex-col text-[12px] leading-[18px] sm:text-[12.5px] sm:leading-[19px]">
+      {/* The bar: the sidebar's own head, then the selected agent's tab and
+          a new one — or, with an extension open, its navigation in their
+          place — and the extensions. */}
       <div className="flex h-9 shrink-0 items-center border-b border-line">
         <div className="flex h-full w-32 shrink-0 items-center gap-2 border-r border-line px-3 sm:w-56">
           <span className="font-semibold text-muted">work</span>
           <span className="ml-auto font-semibold text-accent">+ space</span>
-          <span className="text-muted max-sm:hidden">≡</span>
+          {/* Drawn rather than typed: the mono face sets `≡` above the
+              line's centre, beside text that sits on it. */}
+          <span className="flex items-center gap-2 max-sm:hidden" aria-hidden>
+            <span className="h-3.5 w-px bg-line" />
+            <span className="flex w-2.5 flex-col gap-[2px]">
+              <span className="h-px bg-muted" />
+              <span className="h-px bg-muted" />
+              <span className="h-px bg-muted" />
+            </span>
+          </span>
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3">
-          {pane ? (
-            <span className="flex items-center gap-1.5 bg-surface px-2 py-0.5 font-semibold text-ink">
-              <span className="text-accent">✦</span>
-              {selected.name}
-            </span>
-          ) : null}
-          <span className="text-muted">/</span>
-          <span className="bg-surface px-2 py-0.5 text-muted">+</span>
+          {surface ? (
+            <SurfaceNavigation surface={surface} />
+          ) : (
+            <>
+              {pane ? (
+                <span className="flex items-center gap-1.5 bg-surface px-2 py-0.5 font-semibold text-ink">
+                  <span className="text-accent">✦</span>
+                  {selected.name}
+                </span>
+              ) : null}
+              <span className="text-muted">/</span>
+              <span className="bg-surface px-2 py-0.5 text-muted">+</span>
+            </>
+          )}
           <span className="ml-auto flex items-center gap-1.5 max-sm:hidden">
             {ready ? (
               <span className="mr-2">
