@@ -143,12 +143,16 @@ timeout 240 codex exec {shlex.quote(prompt)} 2>&1
     #: Codex asks before a command leaves its sandbox; answered on screen,
     #: the way a person answers it. The hook review is `prepare`'s.
     #: What Codex asks before a call, each answered with Enter on its
-    #: preselected "Allow": a command's approval, and an MCP tool's ("Allow
-    #: the <server> MCP server to run tool …?", 0.160.1).
+    #: preselected "Allow": a command's approval, an MCP tool's ("Allow the
+    #: <server> MCP server to run tool …?", 0.160.1), and an edit's when its
+    #: sandbox could not apply it ("Would you like to make the following
+    #: edits? … retry without sandbox?"), which a CI runner whose kernel
+    #: refuses the sandbox raises and a workstation never does.
     approval_prompts = (
         "Would you like to run",
         "Allow command",
         "MCP server to run tool",
+        "Would you like to make the following edits",
     )
 
     def mcp_calls(self):
