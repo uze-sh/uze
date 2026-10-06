@@ -106,6 +106,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Syntax grammars
+
+Grammars the binary carries for the code surface's highlighting, embedded
+from `crates/uze-extensions/grammars/` with each one's licence beside it.
+The rest of the highlighting comes from `syntect` and `two-face`, listed
+with the Rust dependencies below.
+
+| File | Source | Licence | Modification |
+| --- | --- | --- | --- |
+| `PowerShell.sublime-syntax` | [SublimeText/PowerShell](https://github.com/SublimeText/PowerShell) at `2938700b` | MIT | Two references to grammars outside the file read as plain strings instead, each marked `uze:` |
+
+```
+Copyright (c) 2011-2015 Guillermo López-Anglada
+              2020-2025 Michael Lyons
+```
+
+The permission notice is the MIT text quoted under Theme palettes above.
+
 ## Rust dependencies
 
 The published binary statically links every crate below. uze's own crates are

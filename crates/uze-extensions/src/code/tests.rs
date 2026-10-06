@@ -1643,6 +1643,7 @@ fn every_language_fixture_is_read_as_its_own_language() {
         ("ocaml.ml", "OCaml"),
         ("perl.pl", "Perl"),
         ("php.php", "PHP"),
+        ("powershell.ps1", "PowerShell"),
         ("protobuf.proto", "Protocol Buffer"),
         ("python.py", "Python"),
         ("r.r", "R"),

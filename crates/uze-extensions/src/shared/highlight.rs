@@ -18,7 +18,7 @@ use std::{path::Path, sync::OnceLock};
 use syntect::{
     easy::HighlightLines,
     highlighting::{Theme, ThemeSet},
-    parsing::{SyntaxReference, SyntaxSet},
+    parsing::{SyntaxDefinition, SyntaxReference, SyntaxSet, SyntaxSetBuilder},
 };
 
 use crate::view::Rgb;
@@ -31,9 +31,89 @@ pub const FALLBACK_SYNTAX_THEME: &str = "base16-ocean.dark";
 /// (TypeScript, TOML, Dockerfile, Kotlin, Swift, Zig, Nix, Terraform and
 /// the rest), from `two-face`'s precompiled dump — syntect's defaults
 /// alone draw a `.ts` or a `Cargo.toml` as plain text.
-pub(crate) fn syntax_set() -> &'static SyntaxSet {
-    static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
-    SYNTAX_SET.get_or_init(two_face::syntax::extra_newlines)
+fn bundled() -> &'static SyntaxSet {
+    static BUNDLED: OnceLock<SyntaxSet> = OnceLock::new();
+    BUNDLED.get_or_init(two_face::syntax::extra_newlines)
+}
+
+/// Grammars `two-face` ships only for onig: their upstream regexes once
+/// used what `fancy-regex` cannot compile, and onig is C, which this crate
+/// keeps out of the tree. Each is the upstream file with its licence
+/// beside it in `grammars/`.
+///
+/// A set of their own rather than added to [`bundled`]: adding one
+/// relinks every grammar in the dump, half a second before the first line
+/// is coloured, where the dump loads in milliseconds and this set in
+/// under a tenth of a second, only once a lookup gets past the dump.
+fn vendored() -> &'static SyntaxSet {
+    static VENDORED: OnceLock<SyntaxSet> = OnceLock::new();
+    VENDORED.get_or_init(|| {
+        let mut builder = SyntaxSetBuilder::new();
+        for definition in vendored_definitions() {
+            builder.add(definition);
+        }
+        builder.build()
+    })
+}
+
+const VENDORED_SOURCES: &[&str] = &[include_str!("../../grammars/PowerShell.sublime-syntax")];
+
+fn vendored_definitions() -> impl Iterator<Item = SyntaxDefinition> {
+    VENDORED_SOURCES.iter().map(|source| {
+        SyntaxDefinition::load_from_str(source, true, None)
+            .expect("a vendored grammar is compiled in and parsed by a test")
+    })
+}
+
+/// A grammar and the set it was found in, which is the set every line it
+/// highlights must be parsed against.
+#[derive(Clone, Copy)]
+struct Grammar {
+    set: &'static SyntaxSet,
+    syntax: &'static SyntaxReference,
+}
+
+/// The first answer `lookup` gives, asking the bundled set before the
+/// vendored one, which only fills what the bundled set lacks.
+fn find(
+    lookup: impl Fn(&'static SyntaxSet) -> Option<&'static SyntaxReference>,
+) -> Option<Grammar> {
+    [bundled(), vendored()].into_iter().find_map(|set| {
+        Some(Grammar {
+            set,
+            syntax: lookup(set)?,
+        })
+    })
+}
+
+/// The grammar [`highlighter`] reads `path` with.
+#[cfg(test)]
+pub(crate) fn syntax_for(path: &Path, first_line: Option<&str>) -> &'static SyntaxReference {
+    grammar_for(path, first_line).syntax
+}
+
+fn plain_text() -> Grammar {
+    let set = bundled();
+    Grammar {
+        set,
+        syntax: set.find_syntax_plain_text(),
+    }
+}
+
+/// One stream of lines being coloured: syntect's highlighter and the set
+/// its grammar belongs to.
+pub(crate) struct Highlighter {
+    lines: HighlightLines<'static>,
+    set: &'static SyntaxSet,
+}
+
+impl Highlighter {
+    fn new(grammar: Grammar, theme_name: &str) -> Self {
+        Self {
+            lines: HighlightLines::new(grammar.syntax, theme(theme_name)),
+            set: grammar.set,
+        }
+    }
 }
 
 fn theme_set() -> &'static ThemeSet {
@@ -61,13 +141,9 @@ pub(crate) fn theme(name: &str) -> &'static Theme {
 /// being one halfway down a file.
 ///
 /// `first_line` is the file's own, when there is one to hand — see
-/// [`syntax_for`].
-pub(crate) fn highlighter(
-    path: &Path,
-    first_line: Option<&str>,
-    theme_name: &str,
-) -> HighlightLines<'static> {
-    HighlightLines::new(syntax_for(path, first_line), theme(theme_name))
+/// [`grammar_for`].
+pub(crate) fn highlighter(path: &Path, first_line: Option<&str>, theme_name: &str) -> Highlighter {
+    Highlighter::new(grammar_for(path, first_line), theme_name)
 }
 
 /// The grammar for `path`: by its whole name, then as a lockfile, then by
@@ -75,32 +151,36 @@ pub(crate) fn highlighter(
 /// script is. The name comes first because the grammars list some files
 /// by it — `Makefile`, `Dockerfile`, `.bashrc` — and one of them,
 /// `CMakeLists.txt`, has an extension that would find plain text.
-pub(crate) fn syntax_for(path: &Path, first_line: Option<&str>) -> &'static SyntaxReference {
-    let syntax_set = syntax_set();
+fn grammar_for(path: &Path, first_line: Option<&str>) -> Grammar {
     let by_extension = path
         .extension()
         .and_then(|extension| extension.to_str())
         .and_then(|extension| {
             preferred_for(extension)
-                .and_then(|name| syntax_set.find_syntax_by_name(name))
-                .or_else(|| syntax_set.find_syntax_by_extension(extension))
-                .or_else(|| syntax_set.find_syntax_by_extension(same_language_as(extension)?))
+                .and_then(|name| find(|set| set.find_syntax_by_name(name)))
+                .or_else(|| find(|set| set.find_syntax_by_extension(extension)))
+                .or_else(|| {
+                    let same = same_language_as(extension)?;
+                    find(|set| set.find_syntax_by_extension(same))
+                })
         });
     let by_name = || {
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|name| syntax_set.find_syntax_by_extension(name))
-    };
-    let by_first_line = || first_line.and_then(|line| syntax_set.find_syntax_by_first_line(line));
-    let as_lockfile = || {
         let name = path.file_name()?.to_str()?;
-        syntax_set.find_syntax_by_extension(lockfile_language(name, first_line)?)
+        find(|set| set.find_syntax_by_extension(name))
+    };
+    let by_first_line = || {
+        let line = first_line?;
+        find(|set| set.find_syntax_by_first_line(line))
+    };
+    let as_lockfile = || {
+        let language = lockfile_language(path.file_name()?.to_str()?, first_line)?;
+        find(|set| set.find_syntax_by_extension(language))
     };
     by_name()
         .or_else(as_lockfile)
         .or(by_extension)
         .or_else(by_first_line)
-        .unwrap_or_else(|| syntax_set.find_syntax_plain_text())
+        .unwrap_or_else(plain_text)
 }
 
 /// The extension of the format a lockfile is written in.
@@ -165,11 +245,7 @@ fn same_language_as(extension: &str) -> Option<&'static str> {
 /// silently produces plain text, which is a block of code that renders
 /// but is not coloured. Falls back to plain text for a language syntect
 /// does not know, and for an unfenced block, which names none.
-pub(crate) fn highlighter_for_language(
-    language: &str,
-    theme_name: &str,
-) -> HighlightLines<'static> {
-    let syntax_set = syntax_set();
+pub(crate) fn highlighter_for_language(language: &str, theme_name: &str) -> Highlighter {
     // A fence's info string carries more than the language: rustdoc's
     // `rust,ignore`, a title after a space, Pandoc's `{.python}`.
     let token = language
@@ -179,11 +255,13 @@ pub(crate) fn highlighter_for_language(
         .next()
         .unwrap_or_default();
     let token = fence_alias(token).unwrap_or(token);
-    let syntax = syntax_set
-        .find_syntax_by_token(token)
-        .or_else(|| syntax_set.find_syntax_by_extension(same_language_as(token)?))
-        .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
-    HighlightLines::new(syntax, theme(theme_name))
+    let grammar = find(|set| set.find_syntax_by_token(token))
+        .or_else(|| {
+            let same = same_language_as(token)?;
+            find(|set| set.find_syntax_by_extension(same))
+        })
+        .unwrap_or_else(plain_text);
+    Highlighter::new(grammar, theme_name)
 }
 
 /// The names fences use for a language no grammar is listed under:
@@ -200,7 +278,7 @@ fn fence_alias(token: &str) -> Option<&'static str> {
 /// foreground: an empty answer is drawn as a blank line, and a line whose
 /// grammar failed still has its text.
 pub(crate) fn line(
-    highlighter: &mut HighlightLines<'_>,
+    highlighter: &mut Highlighter,
     text: &str,
     theme_name: &str,
 ) -> Vec<(Rgb, String)> {
@@ -208,7 +286,10 @@ pub(crate) fn line(
     // (matches `load_defaults_newlines` above) to track multi-line
     // constructs correctly across calls.
     let newline_terminated = format!("{text}\n");
-    let Ok(ranges) = highlighter.highlight_line(&newline_terminated, syntax_set()) else {
+    let Ok(ranges) = highlighter
+        .lines
+        .highlight_line(&newline_terminated, highlighter.set)
+    else {
         return plain(theme_name, text);
     };
     ranges
@@ -256,4 +337,61 @@ pub(crate) fn lines(
         .take(limit)
         .map(|text| line(&mut highlighter, text, theme_name))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use syntect::parsing::{Regex, syntax_definition::Pattern};
+
+    use super::{FALLBACK_SYNTAX_THEME, highlighter, vendored_definitions};
+
+    /// syntect compiles a pattern the first time a line reaches it, and a
+    /// pattern `fancy-regex` refuses turns the rest of the file plain —
+    /// so every one is compiled here, not only those a fixture reaches.
+    #[test]
+    fn every_vendored_pattern_compiles() {
+        let refused: Vec<String> = vendored_definitions()
+            .flat_map(|definition| {
+                definition
+                    .contexts
+                    .into_iter()
+                    .flat_map(|(name, context)| {
+                        context.patterns.into_iter().filter_map(move |pattern| {
+                            let Pattern::Match(pattern) = pattern else {
+                                return None;
+                            };
+                            let regex = pattern.regex.regex_str().to_owned();
+                            Regex::try_compile(&regex)
+                                .map(|error| format!("{name}: {regex}\n  {error}"))
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert!(refused.is_empty(), "{}", refused.join("\n"));
+    }
+
+    /// A reference a vendored grammar makes to a grammar its own set does
+    /// not hold fails the line that reaches it, and [`super::line`] hides
+    /// that as plain text — so the parse is asked directly.
+    #[test]
+    fn every_line_of_a_vendored_language_parses() {
+        let text = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/_fixtures/highlight/powershell.ps1"
+        ));
+        let mut highlighter = highlighter(
+            Path::new("powershell.ps1"),
+            text.lines().next(),
+            FALLBACK_SYNTAX_THEME,
+        );
+        for line in text.lines() {
+            highlighter
+                .lines
+                .highlight_line(&format!("{line}\n"), highlighter.set)
+                .unwrap_or_else(|error| panic!("{line:?}: {error}"));
+        }
+    }
 }
