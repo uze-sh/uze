@@ -115,6 +115,20 @@ mechanism needs a rules directory inside the project.
 - **WHEN** `uze status` reports the rules route for Claude Code
 - **THEN** the route is adapted and the reason names the project-local rules directory UZE declines to create
 
+### Requirement: A package's rules never reach a harness's machine-wide rules
+The system SHALL NOT deliver a package's `rules/` directory, or any rule it
+contains, to a location a harness reads for every project. This covers a
+plugin a harness installs for the whole machine, and the harness's global
+rules directories. A package that contains `rules/` SHALL be delivered to
+such a harness without it, in a plugin UZE generates rather than the package
+tree unchanged. Until project delivery of package rules exists, the package's
+rules SHALL be reported as not delivered, with the reason.
+
+#### Scenario: Antigravity does not receive a package's rules machine-wide
+- **WHEN** a package containing `rules/ui.md` is installed for Antigravity
+- **THEN** the plugin `agy` stages under its global plugin directory contains no `rules/`
+- **AND** the package's rules are reported as not delivered, because rules are delivered per project
+
 ### Requirement: The rules engine is installed once per machine and activated by the checkout
 The system SHALL install the rules engine as part of machine setup for each
 harness that needs it, as receipt-owned entries in that harness's own

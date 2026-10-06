@@ -51,7 +51,13 @@
 - [ ] 4.3 Codex: the same in `~/.codex/hooks.json` (shell-line form, as the portable hooks' Codex entries)
 - [ ] 4.4 OpenCode: the generated `rules.ts` in the global plugin directory, receipt-owned like the portable-hook bridge, and no `plugin` entry in `opencode.json`
 - [ ] 4.5 Removal: detaching the rules engine removes only its own entries and files, after inspection, and refuses drift as portable hooks do
-- [ ] 4.6 Integration tests with `FakeHarness`/isolated homes:
+- [ ] 4.6 Guard the machine-wide leak:
+  - Antigravity delivers a package containing `rules/` through its generated plugin with `rules/` excluded, the way a non-default invocation policy already forces capability-by-capability delivery;
+  - the other harnesses' plugin envelopes never carry `rules/`;
+  - the package's rules are reported as not delivered, with the per-project reason.
+
+  Include a test that the plugin staged by `agy` has no `rules/`
+- [ ] 4.7 Integration tests with `FakeHarness`/isolated homes:
   - setup is idempotent;
   - a foreign hook and plugin survive;
   - drift blocks removal;
