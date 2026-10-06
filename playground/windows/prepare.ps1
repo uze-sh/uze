@@ -26,6 +26,15 @@ $credential = $null
 $script:terminal = $null
 
 try {
+    # The Sandbox inherits the host's Smart App Control, which blocks every
+    # unsigned build of this checkout. Off here and refreshed in place, with
+    # no restart the Sandbox would not survive; on a host it is a one-way
+    # switch, here the Sandbox is thrown away.
+    Note 'smart app control: off for this Sandbox'
+    Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' `
+        -Name VerifiedAndReputablePolicyState -Value 0 -Type DWord
+    & "$env:SystemRoot\System32\CiTool.exe" --refresh --json | Out-Null
+
     # For every account: under Program Files, on the machine's Path.
     Note 'git: MinGit'
     $mingit = Latest-Asset 'git-for-windows/git' '^MinGit-[\d.]+-64-bit\.zip$'
