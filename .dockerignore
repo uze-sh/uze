@@ -1,4 +1,10 @@
 .git
-/target
-/e2e/target
+**/target
 /e2e/.env
+# Everything below is large and nothing the Lab image builds from: the
+# context is snapshotted into the build cache on every rebuild, and these
+# were 1.5 GB of it (another agent's checkouts under `.worktrees/` far more).
+/.worktrees
+/web/node_modules
+/web/.next
+/journeys/.evidence
