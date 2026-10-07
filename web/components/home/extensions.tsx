@@ -226,7 +226,7 @@ function Box({
 }) {
   return (
     <div
-      className={`bg-paper px-3 py-2 text-center ${className}`}
+      className={`rounded-md bg-paper px-3 py-2 text-center ${className}`}
       style={{
         boxShadow: `inset 0 0 0 ${selected ? 2 : 1}px var(--color-${lit ? 'ink' : 'line'})`,
       }}
