@@ -29,6 +29,9 @@
   --color-danger: #b3402f;
   /* What the terminal's markdown draws code and links in. */
   --color-info: #3d5a99;
+  /* The page's scrollbar: present where it is needed, never louder than
+     the hairlines around it. */
+  --color-scrollbar: #d4d4d8;
 
   --color-fd-background: var(--color-paper);
   --color-fd-foreground: var(--color-ink);
@@ -60,6 +63,7 @@
   --color-warn: #d4a72c;
   --color-danger: #d9776b;
   --color-info: #7d97c9;
+  --color-scrollbar: #303034;
 
   /* fumadocs' default-colors sheet gives `.dark` its own neutral #121212
      ground and greys, which outrank the @theme mapping above in dark mode:
