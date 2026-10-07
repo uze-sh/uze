@@ -109,6 +109,18 @@ export function HeroStage({ hero, session }: { hero: ReactNode; session: ReactNo
 
     const cruise = 1 / CRUISE_MS;
 
+    // Once the hand-off is whole, what is left of the pinned screen that way
+    // would be scrolled through with nothing changing on it, and the next
+    // scroll would seem swallowed. Every position along the pinned screen
+    // draws the same frame, so the page is moved to its end unseen.
+    const skipPinnedRest = () => {
+      const y = window.scrollY;
+      const to = goal === 1 && y > start && y < end ? end : goal === 0 && y > start && y < end ? start : y;
+      if (to === y) return;
+      lastY = to;
+      window.scrollTo({ top: to, behavior: 'instant' });
+    };
+
     const frameStep = (now: number) => {
       const dt = Math.min(50, now - lastFrame);
       lastFrame = now;
@@ -118,6 +130,7 @@ export function HeroStage({ hero, session }: { hero: ReactNode; session: ReactNo
         paint(goal);
         pace = 0;
         running = 0;
+        skipPinnedRest();
         return;
       }
       // The ramp only eases the start of the cruising pace; a scroll faster
