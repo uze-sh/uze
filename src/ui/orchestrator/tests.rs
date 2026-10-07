@@ -515,6 +515,35 @@ mod workspace_tests {
         );
     }
 
+    /// An agent tab is the agent's from its first frame, before the
+    /// server's probe has seen the harness in its foreground: a shell
+    /// opened beside it then is the agent's "shell 1", not the space's
+    /// "shell 3" counting the bootstrap shell and the agent itself.
+    #[test]
+    fn an_agent_not_yet_probed_is_still_the_context_of_its_first_shell() {
+        let mut session = session("/repo");
+        let space = session.workspace.selected_space;
+        let agent = session.add_tab(space, "agent 1".into(), None, 80, 24, "/repo".into());
+        let tab = session.workspace.spaces[0]
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.pane.id == agent)
+            .expect("agent tab");
+        assert_eq!(tab.pane.process, "shell", "nothing has probed it yet");
+        tab.env = vec![(
+            uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
+            "a1".to_owned(),
+        )];
+        let agent_tab = tab.id;
+        session.select_tab(agent_tab);
+        let model = model_of(session);
+        let identities = identities_fixture();
+
+        let space = model.session.as_ref().expect("session").selected_space();
+        assert_eq!(space_context_agent(space, &identities), Some(agent_tab));
+        assert_eq!(next_shell_label(&model, &identities), "shell 1");
+    }
+
     /// The space's row in the sidebar is the way back to the space's own
     /// shells: it lands on one, and stays put when you are already there.
     #[test]
@@ -10400,7 +10429,10 @@ mod workspace_tests {
     #[test]
     fn isolate_is_offered_only_where_a_slot_could_be_cut() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-menu-isolate"));
-        let menu_on = |model: WorkspaceModel, wanted: TabId| {
+        // The agent is selected first: the strip shows one agent's context
+        // at a time, so the chip a menu opens on is the selected agent's.
+        let menu_on = |mut model: WorkspaceModel, wanted: TabId| {
+            model.session.as_mut().expect("session").select_tab(wanted);
             let mut driven = driven(model, &home);
             driven.frame();
             let row = driven

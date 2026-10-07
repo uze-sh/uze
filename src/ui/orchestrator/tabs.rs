@@ -17,7 +17,7 @@ pub(super) fn next_shell_label(model: &WorkspaceModel, identities: &[AgentIdenti
             .selected_space()
             .tabs
             .iter()
-            .filter(|tab| tab.agent == context && agent_identity_for_tab(identities, tab).is_none())
+            .filter(|tab| tab.agent == context && !is_agent_tab(identities, tab))
             .count()
     });
     format!("shell {}", count + 1)
@@ -41,9 +41,10 @@ pub(super) fn context_agent(model: &WorkspaceModel, identities: &[AgentIdentity]
 /// of it.
 pub(super) fn space_context_agent(space: &Space, identities: &[AgentIdentity]) -> Option<TabId> {
     let selected = space.tabs.iter().find(|tab| tab.id == space.selected_tab)?;
-    let agent = match agent_identity_for_tab(identities, selected) {
-        Some(_) => selected.id,
-        None => selected.agent?,
+    let agent = if is_agent_tab(identities, selected) {
+        selected.id
+    } else {
+        selected.agent?
     };
     // The tab a shell points at can have stopped being an agent under it
     // (the harness exited, leaving a plain shell behind); the space is the
@@ -51,7 +52,7 @@ pub(super) fn space_context_agent(space: &Space, identities: &[AgentIdentity]) -
     space
         .tabs
         .iter()
-        .find(|tab| tab.id == agent && agent_identity_for_tab(identities, tab).is_some())
+        .find(|tab| tab.id == agent && is_agent_tab(identities, tab))
         .map(|tab| tab.id)
 }
 
@@ -72,9 +73,12 @@ pub(super) fn strip_tabs<'a>(
     context
         .and_then(|agent| space.tabs.iter().find(|tab| tab.id == agent))
         .into_iter()
-        .chain(space.tabs.iter().filter(|tab| {
-            agent_identity_for_tab(identities, tab).is_none() && tab.agent == context
-        }))
+        .chain(
+            space
+                .tabs
+                .iter()
+                .filter(|tab| !is_agent_tab(identities, tab) && tab.agent == context),
+        )
         .collect()
 }
 
@@ -254,7 +258,7 @@ pub(super) fn new_shell_cwd(
 /// already is one. `None` means the space has nothing but agents, and the
 /// click stays a plain space switch.
 pub(super) fn space_own_tab(space: &Space, identities: &[AgentIdentity]) -> Option<TabId> {
-    let own = |tab: &&Tab| tab.agent.is_none() && agent_identity_for_tab(identities, tab).is_none();
+    let own = |tab: &&Tab| tab.agent.is_none() && !is_agent_tab(identities, tab);
     space
         .tabs
         .iter()
@@ -590,9 +594,7 @@ pub(super) fn tab_needs_replacement_shell(
     identities: &[AgentIdentity],
     tab: TabId,
 ) -> bool {
-    let own = |candidate: &Tab| {
-        candidate.agent.is_none() && agent_identity_for_tab(identities, candidate).is_none()
-    };
+    let own = |candidate: &Tab| candidate.agent.is_none() && !is_agent_tab(identities, candidate);
     model.session.as_ref().is_some_and(|session| {
         session.workspace.spaces.iter().any(|space| {
             let Some(closing) = space.tabs.iter().find(|candidate| candidate.id == tab) else {
