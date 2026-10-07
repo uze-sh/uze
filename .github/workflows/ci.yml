@@ -9,11 +9,14 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch:
 
-# One run per ref. A pull request superseded by its next push is cancelled;
-# a run on `main` or from the nightly schedule is not, because those two are
-# the record of whether that commit was green.
+# One run per ref for a pull request, superseded by its next push and
+# cancelled. One run per commit for a push to `main`, never cancelled: each
+# is the record of whether that commit was green. Grouping pushes by ref made
+# every merge wait out the run before it, and GitHub keeps one pending run
+# per group, so a third merge in that window cancelled the second's run
+# before it started and left that commit with no record at all.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only by default; a job that needs more says so itself.
@@ -101,8 +104,8 @@ jobs:
           macos='{"platform":"macos","runner":"macos-15","clippy":true}'
           # Native Windows, x64: gating, green since the platform settled.
           windows='{"platform":"windows","runner":"windows-2025","clippy":true}'
-          # Native Windows on Arm. Not gating yet: it has to build a history
-          # of being green first, as the x64 row did (task 9.3).
+          # Native Windows on Arm: gating, as the x64 row does. Reporting
+          # without gating hid a wall-clock budget failing here twice.
           windows_arm='{"platform":"windows-arm","runner":"windows-11-arm","clippy":false}'
 
           # Anything that is not a pull request answers "everything". A push
@@ -227,8 +230,6 @@ jobs:
     needs: changes
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
-    # Windows on Arm reports until it has a history of being green (task 9.3).
-    continue-on-error: ${{ matrix.platform == 'windows-arm' }}
     strategy:
       # The first run on a new platform is worth the complete list of what
       # does not hold there, not the name of the first leg that stopped.
@@ -667,8 +668,7 @@ jobs:
   # workflow: during the 2026-10-05 Actions outage this check read eleven
   # such jobs as nothing at all and stayed green. So the run's own jobs are
   # read as well, and one that never finished its work fails the gate. A
-  # plain failure is still judged by `needs` alone, which is what honours
-  # `continue-on-error` on a leg that only reports.
+  # plain failure is still judged by `needs` alone.
   gate:
     name: Gate
     runs-on: ubuntu-24.04

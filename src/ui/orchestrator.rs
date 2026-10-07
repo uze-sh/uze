@@ -916,6 +916,15 @@ fn agent_identity_for_tab<'a>(identities: &'a [AgentIdentity], tab: &Tab) -> Opt
     agent_for_tab(identities, tab).map(|identity| identity.binary)
 }
 
+/// Whether `tab` is an agent's own: launched for one, or found running one.
+/// The launch stamp answers from the tab's first frame; the process name
+/// only once the server's probe has seen the harness, which on a slow
+/// machine is after a person has already opened a shell beside it — and a
+/// shell opened then must still belong to the agent, not to the space.
+fn is_agent_tab(identities: &[AgentIdentity], tab: &Tab) -> bool {
+    launched_agent_id(tab).is_some() || agent_identity_for_tab(identities, tab).is_some()
+}
+
 /// The harness running in `tab`, as [`agent_identity_for_tab`] recognizes
 /// it — the whole identity, for a caller that names it to a person.
 fn agent_for_tab<'a>(identities: &'a [AgentIdentity], tab: &Tab) -> Option<&'a AgentIdentity> {

@@ -1,0 +1,7 @@
+# A test that stops making progress fails by its own name instead of holding
+# the runner until the job's `timeout-minutes`: a pty deadlock on macOS once
+# sat for 34 minutes, cancelled with no verdict, and every push to `main`
+# behind it waited in the queue. The slowest test that passes takes about a
+# minute on a hosted Windows runner, so five periods is headroom, not a race.
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 5 }
