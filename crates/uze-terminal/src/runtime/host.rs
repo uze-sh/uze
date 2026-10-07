@@ -35,9 +35,7 @@ pub(super) fn foreground(leader: u32, group: Option<&Group>) -> Option<u32> {
 }
 
 fn passes_on(holder: &Member, child: &Member) -> bool {
-    super::process::PLAIN_SHELL_PROCESS_NAMES
-        .iter()
-        .any(|shell| holder.name.eq_ignore_ascii_case(shell))
+    crate::state::is_plain_shell(&holder.name)
         || holder.name.eq_ignore_ascii_case("uze")
         || super::pane::shim_launched(child.pid)
 }

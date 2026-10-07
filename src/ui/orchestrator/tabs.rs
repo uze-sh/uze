@@ -300,6 +300,19 @@ pub(super) fn is_generated_shell_label(label: &str) -> bool {
     label == "shell" || is_generated_label(label, "shell")
 }
 
+/// What the strip calls `tab`: the program in its foreground while a
+/// shell nobody named is running one — `cargo`, `nvim`, `htop` — the way a
+/// terminal titles a tab, and its own label otherwise. A shell at its
+/// prompt keeps `shell N`, since three tabs all reading `zsh` tell the
+/// person nothing; a label they typed is theirs and always stands.
+pub(super) fn strip_label(tab: &Tab) -> &str {
+    if is_generated_shell_label(&tab.label) && !tab.pane.runs_a_shell() {
+        tab.pane.process.trim()
+    } else {
+        &tab.label
+    }
+}
+
 pub(super) fn is_generated_label(label: &str, prefix: &str) -> bool {
     label
         .strip_prefix(prefix)

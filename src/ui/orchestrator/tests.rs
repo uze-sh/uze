@@ -53,8 +53,8 @@ mod workspace_tests {
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
         },
         scroll_timeline, scroll_tree, selected_agent_drawer, selected_pane_cwd,
-        space_context_agent, space_cwd, space_own_tab, strip_tabs, sync_slot_occupancy,
-        tab_drag_group, tab_drag_group_members, tab_needs_replacement_shell,
+        space_context_agent, space_cwd, space_own_tab, strip_label, strip_tabs,
+        sync_slot_occupancy, tab_drag_group, tab_drag_group_members, tab_needs_replacement_shell,
         toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
         workspace_has_active_agent_operation,
     };
@@ -11178,6 +11178,28 @@ mod workspace_tests {
                 .any(|request| matches!(request, ClientRequest::SelectSpace { .. })),
             "in the space rooted at its own project: {sent:?}"
         );
+    }
+
+    /// A shell nobody named reads as the program it is running, and as
+    /// itself again once that program returns to the prompt; a name the
+    /// person typed never moves.
+    #[test]
+    fn an_unnamed_shell_is_labelled_by_what_it_runs() {
+        let mut tab = agent_session().session.unwrap().workspace.spaces[0].tabs[0].clone();
+        tab.label = "shell 2".into();
+
+        tab.pane.process = "nvim".into();
+        assert_eq!(strip_label(&tab), "nvim");
+
+        tab.pane.process = "zsh".into();
+        assert_eq!(strip_label(&tab), "shell 2", "a prompt keeps the number");
+
+        tab.pane.process = "shell".into();
+        assert_eq!(strip_label(&tab), "shell 2", "an unprobed pane too");
+
+        tab.label = "server".into();
+        tab.pane.process = "cargo".into();
+        assert_eq!(strip_label(&tab), "server", "a typed name stands");
     }
 
     /// A message for an agent reaches the agent's own pane, never a shell

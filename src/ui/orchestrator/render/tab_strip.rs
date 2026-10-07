@@ -426,8 +426,9 @@ fn render_agent_tabs(
             // edits. A working agent's task carries a label of its own
             // (the prompt's slug, or the bare task identifier when it has
             // no prompt) — showing that here left the same agent reading
-            // as "engineer" in the sidebar and "gic3jz" up top.
-            None => vec![Span::styled(tab.label.clone(), label_style)],
+            // as "engineer" in the sidebar and "gic3jz" up top. A shell
+            // nobody named reads as what it runs (see `strip_label`).
+            None => vec![Span::styled(strip_label(tab).to_owned(), label_style)],
         };
         // An agent is never closed by a stray click — that stays a
         // right-click and a confirmation in the sidebar (see `ContextMenu`),
