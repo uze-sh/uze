@@ -4,6 +4,32 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.13](https://github.com/uze-sh/uze/compare/v1.0.0-beta.12...v1.0.0-beta.13) - 2026-10-07
+
+### Features
+
+- **theme:** Add an adaptive theme that follows the system color scheme ([#205](https://github.com/uze-sh/uze/pull/205)) ([3453abb](https://github.com/uze-sh/uze/commit/3453abb92f299300580c42e1f9bcc6727d5799aa))
+- **code:** Hide files.exclude patterns from the file tree ([#207](https://github.com/uze-sh/uze/pull/207)) ([3e7d65d](https://github.com/uze-sh/uze/commit/3e7d65d9ab94bd8cf3fc7b756148ca549662c4e9))
+- **highlight:** Vendor a PowerShell grammar for the code surface ([#209](https://github.com/uze-sh/uze/pull/209)) ([e289167](https://github.com/uze-sh/uze/commit/e28916736fe5c660513acd41f72a27c5909b20bd))
+- **workspace:** Render a generated shell tab label as its foreground process ([#210](https://github.com/uze-sh/uze/pull/210)) ([00124c9](https://github.com/uze-sh/uze/commit/00124c93cba5e21c6ab25ec181eb275720da960a))
+- **hooks:** Add exec-form handlers, transform and plugin requirements ([#204](https://github.com/uze-sh/uze/pull/204)) ([3aa314d](https://github.com/uze-sh/uze/commit/3aa314da67042cb94bf0062afa7d62745f7232e3))
+
+### Fixes
+
+- **setup:** Retry official installers that exit unsuccessfully ([#208](https://github.com/uze-sh/uze/pull/208)) ([c0261e9](https://github.com/uze-sh/uze/commit/c0261e9afa77446220d0c3dd9ff9dc8e46f18fd3))
+
+### Documentation
+
+- **openspec:** Propose project-rules and plugin-rules ([#203](https://github.com/uze-sh/uze/pull/203)) ([dcaad17](https://github.com/uze-sh/uze/commit/dcaad17aff7cb76abfc4a5c57f4ea06aa78a5a0a))
+
+### Tests
+
+- **platform:** Fix the stdio pty deadlock that hung Test (macos) ([#211](https://github.com/uze-sh/uze/pull/211)) ([6d8ab27](https://github.com/uze-sh/uze/commit/6d8ab279178d39af76d81755976832b7bc12ae56))
+
+### Other
+
+- **conformance:** Trim the Lab image's build context and duplicated layers ([#206](https://github.com/uze-sh/uze/pull/206)) ([134a9d2](https://github.com/uze-sh/uze/commit/134a9d2c8a4aaf3640108dff037f529898e94dd3))
+
 ## [1.0.0-beta.12](https://github.com/uze-sh/uze/compare/v1.0.0-beta.11...v1.0.0-beta.12) - 2026-10-06
 
 ### Features
