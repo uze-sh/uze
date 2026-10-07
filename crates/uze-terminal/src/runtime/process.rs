@@ -2,30 +2,6 @@
 
 use super::*;
 
-/// Common interactive-shell `comm` names, plus the server's own generic
-/// "shell" placeholder before a pane's first status probe resolves —
-/// recognized here purely to say "not worth trying to relaunch this by
-/// name", the same judgment call `orchestrator.rs`'s sidebar used to make
-/// with an identical list before agent classification took it over
-/// client-side. This one is unrelated to that: naming ordinary shells is
-/// general POSIX-adjacent knowledge, not the specific-harness knowledge
-/// `uze-core`'s vendor-neutrality rule is actually about, so it's fine for
-/// this crate to hold.
-pub(super) const PLAIN_SHELL_PROCESS_NAMES: [&str; 12] = [
-    "shell",
-    "zsh",
-    "bash",
-    "sh",
-    "dash",
-    "fish",
-    "ksh",
-    "tcsh",
-    "cmd",
-    "powershell",
-    "pwsh",
-    "nu",
-];
-
 /// A best-effort relaunch command for a pane that was spawned as a shell
 /// (see [`PaneRuntime::launch`]) but whose last-
 /// known foreground process isn't an ordinary shell — `Some([process])` to
@@ -47,10 +23,7 @@ pub(super) fn relaunch_command_for_process(process: &str) -> Option<Vec<String>>
     let trimmed = process.trim();
     if trimmed.is_empty()
         || trimmed.contains(['/', '\\', ':'])
-        // Windows names a process in whatever case its image was given.
-        || PLAIN_SHELL_PROCESS_NAMES
-            .iter()
-            .any(|shell| shell.eq_ignore_ascii_case(trimmed))
+        || crate::state::is_plain_shell(trimmed)
     {
         return None;
     }

@@ -126,6 +126,43 @@ pub struct Pane {
     pub through_launcher: bool,
 }
 
+impl Pane {
+    /// Whether the foreground is the pane's shell itself, waiting at a
+    /// prompt, rather than a program it is running — the question a client
+    /// asks before naming a tab after what runs in it.
+    pub fn runs_a_shell(&self) -> bool {
+        self.process.trim().is_empty() || is_plain_shell(&self.process)
+    }
+}
+
+/// Common interactive-shell `comm` names, plus the server's own generic
+/// "shell" placeholder before a pane's first status probe resolves. Naming
+/// ordinary shells is general POSIX-adjacent knowledge, not the
+/// specific-harness knowledge `uze-core`'s vendor-neutrality rule is about,
+/// so it's fine for this crate to hold.
+const PLAIN_SHELL_PROCESS_NAMES: [&str; 12] = [
+    "shell",
+    "zsh",
+    "bash",
+    "sh",
+    "dash",
+    "fish",
+    "ksh",
+    "tcsh",
+    "cmd",
+    "powershell",
+    "pwsh",
+    "nu",
+];
+
+/// Whether `name` is an ordinary interactive shell. Windows names a process
+/// in whatever case its image was given.
+pub(crate) fn is_plain_shell(name: &str) -> bool {
+    PLAIN_SHELL_PROCESS_NAMES
+        .iter()
+        .any(|shell| shell.eq_ignore_ascii_case(name))
+}
+
 /// What [`Session::open_space`] found or did — the caller only has a pane
 /// to spawn when a space was actually created.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
