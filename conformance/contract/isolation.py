@@ -23,29 +23,35 @@ from shared.common import check, describe, observed_markers, provider_struct
 PROJECT = "/work/project"
 SLOT = f"{PROJECT}/.worktrees/t0lab"
 
-#: A phrase only the projected declaration carries.
+#: A phrase only the projected declaration carries
+#: (`uze-workspace`'s `WorktreePolicy::instructions`).
 DECLARATION_MARKER = "already isolated"
 #: A sentinel only the typed message carries.
 MESSAGE_MARKER = "UZE_CONFORMANCE_REBASE"
 
-#: The declaration `uze agent context reconcile` projects for a `worktrees`
-#: policy, committed into the fixture repository so the slot's checkout
-#: carries it the way a real project's would. Kept in step with
-#: `WorktreePolicy::instructions` by the deterministic suite, not by this
-#: copy: this only has to contain the phrase the check looks for.
-DECLARATION = """## Concurrent work isolation
 
-- An agent UZE isolated works in a checkout of its own under `.worktrees/<id>`, on branch `agent/<id>`. If your working directory is inside `.worktrees/`, you are already isolated; do not switch branches.
-- If your working directory is not inside `.worktrees/`, you are in the operator's own checkout, on the branch they are on: commit there, as you go, and never switch, reset, stash or clean it — the operator's uncommitted work is theirs. Nothing below about delivery applies to you; the branch already has the name it will keep.
-- Commit your work on your own branch, as you go. Never commit to, merge into, rebase, or reset the target branch: delivery is UZE's.
-- If UZE tells you a rebase is paused in your checkout, resolve the conflicts preserving the intent of your change, run `git rebase --continue`, run the project's checks, and end your turn.
+#: The workspace's section of `AGENTS.md`, laid down by hand like the slot:
+#: the workspace projects it when it opens and places an agent, never the
+#: package manager (`worktree-policy`: "The package manager leaves the
+#: region alone"), and the deterministic suite holds the projection —
+#: `uze-workspace`'s `the_projected_text_never_asks_for_a_top_level_worktree`
+#: pins the phrase the check looks for. What only a harness can answer is
+#: whether it reads that region from inside the slot.
+DECLARATION = f"""<!-- uze:begin project:worktree-policy/lab -->
+## Concurrent work isolation
+
+- An agent UZE isolated works in a checkout of its own under `.worktrees/<id>`, on branch `agent/<id>`. If your working directory is inside `.worktrees/`, you are {DECLARATION_MARKER}; do not switch branches.
+<!-- uze:end project:worktree-policy/lab -->
 """
 
 
 def prelude():
     """The shell that lays the scene down before the harness starts: a
-    repository with the declaration committed, bridged for every harness
-    that reads its own file name, and one slot to start the harness in."""
+    project as a person has it — an `AGENTS.md` carrying the workspace's
+    section, and an `agents.yaml` declaring the workspace's policy — made
+    ready by `uze install`, which projects whatever bridge each harness
+    needs; then one slot to start the harness in. No bridge is written by
+    hand: a scene that did measured the Lab's file, not UZE's projection."""
     return f"""
 mkdir -p {PROJECT} && cd {PROJECT}
 git init -q -b main .
@@ -54,13 +60,10 @@ git config user.email lab@uze.invalid
 cat > AGENTS.md <<'UZE_EOF'
 # Lab project
 
-<!-- uze:begin project:worktree-policy/lab -->
-{DECLARATION}<!-- uze:end project:worktree-policy/lab -->
-UZE_EOF
-printf '@AGENTS.md\\n' > CLAUDE.md
-printf '@AGENTS.md\\n' > GEMINI.md
-printf 'worktrees:\\n  completion: handoff\\n' > agents.yaml
-git add . && git commit -q -m init
+{DECLARATION}UZE_EOF
+printf 'workspace:\\n  delivery: merge\\n' > agents.yaml
+uze install >/work/isolation-install.log 2>&1 || true
+git add -A && git commit -q -m init
 git worktree add -q -b agent/t0lab .worktrees/t0lab HEAD
 printf '/.worktrees/\\n' >> .git/info/exclude
 """

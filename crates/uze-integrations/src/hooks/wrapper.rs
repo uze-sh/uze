@@ -37,7 +37,14 @@ pub(crate) struct PayloadPaths {
     pub(crate) input: &'static str,
     /// The workspace directory.
     pub(crate) cwd: &'static str,
+    /// How a session began when the harness's session-start payload does
+    /// not say: a harness that announces only a new session implies it.
+    pub(crate) implied_source: Option<&'static str>,
 }
+
+/// The most a `transform` handler may write as the rewritten input; past
+/// it the handler has failed, and the group closes.
+pub(crate) const TRANSFORM_OUTPUT_LIMIT: usize = 64 * 1024;
 
 /// What the wrapper writes on stdout to deny, and when nothing is denied, in
 /// one template's language.
@@ -45,6 +52,11 @@ pub(crate) struct PayloadPaths {
 pub(crate) struct Decisions {
     pub(crate) deny: &'static str,
     pub(crate) allow: &'static str,
+    /// The harness's document for a call a `transform` group rewrote, read
+    /// from the rewritten input as JSON (`$updated_json` in `sh`,
+    /// `$updatedJson` in PowerShell); `None` where the harness takes no
+    /// rewritten input, which keeps `transform` from being claimed there.
+    pub(crate) transform: Option<&'static str>,
     /// What the harness never fires an event for under this template's
     /// platform.
     pub(crate) unfired: &'static [Unfired],
@@ -106,6 +118,26 @@ pub(crate) fn wrapper_source(target: HookTarget) -> Option<String> {
     match shell::FAMILY {
         Family::Posix => PosixWrapper::source(target),
         Family::PowerShell => PowerShellWrapper::source(target),
+    }
+}
+
+/// Whether this platform's wrapper can hand the harness a rewritten input.
+pub(crate) fn transforms_here(target: HookTarget) -> bool {
+    target.dialect().is_some_and(|dialect| match shell::FAMILY {
+        Family::Posix => dialect.posix.transform.is_some(),
+        Family::PowerShell => dialect
+            .powershell
+            .is_some_and(|decisions| decisions.transform.is_some()),
+    })
+}
+
+/// The system programs this platform's wrapper runs beside the shell: the
+/// `sh` wrapper reads the harness's payload with `jq`; the PowerShell one
+/// uses the .NET reader every Windows carries.
+pub(crate) fn dependencies_here() -> &'static [&'static str] {
+    match shell::FAMILY {
+        Family::Posix => &[uze_core::hook::WRAPPER_DEPENDENCY],
+        Family::PowerShell => &[],
     }
 }
 
@@ -238,10 +270,10 @@ pub(super) fn entry_is_attached(
 /// generation time, so the native entry reads as what will run.
 pub(crate) fn wrapper_arguments(
     hook: &PortableHook,
-    package_root: &Path,
+    store_root: &Path,
     handlers: &[CommandHook],
 ) -> Vec<String> {
-    let package_root = &crate::shared::package_root::delivered(package_root);
+    let package_root = &crate::shared::package_root::delivered(store_root);
     let mut arguments = vec![
         package_root.display().to_string(),
         hook.event.abi_name().to_owned(),
@@ -251,11 +283,7 @@ pub(crate) fn wrapper_arguments(
         arguments.push(format!(
             "{}:{}",
             handler.timeout,
-            handler
-                .command
-                .here()
-                .unwrap_or_default()
-                .replace("${PLUGIN_ROOT}", &package_root.display().to_string())
+            super::handler_line(handler, store_root, package_root)
         ));
     }
     arguments

@@ -25,6 +25,14 @@ impl Plugins<'_> {
             .collect()
     }
 
+    /// Every requirement of the installed plugin named `id`, met or not,
+    /// checked against this machine now.
+    #[tracing::instrument(name = "plugins.requirements", skip_all, fields(id = %id), err)]
+    pub fn requirements(&self, id: &str) -> Result<super::PackageRequirements> {
+        let package = self.0.package_by_name(id)?;
+        self.0.requirement_check().of(&package)
+    }
+
     #[tracing::instrument(name = "plugins.inspect", skip_all, fields(id = %id), err)]
     pub fn inspect(&self, id: &str) -> Result<PluginInspection> {
         self.inspect_on(id, None)
@@ -84,6 +92,7 @@ impl Plugins<'_> {
             deliveries,
             managed_state: managed_state(&reconciliation),
             reconciliation,
+            held_back: super::doctor::held_back_notes(self.0, Some(package.id.as_str())),
         })
     }
 }
@@ -115,6 +124,9 @@ pub struct PluginSummary {
     /// Every harness the package is installed for and could not be
     /// delivered to. Empty for a package every harness received.
     pub undelivered: Vec<UndeliveredHarness>,
+    /// What the package needs from the machine and the machine lacks, each
+    /// with the command that installs it. Empty when nothing is missing.
+    pub requirement_gaps: Vec<super::RequirementLine>,
 }
 
 /// One harness a package stayed installed without reaching, and the error
@@ -418,6 +430,8 @@ pub struct PluginInspection {
     pub deliveries: Vec<HarnessDelivery>,
     pub managed_state: ManagedStateSummary,
     pub reconciliation: ReconciliationReport,
+    /// See [`StatusReport::held_back`]; this package's alone.
+    pub held_back: Vec<HeldBackNote>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -526,6 +540,9 @@ pub struct AddPluginReport {
     pub declared: bool,
     /// One entry per detected harness, in the registry's order.
     pub deliveries: Vec<HarnessDeliveryReport>,
+    /// What a harness holds back of this delivery until the person acts in
+    /// it — said at install, the moment the person is there to act.
+    pub held_back: Vec<HeldBackNote>,
 }
 
 impl AddPluginReport {
@@ -988,6 +1005,20 @@ pub struct StatusReport {
     /// `agent context inspect` — this is the "does anything need my
     /// attention" view.
     pub issues: Vec<String>,
+    /// What a harness holds back of what UZE delivered until the person
+    /// acts in it, with the action. Not an issue of the project's: the
+    /// delivery is in place, and only the person can let the harness use it.
+    pub held_back: Vec<HeldBackNote>,
+}
+
+/// One delivered capability a harness holds back until the person acts in
+/// it — a hook awaiting the harness's review.
+#[derive(Clone, Debug, Serialize)]
+pub struct HeldBackNote {
+    pub harness: String,
+    pub plugin: String,
+    pub capability: String,
+    pub action: String,
 }
 
 /// The machine read model `uze status` answers with when there is no
@@ -996,6 +1027,8 @@ pub struct StatusReport {
 #[derive(Clone, Debug, Serialize)]
 pub struct MachineStatusReport {
     pub packages: Vec<PluginSummary>,
+    /// See [`StatusReport::held_back`].
+    pub held_back: Vec<HeldBackNote>,
 }
 
 /// Drift along the chain a project's environment passes through:
@@ -1138,6 +1171,9 @@ pub enum DeliveryFindingKind {
     Unhealthy,
     /// In place, and the harness would still not load it.
     Unreadable,
+    /// In place, and the harness holds it back until the operator acts in
+    /// it: the detail is the action.
+    HeldBack,
 }
 
 /// Per-(hook group, harness) diagnostic row in the doctor report. `weakened`

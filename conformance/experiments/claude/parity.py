@@ -171,6 +171,7 @@ cd /work && mkdir -p proj && cd proj
 set +e
 {INVENTORY if inventory else ""}
 echo '=== turn'
+# decision: headless-permissions
 timeout 150 claude -p {json.dumps(prompt)} --permission-mode bypassPermissions --output-format json 2>&1
 echo "=== turn-exit $?"
 echo '=== markers'
@@ -323,9 +324,44 @@ def run(cfg, prov_ip):
     for form in [form for form in FORMS if form != "native" and "native" in FORMS]:
         for name, native, delivered in compare(report, form):
             check = f"parity-{name}" if form == "uze" else f"parity-{form}-{name}"
+            # Agreement is evidence only when the native side was observed:
+            # two sessions that both saw nothing agree perfectly, and that is
+            # how a broken probe read as parity.
+            proven = native_observed(report, FACT_PROBES[name])
             common.check(
-                check, native == delivered, f"native: {native} | {form}: {delivered}"
+                check,
+                proven and native == delivered,
+                f"native: {native} | {form}: {delivered}"
+                if proven
+                else f"the native session observed nothing on `{FACT_PROBES[name]}` "
+                f"({report['native'].get(FACT_PROBES[name], {}).get('skipped', 'no requests')})",
             )
+
+
+#: The probe each fact is read from (`observed`).
+FACT_PROBES = {
+    "skill-listed-probe": "listing",
+    "skill-listed-hidden": "listing",
+    "skill-body": "skill",
+    "skill-root-placeholder": "skill",
+    "skill-user-only-refused": "manual",
+    "skill-model-only-body": "hidden",
+    "agent-qualified": "agent",
+    "agent-bare-name": "agent-bare",
+    "agent-nested-qualified": "agent-nested",
+    "agent-frontmatter-name": "agent-renamed",
+    "mcp-tool-names": "listing",
+    "mcp-call": "mcp",
+    "hook-pre-tool-deny": "deny",
+    "hook-post-tool": "plain",
+    "hook-session-start": "listing",
+    "cache-complete": "listing",
+}
+
+
+def native_observed(report, probe):
+    """Whether the native session ran `probe` and its harness made a request."""
+    return bool(report["native"].get(probe, {}).get("requests"))
 
 
 def observed(report):

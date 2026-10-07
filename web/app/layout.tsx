@@ -52,7 +52,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html
       lang="en"
-      className={`${plexSans.variable} ${plexMono.variable} scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent scrollbar-thumb-rounded-full`}
+      className={`${plexSans.variable} ${plexMono.variable} scrollbar-thin scrollbar-thumb-scrollbar scrollbar-track-transparent scrollbar-thumb-rounded-full`}
       suppressHydrationWarning
     >
       <body className="flex flex-col min-h-screen font-sans">

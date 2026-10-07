@@ -292,25 +292,27 @@ pub(super) fn codex_exact_coverage(
     package: &StoredPackage,
     resources: &[&uze_core::capability::Resource],
 ) -> std::collections::BTreeSet<String> {
-    let manifest_path = package.root.join(".codex-plugin/plugin.json");
-    let bytes = match fs::read(&manifest_path) {
-        Ok(bytes) => bytes,
-        Err(_) => return std::collections::BTreeSet::new(),
-    };
-    let value: serde_json::Value = match uze_core::authored::json(&bytes) {
-        Ok(value) => value,
-        Err(_) => return std::collections::BTreeSet::new(),
+    let (declared_skills_dir, mcp_file) = match manifest_codex_reads(&package.root) {
+        // An Agent Plugins manifest fixes both roots: the skills under
+        // `./skills`, the servers in `./mcp.json`.
+        Some(CodexManifest::AgentPlugins) => (
+            Some(PathBuf::from("skills")),
+            Some(PathBuf::from("mcp.json")),
+        ),
+        Some(CodexManifest::CodexPlugin(value)) => (
+            value
+                .get("skills")
+                .and_then(serde_json::Value::as_str)
+                .and_then(normalize_declared_relative_path),
+            value
+                .get("mcpServers")
+                .and_then(serde_json::Value::as_str)
+                .and_then(normalize_declared_relative_path),
+        ),
+        None => return std::collections::BTreeSet::new(),
     };
 
-    let declared_skills_dir = value
-        .get("skills")
-        .and_then(serde_json::Value::as_str)
-        .and_then(normalize_declared_relative_path);
-
-    let declared_mcp: std::collections::BTreeSet<String> = value
-        .get("mcpServers")
-        .and_then(serde_json::Value::as_str)
-        .and_then(normalize_declared_relative_path)
+    let declared_mcp: std::collections::BTreeSet<String> = mcp_file
         .and_then(|relative| fs::read(package.root.join(relative)).ok())
         .and_then(|bytes| uze_core::authored::json::<serde_json::Value>(&bytes).ok())
         .and_then(|document| {
@@ -356,6 +358,40 @@ pub(super) fn codex_exact_coverage(
         }
     }
     provided
+}
+
+/// The manifest Codex reads for a plugin tree, by Codex's own precedence
+/// (codex-rs `utils/plugins/src/plugin_namespace.rs`
+/// `find_plugin_manifest_path`, 0.147.0 onwards): a root `plugin.json`
+/// declaring the Agent Plugins schema first — whose skills and MCP roots
+/// are fixed at `./skills` and `./mcp.json`, `.codex-plugin/plugin.json`
+/// then only overlaying apps, hooks and the interface — and
+/// `.codex-plugin/plugin.json` otherwise. Coverage and the mirror both read
+/// from this, so what UZE counts as delivered by the plugin is what Codex
+/// loads from it.
+pub(super) fn manifest_codex_reads(root: &Path) -> Option<CodexManifest> {
+    let read = |path: PathBuf| {
+        fs::read(path)
+            .ok()
+            .and_then(|bytes| uze_core::authored::json::<serde_json::Value>(&bytes).ok())
+    };
+    if read(root.join("plugin.json")).is_some_and(|manifest| {
+        manifest
+            .get("$schema")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|schema| schema.contains("agent-plugins.org"))
+    }) {
+        return Some(CodexManifest::AgentPlugins);
+    }
+    read(root.join(".codex-plugin/plugin.json")).map(CodexManifest::CodexPlugin)
+}
+
+/// Which manifest Codex reads (`manifest_codex_reads`).
+pub(super) enum CodexManifest {
+    /// A root `plugin.json` declaring the Agent Plugins schema.
+    AgentPlugins,
+    /// `.codex-plugin/plugin.json`, parsed.
+    CodexPlugin(serde_json::Value),
 }
 
 /// Whether the author's own bytes already carry Codex's encoding of the
@@ -835,5 +871,40 @@ mod codex_native_coverage_tests {
             ));
         }
         let _ = fs::remove_dir_all(_root);
+    }
+
+    /// Codex reads a root Agent Plugins manifest before the package's own
+    /// `.codex-plugin/plugin.json` (0.147.0 onwards), and loads the servers
+    /// in `./mcp.json` from it whatever the `.codex-plugin` manifest says.
+    /// Counting coverage from `.codex-plugin` left such a server to be
+    /// registered a second time through the vendor CLI.
+    #[test]
+    fn a_root_agent_plugins_manifest_is_the_one_codex_reads() {
+        let (root, pkg) = make_package("agent-plugins-precedence", None, None, None);
+        fs::write(
+            pkg.root.join("plugin.json"),
+            r#"{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"test-pkg"}"#,
+        )
+        .unwrap();
+        fs::write(
+            pkg.root.join("mcp.json"),
+            r#"{"mcpServers":{"probe":{"command":"node"}}}"#,
+        )
+        .unwrap();
+        let skill = skill_resource(&pkg, "skills", "audit");
+        let server = mcp_resource(&pkg, "probe");
+        let provided = codex_exact_coverage(&pkg, &[&skill, &server]);
+        assert!(
+            provided.contains(&server.identity()),
+            "the server Codex loads from the root manifest is the plugin's: {provided:?}"
+        );
+        assert!(
+            matches!(
+                super::manifest_codex_reads(&pkg.root),
+                Some(super::CodexManifest::AgentPlugins)
+            ),
+            "the schema'd root manifest wins over .codex-plugin"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }

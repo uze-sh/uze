@@ -37,8 +37,8 @@ binary is removed.
   `startup`, `resume`, `clear`, or several joined by `|`. Omitting it
   matches all three.
 - **Effect**: `observe` (default), `allow`, `ask`, `deny`, or `transform`.
-  `transform` is only valid on `PreToolUse`, and is not deliverable today
-  (see [Known limitations](#known-limitations)). `SessionStart` takes
+  `transform` is only valid on `PreToolUse`, and rewrites the call before
+  it runs (see [Rewriting a call](#rewriting-a-call)). `SessionStart` takes
   `observe` only: a session has nothing to allow or deny, and a manifest
   declaring any other effect there is refused at `uze agent plugin check`
   and at install, naming the group.
@@ -58,12 +58,32 @@ binary is removed.
 Malformed, duplicate, or unsafe declarations are rejected before any
 attachment; nothing is projected silently.
 
-> **Commands are shell command lines.** A handler's `command` is executed
-> as a user would type it — `${PLUGIN_ROOT}/scripts/check` therefore
-> requires the script to be executable, or the command must say so
-> (`sh ${PLUGIN_ROOT}/scripts/check`). A non-executable script fails the
-> handler and follows the declared effect's fail-open/fail-closed rule — a
-> `deny` hook that cannot run denies.
+### Two ways to name a handler
+
+- **Exec form**: `command` plus `args` (a list, possibly empty). `command`
+  is then the path of a script inside the package, relative to its root,
+  and each word of `args` reaches it as written: nothing between the
+  manifest and the script reads them as shell, so the author never quotes
+  and `${PLUGIN_ROOT}` is not needed. UZE chooses the program that starts
+  the script when it delivers the hook (`uze_core::launcher`): on POSIX an
+  executable file starts itself, so its shebang decides; otherwise, and on
+  Windows, the extension picks from a fixed table (`.py`, `.js`/`.mjs`/
+  `.cjs`, `.ps1`, `.sh`, `.exe`), and on Windows the Python is the one that
+  answers `--version` (`py -3`, `python`, `python3`), never a Store alias.
+  `interpreter`, a list of words, replaces the table for one handler. On
+  OpenCode a JavaScript or TypeScript script runs in OpenCode's own Bun.
+  The program the launcher needs joins the package's requirements,
+  attributed to the hook, so `uze install`, `uze status -m` and
+  `uze doctor` name it when it is missing.
+  A script no launcher can start on a platform is treated there like a
+  line with no spelling for it.
+- **Shell line**: `command` alone, one POSIX line or a `posix`/`windows`
+  pair, executed as a user would type it. `${PLUGIN_ROOT}/scripts/check`
+  therefore requires the script to be executable, or the line must say so
+  (`sh ${PLUGIN_ROOT}/scripts/check`).
+
+A handler that cannot start fails and follows the declared effect's
+fail-open/fail-closed rule: a `deny` hook that cannot run denies.
 
 ## Handler contract
 
@@ -76,7 +96,7 @@ exit code. It never parses a harness payload and never writes harness JSON.
 | `HOOK_EVENT` | `pre_tool_use` \| `post_tool_use` \| `stop` \| `session_start` |
 | `HOOK_SOURCE` | `session_start` only: `startup`, `resume` or `clear`, when the harness reports it; empty otherwise |
 | `HOOK_TOOL` | the portable alias that matched; empty for a tool the vocabulary does not bind, and on `stop` and `session_start`, which carry no tool |
-| `HOOK_TOOL_NATIVE` | the harness's own tool name (`Bash`, `exec_command`, `run_command`, `bash`) |
+| `HOOK_TOOL_NATIVE` | the harness's own tool name, as its hook system reports it (`Bash`, `run_command`, `shell`) |
 | `HOOK_CWD` | the workspace directory; may be empty |
 | `HOOK_INPUT` | the tool input, as JSON, for anything the alias does not name |
 | `PLUGIN_ROOT` | the package root the handler was delivered from |
@@ -91,6 +111,25 @@ exit code. It never parses a harness payload and never writes harness JSON.
 Only the first 4096 bytes of a handler's stderr become the reason; a handler
 that writes megabytes is still a decision, not a document the harness has to
 parse.
+
+### Rewriting a call
+
+A handler in a `transform` group answers the same way, plus one thing: on
+exit `0` it may write the call's **complete** input to stdout, as one JSON
+object in the harness's own shape: what it read from `HOOK_INPUT`, changed.
+Nothing on stdout leaves the input as it was. The handlers of the group run
+in order, and each one reads the rewrite before it as its `HOOK_INPUT` (and
+its portable fields); the last rewrite is what the tool runs. Stdout that is
+not one JSON object, or that is longer than 64 KiB, is a handler failure.
+The input is the harness's own because a rewrite in portable terms could not
+be mapped back: a portable `command` is `command` on one harness and
+`CommandLine` on another.
+
+```sh
+#!/bin/sh
+# Every `rm -rf` the model asks for becomes a dry run.
+printf '%s' "$HOOK_INPUT" | jq -c 'walk(if type == "string" then sub("rm -rf "; "echo would remove ") else . end)'
+```
 
 A handler failure is **fail-open** for `observe`/`allow` (the tool proceeds
 and the failure is reported) and **fail-closed** for `deny`/`ask`/`transform`
@@ -141,28 +180,42 @@ compatibility verdicts.
 
 | Alias | Fields | Claude Code | Codex | Antigravity CLI | OpenCode |
 |---|---|---|---|---|---|
-| `shell` | `HOOK_COMMAND` | `Bash` / `command` | `exec_command` / `cmd` | `run_command` / `CommandLine` | `bash` / `command` |
-| `file.read` | `HOOK_PATH` | `Read` / `file_path` | `Read` / `file_path` | `view_file` / `AbsolutePath` | `read` / `filePath` |
-| `file.write` | `HOOK_PATH` | `Write` / `file_path` | `Write` / `file_path` | `write_to_file` / `TargetFile` | `write` / `filePath` |
-| `file.edit` | `HOOK_PATH` | `MultiEdit`, `Edit` / `file_path` | `Edit` / `file_path` | `replace_file_content` / `TargetFile` | `edit` / `filePath` |
-| `search.files` | `HOOK_QUERY` | `Grep` / `pattern` | `Grep` / `pattern` | `grep_search` / `Query` | `grep` / `pattern` |
-| `search.web` | `HOOK_QUERY` | `WebSearch` / `query` | `WebSearch` / `query` | `search_web` / `query` | `web_search` / `query` |
-| `agent.spawn` | — | `Task` | — | — | `task` |
-| `agent.message` | — | — | — | — | — |
+| `shell` | `HOOK_COMMAND` | `Bash` / `command` | `Bash` / `command` | `run_command` / `CommandLine` | `shell` / `command` |
+| `file.read` | `HOOK_PATH` | `Read` / `file_path` | — | `view_file` / `AbsolutePath` | `read` / `path` |
+| `file.write` | `HOOK_PATH` | `Write` / `file_path` | — ¹ | `write_to_file` / `TargetFile` | `write` / `path` |
+| `file.edit` | `HOOK_PATH` | `Edit` / `file_path` | — ¹ | `replace_file_content` / `TargetFile` | `edit` / `path` |
+| `search.files` | `HOOK_QUERY` | `Grep` / `pattern` ² | — | — | `grep` / `pattern` |
+| `search.web` | `HOOK_QUERY` | `WebSearch` / `query` | — | `search_web` / `query` | `websearch` / `query` |
+| `agent.spawn` | — | `Agent` | `collaborationspawn_agent` | — ³ | `subagent` |
+| `agent.message` | — | — | `collaborationsend_message` | `send_message` | — |
 
-Antigravity's and Codex's names come from the schemas those harnesses
-declare to the model, captured with the Lab's `--discovery` mode. A
+Every name is measured, never recalled: it is the name and the input
+field a real call reached a hook with, recorded by the Conformance Lab's
+census (`conformance/evidence/tools/<harness>.json`, Claude Code 2.1.290,
+codex-cli 0.160.1, Antigravity 1.2.17, OpenCode 2.0.23), and
+`cargo test` fails on a table entry a later census contradicts. A
 `native:<tool>` matcher bypasses the table entirely: the handler receives
-`HOOK_TOOL_NATIVE` and `HOOK_INPUT`, with `HOOK_TOOL` empty.
+`HOOK_TOOL_NATIVE` and `HOOK_INPUT`, with `HOOK_TOOL` empty. A group whose
+matchers name only aliases a harness has no tool for is reported
+unsupported there and not delivered.
+
+1. Codex writes and edits files through `apply_patch`, which reaches a hook
+   with the whole patch in `command` and no path field, so neither alias
+   can carry `HOOK_PATH`; a guard on patches matches `native:apply_patch`.
+2. Claude Code's native build searches through `Bash` and offers `Grep` to
+   the main model only on opt-in (`--allowedTools`/`--tools`) or to a
+   subagent whose tools name it.
+3. Antigravity offers `invoke_subagent` only to an agent whose definition
+   lists it.
 
 ## Delivery per harness
 
 | Harness | Delivered artifact | Route |
 |---|---|---|
 | Claude Code | one merged entry per group in `~/.claude/settings.json`, `command` = the generated `hooks/exec` with the group's arguments (exec form: no shell parsing) | native |
-| Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native |
-| Antigravity CLI | one named entry per group merged into the shared `~/.gemini/config/hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` — whose command is the shared `hooks/exec` wrapper by absolute path | native (shared vendor file); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures both the vendor's execution gate (`hooks > vendor`) and whether the harness loads what UZE delivered (`hooks > delivery`) live, every run |
-| OpenCode | one generated plugin module (the definition as its default export, no import), `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted (`observe`/`allow` only; `deny`/`ask` unsupported, `Stop` and `SessionStart` never claimed) |
+| Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native; held back until the person trusts it — Codex runs a hook from `hooks.json` only once its review recorded a hash for it (a TUI session asks; `codex exec` skips it in silence), and asks again after a change. `uze status`, `uze inspect`, `uze doctor` and the install report name every hook waiting on that review, read from Codex's own record and never written to it |
+| Antigravity CLI | one named entry per group merged into the shared `~/.gemini/config/hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` and `SessionStart` — whose command is the shared `hooks/exec` wrapper by absolute path | native (shared vendor file); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
+| OpenCode | one generated plugin module (the definition as its default export, no import), `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted: every event and effect rides OpenCode's own plugin API (tool hooks, `permission.evaluate`, the `session.created` and `session.execution.succeeded` bus events); `SessionStart` reports `startup` only |
 
 The `sh` wrapper is one file per harness, byte-identical for every package,
 and depends on `sh` and `jq`. Claude, Codex and Antigravity each keep one
@@ -199,10 +252,16 @@ callback, and a `SessionStart` hook is never a per-turn callback. The group
 is reported Unsupported on that harness with the reason stated (in `uze
 doctor`, one row per group and harness), and it is not attached; the
 package's other groups are delivered there as usual, and the manifest is
-not refused for it. `deny`/`ask` are Unsupported on OpenCode V2
-— its tool hooks see the input but cannot block, and its only decision point
-(`permission.evaluate`) carries the action's resources rather than the tool
-input — so they are never fabricated.
+not refused for it. A `SessionStart` group that waits only for a start the
+harness never announces (a resume or a clear, on a harness that announces
+only a new session) is reported Unsupported the same way.
+
+On OpenCode V2 the decisions ride two halves of its plugin API: the tool
+hook sees the input but cannot refuse, and `permission.evaluate` can refuse
+or ask but carries no input, so the bridge keeps the input by call id
+between the two. Its permission prompt shows the call and not the request's
+message, so a handler's reason for asking is not on screen there (the
+reason for a denial reaches the model as on every harness).
 
 ## Compatibility matrix
 
@@ -214,18 +273,18 @@ stated) · **—** = not expressible.
 |---|---|---|---|---|
 | wrapper runtime | `sh` + `jq` | `sh` + `jq` | `sh` + `jq` | Bun (embedded) |
 | plugin root | absolute path | absolute path | absolute path (cwd is the `hooks.json` directory) | `import.meta.url` |
-| exec form (no shell parsing) | yes (`command` + `args`) | no (shell line) | no (shell line) | n/a |
+| native entry in exec form (no shell parsing) | yes (`command` + `args`) | no (shell line) | no (shell line) | n/a |
 | matcher | native, regex on the tool name | native | native, regex (`"*"` matches all) | in-plugin |
 | a group's handlers | run **in parallel** natively → sequential inside `exec` | sequential inside `exec` | sequential inside `exec` | sequential inside the plugin |
 | `PreToolUse` observe/allow | native | native | native (signed-in session) | native (`execute.before`) |
-| `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`, signed-in session) | — |
-| `PreToolUse` ask | native (`permissionDecision: ask`) | rendered as a denial | native (signed-in session) | — |
-| `PreToolUse` transform | — (needs a stdout convention) | — | — | — |
-| `PostToolUse` | native, observe only | native, observe only | native (`{}`), signed-in session | native (`execute.after`) |
-| `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native, signed-in session | — |
-| `SessionStart` (observe) | native, matcher on the source | native, matcher on the source (a hook is reviewed before it runs) | — (no session-start event; `PreInvocation` fires every turn and is not used) | — (the plugin event stream carries no `session.created` for a new session, 2.0.18) |
+| `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`, signed-in session) | native (`permission.evaluate` → `deny`, input kept from `execute.before`) |
+| `PreToolUse` ask | native (`permissionDecision: ask`; the prompt shows the reason) | — (0.160.1 rejects `permissionDecision: ask` in `PreToolUse`, and its `PermissionRequest` hook takes `allow`/`deny` only: codex-rs `hooks/src/engine/output_parser.rs`) | native (`decision: ask`, signed-in session) | native (`permission.evaluate` → `ask`; the prompt does not show the reason) |
+| `PreToolUse` transform | native (`allow` + `updatedInput`) | native (`allow` + `updatedInput`, `hookEventName` required; only `command` is read for a shell call) | native (`allow` + `overwrite`, a hook result field the docs do not list, measured every run) | native (`execute.before`'s input reassigned, as OpenCode's own input repair does; a failed rewrite is refused at `permission.evaluate`) |
+| `PostToolUse` | native, observe only | native, observe only | native (`{}`), signed-in session | native (`execute.after`; a denial reaches the model as synthetic input) |
+| `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native, signed-in session | native (`session.execution.succeeded`; a denial continues the session with synthetic input, as OpenCode's own plan plugin does) |
+| `SessionStart` (observe) | native, matcher on the source | native, matcher on the source (a hook is reviewed before it runs) | native through the undocumented `SessionStart` key (flat; once per new conversation, at its first model call; `startup` only — a `--continue` announces nothing), measured every run | native (`session.created` of a top-level session; `startup` only — a resumed session announces nothing) |
 | a denial's exit status | 2 (the documented block signal) | 2 | **0** — the decision is the stdout document, and any non-zero exit is logged as a *failed* hook | n/a |
-| fail-closed on handler failure | via `exec` (natively, exit ≠ 2 **runs the tool**) | via `exec` | via `exec` | via the plugin |
+| fail-closed on handler failure | via `exec` (natively, exit ≠ 2 **runs the tool**) | via `exec` | via `exec` | via the plugin (`permission.evaluate`) |
 | handler context | `HOOK_*` environment | `HOOK_*` environment | `HOOK_*` environment | `HOOK_*` environment |
 
 ### Session start
@@ -261,28 +320,30 @@ runs exactly once for a new headless session, with `HOOK_SOURCE=startup`.
   migrated in place, and a receipt-owned entry from a previous release is
   replaced, never duplicated.
 - `uze inspect <plugin>` lists hooks with their per-harness delivery;
-  `uze doctor` reports attachment health, the route each hook took, and a
-  delivered wrapper whose `jq` is missing; the TUI harness matrix shows the
-  per-harness verdict.
+  `uze doctor` reports attachment health, the route each hook took, and
+  every requirement a delivered hook is missing (the wrapper's `jq` among
+  them); the TUI harness matrix shows the per-harness verdict.
 
 ## Known limitations
 
-- **`transform` is not deliverable.** Rewriting the tool input needs a
-  channel for the handler to answer on, which an exit code is not. A
-  `transform` group is degraded on every harness — stated, never a silent
-  claim — until its own change defines that channel. Delivered degraded, it
-  is fail-closed like `deny`/`ask`: a rewrite that did not happen must not
-  let the original input through as if it had.
-- **`jq` is the shell wrapper's dependency.** It is not declarable by a
-  package yet (plugin `requirements` is its own change); `uze doctor`
-  reports it missing, and until it is installed a `deny` group denies while
-  an `observe` group proceeds and reports.
-- **Windows has no wrapper template, so Windows has no hooks.** A PowerShell
-  wrapper is future work; until it exists a hook there is reported
-  Unsupported with that reason and nothing is attached. There is no second
-  route to fall back to, by design: an entry running something other than
-  the wrapper would be a second implementation of the contract, and the
-  first thing two implementations do is disagree.
+- **A rewrite is in the harness's own shape.** A `transform` handler that
+  must run on several harnesses reads `HOOK_TOOL_NATIVE` to know which shape
+  it is answering in; the portable fields are inputs only.
+- **`jq` is the shell wrapper's dependency.** It joins the package's
+  requirements as one the wrapper introduced, so the author never declares
+  it: `uze install`, `uze status -m`, `uze inspect` and `uze doctor` name it
+  when it is missing, with the command that installs it, and UZE never runs
+  that command. Until it is installed a `deny` group denies while an
+  `observe` group proceeds and reports. What a package's own scripts need
+  is declared by the author the same way (`extensions["sh.uze"].requirements`
+  in `plugin.json`, see the plugin format reference).
+- **On Windows the wrapper is a Windows PowerShell 5.1 script.** It reads
+  the payload with the .NET reader every Windows carries, so it needs no
+  `jq`. A Group Policy execution policy that forbids local scripts, or a
+  language mode short of `FullLanguage`, stops it; `uze doctor` reports
+  either as a shell refusal. A handler still runs only the spelling written
+  for this platform: a guard with no `windows` spelling keeps its package
+  from installing there, since the guard could not run.
 - **Antigravity ran delivered hooks only in a signed-in session through
   1.1.24.** Its hook entries load and list correctly in either mode
   (`hooks_manager: loaded N named hooks`), but the executor reads

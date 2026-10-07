@@ -354,6 +354,47 @@ pub(crate) fn write_file(path: &Path, content: &[u8]) -> Result<()> {
     fs::write(path, content).map_err(UzeError::write(path))
 }
 
+/// The invocation controls a harness reads from a Skill's own frontmatter
+/// that the Skill wrote by hand. UZE writes each of them from the canonical
+/// `invoke:` block when it delivers, so one written by hand either repeats
+/// that or overrides it on this harness alone, and means nothing to any
+/// other. `controls` are paths into the frontmatter (`metadata` then a key
+/// under it).
+pub(crate) fn hand_written_controls(
+    resource: &Resource,
+    controls: &[&[&str]],
+) -> uze_core::capability::harness::Findings {
+    let mut findings = uze_core::capability::harness::Findings::default();
+    if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {
+        return findings;
+    }
+    let Some((frontmatter, _)) = std::str::from_utf8(&resource.capability.payload)
+        .ok()
+        .and_then(uze_core::capability::harness::frontmatter_of)
+    else {
+        return findings;
+    };
+    for path in controls {
+        let Some((first, rest)) = path.split_first() else {
+            continue;
+        };
+        let mut value = frontmatter.get(first);
+        for key in rest {
+            value = value
+                .and_then(|value| value.as_mapping())
+                .and_then(|mapping| mapping.get(key));
+        }
+        if value.is_some() {
+            findings.warnings.push(format!(
+                "`{}` is this harness's own invocation control, written by hand; say who may \
+                 invoke the skill with `invoke:`, which UZE writes into every harness's own field",
+                path.join(".")
+            ));
+        }
+    }
+    findings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

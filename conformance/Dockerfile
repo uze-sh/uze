@@ -77,8 +77,11 @@ COPY --chmod=0755 conformance/entrypoint.sh /usr/local/bin/uze-harness-entrypoin
 # UZE_HOME, fixture cache, package-manager home, harness installs (vendors
 # self-update in place; networkless L2 makes those writes no-ops, and a
 # permission error must never be the reason a probe fails). No step of the
-# runtime user path can escalate: read-only root, cap_drop ALL,
-# no-new-privileges, tmpfs-only writes, no Docker socket, no host HOME.
+# runtime user path can escalate: `docker_base` (shared/common.py) runs it
+# with every capability dropped and no-new-privileges, `/work` and `/tmp` on
+# tmpfs, no Docker socket and no host HOME. The root is not read-only: the
+# vendors write their own install trees, and refusing those writes would
+# test a machine no person has.
 USER node
 WORKDIR /work
 ENV HOME=/home/node

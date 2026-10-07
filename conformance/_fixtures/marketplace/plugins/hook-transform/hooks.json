@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "effect-transform",
+        "matcher": "shell",
+        "effect": "transform",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe effect-transform rewrite",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

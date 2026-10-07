@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-exec",
+  "description": "Conformance exec-form hook: a deny group whose guard is a JavaScript file named by its path, not executable, so its extension picks the launcher, and given a word no shell may read."
+}

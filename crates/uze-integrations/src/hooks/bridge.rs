@@ -23,6 +23,7 @@ pub(super) fn bridge_hooks(
     hooks: &[&PortableHook],
     package_root: &Path,
 ) -> serde_json::Value {
+    let store_root = package_root;
     let package_root = &crate::shared::package_root::delivered(package_root);
     serde_json::Value::Array(
         hooks
@@ -33,19 +34,76 @@ pub(super) fn bridge_hooks(
                     "event": hook.event.abi_name(),
                     "effect": hook.effect.abi_name(),
                     "matchers": hook.matchers.iter().flat_map(|m| tool_names(target, m)).collect::<Vec<_>>(),
-                    "handlers": hook.handlers.iter().map(|handler| serde_json::json!({
-                        "command": uze_platform::shell::script_text(
-                            &handler.command.here().unwrap_or_default().replace(
-                                "${PLUGIN_ROOT}",
-                                &package_root.display().to_string(),
-                            ),
-                        ),
-                        "timeout": handler.timeout,
-                    })).collect::<Vec<_>>(),
+                    "handlers": hook.handlers.iter().map(|handler| bridged_handler(handler, store_root, package_root)).collect::<Vec<_>>(),
                 })
             })
             .collect(),
     )
+}
+
+/// The extensions OpenCode's embedded Bun runs as they are, with no
+/// interpreter asked of the machine.
+const OWN_RUNTIME: &[&str] = &["js", "mjs", "cjs", "ts"];
+
+/// Whether the bridge runs `handler` in OpenCode's own Bun, asking nothing
+/// of the machine: an exec-form JavaScript or TypeScript script with no
+/// launcher of the author's.
+pub(super) fn runs_in_own_runtime(handler: &uze_core::hook::CommandHook) -> bool {
+    handler.interpreter.is_none()
+        && handler.script().is_some_and(|script| {
+            Path::new(script)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    OWN_RUNTIME.contains(&extension.to_ascii_lowercase().as_str())
+                })
+        })
+}
+
+/// One handler as the bridge spawns it: a shell line as the author wrote
+/// it; an exec-form script from its words, with no shell between; or a
+/// JavaScript one in OpenCode's own Bun (`process.execPath`, which is a
+/// `bun build --compile` executable that acts as `bun` under `BUN_BE_BUN`).
+fn bridged_handler(
+    handler: &uze_core::hook::CommandHook,
+    store_root: &Path,
+    delivered_root: &Path,
+) -> serde_json::Value {
+    if runs_in_own_runtime(handler)
+        && let Some(script) = handler.script()
+    {
+        let argv: Vec<String> = std::iter::once(delivered_root.join(script).display().to_string())
+            .chain(handler.args.iter().flatten().cloned())
+            .collect();
+        return serde_json::json!({
+            "command": handler.describe(),
+            "argv": argv,
+            "bun": true,
+            "timeout": handler.timeout,
+        });
+    }
+    match handler.invocation(
+        store_root,
+        delivered_root,
+        uze_platform::shell::FAMILY,
+        &uze_core::launcher::python_answers,
+    ) {
+        uze_core::hook::Invocation::Argv { argv, .. } => serde_json::json!({
+            "command": handler.describe(),
+            "argv": argv,
+            "timeout": handler.timeout,
+        }),
+        uze_core::hook::Invocation::Line(line) => serde_json::json!({
+            "command": uze_platform::shell::script_text(
+                &line.replace("${PLUGIN_ROOT}", &delivered_root.display().to_string()),
+            ),
+            "timeout": handler.timeout,
+        }),
+        uze_core::hook::Invocation::Unrunnable(_) => serde_json::json!({
+            "command": handler.describe(),
+            "timeout": handler.timeout,
+        }),
+    }
 }
 
 /// The alias table this harness's plugin reads, generated from the one
@@ -112,10 +170,14 @@ pub(crate) fn bridge_carries_groups(
 /// groups as data. JavaScript valid as TypeScript (no build step), no
 /// dependencies, deterministic — and naming nothing but the hook contract.
 ///
-/// The V2 tool hooks see the tool input but cannot block, and the only
-/// decision point (`permission.evaluate`) carries the action and its
-/// resources rather than the tool input; deny/ask are therefore diagnosed
-/// before attach and never fabricated here.
+/// Every event and effect rides OpenCode V2's own plugin API (anomalyco/
+/// opencode `v2`, measured on 2.0.24): the tool hooks for observing, and
+/// `permission.evaluate` for deciding — the tool hooks see the input but
+/// cannot refuse, and the permission hook can refuse or ask but carries no
+/// input, so the input is kept by call id between the two. A session's
+/// start and the end of its turn are bus events (`session.created`,
+/// `session.execution.succeeded`); a denied stop is answered the way the
+/// harness's own plan plugin keeps a session going, with synthetic input.
 pub(crate) fn opencode_bridge(
     target: HookTarget,
     hooks: &[&PortableHook],
@@ -132,6 +194,7 @@ pub(crate) fn opencode_bridge(
     let shell = serde_json::to_string(uze_platform::shell::ARGV).expect("shell words serialize");
     let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
     let reason_limit = HANDLER_REASON_LIMIT;
+    let output_limit = wrapper::TRANSFORM_OUTPUT_LIMIT;
     format!(
         r#"{BRIDGE_HEADER}
 // OpenCode V2 (opencode.ai/v2/docs/build/plugins) has no hooks.json: the
@@ -160,7 +223,7 @@ const ALIASES = {{
 
 const closed = (effect) => effect === "deny" || effect === "ask";
 
-function environment(group, native, input) {{
+function environment(group, native, input, source) {{
   const alias = ALIASES[native];
   return {{
     ...process.env,
@@ -168,9 +231,10 @@ function environment(group, native, input) {{
     HOOK_HARNESS: "opencode",
     HOOK_EVENT: group.event,
     HOOK_TOOL: alias?.tool ?? "",
-    HOOK_TOOL_NATIVE: native,
+    HOOK_TOOL_NATIVE: native ?? "",
     HOOK_CWD: process.cwd(),
     HOOK_INPUT: JSON.stringify(input ?? {{}}),
+    HOOK_SOURCE: source ?? "",
     ...(alias ? alias.fields(input ?? {{}}) : {{}}),
   }};
 }}
@@ -196,14 +260,22 @@ async function collect(stream) {{
 }}
 
 // One handler: null when it allowed, otherwise the reason it answered with.
-async function handler(command, timeout, env) {{
+// A `transform` handler's stdout is kept: `rewrite` receives it when it
+// allowed with something to say.
+async function handler(entry, timeout, env, rewrite) {{
+  const command = entry.command;
+  const argv = !entry.argv
+    ? [...SHELL, command]
+    : entry.bun
+      ? [process.execPath, ...entry.argv]
+      : entry.argv;
   let proc;
   try {{
-    proc = Bun.spawn([...SHELL, command], {{
+    proc = Bun.spawn(argv, {{
       cwd: ROOT,
-      env,
+      env: entry.bun ? {{ ...env, BUN_BE_BUN: "1" }} : env,
       stdin: "ignore",
-      stdout: "ignore",
+      stdout: rewrite ? "pipe" : "ignore",
       stderr: "pipe",
     }});
   }} catch (error) {{
@@ -218,7 +290,8 @@ async function handler(command, timeout, env) {{
     timer = setTimeout(() => resolve("expired"), timeout * 1000);
   }});
   const stream = proc.stderr.getReader();
-  const answer = Promise.all([collect(stream), proc.exited]);
+  const output = rewrite ? new Response(proc.stdout).text() : Promise.resolve("");
+  const answer = Promise.all([collect(stream), proc.exited, output]);
   const outcome = await Promise.race([answer, deadline]);
   clearTimeout(timer);
   if (outcome === "expired") {{
@@ -226,18 +299,34 @@ async function handler(command, timeout, env) {{
     stream.cancel().catch(() => {{}});
     return {{ failed: true, reason: `handler timed out after ${{timeout}}s: ${{command}}` }};
   }}
-  const [stderr, code] = outcome;
-  if (code === 0) return null;
+  const [stderr, code, stdout] = outcome;
+  if (code === 0) {{
+    if (!rewrite || stdout.trim() === "") return null;
+    if (stdout.length > {output_limit}) {{
+      return {{ failed: true, reason: `handler wrote more than {output_limit} bytes: ${{command}}` }};
+    }}
+    let rewritten;
+    try {{
+      rewritten = JSON.parse(stdout);
+    }} catch {{
+      rewritten = undefined;
+    }}
+    if (rewritten === null || typeof rewritten !== "object" || Array.isArray(rewritten)) {{
+      return {{ failed: true, reason: `handler did not write a JSON object: ${{command}}` }};
+    }}
+    rewrite(rewritten);
+    return null;
+  }}
   if (code === {deny_exit_code}) return {{ failed: false, reason: stderr || `${{command}} denied the operation` }};
   return {{ failed: true, reason: `handler failed (exit ${{code}}): ${{command}}${{stderr ? " — " + stderr : ""}}` }};
 }}
 
 // Handlers in manifest order; the first denial stops the rest. A failure
 // denies for a fail-closed group and is reported for the others.
-async function run(group, native, input) {{
-  const env = environment(group, native, input);
+async function run(group, native, input, source) {{
+  const env = environment(group, native, input, source);
   for (const entry of group.handlers) {{
-    const answer = await handler(entry.command, entry.timeout, env);
+    const answer = await handler(entry, entry.timeout, env);
     if (answer === null) continue;
     if (answer.failed && !closed(group.effect)) {{
       console.error(`[hooks:${{group.id}}]`, answer.reason);
@@ -255,23 +344,138 @@ function matches(group, event, native) {{
   );
 }}
 
+// Groups on `event` for `native`: the observing ones, the deciding ones and
+// the rewriting ones.
+const observing = (event, native) =>
+  GROUPS.filter((group) => matches(group, event, native) && !closed(group.effect));
+const deciding = (event, native) =>
+  GROUPS.filter(
+    (group) => matches(group, event, native) && closed(group.effect) && group.effect !== "transform",
+  );
+const rewriting = (event, native) =>
+  GROUPS.filter((group) => matches(group, event, native) && group.effect === "transform");
+
+// A transform group's handlers in order, each reading the input the one
+// before it wrote; the first denial or failure stops it and closes the call.
+async function transform(group, native, input) {{
+  let current = input;
+  for (const entry of group.handlers) {{
+    const env = environment(group, native, current);
+    const answer = await handler(entry, entry.timeout, env, (rewritten) => {{
+      current = rewritten;
+    }});
+    if (answer !== null) return {{ reason: answer.reason }};
+  }}
+  return {{ input: current }};
+}}
+
+// A tool call's name and input, kept from `execute.before` until the
+// permission check of the same call decides on it.
+const CALLS = new Map();
+
+// Sessions a subagent runs in: their turns are the parent's work, not a
+// person's session starting or stopping.
+const CHILDREN = new Set();
+
+async function decide(groups, native, input) {{
+  for (const group of groups) {{
+    const reason = await run(group, native, input);
+    if (reason) return {{ group, reason }};
+  }}
+  return null;
+}}
+
+async function follow(ctx) {{
+  for await (const event of ctx.event.subscribe()) {{
+    const data = event.data ?? {{}};
+    if (event.type === "session.created") {{
+      if (data.parentID) {{
+        CHILDREN.add(data.sessionID);
+        continue;
+      }}
+      // A new session is the only start OpenCode announces; a resumed one
+      // publishes nothing, so its groups never run here.
+      for (const group of GROUPS) {{
+        if (!matches(group, "session_start", "startup")) continue;
+        const reason = await run(group, undefined, undefined, "startup");
+        if (reason) console.error(`[hooks:${{group.id}}]`, reason);
+      }}
+    }} else if (event.type === "session.execution.succeeded") {{
+      if (CHILDREN.has(data.sessionID)) continue;
+      for (const group of observing("stop", undefined)) {{
+        const reason = await run(group, undefined, undefined);
+        if (reason) console.error(`[hooks:${{group.id}}]`, reason);
+      }}
+      const denied = await decide(deciding("stop", undefined), undefined, undefined);
+      // A denied stop keeps the session going, told why.
+      if (denied) {{
+        await ctx.session.synthetic({{
+          sessionID: data.sessionID,
+          text: denied.reason,
+          resume: true,
+        }});
+      }}
+    }}
+  }}
+}}
+
 export default {{
   id: "hooks-{package_id}",
   async setup(ctx) {{
     await ctx.tool.hook("execute.before", async (event) => {{
-      for (const group of GROUPS) {{
-        if (!matches(group, "pre_tool_use", event.tool)) continue;
+      const call = {{ tool: event.tool, input: event.input }};
+      CALLS.set(event.id, call);
+      // A rewrite is what the tool then runs, as OpenCode's own input
+      // repair does it; a group that cannot rewrite closes the call, which
+      // the permission check refuses.
+      for (const group of rewriting("pre_tool_use", event.tool)) {{
+        const result = await transform(group, event.tool, call.input);
+        if (result.reason) {{
+          call.refused = result.reason;
+          break;
+        }}
+        call.input = result.input;
+        event.input = result.input;
+      }}
+      for (const group of observing("pre_tool_use", event.tool)) {{
         const reason = await run(group, event.tool, event.input);
         if (reason) console.error(`[hooks:${{group.id}}]`, reason);
       }}
+    }});
+    // OpenCode asks every tool that touches the machine for permission
+    // before it runs; this is where a deciding group refuses or asks.
+    await ctx.permission.hook("evaluate", async (event) => {{
+      if (event.source?.type !== "tool") return;
+      const call = CALLS.get(event.source.id);
+      if (!call || call.decided) return;
+      call.decided = true;
+      if (call.refused) {{
+        event.effect = "deny";
+        event.message = call.refused;
+        return;
+      }}
+      const denied = await decide(deciding("pre_tool_use", call.tool), call.tool, call.input);
+      if (!denied) return;
+      event.effect = denied.group.effect === "ask" ? "ask" : "deny";
+      event.message = denied.reason;
     }});
     await ctx.tool.hook("execute.after", async (event) => {{
-      for (const group of GROUPS) {{
-        if (!matches(group, "post_tool_use", event.tool)) continue;
+      CALLS.delete(event.id);
+      for (const group of observing("post_tool_use", event.tool)) {{
         const reason = await run(group, event.tool, event.input);
         if (reason) console.error(`[hooks:${{group.id}}]`, reason);
       }}
+      const denied = await decide(deciding("post_tool_use", event.tool), event.tool, event.input);
+      // The tool already ran; what a denial can still do is tell the model.
+      if (denied) {{
+        await ctx.session.synthetic({{
+          sessionID: event.sessionID,
+          text: denied.reason,
+          resume: false,
+        }});
+      }}
     }});
+    follow(ctx).catch((error) => console.error("[hooks]", error));
   }},
 }};
 "#

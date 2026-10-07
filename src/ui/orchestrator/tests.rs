@@ -1687,6 +1687,39 @@ mod workspace_tests {
         assert!(driven.attach.model.code.is_none());
     }
 
+    /// A command handed to a new shell is typed into the pane that shell
+    /// turns out to be, and only there: a session update that brings no
+    /// new pane leaves it waiting, and the line carries no Enter, since the
+    /// person runs it.
+    #[test]
+    fn a_command_waits_for_its_new_shell_and_is_typed_unrun() {
+        let mut model = model_of(session("/tmp/project"));
+        let identities = identities_fixture();
+        model.typing = Some(crate::ui::orchestrator::PendingTyping {
+            known: model.pane_ids(),
+            text: "sudo apt-get install -y jq".to_owned(),
+        });
+
+        let unchanged = model.session.clone().expect("session");
+        model.apply(
+            ClientEvent::SessionUpdated { session: unchanged },
+            &identities,
+        );
+        assert!(model.typed.is_none(), "no new pane yet");
+        assert!(model.typing.is_some());
+
+        let mut opened = model.session.clone().expect("session");
+        let space = opened.selected_space().id;
+        let shell = opened.add_tab(space, "shell 2".into(), None, 80, 24, "/tmp/project".into());
+        model.apply(ClientEvent::SessionUpdated { session: opened }, &identities);
+        assert_eq!(
+            model.typed,
+            Some((shell, b"sudo apt-get install -y jq".to_vec())),
+            "typed into the new shell, with no Enter"
+        );
+        assert!(model.typing.is_none());
+    }
+
     /// A surface is about the tab it was opened on. Another tab coming to
     /// the front — by whatever way it got there — takes the pane back.
     #[test]

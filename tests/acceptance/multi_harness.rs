@@ -185,9 +185,9 @@ fn invocation_policy_projects_per_harness_classification() {
 }
 
 /// A11 — a model-only Skill on Codex and OpenCode installs cleanly through
-/// the CLI, and OpenCode's own directory carries OpenCode's encoding of the
-/// policy (`slash: false`) and nothing of Codex's. Codex still reports its
-/// own user=false limitation honestly (Degraded).
+/// the CLI, and OpenCode's own directory carries nothing of Codex's and no
+/// field OpenCode V2 does not define. Both report their user=false
+/// limitation honestly (Degraded).
 #[test]
 fn a_model_only_skill_reaches_opencode_in_its_own_encoding() {
     let env = TestEnvironment::isolated();
@@ -220,8 +220,8 @@ fn a_model_only_skill_reaches_opencode_in_its_own_encoding() {
     );
     let wrapper = std::fs::read_to_string(entry.join("SKILL.md")).unwrap();
     assert!(
-        wrapper.contains("slash: false"),
-        "the entry carries OpenCode's user-invocation suppression: {wrapper}"
+        !wrapper.contains("slash"),
+        "OpenCode V2 defines no `slash`, so the entry carries none: {wrapper}"
     );
     assert!(
         !wrapper.contains("opencode/autoinvoke"),

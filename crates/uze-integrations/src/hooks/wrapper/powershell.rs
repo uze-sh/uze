@@ -26,8 +26,14 @@ impl WrapperTemplate for PowerShellWrapper {
         let Decisions {
             deny: deny_document,
             allow: allow_document,
+            transform: transform_document,
             ..
         } = dialect.powershell?;
+        // Where the harness takes no rewritten input a transform group is
+        // never delivered; the wrapper still answers it, closed.
+        let transform_document = transform_document
+            .unwrap_or("Deny-Native 'hooks/exec: this harness takes no rewritten input'");
+        let output_limit = wrapper::TRANSFORM_OUTPUT_LIMIT;
         let deny_exit = dialect.deny_exit;
         let harness = target.key();
         let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
@@ -35,6 +41,11 @@ impl WrapperTemplate for PowerShellWrapper {
         let tool = powershell_filter(dialect.payload.tool, "$payload")?;
         let cwd = powershell_filter(dialect.payload.cwd, "$payload")?;
         let input = powershell_filter(dialect.payload.input, "$payload")?;
+        let implied_source = dialect.payload.implied_source.map_or_else(String::new, |source| {
+            format!(
+                "if ($hookEvent -eq 'session_start' -and -not $env:HOOK_SOURCE) {{ $env:HOOK_SOURCE = '{source}' }}\n"
+            )
+        });
         let field_defaults: String = wrapper_field_variables(target)
             .iter()
             .map(|name| format!("$env:{name} = ''\n"))
@@ -83,7 +94,13 @@ function Allow-Native {{
   {allow_document}
 }}
 
-function Deny-Native([string]$reason) {{
+function Transform-Native {{                     # the rewritten input
+  $updatedJson = $env:HOOK_INPUT
+  {transform_document}
+  exit 0
+}}
+
+function Deny-Native([string]$reason, [string]$decision = 'deny') {{
   [Console]::Error.WriteLine($reason)
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
@@ -139,9 +156,13 @@ $env:HOOK_CWD = Text {cwd}
 $toolInput = {input}
 $env:HOOK_INPUT = if ($null -eq $toolInput) {{ '{{}}' }} else {{ $json.Serialize($toolInput) }}
 $env:HOOK_SOURCE = if ($hookEvent -eq 'session_start') {{ Text (Pick $payload @('source')) }} else {{ '' }}
+{implied_source}# The portable fields are read from the input, so a rewrite reads them again.
+function Portable-Fields {{
 $env:HOOK_TOOL = ''
 {field_defaults}switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {{  # the portable vocabulary
 {aliases}}}
+}}
+Portable-Fields
 
 # --- the handlers, in order; the first denial stops the rest --------------
 # A handler is a PowerShell command line, run from the package root. Each
@@ -183,7 +204,7 @@ foreach ($entry in $handlers) {{
   }}
   $process.StandardInput.Close()
   $errors = $process.StandardError.ReadToEndAsync()
-  $null = $process.StandardOutput.ReadToEndAsync()
+  $output = $process.StandardOutput.ReadToEndAsync()
   if ($process.WaitForExit($seconds * 1000)) {{
     $process.WaitForExit()
     $status = $process.ExitCode
@@ -193,16 +214,34 @@ foreach ($entry in $handlers) {{
     $status = 124
   }}
   Remove-Item -LiteralPath $script -ErrorAction SilentlyContinue
+  if ($status -eq 0 -and $effect -eq 'transform' -and $output.Wait(1000) -and $output.Result.Trim()) {{
+    # A rewrite: the complete input, as one JSON object. The next handler
+    # reads it as its HOOK_INPUT, and the last one is what the tool runs.
+    if ($output.Result.Length -gt {output_limit}) {{ Fail "handler wrote more than {output_limit} characters: $handler" }}
+    $rewritten = $null
+    try {{ $rewritten = $json.DeserializeObject($output.Result) }} catch {{ $rewritten = $null }}
+    if ($rewritten -isnot [System.Collections.IDictionary]) {{ Fail "handler did not write a JSON object: $handler" }}
+    $toolInput = $rewritten
+    $env:HOOK_INPUT = $json.Serialize($toolInput)
+    $changed = $true
+    Portable-Fields
+  }}
   if ($status -eq 0) {{ continue }}
   $reason = ''
   if ($errors.Wait(1000)) {{ $reason = $errors.Result.Trim() }}
   if ($reason.Length -gt {reason_limit}) {{ $reason = $reason.Substring(0, {reason_limit}) }}
   switch ($status) {{
-    {deny_exit_code} {{ if ($reason) {{ Deny-Native $reason }} else {{ Deny-Native "$handler denied the operation" }} }}
+    {deny_exit_code} {{
+      # A handler's own denial in an `ask` group asks the person; only a
+      # failure falls back to denying.
+      $decision = if ($effect -eq 'ask') {{ 'ask' }} else {{ 'deny' }}
+      if ($reason) {{ Deny-Native $reason $decision }} else {{ Deny-Native "$handler denied the operation" $decision }}
+    }}
     124 {{ Fail "handler timed out after ${{seconds}}s: $handler" }}
     default {{ if ($reason) {{ Fail "handler failed (exit $status): $handler — $reason" }} else {{ Fail "handler failed (exit $status): $handler" }} }}
   }}
 }}
+if ($changed) {{ Transform-Native }}
 Allow-Native
 exit 0
 "#

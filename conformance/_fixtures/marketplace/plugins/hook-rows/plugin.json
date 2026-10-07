@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-rows",
+  "description": "Conformance hook rows: a census group with no matcher recording the name and input every tool reaches a hook with, and one observing group per portable tool alias, each matched on the alias alone, so a harness binding an alias to the wrong native tool or field leaves that row's record missing."
+}

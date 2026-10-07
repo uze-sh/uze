@@ -261,3 +261,66 @@ fn default_skill_package_installs_cleanly_on_every_harness_as_before() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+/// A harness's own invocation control written by hand in a Skill is
+/// pointed back at `invoke:`, which UZE writes into every harness's field:
+/// each harness names only its own controls, and a Skill that says who may
+/// invoke it canonically draws nothing from any of them.
+#[test]
+fn a_harness_invocation_control_written_by_hand_is_pointed_at_invoke() {
+    let hand_written = "---\nname: mixed\ndescription: Mixed.\nslash: true\n\
+                        disable-model-invocation: true\nuser-invocable: false\n\
+                        disable-slash-command: true\nmetadata:\n  opencode/autoinvoke: \"true\"\n\
+                        ---\n\nBody.\n";
+    let canonical = "---\nname: canonical\ndescription: Canonical.\ninvoke:\n  model: false\n  \
+                     user: true\n---\n\nBody.\n";
+    let (root, home, _package, mixed) = make_policy_package("hand-written", "mixed", hand_written);
+    let (other, _, _, clean) = make_policy_package("canonical-controls", "canonical", canonical);
+    let integrations: Vec<(Box<dyn IntegrationPort>, &[&str])> = vec![
+        (
+            Box::new(ClaudeIntegration::new(root.join("claude"), home.clone())),
+            &["disable-model-invocation", "user-invocable"],
+        ),
+        (
+            Box::new(OpenCodeIntegration::new(
+                root.join("agents"),
+                root.join("config/opencode.json"),
+                home.clone(),
+            )),
+            &["slash", "metadata.opencode/autoinvoke"],
+        ),
+        (
+            Box::new(AntigravityIntegration::new(
+                root.join("agents"),
+                home.clone(),
+            )),
+            &["disable-model-invocation", "disable-slash-command"],
+        ),
+    ];
+    for (integration, controls) in &integrations {
+        let warnings = integration.check_capability(&mixed).warnings;
+        for control in *controls {
+            assert!(
+                warnings
+                    .iter()
+                    .any(|warning| warning.contains(&format!("`{control}`"))
+                        && warning.contains("`invoke:`")),
+                "{}: {control}: {warnings:?}",
+                integration.id()
+            );
+        }
+        assert_eq!(
+            warnings.len(),
+            controls.len(),
+            "{}: {warnings:?}",
+            integration.id()
+        );
+        assert!(
+            integration.check_capability(&clean).warnings.is_empty(),
+            "{}",
+            integration.id()
+        );
+    }
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(other);
+}

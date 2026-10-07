@@ -29,6 +29,9 @@
   --color-danger: #b3402f;
   /* What the terminal's markdown draws code and links in. */
   --color-info: #3d5a99;
+  /* The page's scrollbar: present where it is needed, never louder than
+     the hairlines around it. */
+  --color-scrollbar: #d4d4d8;
 
   --color-fd-background: var(--color-paper);
   --color-fd-foreground: var(--color-ink);
@@ -60,6 +63,7 @@
   --color-warn: #d4a72c;
   --color-danger: #d9776b;
   --color-info: #7d97c9;
+  --color-scrollbar: #303034;
 
   /* fumadocs' default-colors sheet gives `.dark` its own neutral #121212
      ground and greys, which outrank the @theme mapping above in dark mode:
@@ -122,6 +126,78 @@ html > body[data-scroll-locked] {
   gap: 6px;
   white-space: nowrap;
 }
+/*
+  The tables inside a harness's tab keep the same columns from one tab to the
+  next: sized by content, they jumped as the reader switched harness.
+*/
+.harness-capabilities table,
+.harness-facts table {
+  table-layout: fixed;
+  width: 100%;
+}
+.harness-capabilities th:nth-child(1) {
+  width: 30%;
+}
+.harness-capabilities th:nth-child(2) {
+  width: 3.25rem;
+}
+.harness-facts th:nth-child(1) {
+  width: 22%;
+}
+.harness-facts th:nth-child(3) {
+  width: 7.5rem;
+}
+
+/* components/support.tsx: a support level as a mark, in the theme's tokens. */
+.support {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+}
+.support svg {
+  flex-shrink: 0;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.support[data-level='native'] .support-fill {
+  fill: var(--color-success);
+}
+.support .support-check-on-fill {
+  stroke: var(--color-paper);
+  stroke-width: 2.5;
+}
+.support[data-level='uze'] .support-ring,
+.support[data-level='uze'] .support-check {
+  stroke: var(--color-success);
+}
+.support[data-level='partial'] .support-ring,
+.support[data-level='partial'] .support-check {
+  stroke: var(--color-warn);
+}
+.support .support-dash,
+.support[data-level='experimental'] .support-ring {
+  stroke: var(--color-muted);
+}
+.support .support-ring-dashed {
+  stroke-dasharray: 3 3;
+}
+.support[data-level='planned'] .support-fill {
+  fill: var(--color-muted);
+}
+.support-label {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+.support-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 1rem 0;
+}
+
 .harness-table-icon {
   width: 14px;
   height: 14px;

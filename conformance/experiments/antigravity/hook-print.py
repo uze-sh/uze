@@ -71,6 +71,7 @@ def final_script():
         prelude += f"cp /work/home/.gemini/config/plugins/hook-plugin/hooks.json {GLOBAL_HOOKS}\n"
     if os.environ.get("HOOK_PRINT_VENDOR"):
         prelude += VENDOR_HOOK
+    # decision: experiment-isolation
     skip = "" if os.environ.get("HOOK_PRINT_ASK") else "--dangerously-skip-permissions"
     return f"""{prelude}
 agy --print "run the API check" --output-format stream-json \\

@@ -7,37 +7,52 @@ use crate::hooks::{
 };
 
 /// Antigravity CLI's named hooks carry camelCase payloads and native
-/// `allow`/`ask`/`deny` decisions. It has no session-start event
-/// (1.2.x fires `PreToolUse`, `PostToolUse`, `PreInvocation`,
-/// `PostInvocation`, `Stop`); `PreInvocation` fires on every turn, and
-/// telling the first from the rest would need per-session state the
-/// stateless wrapper does not keep, so `SessionStart` is not claimed.
+/// `allow`/`ask`/`deny` decisions. Beside the documented events it reads a
+/// `SessionStart` key the docs do not list (the binary's
+/// `CallSessionStartHook`, measured on 1.2.17): flat like `Stop`, run once
+/// for a new conversation at its first model call, and never for one
+/// resumed with `--continue`, so its only source is `startup`. Being
+/// undocumented, the Lab measures it every run (`hooks > events`).
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "antigravity",
     events: &[
         HookEvent::PreToolUse,
         HookEvent::PostToolUse,
         HookEvent::Stop,
+        HookEvent::SessionStart,
     ],
     effects: &[
         HookEffect::Observe,
         HookEffect::Allow,
         HookEffect::Ask,
         HookEffect::Deny,
+        HookEffect::Transform,
     ],
     tools: TOOLS,
+    session_sources: &["startup"],
     runner: HookRunner::Wrapper {
-        dialect: WrapperDialect {
+        dialect: &WrapperDialect {
             payload: PayloadPaths {
                 tool: ".toolCall.name // empty",
                 input: ".toolCall.args // {}",
                 cwd: ".workspacePaths[0] // empty",
+                // Its session-start hook (undocumented, measured on 1.2.17)
+                // fires for a new conversation only and carries no source.
+                implied_source: Some("startup"),
             },
             // Only the pre-tool event carries a decision; the others answer
-            // with the empty object the vendor's contract requires.
+            // with the empty object the vendor's contract requires. A
+            // handler's denial in an `ask` group is answered `ask`, which
+            // the harness puts to the person; any other closing is `deny`.
             posix: Decisions {
-                deny: "printf '{\"decision\":\"deny\",\"reason\":%s}' \"$reason_json\"",
+                deny: "printf '{\"decision\":\"%s\",\"reason\":%s}' \"$decision\" \"$reason_json\"",
                 allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
+                // A rewrite is `overwrite` (the tool call's whole args) beside
+                // `allow`: the hook result's field the docs do not list
+                // (`PreToolHookResult.overwrite`, 1.3.0), measured by the Lab.
+                transform: Some(
+                    "printf '{\"decision\":\"allow\",\"overwrite\":%s}' \"$updated_json\"",
+                ),
                 unfired: &[],
             },
             // Measured on 1.2.16 on Windows: the entry is run as
@@ -46,8 +61,11 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             // writing nothing, `{}` reading as a denial. The entry's line is
             // sealed against `cmd`'s quoting (`sealed_wrapper_command_line`).
             powershell: Some(Decisions {
-                deny: "[Console]::Out.Write('{\"decision\":\"deny\",\"reason\":' + $reasonJson + '}')",
+                deny: "[Console]::Out.Write('{\"decision\":\"' + $decision + '\",\"reason\":' + $reasonJson + '}')",
                 allow: "if ($hookEvent -ne 'pre_tool_use') { [Console]::Out.Write('{}') }",
+                transform: Some(
+                    "[Console]::Out.Write('{\"decision\":\"allow\",\"overwrite\":' + $updatedJson + '}')",
+                ),
                 unfired: &[],
             }),
             // The decision is the stdout document; a non-zero exit is a
@@ -60,10 +78,11 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
     },
 };
 
-/// Read off the harness's own `parametersJsonSchema` with the Lab's
-/// `--discovery` mode: `run_command`/`CommandLine`+`Cwd`,
-/// `write_to_file`/`TargetFile`, `view_file`/`AbsolutePath`,
-/// `grep_search`/`Query` and `search_web`/`query`.
+/// Measured, never recalled: every native name and field here is the one a
+/// Lab census saw a call reach a hook with (`hook_tools` in
+/// `conformance/evidence/tools/antigravity.json`, 1.2.17), and
+/// `hooks::measured_tests` fails on any that a later census contradicts.
+/// 1.2.17 offers no `grep_search`, so `search.files` stays unbound.
 const TOOLS: &[ToolBinding] = &[
     ToolBinding {
         alias: "shell",
@@ -91,7 +110,7 @@ const TOOLS: &[ToolBinding] = &[
     },
     ToolBinding {
         alias: "search.files",
-        native_tool: Some("grep_search"),
+        native_tool: UNBOUND,
         also_matches: &[],
         fields: &[("query", "Query")],
     },
@@ -109,7 +128,7 @@ const TOOLS: &[ToolBinding] = &[
     },
     ToolBinding {
         alias: "agent.message",
-        native_tool: UNBOUND,
+        native_tool: Some("send_message"),
         also_matches: &[],
         fields: &[],
     },

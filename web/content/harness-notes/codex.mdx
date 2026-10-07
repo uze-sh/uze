@@ -1,0 +1,7 @@
+A skill the plugin does not cover goes to Codex's documented user root, `~/.agents/skills`, and
+a person-only skill carries `agents/openai.yaml` with implicit invocation disabled. Hooks merge
+into Codex's own `hooks.json`, and Codex runs one only after the person trusts it in its hook
+review: `uze status` lists every hook still waiting. Codex has no tool of its own for reading or
+writing a file, so `file.*` matchers have nothing to reach. In the default model's code mode an
+MCP tool is not listed to the model up front; it is reachable from `exec`, where Codex asks the
+person before the call.

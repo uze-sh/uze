@@ -1,0 +1,116 @@
+{
+  "events": [
+    "pre_tool_use",
+    "post_tool_use",
+    "stop",
+    "session_start"
+  ],
+  "effects": [
+    "observe",
+    "allow",
+    "ask",
+    "deny",
+    "transform"
+  ],
+  "aliases": {
+    "shell": {
+      "tools": [
+        "Bash"
+      ],
+      "fields": {
+        "command": "command"
+      },
+      "call": {
+        "command": "mkdir -p {dir} && printf ran > {side} # {mark}",
+        "description": "lab"
+      },
+      "elsewhere": {
+        "windows": {
+          "tools": [
+            "PowerShell"
+          ],
+          "source": "measured on Claude Code 2.1.289 on Windows; the Lab runs Linux only"
+        }
+      }
+    },
+    "file.read": {
+      "tools": [
+        "Read"
+      ],
+      "fields": {
+        "path": "file_path"
+      },
+      "call": {
+        "file_path": "{project}/README.md"
+      }
+    },
+    "file.write": {
+      "tools": [
+        "Write"
+      ],
+      "fields": {
+        "path": "file_path"
+      },
+      "call": {
+        "file_path": "{side}",
+        "content": "lab"
+      }
+    },
+    "file.edit": {
+      "tools": [
+        "Edit"
+      ],
+      "fields": {
+        "path": "file_path"
+      },
+      "call": {
+        "file_path": "{project}/README.md",
+        "old_string": "lab project",
+        "new_string": "lab project, edited"
+      }
+    },
+    "search.files": {
+      "tools": [
+        "Grep"
+      ],
+      "fields": {
+        "query": "pattern"
+      },
+      "call": {
+        "pattern": "lab",
+        "path": "{project}"
+      },
+      "optional": "Claude Code's native build searches through Bash (`grep` is its bundled ugrep) and offers `Grep` to the main model only when a session opts in with `--allowedTools`/`--tools`, or to a subagent whose tools name it without Bash (measured on 2.1.290)"
+    },
+    "search.web": {
+      "tools": [
+        "WebSearch"
+      ],
+      "fields": {
+        "query": "query"
+      },
+      "call": {
+        "query": "lab"
+      },
+      "load": {
+        "tool": "ToolSearch",
+        "args": {
+          "query": "select:WebSearch",
+          "max_results": 1
+        }
+      }
+    },
+    "agent.spawn": {
+      "tools": [
+        "Agent"
+      ],
+      "fields": {},
+      "call": {
+        "subagent_type": "general-purpose",
+        "description": "lab",
+        "prompt": "lab subagent"
+      }
+    },
+    "agent.message": null
+  }
+}

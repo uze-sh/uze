@@ -25,7 +25,7 @@ use uze_application::CapabilityKind;
 use uze_application::application::offers::ActionOffer;
 use uze_application::application::{
     DoctorReport, FreshnessState, MarketplacePluginSummary, MarketplaceSummary, PluginCapability,
-    Revision,
+    RequirementLine, RequirementStatus, Revision,
 };
 
 use super::plural;
@@ -800,6 +800,12 @@ fn plugin_status(model: &TuiModel, plugin: &MarketplacePluginSummary) -> (String
     if model.was_just_updated(&model.marketplace_plugin_id(plugin)) {
         return ("updated".to_owned(), theme::fg(Token::StateSuccess));
     }
+    if let Some(gap) = requirement_gaps(model, &model.marketplace_plugin_id(plugin)).first() {
+        return (
+            format!("needs {}", gap.executable),
+            theme::fg(Token::StateWarning),
+        );
+    }
     match &plugin.freshness.state {
         FreshnessState::Behind {
             commits: Some(commits),
@@ -1211,6 +1217,23 @@ fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail 
             fields.push(("health", health.to_owned(), theme::fg(tone), None));
         }
     }
+    // What the machine lacks for it, each a click away from the command
+    // that installs it, typed into a shell for the person to run.
+    if plugin.installed {
+        for gap in requirement_gaps(model, &id) {
+            let tone = if gap.denies_while_unmet.is_empty() {
+                Token::StateWarning
+            } else {
+                Token::StateDanger
+            };
+            fields.push((
+                "needs",
+                gap_text(gap),
+                theme::fg(tone),
+                gap.install_command.clone().map(Hit::TypeInShell),
+            ));
+        }
+    }
     Detail {
         kind: format!("plugin · {}", group_display_name(&plugin.marketplace)),
         status: plugin_status(model, plugin),
@@ -1227,6 +1250,39 @@ fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail 
         }),
         offers: plugin.offers(),
     }
+}
+
+/// What the machine lacks for the installed package `id`, as the last
+/// resolution found it.
+fn requirement_gaps<'a>(model: &'a TuiModel, id: &str) -> &'a [RequirementLine] {
+    model
+        .remembered
+        .plugins
+        .iter()
+        .find(|summary| summary.id == id)
+        .map_or(&[], |summary| summary.requirement_gaps.as_slice())
+}
+
+/// One gap as the panel's field reads it: what is missing, what that costs,
+/// and whether a click hands over the command that closes it.
+fn gap_text(gap: &RequirementLine) -> String {
+    let state = match &gap.status {
+        RequirementStatus::TooOld { found, minimum } => {
+            format!("{} {found}, needs {minimum}", gap.executable)
+        }
+        _ => format!("{} missing", gap.executable),
+    };
+    let cost = match gap.denies_while_unmet.as_slice() {
+        [] => String::new(),
+        [hook] => format!(" · `{hook}` denies until then"),
+        hooks => format!(" · {} hooks deny until then", hooks.len()),
+    };
+    let action = if gap.install_command.is_some() {
+        " · click to type in a shell"
+    } else {
+        " · install by hand"
+    };
+    format!("{state}{cost}{action}")
 }
 
 fn resource_detail(plugin: &MarketplacePluginSummary, resource: &PluginCapability) -> Detail {

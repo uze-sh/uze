@@ -1,5 +1,5 @@
-//! OpenCode invocation-policy conformance (ADR-030): what `autoinvoke` and
-//! `slash` carry, and what `slash` does not.
+//! OpenCode invocation-policy conformance (ADR-030): what `autoinvoke`
+//! carries, and that OpenCode V2 defines nothing for the person's half.
 
 use crate::policy::*;
 
@@ -18,16 +18,14 @@ fn opencode_routes_each_combination_by_what_the_vendor_carries() {
             user_only_body("review"),
             CompatibilityRoute::Native,
         ),
-        // `slash: false` gates the `/` catalog only: V2 also invokes a
-        // Skill by mention (`@id`), and a mentioned Skill's body is
-        // expanded whatever its `slash` value. Measured by the Lab's
-        // invocation check (`skill-model-only-is-not-invocable`, opencode2
-        // beta-19192), which types `@flow:analyze` and finds its body in
-        // the request. Half the policy is carried; half is not.
+        // V2 removed `slash` (199aabe9e): `/skills` lists every Skill and a
+        // mention (`@id`) expands any, so invoke.user=false is not carried
+        // at all. Measured by the Lab's `skill-model-only-is-*`
+        // declarations (opencode v2.0.23).
         (
             "model-only",
             model_only_body("legacy"),
-            CompatibilityRoute::Adaptable,
+            CompatibilityRoute::Degraded,
         ),
         (
             "invalid",
@@ -51,7 +49,7 @@ fn opencode_routes_each_combination_by_what_the_vendor_carries() {
         );
         if label == "model-only" {
             assert!(
-                plan.evidence.contains("still invokes it"),
+                plan.evidence.contains("cannot be enforced"),
                 "the degradation must be stated, never hidden: {}",
                 plan.evidence
             );
@@ -128,7 +126,7 @@ fn opencode_user_only_wrapper_carries_autoinvoke_metadata() {
 }
 
 #[test]
-fn opencode_model_only_wrapper_carries_slash_false() {
+fn opencode_model_only_wrapper_writes_no_field_v2_does_not_define() {
     let (root, home, _package, r) =
         make_policy_package("oc-model-only", "legacy", &model_only_body("legacy"));
     let opencode = OpenCodeIntegration::new(
@@ -146,8 +144,8 @@ fn opencode_model_only_wrapper_carries_slash_false() {
     };
     let wrapper = fs::read_to_string(target.join("SKILL.md")).unwrap();
     assert!(
-        wrapper.contains("slash: false\n"),
-        "user=false is translated into OpenCode's catalog-hiding field: {wrapper}"
+        !wrapper.contains("slash"),
+        "V2 defines no `slash`, so the wrapper carries none: {wrapper}"
     );
     assert!(
         !wrapper.contains("opencode/autoinvoke"),

@@ -26,10 +26,10 @@ how a Skill that never reached the model read as a policy working.
 import subprocess
 import time
 
+from contract import declared
 from shared.common import (
     HARNESS_IMAGE,
     check,
-    check_absence,
     describe,
     observed_markers,
     provider_struct,
@@ -60,25 +60,6 @@ def body_marker(skill):
     return f"UZE_SKILL_BODY_{skill.upper()}"
 
 
-def _declined(bindings, prop):
-    """Records a harness's declaration that it cannot deliver `prop`.
-
-    A declaration is a result: it appears in the evidence beside the passes,
-    with the reason, and review can disagree with it. An omitted check
-    cannot be disagreed with — which is why the contract asks every harness
-    every question and lets it answer "no, because".
-    """
-    reason = bindings.unsupported(prop)
-    if reason:
-        check(
-            f"skill-{prop}",
-            True,
-            f"{bindings.harness} cannot: {reason}",
-            kind="adapt",
-        )
-    return reason
-
-
 def assert_contract(cfg, prov_ip, bindings):
     with describe("skill"):
         _assert_catalog(cfg, prov_ip, bindings)
@@ -94,13 +75,9 @@ def _assert_catalog(cfg, prov_ip, bindings):
     """
     # Every assertion below is about a harness started as its own binary,
     # the way a person who only uses the package manager starts it: plugins
-    # are delivered natively and must not need the workspace's shim. The
+    # are delivered natively and must not need the workspace's shim
+    # (`tests/test_lint.py` holds every binding's launch to that). The
     # shim's own deliveries are the context and continuity contracts'.
-    check(
-        "skill-harness-started-without-the-shim",
-        "shims" not in bindings.launch,
-        f"{bindings.harness} is launched as `{bindings.launch}`",
-    )
     with bindings.session(cfg, prov_ip) as tui:
         plain, matched = bindings.prepare(tui)
         check(
@@ -132,18 +109,21 @@ def _assert_catalog(cfg, prov_ip, bindings):
 
         # user-only is the inverse of model-only, and the surface is proven
         # populated, so an absence here means the policy, not an empty list.
+        user_only_listed = bindings.lists(catalog, USER_ONLY)
         check(
             "skill-user-only-is-user-invocable",
-            bindings.lists(catalog, USER_ONLY),
+            user_only_listed,
             f"`{USER_ONLY}` declares user: true and is offered",
         )
-        if not _declined(bindings, "model-only-is-not-user-invocable"):
-            check_absence(
-                "skill-model-only-is-not-user-invocable",
-                not bindings.lists(catalog, MODEL_ONLY),
-                settled=True,
-                detail=f"`{MODEL_ONLY}` declares user: false",
-            )
+        declared.absence(
+            bindings,
+            "skill-model-only-is-not-user-invocable",
+            "model-only-is-not-user-invocable",
+            bindings.lists(catalog, MODEL_ONLY),
+            settled=tui.quiet(),
+            proof=default_listed and user_only_listed,
+            detail=f"`{MODEL_ONLY}` declares user: false",
+        )
 
 
 def _await_marker(cfg, marker, timeout=45.0, gap=2.0):
@@ -180,15 +160,7 @@ def _assert_invocation(cfg, prov_ip, bindings):
     request the harness sent: the Skill's body marker is there only if the
     body was expanded into the model's context.
     """
-    invoke = getattr(bindings, "invoke", None)
-    if invoke is None:
-        check(
-            "skill-invocation-not-driven",
-            True,
-            f"{bindings.harness} has no invocation binding yet",
-            kind="adapt",
-        )
-        return
+    invoke = bindings.invoke
 
     # Its own provider, twice over. Invoking a Skill puts that Skill into a
     # request by design, so these turns would otherwise be read by whatever
@@ -234,18 +206,21 @@ def _assert_invocation(cfg, prov_ip, bindings):
             f"`{USER_ONLY}` declares user: true, and invoking it reached the model",
         )
 
-        if not _declined(bindings, "model-only-is-not-invocable"):
-            rendered = invoke(tui, MODEL_ONLY)
-            tui.snapshot("invoke-model-only", rendered)
-            # The same window the positives are given, so an absence means
-            # it never arrived rather than that nobody waited.
-            check_absence(
-                "skill-model-only-is-not-invocable",
-                not _await_marker(cfg, body_marker(MODEL_ONLY)),
-                settled=True,
-                detail=f"`{MODEL_ONLY}` declares user: false, so invoking it "
-                "must not reach the model",
-            )
+        rendered = invoke(tui, MODEL_ONLY)
+        tui.snapshot("invoke-model-only", rendered)
+        # The same window the positives are given, so an absence means it
+        # never arrived rather than that nobody waited; the two invocations
+        # before it reaching the model are what prove this one could have.
+        declared.absence(
+            bindings,
+            "skill-model-only-is-not-invocable",
+            "model-only-is-not-invocable",
+            _await_marker(cfg, body_marker(MODEL_ONLY)),
+            settled=tui.quiet(),
+            proof=invoked,
+            detail=f"`{MODEL_ONLY}` declares user: false, so invoking it "
+            "must not reach the model",
+        )
 
         _assert_plugin_root(cfg, tui, invoke)
 

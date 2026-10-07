@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-ask",
+  "description": "Conformance hook ask effect on the shell alias: the guard asks only for a command carrying `lab-deny`."
+}

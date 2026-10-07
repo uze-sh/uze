@@ -68,4 +68,8 @@ def run_with(cfg, prov_ip, container):
         f"evidence in {cfg.outdir}",
         flush=True,
     )
-    common.check("agent-probe-ran", True, "observation only")
+    common.check(
+        "agent-probe-ran",
+        requests.count("### ") > 0,
+        f"{requests.count('### ')} requests observed",
+    )

@@ -110,8 +110,11 @@ fn entry_words(handler: &serde_json::Value) -> Vec<String> {
 
 /// A guard on file writes, which every harness fires its pre-tool event
 /// for on every platform: what a test about an entry's mechanics guards.
-fn file_write_guard() -> &'static str {
-    r#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"file.write","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/scripts/check","timeout":10}]}]}}"#
+/// A deny group on a tool Codex fires its hook for on every platform:
+/// `shell` is not one, since Codex runs a Windows shell command without
+/// firing `PreToolUse` (the Windows template declares it unfired).
+fn codex_deny_group() -> &'static str {
+    r#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"agent.spawn","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/scripts/check","timeout":10}]}]}}"#
 }
 
 fn deny_group() -> &'static str {
@@ -162,28 +165,26 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     assert_eq!(codex.exposure_plan(protect).route, CODEX_GUARDS_SHELL);
     assert_eq!(
         opencode.exposure_plan(protect).route,
-        // OpenCode V2 exposes no input-based block (spec:
-        // opencode.ai/v2/docs/build/plugins — the action-level deny lives in
-        // the permission hook, which carries no tool input), so deny is
-        // diagnosed Unsupported, never fabricated.
-        CompatibilityRoute::Unsupported
+        // OpenCode V2 decides in `permission.evaluate`, which carries no
+        // tool input; the bridge keeps the input `execute.before` saw by
+        // call id, so the deny is carried — through UZE's adapter.
+        CompatibilityRoute::Adaptable
     );
     assert_eq!(
         antigravity.exposure_plan(protect).route,
         CompatibilityRoute::Native
     );
 
-    // Stop must never claim an OpenCode equivalence (spec scenario).
+    // Stop is OpenCode's end-of-turn bus event, carried by the bridge; it
+    // is never a tool callback.
     let (_root_stop, stop_resources) = hook_package(
         "compat-stop",
         &manifest_with(r#""Stop":[{"id":"archive","hooks":[{"type":"command","command":"log"}]}]"#),
     );
     let archive = hook_resource(&stop_resources, "archive");
-    let opencode_plan = opencode.exposure_plan(archive);
-    assert_eq!(opencode_plan.route, CompatibilityRoute::Unsupported);
-    assert!(
-        opencode_plan.evidence.contains("no `stop` semantic event"),
-        "the opencode plan must state the exact semantic loss"
+    assert_eq!(
+        opencode.exposure_plan(archive).route,
+        CompatibilityRoute::Adaptable
     );
     assert_eq!(
         claude.exposure_plan(archive).route,
@@ -195,8 +196,10 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
         CompatibilityRoute::Native
     );
 
-    // Ask cannot be enforced on Claude (not in its declared effect set) and
-    // must never silently become an observation — Unsupported, not Degraded.
+    // Ask is carried where the harness puts a call to the person (Claude's
+    // `permissionDecision: ask`, OpenCode's permission prompt, Antigravity's
+    // `decision: ask`) and never silently becomes an observation where it
+    // cannot be: Codex rejects `ask` from a PreToolUse hook.
     let (_root_ask, ask_resources) = hook_package(
         "compat-ask",
         &manifest_with(
@@ -206,7 +209,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     let prompt = hook_resource(&ask_resources, "prompt");
     assert_eq!(
         claude.exposure_plan(prompt).route,
-        CompatibilityRoute::Unsupported
+        CompatibilityRoute::Native
     );
     assert_eq!(
         codex.exposure_plan(prompt).route,
@@ -214,8 +217,7 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
     assert_eq!(
         opencode.exposure_plan(prompt).route,
-        CompatibilityRoute::Unsupported,
-        "ask is a hard denial in the bridge, never a faithful ask"
+        CompatibilityRoute::Adaptable
     );
     assert_eq!(
         antigravity.exposure_plan(prompt).route,
@@ -224,10 +226,11 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
     );
 }
 
-/// A session start is delivered where the harness fires one and reported
-/// Unsupported where it does not — per harness, beside the package's other
-/// groups, never as a reason to refuse the manifest (spec: "An event a
-/// harness lacks does not block the package").
+/// A session start is delivered wherever the harness announces one — and a
+/// group waiting for a start the harness never announces is reported
+/// Unsupported there, beside the package's other groups, never as a reason
+/// to refuse the manifest (spec: "An event a harness lacks does not block
+/// the package").
 #[test]
 fn session_start_is_native_where_fired_and_unsupported_where_not() {
     let (root, resources) = hook_package(
@@ -269,12 +272,21 @@ fn session_start_is_native_where_fired_and_unsupported_where_not() {
         );
     }
 
+    // Antigravity's undocumented `SessionStart` key: a flat entry, no
+    // matcher, run for a new conversation only.
     let plan = antigravity.exposure_plan(started);
-    assert_eq!(plan.route, CompatibilityRoute::Unsupported);
+    assert_eq!(plan.route, CompatibilityRoute::Native, "{}", plan.evidence);
+    let uze_core::exposure::ExposureMechanism::Managed(ManagedArtifact::HookConfigEntry {
+        expected,
+        ..
+    }) = &plan.mechanism
+    else {
+        panic!("a session start is a named entry on Antigravity");
+    };
+    let entry: serde_json::Value = serde_json::from_str(expected).unwrap();
     assert!(
-        plan.evidence.contains("no `session_start` semantic event"),
-        "the report says why: {}",
-        plan.evidence
+        entry["SessionStart"][0]["command"].is_string(),
+        "flat, like Stop: a grouped entry poisons the whole file: {entry}"
     );
     assert_eq!(
         antigravity.exposure_plan(watch).route,
@@ -283,16 +295,37 @@ fn session_start_is_native_where_fired_and_unsupported_where_not() {
     );
     assert_eq!(
         opencode.exposure_plan(started).route,
-        CompatibilityRoute::Unsupported
+        CompatibilityRoute::Adaptable
     );
+    // A start neither of them announces is reported, never delivered.
+    let (_resume_root, resume_resources) = hook_package(
+        "compat-session-resume",
+        &manifest_with(
+            r#""SessionStart":[{"id":"on-resume","matcher":"resume","hooks":[{"type":"command","command":"resumed"}]}]"#,
+        ),
+    );
+    let on_resume = hook_resource(&resume_resources, "on-resume");
+    for (harness, plan) in [
+        ("antigravity", antigravity.exposure_plan(on_resume)),
+        ("opencode", opencode.exposure_plan(on_resume)),
+    ] {
+        assert_eq!(plan.route, CompatibilityRoute::Unsupported, "{harness}");
+        assert!(
+            plan.evidence.contains("`resume`"),
+            "{harness}: {}",
+            plan.evidence
+        );
+    }
     let _ = fs::remove_dir_all(root);
 }
 
-/// `transform` needs a channel for the handler to answer on, which the
-/// exit-code contract does not have; it is deferred to its own change and
-/// must degrade everywhere until then rather than attach as an observation.
+/// A `transform` handler answers with the rewritten input on stdout, and
+/// every harness takes a rewrite (Claude and Codex `updatedInput`,
+/// Antigravity `overwrite`, OpenCode's `execute.before` input), so the group
+/// is delivered — natively through a wrapper, adapted through the bridge.
+/// Where its alias has no tool, nothing is delivered that could never run.
 #[test]
-fn transform_degrades_on_every_harness_while_it_has_no_answer_channel() {
+fn transform_is_delivered_where_the_harness_takes_a_rewrite() {
     let (_root, resources) = hook_package(
         "compat-transform",
         &manifest_with(
@@ -302,6 +335,7 @@ fn transform_degrades_on_every_harness_while_it_has_no_answer_channel() {
     let sandbox = hook_resource(&resources, "sandbox");
     let home = UzeHome::at(temp("compat-transform-home").join("uze"));
     let claude = ClaudeIntegration::new(temp("compat-transform-home").join("claude"), home.clone());
+    let codex = CodexIntegration::new(temp("compat-transform-home").join("agents"), home.clone());
     let opencode = OpenCodeIntegration::new(
         temp("compat-transform-home").join("agents"),
         temp("compat-transform-home").join("config/opencode.json"),
@@ -309,13 +343,136 @@ fn transform_degrades_on_every_harness_while_it_has_no_answer_channel() {
     );
     assert_eq!(
         claude.exposure_plan(sandbox).route,
-        CompatibilityRoute::Degraded,
-        "an input rewrite Claude cannot enforce must degrade, never attach silently"
+        CompatibilityRoute::Native
     );
     assert_eq!(
         opencode.exposure_plan(sandbox).route,
-        CompatibilityRoute::Degraded,
-        "a rewrite the delivered plugin cannot carry must degrade, never attach silently"
+        CompatibilityRoute::Adaptable
+    );
+    // Codex reports a write as `apply_patch` with no path, so `file.write`
+    // binds no tool there.
+    assert_eq!(
+        codex.exposure_plan(sandbox).route,
+        CompatibilityRoute::Unsupported
+    );
+}
+
+/// The packager declares what it generates: a hook delivered through the
+/// `sh` wrapper needs `jq`, attributed to the wrapper rather than to the
+/// author; OpenCode's hooks run in its own runtime and need nothing; and a
+/// package with no hook needs nothing from any harness.
+#[test]
+fn the_hook_wrapper_contributes_its_own_requirement_where_it_runs() {
+    use uze_core::requirement::{Requirement, RequirementSource};
+    let (root, _) = hook_package("generated-requirements", deny_group());
+    let home = UzeHome::at(root.join("uze"));
+    ingest_package(&home, &root.join("pkg"));
+    let package = uze_core::store::UzeStore::new(home.clone())
+        .package(&PackageId::from_plugin_name("hook-demo", Path::new("plugin.json")).unwrap())
+        .unwrap();
+    let resources = stored_resources(&home, "hook-demo");
+    let resources: Vec<&Resource> = resources.iter().collect();
+    let wrapper_needs: Vec<(Requirement, RequirementSource)> =
+        if uze_core::shell::ShellCommand::platform() == "posix" {
+            vec![(
+                Requirement::named(uze_core::hook::WRAPPER_DEPENDENCY)
+                    .with_purpose("the hook wrapper reads the harness's payload with it"),
+                RequirementSource::Artifact {
+                    what: "hook wrapper".to_owned(),
+                },
+            )]
+        } else {
+            Vec::new()
+        };
+    let integrations: Vec<Box<dyn IntegrationPort>> = vec![
+        Box::new(ClaudeIntegration::new(root.join("claude"), home.clone())),
+        Box::new(CodexIntegration::new(root.join("agents"), home.clone())),
+        Box::new(AntigravityIntegration::new(
+            root.join("agents"),
+            home.clone(),
+        )),
+    ];
+    for integration in &integrations {
+        assert_eq!(
+            integration.generated_requirements(&package, &resources),
+            wrapper_needs,
+            "{}",
+            integration.id()
+        );
+        assert!(
+            integration.generated_requirements(&package, &[]).is_empty(),
+            "{} needs nothing for a package with no hook",
+            integration.id()
+        );
+    }
+    assert!(
+        opencode(&root)
+            .generated_requirements(&package, &resources)
+            .is_empty(),
+        "OpenCode runs hooks in its own runtime"
+    );
+}
+
+/// An exec-form handler asks the machine for what its launcher needs,
+/// attributed to its hook and marked when the hook fails closed: a Python
+/// guard needs `python3` and a JavaScript observer `node` where a wrapper
+/// runs them, while OpenCode runs the JavaScript in its own runtime and
+/// asks only for Python.
+#[test]
+fn an_exec_form_handler_requires_the_interpreter_its_launcher_names() {
+    use uze_core::requirement::{Requirement, RequirementSource};
+    // The launcher's words are the POSIX table's; the Windows one, and its
+    // Python probe, are proved by the launcher's own tests on every host.
+    if uze_core::shell::ShellCommand::platform() != "posix" {
+        return;
+    }
+    let root = temp("exec-form-requirements");
+    let pkg = root.join("pkg");
+    fs::create_dir_all(pkg.join("hooks")).unwrap();
+    fs::write(
+        pkg.join("plugin.json"),
+        r#"{"name":"hook-demo","version":"1.0.0","description":"Hooks fixture"}"#,
+    )
+    .unwrap();
+    fs::write(pkg.join("hooks").join("guard.py"), "import sys\n").unwrap();
+    fs::write(pkg.join("hooks").join("watch.js"), "\n").unwrap();
+    fs::write(
+        pkg.join("hooks.json"),
+        r#"{"hooks":{"PreToolUse":[
+            {"id":"py-guard","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"hooks/guard.py","args":[]}]},
+            {"id":"js-watch","matcher":"shell","hooks":[{"type":"command","command":"hooks/watch.js","args":["--quiet"]}]}
+        ]}}"#,
+    )
+    .unwrap();
+    let home = UzeHome::at(root.join("uze"));
+    ingest_package(&home, &pkg);
+    let package = uze_core::store::UzeStore::new(home.clone())
+        .package(&PackageId::from_plugin_name("hook-demo", Path::new("plugin.json")).unwrap())
+        .unwrap();
+    let resources = stored_resources(&home, "hook-demo");
+    let resources: Vec<&Resource> = resources.iter().collect();
+    let python = (
+        Requirement::named("python3").with_purpose("starts the hook's script"),
+        RequirementSource::Hook {
+            id: "py-guard".to_owned(),
+            fails_closed: true,
+        },
+    );
+    let node = (
+        Requirement::named("node").with_purpose("starts the hook's script"),
+        RequirementSource::Hook {
+            id: "js-watch".to_owned(),
+            fails_closed: false,
+        },
+    );
+    let claude = ClaudeIntegration::new(root.join("claude"), home.clone());
+    let needed = claude.generated_requirements(&package, &resources);
+    assert!(needed.contains(&python), "{needed:?}");
+    assert!(needed.contains(&node), "{needed:?}");
+    assert_eq!(
+        opencode(&root).generated_requirements(&package, &resources),
+        vec![python],
+        "OpenCode's own runtime runs the JavaScript"
     );
 }
 
@@ -711,7 +868,7 @@ fn reinstalling_replaces_a_previous_packager_entry_and_leaves_foreign_ones() {
 
 #[test]
 fn codex_writes_its_own_hooks_json_command_form() {
-    let (root, resources) = hook_package("codex-hooks", file_write_guard());
+    let (root, resources) = hook_package("codex-hooks", codex_deny_group());
     let protect = hook_resource(&resources, "protect-env");
     let home = UzeHome::at(root.join("uze"));
     let codex = CodexIntegration::new(root.join("agents"), home);
@@ -774,7 +931,7 @@ fn codex_writes_its_own_hooks_json_command_form() {
 
 #[test]
 fn foreign_codex_hooks_survive_attach_and_detach() {
-    let (root, resources) = hook_package("codex-foreign", file_write_guard());
+    let (root, resources) = hook_package("codex-foreign", codex_deny_group());
     let protect = hook_resource(&resources, "protect-env");
     let home = UzeHome::at(root.join("uze"));
     let codex = CodexIntegration::new(root.join("agents"), home);
@@ -928,7 +1085,7 @@ fn opencode_bridge_lifecycle_preserves_foreign_plugins_in_the_directory() {
     assert!(source.contains("Plugin.define"));
     assert!(source.contains("tool.hook"));
     assert!(source.contains("\"effect\":\"observe\""));
-    assert!(source.contains("\"matchers\":[\"bash\"]"));
+    assert!(source.contains("\"matchers\":[\"shell\"]"));
 
     assert_eq!(
         integration.inspect_receipt(&receipt).state,
@@ -1124,7 +1281,7 @@ fn an_opencode_bridge_an_earlier_build_wrote_still_removes() {
 }
 
 #[test]
-fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_never_bridged() {
+fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_bridged_as_end_of_turn() {
     let (_root, resources) = hook_package(
         "opencode-nomatcher",
         &manifest_with(
@@ -1136,14 +1293,15 @@ fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_never_bridged() {
     let integration = opencode(&_root);
 
     let plan = integration.exposure_plan(stop);
-    assert_eq!(plan.route, CompatibilityRoute::Unsupported);
-    assert!(matches!(
-        plan.mechanism,
-        uze_core::exposure::ExposureMechanism::Unsupported { .. }
-    ));
+    assert_eq!(plan.route, CompatibilityRoute::Adaptable);
+    let stop_receipt = integration.attach_receipt(stop).unwrap().unwrap();
+    let ManagedArtifact::ManagedHookFile { path } = &stop_receipt.artifact else {
+        unreachable!();
+    };
+    let bridge = fs::read_to_string(path).unwrap();
     assert!(
-        integration.attach_receipt(stop).unwrap().is_none(),
-        "a degraded hook never attaches on OpenCode"
+        bridge.contains("session.execution.succeeded") && bridge.contains("\"event\":\"stop\""),
+        "a Stop group runs at the end of a turn, never as a tool callback"
     );
 
     let receipt = integration.attach_receipt(all_tools).unwrap().unwrap();

@@ -226,7 +226,7 @@ function Box({
 }) {
   return (
     <div
-      className={`bg-paper px-3 py-2 text-center ${className}`}
+      className={`rounded-md bg-paper px-3 py-2 text-center ${className}`}
       style={{
         boxShadow: `inset 0 0 0 ${selected ? 2 : 1}px var(--color-${lit ? 'ink' : 'line'})`,
       }}
@@ -258,7 +258,7 @@ function Arch({ step }: { step: boolean }) {
       </div>
       {/* The canvas's dot grid, the same the terminal draws under a diagram. */}
       <div
-        className="flex min-h-0 flex-1 flex-col justify-center px-[6%]"
+        className="flex min-h-0 flex-1 flex-col justify-center px-[14%]"
         style={{
           backgroundImage: 'radial-gradient(var(--color-line) 1px, transparent 1px)',
           backgroundSize: '22px 22px',

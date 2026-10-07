@@ -107,6 +107,24 @@ class Tui:
                 break
         return ansi_strip(raw)
 
+    def transcript(self):
+        """Everything the session printed so far, as plain text: the record,
+        not the reads. A wait hands back only the read that satisfied it, so
+        text that arrived between reads — a hook error flashing past — is
+        in the record and in no read."""
+        path = f"{self.cfg.outdir}/{self.tag}.typescript"
+        try:
+            with open(path, errors="replace") as handle:
+                return ansi_strip(handle.read())
+        except OSError:
+            return ""
+
+    def quiet(self):
+        """Whether the surface stopped changing (`settle_and_quiet`): the
+        condition an absence read from this screen needs before it means
+        anything."""
+        return common.settle_and_quiet(self.screen)
+
     def ask(self, prompt, reads=8):
         """Sends a prompt and returns what the turn produced."""
         self.type(prompt)

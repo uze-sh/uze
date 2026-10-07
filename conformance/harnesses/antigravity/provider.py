@@ -53,7 +53,7 @@ value served here is synthetic):
 
 The model logic is the one below, unchanged: the CloudCode listener unwraps
 `request` before the same summary/decision path and re-wraps every event it
-emits, so `static`/`toolcall`, `wants_function_call` and the variation
+emits, so `static`/`toolcall`, `scripted_step` and the variation
 machinery behave identically in both auth modes.
 
 Modes (PROVIDER_MODE):
@@ -119,6 +119,12 @@ MCP_PROOF = os.environ.get("MCP_PROOF", "UZE_MCP_CONFORMANCE_PROOF_1")
 # The hook scenarios script a functionCall to the harness's native shell
 # tool (`run_command`); the MCP phases keep the default below.
 FC_NAME = os.environ.get("TOOL_NAME", "call_mcp_tool")
+#: Several calls, one per model step, as a JSON list of `{"name", "args"}`.
+#: Gemini resends the whole conversation, so the step a request is answered
+#: with is the number of function responses it already carries.
+TOOL_SEQUENCE = json.loads(os.environ.get("TOOL_SEQUENCE", "null") or "null") or [
+    {"name": FC_NAME, "args": FC_ARGS}
+]
 
 ISOLATION_MARKERS = ["already isolated", "UZE_CONFORMANCE_REBASE"]
 #: One turn each. A single request carrying both is what proves a relaunched
@@ -130,30 +136,12 @@ SKILL_MARKERS = [
     "flow:commit",
     "flow:review",
     "flow:analyze",
-    "commit",
-    "review",
-    "analyze",
-    "init",
     # A Skill's *body* reaches the model only when the Skill was
     # invoked — a listing carries name and description alone. These are
     # what tell an invocation from an offer.
     "UZE_SKILL_BODY_COMMIT",
     "UZE_SKILL_BODY_REVIEW",
     "UZE_SKILL_BODY_ANALYZE",
-]
-TOOL_NAMES = [
-    "grep_search",
-    "list_dir",
-    "manage_task",
-    "read_url_content",
-    "replace_file_content",
-    "run_command",
-    "schedule",
-    "search_web",
-    "view_file",
-    "write_to_file",
-    "generate_image",
-    "call_mcp_tool",
 ]
 # Conformance evidence markers carried by portable-hook denial reasons
 # (ADR-033): presence/absence in the structural summary proves what the real
@@ -216,13 +204,40 @@ def sse(obj):
     return f"data: {json.dumps(obj)}\n\n".encode()
 
 
-def wants_function_call(summary):
-    """A model can only call a function the request declared, and has no
-    reason to call it again once the response is in the conversation. The
-    harness also makes side requests (a lighter model, no tools declared)
-    around the user's turn; counting requests handed the call to one of
-    those and the real turn never saw a tool."""
-    return FC_NAME in summary["tools"] and not summary["has_function_response"]
+def scripted_step(body_text):
+    """The index of the call this request is answered with, or None once
+    the sequence is done.
+
+    Gemini resends the whole conversation and names no call ids, so the
+    step is found by replaying it: each `functionCall` already in the
+    conversation is matched, in order, to the next step that names that
+    tool. A step the provider passed over (`capture.next_scriptable`) is
+    simply never matched, and the sequence goes on after it.
+    """
+    try:
+        contents = json.loads(body_text).get("contents") or []
+    except (ValueError, AttributeError):
+        contents = []
+    made = [
+        part["functionCall"].get("name")
+        for content in contents
+        for part in content.get("parts", [])
+        if isinstance(part, dict) and isinstance(part.get("functionCall"), dict)
+    ]
+    step = 0
+    for name in made:
+        following = next(
+            (
+                i
+                for i in range(step, len(TOOL_SEQUENCE))
+                if TOOL_SEQUENCE[i]["name"] == name
+            ),
+            None,
+        )
+        if following is None:
+            continue
+        step = following + 1
+    return step if step < len(TOOL_SEQUENCE) else None
 
 
 def unwrap_consumer_request(body_text):
@@ -307,11 +322,18 @@ def text_frame(text):
     )
 
 
-def model_payload(summary):
+def model_payload(body_text):
     """The SSE the mode dictates for this request — the one decision path,
-    shared by the API-key listener and the signed-in one."""
-    if MODE == "toolcall" and wants_function_call(summary):
-        fc = {"functionCall": {"name": FC_NAME, "args": FC_ARGS}}
+    shared by the API-key listener and the signed-in one.
+
+    The harness also makes side requests (a lighter model, no tools
+    declared) around the user's turn; `capture.scriptable` answers those
+    with text, so the call lands on the turn that offered the tool."""
+    due = scripted_step(body_text) if MODE == "toolcall" else None
+    step = capture.next_scriptable(body_text, TOOL_SEQUENCE, due)
+    if step is not None:
+        call = TOOL_SEQUENCE[step]
+        fc = {"functionCall": {"name": call["name"], "args": call["args"]}}
         return sse(
             {
                 "candidates": [
@@ -336,8 +358,8 @@ def model_payload(summary):
 def serve_model(handler, body_text, consumer=False):
     """Records the request and streams the answer; `consumer` re-frames
     every event into the signed-in envelope."""
-    rec = record_request(handler, body_text)
-    payload = model_payload(rec["summary"])
+    record_request(handler, body_text)
+    payload = model_payload(body_text)
     if consumer:
         payload = wrap_consumer_stream(payload)
     handler.send_response(200)

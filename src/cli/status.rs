@@ -38,6 +38,18 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
                     .iter()
                     .map(|finding| finding.capability.as_str())
                     .collect();
+                // Held back is in place and waiting on the person, not
+                // broken: a warning, worded as the wait it is.
+                if group[0].kind == uze_application::application::DeliveryFindingKind::HeldBack {
+                    warnings.push(format!(
+                        "{}  {} of {} held back\n  {}",
+                        harness.display_name,
+                        names.join(", "),
+                        package.plugin,
+                        progress::label(&group[0].detail)
+                    ));
+                    continue;
+                }
                 let kind = format!("{:?}", group[0].kind).to_lowercase();
                 problems.push(format!(
                     "{}  {} of {} {kind}\n  {}",
@@ -50,6 +62,14 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
         }
     }
     for plugin in &report.plugins {
+        for gap in &plugin.requirement_gaps {
+            let finding = format!("{}  {}", plugin.id, requirement_gap_text(gap));
+            if gap.denies_while_unmet.is_empty() {
+                warnings.push(finding);
+            } else {
+                problems.push(finding);
+            }
+        }
         for harness in &plugin.undelivered {
             warnings.push(format!(
                 "{}  {} not delivered: {}",
@@ -471,6 +491,128 @@ pub(crate) fn render_machine_status(report: &MachineStatusReport, asked: Machine
         ));
     }
     text.push_str(&render_plugin_list(&report.packages));
+    text.push_str(&render_requirement_gaps(&report.packages));
+    text.push_str(&render_held_back(&report.held_back));
+    text
+}
+
+/// What installed plugins need from this machine and do not find, one
+/// entry per executable with the command that installs it. A gap that
+/// keeps a guard denying is marked as the failure it is. Empty when
+/// nothing is missing.
+pub(crate) fn render_requirement_gaps(
+    packages: &[uze_application::application::PluginSummary],
+) -> String {
+    render_gap_section(
+        packages
+            .iter()
+            .flat_map(|package| {
+                package
+                    .requirement_gaps
+                    .iter()
+                    .map(move |gap| (package.id.as_str(), gap))
+            })
+            .collect(),
+    )
+}
+
+/// [`render_requirement_gaps`] for packages a command just installed or
+/// updated, asked of the machine now.
+pub(crate) fn render_requirement_gaps_of<'a>(
+    app: &UzeApplication,
+    packages: impl IntoIterator<Item = &'a str>,
+) -> String {
+    let reports: Vec<_> = packages
+        .into_iter()
+        .filter_map(|package| app.plugins().requirements(package).ok())
+        .collect();
+    render_gap_section(
+        reports
+            .iter()
+            .flat_map(|report| report.gaps().map(|gap| (report.package.as_str(), gap)))
+            .collect(),
+    )
+}
+
+fn render_gap_section(gaps: Vec<(&str, &uze_application::application::RequirementLine)>) -> String {
+    if gaps.is_empty() {
+        return String::new();
+    }
+    let mut text = format!("\n{}", progress::report_section("Missing on this machine"));
+    for (package, gap) in gaps {
+        let icon = if gap.denies_while_unmet.is_empty() {
+            progress::warning_icon()
+        } else {
+            progress::error_icon()
+        };
+        text.push_str(&format!(
+            "{icon} {package}  {}\n",
+            requirement_gap_text(gap)
+        ));
+    }
+    text
+}
+
+/// One unmet requirement as a person reads it: what is missing, who needs
+/// it and why, what is denied meanwhile, and the command that installs it.
+/// UZE never runs that command.
+pub(crate) fn requirement_gap_text(gap: &uze_application::application::RequirementLine) -> String {
+    use uze_application::application::RequirementStatus;
+    let wanted = match &gap.minimum {
+        Some(minimum) => format!("{} {minimum}", gap.executable),
+        None => gap.executable.clone(),
+    };
+    let mut text = match &gap.status {
+        RequirementStatus::TooOld { found, .. } => format!("{wanted} needed, {found} installed"),
+        _ => format!("{wanted} not installed"),
+    };
+    let needed_by = gap.needed_by.join(", ");
+    text.push_str(&match &gap.purpose {
+        Some(purpose) => format!("\n  needed by {needed_by}: {purpose}"),
+        None => format!("\n  needed by {needed_by}"),
+    });
+    if !gap.denies_while_unmet.is_empty() {
+        let hooks: Vec<String> = gap
+            .denies_while_unmet
+            .iter()
+            .map(|hook| format!("`{hook}`"))
+            .collect();
+        text.push_str(&format!(
+            "\n  until it is, hook {} denies every call it matches",
+            hooks.join(", ")
+        ));
+    }
+    text.push_str(&match &gap.install_command {
+        Some(command) => format!("\n  install it: {}", progress::label(command)),
+        None => "\n  install it by hand: no package manager on this machine offers it".to_owned(),
+    });
+    text
+}
+
+/// What a harness holds back until the person acts in it: one line per
+/// plugin on a harness, naming how many of its capabilities wait, and the
+/// action under it. Empty when nothing waits.
+pub(crate) fn render_held_back(notes: &[uze_application::application::HeldBackNote]) -> String {
+    if notes.is_empty() {
+        return String::new();
+    }
+    let mut text = format!("\n{}", progress::report_section("Waiting on you"));
+    for group in notes.chunk_by(|left, right| {
+        left.harness == right.harness && left.plugin == right.plugin && left.action == right.action
+    }) {
+        let one = &group[0];
+        let count = match group.len() {
+            1 => "1 capability".to_owned(),
+            n => format!("{n} capabilities"),
+        };
+        text.push_str(&format!(
+            "{} {}  {count} of {} held back\n  {}\n",
+            progress::warning_icon(),
+            one.harness,
+            one.plugin,
+            progress::label(&one.action)
+        ));
+    }
     text
 }
 
@@ -536,6 +678,7 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         ));
         text.push('\n');
     }
+    text.push_str(&render_held_back(&report.held_back));
     for issue in &report.issues {
         text.push_str(&format!("{} {issue}\n", progress::warning_icon()));
     }
@@ -1082,4 +1225,59 @@ pub(crate) fn render_managed_state(states: &[uze_application::AttachmentState]) 
     format!(
         "{matched} matched, {missing} missing, {drifted} drifted, {conflict} conflicts, {blocked} blocked"
     )
+}
+
+#[cfg(test)]
+mod requirement_gap_tests {
+    use uze_application::application::{RequirementLine, RequirementStatus};
+
+    use super::requirement_gap_text;
+
+    fn gap(status: RequirementStatus) -> RequirementLine {
+        RequirementLine {
+            executable: "python3".to_owned(),
+            minimum: Some(">=3.10".to_owned()),
+            purpose: Some("the guard is Python".to_owned()),
+            needed_by: vec!["the plugin".to_owned(), "hook `guard`".to_owned()],
+            denies_while_unmet: vec!["guard".to_owned()],
+            status,
+            install_command: Some("sudo apt-get install -y python3".to_owned()),
+        }
+    }
+
+    #[test]
+    fn a_gap_says_what_is_missing_who_needs_it_what_it_denies_and_how_to_close_it() {
+        let text =
+            crate::progress::unpainted(&requirement_gap_text(&gap(RequirementStatus::Missing)));
+        assert!(text.starts_with("python3 >=3.10 not installed"), "{text}");
+        assert!(
+            text.contains("needed by the plugin, hook `guard`: the guard is Python"),
+            "{text}"
+        );
+        assert!(
+            text.contains("hook `guard` denies every call it matches"),
+            "{text}"
+        );
+        assert!(
+            text.contains("install it: sudo apt-get install -y python3"),
+            "{text}"
+        );
+
+        let old =
+            crate::progress::unpainted(&requirement_gap_text(&gap(RequirementStatus::TooOld {
+                found: "3.8.10".to_owned(),
+                minimum: "3.10".to_owned(),
+            })));
+        assert!(
+            old.starts_with("python3 >=3.10 needed, 3.8.10 installed"),
+            "{old}"
+        );
+
+        let mut by_hand = gap(RequirementStatus::Missing);
+        by_hand.install_command = None;
+        by_hand.denies_while_unmet.clear();
+        let text = crate::progress::unpainted(&requirement_gap_text(&by_hand));
+        assert!(text.contains("install it by hand"), "{text}");
+        assert!(!text.contains("denies"), "{text}");
+    }
 }

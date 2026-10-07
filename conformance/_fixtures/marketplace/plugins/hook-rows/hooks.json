@@ -1,0 +1,113 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "census",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe census allow",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "id": "row-shell",
+        "matcher": "shell",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe row-shell allow",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "id": "row-file-read",
+        "matcher": "file.read",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe row-file-read allow",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "id": "row-file-write",
+        "matcher": "file.write",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe row-file-write allow",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "id": "row-file-edit",
+        "matcher": "file.edit",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe row-file-edit allow",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "id": "row-search-files",
+        "matcher": "search.files",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe row-search-files allow",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "id": "row-search-web",
+        "matcher": "search.web",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe row-search-web allow",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "id": "row-agent-spawn",
+        "matcher": "agent.spawn",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe row-agent-spawn allow",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "id": "row-agent-message",
+        "matcher": "agent.message",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe row-agent-message allow",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

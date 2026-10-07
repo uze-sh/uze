@@ -312,6 +312,17 @@ impl IntegrationPort for ClaudeIntegration {
         )
     }
 
+    fn generated_requirements(
+        &self,
+        _package: &StoredPackage,
+        resources: &[&Resource],
+    ) -> Vec<(
+        uze_core::requirement::Requirement,
+        uze_core::requirement::RequirementSource,
+    )> {
+        crate::hooks::generated_requirements(self, HOOKS, resources)
+    }
+
     fn exposure_plan(&self, resource: &Resource) -> ExposurePlan {
         match resource.capability.kind {
             CapabilityKind::AgentSkill => self.skill_exposure_plan(resource),
@@ -373,7 +384,10 @@ impl IntegrationPort for ClaudeIntegration {
     /// agent that declares one reaches it without that part.
     fn check_capability(&self, resource: &Resource) -> Findings {
         if resource.capability.kind != CapabilityKind::Agent {
-            return Findings::default();
+            return crate::shared::skill::hand_written_controls(
+                resource,
+                &[&["disable-model-invocation"], &["user-invocable"]],
+            );
         }
         let Some(document) = AgentDocument::parse(&resource.capability.payload) else {
             return Findings::default();
@@ -742,7 +756,7 @@ const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "plugins",
         fact: "reads a directory-marketplace plugin live from its source; its cache copy drops linked files",
-        measured_on: VERSION,
+        measured_on: "2.1.283",
         proven_by: "experiments/claude/parity.py::observed",
     },
     HarnessFact {
@@ -759,13 +773,27 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "hooks",
-        fact: "fires `SessionStart` once per new session, with its source",
+        fact: "runs a delivered `SessionStart`, `PostToolUse` and `Stop` group, each \
+               naming its event",
         measured_on: VERSION,
-        proven_by: "experiments/session_start_probe.py::run",
+        proven_by: "contract/hooks.py::_events",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "puts a call a hook answers with `permissionDecision: ask` to the person, \
+               showing the hook's reason, and runs it once approved",
+        measured_on: VERSION,
+        proven_by: "contract/hooks.py::_ask",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs the input a PreToolUse hook hands back as `updatedInput` beside `allow`",
+        measured_on: VERSION,
+        proven_by: "contract/hooks.py::_transform",
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "2.1.283";
+const VERSION: &str = "2.1.291";
 
 #[cfg(test)]
 mod lifecycle_tests {

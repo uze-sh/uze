@@ -70,6 +70,18 @@ pub struct UnreadableDelivery {
     pub reason: String,
 }
 
+/// One capability the harness holds back until the operator acts in it — a
+/// review, a trust decision — although UZE delivered it and its receipt
+/// inspects as matched. The receipt answers whether UZE owns the artifact;
+/// this answers whether the harness will use it yet.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct HeldBack {
+    /// The capability's resource identity.
+    pub capability: String,
+    /// What the operator does in the harness for it to be used.
+    pub action: String,
+}
+
 /// Read-only detection of a harness binary. No side effects.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct HarnessDetection {
@@ -477,6 +489,46 @@ pub trait IntegrationPort: Send + Sync {
         _receipt: &AttachmentReceipt,
         _served: &[&crate::capability::Resource],
     ) -> Vec<UnreadableDelivery> {
+        Vec::new()
+    }
+
+    /// Why the harness will not read the project context in `project_root`
+    /// — `instructions` is its `AGENTS.md` — although it reads that file
+    /// natively or through a bridge: a project the person marked untrusted,
+    /// a file past the size the harness reads. Read from the harness's own
+    /// state and the file, never written. `None` by default.
+    fn context_unread(&self, _project_root: &Path, _instructions: &Path) -> Option<String> {
+        None
+    }
+
+    /// What the artifacts this integration generates for `package` need
+    /// from the machine, each attributed to what needs it: the program a
+    /// generated hook wrapper reads its payload with, an interpreter a
+    /// hook's launcher starts. Joins what the package declares to make its
+    /// effective requirements. Empty by default.
+    fn generated_requirements(
+        &self,
+        _package: &StoredPackage,
+        _resources: &[&crate::capability::Resource],
+    ) -> Vec<(
+        crate::requirement::Requirement,
+        crate::requirement::RequirementSource,
+    )> {
+        Vec::new()
+    }
+
+    /// What the harness holds back of a delivery whose receipt still
+    /// inspects as matched, until the operator acts in the harness: a hook
+    /// awaiting the harness's review, read from the harness's own record of
+    /// that decision and never written to it. `served` is every resource
+    /// the receipt delivers. Empty by default, and never a reason to detach
+    /// anything: status, inspect and doctor report it with the action.
+    fn held_back(
+        &self,
+        _package: &StoredPackage,
+        _receipt: &AttachmentReceipt,
+        _served: &[&crate::capability::Resource],
+    ) -> Vec<HeldBack> {
         Vec::new()
     }
 

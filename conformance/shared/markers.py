@@ -51,6 +51,10 @@ AGENT_PROBE = "UZE_AGENT_PROBE"
 CONTEXT = "UZE_CONTEXT_MARKER_AGENTS_MD"
 #: Carried by the context scene's prompt, for the same reason as above.
 CONTEXT_PROBE = "UZE_CONTEXT_PROBE"
+
+#: The last line of the long `AGENTS.md` the context contract writes, past
+#: the size any harness is known to cut a rules file at.
+CONTEXT_TAIL = "UZE_CONTEXT_MARKER_TAIL"
 #: The description of a Skill the project authored under `.agents/skills/`,
 #: which a harness's catalog carries to the model.
 PROJECT_SKILL = "UZE_CONTEXT_MARKER_PROJECT_SKILL"
@@ -64,6 +68,28 @@ ROOT_SKILL_BODY = "UZE_SKILL_BODY_LOCATE"
 ROOT_FILE_MARKER = "UZE_PLUGIN_FILE_LOCATE"
 #: Placeholders a harness's model must never be handed literally.
 PLACEHOLDERS = ("${PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}")
+
+#: What each version of the lifecycle fixture puts in front of the model
+#: (`plugins/lifecycle-plugin`): a Skill's and an agent's description.
+LIFECYCLE = {
+    version: (f"UZE_LIFECYCLE_SKILL_{version}", f"UZE_LIFECYCLE_AGENT_{version}")
+    for version in ("V1", "V2")
+}
+
+#: The reasons the hooks contract's denying handlers relay
+#: (`_fixtures/.../scripts/probe`). Composed by the handler from its own
+#: label at run time, so neither the prompt nor a scripted call carries one.
+HOOK_DENIALS = (
+    *(
+        f"lab-hook-denied:{label}"
+        for label in ("effect-guard", "effect-ask", "post-guard", "exec-guard")
+    ),
+    # The wrapper's own reason when a guard cannot run (fail-closed): its
+    # shell's exit, or, where a handler is spawned from its words with no
+    # shell between (OpenCode's bridge), the spawn that never started.
+    "handler failed (exit",
+    "handler failed to start",
+)
 
 _ROOT_REF = re.compile(r"UZE_ROOT_REF=([^\s\"'\\`]+)")
 _MODEL = re.compile(r'"model"\s*:\s*"([^"]+)"')
@@ -79,13 +105,24 @@ def summary(body):
     return {
         "agent_markers": agent_markers,
         "context_markers": {
-            m: m in body for m in (CONTEXT, CONTEXT_PROBE, PROJECT_SKILL, PROJECT_AGENT)
+            m: m in body
+            for m in (
+                CONTEXT,
+                CONTEXT_PROBE,
+                CONTEXT_TAIL,
+                PROJECT_SKILL,
+                PROJECT_AGENT,
+            )
         },
         "root_markers": {
             ROOT_SKILL_BODY: ROOT_SKILL_BODY in body,
             **{p: p in body for p in PLACEHOLDERS},
         },
         "root_refs": sorted(set(_ROOT_REF.findall(body))),
+        "hook_denials": {m: m in body for m in HOOK_DENIALS},
+        "lifecycle_markers": {
+            m: m in body for markers in LIFECYCLE.values() for m in markers
+        },
         # The model a request asked for, where the body names it (Gemini
         # names it in the path instead, which the request record keeps).
         "model": next(iter(_MODEL.findall(body)), None),

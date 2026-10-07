@@ -3,7 +3,7 @@
 //! MCP definitions from its global config, so this integration decomposes
 //! only those portable capabilities — including the canonical invocation
 //! policy, which OpenCode V2 expresses natively in SKILL.md frontmatter
-//! (`metadata.opencode/autoinvoke`, `slash`), so the vendor Command
+//! (`metadata.opencode/autoinvoke`), so the vendor Command
 //! primitive is never needed (ADR-030 §9).
 //!
 //! Split by concern: [`mcp`] (the global `mcp.<name>` config entries),
@@ -140,9 +140,9 @@ impl IntegrationPort for OpenCodeIntegration {
 
     /// A **mention**, not a slash command. V2's picker renders every
     /// discovered Skill as `"@" + id` and `SessionPrompt.prepare` expands a
-    /// mentioned Skill's body into the user message; `slash: false` removes
-    /// one from the `/` catalog without removing this path, which is why
-    /// `invoke.user: false` is Adaptable here (see `skills.rs`). The Lab
+    /// mentioned Skill's body into the user message, whatever its policy,
+    /// which is one reason `invoke.user: false` is Degraded here (see
+    /// `skills.rs`). The Lab
     /// types this exact form (`harnesses/opencode/bindings.py::invoke`).
     fn invocation_prefix(&self) -> &'static str {
         "@"
@@ -198,7 +198,7 @@ impl IntegrationPort for OpenCodeIntegration {
             // explicit adapter, never a native hook file (OpenCode exposes
             // no declarative hook surface; ADR-033).
             adaptable: [CapabilityKind::Hook].into_iter().collect(),
-            evidence: "OpenCode V2 reads global Agent Skills from its own ~/.config/opencode/skills, where UZE delivers each as a directory of its own, and local MCP as a global `mcp.servers.<name>` entry in opencode.json, which UZE writes, inspects and detaches directly. Skills preserve invocation policy natively in SKILL.md frontmatter (metadata.opencode/autoinvoke/slash — ADR-030 §9) without Command primitive. Portable Hooks are delivered as one owned, regenerable `plugins/hooks-<package>.ts` plugin the harness auto-discovers: it is the same wrapper the other harnesses get as a shell script — handlers run sequentially against the portable HOOK_* contract, first-deny-wins, per-handler timeouts, fail-closed by effect — with this package's groups as data and no author TypeScript toolchain (ADR-033)."
+            evidence: "OpenCode V2 reads global Agent Skills from its own ~/.config/opencode/skills, where UZE delivers each as a directory of its own, and local MCP as a global `mcp.servers.<name>` entry in opencode.json, which UZE writes, inspects and detaches directly. Skills carry the model half of the invocation policy natively in SKILL.md frontmatter (metadata.opencode/autoinvoke — ADR-030 §9); V2 defines nothing for the person's half. Portable Hooks are delivered as one owned, regenerable `plugins/hooks-<package>.ts` plugin the harness auto-discovers: it is the same wrapper the other harnesses get as a shell script — handlers run sequentially against the portable HOOK_* contract, first-deny-wins, per-handler timeouts, fail-closed by effect — with this package's groups as data and no author TypeScript toolchain (ADR-033)."
                 .to_owned(),
             ..HarnessCapabilities::default()
         }
@@ -273,10 +273,14 @@ impl IntegrationPort for OpenCodeIntegration {
     }
 
     fn check_capability(&self, resource: &Resource) -> Findings {
-        if resource.capability.kind == CapabilityKind::Agent {
-            opencode_agent_findings(&self.harness_keys(), resource)
-        } else {
-            Findings::default()
+        match resource.capability.kind {
+            CapabilityKind::Agent => opencode_agent_findings(&self.harness_keys(), resource),
+            // `slash` is V1's, which V2 no longer reads; `autoinvoke` is
+            // what UZE writes from `invoke.model`.
+            _ => crate::shared::skill::hand_written_controls(
+                resource,
+                &[&["slash"], &["metadata", "opencode/autoinvoke"]],
+            ),
         }
     }
 
@@ -305,6 +309,17 @@ impl IntegrationPort for OpenCodeIntegration {
             },
         )
     }
+    fn generated_requirements(
+        &self,
+        _package: &uze_core::StoredPackage,
+        resources: &[&Resource],
+    ) -> Vec<(
+        uze_core::requirement::Requirement,
+        uze_core::requirement::RequirementSource,
+    )> {
+        crate::hooks::generated_requirements(self, HOOKS, resources)
+    }
+
     fn exposure_plan(&self, resource: &Resource) -> ExposurePlan {
         match resource.capability.kind {
             CapabilityKind::AgentSkill => self.skill_plan(resource),
@@ -447,6 +462,16 @@ fn opencode_agent_unreadable(path: &Path) -> Option<String> {
     if field("tools").is_some_and(|tools| !tools.is_mapping()) {
         problems.push("`tools` is not a map, so OpenCode drops the agent".to_owned());
     }
+    if field("color").is_some_and(|color| {
+        color.as_str().is_none_or(|color| {
+            color.len() != 7
+                || !color.starts_with('#')
+                || !color[1..].chars().all(|digit| digit.is_ascii_hexdigit())
+        })
+    }) {
+        problems
+            .push("`color` is not a `#rrggbb` color, so OpenCode V2 drops the agent".to_owned());
+    }
     (!problems.is_empty()).then(|| format!("{}: {}", path.display(), problems.join("; ")))
 }
 
@@ -463,21 +488,44 @@ const OPENCODE_AGENT: MarkdownAgent = MarkdownAgent {
     dialect: &OPENCODE_AGENT_DIALECT,
 };
 
-/// What OpenCode reads under `harness.opencode` on an agent (agents
-/// reference). A `model` it cannot resolve or a `tools` that is not a map
-/// makes it drop the agent silently (measured on 2.0.15 and 2.0.18), so
-/// both are checked; a field outside this list is carried, unverified.
+/// What OpenCode V2 reads under `harness.opencode` on an agent, from its
+/// agent schema (anomalyco/opencode `v2`, `packages/schema/src/config/
+/// agent.ts`). A single key outside it sends the whole file down V2's
+/// legacy path (`core/src/config/plugin/agent.ts`), where a V2 field is
+/// lost and `temperature`/`top_p` land in a request body V2 does not send —
+/// so no unknown key is carried, and V1's fields are left out with the V2
+/// field that says the same thing.
 const OPENCODE_AGENT_DIALECT: AgentDialect = AgentDialect {
     known: &[
         ("model", Shape::Qualified),
-        ("tools", Shape::Map),
-        ("permission", Shape::Map),
-        ("temperature", Shape::Number),
-        ("top_p", Shape::Number),
-        ("color", Shape::Text),
+        ("color", Shape::HexColor),
         ("mode", Shape::OneOf(&["subagent", "all"])),
+        ("permissions", Shape::Rules),
+        ("steps", Shape::Count),
+        ("hidden", Shape::Flag),
+        ("disabled", Shape::Flag),
+        (
+            "tools",
+            Shape::Refused(
+                "OpenCode V2 reads it only on its legacy path; restrict tools with `permissions` rules",
+            ),
+        ),
+        (
+            "permission",
+            Shape::Refused(
+                "OpenCode V2 reads it only on its legacy path; write the same as `permissions` rules",
+            ),
+        ),
+        (
+            "temperature",
+            Shape::Refused("OpenCode V2 keeps it in a request body it does not send"),
+        ),
+        (
+            "top_p",
+            Shape::Refused("OpenCode V2 keeps it in a request body it does not send"),
+        ),
     ],
-    carries_unknown: true,
+    carries_unknown: false,
 };
 
 /// The fields an agent loses on OpenCode, and what its `harness.opencode`
@@ -536,7 +584,7 @@ impl OpenCodeIntegration {
         let path =
             hook_projection::opencode_bridge_path(self.config_root(), resource.package_id.as_str());
         let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated plugin module (its default export is the plugin definition, with no import the harness would have to resolve) that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The V2 tool hooks carry the tool input but no block signal, and the only decision point (permission.evaluate) carries the action's resources rather than the input, so deny/ask are diagnosed Unsupported before attach — never fabricated. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice. SessionStart is not claimed: on OpenCode 2.0.18 a plugin's event stream carries no `session.created` for a new session, and nothing in it tells a new session from a continued one (Conformance Lab, experiment opencode/session-start).";
-        hook_projection::hook_plan(resource, &HOOKS.capabilities(), true, evidence, |_| {
+        hook_projection::hook_plan(resource, HOOKS, true, evidence, |_| {
             Some(ManagedArtifact::ManagedHookFile { path })
         })
     }
@@ -731,7 +779,7 @@ const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "project agents",
         fact: "reads no `./.agents/agents`, and its extra-configuration environment reaches only the shared service a launch starts, which serves it to every project",
-        measured_on: VERSION,
+        measured_on: "2.0.18",
         proven_by: "experiments/opencode/project-agents.py::run",
     },
     HarnessFact {
@@ -743,7 +791,7 @@ const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "skills",
         fact: "lists a skill's supporting files only when its directory is not a link",
-        measured_on: VERSION,
+        measured_on: "2.0.18",
         proven_by: "experiments/opencode/skill_files.py::run",
     },
     HarnessFact {
@@ -754,13 +802,28 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "hooks",
-        fact: "runs a plugin's tool hooks but cannot block a tool from them",
+        fact: "runs a delivered tool hook through the bridge plugin, relaying the V2 \
+               tool's own name and input, before and after the call",
         measured_on: VERSION,
-        proven_by: "harnesses/opencode/scenarios.py::phase_hooks",
+        proven_by: "contract/hooks.py::_rows",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "refuses or asks about a call through `permission.evaluate`, announces a new \
+               session and the end of a turn on its event bus, and continues a session \
+               given synthetic input",
+        measured_on: VERSION,
+        proven_by: "contract/hooks.py::_deny",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs the input a plugin assigns to `execute.before`'s `input`",
+        measured_on: VERSION,
+        proven_by: "contract/hooks.py::_transform",
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "2.0.18";
+const VERSION: &str = "2.0.24";
 
 #[cfg(test)]
 mod lifecycle_tests {

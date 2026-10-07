@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic unit tests for the adaptive-result gate (ADR-035).
+"""Deterministic unit tests for the declared-limitation gate (ADR-035).
 
 Run without the Lab: no docker, no harness binaries — pure registry and
 adjudication semantics. `python3 conformance/tests/test_gate.py`.
@@ -15,13 +15,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import gate
 
-ALLOW_ENTRY = {
+ENTRY = {
     "harness": "codex",
-    "check": "hooks-allow-approval-gate",
-    "suite": "hooks > allow",
-    "reason": "approval gate",
-    "versions": ["*"],
-    "observed_at": "2026-08-26",
+    "check": "skill-user-only-is-not-model-invocable",
+    "suite": "skill",
+    "reason": "no documented control",
+    "measurement": "the model invoked the skill",
+    "versions": ["0.150.0"],
+    "observed_at": "2026-10-05",
 }
 
 
@@ -32,16 +33,38 @@ def registry_file(entries):
     return path
 
 
-def verdict(name, kind="assert", ok=True, harness="codex", version="0.150.0"):
+def registry(*entries):
+    return gate.load_registry(registry_file(list(entries)))
+
+
+def declared(name=ENTRY["check"], holds=True, harness="codex", version="0.150.0"):
     return {
         "check": name,
-        "suite": "hooks > allow",
-        "pass": ok,
+        "suite": "skill",
+        "pass": holds is True,
         "detail": "",
-        "kind": kind,
+        "kind": gate.DECLARED,
+        "holds": holds,
         "harness": harness,
         "harness_version": version,
     }
+
+
+def asserted(name, ok=True, harness="codex", version="0.150.0"):
+    return {
+        "check": name,
+        "suite": "skill",
+        "pass": ok,
+        "detail": "",
+        "kind": "assert",
+        "harness": harness,
+        "harness_version": version,
+    }
+
+
+def adjudicate(result, *entries):
+    [out] = gate.evaluate("codex", [result], registry(*entries))
+    return out["pass"], out["gate"]["adjudication"]
 
 
 class LoadRegistryTest(unittest.TestCase):
@@ -50,82 +73,68 @@ class LoadRegistryTest(unittest.TestCase):
             gate.load_registry("/nonexistent/expected.json")
 
     def test_parses_entries_into_harness_check_map(self):
-        path = registry_file([ALLOW_ENTRY])
-        loaded = gate.load_registry(path)
-        self.assertIn(("codex", "hooks-allow-approval-gate"), loaded)
+        self.assertIn(("codex", ENTRY["check"]), registry(ENTRY))
 
 
-class EvaluateTest(unittest.TestCase):
-    def setUp(self):
-        self.registry = gate.load_registry(registry_file([ALLOW_ENTRY]))
+class DeclarationTest(unittest.TestCase):
+    def test_a_measured_registered_declaration_passes(self):
+        self.assertEqual(adjudicate(declared(), ENTRY), (True, "known_declared"))
 
-    def test_unregistered_adapt_fails(self):
-        results = gate.evaluate(
-            "codex", [verdict("mystery-adapt", kind="adapted")], self.registry
+    def test_an_unregistered_declaration_fails(self):
+        self.assertEqual(adjudicate(declared()), (False, "unregistered"))
+
+    def test_another_harness_entry_never_matches(self):
+        entry = {**ENTRY, "harness": "antigravity"}
+        self.assertEqual(adjudicate(declared(), entry), (False, "unregistered"))
+
+    def test_a_wildcard_entry_fails(self):
+        entry = {**ENTRY, "versions": ["*"]}
+        self.assertEqual(adjudicate(declared(), entry), (False, "wildcard"))
+
+    def test_an_entry_with_no_versions_fails(self):
+        entry = {**ENTRY, "versions": []}
+        self.assertEqual(adjudicate(declared(), entry), (False, "wildcard"))
+
+    def test_a_declaration_whose_measurement_did_not_run_fails(self):
+        self.assertEqual(adjudicate(declared(holds=None), ENTRY), (False, "unproven"))
+
+    def test_a_declaration_that_found_the_control_escalates(self):
+        self.assertEqual(adjudicate(declared(holds=False), ENTRY), (False, "escalated"))
+
+    def test_a_reproduced_limitation_on_a_new_version_passes_as_repin(self):
+        result = declared(version="0.160.0")
+        self.assertEqual(adjudicate(result, ENTRY), (True, "repin"))
+
+    def test_escalation_wins_over_a_new_version(self):
+        result = declared(holds=False, version="0.160.0")
+        self.assertEqual(adjudicate(result, ENTRY), (False, "escalated"))
+
+
+class AssertionTest(unittest.TestCase):
+    def test_a_plain_assertion_is_untouched(self):
+        self.assertEqual(
+            adjudicate(asserted("plain", ok=False), ENTRY), (False, "asserted")
         )
-        self.assertFalse(results[0]["pass"])
-        self.assertEqual(results[0]["gate"]["adjudication"], "unregistered_adapt")
 
-    def test_registered_adapt_passes_as_known(self):
-        results = gate.evaluate(
-            "codex",
-            [verdict("hooks-allow-approval-gate", kind="adapted")],
-            self.registry,
+    def test_a_registered_check_recording_an_ordinary_pass_escalates(self):
+        self.assertEqual(
+            adjudicate(asserted(ENTRY["check"]), ENTRY), (False, "escalated")
         )
-        self.assertTrue(results[0]["pass"])
-        self.assertEqual(results[0]["gate"]["adjudication"], "known_adapt")
 
-    def test_registered_adapt_now_passing_escalates(self):
-        # The scenario was promoted (assert) while the entry still exists.
+
+class NextRegistryTest(unittest.TestCase):
+    def test_repins_append_the_observed_version(self):
+        path = registry_file([ENTRY])
         results = gate.evaluate(
-            "codex", [verdict("hooks-allow-approval-gate")], self.registry
+            "codex", [declared(version="0.160.0")], gate.load_registry(path)
         )
-        self.assertFalse(results[0]["pass"])
-        self.assertEqual(results[0]["gate"]["adjudication"], "escalated")
+        updated = gate.next_registry(results, path)
+        self.assertEqual(updated["adaptive"][0]["versions"], ["0.150.0", "0.160.0"])
 
-    def test_plain_assert_is_untouched(self):
-        results = gate.evaluate(
-            "codex", [verdict("plain-check", ok=False)], self.registry
-        )
-        self.assertFalse(results[0]["pass"])
-        self.assertEqual(results[0]["gate"]["adjudication"], "asserted")
-
-    def test_other_harness_entry_never_matches(self):
-        # An antigravity-only registration must not bless a codex adapt.
-        entry = {**ALLOW_ENTRY, "harness": "antigravity"}
-        registry = gate.load_registry(registry_file([entry]))
-        results = gate.evaluate(
-            "codex", [verdict("hooks-allow-approval-gate", kind="adapted")], registry
-        )
-        self.assertEqual(results[0]["gate"]["adjudication"], "unregistered_adapt")
-
-
-class VersionCoverageTest(unittest.TestCase):
-    def test_wildcard_covers_any_version(self):
-        self.assertTrue(gate.covers_version(ALLOW_ENTRY, "9.9.9"))
-
-    def test_exact_list_covers_and_rejects(self):
-        entry = {**ALLOW_ENTRY, "versions": ["0.150.0", "0.151.0"]}
-        self.assertTrue(gate.covers_version(entry, "0.151.0"))
-        self.assertFalse(gate.covers_version(entry, "0.152.0"))
-
-    def test_unprobed_version_counts_as_covered(self):
-        # The manifest records the probe failure; the gate cannot fail a
-        # record it cannot verify.
-        self.assertTrue(gate.covers_version(ALLOW_ENTRY, None))
-        self.assertTrue(gate.covers_version(ALLOW_ENTRY, ""))
-
-    def test_version_mismatch_fails_with_drift(self):
-        entry = {**ALLOW_ENTRY, "versions": ["0.150.0"]}
-        registry = gate.load_registry(registry_file([entry]))
-        results = gate.evaluate(
-            "codex",
-            [verdict("hooks-allow-approval-gate", kind="adapted", version="0.152.0")],
-            registry,
-        )
-        self.assertFalse(results[0]["pass"])
-        self.assertEqual(results[0]["gate"]["adjudication"], "version_drift")
-        self.assertIn("0.152.0", results[0]["gate"]["reason"])
+    def test_no_repin_writes_nothing(self):
+        path = registry_file([ENTRY])
+        results = gate.evaluate("codex", [declared()], gate.load_registry(path))
+        self.assertIsNone(gate.next_registry(results, path))
 
 
 if __name__ == "__main__":

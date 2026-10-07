@@ -48,6 +48,8 @@ fn group(effect: HookEffect, handler: &str) -> PortableHook {
                 format!("${{PLUGIN_ROOT}}/scripts/{handler}"),
                 format!("& \"${{PLUGIN_ROOT}}/scripts/{handler}.ps1\""),
             ),
+            args: None,
+            interpreter: None,
             timeout: 10,
         }],
         effect,
@@ -97,8 +99,10 @@ fn shell_payload(command: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+/// A denial in this host harness's dialect: the decision on stdout, with
+/// exit 0 (Claude reads stdout only then).
 fn denied(answer: &Answer) -> bool {
-    answer.exit == Some(2) && answer.stdout.contains(r#""permissionDecision":"deny""#)
+    answer.exit == Some(0) && answer.stdout.contains(r#""permissionDecision":"deny""#)
 }
 
 #[test]

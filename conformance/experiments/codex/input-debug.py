@@ -46,6 +46,7 @@ def run(cfg, prov_ip):
     cmd = codex_container(
         cfg,
         prov_ip,
+        # decision: experiment-isolation
         "exec codex --dangerously-bypass-hook-trust" if not CONTROL else "exec codex",
         plugins=plugins,
     )
@@ -105,4 +106,8 @@ def run(cfg, prov_ip):
     with open(f"{cfg.outdir}/struct.json", "w") as f:
         json.dump(struct, f, indent=1)
     log.close()
-    common.check(f"debug-{label}-observed", True, "observation stream recorded")
+    common.check(
+        f"debug-{label}-observed",
+        bool(struct),
+        f"{len(struct)} requests in the observation stream",
+    )

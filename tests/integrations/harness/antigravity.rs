@@ -119,3 +119,21 @@ fn antigravity_generated_package_never_claims_a_user_only_skill() {
     assert_eq!(fallback.route, CompatibilityRoute::Native);
     fs::remove_dir_all(root).unwrap();
 }
+
+/// Antigravity reads at most 24,000 bytes of a rules file and points at the
+/// rest by path, so a longer `AGENTS.md` is reported as partly unread.
+#[test]
+fn an_agents_md_past_the_rules_limit_is_reported_partly_unread() {
+    let root = uze_testkit::temp::scratch("agy-rules-limit");
+    std::fs::create_dir_all(&root).unwrap();
+    let home = uze_core::home::UzeHome::at(root.join(".uze"));
+    let agy = AntigravityIntegration::new(root.join("agents"), home);
+    let agents_md = root.join("AGENTS.md");
+    std::fs::write(&agents_md, "x".repeat(24_000)).unwrap();
+    assert_eq!(agy.context_unread(&root, &agents_md), None);
+    std::fs::write(&agents_md, "x".repeat(24_001)).unwrap();
+    let reason = agy
+        .context_unread(&root, &agents_md)
+        .expect("past the limit");
+    assert!(reason.contains("24000"), "{reason}");
+}

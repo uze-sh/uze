@@ -454,6 +454,17 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                             .install(&context_path(path), authority.as_ref())
                     })?;
                     emit(format, &report, render_install);
+                    if matches!(format, OutputFormat::Text)
+                        && let uze_application::application::InstallReport::Installed {
+                            plugins,
+                            ..
+                        } = &report
+                    {
+                        print!(
+                            "{}",
+                            render_requirement_gaps_of(&app, plugins.iter().map(String::as_str))
+                        );
+                    }
                     if let Some(failure) = undelivered_failure(report.undelivered()) {
                         return Err(failure);
                     }
@@ -483,6 +494,24 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                     render_update_summary(report)
                 }
             });
+            if matches!(format, OutputFormat::Text) {
+                print!(
+                    "{}",
+                    render_requirement_gaps_of(
+                        &app,
+                        report.outcomes.iter().filter_map(|outcome| {
+                            use uze_application::application::UpdateOutcome;
+                            match outcome {
+                                UpdateOutcome::Moved { plugin, .. }
+                                | UpdateOutcome::FollowedLink { plugin, .. } => {
+                                    Some(plugin.as_str())
+                                }
+                                _ => None,
+                            }
+                        })
+                    )
+                );
+            }
             if let Some(failure) = undelivered_failure(report.undelivered()) {
                 return Err(failure);
             }
@@ -837,6 +866,7 @@ mod status_output_tests {
             project_lock: ProjectLockStatus::Absent,
             drift: EnvironmentDrift::default(),
             issues: Vec::new(),
+            held_back: Vec::new(),
         };
         ProjectStatus {
             report,

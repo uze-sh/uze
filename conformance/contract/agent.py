@@ -41,6 +41,7 @@ import os
 import re
 import subprocess
 
+from contract import declared
 from shared.common import (
     check,
     describe,
@@ -59,18 +60,6 @@ git init -q -b main .
 """
 
 
-def _declined(bindings, prop):
-    reason = bindings.unsupported(f"agent-{prop}")
-    if reason:
-        check(
-            f"agent-{prop}",
-            True,
-            f"{bindings.harness} cannot: {reason}",
-            kind="adapt",
-        )
-    return reason
-
-
 def assert_contract(cfg, prov_ip, bindings):
     with describe("agent"):
         exposed = _assert_exposure(cfg, bindings)
@@ -84,8 +73,6 @@ def _assert_block_model(cfg, bindings, label, body):
     Read off the request that carried its body: the model is what the
     harness asked the provider for, never what UZE says it delivered.
     """
-    if _declined(bindings, "vendor-fields-block-model"):
-        return
     expected = BLOCK_MODELS[bindings.harness]
     models = sorted(
         {
@@ -95,10 +82,13 @@ def _assert_block_model(cfg, bindings, label, body):
         }
         - {None}
     )
-    check(
+    declared.presence(
+        bindings,
+        "agent-vendor-fields-block-model",
         "agent-vendor-fields-block-model",
         any(expected in model for model in models),
         f"`{label}` ran on {models} (its `harness` block asks for `{expected}`)",
+        measured=bool(models),
     )
 
 
@@ -151,10 +141,10 @@ def _assert_exposure(cfg, bindings):
 
     exposed = {}
     for shape, (label, _) in AGENTS.items():
-        if _declined(bindings, f"{shape}-exposed"):
-            continue
         exposed[shape] = seen.get(label, False)
-        check(
+        declared.presence(
+            bindings,
+            f"agent-{shape}-exposed",
             f"agent-{shape}-exposed",
             exposed[shape],
             f"`{label}` is offered to the model"
@@ -168,13 +158,14 @@ def _assert_dispatch(cfg, bindings, exposed):
     """One turn per agent in which the model dispatches it by its label."""
     for shape, (label, body) in AGENTS.items():
         name = f"agent-{shape}-dispatch-delivers-body"
-        if _declined(bindings, f"{shape}-dispatch-delivers-body"):
-            continue
         if not exposed.get(shape):
             # Dispatching a label the harness never offered cannot tell a
             # broken dispatch from a missing agent, and it is the missing
-            # agent the exposure check already reported.
-            check(
+            # agent the exposure check already reported. A harness that
+            # declares it cannot dispatch is measured by that same absence.
+            declared.presence(
+                bindings,
+                name,
                 name,
                 False,
                 f"not dispatched: `{label}` was never offered to the model",
@@ -185,7 +176,9 @@ def _assert_dispatch(cfg, bindings, exposed):
         prov_ip = start_provider(cfg, mode, env)
         output = _turn(cfg, prov_ip, bindings, f"dispatch-{shape}", prompt)
         arrived = _reached_model(cfg).get(body, False)
-        check(
+        declared.presence(
+            bindings,
+            name,
             name,
             arrived,
             f"dispatching `{label}` put its body in a model request"

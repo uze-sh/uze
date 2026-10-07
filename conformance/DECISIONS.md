@@ -587,3 +587,76 @@ gate exists to catch); dropping the API-key probe now that it passes (it is
 what would say the gate closed again, and a regression to #893 must read as
 a red check, not as a mode dependency users discover in the field).
 
+
+---
+
+## Prompts the Lab answers
+
+**Context.** Codex's interactive installer asked "Start Codex now?" on
+`/dev/tty`; Docker runs had no controlling terminal, so the prompt answered
+itself and CI stayed green while `uze setup codex` hung on a person's
+machine (#172). The Lab had the same habit everywhere: it pre-seeded trust,
+passed bypass flags and turned features on, so every prompt that stands
+between a delivered capability and a person was answered before the
+harness could ask it. Codex's hook review and project trust, and Claude's
+auto-mode classifier, were all invisible to it that way.
+
+**Chosen.** The Lab answers no prompt a person meets after `uze install`,
+except through the harness's own interface, once the prompt is on screen —
+the way a person answers it. A pre-seed, a flag or an environment variable
+that answers one is allowed only when the prompt is outside UZE's scope,
+and only as an entry below. Every such answer in code carries
+`# decision: <id>` naming its entry; `tests/test_lint.py` fails on one that
+does not.
+
+**Discarded.** Allowing bypasses "for the phases that are not about the
+prompt": every phase then proves a machine no person has, which is exactly
+how the hook trust gate went unseen.
+
+### `synthetic-credentials`
+
+The harness signs in to the synthetic provider with a credential the Lab
+makes up: Claude's `ANTHROPIC_API_KEY` and the custom-key dialog it raises,
+Codex's `auth.json` and `OPENAI_API_KEY`, Antigravity's OAuth token,
+OpenCode's provider entry. A person signs in to their own account; UZE
+delivers nothing through sign-in, and the Lab holds no account by design.
+
+### `vendor-onboarding`
+
+First-run state unrelated to delivery: Claude's `hasCompletedOnboarding`
+and theme, Antigravity's onboarding steps and installation id. Answering
+them through the interface on every launch costs minutes per leg and
+proves nothing UZE does. Folder trust is *not* part of this entry: it gates
+what a harness loads from a project, so it is answered on screen.
+
+### `pinned-binary`
+
+Self-update is off (`AGY_CLI_DISABLE_AUTO_UPDATE`,
+`OPENCODE_DISABLE_MODELS_FETCH`): a run tests the binary the image
+installed and no Internet is reachable to update from.
+
+### `headless-permissions`
+
+The headless turns of the agent and context contracts (`claude -p`,
+`agy --print`) are a person's own scripted invocation, and a person who
+scripts one chooses its permission mode on the command line — there is no
+interface to answer on. Those contracts assert what reaches the model, not
+what a permission allows; the hooks contract, which is about permissions,
+runs in the TUI and answers on screen.
+
+### `experiment-isolation`
+
+An experiment (`experiments/`) may answer a prompt to isolate the one
+variable it measures — whether a hook prints under `--dangerously-skip-
+permissions`, what a probe plugin is handed. It never gates a leg, its
+verdict is recorded apart from the canonical run, and promoting it into the
+suite means dropping the answer or giving it an entry of its own.
+
+### `opencode-standalone`
+
+OpenCode 2 serves sessions from a background service that a TUI attaches
+to; a person's machine starts it on first launch. The Lab's container is a
+single process tree with no service to attach to, so the harness runs
+`--standalone`, which serves the session in the TUI's own process. It
+changes where OpenCode's server lives, not what it loads or what it asks
+a person.

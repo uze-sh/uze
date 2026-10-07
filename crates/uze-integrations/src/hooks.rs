@@ -27,7 +27,7 @@ use uze_core::{
     home::UzeHome,
     hook::{
         CommandHook, HOOKS_FILE_NAME, HarnessToolVocabulary, HookCapabilities, HookEffect,
-        HookEvent, HookMatcher, PortableHook, ToolBinding,
+        HookEvent, HookMatcher, Invocation, PortableHook, ToolBinding,
     },
     integration::{AttachmentInspection, AttachmentState},
     router::CompatibilityRoute,
@@ -60,6 +60,9 @@ pub(crate) struct HookTarget {
     /// The harness's binding of the portable tool vocabulary: the single
     /// source the matchers, the generated wrapper and the bridge all read.
     pub tools: &'static [ToolBinding],
+    /// How a session can begin here, as `SessionStart` reports it: a
+    /// harness that announces only a new session reports only `startup`.
+    pub session_sources: &'static [&'static str],
     pub runner: HookRunner,
 }
 
@@ -69,7 +72,7 @@ pub(crate) enum HookRunner {
     /// A command hook in the harness's shared config file, starting the
     /// generated wrapper.
     Wrapper {
-        dialect: WrapperDialect,
+        dialect: &'static WrapperDialect,
         entry: EntryShape,
     },
     /// UZE's generated plugin is the runner: the harness has no command
@@ -142,6 +145,74 @@ impl<'a> HookEntry<'a> {
     }
 }
 
+/// What the hook artifacts `integration` generates for `resources` need
+/// from the machine: the wrapper's own programs, once any hook group is
+/// actually delivered through it, and the interpreter each exec-form
+/// handler's launcher asks for, attributed to its hook. A script the
+/// harness's own runtime runs (OpenCode's Bun) asks for nothing.
+pub(crate) fn generated_requirements(
+    integration: &dyn uze_core::integration::IntegrationPort,
+    target: HookTarget,
+    resources: &[&Resource],
+) -> Vec<(
+    uze_core::requirement::Requirement,
+    uze_core::requirement::RequirementSource,
+)> {
+    use uze_core::requirement::{Requirement, RequirementSource};
+
+    let delivered: Vec<&Resource> = resources
+        .iter()
+        .copied()
+        .filter(|resource| {
+            resource.capability.kind == uze_core::capability::CapabilityKind::Hook
+                && !matches!(
+                    integration.exposure_plan(resource).mechanism,
+                    ExposureMechanism::Unsupported { .. }
+                )
+        })
+        .collect();
+    let mut needed = Vec::new();
+    if matches!(target.runner, HookRunner::Wrapper { .. }) && !delivered.is_empty() {
+        needed.extend(wrapper::dependencies_here().iter().map(|program| {
+            (
+                Requirement::named(*program)
+                    .with_purpose("the hook wrapper reads the harness's payload with it"),
+                RequirementSource::Artifact {
+                    what: "hook wrapper".to_owned(),
+                },
+            )
+        }));
+    }
+    for resource in delivered {
+        let Ok(hook) = serde_json::from_slice::<PortableHook>(&resource.capability.payload) else {
+            continue;
+        };
+        for handler in &hook.handlers {
+            if matches!(target.runner, HookRunner::Bridge) && runs_in_own_runtime(handler) {
+                continue;
+            }
+            if let Invocation::Argv {
+                needs: Some(program),
+                ..
+            } = handler.invocation(
+                &resource.package_root,
+                &resource.package_root,
+                uze_platform::shell::FAMILY,
+                &uze_core::launcher::python_answers,
+            ) {
+                needed.push((
+                    Requirement::named(program).with_purpose("starts the hook's script"),
+                    RequirementSource::Hook {
+                        id: hook.id.clone(),
+                        fails_closed: hook.effect.fails_closed(),
+                    },
+                ));
+            }
+        }
+    }
+    needed
+}
+
 impl HookTarget {
     /// The harness's name in UZE's own state and in `HOOK_HARNESS`.
     pub(crate) const fn key(self) -> &'static str {
@@ -155,6 +226,10 @@ impl HookTarget {
             effects: self.effects.iter().copied().collect(),
             supports_native_matchers: true,
             executes_handlers_in_order: true,
+            // The bridge rewrites `execute.before`'s input itself; a
+            // wrapper needs the harness's document for a rewrite.
+            supports_input_transform: matches!(self.runner, HookRunner::Bridge)
+                || wrapper::transforms_here(self),
             unfired: wrapper::unfired_here(self)
                 .iter()
                 .map(|unfired| uze_core::hook::UnfiredTool {
@@ -163,7 +238,6 @@ impl HookTarget {
                     why: unfired.why.to_owned(),
                 })
                 .collect(),
-            ..HookCapabilities::default()
         }
     }
 
@@ -171,7 +245,7 @@ impl HookTarget {
     /// where UZE's generated plugin is its own runner.
     pub(super) const fn dialect(self) -> Option<WrapperDialect> {
         match self.runner {
-            HookRunner::Wrapper { dialect, .. } => Some(dialect),
+            HookRunner::Wrapper { dialect, .. } => Some(*dialect),
             HookRunner::Bridge => None,
         }
     }
@@ -218,7 +292,7 @@ impl HookTarget {
                 "this machine's shell refuses the hook's wrapper: {refusal}"
             ));
         }
-        hook_plan(resource, &self.capabilities(), false, evidence, |hook| {
+        hook_plan(resource, self, false, evidence, |hook| {
             if !self.deliverable() {
                 return None;
             }
@@ -347,12 +421,80 @@ pub(crate) fn groups_with_ids(
 /// Parses a hook resource's payload into its portable group and computes the
 /// per-resource plan: semantic compatibility from the vendor profile —
 /// `bridged` when UZE's own generated runner carries the hook — and the
+/// The aliases of a group that names nothing but portable aliases this
+/// harness binds to no tool, spelled for a report; `None` when any matcher
+/// can fire here (a bound alias, a `native:` name) or the group matches
+/// every tool.
+fn unbound_only(target: HookTarget, hook: &PortableHook) -> Option<String> {
+    let vocabulary = tools::vocabulary(target);
+    let mut aliases = Vec::new();
+    for matcher in &hook.matchers {
+        let HookMatcher::Portable(alias) = matcher else {
+            return None;
+        };
+        if vocabulary
+            .binding(alias)
+            .is_some_and(|binding| binding.native_tool.is_some())
+        {
+            return None;
+        }
+        aliases.push(format!("`{alias}`"));
+    }
+    (!aliases.is_empty()).then(|| aliases.join(", "))
+}
+
+/// The sources a `SessionStart` group waits for, spelled for a report, when
+/// none of them is one this harness announces; `None` when any is, or the
+/// group waits for every start.
+fn unannounced_sources(target: HookTarget, hook: &PortableHook) -> Option<String> {
+    if hook.event != HookEvent::SessionStart || hook.matchers.is_empty() {
+        return None;
+    }
+    let mut sources = Vec::new();
+    for matcher in &hook.matchers {
+        let HookMatcher::Source(source) = matcher else {
+            return None;
+        };
+        if target.session_sources.contains(&source.as_str()) {
+            return None;
+        }
+        sources.push(format!("`{source}`"));
+    }
+    Some(sources.join(", "))
+}
+
+/// The line a generated wrapper runs for `handler` on this platform: the
+/// author's own line with `${PLUGIN_ROOT}` resolved, or an exec-form
+/// script's launcher and words quoted for this shell. Empty for a handler
+/// nothing runs here, which the plan never delivers.
+pub(crate) fn handler_line(
+    handler: &CommandHook,
+    store_root: &Path,
+    delivered_root: &Path,
+) -> String {
+    match handler.invocation(
+        store_root,
+        delivered_root,
+        uze_platform::shell::FAMILY,
+        &uze_core::launcher::python_answers,
+    ) {
+        Invocation::Line(line) => {
+            line.replace("${PLUGIN_ROOT}", &delivered_root.display().to_string())
+        }
+        Invocation::Argv { argv, .. } => match argv.split_first() {
+            Some((program, arguments)) => uze_platform::shell::command_line(program, arguments),
+            None => String::new(),
+        },
+        Invocation::Unrunnable(_) => String::new(),
+    }
+}
+
 /// artifact `deliver` renders for it. A `degraded` or `unsupported` route
 /// never attaches, and neither does a group `deliver` has no artifact for
 /// on this platform: the mechanism carries the diagnostic instead.
 pub(crate) fn hook_plan(
     resource: &Resource,
-    capabilities: &HookCapabilities,
+    target: HookTarget,
     bridged: bool,
     evidence: &str,
     deliver: impl FnOnce(&PortableHook) -> Option<ManagedArtifact>,
@@ -360,7 +502,25 @@ pub(crate) fn hook_plan(
     let Ok(hook) = serde_json::from_slice::<PortableHook>(&resource.capability.payload) else {
         return unsupported("hook resource payload is not a valid portable hook group");
     };
-    let compatibility = uze_core::hook::assess(&hook, capabilities, bridged);
+    // A group that names only aliases this harness has no tool for would be
+    // delivered with a matcher that never fires: said, never attached.
+    if let Some(aliases) = unbound_only(target, &hook) {
+        return unsupported(format!(
+            "hook `{}` matches only {aliases}, which {} offers no tool for, so it is not delivered here",
+            hook.id,
+            target.key()
+        ));
+    }
+    // A session-start group that waits only for a start this harness never
+    // announces (a resume, a clear) would be delivered and never run.
+    if let Some(sources) = unannounced_sources(target, &hook) {
+        return unsupported(format!(
+            "hook `{}` runs only when a session begins by {sources}, which {} never announces, so it is not delivered here",
+            hook.id,
+            target.key()
+        ));
+    }
+    let compatibility = uze_core::hook::assess(&hook, &target.capabilities(), bridged);
     // What the route cannot carry leads, so a report showing one sentence
     // shows the reason; the mechanism follows.
     let with_compatibility =
@@ -383,18 +543,24 @@ pub(crate) fn hook_plan(
                 .map_or_else(|| evidence.to_owned(), with_compatibility),
         };
     }
-    // A handler is never run in a shell it was not written for, so a group
-    // with one that has no spelling here delivers nothing here.
-    if let Some(unspelled) = hook
-        .handlers
-        .iter()
-        .find(|handler| handler.command.here().is_none())
-    {
+    // A handler is never run in a shell it was not written for, nor an
+    // exec-form script with no launcher here, so a group with one delivers
+    // nothing here.
+    let unrunnable = hook.handlers.iter().find_map(|handler| {
+        match handler.invocation(
+            &resource.package_root,
+            &resource.package_root,
+            uze_platform::shell::FAMILY,
+            &|_| false,
+        ) {
+            Invocation::Unrunnable(reason) => Some(reason),
+            _ => None,
+        }
+    });
+    if let Some(reason) = unrunnable {
         return unsupported(format!(
-            "hook `{}` has no {} spelling for `{}`, so it is not delivered on this platform",
+            "hook `{}`: {reason}, so it is not delivered on this platform",
             hook.id,
-            uze_core::shell::ShellCommand::platform(),
-            unspelled.command
         ));
     }
     match deliver(&hook) {
@@ -428,6 +594,10 @@ pub(crate) fn hook_entry_name(resource: &Resource, hook: &PortableHook) -> Strin
 
 #[cfg(test)]
 mod tests;
+
+/// The binding tables, held against the tools each real harness declared.
+#[cfg(test)]
+mod measured_tests;
 
 /// The wrapper this platform's harnesses run, on its own platform.
 #[cfg(test)]

@@ -28,6 +28,13 @@ fn package(label: &str) -> PathBuf {
         &scripts.join("refuse"),
         "echo \"refused on $HOOK_EVENT from $HOOK_SOURCE\" >&2\nexit 3",
     );
+    // A transform: the whole input back, in the harness's own shape, with
+    // the command made harmless.
+    write_script(
+        &scripts.join("rewrite"),
+        "printf '%s' \"$HOOK_INPUT\" | jq -c 'if has(\"CommandLine\") then .CommandLine = \"echo rewritten\" else .command = \"echo rewritten\" end'",
+    );
+    write_script(&scripts.join("garble"), "echo 'not an input'");
     root
 }
 
@@ -62,6 +69,8 @@ fn group_at(event: HookEvent, effect: HookEffect, handlers: &[&str], timeout: u1
             .map(|spec| CommandHook {
                 handler_type: CommandHandlerType::Command,
                 command: handler_command(spec).into(),
+                args: None,
+                interpreter: None,
                 timeout,
             })
             .collect(),
@@ -155,16 +164,13 @@ fn run(execution: Run<'_>) -> Answer {
     }
 }
 
-/// What a denial exits with, per harness. Claude and Codex document
-/// exit 2 as the block signal; Antigravity reads the decision from
-/// stdout and logs any non-zero exit as a *failed* hook, so a denial
-/// there exits 0 (measured on 1.1.24).
+/// What a denial exits with, per harness, each measured: Codex blocks on
+/// exit 2; Antigravity reads the decision from stdout and logs any
+/// non-zero exit as a *failed* hook (1.1.24); Claude reads stdout only on
+/// exit 0 and renders exit 2 as "hook error" however intentional the
+/// denial (2.1.290, the Lab's `hooks-deny-not-reported-as-error`).
 fn block_exit(target: HookTarget) -> i32 {
-    if target == crate::antigravity::HOOKS {
-        0
-    } else {
-        2
-    }
+    if target == crate::codex::HOOKS { 2 } else { 0 }
 }
 
 #[test]
@@ -295,6 +301,36 @@ fn a_denial_is_relayed_in_each_harnesss_own_dialect() {
         assert!(
             !root.join("audit.log").exists(),
             "{target}: the denial stopped the second handler"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+/// A transform hands the harness the rewritten input in its own dialect,
+/// and every handler after the rewriting one reads the rewrite.
+#[test]
+fn a_rewrite_reaches_the_next_handler_and_the_harness() {
+    for target in TARGETS {
+        let root = package(&format!("wrapper-transform-{target}"));
+        let hook = group(HookEffect::Transform, &["rewrite", "audit"]);
+        let answer = run_wrapper(target, &root, &hook, &payload(target, "cat .env"), None);
+        assert_eq!(answer.exit, 0, "{target}: a rewrite allows the call");
+        let document: serde_json::Value = serde_json::from_str(answer.stdout.trim()).unwrap();
+        let rewritten = if target == crate::antigravity::HOOKS {
+            assert_eq!(document["decision"], "allow");
+            &document["overwrite"]["CommandLine"]
+        } else {
+            assert_eq!(
+                document["hookSpecificOutput"]["permissionDecision"],
+                "allow"
+            );
+            &document["hookSpecificOutput"]["updatedInput"]["command"]
+        };
+        assert_eq!(*rewritten, "echo rewritten", "{target}: {document}");
+        let audit = fs::read_to_string(root.join("audit.log")).unwrap();
+        assert!(
+            audit.contains("echo rewritten") && !audit.contains(".env"),
+            "{target}: the next handler read the rewrite: {audit}"
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -841,5 +877,59 @@ fn the_wrapper_answers_every_fixture_as_recorded() {
             "{}/{} answered differently than recorded",
             recorded["harness"], recorded["event"]
         );
+    }
+}
+
+/// The exec form, end to end: a Python guard written once, named by its
+/// path and given words no shell may read, in a package whose root has a
+/// space in it. The script is not executable, so its extension picks the
+/// launcher, and every word reaches it intact.
+#[test]
+fn an_exec_form_python_guard_receives_its_words_and_denies() {
+    for target in TARGETS {
+        let root = uze_testkit::temp::scratch(&format!("wrapper-exec-{target}")).join("with space");
+        fs::create_dir_all(root.join("hooks")).unwrap();
+        fs::write(
+            root.join("hooks").join("guard.py"),
+            "import os, sys\n\
+             open(os.path.join(os.environ['PLUGIN_ROOT'], 'argv.txt'), 'w').write('\\n'.join(sys.argv[1:]))\n\
+             if '.env' in os.environ.get('HOOK_COMMAND', ''):\n\
+             \x20   sys.stderr.write('blocked by python')\n\
+             \x20   sys.exit(3)\n",
+        )
+        .unwrap();
+        let word = r#"it's "$HOME" `x`"#;
+        let hook = PortableHook {
+            id: "exec-guard".into(),
+            event: HookEvent::PreToolUse,
+            matchers: vec![HookMatcher::Portable("shell".into())],
+            handlers: vec![CommandHook {
+                handler_type: CommandHandlerType::Command,
+                command: "hooks/guard.py".into(),
+                args: Some(vec!["--strict".into(), word.into()]),
+                interpreter: None,
+                timeout: 10,
+            }],
+            effect: HookEffect::Deny,
+            order: 0,
+        };
+        let answer = run_wrapper(target, &root, &hook, &payload(target, "cat .env"), None);
+        assert_eq!(
+            answer.exit,
+            block_exit(target),
+            "{target}: the guard denied ({})",
+            answer.stderr
+        );
+        assert!(
+            answer.stderr.contains("blocked by python"),
+            "{target}: {}",
+            answer.stderr
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("argv.txt")).unwrap(),
+            format!("--strict\n{word}"),
+            "{target}: every word arrived as written"
+        );
+        let _ = fs::remove_dir_all(root.parent().unwrap());
     }
 }

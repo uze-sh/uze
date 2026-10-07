@@ -29,6 +29,46 @@
     {
       "name": "hook-session-plugin",
       "source": "./plugins/hook-session-plugin"
+    },
+    {
+      "name": "hook-rows",
+      "source": "./plugins/hook-rows"
+    },
+    {
+      "name": "hook-effects",
+      "source": "./plugins/hook-effects"
+    },
+    {
+      "name": "hook-exec",
+      "source": "./plugins/hook-exec"
+    },
+    {
+      "name": "hook-needs-python",
+      "source": "./plugins/hook-needs-python"
+    },
+    {
+      "name": "hook-events",
+      "source": "./plugins/hook-events"
+    },
+    {
+      "name": "hook-ask",
+      "source": "./plugins/hook-ask"
+    },
+    {
+      "name": "hook-post-deny",
+      "source": "./plugins/hook-post-deny"
+    },
+    {
+      "name": "lifecycle-plugin",
+      "source": "./plugins/lifecycle-plugin"
+    },
+    {
+      "name": "route-explicit",
+      "source": "./plugins/route-explicit"
+    },
+    {
+      "name": "hook-transform",
+      "source": "./plugins/hook-transform"
     }
   ]
 }

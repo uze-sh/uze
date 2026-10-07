@@ -15,6 +15,8 @@ fn hook() -> PortableHook {
                 "${PLUGIN_ROOT}/check",
                 "& \"${PLUGIN_ROOT}/check.ps1\"",
             ),
+            args: None,
+            interpreter: None,
             timeout: 10,
         }],
         effect: HookEffect::Deny,
@@ -58,7 +60,7 @@ fn vendor_aliases_are_explicit() {
     );
 }
 
-const TARGETS: [HookTarget; 4] = [
+pub(super) const TARGETS: [HookTarget; 4] = [
     crate::claude::HOOKS,
     crate::codex::HOOKS,
     crate::antigravity::HOOKS,
@@ -109,7 +111,7 @@ fn the_shell_alias_reads_each_harnesss_own_command_field() {
             .map(|(_, native)| *native)
     };
     assert_eq!(field(crate::claude::HOOKS), Some("command"));
-    assert_eq!(field(crate::codex::HOOKS), Some("cmd"));
+    assert_eq!(field(crate::codex::HOOKS), Some("command"));
     assert_eq!(field(crate::antigravity::HOOKS), Some("CommandLine"));
     assert_eq!(field(crate::opencode::HOOKS), Some("command"));
 }
@@ -117,16 +119,108 @@ fn the_shell_alias_reads_each_harnesss_own_command_field() {
 #[test]
 fn a_renamed_vendor_tool_still_normalizes_to_its_alias() {
     let alias = |native| {
-        vocabulary(crate::codex::HOOKS)
+        vocabulary(crate::claude::HOOKS)
             .binding_for_native(native)
             .map(|binding| binding.alias)
     };
-    assert_eq!(alias("exec_command"), Some("shell"));
     assert_eq!(alias("Bash"), Some("shell"));
+    assert_eq!(alias("PowerShell"), Some("shell"));
     assert_eq!(
-        tool_names(crate::codex::HOOKS, &HookMatcher::Portable("shell".into())),
-        ["exec_command", "Bash"],
+        tool_names(crate::claude::HOOKS, &HookMatcher::Portable("shell".into())),
+        ["Bash", "PowerShell"],
         "the matcher intercepts every name this harness's shell tool answers to"
+    );
+}
+
+/// A group naming only aliases a harness has no tool for would be
+/// delivered with a matcher that never fires; it is reported instead, and
+/// one that also names a tool the harness has is delivered as usual.
+#[test]
+fn a_group_that_could_never_fire_here_is_reported_not_delivered() {
+    let package = uze_testkit::temp::scratch("unbound-only");
+    fs::create_dir_all(&package).unwrap();
+    let with = |matchers: Vec<HookMatcher>| {
+        let mut group = hook();
+        group.matchers = matchers;
+        let mut resource = hook_resource(&package);
+        resource.capability.payload = serde_json::to_vec(&group).unwrap();
+        hook_plan(&resource, crate::codex::HOOKS, false, "evidence.", |_| {
+            Some(ManagedArtifact::HookConfigEntry {
+                config_file: package.join("hooks.json"),
+                entry_name: "demo:protect-env".into(),
+                event: HookEvent::PreToolUse,
+                expected: "{}".into(),
+                wrapper: package.join("exec"),
+            })
+        })
+    };
+    let unbound = with(vec![HookMatcher::Portable("file.read".into())]);
+    assert_eq!(unbound.route, CompatibilityRoute::Unsupported);
+    assert!(
+        unbound.evidence.contains("`file.read`"),
+        "{}",
+        unbound.evidence
+    );
+    // `agent.spawn` fires on every platform; Codex's Windows shell does not.
+    let mixed = with(vec![
+        HookMatcher::Portable("file.read".into()),
+        HookMatcher::Portable("agent.spawn".into()),
+    ]);
+    assert_ne!(
+        mixed.route,
+        CompatibilityRoute::Unsupported,
+        "{}",
+        mixed.evidence
+    );
+}
+
+/// A harness that announces only a new session never runs a group that
+/// waits for a resume or a clear: it is reported, not delivered, while a
+/// group that also waits for a new session is delivered as usual.
+#[test]
+fn a_session_start_the_harness_never_announces_is_reported_not_delivered() {
+    let package = uze_testkit::temp::scratch("unannounced-source");
+    fs::create_dir_all(&package).unwrap();
+    let with = |target: HookTarget, sources: &[&str]| {
+        let mut group = hook();
+        group.event = HookEvent::SessionStart;
+        group.effect = uze_core::hook::HookEffect::Observe;
+        group.matchers = sources
+            .iter()
+            .map(|source| HookMatcher::Source((*source).to_owned()))
+            .collect();
+        let mut resource = hook_resource(&package);
+        resource.capability.payload = serde_json::to_vec(&group).unwrap();
+        hook_plan(&resource, target, false, "evidence.", |_| {
+            Some(ManagedArtifact::HookConfigEntry {
+                config_file: package.join("hooks.json"),
+                entry_name: "demo:protect-env".into(),
+                event: HookEvent::SessionStart,
+                expected: "{}".into(),
+                wrapper: package.join("exec"),
+            })
+        })
+    };
+    let resume_only = with(crate::antigravity::HOOKS, &["resume"]);
+    assert_eq!(resume_only.route, CompatibilityRoute::Unsupported);
+    assert!(
+        resume_only.evidence.contains("`resume`"),
+        "{}",
+        resume_only.evidence
+    );
+    let with_startup = with(crate::antigravity::HOOKS, &["resume", "startup"]);
+    assert_ne!(
+        with_startup.route,
+        CompatibilityRoute::Unsupported,
+        "{}",
+        with_startup.evidence
+    );
+    let resume_on_claude = with(crate::claude::HOOKS, &["resume"]);
+    assert_ne!(
+        resume_on_claude.route,
+        CompatibilityRoute::Unsupported,
+        "{}",
+        resume_on_claude.evidence
     );
 }
 
@@ -187,13 +281,9 @@ fn a_hook_that_cannot_be_delivered_is_reported_unsupported() {
     let package = uze_testkit::temp::scratch("undeliverable");
     fs::create_dir_all(&package).unwrap();
     let resource = hook_resource(&package);
-    let plan = hook_plan(
-        &resource,
-        &crate::claude::HOOKS.capabilities(),
-        false,
-        "evidence.",
-        |_| None,
-    );
+    let plan = hook_plan(&resource, crate::claude::HOOKS, false, "evidence.", |_| {
+        None
+    });
     assert_eq!(plan.route, CompatibilityRoute::Unsupported);
     assert!(
         matches!(
@@ -622,10 +712,10 @@ fn the_opencode_plugin_is_the_wrapper_with_the_packages_groups_as_data() {
         "the harness's embedded Bun runtime executes handlers"
     );
     assert!(plugin.contains("\"event\":\"pre_tool_use\""));
-    assert!(plugin.contains("\"matchers\":[\"bash\",\"Write\"]"));
+    assert!(plugin.contains("\"matchers\":[\"shell\",\"Write\"]"));
     assert!(plugin.contains("\"effect\":\"deny\""));
     assert!(
-        plugin.contains("bash: { tool: \"shell\", fields: (input) => ({ HOOK_COMMAND:"),
+        plugin.contains("shell: { tool: \"shell\", fields: (input) => ({ HOOK_COMMAND:"),
         "the alias table comes from the one vocabulary"
     );
     assert!(
@@ -1118,4 +1208,52 @@ fn codex_s_windows_shell_gap_is_declared_by_the_windows_template_alone() {
     );
     assert!(PosixWrapper::unfired(crate::codex::HOOKS).is_empty());
     assert!(PowerShellWrapper::unfired(crate::claude::HOOKS).is_empty());
+}
+
+/// An exec-form handler whose script nothing starts here is never
+/// delivered, and the plan says why: a script that is neither executable
+/// nor placed by its extension on POSIX, a `.sh` one on Windows. One the
+/// table places is delivered as usual.
+#[test]
+fn an_exec_form_script_nothing_starts_here_is_reported_not_delivered() {
+    let package = uze_testkit::temp::scratch("exec-form-plan");
+    fs::create_dir_all(package.join("hooks")).unwrap();
+    fs::write(package.join("hooks").join("guard"), "exit 0\n").unwrap();
+    let with = |script: &str| {
+        let mut group = hook();
+        group.handlers = vec![CommandHook {
+            handler_type: CommandHandlerType::Command,
+            command: script.into(),
+            args: Some(Vec::new()),
+            interpreter: None,
+            timeout: 10,
+        }];
+        let mut resource = hook_resource(&package);
+        resource.capability.payload = serde_json::to_vec(&group).unwrap();
+        hook_plan(&resource, crate::claude::HOOKS, false, "evidence.", |_| {
+            Some(ManagedArtifact::HookConfigEntry {
+                config_file: package.join("hooks.json"),
+                entry_name: "demo:protect-env".into(),
+                event: HookEvent::PreToolUse,
+                expected: "{}".into(),
+                wrapper: package.join("exec"),
+            })
+        })
+    };
+    let unplaced = with(uze_platform::shell::spelling(
+        "hooks/guard",
+        "hooks/guard.sh",
+    ));
+    assert_eq!(unplaced.route, CompatibilityRoute::Unsupported);
+    assert!(
+        unplaced.evidence.contains("not delivered on this platform"),
+        "{}",
+        unplaced.evidence
+    );
+    assert_ne!(
+        with("hooks/guard.py").route,
+        CompatibilityRoute::Unsupported,
+        "a script the table places is delivered"
+    );
+    let _ = fs::remove_dir_all(package);
 }

@@ -920,12 +920,23 @@ granting, even for the official marketplace.
 
 ### Hook semantics are assessed per event/effect, never by event names alone
 
-A `Stop` hook is never represented as an OpenCode tool callback and an
-`ask`/`transform` effect never attaches where the target cannot preserve it;
-a degraded or unsupported route states the exact loss.
+A `Stop` hook is never represented as a tool callback (on OpenCode it is the
+end-of-turn bus event), and an `ask`/`transform` effect never attaches where
+the target cannot preserve it (Codex takes no `ask`); a degraded or
+unsupported route states the exact loss.
 
 > `tests/integrations/hooks.rs::compatibility_is_semantic_and_never_fabricates_a_stop_equivalence`
-> `tests/integrations/hooks.rs::transform_degrades_on_every_harness_while_it_has_no_answer_channel`
+> `tests/integrations/hooks.rs::transform_is_delivered_where_the_harness_takes_a_rewrite`
+
+### A rewrite is the complete input, chained, and closes when it fails
+
+A `transform` handler answers with the call's complete input on stdout; the
+next handler of the group reads that rewrite, the harness receives the last
+one in its own dialect, and an answer that is not one JSON object closes the
+call like a `deny`.
+
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_rewrite_reaches_the_next_handler_and_the_harness`
+> `crates/uze-integrations/src/hooks/opencode_runtime_tests.rs::a_rewrite_replaces_the_input_the_tool_runs`
 
 ### A delivered hook runs without the packager
 
@@ -1050,6 +1061,27 @@ delivery that did not happen.
 
 > `crates/uze-integrations/src/hooks/tests.rs::a_platform_without_a_wrapper_template_delivers_no_hook`
 > `crates/uze-integrations/src/hooks/tests.rs::a_hook_that_cannot_be_delivered_is_reported_unsupported`
+
+### A group that could never fire is reported, not delivered
+
+A group whose matcher names only tools the harness cannot bind (a tool it
+does not have, or one whose input lacks the field the alias promises) gets
+no entry: an entry whose matcher never matches is a guard that guards
+nothing and reports Native.
+
+> `crates/uze-integrations/src/hooks/tests.rs::a_group_that_could_never_fire_here_is_reported_not_delivered`
+
+### What the harness holds back is said beside the receipt, never written over
+
+A delivery the harness keeps from running until the person acts (Codex's
+hook review) is reported with the action that releases it, while its
+receipt stays `Matched`: the artifact is UZE's and intact, and removal is
+unchanged. UZE reads the harness's record of the person's decision and
+never writes it.
+
+> `crates/uze-integrations/src/codex/trust.rs::tests::the_identity_hashes_as_codex_recorded_it`
+> `crates/uze-integrations/src/codex/trust.rs::tests::a_group_with_no_recorded_hash_awaits_review`
+> `crates/uze-integrations/src/codex/trust.rs::tests::a_group_changed_since_its_review_awaits_it_again`
 
 ## Concurrent work isolation (`add-portable-worktree-policy`)
 
@@ -2171,17 +2203,18 @@ three harnesses, for months.
 > `conformance/contract/skill.py`
 > `conformance/contract/mcp.py`
 
-### A harness declines out loud, or not at all
+### A harness declines out loud, measured, or not at all
 
-A harness that cannot deliver part of a contract returns a reason from
-`bindings.unsupported`, and the run records it beside the passes. Omitting
-the check is not available: an omission cannot be reviewed, and the
-divergence it hides is exactly what the Lab exists to surface.
+A harness that cannot deliver part of a contract says so through
+`declare`, which records the measurement that shows the limit still holds,
+and the gate passes it only against a registry entry naming the versions it
+was measured on. A declaration whose measurement did not run is unproven;
+one whose measurement found the control after all escalates; a wildcard
+version is refused. Omitting the check is not available, and neither is a
+declaration that is a constant: each is a measurement of this run.
 
-This is how the suite now states that `invoke.user: false` is enforced on
-one harness of four — a fact no vertical asked about before.
-
-> `conformance/contract/skill.py::_declined`
+> `conformance/tests/test_gate.py::DeclarationTest`
+> `conformance/tests/test_lint.py::VerdictsAreObservedTest::test_no_declaration_is_a_constant`
 
 ### An absence proves nothing until something proves the surface
 
@@ -2191,6 +2224,35 @@ otherwise. `check_absence` already refuses an unsettled turn (ADR-035);
 this is the other half of the same defence.
 
 > `conformance/contract/skill.py::_assert_catalog`
+> `conformance/tests/test_lint.py::VerdictsAreObservedTest::test_every_absence_names_its_proof`
+
+### The vocabulary is measured, never believed
+
+What a harness calls its tools, and the input fields it hands a hook, are
+read from the harness itself: the tools each request declares to the
+model, and the name and input a hook with no matcher receives. Two tables
+written independently, UZE's binding tables and the Lab's own expectation,
+are each held against that measurement and against each other, so a
+mistake the two share becomes a disagreement instead of a pass. The last
+measurement is committed, so a table edit that contradicts it fails
+`cargo test` without Docker; the live run fails when the vendor moves away
+from it.
+
+> `crates/uze-integrations/src/hooks/measured_tests.rs::every_bound_tool_and_field_is_one_the_harness_declared`
+> `crates/uze-integrations/src/hooks/measured_tests.rs::the_lab_and_the_integration_agree_on_every_alias`
+> `conformance/tests/test_vocabulary.py::EvaluateTest`
+
+### The Lab answers a prompt only by a recorded decision
+
+Every prompt a person would meet in front of a capability (folder trust,
+hook review, permission dialogs) is answered on screen, the way the person
+answers it. A flag, a seeded answer in a fixture home or a bypass is
+allowed only where `conformance/DECISIONS.md` records why that prompt is
+outside what UZE delivers, and the code site names that decision.
+
+> `conformance/tests/test_lint.py::PromptsAreDecidedTest`
+> `conformance/tests/test_lint.py::FixturesAnswerNothingTest`
+> `conformance/tests/test_lint.py::LaunchesAreAPersonsTest`
 
 ## Unfinished surfaces
 

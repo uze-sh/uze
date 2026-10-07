@@ -61,9 +61,19 @@ impl Fingerprint {
     /// its mtime. No subprocess spawned; this is the entire reason a
     /// fingerprint check is cheap enough to run on every cache read.
     fn resolve(candidates: &[&str], shims_dir: &Path) -> Self {
+        Self::resolve_in(
+            crate::harness_runtime::harness_search_path(),
+            candidates,
+            shims_dir,
+        )
+    }
+
+    /// [`Fingerprint::resolve`] in `search_path` rather than this process's
+    /// `PATH`, which other threads may be reading.
+    fn resolve_in(search_path: Vec<PathBuf>, candidates: &[&str], shims_dir: &Path) -> Self {
         let resolved_path = candidates
             .iter()
-            .find_map(|name| resolve_candidate(name, shims_dir));
+            .find_map(|name| resolve_candidate(name, &search_path, shims_dir));
         let modified_unix_nanos = resolved_path.as_deref().and_then(mtime_unix_nanos);
         Self {
             resolved_path,
@@ -77,12 +87,16 @@ impl Fingerprint {
 /// Everything else resolves through the same walk the runtime shim itself
 /// uses, which skips `shims_dir`: fingerprinting the shim would track the
 /// `uze` binary's mtime instead of the harness's.
-fn resolve_candidate(program: &str, shims_dir: &Path) -> Option<PathBuf> {
+fn resolve_candidate(program: &str, search_path: &[PathBuf], shims_dir: &Path) -> Option<PathBuf> {
     if program.contains(std::path::MAIN_SEPARATOR) {
         let path = PathBuf::from(program);
         return is_executable_file(&path).then_some(path);
     }
-    crate::harness_runtime::resolve_real_executable(&[program], shims_dir)
+    crate::harness_runtime::resolve_real_executable_in(
+        search_path.iter().cloned(),
+        &[program],
+        shims_dir,
+    )
 }
 
 fn mtime_unix_nanos(path: &Path) -> Option<u128> {
@@ -355,7 +369,6 @@ mod tests {
     /// could see, and rebuilding `uze` invalidated every entry at once.
     #[test]
     fn a_shim_ahead_of_the_real_binary_is_never_what_gets_fingerprinted() {
-        let mut env = uze_testkit::env::scope();
         let dir = unique_temp_dir("shim-skip");
         let shims_dir = dir.join("shims");
         let real_dir = dir.join("real-bin");
@@ -364,11 +377,11 @@ mod tests {
         let shim = fake_executable(&shims_dir, "codex");
         let real = fake_executable(&real_dir, "codex");
 
-        env.set(
-            "PATH",
-            std::env::join_paths([&shims_dir, &real_dir]).unwrap(),
+        let fingerprint = Fingerprint::resolve_in(
+            vec![shims_dir.clone(), real_dir.clone()],
+            &["codex"],
+            &shims_dir,
         );
-        let fingerprint = Fingerprint::resolve(&["codex"], &shims_dir);
 
         assert_eq!(
             fingerprint.resolved_path,

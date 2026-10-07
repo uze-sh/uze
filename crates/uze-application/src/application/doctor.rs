@@ -328,7 +328,10 @@ impl Health<'_> {
     #[tracing::instrument(name = "health.machine_status", skip_all, err)]
     pub fn machine_status(&self) -> Result<MachineStatusReport> {
         let packages = self.0.plugins().list()?;
-        Ok(MachineStatusReport { packages })
+        Ok(MachineStatusReport {
+            packages,
+            held_back: held_back_notes(self.0, None),
+        })
     }
 
     #[tracing::instrument(name = "health.status", skip_all, fields(project_root = %project_root.display()), err)]
@@ -336,6 +339,22 @@ impl Health<'_> {
         let context = self.0.context().inspect(project_root)?;
         let installed = self.0.store.package_ids()?.len();
         let contributing = context.contributions.len();
+        let agents_md = context
+            .canonical
+            .join(uze_core::project_context::AGENTS_MD_FILE_NAME);
+        // A harness that reads the context but will not here — a project
+        // the person marked untrusted, a file past the size it reads.
+        let unread = self
+            .0
+            .integrations
+            .iter()
+            .map(|integration| integration.as_ref())
+            .filter(|integration| self.0.detect_cached(*integration).present)
+            .filter_map(|integration| {
+                integration
+                    .context_unread(&context.canonical, &agents_md)
+                    .map(|reason| format!("{}: {reason}", integration.display_name()))
+            });
         let issues: Vec<String> = context
             .contributions
             .iter()
@@ -361,6 +380,7 @@ impl Health<'_> {
                     .iter()
                     .map(|region| format!("{region}: malformed")),
             )
+            .chain(unread)
             .collect();
         // Read out of the sources the inspection already observed rather
         // than asked of the filesystem again: `status` and `agent context
@@ -403,6 +423,7 @@ impl Health<'_> {
             packages_contributing_here: contributing,
             project_lock,
             issues,
+            held_back: held_back_notes(self.0, None),
         })
     }
 }
@@ -901,27 +922,42 @@ fn check_delivery(
     };
     let mut findings = Vec::new();
     let mut failing = std::collections::BTreeSet::new();
-    let unreadable = |entry: &uze_core::reconciliation::ReconciledReceipt,
-                      served: &[&CapabilityDelivery],
-                      findings: &mut Vec<DeliveryFinding>,
-                      failing: &mut std::collections::BTreeSet<String>| {
-        let served_resources: Vec<_> = served
-            .iter()
-            .filter_map(|capability| resource_of(&capability.identity))
-            .collect();
-        for one in integration.unreadable(package, &entry.receipt, &served_resources) {
-            let capability = served
+    // What the harness makes of a delivery whose receipt matched: what it
+    // would not load, and what it holds back until the operator acts.
+    let harness_reading =
+        |entry: &uze_core::reconciliation::ReconciledReceipt,
+         served: &[&CapabilityDelivery],
+         findings: &mut Vec<DeliveryFinding>,
+         failing: &mut std::collections::BTreeSet<String>| {
+            let served_resources: Vec<_> = served
                 .iter()
-                .find(|capability| capability.identity == one.capability)
-                .map_or_else(|| one.capability.clone(), |capability| name_of(capability));
-            failing.insert(one.capability);
-            findings.push(DeliveryFinding {
-                capability,
-                kind: DeliveryFindingKind::Unreadable,
-                detail: one.reason,
-            });
-        }
-    };
+                .filter_map(|capability| resource_of(&capability.identity))
+                .collect();
+            for one in integration.unreadable(package, &entry.receipt, &served_resources) {
+                let capability = served
+                    .iter()
+                    .find(|capability| capability.identity == one.capability)
+                    .map_or_else(|| one.capability.clone(), |capability| name_of(capability));
+                failing.insert(one.capability);
+                findings.push(DeliveryFinding {
+                    capability,
+                    kind: DeliveryFindingKind::Unreadable,
+                    detail: one.reason,
+                });
+            }
+            for one in integration.held_back(package, &entry.receipt, &served_resources) {
+                let capability = served
+                    .iter()
+                    .find(|capability| capability.identity == one.capability)
+                    .map_or_else(|| one.capability.clone(), |capability| name_of(capability));
+                failing.insert(one.capability);
+                findings.push(DeliveryFinding {
+                    capability,
+                    kind: DeliveryFindingKind::HeldBack,
+                    detail: one.action,
+                });
+            }
+        };
     let inspected = |entry: &uze_core::reconciliation::ReconciledReceipt| {
         let kind = match entry.inspection.state {
             AttachmentState::Matched => return None,
@@ -967,7 +1003,7 @@ fn check_delivery(
                     });
                 }
             }
-            (None, Some(entry)) => unreadable(entry, &packaged, &mut findings, &mut failing),
+            (None, Some(entry)) => harness_reading(entry, &packaged, &mut findings, &mut failing),
             (None, None) => {}
         }
     }
@@ -1008,7 +1044,7 @@ fn check_delivery(
                     detail,
                 });
             }
-            None => unreadable(entry, &[capability], &mut findings, &mut failing),
+            None => harness_reading(entry, &[capability], &mut findings, &mut failing),
         }
     }
     HarnessDeliveryHealth {
@@ -1021,4 +1057,51 @@ fn check_delivery(
             .count(),
         findings,
     }
+}
+
+/// Every delivered capability a detected harness holds back until the
+/// person acts in it, of every package or of `plugin` alone. Asked of each receipt's own integration, which
+/// reads the harness's record of the person's decision — files, never a
+/// process — so `status` keeps its budget.
+pub(crate) fn held_back_notes(app: &UzeApplication, plugin: Option<&str>) -> Vec<HeldBackNote> {
+    let Ok(receipts) = state::receipts(&app.home, None) else {
+        return Vec::new();
+    };
+    let mut notes = Vec::new();
+    for integration in app
+        .integrations
+        .iter()
+        .map(|integration| integration.as_ref())
+        .filter(|integration| app.detect_cached(*integration).present)
+    {
+        for receipt in receipts.iter().filter(|receipt| {
+            receipt.integration == integration.id()
+                && plugin.is_none_or(|plugin| receipt.package_id == plugin)
+        }) {
+            let Ok(package) = app.package_by_name(&receipt.package_id) else {
+                continue;
+            };
+            let Ok(resources) = uze_core::engine::package_resources(&package) else {
+                continue;
+            };
+            let served: Vec<_> = resources
+                .iter()
+                .filter(|resource| {
+                    receipt
+                        .resource_identity
+                        .as_deref()
+                        .is_none_or(|identity| resource.identity() == identity)
+                })
+                .collect();
+            for one in integration.held_back(&package, receipt, &served) {
+                notes.push(HeldBackNote {
+                    harness: integration.display_name().to_owned(),
+                    plugin: receipt.package_id.clone(),
+                    capability: one.capability,
+                    action: one.action,
+                });
+            }
+        }
+    }
+    notes
 }

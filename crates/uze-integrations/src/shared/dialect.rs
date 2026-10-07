@@ -24,13 +24,20 @@ use crate::shared::package_root::resolve_bytes;
 #[derive(Clone, Copy)]
 pub(crate) enum Shape {
     Text,
-    Number,
-    Map,
     /// Text or a list of text.
     TextOrList,
     OneOf(&'static [&'static str]),
     /// `provider/model`.
     Qualified,
+    /// `true` or `false`.
+    Flag,
+    /// A positive whole number.
+    Count,
+    /// `#rrggbb`.
+    HexColor,
+    /// An ordered list of `{action, resource, effect}` rules, `effect` one of
+    /// allow, deny, ask (OpenCode V2's `permissions`).
+    Rules,
     /// Read by the harness in a way that loses the agent: whatever the value,
     /// the harness drops an agent carrying the field. It is left out, and
     /// the reason is the warning.
@@ -98,14 +105,28 @@ fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
     };
     let ok = match shape {
         Shape::Text => value.as_str().is_some_and(|text| !text.trim().is_empty()),
-        Shape::Number => value.as_f64().is_some() || value.as_i64().is_some(),
-        Shape::Map => value.as_mapping().is_some(),
         Shape::TextOrList => value.as_str().is_some() || text_list(value),
         Shape::OneOf(choices) => value.as_str().is_some_and(|text| choices.contains(&text)),
         Shape::Qualified => value
             .as_str()
             .and_then(|text| text.split_once('/'))
             .is_some_and(|(provider, model)| !provider.is_empty() && !model.is_empty()),
+        Shape::Flag => value.as_bool().is_some(),
+        Shape::Count => value.as_u64().is_some_and(|count| count > 0),
+        Shape::HexColor => value.as_str().is_some_and(|text| {
+            text.len() == 7
+                && text.starts_with('#')
+                && text[1..].chars().all(|digit| digit.is_ascii_hexdigit())
+        }),
+        Shape::Rules => value.as_sequence().is_some_and(|rules| {
+            rules.iter().all(|rule| {
+                let field = |name: &str| rule.get(name).and_then(serde_yaml::Value::as_str);
+                field("action").is_some()
+                    && field("resource").is_some()
+                    && field("effect")
+                        .is_some_and(|effect| ["allow", "deny", "ask"].contains(&effect))
+            })
+        }),
         Shape::Refused(_) => false,
     };
     if ok {
@@ -113,11 +134,13 @@ fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
     }
     Err(match shape {
         Shape::Text => "text".to_owned(),
-        Shape::Number => "a number".to_owned(),
-        Shape::Map => "a mapping".to_owned(),
         Shape::TextOrList => "text or a list of text".to_owned(),
         Shape::OneOf(choices) => format!("one of {}", choices.join(", ")),
         Shape::Qualified => "`provider/model`".to_owned(),
+        Shape::Flag => "true or false".to_owned(),
+        Shape::Count => "a positive whole number".to_owned(),
+        Shape::HexColor => "a `#rrggbb` color".to_owned(),
+        Shape::Rules => "a list of `{action, resource, effect}` rules".to_owned(),
         Shape::Refused(reason) => reason.to_owned(),
     })
 }
@@ -167,7 +190,7 @@ mod tests {
     const DIALECT: AgentDialect = AgentDialect {
         known: &[
             ("model", Shape::Qualified),
-            ("tools", Shape::Map),
+            ("permissions", Shape::Rules),
             ("effort", Shape::OneOf(&["low", "high"])),
         ],
         carries_unknown: false,
@@ -191,12 +214,37 @@ mod tests {
     }
 
     #[test]
+    fn the_v2_shapes_accept_what_opencode_reads_and_nothing_else() {
+        let yaml = |value: &str| serde_yaml::from_str::<serde_yaml::Value>(value).unwrap();
+        assert!(conforms(Shape::Flag, &yaml("true")).is_ok());
+        assert!(conforms(Shape::Flag, &yaml("yes please")).is_err());
+        assert!(conforms(Shape::Count, &yaml("3")).is_ok());
+        assert!(conforms(Shape::Count, &yaml("0")).is_err());
+        assert!(conforms(Shape::HexColor, &yaml("'#a1b2c3'")).is_ok());
+        assert!(conforms(Shape::HexColor, &yaml("teal")).is_err());
+        assert!(
+            conforms(
+                Shape::Rules,
+                &yaml("[{action: shell, resource: '*', effect: deny}]")
+            )
+            .is_ok()
+        );
+        assert!(
+            conforms(
+                Shape::Rules,
+                &yaml("[{action: shell, resource: '*', effect: maybe}]")
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn a_wrong_shape_is_an_error_and_is_not_carried() {
         let (carried, findings) = agent_block(
             &DIALECT,
             &["opencode"],
             &document(
-                "name: a\ndescription: d\nharness:\n  opencode: { model: haiku, tools: Read }",
+                "name: a\ndescription: d\nharness:\n  opencode: { model: haiku, permissions: Read }",
             ),
         );
         assert!(carried.is_empty());

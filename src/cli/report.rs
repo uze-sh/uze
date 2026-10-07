@@ -410,6 +410,10 @@ pub(crate) fn render_inspection(report: &PluginInspection, verbose: bool) -> Str
             text.push_str(&render_effective_delivery(delivery, verbose));
         }
     }
+    text.push_str(&super::status::render_requirement_gaps(
+        std::slice::from_ref(&report.plugin),
+    ));
+    text.push_str(&super::status::render_held_back(&report.held_back));
     text
 }
 
@@ -616,6 +620,7 @@ pub(crate) fn render_add_report(report: &AddPluginReport, verbose: bool) -> Stri
         ));
     }
     out.push_str(&render_deliveries(&report.deliveries, verbose, "  "));
+    out.push_str(&super::status::render_held_back(&report.held_back));
     out
 }
 

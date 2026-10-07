@@ -93,6 +93,11 @@ class Config:
         # every provider start in the run.
         self.discovery = False
         self.variation = None
+        #: The most recent harness container `docker_base` named, so a
+        #: scenario can read what a hook handler wrote inside it while the
+        #: harness is still running (`harness_files`).
+        self.harness_container = None
+        self._containers = 0
         os.makedirs(self.outdir, exist_ok=True)
 
 
@@ -201,8 +206,8 @@ def settle_and_quiet(screen, quiet=None, budget=None):
 # The same marks the journey suite prints. Emoji are double-width in some
 # terminals and single in others, so a column that lines up locally does
 # not in CI — and they carry no meaning a colour and a glyph do not.
-VERDICT_SYMBOL = {"PASS": "✓", "ADAPTED": "!", "FAIL": "✕"}
-VERDICT_COLOR = {"PASS": "\033[32m", "ADAPTED": "\033[33m", "FAIL": "\033[31m"}
+VERDICT_SYMBOL = {"PASS": "✓", "DECLARED": "!", "FAIL": "✕"}
+VERDICT_COLOR = {"PASS": "\033[32m", "DECLARED": "\033[33m", "FAIL": "\033[31m"}
 VERDICT_LABEL_WIDTH = max(len(tag) for tag in VERDICT_SYMBOL) + len("[]")
 
 
@@ -237,47 +242,81 @@ def print_verdict(tag, name, detail=""):
     print(f"{indent}{mark} {name}{suffix}", flush=True)
 
 
-def check_absence(name, ok, settled, detail=""):
+def _record(name, ok, detail, kind="assert", **extra):
+    results.append(
+        {
+            "check": name,
+            "suite": suite_path(name),
+            "pass": bool(ok),
+            "detail": detail,
+            "kind": kind,
+            "harness": CURRENT_HARNESS,
+            **extra,
+        }
+    )
+
+
+def check(name, ok, detail=""):
+    """An ordinary assertion: `ok` is what this run observed.
+
+    There is no `kind`: a limitation is never an assertion with a flag on
+    it, it is a measurement (`declare`). A literal verdict is refused by
+    the Lab's lint (`tests/test_lint.py`), so every result here was
+    computed from something the run saw.
+    """
+    _record(name, ok, detail)
+    print_verdict("PASS" if ok else "FAIL", name, detail)
+
+
+def check_absence(name, ok, settled, *, proof, detail=""):
     """Absence assertion under the settled-turn contract (ADR-035).
 
-    An absence (a marker that must never appear) is only provable once the
-    turn settled and the TUI went quiet. An unsettled turn FAILS the check
-    with that reason recorded — it can never pass by accident.
+    An absence — a tool that did not execute, a handler that did not run, a
+    marker that never appeared — holds only when two things were seen
+    first: the turn settled (the TUI went quiet after a real tool result),
+    and `proof`, a presence observed in the same turn showing the subject
+    ran (the handler's own marker, the denial the harness relayed).
+    Without the proof a hook that never ran passes every absence, which is
+    how deny checks stayed green on a harness that never fired them.
     """
-    suite = suite_path(name)
+    if not proof:
+        detail = f"nothing showed the subject ran — absence not proven ({detail})"
+        _record(name, False, detail)
+        print_verdict("FAIL", name, detail)
+        return
     if not settled:
         detail = f"turn never settled — absence not proven ({detail})"
-        results.append(
-            {
-                "check": name,
-                "suite": suite,
-                "pass": False,
-                "detail": detail,
-                "kind": "assert",
-                "harness": CURRENT_HARNESS,
-            }
-        )
+        _record(name, False, detail)
         print_verdict("FAIL", name, detail)
         return
     check(name, ok, detail)
 
 
-def check(name, ok, detail="", kind="assert"):
-    suite = suite_path(name)
-    results.append(
-        {
-            "check": name,
-            "suite": suite,
-            "pass": bool(ok),
-            "detail": detail,
-            "kind": kind,
-            "harness": CURRENT_HARNESS,
-        }
+def declare(name, holds, reason, evidence=""):
+    """A declared limitation: this harness lacks a control the contract
+    covers, as measured in this run.
+
+    `holds` is the measurement: True when the run observed the limitation
+    (the user-only skill was invocable after all, the event carried no
+    input), False when it observed the control, None when the measurement
+    could not run. The gate adjudicates it against the registry
+    (`gate.py`); it is never a constant, and the lint refuses one.
+    """
+    _record(
+        name,
+        holds is True,
+        f"{reason} — {evidence}" if evidence else reason,
+        kind="declared",
+        holds=holds,
     )
-    tag = "PASS" if ok else "FAIL"
-    if ok and kind == "adapted":
-        tag = "ADAPTED"
-    print_verdict(tag, name, detail)
+    tag = "DECLARED" if holds is True else "FAIL"
+    print_verdict(
+        tag,
+        name,
+        reason
+        if holds is True
+        else f"measurement {'found the control' if holds is False else 'did not run'}: {evidence}",
+    )
 
 
 def sh(*args, ok=(0,)):
@@ -305,8 +344,8 @@ def materialize_marketplace(cfg):
     )
     return f"""
 cp -r {cfg.marketplace} /work/market
-sed -i 's|__UZE_MCP_FIXTURE_BINARY__|{cfg.mcp_fixture_bin}|g' /work/market/plugins/mcp-plugin/scripts/server
-sed -i 's|__UZE_MCP_CONFORMANCE_PROOF__|{cfg.mcp_proof}|g' /work/market/plugins/mcp-plugin/mcp.json
+sed -i 's|__UZE_MCP_FIXTURE_BINARY__|{cfg.mcp_fixture_bin}|g' /work/market/plugins/mcp-plugin/scripts/server /work/market/plugins/route-explicit/scripts/server
+sed -i 's|__UZE_MCP_CONFORMANCE_PROOF__|{cfg.mcp_proof}|g' /work/market/plugins/mcp-plugin/mcp.json /work/market/plugins/route-explicit/mcp.json
 {git} init -q
 {git} add -A
 {git} commit -q -m 'lab marketplace'
@@ -328,6 +367,16 @@ def validate_marketplace(cfg):
         "hook-order-plugin": "./plugins/hook-order-plugin",
         "hook-fail-plugin": "./plugins/hook-fail-plugin",
         "hook-session-plugin": "./plugins/hook-session-plugin",
+        "hook-rows": "./plugins/hook-rows",
+        "hook-effects": "./plugins/hook-effects",
+        "hook-exec": "./plugins/hook-exec",
+        "hook-needs-python": "./plugins/hook-needs-python",
+        "hook-events": "./plugins/hook-events",
+        "hook-ask": "./plugins/hook-ask",
+        "hook-post-deny": "./plugins/hook-post-deny",
+        "lifecycle-plugin": "./plugins/lifecycle-plugin",
+        "route-explicit": "./plugins/route-explicit",
+        "hook-transform": "./plugins/hook-transform",
     }
     if plugins != expected:
         raise RuntimeError(f"invalid conformance marketplace inventory: {plugins}")
@@ -352,10 +401,33 @@ def validate_marketplace(cfg):
         "plugins/hook-order-plugin/hooks.json",
         "plugins/hook-order-plugin/scripts/order-1",
         "plugins/hook-order-plugin/scripts/order-2",
+        *(
+            f"plugins/{plugin}/{file}"
+            for plugin in (
+                "hook-rows",
+                "hook-effects",
+                "hook-events",
+                "hook-ask",
+                "hook-post-deny",
+            )
+            for file in ("hooks.json", "plugin.json", "scripts/probe")
+        ),
+        "plugins/lifecycle-plugin/skills/probe/SKILL.md",
+        "plugins/route-explicit/.codex-plugin/plugin.json",
+        "plugins/route-explicit/mcp.json",
+        "plugins/route-explicit/scripts/server",
+        "plugins/lifecycle-plugin/agents/keeper.md",
+        "plugins/lifecycle-plugin/hooks.json",
         "plugins/hook-fail-plugin/hooks.json",
         "plugins/hook-fail-plugin/plugin.json",
         "plugins/hook-session-plugin/hooks.json",
         "plugins/hook-session-plugin/scripts/opened",
+        "plugins/hook-exec/hooks.json",
+        "plugins/hook-exec/plugin.json",
+        "plugins/hook-exec/scripts/probe.js",
+        "plugins/hook-needs-python/hooks.json",
+        "plugins/hook-needs-python/plugin.json",
+        "plugins/hook-needs-python/scripts/guard.py",
     )
     for relative_path in required:
         path = os.path.join(cfg.marketplace_source, relative_path)
@@ -517,6 +589,7 @@ def start_provider(cfg, mode, extra_env=None):
     # is replaced or the earlier phases' requests are gone.
     if cfg.discovery:
         pull_captures(cfg)
+    pull_declared_tools(cfg)
     subprocess.run(["docker", "rm", "-f", cfg.prov_name], capture_output=True)
     env = [
         "-e",
@@ -769,6 +842,76 @@ def pull_captures(cfg):
         return False
 
 
+DECLARED_TOOLS = "declared-tools.json"
+
+
+def pull_declared_tools(cfg):
+    """Folds the current provider's record of the tools the harness
+    declared into the run's `declared-tools.json`, and of the calls it
+    refused to script into `undeclared-calls.json`.
+
+    A vertical replaces its provider per phase, and each phase's harness
+    declares what that phase's world gave it (an MCP server installed, a
+    subagent dispatched), so the run's vocabulary is the union of every
+    provider's record — pulled before the container goes. No provider yet,
+    or one that recorded nothing, adds nothing; an empty union is refused
+    by the vocabulary checks, not here.
+    """
+    refused = _pull_provider_json(cfg, "undeclared-calls.json") or []
+    if refused:
+        calls = read_undeclared_calls(cfg) + refused
+        with open(os.path.join(cfg.outdir, UNDECLARED_CALLS), "w") as f:
+            json.dump(calls, f, indent=1)
+    pulled = _pull_provider_json(cfg, "declared-tools.json")
+    if not pulled:
+        return
+    path = os.path.join(cfg.outdir, DECLARED_TOOLS)
+    known = read_declared_tools(cfg)
+    for name, fields in pulled.items():
+        known[name] = sorted(set(known.get(name, [])) | set(fields))
+    with open(path, "w") as f:
+        json.dump(known, f, indent=1, sort_keys=True)
+
+
+UNDECLARED_CALLS = "undeclared-calls.json"
+
+
+def _pull_provider_json(cfg, name):
+    r = subprocess.run(
+        ["docker", "cp", f"{cfg.prov_name}:/app/{name}", "-"],
+        capture_output=True,
+        timeout=30,
+    )
+    if r.returncode != 0:
+        return None
+    return json.loads(untar_single_file(r.stdout) or b"null")
+
+
+def provider_undeclared_calls(cfg):
+    """The calls the running provider has refused so far — read while it is
+    alive, for a scene that needs to know which tools its session offered."""
+    return _pull_provider_json(cfg, "undeclared-calls.json") or []
+
+
+def read_undeclared_calls(cfg):
+    """Every call a provider refused to script because the harness had not
+    declared the tool (`capture.scriptable`)."""
+    try:
+        with open(os.path.join(cfg.outdir, UNDECLARED_CALLS)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def read_declared_tools(cfg):
+    """Every tool the harness declared in this run so far, with its fields."""
+    try:
+        with open(os.path.join(cfg.outdir, DECLARED_TOOLS)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
 def untar_single_file(archive: bytes) -> bytes:
     """`docker cp <container>:<file> -` streams a tar with that one member."""
     import io
@@ -916,7 +1059,7 @@ def write_evidence_summary(cfg, manifest, outcome, retry=0):
         "gate": {
             "passed": outcome["passed"],
             "total": outcome["total"],
-            "known_adapted": outcome["known_adapted"],
+            "declared": outcome["declared"],
             "retry": retry,
             "failures": [
                 {
@@ -963,11 +1106,15 @@ def marketplace_mount():
 
 
 def docker_base(cfg, prov_ip, final_cmd, tty=True):
+    cfg._containers += 1
+    cfg.harness_container = f"{cfg.prov_name}-harness-{cfg._containers}"
     cmd = (
         [
             "docker",
             "run",
             "--rm",
+            "--name",
+            cfg.harness_container,
             # The codex harness sandboxes its own tool execution with
             # bubblewrap, which needs user namespaces; the Lab's default
             # seccomp blocks CLONE_NEWUSER, so the sandbox errors out and the
@@ -977,6 +1124,13 @@ def docker_base(cfg, prov_ip, final_cmd, tty=True):
             # prerequisite, not an escape hatch.
             "--security-opt",
             "seccomp=unconfined",
+            # Isolation the image declares (conformance/Dockerfile): the
+            # runtime user is rootless and needs no capability, so none is
+            # granted and none can be gained.
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
         ]
         + (["-it"] if tty else [])
         + ["--network", cfg.net]
@@ -1006,6 +1160,39 @@ def docker_base(cfg, prov_ip, final_cmd, tty=True):
         final_cmd,
     ]
     return cmd
+
+
+#: Where the Lab's hook fixtures record that a handler ran: one file per
+#: invocation, holding every `HOOK_*` value the handler was handed. Written
+#: by the handler itself inside the harness container, so its existence is
+#: the presence proof a relayed text or an absent side effect cannot be.
+HOOK_MARKERS_DIR = "/work/hook-markers"
+
+
+def harness_files(cfg, directory=HOOK_MARKERS_DIR):
+    """Every file under `directory` in the running harness container, as
+    {name: content}. Read while the harness is alive: the container is
+    removed when it exits. An unreadable directory reads as empty, which
+    every presence check then fails on."""
+    if not cfg.harness_container:
+        return {}
+    listing = subprocess.run(
+        [
+            "docker",
+            "exec",
+            cfg.harness_container,
+            "sh",
+            "-c",
+            f'for f in "{directory}"/*; do [ -f "$f" ] && printf "\\0%s\\0" "$(basename "$f")" && cat "$f"; done',
+        ],
+        capture_output=True,
+        text=True,
+        errors="replace",
+    )
+    if listing.returncode != 0 or not listing.stdout:
+        return {}
+    parts = listing.stdout.split("\0")[1:]
+    return {parts[i]: parts[i + 1] for i in range(0, len(parts) - 1, 2)}
 
 
 def spawn_tui(cfg, cmd, tag):

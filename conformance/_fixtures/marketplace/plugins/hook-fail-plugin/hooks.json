@@ -3,9 +3,15 @@
     "PreToolUse": [
       {
         "id": "fail-closed-guard",
-        "matcher": "shell|file.write",
+        "matcher": "shell",
         "effect": "deny",
-        "hooks": [{ "type": "command", "command": "${PLUGIN_ROOT}/scripts/absent", "timeout": 5 }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/absent",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

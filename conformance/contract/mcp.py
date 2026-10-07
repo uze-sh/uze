@@ -12,29 +12,58 @@ rendered above the words "No MCP servers configured". A surface check that
 matches its own chrome proves the screen exists, not the server.
 """
 
-from shared.common import check, describe
+from shared.common import check, describe, provider_struct, start_provider
 
 #: The server UZE delivers from the `mcp-plugin` fixture.
 SERVER = "uze-conformance"
 
-
-def _declined(bindings, prop):
-    reason = bindings.unsupported(f"mcp-{prop}")
-    if reason:
-        check(
-            f"mcp-{prop}",
-            True,
-            f"{bindings.harness} cannot: {reason}",
-            kind="adapt",
-        )
-    return reason
+#: The turn that asks for the server's tool.
+PROMPT = "run the mcp probe"
 
 
 def assert_contract(cfg, prov_ip, bindings):
-    if _declined(bindings, "inventory"):
-        return
     with describe("mcp"):
         _assert_inventory(cfg, prov_ip, bindings)
+        _assert_execution(cfg, bindings)
+    start_provider(cfg, "static")
+
+
+def _assert_execution(cfg, bindings):
+    """The model calls the server's tool and the server's answer reaches the
+    next request: the fixture server returns the run's proof, which only a
+    call that reached it can carry back. The tool is called the way the
+    harness offers it, including loading it first where the harness defers
+    MCP tools."""
+    calls = bindings.mcp_calls()
+    if calls is None:
+        # The vertical proves execution in a phase of its own.
+        return
+    mode, env = bindings.sequence(calls, PROMPT)
+    prov_ip = start_provider(cfg, mode, env)
+    with bindings.session(cfg, prov_ip) as tui:
+        plain, ready = bindings.prepare(tui)
+        check(
+            "mcp-exec-ready",
+            bool(ready),
+            f"{bindings.harness} reached its prompt"
+            if ready
+            else plain[-160:].replace("\n", " "),
+        )
+        if not ready:
+            return
+        turn = bindings.hook_turn(tui, PROMPT)
+        tui.snapshot("mcp-exec", turn.plain)
+    returned = any(
+        request.get("summary", {}).get("mcp_proof_present")
+        for request in provider_struct(cfg)
+    )
+    check(
+        "mcp-tool-executed",
+        returned,
+        "the server's answer reached the model"
+        if returned
+        else f"no request carried the server's proof; {turn.detail}",
+    )
 
 
 def _assert_inventory(cfg, prov_ip, bindings):

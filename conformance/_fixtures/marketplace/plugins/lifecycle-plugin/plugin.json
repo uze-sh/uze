@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "lifecycle-plugin",
+  "description": "Conformance lifecycle: a Skill, an agent and a hook whose version the lifecycle contract moves from V1 to V2 and then removes, asserting each move from what the harness loads."
+}

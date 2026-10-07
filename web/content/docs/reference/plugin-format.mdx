@@ -41,7 +41,43 @@ listed: the plugins screen, `uze market inspect` and the JSON reports. The
 standard also allows `version`, `author` (`name`, `email`, `url`),
 `homepage`, `repository`, `license` and `extensions`, and nothing else at
 the top level. Settings for one tool go under `extensions`, keyed by that
-tool's namespace; uze's is `sh.uze`, which holds no settings yet.
+tool's namespace; uze's is `sh.uze`.
+
+### Requirements
+
+A plugin whose scripts need a program on the machine says so under
+`extensions["sh.uze"].requirements`:
+
+```json
+{
+  "name": "flow",
+  "extensions": {
+    "sh.uze": {
+      "requirements": [
+        { "executable": "python3", "version": ">=3.10", "purpose": "the commit guard is Python" }
+      ]
+    }
+  }
+}
+```
+
+Each entry names an `executable` looked up on `PATH`, and may give a minimum
+`version` (`>=3.10` or `3.10`) and a `purpose`. A malformed entry stops the
+install before anything is stored. A missing or too old program does not:
+the plugin installs, and `uze install`, `uze status -m`, `uze inspect` and
+`uze doctor` name what is missing, who needs it, and the command that
+installs it with a package manager the machine has. uze never runs that
+command; you do.
+
+A program only counts when it answers. Asked its version, a Windows
+`python3` that only opens the Microsoft Store, or the macOS `python3` that
+asks to install the developer tools, is reported missing.
+
+You declare only what your own scripts use. What uze generates declares its
+own needs: a hook delivered through the shell wrapper needs `jq`, and shows
+up as needed by the hook wrapper. The check runs in the shell that ran the
+command, so a harness started from a desktop launcher, with a shorter
+`PATH`, may still miss a program that check found.
 
 ## Agent Plugins 1.0
 
@@ -88,7 +124,7 @@ What the agent does when the skill runs.
 
 Each agent receives the policy in its own encoding. A skill is always called by
 its plugin-qualified name, like `/flow:review`; the prefix per agent is in
-[Harness support](/docs/reference/harnesses#invoking-a-plugin).
+[Harness support](/docs/reference/harnesses), in each harness's tab.
 
 ## Agents
 
@@ -187,7 +223,7 @@ Each agent receives it through its own mechanism (`claude mcp add`,
 
 ## Hooks
 
-`hooks.json` runs a command when a session starts, when an agent is about to
+`hooks.json` runs a script when a session starts, when an agent is about to
 use a tool or has used one, or when it stops:
 
 ```json
@@ -197,7 +233,7 @@ use a tool or has used one, or when it stops:
       {
         "matcher": "shell|file.write",
         "effect": "deny",
-        "hooks": [{ "type": "command", "command": "${PLUGIN_ROOT}/scripts/check", "timeout": 10 }]
+        "hooks": [{ "type": "command", "command": "hooks/guard.py", "args": ["--strict"], "timeout": 10 }]
       }
     ]
   }
@@ -213,39 +249,79 @@ use a tool or has used one, or when it stops:
 - **Effect:** `observe` (default), `allow`, `ask`, `deny`, `transform`.
   `SessionStart` only observes: any other effect there is refused.
 
+### Naming the script: one file for every platform
+
+With `args` (a list, empty when there are none), `command` is the path of a
+script inside your plugin, relative to its root, and each word in `args`
+reaches it exactly as written. Nothing is read by a shell, so nothing needs
+quoting. uze starts the script with the program the platform calls for:
+
+| Script | Linux and macOS | Windows |
+| --- | --- | --- |
+| executable file | runs itself, so its shebang decides | not applicable |
+| `.py` | `python3` | the Python that answers: `py -3`, `python` or `python3` |
+| `.js`, `.mjs`, `.cjs` | `node` | `node` |
+| `.ps1` | `pwsh` | Windows PowerShell 5.1 |
+| `.sh` | `sh` | none |
+| `.exe` | none | runs itself |
+
+On OpenCode a `.js`, `.mjs`, `.cjs` or `.ts` script runs in OpenCode's own
+runtime and needs nothing from the machine. `interpreter` (a list of words,
+such as `["uv", "run", "--script"]`) replaces the table for one handler.
+
+What the launcher needs from the machine, `python3` or `node`, becomes a
+requirement of the plugin: `uze install` and `uze doctor` say when it is
+missing and how to install it. A guard whose interpreter is missing denies
+every call it matches until it is installed.
+
+Python and JavaScript run the same on every platform, so a hook written in
+either works everywhere without a second version. A `.sh` script cannot run
+on Windows; a `deny`, `ask` or `transform` hook that uses one keeps the plugin
+from installing there.
+
+### A shell line, per platform
+
+Without `args`, `command` is one line for the POSIX shell, or a pair with a
+line for each platform:
+
+```json
+{ "type": "command", "command": { "posix": "${PLUGIN_ROOT}/check", "windows": "& \"${PLUGIN_ROOT}/check.ps1\"" } }
+```
+
+Each platform runs only the line written for it, in `sh` or in Windows
+PowerShell 5.1. `${PLUGIN_ROOT}` is your plugin's directory. A guard with no
+line for a platform keeps the plugin from installing there.
+
+Older uze builds do not know `args`, and refuse a plugin that uses it.
+
+### The handler's contract
+
 The handler reads the context from `HOOK_*` environment variables and answers
 with its exit code:
 
-```sh
-#!/bin/sh
-case "$HOOK_COMMAND" in
-  *.env*|*id_rsa*)
-    echo "blocked: $HOOK_COMMAND touches a secret file" >&2
-    exit 3 ;;
-esac
-exit 0
+```python
+import os, sys
+
+command = os.environ.get("HOOK_COMMAND", "")
+if ".env" in command or "id_rsa" in command:
+    sys.stderr.write(f"blocked: {command} touches a secret file")
+    sys.exit(3)
 ```
 
 `0` allows, `3` denies with stderr as the reason. Anything else, or a timeout,
 lets the tool run for `observe` and `allow` hooks and blocks it for the rest.
-
-Not every agent carries every effect:
-
-| Agent | Events | Effects |
-| --- | --- | --- |
-| Claude Code | `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart` | `observe`, `allow`, `deny` |
-| Codex | `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart` | `observe`, `allow`, `deny` |
-| Antigravity | `PreToolUse`, `PostToolUse`, `Stop` | `observe`, `allow`, `ask`, `deny` |
-| OpenCode | `PreToolUse`, `PostToolUse` | `observe`, `allow` |
+A `transform` handler exits `0` and writes the whole replacement input, as one
+JSON object in the harness's own shape, to stdout.
 
 A `SessionStart` handler gets `HOOK_EVENT=session_start` and `HOOK_SOURCE`
 (`startup`, `resume` or `clear`), and nothing it answers keeps the session from
 opening. Keep it fast and safe to run twice.
 
-A hook an agent cannot honour is reported before it is installed, never
-silently weakened. An agent without the event, such as Antigravity or OpenCode
-for `SessionStart`, still receives the plugin's other hooks. The full contract,
-every variable included, is in
+Which events, effects and tools each agent carries is in
+[Harness support](/docs/reference/harnesses), generated from uze's own
+delivery plan. A hook an agent cannot honour is reported before it is
+installed, never silently weakened, and the agent still receives the plugin's
+other hooks. The full contract, every variable included, is in
 [portable-hooks.md](https://github.com/uze-sh/uze/blob/main/docs/capabilities/portable-hooks.md).
 
 ## Commands a plugin runs

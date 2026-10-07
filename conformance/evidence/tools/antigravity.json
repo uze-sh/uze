@@ -1,0 +1,179 @@
+{
+ "harness": "antigravity",
+ "harness_version": "1.2.17",
+ "recorded_at": "2026-10-06",
+ "tools": {
+  "ask_question": [
+   "questions",
+   "toolAction",
+   "toolSummary"
+  ],
+  "call_mcp_tool": [
+   "Arguments",
+   "ServerName",
+   "ToolName",
+   "toolAction",
+   "toolSummary"
+  ],
+  "define_subagent": [
+   "description",
+   "enable_mcp_tools",
+   "enable_subagent_tools",
+   "enable_write_tools",
+   "name",
+   "system_prompt",
+   "toolAction",
+   "toolSummary"
+  ],
+  "generate_image": [
+   "AspectRatio",
+   "ImageName",
+   "ImagePaths",
+   "Prompt",
+   "toolAction",
+   "toolSummary"
+  ],
+  "invoke_subagent": [
+   "Subagents",
+   "toolAction",
+   "toolSummary"
+  ],
+  "list_resources": [
+   "ServerName",
+   "toolAction",
+   "toolSummary"
+  ],
+  "manage_subagents": [
+   "Action",
+   "ConversationIds",
+   "toolAction",
+   "toolSummary"
+  ],
+  "manage_task": [
+   "Action",
+   "Input",
+   "TaskId",
+   "toolAction",
+   "toolSummary"
+  ],
+  "read_resource": [
+   "ServerName",
+   "Uri",
+   "toolAction",
+   "toolSummary"
+  ],
+  "read_url_content": [
+   "Url",
+   "toolAction",
+   "toolSummary"
+  ],
+  "replace_file_content": [
+   "AllowMultiple",
+   "Description",
+   "EndLine",
+   "Instruction",
+   "ReplacementContent",
+   "StartLine",
+   "TargetContent",
+   "TargetFile",
+   "TargetLintErrorIds",
+   "toolAction",
+   "toolSummary"
+  ],
+  "run_command": [
+   "CommandLine",
+   "Cwd",
+   "IsDaemon",
+   "RequestedTerminalID",
+   "RunPersistent",
+   "WaitMsBeforeAsync",
+   "toolAction",
+   "toolSummary"
+  ],
+  "schedule": [
+   "CronExpression",
+   "DurationSeconds",
+   "IsDaemon",
+   "MaxIterations",
+   "Prompt",
+   "TimerCondition",
+   "toolAction",
+   "toolSummary"
+  ],
+  "search_web": [
+   "domain",
+   "query",
+   "toolAction",
+   "toolSummary"
+  ],
+  "send_message": [
+   "Message",
+   "Recipient",
+   "toolAction",
+   "toolSummary"
+  ],
+  "view_file": [
+   "AbsolutePath",
+   "ContentOffset",
+   "EndLine",
+   "StartLine",
+   "toolAction",
+   "toolSummary"
+  ],
+  "write_to_file": [
+   "Append",
+   "ArtifactMetadata",
+   "CodeContent",
+   "Description",
+   "Overwrite",
+   "TargetFile",
+   "toolAction",
+   "toolSummary"
+  ]
+ },
+ "hook_tools": {
+  "replace_file_content": [
+   "AllowMultiple",
+   "Description",
+   "EndLine",
+   "Instruction",
+   "ReplacementContent",
+   "StartLine",
+   "TargetContent",
+   "TargetFile",
+   "toolAction",
+   "toolSummary"
+  ],
+  "run_command": [
+   "CommandLine",
+   "Cwd",
+   "WaitMsBeforeAsync",
+   "toolAction",
+   "toolSummary"
+  ],
+  "search_web": [
+   "query",
+   "toolAction",
+   "toolSummary"
+  ],
+  "send_message": [
+   "Message",
+   "Recipient",
+   "toolAction",
+   "toolSummary"
+  ],
+  "view_file": [
+   "AbsolutePath",
+   "toolAction",
+   "toolSummary"
+  ],
+  "write_to_file": [
+   "CodeContent",
+   "Description",
+   "Overwrite",
+   "TargetFile",
+   "toolAction",
+   "toolSummary"
+  ]
+ }
+}

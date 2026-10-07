@@ -19,17 +19,15 @@ VARIATION = "slow_sse:0.4"
 
 
 def run(cfg, prov_ip):
+    crash = None
     try:
         phase_tui(cfg, prov_ip)
     except Exception as exc:  # the experiment records the crash, never hides it
-        common.check(
-            "experiment-ran-to-completion",
-            False,
-            f"the TUI drive crashed under the variation: {type(exc).__name__}: {exc}",
-        )
-        return
+        crash = f"{type(exc).__name__}: {exc}"
     common.check(
         "experiment-ran-to-completion",
-        True,
-        f"canonical TUI drive completed under VARIATION={VARIATION}",
+        crash is None,
+        f"canonical TUI drive completed under VARIATION={VARIATION}"
+        if crash is None
+        else f"the TUI drive crashed under the variation: {crash}",
     )

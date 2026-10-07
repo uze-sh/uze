@@ -135,7 +135,10 @@ fn manifest_divergences(root: &Path, divergences: &mut Vec<String>, warnings: &m
         .and_then(|extensions| extensions.get(UZE_NAMESPACE))
         .and_then(serde_json::Value::as_object)
     {
-        for key in ours.keys() {
+        for key in ours
+            .keys()
+            .filter(|key| key.as_str() != crate::requirement::REQUIREMENTS_KEY)
+        {
             warnings.push(format!(
                 "{located}: `extensions[\"{UZE_NAMESPACE}\"].{key}` is not a setting uze \
                  reads; it is ignored"

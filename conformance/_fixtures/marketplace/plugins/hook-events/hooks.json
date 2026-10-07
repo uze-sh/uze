@@ -1,0 +1,44 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "id": "event-session",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe event-session allow",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "id": "event-post",
+        "matcher": "shell",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe event-post allow",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "id": "event-stop",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe event-stop allow",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

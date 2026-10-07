@@ -97,16 +97,19 @@ class DeclaredToolsTest(unittest.TestCase):
         )
         summary = provider.structural_summary(body)
         self.assertEqual(summary["tools"], ["generate_image", "run_command"])
-        self.assertTrue(
-            provider.wants_function_call(
-                {"tools": [provider.FC_NAME], "has_function_response": False}
-            )
+        self.assertEqual(provider.scripted_step(body), 0)
+        answered = json.dumps(
+            {
+                "contents": [
+                    {
+                        "role": "model",
+                        "parts": [{"functionCall": {"name": provider.FC_NAME}}],
+                    },
+                    {"role": "user", "parts": [{"functionResponse": {}}]},
+                ]
+            }
         )
-        self.assertFalse(
-            provider.wants_function_call(
-                {"tools": [provider.FC_NAME], "has_function_response": True}
-            )
-        )
+        self.assertIsNone(provider.scripted_step(answered))
 
     def test_a_request_without_tools_declares_none(self):
         self.assertEqual(provider.structural_summary("{}")["tools"], [])

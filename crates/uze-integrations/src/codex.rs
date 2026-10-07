@@ -42,6 +42,7 @@ mod preferences;
 mod runtime;
 mod session;
 mod skills;
+mod trust;
 
 pub(crate) use hooks::HOOKS;
 pub use mcp::detach_mcp_entry;
@@ -311,6 +312,17 @@ impl IntegrationPort for CodexIntegration {
         )
     }
 
+    fn generated_requirements(
+        &self,
+        _package: &StoredPackage,
+        resources: &[&Resource],
+    ) -> Vec<(
+        uze_core::requirement::Requirement,
+        uze_core::requirement::RequirementSource,
+    )> {
+        crate::hooks::generated_requirements(self, HOOKS, resources)
+    }
+
     fn exposure_plan(&self, resource: &Resource) -> ExposurePlan {
         match resource.capability.kind {
             CapabilityKind::AgentSkill => self.skill_exposure_plan(resource),
@@ -411,6 +423,55 @@ impl IntegrationPort for CodexIntegration {
 
     fn publication(&self, packages: &[StoredPackage]) -> PublicationStatus {
         marketplace::publication::<CodexMarketplace>(&self.uze_home, packages)
+    }
+
+    /// Codex skips a project's `AGENTS.md` only when the person marked the
+    /// project untrusted (`[projects."<root>"] trust_level = "untrusted"`
+    /// in `config.toml`, codex-rs `core/src/agents_md.rs`, 0.160.1); an
+    /// unset level still reads it. It reads at most `project_doc_max_bytes`
+    /// of it (32 KiB unless `config.toml` says otherwise), and the rest
+    /// never reaches the model (measured, `context-long-report-agrees`).
+    fn context_unread(&self, project_root: &Path, instructions: &Path) -> Option<String> {
+        let config = self.config_toml_path();
+        if trust::project_untrusted(&config, project_root) {
+            return Some(
+                "Codex will not read this project's AGENTS.md: the project is marked untrusted. \
+                 Trust it in Codex (open Codex here and accept the folder trust)"
+                    .to_owned(),
+            );
+        }
+        let size = std::fs::metadata(instructions).ok()?.len();
+        let limit = trust::project_doc_max_bytes(&config);
+        (size > limit).then(|| {
+            format!(
+                "Codex reads the first {limit} bytes of AGENTS.md ({size} here) and drops the \
+                 rest; raise `project_doc_max_bytes` in ~/.codex/config.toml or shorten the file"
+            )
+        })
+    }
+
+    fn held_back(
+        &self,
+        _package: &StoredPackage,
+        receipt: &AttachmentReceipt,
+        served: &[&uze_core::capability::Resource],
+    ) -> Vec<uze_core::integration::HeldBack> {
+        let Some(entry) = HookEntry::recorded(&receipt.artifact) else {
+            return Vec::new();
+        };
+        let Some(action) = trust::review(&self.config_toml_path(), &entry)
+            .as_ref()
+            .and_then(trust::Review::action)
+        else {
+            return Vec::new();
+        };
+        served
+            .iter()
+            .map(|resource| uze_core::integration::HeldBack {
+                capability: resource.identity(),
+                action: action.to_owned(),
+            })
+            .collect()
     }
 
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
@@ -648,7 +709,7 @@ const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "project agents",
         fact: "takes a launch's `-c` layer into a session served by an app-server daemon started without it",
-        measured_on: VERSION,
+        measured_on: "0.158.0",
         proven_by: "experiments/codex/project-agents.py::run",
     },
     HarnessFact {
@@ -677,13 +738,28 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "hooks",
-        fact: "fires `SessionStart` once per new session, with its source",
+        fact: "runs a delivered `SessionStart`, `PostToolUse` and `Stop` group, each \
+               naming its event",
         measured_on: VERSION,
-        proven_by: "experiments/session_start_probe.py::run",
+        proven_by: "contract/hooks.py::_events",
+    },
+    HarnessFact {
+        subject: "mcp",
+        fact: "offers a delivered MCP server's tool in code mode as a deferred nested tool, \
+               absent from `exec`'s description but on `tools` and in `ALL_TOOLS`, and runs \
+               it once the person allows the call",
+        measured_on: VERSION,
+        proven_by: "contract/mcp.py::_assert_execution",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "runs the input a PreToolUse hook hands back as `updatedInput` beside `allow`, and only with `hookEventName` in the document",
+        measured_on: VERSION,
+        proven_by: "contract/hooks.py::_transform",
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "0.158.0";
+const VERSION: &str = "0.160.1";
 
 /// The installer's documented switch for skipping its "Start Codex now?" prompt.
 const NON_INTERACTIVE: &str = "CODEX_NON_INTERACTIVE";

@@ -161,11 +161,6 @@ def assert_contract(cfg, prov_ip, bindings):
 
 
 def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings):
-    declined = bindings.unsupported("relaunch_in")
-    if declined:
-        check("continuity-relaunch-carries-the-turn", True, declined, kind="adapt")
-        return
-
     with bindings.relaunch_in(
         cfg, prov_ip, SLOT, prelude(bindings.launcher_name())
     ) as tui:

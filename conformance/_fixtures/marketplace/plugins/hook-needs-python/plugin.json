@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-needs-python",
+  "description": "Conformance unmet requirement: a deny group whose exec-form guard is a Python script, on a Lab image that carries no python3, so the requirement report must name it and the guard must fail closed."
+}

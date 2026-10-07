@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-events",
+  "description": "Conformance hook events: an observing group per event (session start, after a shell call, at the end of a turn), each recording that it ran."
+}

@@ -296,6 +296,10 @@ impl Plugins<'_> {
             blocked,
             declared: false,
             deliveries: reports,
+            held_back: crate::application::doctor::held_back_notes(
+                self.0,
+                Some(installed.id.as_str()),
+            ),
         })
     }
 

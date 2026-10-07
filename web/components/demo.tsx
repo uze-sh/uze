@@ -17,7 +17,10 @@ export function Demo({
   // whose edge the content padding does not clear.
   return (
     <figure className="my-8">
-      <div className="overflow-hidden rounded-md" style={{ background: '#0a0c0d' }}>
+      {/* The hairline is what shows the rounded corners on the dark theme,
+          where the recording's own ground meets the page's at nearly the
+          same black. */}
+      <div className="overflow-hidden rounded-lg ring-1 ring-line" style={{ background: '#0a0c0d' }}>
         {/* The margin is zeroed on the `picture`, which is what carries it:
             the docs typography gives media in the content a 2em block margin,
             and inside this frame that lands as 64px of the app's own

@@ -94,6 +94,25 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
+    /// Opens a shell in the space in front and types `command` into it
+    /// without running it: the person reads what will run, and runs it,
+    /// with their own shell, `PATH` and privileges.
+    fn type_in_new_shell(&mut self, command: String) {
+        let Some(space) = self
+            .model
+            .session
+            .as_ref()
+            .map(|session| session.selected_space().clone())
+        else {
+            return;
+        };
+        self.model.typing = Some(PendingTyping {
+            known: self.model.pane_ids(),
+            text: command,
+        });
+        open_shell_in(&mut self.stream, &self.model, &self.identities, &space);
+    }
+
     pub(super) fn manage_key(&mut self, key: KeyEvent) -> Flow {
         let intent = self
             .model
@@ -163,6 +182,11 @@ impl Attach<'_> {
             }
             Intent::CloseModal => {
                 self.close_manage();
+                Flow::Continue
+            }
+            Intent::TypeInShell(command) => {
+                self.close_manage();
+                self.type_in_new_shell(command);
                 Flow::Continue
             }
             intent => {

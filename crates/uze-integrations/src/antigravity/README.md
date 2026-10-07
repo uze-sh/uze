@@ -9,7 +9,7 @@
 | Plugin (explicit) | SUPPORTED, exact coverage | Superseded: every package is installed from a plugin UZE generates (`$UZE_HOME/runtime/attachments/antigravity/generated/<id>/`), because agy staged a Store tree with `${PLUGIN_ROOT}` unresolved and its agents under bare names; an earlier Store-tree receipt is retired | PROVEN — real-binary dogfood: attach → `agy plugin list` shows import → inspect MATCHED → remove → unregistered → reinstall MATCHED |
 | Plugin (generated) | SUPPORTED, exact coverage | canonical `mcp.json` → generated envelope (`mcp_config.json` translation: `url`/`httpUrl` → `serverUrl`) installed from `$UZE_HOME/runtime/attachments/antigravity/plugins/<id>/` | PROVEN — real-binary dogfood + `agy plugin validate` (skills + mcpServers processed) |
 | Skills | SUPPORTED, native (default policy) | via plugin (package-level) or a managed directory `~/.gemini/antigravity-cli/skills/<label>` (CLI-documented global skills root, which agy 1.2 moves to `~/.gemini/config/skills` and links back): SKILL.md and the supporting files, copied; receipt `GeneratedTree` | DOCUMENTED (root) + TESTED (lifecycle/drift) |
-| Skill invocation policy | NATIVE model-only; ADAPTED user-only | `disable-slash-command: true` preserves `model=true,user=false`; no model-discovery suppression exists for `model=false,user=true` | PROVEN (agy 1.1.21) + TESTED |
+| Skill invocation policy | NATIVE, both halves | `disable-slash-command: true` preserves `model=true,user=false`; `disable-model-invocation: true` (since 1.1.27) preserves `model=false,user=true` | PROVEN (`contract/skill.py::_assert_invocation`) + TESTED |
 | MCP | SUPPORTED, adapted | `agy mcp add <name> <command> [args…]` → `~/.gemini/config/mcp_config.json` | PROVEN (add/list/remove/disable) + TESTED (inspection) |
 
 ## Delivery
@@ -46,11 +46,12 @@ it become authoritative.
   `mcp_config.json`, so MCP-bearing canonical packages take the generated
   route; the translation `url`/`httpUrl` → `serverUrl` is the vendor's own
   documented legacy-migration rule.
-- **Invocation policy is asymmetric**: `disable-slash-command: true`
-  natively preserves model-only Skills; Antigravity still has no way to
-  preserve user-only Skills because they remain model-discoverable. Any
-  package containing a non-default Skill is decomposed so an unchanged
-  plugin tree cannot bypass the per-skill policy wrapper or duplicate it.
+- **Invocation policy is carried by the vendor's own controls**:
+  `disable-slash-command: true` keeps a model-only Skill out of `/`, and
+  `disable-model-invocation: true` (since 1.1.27) keeps a user-only Skill
+  from the model. Any package containing a non-default Skill is
+  decomposed so an unchanged plugin tree cannot bypass the per-skill
+  policy wrapper or duplicate it.
 - **Context is Native**: `AGENTS.md` and `GEMINI.md` are both parsed
   (official docs: "identical workspace context rules"), so UZE
   generates no bridge file.
@@ -62,7 +63,10 @@ it become authoritative.
   Antigravity 1.2.x reads the name from the frontmatter, lists no agent
   without one, scans no subdirectory, and silently drops an agent with a
   Claude-style `model` or string `tools`, so nothing else is carried and
-  the loss is reported as Degraded.
+  the loss is reported as Degraded. The delivery itself is Degraded too:
+  1.2.17 offers `invoke_subagent` only to an agent whose own definition
+  lists it, so the agent a person starts on cannot dispatch a delivered
+  one (Lab `agent-*-exposed`, a registered declaration).
 
 ## Delivery notes
 

@@ -76,10 +76,13 @@ mod tests {
         let directory = uze_testkit::temp::scratch("process-cwd");
         std::fs::create_dir_all(&directory).unwrap();
         // Not a child of this process once `sh` has forked it off and
-        // exited, which is what somebody else's process looks like.
+        // exited, which is what somebody else's process looks like. `sleep`
+        // is named by its path: other tests in this binary point `PATH` at
+        // a directory of shims while they run, and a `sleep` looked up then
+        // is not found, exits at once, and is never there to be seen.
         let mut starter = std::process::Command::new("/bin/sh")
             .arg("-c")
-            .arg("sleep 30 >/dev/null 2>&1 & echo $!")
+            .arg("/bin/sleep 30 >/dev/null 2>&1 & echo $!")
             .current_dir(&directory)
             .stdout(std::process::Stdio::piped())
             .spawn()
@@ -90,9 +93,19 @@ mod tests {
         let sleeper: libc::pid_t = spelled.trim().parse().unwrap();
 
         let seen = Presence::observe().inside(&directory);
+        let proc = std::path::Path::new("/proc").join(sleeper.to_string());
+        let state = format!(
+            "pid {sleeper}: cwd {:?}, stat {:?}, directory {:?}",
+            std::fs::read_link(proc.join("cwd")),
+            std::fs::read_to_string(proc.join("stat")).map(|stat| stat.trim().to_owned()),
+            directory,
+        );
         // SAFETY: `sleeper` is the positive pid of the process started above.
         unsafe { libc::kill(sleeper, libc::SIGKILL) };
-        assert!(seen, "a process working in the directory was not seen");
+        assert!(
+            seen,
+            "a process working in the directory was not seen: {state}"
+        );
 
         let _ = std::fs::remove_dir_all(&directory);
     }

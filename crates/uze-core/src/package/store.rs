@@ -14,17 +14,19 @@ use crate::{
     home::UzeHome,
 };
 
-/// What UZE reads of a package's `plugin.json`: the name it declares, and
-/// where the manifest sits.
+/// What UZE reads of a package's `plugin.json`: the name it declares, the
+/// executables it needs, and where the manifest sits.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PluginManifest {
     pub name: String,
     pub path: PathBuf,
+    pub requirements: Vec<crate::requirement::Requirement>,
 }
 
 /// Reads the Agent Plugins manifest at `root`, refusing one that is absent,
-/// unnamed, or that references a path outside the package — the check every
-/// acquisition passes before a byte is stored.
+/// unnamed, that references a path outside the package, or whose
+/// requirements are malformed: the check every acquisition passes before a
+/// byte is stored.
 pub fn read_plugin_manifest(root: &Path) -> Result<PluginManifest> {
     let path = root.join("plugin.json");
     if !path.is_file() {
@@ -42,7 +44,12 @@ pub fn read_plugin_manifest(root: &Path) -> Result<PluginManifest> {
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| UzeError::MissingPackageName(path.clone()))?
         .to_owned();
-    Ok(PluginManifest { name, path })
+    let requirements = crate::requirement::declared_in(&value, &path)?;
+    Ok(PluginManifest {
+        name,
+        path,
+        requirements,
+    })
 }
 
 /// Every file UZE reads out of a package is a declaration it parses or text
@@ -446,6 +453,7 @@ impl UzeStore {
         let PluginManifest {
             name,
             path: manifest,
+            ..
         } = read_plugin_manifest(source)?;
         let name = name.as_str();
         let id = PackageId::from_marketplace_plugin(marketplace, name, &manifest)?;

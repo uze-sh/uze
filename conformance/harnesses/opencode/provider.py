@@ -63,6 +63,38 @@ TOOL_ARGS = os.environ.get("TOOL_ARGS", MCP_CALL)
 #: subagent's turn carries tools and no tool result either, and answering it
 #: with the same `task` call dispatches another subagent in turn.
 TOOL_TRIGGER = os.environ.get("TOOL_TRIGGER", "")
+#: Several calls, one per model step, as a JSON list of `{"name", "args"}`
+#: (`args` a JSON string). Step N+1 answers the request carrying step N's
+#: tool result, so one turn can drive every tool a hook scene intercepts.
+TOOL_SEQUENCE = json.loads(os.environ.get("TOOL_SEQUENCE", "null") or "null") or [
+    {"name": TOOL_NAME, "args": TOOL_ARGS}
+]
+
+
+def call_id(step):
+    return f"call_uze_{step + 1}"
+
+
+def scripted_step(body):
+    """The index of the call this request is answered with, or None.
+
+    A request carrying step N's result is answered with step N+1; one
+    carrying the last step's result, or any result not of this sequence,
+    with the final text. A request offering tools with no result yet starts
+    the sequence.
+    """
+    compact = body.replace(" ", "")
+    for step in range(len(TOOL_SEQUENCE) - 1, -1, -1):
+        if f'"tool_call_id":"{call_id(step)}"' in compact:
+            following = step + 1
+            return following if following < len(TOOL_SEQUENCE) else None
+    has_result = '"role":"tool"' in compact or '"tool_result"' in compact
+    if MODE != "toolcall" or has_result or '"tools"' not in body:
+        return None
+    if TOOL_TRIGGER and TOOL_TRIGGER not in body:
+        return None
+    return 0
+
 
 ISOLATION_MARKERS = ["already isolated", "UZE_CONFORMANCE_REBASE"]
 #: One turn each. A single request carrying both is what proves a relaunched
@@ -74,10 +106,6 @@ SKILL_MARKERS = [
     "flow:analyze",
     "flow:commit",
     "flow:review",
-    "analyze",
-    "commit",
-    "review",
-    "init",
     "North Star",
     "Review code",
     # A Skill's *body* reaches the model only when the Skill was
@@ -159,7 +187,8 @@ def text_chunks(text):
     ]
 
 
-def tool_call_chunks():
+def tool_call_chunks(step):
+    call = TOOL_SEQUENCE[step]
     return [
         {
             "id": "c1",
@@ -174,9 +203,9 @@ def tool_call_chunks():
                         "tool_calls": [
                             {
                                 "index": 0,
-                                "id": "call_uze_1",
+                                "id": call_id(step),
                                 "type": "function",
-                                "function": {"name": TOOL_NAME, "arguments": ""},
+                                "function": {"name": call["name"], "arguments": ""},
                             }
                         ],
                     },
@@ -193,7 +222,7 @@ def tool_call_chunks():
                     "index": 0,
                     "delta": {
                         "tool_calls": [
-                            {"index": 0, "function": {"arguments": TOOL_ARGS}}
+                            {"index": 0, "function": {"arguments": call["args"]}}
                         ]
                     },
                     "finish_reason": None,
@@ -244,12 +273,12 @@ class H(BaseHTTPRequestHandler):
             f"[opencode-provider:{MODE}] {self.command} {self.path} req#{n}", flush=True
         )
 
-        has_tools = '"tools"' in body
-        has_result = '"role":"tool"' in body or '"tool_result"' in body
-        triggered = not TOOL_TRIGGER or TOOL_TRIGGER in body
-        if MODE == "toolcall" and has_tools and not has_result and triggered:
-            payload = sse(tool_call_chunks())
-        elif MODE == "toolcall" and has_result:
+        due = scripted_step(body)
+        step = capture.next_scriptable(body, TOOL_SEQUENCE, due)
+        has_result = '"role":"tool"' in body.replace(" ", "") or '"tool_result"' in body
+        if step is not None:
+            payload = sse(tool_call_chunks(step))
+        elif MODE == "toolcall" and (due is not None or has_result):
             payload = sse(text_chunks(FINAL_TEXT))
         else:
             payload = sse(text_chunks(RESPONSE_TEXT))

@@ -1,7 +1,7 @@
 """Can the generated OpenCode plugin observe a session starting, once?
 
 The portable `SessionStart` event is delivered natively on Claude Code and
-Codex (see `experiments.session_start_probe`). OpenCode has no hook file; the
+Codex (the hooks contract's `events` scene). OpenCode has no hook file; the
 generated plugin would have to subscribe to the harness's own
 `session.created` event. Whether that is a route depends on facts this
 experiment measures rather than assumes:

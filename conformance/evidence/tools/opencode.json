@@ -1,0 +1,96 @@
+{
+ "harness": "opencode",
+ "harness_version": "opencode v2.0.24",
+ "recorded_at": "2026-10-06",
+ "tools": {
+  "edit": [
+   "newString",
+   "oldString",
+   "path",
+   "replaceAll"
+  ],
+  "execute": [
+   "code"
+  ],
+  "glob": [
+   "hidden",
+   "limit",
+   "path",
+   "pattern"
+  ],
+  "grep": [
+   "caseSensitive",
+   "include",
+   "limit",
+   "literal",
+   "path",
+   "pattern"
+  ],
+  "question": [
+   "questions"
+  ],
+  "read": [
+   "limit",
+   "offset",
+   "path"
+  ],
+  "shell": [
+   "background",
+   "command",
+   "timeout",
+   "workdir"
+  ],
+  "skill": [
+   "id"
+  ],
+  "subagent": [
+   "agent",
+   "background",
+   "description",
+   "model",
+   "prompt",
+   "sessionID"
+  ],
+  "webfetch": [
+   "format",
+   "timeout",
+   "url"
+  ],
+  "websearch": [
+   "query"
+  ],
+  "write": [
+   "content",
+   "path"
+  ]
+ },
+ "hook_tools": {
+  "edit": [
+   "newString",
+   "oldString",
+   "path"
+  ],
+  "grep": [
+   "path",
+   "pattern"
+  ],
+  "read": [
+   "path"
+  ],
+  "shell": [
+   "command"
+  ],
+  "subagent": [
+   "agent",
+   "description",
+   "prompt"
+  ],
+  "websearch": [
+   "query"
+  ],
+  "write": [
+   "content",
+   "path"
+  ]
+ }
+}

@@ -7,7 +7,6 @@ description: Guides creating a uze plugin end to end — marketplace create or s
 invoke:
   model: true
   user: true
-slash: true
 ---
 
 Creating a plugin with uze is a loop of four deterministic verbs. Run them

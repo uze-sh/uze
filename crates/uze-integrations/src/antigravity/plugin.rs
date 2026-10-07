@@ -282,9 +282,10 @@ pub(super) fn attach_generated_plugin(
 }
 
 /// UZE never overwrites an import it does not own. The vendor's install
-/// verb merges over an existing same-name plugin (verified: stale files
-/// survive a re-install), so a name already registered — with no receipt in
-/// the ledger — is foreign state, not something to clobber or silently
+/// verb replaces an existing same-name plugin's directory exactly (measured
+/// on 1.2.17; it merged until 1.1.28), so installing over a name already
+/// registered — with no receipt in the ledger — would destroy someone
+/// else's plugin: foreign state, not something to clobber or silently
 /// resume. It is nevertheless a successful no-op: the harness already
 /// exposes a native plugin under the requested name, and UZE must neither
 /// replace it nor present ordinary setup as failed.

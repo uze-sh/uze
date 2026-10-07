@@ -1,6 +1,6 @@
 ---
 name: conformance-debug
-description: Fast, targeted debugging of the Harness Conformance Lab (conformance/) — use whenever a conformance check fails (locally or in CI), a check is recorded ADAPTED, a harness version drifted, a harness TUI check needs poking at directly, or you're about to guess at a fix instead of reproducing the real failure. Covers reading the failure's shape, checking the vendor's current docs/changelog/issues before touching code, the --sandbox and --experiment fast loops, proving the provider speaks the real wire shape with --discovery and mitmproxy, telling a vendor limitation from a Lab defect, and reading evidence/verdict.json.
+description: Fast, targeted debugging of the Harness Conformance Lab (conformance/) — use whenever a conformance check fails (locally or in CI), a check is recorded as a declared limitation, a harness version drifted, a harness TUI check needs poking at directly, or you're about to guess at a fix instead of reproducing the real failure. Covers reading the failure's shape, checking the vendor's current docs/changelog/issues before touching code, the --sandbox and --experiment fast loops, proving the provider speaks the real wire shape with --discovery and mitmproxy, telling a vendor limitation from a Lab defect, and reading evidence/verdict.json.
 ---
 
 # Debugging the Harness Conformance Lab
@@ -183,9 +183,17 @@ The checklist for any provider change:
 
 ## Step 4 — vendor limitation, or Lab defect?
 
-Only declare ADAPTED when the vendor itself cannot do it **in a way you
-have measured**, and register the declaration with its reason and the
-versions it was observed on. The tools for the measurement:
+Only declare a limitation when the vendor itself cannot do it **in a way
+you have measured**. A declaration goes through `declare` (or
+`contract/declared.py`'s `presence`/`absence`), whose `holds` is the
+measurement of this run, never a constant: the lint refuses a literal.
+Register it in `evidence/expected.json` with its reason, its measurement
+and the versions it was observed on; `*` is refused. The gate then reads
+each run's measurement: a registered one that still holds passes, one that
+holds on a version not listed passes as a repin and the run writes
+`expected.next.json`, one whose measurement found the control escalates,
+and one whose measurement never ran is unproven. The tools for the
+measurement:
 
 - **A control probe in the vendor's own format at the vendor's own path,
   with no UZE in the loop.** If a vendor-format deny hook at
@@ -195,6 +203,12 @@ versions it was observed on. The tools for the measurement:
   (`hooks > vendor` in the Antigravity vertical) rather than assume it in
   a spec. A live precondition is the only declaration that can expire on
   its own: the gate escalates the day the vendor opens it.
+- **The same probe for a rendering or a prompt.** Whether a harness shows
+  a hook's denial as a decision was settled by a hand-written hook in the
+  user's own `settings.json` (`experiments/claude/deny-render`): Claude
+  2.1.290 showed the documented JSON decision as "hook error" too, so the
+  check became a registered declaration instead of a UZE fix. The image
+  has no Python or jq; an experiment edits vendor JSON with `sed`.
 - **Pin the previous image.** `UZE_LAB_IMAGE=<image id> python3
   conformance/lab.py ...` runs the same scenario against the harness
   version that last passed. Same result on both → it was never the
@@ -220,8 +234,40 @@ docker build -f conformance/Dockerfile -t conformance-harness:latest .
 
 Rebuilds are fast when only `crates/`/`src/` changed (cached apt/provision
 layers); expect ~30-40s from a clean base, ~5-10s incremental. Python under
-`conformance/` (providers, scenarios, bindings, contract) is mounted at run
-time — no rebuild needed.
+`conformance/` (providers, scenarios, bindings, contract) runs on the host —
+no rebuild needed. The fixture marketplace is baked into the image, so a
+fixture added since the last build fails `materialize_marketplace` before
+the harness starts; rebuild, or run with
+`UZE_MARKETPLACE_MOUNT=$PWD/conformance/_fixtures/marketplace`.
+
+## The measured vocabulary
+
+What a harness calls its tools is measured, never remembered:
+
+- `capture.declared_tools` records every tool each request declares to the
+  model (`declared-tools.json`); a scripted call naming a tool the request
+  did not declare is refused and recorded (`undeclared-calls.json`).
+- The `hook-rows` fixture's census group (no matcher) records the tool
+  name and input every hook receives (`hooked-tools.json`); each alias has
+  its own row group, and `RowsFixtureTest` fails when one is missing.
+- `harnesses/<h>/vocabulary.json` is the Lab's own expectation, written
+  independently of UZE's `ToolBinding` tables; `vocabulary-*` checks hold
+  both against the capture, and Rust's `hooks/measured_tests.rs` holds the
+  tables against the committed snapshot (`evidence/tools/<h>.json`).
+- `--record-vocabulary` rewrites the snapshot from the run; the diff is the
+  review of what the vendor changed. An `optional` tool (offered only on
+  opt-in) is judged by the session that scripted it, never by the run's
+  union: an agent that lists a tool in its own definition is offered it.
+
+## Prompts and markers
+
+- Every prompt a person meets is answered on screen through the binding
+  (`approval_prompts`, `prepare`), the way a person answers it. A flag,
+  a seeded fixture answer or a bypass needs a `# decision: <id>` naming an
+  entry under "Prompts the Lab answers" in `conformance/DECISIONS.md`; the
+  lint fails otherwise.
+- A marker is a nonce no harness writes on its own; the lint refuses a
+  common word and a marker inside a scripted call's arguments.
 
 ## Reading evidence
 
@@ -241,7 +287,8 @@ or `$AGY_OUTDIR`) holds:
   request hit tells you which request was the user's turn.
 - `raw-requests.log` — with `--discovery`, the verbatim requests.
 - `verdict.json` — structured result per check, including `gate.adjudication`
-  (`asserted` vs `unregistered_adapt` vs escalated) and the run manifest
+  (`asserted`, `known_declared`, `repin`, `unregistered`, `wildcard`,
+  `unproven`, `escalated`) and the run manifest
   (harness/uze/image/fixture versions — check `version_drift` first if
   nothing else changed).
 
@@ -256,10 +303,13 @@ or `$AGY_OUTDIR`) holds:
   real answer.
 - Don't treat "all 4 harnesses broke on the same push" as 4 separate bugs —
   check the shared setup path first (Step 1).
-- Don't hard-code an ADAPTED in a scenario. A declaration is either a
-  binding's `unsupported` reason (a harness limitation, reviewable) or a
-  live precondition that measures the vendor each run; a registry entry
-  must exist for it, pinned to the observed versions.
+- Don't hard-code a declaration in a scenario. It is either a binding's
+  `unsupported` reason (a harness limitation, reviewable) measured through
+  `contract/declared.py`, or a live precondition that measures the vendor
+  each run; a registry entry must exist for it, pinned to the observed
+  versions.
+- Don't answer a prompt for the person with a flag or a seeded file to get
+  a phase green: that proves the capability on a machine nobody has.
 - Don't let a check pass on a turn where nothing happened. Gate every
   absence on a presence; demand the tool's own stdout, not merely "a tool
   result"; read the wire when in doubt.

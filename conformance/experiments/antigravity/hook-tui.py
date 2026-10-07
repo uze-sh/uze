@@ -44,7 +44,11 @@ import time
 
 import pexpect
 
-from harnesses.antigravity.scenarios import PERMISSION_PROMPTS, agy_setup
+from harnesses.antigravity.scenarios import (
+    PERMISSION_PROMPTS,
+    agy_setup,
+    answer_first_run,
+)
 from shared import common
 
 ARGS = (
@@ -139,8 +143,7 @@ def run(cfg, prov_ip):
     # Named so the vendor's log can be read from outside while the session
     # is alive — the container dies with the TUI, and `/exit` is not
     # reliably accepted.
-    name = f"hook-tui-{os.getpid()}"
-    cmd[2:2] = ["--name", name]
+    name = cfg.harness_container
     child = pexpect.spawn(
         cmd[0], cmd[1:], encoding="utf-8", codec_errors="replace", timeout=300
     )
@@ -148,14 +151,7 @@ def run(cfg, prov_ip):
     child.logfile_read = common.CastRecorder(cfg.outdir, "tui-hook-experiment")
     screen = common.make_screen(child)
 
-    child.expect("Choose your color scheme", timeout=150)
-    child.send("\r")
-    time.sleep(3)
-    child.send("\t\t")
-    time.sleep(0.7)
-    child.send("\r")
-    time.sleep(5)
-    screen(3)
+    answer_first_run(child, screen)
 
     for ch in "run the API check":
         child.send(ch)
@@ -206,7 +202,6 @@ def run(cfg, prov_ip):
         "the vendor permission prompt appeared before any hook decision"
         if prompted
         else "no permission prompt",
-        kind="observe",
     )
     common.check(
         "hook-tui-denial-relayed",

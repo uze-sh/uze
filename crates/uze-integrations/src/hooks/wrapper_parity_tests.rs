@@ -48,6 +48,16 @@ fn package(label: &str) -> std::path::PathBuf {
         "echo \"refused on $HOOK_EVENT from $HOOK_SOURCE\" >&2\nexit 3",
         "[Console]::Error.WriteLine(\"refused on $env:HOOK_EVENT from $env:HOOK_SOURCE\")\nexit 3\n",
     );
+    install(
+        "rewrite",
+        "printf '%s' \"$HOOK_INPUT\" | jq -c 'if has(\"CommandLine\") then .CommandLine = \"echo rewritten\" else .command = \"echo rewritten\" end'",
+        "$input = $env:HOOK_INPUT | ConvertFrom-Json\nif ($input.PSObject.Properties['CommandLine']) { $input.CommandLine = 'echo rewritten' } else { $input.command = 'echo rewritten' }\n[Console]::Out.Write(($input | ConvertTo-Json -Compress))\nexit 0\n",
+    );
+    install(
+        "garble",
+        "echo 'not an input'",
+        "[Console]::Out.Write('not an input')\nexit 0\n",
+    );
     root
 }
 
@@ -80,6 +90,8 @@ fn answered(target: HookTarget, index: usize, fixture: &Fixture) -> serde_json::
             .map(|handler| CommandHook {
                 handler_type: CommandHandlerType::Command,
                 command: spelled(handler),
+                args: None,
+                interpreter: None,
                 timeout: fixture.timeout,
             })
             .collect(),
@@ -155,6 +167,14 @@ fn decided(value: serde_json::Value) -> serde_json::Value {
         serde_json::Value::String(text) => {
             serde_json::Value::String(if text.starts_with("handler failed (exit ") {
                 "handler failed".to_owned()
+            } else if let Some(reason) = [
+                "handler did not write a JSON object",
+                "handler wrote more than",
+            ]
+            .into_iter()
+            .find(|reason| text.starts_with(reason))
+            {
+                reason.to_owned()
             } else if text.starts_with("handler timed out after ") {
                 text.split(": ").next().unwrap_or_default().to_owned()
             } else {

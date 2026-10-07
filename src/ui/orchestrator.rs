@@ -1771,6 +1771,18 @@ struct WorkspaceModel {
     /// The modal's shape as it was last closed, kept here so the layout
     /// file is written from this model alone (see `shape`).
     management_layout: uze_application::ManagementLayout,
+    /// A line waiting for the shell this client asked the server to open:
+    /// the first pane the session reports beyond `known` is that shell.
+    typing: Option<PendingTyping>,
+    /// The line `typing` resolved to its pane, for the session to write.
+    typed: Option<(PaneId, Vec<u8>)>,
+}
+
+/// A command typed into a shell that is about to open, never run: the
+/// person reads it and presses Enter, in their own shell.
+struct PendingTyping {
+    known: std::collections::BTreeSet<PaneId>,
+    text: String,
 }
 
 /// What [`WorkspaceModel::commit_detail`] holds while a commit is open —

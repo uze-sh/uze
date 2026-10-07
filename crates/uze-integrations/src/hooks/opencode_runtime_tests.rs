@@ -22,7 +22,12 @@ fn drive(root: &Path, hook: &PortableHook, calls: &str) -> Vec<String> {
         format!(
             r#"import plugin from "./hooks-demo.ts";
 const hooks = {{}};
-await plugin.setup({{ tool: {{ hook: async (name, fn) => {{ hooks[name] = fn; }} }} }});
+await plugin.setup({{
+  tool: {{ hook: async (name, fn) => {{ hooks[name] = fn; }} }},
+  permission: {{ hook: async (name, fn) => {{ hooks[`permission.${{name}}`] = fn; }} }},
+  event: {{ subscribe: () => ({{ [Symbol.asyncIterator]: () => ({{ next: () => new Promise(() => {{}}) }}) }}) }},
+  session: {{ synthetic: async () => {{}} }},
+}});
 const errors = [];
 console.error = (...parts) => errors.push(parts.join(" "));
 {calls}
@@ -53,6 +58,8 @@ fn observing(command: &str, timeout: u16) -> PortableHook {
         handlers: vec![CommandHook {
             handler_type: CommandHandlerType::Command,
             command: command.into(),
+            args: None,
+            interpreter: None,
             timeout,
         }],
         effect: HookEffect::Observe,
@@ -75,7 +82,7 @@ fn a_handler_whose_child_holds_stderr_is_still_stopped_at_its_deadline() {
     let reported = drive(
         &root,
         &observing("sleep 8 & sleep 8", 1),
-        r#"await hooks["execute.before"]({ tool: "bash", input: { command: "ls" } });"#,
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "ls" } });"#,
     );
     assert!(
         started.elapsed() < std::time::Duration::from_secs(6),
@@ -102,7 +109,7 @@ fn the_reason_the_plugin_reports_is_bounded() {
     let reported = drive(
         &root,
         &observing("head -c 200000 /dev/zero | tr '\\0' x >&2; exit 1", 10),
-        r#"await hooks["execute.before"]({ tool: "bash", input: { command: "ls" } });"#,
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "ls" } });"#,
     );
     let reason = reported
         .iter()
@@ -151,6 +158,8 @@ fn the_plugin_runs_the_handlers_on_the_harnesss_own_runtime() {
             .map(|name| CommandHook {
                 handler_type: CommandHandlerType::Command,
                 command: format!("${{PLUGIN_ROOT}}/scripts/{name}").into(),
+                args: None,
+                interpreter: None,
                 timeout: 10,
             })
             .collect(),
@@ -160,9 +169,9 @@ fn the_plugin_runs_the_handlers_on_the_harnesss_own_runtime() {
     let reported = drive(
         &root,
         &hook,
-        r#"await hooks["execute.before"]({ tool: "bash", input: { command: "cat .env" } });
-await hooks["execute.before"]({ tool: "bash", input: { command: "ls -la" } });
-await hooks["execute.before"]({ tool: "read", input: { filePath: "/x" } });"#,
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "cat .env" } });
+await hooks["execute.before"]({ tool: "shell", input: { command: "ls -la" } });
+await hooks["execute.before"]({ tool: "read", input: { path: "/x" } });"#,
     );
     assert!(
         reported
@@ -176,4 +185,109 @@ await hooks["execute.before"]({ tool: "read", input: { filePath: "/x" } });"#,
         "the second handler ran only for the allowed call, with the portable context"
     );
     let _ = fs::remove_dir_all(root);
+}
+
+/// A transform group's rewrite is what the tool runs: `execute.before`'s
+/// input is replaced, as OpenCode's own input repair does it; an answer
+/// that is not an input refuses the call at the permission check.
+#[test]
+fn a_rewrite_replaces_the_input_the_tool_runs() {
+    if !bun_available() {
+        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-transform");
+    fs::create_dir_all(&root).unwrap();
+    let rewriting = |command: &str| PortableHook {
+        effect: HookEffect::Transform,
+        ..observing(command, 10)
+    };
+    let rewritten = drive(
+        &root,
+        &rewriting(r#"printf '{"command":"echo rewritten"}'"#),
+        r#"const event = { id: "call-1", tool: "shell", input: { command: "cat .env" } };
+await hooks["execute.before"](event);
+console.error(`input ${JSON.stringify(event.input)}`);"#,
+    );
+    assert!(
+        rewritten
+            .iter()
+            .any(|line| line == r#"input {"command":"echo rewritten"}"#),
+        "{rewritten:?}"
+    );
+    let refused = drive(
+        &root,
+        &rewriting("echo not-an-input"),
+        r#"const event = { id: "call-2", tool: "shell", input: { command: "ls" } };
+await hooks["execute.before"](event);
+const check = { source: { type: "tool", id: "call-2" }, effect: "allow" };
+await hooks["permission.evaluate"](check);
+console.error(`decision ${check.effect}: ${check.message}`);"#,
+    );
+    assert!(
+        refused
+            .iter()
+            .any(|line| line.starts_with("decision deny: handler did not write a JSON object")),
+        "{refused:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The exec form on OpenCode: a JavaScript guard runs in the harness's
+/// own runtime, and a Python one is spawned from its words with no shell
+/// between; both receive their words intact.
+#[test]
+fn exec_form_handlers_run_from_their_words_and_javascript_in_the_harnesss_runtime() {
+    if !bun_available() {
+        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-exec").join("with space");
+    fs::create_dir_all(root.join("hooks")).unwrap();
+    fs::write(
+        root.join("hooks").join("guard.js"),
+        "const fs = require('fs');\n\
+         fs.writeFileSync(process.env.PLUGIN_ROOT + '/js-argv.txt', process.argv.slice(2).join('\\n'));\n\
+         if ((process.env.HOOK_COMMAND || '').includes('.env')) { process.stderr.write('blocked by js'); process.exit(3); }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("hooks").join("audit.py"),
+        "import os, sys\n\
+         open(os.path.join(os.environ['PLUGIN_ROOT'], 'py-argv.txt'), 'w').write('\\n'.join(sys.argv[1:]))\n",
+    )
+    .unwrap();
+    let word = r#"it's "$HOME""#;
+    let exec = |script: &str| CommandHook {
+        handler_type: CommandHandlerType::Command,
+        command: script.into(),
+        args: Some(vec![word.into()]),
+        interpreter: None,
+        timeout: 10,
+    };
+    let hook = PortableHook {
+        id: "exec".into(),
+        event: HookEvent::PreToolUse,
+        matchers: vec![HookMatcher::Portable("shell".into())],
+        handlers: vec![exec("hooks/audit.py"), exec("hooks/guard.js")],
+        effect: HookEffect::Observe,
+        order: 0,
+    };
+    let reported = drive(
+        &root,
+        &hook,
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "cat .env" } });"#,
+    );
+    assert!(
+        reported.iter().any(|line| line.contains("blocked by js")),
+        "the JavaScript guard ran and denied: {reported:?}"
+    );
+    for file in ["js-argv.txt", "py-argv.txt"] {
+        assert_eq!(
+            fs::read_to_string(root.join(file)).unwrap(),
+            word,
+            "{file}: the word arrived as written"
+        );
+    }
+    let _ = fs::remove_dir_all(root.parent().unwrap());
 }

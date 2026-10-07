@@ -23,7 +23,6 @@ Run: python3 conformance/lab.py --harness opencode \
 """
 
 import json
-import os
 import subprocess
 import time
 
@@ -95,8 +94,7 @@ def run(cfg, prov_ip):
     )
     # Named so the probe's log can be read from outside while the session
     # is alive: the container dies with the TUI.
-    container = f"permission-evaluate-{os.getpid()}"
-    cmd[2:2] = ["--name", container]
+    container = cfg.harness_container
     child = pexpect.spawn(
         cmd[0], cmd[1:], encoding="utf-8", codec_errors="replace", timeout=300
     )
