@@ -119,6 +119,20 @@ class Tui:
         except OSError:
             return ""
 
+    def shown(self):
+        """What the session's screen shows now, rebuilt from the record
+        (`render_screen`). A harness that streams an answer continues its
+        line by moving the cursor, so the words a person reads can sit in
+        no read and in no transcript — only on this grid. Read with
+        `newline=""`: the grid needs every `\\r` the harness wrote, and a
+        text-mode read folds `\\r\\n` into `\\n`."""
+        path = f"{self.cfg.outdir}/{self.tag}.typescript"
+        try:
+            with open(path, errors="replace", newline="") as handle:
+                return common.render_screen(handle.read())
+        except OSError:
+            return ""
+
     def quiet(self):
         """Whether the surface stopped changing (`settle_and_quiet`): the
         condition an absence read from this screen needs before it means

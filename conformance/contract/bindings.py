@@ -17,6 +17,8 @@ two ways a suite starts lying.
 import time
 from dataclasses import dataclass, field
 
+from shared.common import squash
+
 
 @dataclass
 class Turn:
@@ -275,6 +277,7 @@ class Bindings:
         """Sends `prompt` and drives the turn to its end, accepting every
         approval the harness asks for on the way."""
         time.sleep(self.warmup)
+        before = self._finals_shown(tui)
         tui.type(prompt)
         tui.submit()
         seen, approvals, matched = "", [], None
@@ -290,6 +293,14 @@ class Bindings:
                 continue
             if matched in self.final_markers:
                 break
+            # The final text can reach the screen in pieces a read never
+            # holds whole: Antigravity 1.3.0 streams `UZE_CONFORMA`, redraws
+            # its spinner, then writes `NCE_PASS` by moving the cursor back
+            # up the line. The screen is what a person reads, so it is what
+            # says the answer arrived.
+            if self._finals_shown(tui) > before:
+                matched = self.final_markers[0]
+                break
         settled = matched in self.final_markers and tui.quiet()
         seen = tui.transcript() or seen
         detail = (
@@ -298,6 +309,12 @@ class Bindings:
             else f"the turn never ended: {seen[-160:]}".replace("\n", " ")
         )
         return Turn(seen, settled, detail, approvals)
+
+    def _finals_shown(self, tui):
+        """How many final texts the session's screen shows. Counted rather
+        than found, so a second turn in one session waits for its own."""
+        screen = squash(tui.shown())
+        return sum(screen.count(squash(marker)) for marker in self.final_markers)
 
     def mcp_calls(self):
         """The scripted calls that run the delivered server's tool in this
