@@ -258,7 +258,7 @@ function Arch({ step }: { step: boolean }) {
       </div>
       {/* The canvas's dot grid, the same the terminal draws under a diagram. */}
       <div
-        className="flex min-h-0 flex-1 flex-col justify-center px-[6%]"
+        className="flex min-h-0 flex-1 flex-col justify-center px-[14%]"
         style={{
           backgroundImage: 'radial-gradient(var(--color-line) 1px, transparent 1px)',
           backgroundSize: '22px 22px',
