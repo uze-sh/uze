@@ -23,13 +23,19 @@ const LANDING_MS = 90;
 // How quickly the speed a scroll gave the hand-off fades, per millisecond.
 const SPEED_DECAY = 0.992;
 
+// The room the claim keeps above and below itself before the session peeks
+// in, and the share of the screen the claim may take at most, so the session
+// is always there to be seen on a short screen.
+const CLAIM_BREATH = 72;
+const CLAIM_MAX_SHARE = 0.68;
+
 // How far the page must move against the way it was going before it counts
 // as a turn: above the jitter a trackpad sends at the end of a swipe.
 const TURN_PX = 8;
 
 /**
- * The first screen, split in two: the claim in the top half and the session
- * peeking from the bottom one. Scrolling does not move the page past it at
+ * The first screen, split in two: the claim on top, with the room it needs,
+ * and the session peeking from below it. Scrolling does not move the page past it at
  * once; it pins the screen while the claim fades out and the session lifts
  * to its centre, and only then lets the sections below arrive.
  *
@@ -51,12 +57,14 @@ export function HeroStage({ hero, session }: { hero: ReactNode; session: ReactNo
   const track = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
+  const claim = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const trackEl = track.current;
     const stageEl = stage.current;
     const frameEl = frame.current;
-    if (!trackEl || !stageEl || !frameEl) return;
+    const claimEl = claim.current;
+    if (!trackEl || !stageEl || !frameEl || !claimEl) return;
 
     const wide = window.matchMedia('(min-width: 768px)');
     const still = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -86,7 +94,13 @@ export function HeroStage({ hero, session }: { hero: ReactNode; session: ReactNo
       const rest = Math.max(24, Math.round((stageHeight - frameEl.offsetHeight) / 2));
       trackEl.style.setProperty('--stage-top', `${top}px`);
       trackEl.style.setProperty('--stage-h', `${stageHeight}px`);
-      trackEl.style.setProperty('--peek', `${Math.round(stageHeight / 2)}px`);
+      // The claim gets the room it needs, never less than half the screen,
+      // and the session peeks in below it.
+      const claimHeight = (claimEl.firstElementChild as HTMLElement | null)?.offsetHeight ?? 0;
+      const split = Math.round(
+        Math.min(stageHeight * CLAIM_MAX_SHARE, Math.max(stageHeight / 2, claimHeight + 2 * CLAIM_BREATH)),
+      );
+      trackEl.style.setProperty('--peek', `${split}px`);
       trackEl.style.setProperty('--rest', `${rest}px`);
       trackEl.style.setProperty('--handoff', `${window.innerHeight * HANDOFF}px`);
       // The stage pins under the header, so the hand-off starts when the
@@ -212,6 +226,7 @@ export function HeroStage({ hero, session }: { hero: ReactNode; session: ReactNo
     const nav = document.getElementById('nd-nav');
     if (nav) observer.observe(nav);
     observer.observe(frameEl);
+    if (claimEl.firstElementChild) observer.observe(claimEl.firstElementChild);
     return () => {
       cancelAnimationFrame(running);
       window.removeEventListener('scroll', onScroll);
@@ -230,7 +245,10 @@ export function HeroStage({ hero, session }: { hero: ReactNode; session: ReactNo
         ref={stage}
         className="md:sticky md:top-[var(--stage-top,0px)] md:h-[var(--stage-h,100svh)] md:overflow-hidden"
       >
-        <div className="md:absolute md:inset-x-0 md:top-0 md:flex md:h-1/2 md:items-center md:justify-center md:opacity-[calc(1-var(--p)*1.8)] md:[filter:blur(calc(var(--p)*6px))] md:[transform:translateY(calc(var(--p)*-4rem))_scale(calc(1-var(--p)*0.04))] md:in-data-moving:will-change-[opacity,filter,transform]">
+        <div
+          ref={claim}
+          className="md:absolute md:inset-x-0 md:top-0 md:flex md:h-[var(--peek,50%)] md:items-center md:justify-center md:opacity-[calc(1-var(--p)*1.8)] md:[filter:blur(calc(var(--p)*6px))] md:[transform:translateY(calc(var(--p)*-4rem))_scale(calc(1-var(--p)*0.04))] md:in-data-moving:will-change-[opacity,filter,transform]"
+        >
           {hero}
         </div>
         <div
