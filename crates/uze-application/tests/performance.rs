@@ -58,6 +58,13 @@ use uze_core::{
 /// miss still fails, and far enough above the work that a slow runner
 /// does not.
 ///
+/// A mutation is not held to it at all. What a write costs is the disk's:
+/// every state file is fsync'd, renamed and its directory synced, and a
+/// hosted Windows runner took 366 ms over one registry write that an idle
+/// Linux disk does in a few. A clock there measures the runner. A
+/// mutation is held to its counts instead — no probe, and exactly the Git
+/// calls its path makes — which is the same answer on every machine.
+///
 /// `specs/cli-performance/spec.md` promises a person 50 ms on a release
 /// build. That promise is not what is measured here and never was.
 const BUDGET: Duration = Duration::from_millis(250);
@@ -251,23 +258,32 @@ impl World {
         assert_within_budget(label, best, ATTEMPTS);
     }
 
-    /// For a mutation, which cannot be repeated in one world: one timed run
-    /// on a fresh application, zero probes. The caller takes the best over
-    /// several worlds.
-    fn timed_once<T>(&self, label: &str, operation: impl FnOnce(&UzeApplication) -> T) -> Duration {
-        let _measuring = meter();
+    /// For a mutation, which cannot be repeated in one world: one run on a
+    /// fresh application, zero probes, and the number of times it reached
+    /// for the Git binary. The caller holds that count over several worlds
+    /// (see [`assert_git_calls`]).
+    fn counted_once<T>(&self, label: &str, operation: impl FnOnce(&UzeApplication) -> T) -> usize {
         let probes_before = self.probes.load(Ordering::SeqCst);
-        let started = Instant::now();
         let app = self.app();
-        let _ = operation(&app);
-        let elapsed = started.elapsed();
+        let (_, calls) = git_calls(|| operation(&app));
         assert_eq!(
             self.probes.load(Ordering::SeqCst),
             probes_before,
             "{label}: probed the harness"
         );
-        elapsed
+        calls
     }
+}
+
+/// Holds every run of a mutation to the Git calls its path makes — the
+/// same number on every run and every machine, which is what a write's
+/// budget can be (see [`BUDGET`]).
+fn assert_git_calls(label: &str, runs: &[usize], expected: usize) {
+    eprintln!("{label}: {runs:?} git call(s) per run");
+    assert!(
+        runs.iter().all(|calls| *calls == expected),
+        "{label}: reached for the Git binary {runs:?} time(s) per run, its path makes {expected}"
+    );
 }
 
 /// Holds the best of several runs to the budget.
@@ -427,21 +443,21 @@ fn market_host_meets_the_budget() {
     let home = UzeHome::at(root.join("uze"));
     let application = || UzeApplication::new(home.clone(), Vec::new());
 
-    let runs: Vec<Duration> = (0..ATTEMPTS)
+    let runs: Vec<usize> = (0..ATTEMPTS)
         .map(|_| {
-            let _measuring = meter();
             let app = application();
-            let started = Instant::now();
-            app.marketplace()
-                .define_host("work", "https://git.acme.io")
-                .unwrap();
-            app.marketplace().set_default_host("work").unwrap();
-            assert!(!app.marketplace().hosts().unwrap().is_empty());
-            app.marketplace().remove_host("work").unwrap();
-            started.elapsed()
+            git_calls(|| {
+                app.marketplace()
+                    .define_host("work", "https://git.acme.io")
+                    .unwrap();
+                app.marketplace().set_default_host("work").unwrap();
+                assert!(!app.marketplace().hosts().unwrap().is_empty());
+                app.marketplace().remove_host("work").unwrap();
+            })
+            .1
         })
         .collect();
-    assert_best_within_budget("market host", &runs);
+    assert_git_calls("market host", &runs, 0);
     let _ = fs::remove_dir_all(root);
 }
 
@@ -462,8 +478,9 @@ fn market_list_and_inspect_meet_the_budget_without_the_repository() {
 }
 
 /// Linking and unlinking are a registry write and a dropped cache entry.
-/// `link` also asks Git what repository the checkout is, which is one local
-/// call — so neither has any excuse to leave the budget.
+/// `link` also asks Git what repository the registered source and the
+/// checkout are — local calls, three in all — and nothing else reaches
+/// for it: a link that cloned or fetched would show here.
 ///
 /// Built on its own world because `World::build` deletes the marketplace's
 /// repository, and a link must point at one that exists.
@@ -491,29 +508,23 @@ fn market_link_and_unlink_meet_the_budget() {
         .add(&format!("file://{}", market.display()))
         .unwrap();
 
-    let links: Vec<Duration> = (0..ATTEMPTS)
+    let links: Vec<usize> = (0..ATTEMPTS)
         .map(|_| {
-            let _measuring = meter();
             let app = application();
-            let started = Instant::now();
-            app.marketplace().link(MARKETPLACE, &market).unwrap();
-            started.elapsed()
+            git_calls(|| app.marketplace().link(MARKETPLACE, &market).unwrap()).1
         })
         .collect();
-    assert_best_within_budget("market link", &links);
+    assert_git_calls("market link", &links, 3);
 
-    let unlinks: Vec<Duration> = (0..ATTEMPTS)
+    let unlinks: Vec<usize> = (0..ATTEMPTS)
         .map(|_| {
             let app = application();
             app.marketplace().link(MARKETPLACE, &market).unwrap();
-            let _measuring = meter();
             let fresh = application();
-            let started = Instant::now();
-            fresh.marketplace().unlink(MARKETPLACE).unwrap();
-            started.elapsed()
+            git_calls(|| fresh.marketplace().unlink(MARKETPLACE).unwrap()).1
         })
         .collect();
-    assert_best_within_budget("market unlink", &unlinks);
+    assert_git_calls("market unlink", &unlinks, 0);
 
     fs::remove_dir_all(&root).unwrap();
 }
@@ -527,14 +538,14 @@ fn context_reads_and_reconcile_meet_the_budget() {
     world.within_budget("agent context plan", |app| {
         app.context().plan(&world.project)
     });
-    let reconciles: Vec<Duration> = (0..ATTEMPTS)
+    let reconciles: Vec<usize> = (0..ATTEMPTS)
         .map(|_| {
-            world.timed_once("agent context reconcile", |app| {
+            world.counted_once("agent context reconcile", |app| {
                 app.context().reconcile(&world.project).unwrap()
             })
         })
         .collect();
-    assert_best_within_budget("agent context reconcile", &reconciles);
+    assert_git_calls("agent context reconcile", &reconciles, 0);
 }
 
 #[test]
@@ -546,18 +557,18 @@ fn removals_meet_the_budget() {
         let world = World::build(&format!("budget-removals-{attempt}"));
         // Warm every cache the removals read through.
         world.app().health().report();
-        remove.push(world.timed_once("remove", |app| {
+        remove.push(world.counted_once("remove", |app| {
             app.project().remove(PLUGIN, &world.project).unwrap()
         }));
         plugin_remove
-            .push(world.timed_once("plugin remove", |app| app.plugins().remove(PLUGIN).unwrap()));
-        market_remove.push(world.timed_once("market remove", |app| {
+            .push(world.counted_once("plugin remove", |app| app.plugins().remove(PLUGIN).unwrap()));
+        market_remove.push(world.counted_once("market remove", |app| {
             app.marketplace().remove(MARKETPLACE).unwrap()
         }));
     }
-    assert_best_within_budget("remove", &remove);
-    assert_best_within_budget("plugin remove", &plugin_remove);
-    assert_best_within_budget("market remove", &market_remove);
+    assert_git_calls("remove", &remove, 0);
+    assert_git_calls("plugin remove", &plugin_remove, 0);
+    assert_git_calls("market remove", &market_remove, 0);
 }
 
 /// The TUI's management screens are one read model; a refresh is one call.
