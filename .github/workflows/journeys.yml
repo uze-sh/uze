@@ -27,8 +27,9 @@ on:
     - cron: "0 4 * * *"
   workflow_dispatch:
 
+# Per commit on a push, as `ci.yml` groups the run that calls this one.
 concurrency:
-  group: journeys-${{ github.ref }}
+  group: journeys-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
