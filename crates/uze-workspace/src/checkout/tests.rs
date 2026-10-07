@@ -337,6 +337,56 @@ fn an_unintegrated_branch_outlives_its_directory() {
     );
 }
 
+/// Collecting a slot is a rename under the lock and a deletion after it:
+/// the slot leaves Git's registry and the pool at once, and its bytes —
+/// a build's worth, as often as not — are deleted where nobody waits.
+#[test]
+fn a_collected_slot_leaves_the_registry_at_once_and_its_bytes_after() {
+    let repository = repository("slots-trash");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (first, slot) = launch(&repository, &mut store, "built");
+    fs::create_dir_all(slot.path.join("target")).unwrap();
+    fs::write(slot.path.join("target").join("artifact"), b"ignored output").unwrap();
+    set_state(&mut store, &first.id, WorkState::Integrated);
+
+    let removed = trim_free_slots(primary, &store, keep_nothing(), &nobody());
+
+    assert_eq!(removed, vec![slot.id]);
+    assert!(!slot.path.exists());
+    assert!(
+        linked_worktrees(primary)
+            .iter()
+            .all(|(path, _)| path != &slot.path),
+        "Git no longer counts it as a checkout"
+    );
+    let trash = primary.join(WORKTREES_DIRECTORY).join(TRASH_DIRECTORY);
+    assert!(trash.read_dir().unwrap().next().is_some(), "its bytes wait");
+    assert!(
+        slots(primary, &store, &nobody()).is_empty(),
+        "and are never a slot"
+    );
+
+    empty_trash(primary);
+    assert!(trash.read_dir().unwrap().next().is_none());
+}
+
+/// Read as free and then written in before it was taken: a rename has no
+/// refusal of its own, so the tree is asked again, as `worktree remove`
+/// used to ask it.
+#[test]
+fn a_slot_written_in_after_it_was_read_free_is_not_collected() {
+    let repository = repository("slots-trash-dirty");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (first, slot) = launch(&repository, &mut store, "late");
+    set_state(&mut store, &first.id, WorkState::Integrated);
+    fs::write(slot.path.join("late.rs"), b"written after the read").unwrap();
+
+    assert!(!set_aside(primary, &slot.path));
+    assert!(slot.path.join("late.rs").is_file());
+}
+
 #[test]
 fn commits_made_on_a_detached_head_park_the_slot_instead_of_freeing_it() {
     let repository = repository("slots-detached-commits");

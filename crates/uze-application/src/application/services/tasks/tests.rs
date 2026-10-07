@@ -23,14 +23,23 @@ mod placement_tests {
         }
     }
 
-    /// An agent is placed on the target's tip, so the target has to be the
-    /// one the team is on rather than the one this machine last saw: a
-    /// branch cut from a stale tip conflicts in a request already opened.
+    /// An agent is placed on the target's tip as the last sync left it:
+    /// the placement itself asks the remote nothing, because that round
+    /// trip was most of what creating an agent cost. The sync is what
+    /// keeps the tip the one the team is on — a branch cut from a stale
+    /// tip conflicts in a request already opened.
     #[test]
-    fn a_new_agent_starts_from_the_target_as_the_remote_has_it() {
+    fn a_new_agent_starts_from_the_target_as_the_last_sync_left_it() {
         let repository = repository("place-synced");
         let root = repository.root().to_path_buf();
+        std::fs::write(
+            root.join("agents.yaml"),
+            "workspace:\n  worktree: always\n  target: main\n",
+        )
+        .unwrap();
         repository.with_origin("main");
+        // Off the target: one the operator stands on is theirs to pull.
+        repository.git(&["switch", "--quiet", "-c", "elsewhere"]);
         let other = repository.clone_origin();
         std::fs::write(other.join("merged-while-you-were-away.rs"), "").unwrap();
         repository.git_in(&other, &["add", "."]);
@@ -38,23 +47,44 @@ mod placement_tests {
         repository.git_in(&other, &["push", "--quiet"]);
 
         let app = application("place-synced-home");
+        let unsynced = app
+            .workspace()
+            .place_new_agent(&root, None, "claude-code", &[])
+            .unwrap();
+        assert!(
+            !unsynced.cwd.join("merged-while-you-were-away.rs").exists(),
+            "a placement does not wait on the remote"
+        );
+
+        let report = app.workspace().sync_target(&root).unwrap();
+        assert_eq!(report.concern, None, "the target could be moved");
         let placement = app
             .workspace()
-            .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
+            .place_new_agent(&root, None, "claude-code", &[])
             .unwrap();
-
         assert!(
             placement
                 .cwd
                 .join("merged-while-you-were-away.rs")
                 .is_file(),
-            "the agent starts from what the remote has, not from the local tip"
+            "after a sync the agent starts from what the remote has"
         );
         assert!(
             placement.warnings.is_empty(),
-            "nothing to report when the target could be moved: {:?}",
+            "nothing to report: {:?}",
             placement.warnings
         );
+    }
+
+    /// Nothing is branched from the target of a project that does not
+    /// isolate its agents, so its remote is never asked on the clock.
+    #[test]
+    fn a_project_that_does_not_isolate_is_never_synced() {
+        let repository = repository("sync-in-place");
+        let root = repository.root().to_path_buf();
+        repository.with_origin("main");
+        let app = application("sync-in-place-home");
+        assert_eq!(app.workspace().sync_target(&root), None);
     }
 
     /// Where a launch with no kind named lands is the project's answer,

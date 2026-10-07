@@ -431,6 +431,14 @@ pub struct DeliveryPolicyView {
     pub gate: Vec<String>,
 }
 
+/// What bringing a project's target in line with its remote found worth
+/// saying: why it stayed behind, if it did.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TargetSyncReport {
+    pub project: PathBuf,
+    pub concern: Option<String>,
+}
+
 /// Where an agent starts, and the record its launch carries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentPlacement {

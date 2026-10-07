@@ -68,6 +68,39 @@ impl Workspace<'_> {
         }
     }
 
+    /// Brings the local target of the project at `cwd` in line with its
+    /// remote, by fast-forward only, so the next agent is cut from what the
+    /// team is on rather than from what this machine last saw.
+    ///
+    /// Asked on a clock rather than by each placement: the fetch is a
+    /// network round trip, and in front of every new agent it was most of
+    /// what the operator waited for. Only a project that isolates its
+    /// agents asks — nothing is branched from the target in one that does
+    /// not. A target that moved invalidates every remembered integration
+    /// answer, so they are asked again here, where nobody waits for them,
+    /// instead of by the next placement.
+    #[tracing::instrument(name = "workspace.sync_target", skip_all, fields(cwd = %cwd.display()))]
+    pub fn sync_target(&self, cwd: &Path) -> Option<TargetSyncReport> {
+        let (primary, policy) = self.repository_context(cwd)?;
+        if !policy.default.is_isolated() {
+            return None;
+        }
+        let target = policy
+            .target
+            .clone()
+            .or_else(|| checkout::current_branch(&primary))?;
+        let sync = landing::sync_target(&primary, &target);
+        if matches!(sync, landing::TargetSync::FastForwarded { .. })
+            && let Ok(store) = task::load(&self.0.home, &primary)
+        {
+            checkout::slots(&primary, &store, &checkout::Presence::observe());
+        }
+        Some(TargetSyncReport {
+            concern: sync.concern(&target),
+            project: primary,
+        })
+    }
+
     pub(super) fn place_in_slot(
         &self,
         pane_cwd: &Path,
@@ -85,10 +118,9 @@ impl Workspace<'_> {
             .clone()
             .or_else(|| checkout::current_branch(&primary))
             .ok_or_else(|| refused("the primary checkout is not on a branch".to_owned()))?;
-        // Before anything is branched from it: an agent placed on a target
-        // nobody fetched starts behind every merge of the day, and hears
-        // about it as conflicts in a request already opened.
-        let sync = landing::sync_target(&primary, &target);
+        // The local target as the last sync left it ([`Self::sync_target`]):
+        // asking the remote here put a network round trip in front of every
+        // agent the operator creates.
         let base_tip = checkout::tip_of(&primary, &target);
         if base_tip.is_empty() {
             return Err(refused("no commit to branch from".to_owned()));
@@ -152,14 +184,7 @@ impl Workspace<'_> {
         // Outside the document's lock on purpose: the project's `setup` is
         // the one unbounded thing a launch runs, and every other mutation
         // would wait behind it.
-        let isolation = task
-            .isolation()
-            .expect("an agent placed in a slot carries its isolation");
-        let mut warnings = sync
-            .concern(&isolation.target)
-            .into_iter()
-            .collect::<Vec<_>>();
-        warnings.extend(checkout::materialize(&primary, &acquired.path, &policy));
+        let warnings = checkout::materialize(&primary, &acquired.path, &policy);
         let view = self.placed_view(&primary, task.id.as_str(), &policy);
         Ok(AgentPlacement {
             project: primary.clone(),

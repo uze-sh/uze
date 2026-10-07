@@ -16,21 +16,21 @@ pub enum TargetSync {
 }
 
 impl TargetSync {
-    /// What the operator has to be told, if anything: an agent about to be
-    /// placed on a target that could not be brought up to date starts
-    /// behind the work everyone else is already on, and will hear about it
-    /// as a conflict much later.
+    /// What the operator has to be told, if anything: agents placed on a
+    /// target that could not be brought up to date start behind the work
+    /// everyone else is already on, and hear about it as a conflict much
+    /// later.
     pub fn concern(&self, target: &str) -> Option<String> {
         match self {
             Self::Stalled { behind, reason } if *behind > 0 => {
                 let plural = if *behind == 1 { "" } else { "s" };
                 Some(format!(
                     "`{target}` is {behind} commit{plural} behind `{REMOTE}` and could not be \
-                     moved: {reason}. This agent starts from the local tip."
+                     moved: {reason}. New agents start from the local tip."
                 ))
             }
             Self::Stalled { reason, .. } => Some(format!(
-                "`{REMOTE}` could not be read: {reason}. This agent starts from the local tip, \
+                "`{REMOTE}` could not be read: {reason}. New agents start from the local tip, \
                  which may be behind."
             )),
             _ => None,
@@ -38,8 +38,9 @@ impl TargetSync {
     }
 }
 
-/// Brings the local target in line with the remote's before anything is
-/// branched from it, by fast-forward and never by anything else.
+/// Brings the local target in line with the remote's, by fast-forward and
+/// never by anything else. Run on the workspace's clock rather than by each
+/// placement, which branches from whatever this last left.
 ///
 /// An agent is placed on the target's tip, and every judgement made about
 /// its work afterwards — what it is ahead of, whether its slot holds
@@ -53,6 +54,7 @@ impl TargetSync {
 /// commits: a target that has commits the remote lacks is left exactly
 /// where it is and reported, as is one Git refuses to move because the
 /// primary checkout has local modifications in the way.
+#[tracing::instrument(name = "landing.sync_target", level = "debug", skip_all, fields(%target))]
 pub fn sync_target(primary: &Path, target: &str) -> TargetSync {
     if !has_remote(primary) {
         return TargetSync::Unpublished;
@@ -92,6 +94,16 @@ pub(super) fn sync_target_locked(primary: &Path, target: &str) -> TargetSync {
         return TargetSync::Stalled {
             behind,
             reason: format!("it carries commits `{REMOTE}` does not"),
+        };
+    }
+    // Moving the target where the operator stands on it would change files
+    // under their editor on a clock, with no gesture of theirs behind it.
+    // Their checkout already says what a pull would bring; the sync only
+    // moves a target nobody has checked out there.
+    if checkout::current_branch(primary).as_deref() == Some(target) {
+        return TargetSync::Stalled {
+            behind,
+            reason: "it is checked out in the primary checkout, where a pull moves it".to_owned(),
         };
     }
     match fast_forward(primary, target, &tracking) {

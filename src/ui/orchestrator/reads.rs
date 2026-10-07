@@ -169,6 +169,41 @@ pub(super) fn spawn_policy_region_sync(
     });
 }
 
+/// Brings each project's target in line with its remote, off the frame:
+/// a fetch is a network round trip. One answer per project, however many
+/// of the directories belong to it.
+pub(super) fn spawn_target_sync(
+    home: &UzeHome,
+    directories: Vec<PathBuf>,
+    sender: mpsc::Sender<TargetSyncReport>,
+) {
+    if directories.is_empty() {
+        return;
+    }
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _parent = parent.enter();
+        let _pass = crate::telemetry::background_pass!("tui.target_sync");
+        let Ok(app) = tui_application(home) else {
+            return;
+        };
+        let workspace = app.workspace();
+        let mut synced = std::collections::BTreeSet::new();
+        for directory in directories {
+            let Some(primary) = workspace.primary_of(&directory) else {
+                continue;
+            };
+            if !synced.insert(primary.clone()) {
+                continue;
+            }
+            if let Some(report) = workspace.sync_target(&primary) {
+                let _ = sender.send(report);
+            }
+        }
+    });
+}
+
 /// A project's gates this machine's shell has no spelling for, and the
 /// spelling they lack.
 pub(super) struct UnspelledGates {

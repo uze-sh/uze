@@ -129,6 +129,7 @@ pub(super) fn slot_name(path: &Path) -> String {
 
 pub(super) fn slot_state(
     primary: &Path,
+    tips: &BranchTips,
     path: &Path,
     branch: Option<&str>,
     id: &CheckoutId,
@@ -147,7 +148,7 @@ pub(super) fn slot_state(
     }
     // Somebody at work in a directory no agent claims is still somebody
     // at work there; only the operator moves it on.
-    if somebody_inside || holds_uncommitted_work(path) {
+    if somebody_inside {
         return SlotState::Parked;
     }
     // An agent that ended with a child still holding work keeps its own
@@ -160,14 +161,18 @@ pub(super) fn slot_state(
     if keeps_a_child {
         return SlotState::Parked;
     }
+    // Commits before the working tree, though either parks the slot: the
+    // integration answer is remembered and a status is not, and a pool is
+    // mostly slots parked for their commits, so asking this first is what
+    // keeps placing an agent from reading every working tree it owns.
     let declared_done = owner.is_some_and(|owner| owner.state == WorkState::Integrated);
     let target = isolation.map(|isolation| isolation.target.as_str());
     let holds_commits = match (branch, target) {
-        (Some(branch), Some(target)) => !is_integrated(primary, target, branch),
+        (Some(branch), Some(target)) => !is_integrated_among(tips, primary, target, branch),
         (Some(branch), None) => !is_integrated(primary, "HEAD", branch),
         (None, _) => holds_unbranched_commits(path),
     };
-    if holds_commits && !declared_done {
+    if (holds_commits && !declared_done) || holds_uncommitted_work(path) {
         SlotState::Parked
     } else {
         SlotState::Free

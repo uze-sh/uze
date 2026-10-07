@@ -1156,16 +1156,20 @@ repository and every new agent paid for a checkout of its own.
 > `crates/uze-workspace/src/checkout/tests.rs::a_squash_merged_branch_frees_its_slot_and_is_pruned`
 > `crates/uze-workspace/src/checkout/tests.rs::a_rebase_merged_branch_frees_its_slot`
 
-### An agent is placed on the target as the remote has it
+### An agent is placed on the target as the last sync left it
 
-The local target is fast-forwarded onto the remote's before a new agent's
-branch is cut from it, and by nothing but a fast-forward: a target carrying
-commits the remote lacks is left where it stands and the placement reports
-how far behind the agent starts.
+The local target of a project that isolates its agents is fast-forwarded
+onto the remote's on the workspace's clock, never by a placement, and by
+nothing but a fast-forward: a target carrying commits the remote lacks is
+left where it stands and the sync reports how far behind new agents start.
+A placement branches from the local tip without asking the remote, because
+that round trip was most of what creating an agent cost; a delivery fetches
+for itself and never relies on the clock.
 
 > `crates/uze-workspace/src/landing/tests.rs::the_local_target_is_fast_forwarded_onto_the_remotes`
 > `crates/uze-workspace/src/landing/tests.rs::a_target_carrying_its_own_commits_is_left_alone_and_reported`
-> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_new_agent_starts_from_the_target_as_the_remote_has_it`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_new_agent_starts_from_the_target_as_the_last_sync_left_it`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_project_that_does_not_isolate_is_never_synced`
 
 ### Publication is read from the remote, never from UZE's own records
 

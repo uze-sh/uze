@@ -29,6 +29,51 @@ pub fn is_integrated(root: &Path, target: &str, branch: &str) -> bool {
     let Some((target, branch)) = resolve_commit_pair(root, target, branch) else {
         return false;
     };
+    integrated_commits(root, target, branch)
+}
+
+/// [`is_integrated`] for a pass that asks it of many branches: the names
+/// are resolved from `tips`, read once, instead of by a Git process per
+/// question — with the answer remembered, resolving was all a repeated
+/// question cost, and a collection asks it of every branch UZE ever cut.
+/// A name `tips` does not hold is resolved the way [`is_integrated`] would.
+pub fn is_integrated_among(tips: &BranchTips, root: &Path, target: &str, branch: &str) -> bool {
+    match (tips.0.get(target), tips.0.get(branch)) {
+        (Some(target), Some(branch)) => integrated_commits(root, target.clone(), branch.clone()),
+        _ => is_integrated(root, target, branch),
+    }
+}
+
+/// Every local branch and the commit it names, read in one process.
+#[derive(Default)]
+pub struct BranchTips(HashMap<String, String>);
+
+impl BranchTips {
+    pub fn read(root: &Path) -> Self {
+        let listing = read(
+            root,
+            &[
+                "for-each-ref",
+                "--format=%(refname:short) %(objectname)",
+                "refs/heads/",
+            ],
+        )
+        .unwrap_or_default();
+        Self(
+            listing
+                .lines()
+                .filter_map(|line| line.rsplit_once(' '))
+                .map(|(name, commit)| (name.to_owned(), commit.to_owned()))
+                .collect(),
+        )
+    }
+
+    pub fn contains(&self, branch: &str) -> bool {
+        self.0.contains_key(branch)
+    }
+}
+
+fn integrated_commits(root: &Path, target: String, branch: String) -> bool {
     let question = IntegrationQuestion {
         root: root.to_path_buf(),
         target,

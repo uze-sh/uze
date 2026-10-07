@@ -175,18 +175,26 @@ impl Workspace<'_> {
     /// the operator's alone.
     #[tracing::instrument(name = "workspace.collect_slot_garbage", skip_all, fields(cwd = %cwd.display()))]
     pub(super) fn collect_slot_garbage(&self, cwd: &Path, occupied: &[PathBuf]) -> Vec<String> {
-        let Some(repository) = self.repository(cwd) else {
+        let Some((primary, policy)) = self.repository_context(cwd) else {
             return Vec::new();
         };
-        let target = repository.target();
-        let pool = checkout::Pool::declared_by(self.policy(&repository.primary).ok().as_ref());
-        let collected = checkout::collect(
-            &repository.primary,
-            &repository.store,
-            &target,
-            pool,
-            &checkout::Presence::observe_with(occupied),
-        );
+        let target = target_of(&primary, &policy);
+        let pool = checkout::Pool::declared_by(Some(&policy));
+        // Under the document's lock, which a placement holds from choosing
+        // a slot to recording it: read outside it, a slot just taken for a
+        // new agent was still free in the copy, and was collected from
+        // under it.
+        let collected = task::locked(&self.0.home, &primary, |store| {
+            Ok(checkout::collect(
+                &primary,
+                store,
+                &target,
+                pool,
+                &checkout::Presence::observe_with(occupied),
+            ))
+        })
+        .unwrap_or_default();
+        checkout::empty_trash(&primary);
         let collected: Vec<String> = collected
             .branches
             .into_iter()

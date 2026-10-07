@@ -146,13 +146,23 @@ impl std::error::Error for AcquireError {}
 /// Only a recorded checkout in the isolation directory is a slot: reuse
 /// resets and cleans one and collection removes it, which is only safe
 /// for a directory UZE made.
+#[tracing::instrument(name = "checkout.slots", level = "debug", skip_all)]
 pub fn slots(primary: &Path, store: &AgentStore, presence: &Presence) -> Vec<Slot> {
+    let tips = BranchTips::read(primary);
     isolated_checkouts(primary)
         .into_iter()
         .filter(|(path, _)| matches!(record::read(path), Recorded::Ours(_)))
         .map(|(path, branch)| {
             let id = CheckoutId::adopted(&slot_name(&path));
-            let state = slot_state(primary, &path, branch.as_deref(), &id, store, presence);
+            let state = slot_state(
+                primary,
+                &tips,
+                &path,
+                branch.as_deref(),
+                &id,
+                store,
+                presence,
+            );
             Slot {
                 id,
                 path,
@@ -221,6 +231,7 @@ pub fn resume(
     )
 }
 
+#[tracing::instrument(name = "checkout.take", level = "debug", skip_all)]
 pub(super) fn take(
     primary: &Path,
     store: &AgentStore,
@@ -260,20 +271,29 @@ pub(super) fn take(
 
 pub(super) fn reuse(slot: &Slot, branch: &str, start: Start<'_>) -> Result<Acquired, AcquireError> {
     let root = &slot.path;
+    // `--discard-changes` because a free slot may still hold edits that
+    // never parked it — UZE's own regions of `AGENTS.md`, a lock that moved
+    // no pin — and a plain switch refuses over them or carries them into
+    // the next task. The index and the tree land on the new tip in the
+    // same step, which is what a `reset --hard` after it used to do.
     match start {
-        Start::Branching { base_tip } => {
-            git(root, &["switch", "--quiet", "-c", branch, "--", base_tip])?
-        }
-        Start::Existing => git(root, &["switch", "--quiet", "--", branch])?,
+        Start::Branching { base_tip } => git(
+            root,
+            &[
+                "switch",
+                "--quiet",
+                "--discard-changes",
+                "-c",
+                branch,
+                "--",
+                base_tip,
+            ],
+        )?,
+        Start::Existing => git(
+            root,
+            &["switch", "--quiet", "--discard-changes", "--", branch],
+        )?,
     };
-    // `HEAD`, not the tip spelled out again: the switch above has just put
-    // HEAD on it, and `git reset` is the one destructive command with no
-    // option terminator at all — `--` means pathspec ("Cannot do hard reset
-    // with paths"), and `--end-of-options` is refused outright ("must come
-    // before non-option arguments", git 2.43). A literal that can never be
-    // read as an option is the only spelling left that cannot be steered by
-    // a ref name.
-    git(root, &["reset", "--quiet", "--hard", "HEAD"])?;
     // Without `-x` on purpose: ignored artifacts are what make the slot
     // worth keeping.
     git(root, &["clean", "--quiet", "-fd"])?;
@@ -338,6 +358,7 @@ pub(super) fn create(
 /// here too, when the work starts, rather than first at its delivery.
 pub const SETUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
+#[tracing::instrument(name = "checkout.materialize", level = "debug", skip_all)]
 pub fn materialize(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<String> {
     let mut warnings = Vec::new();
     for link in &policy.link {

@@ -386,6 +386,32 @@ mod derived_content {
         assert_eq!(end(&repository, &mut store, &agent), SlotState::Free);
     }
 
+    /// A free slot still holding a reprojected region is handed on even
+    /// when the target changed that same file since: the edit never parked
+    /// it, so it must not stand between the next agent and its base either.
+    #[test]
+    fn a_free_slot_holding_a_region_edit_is_reused_onto_a_target_that_changed_the_file() {
+        let (repository, mut store, agent, slot) =
+            launched_with("derived-region-moved", &[("AGENTS.md", INSTRUCTIONS)]);
+        fs::write(
+            slot.path.join("AGENTS.md"),
+            INSTRUCTIONS.replace("policy/1 -->\nold", "policy/1 -->\nnew"),
+        )
+        .unwrap();
+        assert_eq!(end(&repository, &mut store, &agent), SlotState::Free);
+        let moved = INSTRUCTIONS.replace("Written by a person.", "Edited on the target.");
+        repository.commit_file("AGENTS.md", &moved);
+
+        let (_, next) = launch(&repository, &mut store, "next");
+
+        assert_eq!(next.path, slot.path);
+        assert_eq!(
+            fs::read_to_string(next.path.join("AGENTS.md")).unwrap(),
+            moved,
+            "the next agent starts from its base, not from the last one's edit"
+        );
+    }
+
     #[test]
     fn a_hand_edit_beside_a_region_parks_the_slot() {
         let (repository, mut store, agent, slot) =
