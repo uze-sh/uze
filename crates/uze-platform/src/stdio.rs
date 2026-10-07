@@ -284,7 +284,13 @@ mod imp {
             let emulator = thread::spawn(move || {
                 let mut asked = vec![0u8; QUESTION.len()];
                 terminal.read_exact(&mut asked).expect("the question");
-                let _ = terminal.write_all(&[b'x'; 4096]);
+                // One byte past what a reply may take, and no more: the
+                // reader stops at the cap, and anything beyond it would sit
+                // in macOS's small pty input queue with `write_all` blocked
+                // on it, so the join below would never return.
+                terminal
+                    .write_all(&[b'x'; MOST_A_REPLY_TAKES + 1])
+                    .expect("reply");
                 terminal
             });
             let started = Instant::now();
