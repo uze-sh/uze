@@ -46,6 +46,24 @@ pub fn publication(primary: &Path, isolation: &Isolation) -> Option<Publication>
         })
 }
 
+/// [`publication`] read from `tips` rather than by a Git process per
+/// branch, for a pass that asks it of every recorded agent.
+pub fn publication_among(
+    tips: &checkout::BranchTips,
+    isolation: &Isolation,
+) -> Option<Publication> {
+    isolation
+        .published_as
+        .iter()
+        .chain(std::iter::once(&isolation.branch))
+        .find_map(|branch| {
+            tips.remote(REMOTE, branch).map(|tip| Publication {
+                branch: branch.clone(),
+                tip: tip.to_owned(),
+            })
+        })
+}
+
 /// What the remote said about a task's request, ready to be written down
 /// by [`adopt_request`].
 ///

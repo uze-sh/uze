@@ -59,8 +59,19 @@ pub fn sync_target(primary: &Path, target: &str) -> TargetSync {
     if !has_remote(primary) {
         return TargetSync::Unpublished;
     }
+    // The network half without the lock (see `uze_git::fetch_private`): it
+    // is seconds long, and every placement and evaluation in the project
+    // takes the lock for a prune.
+    let fetched = format!("sync/{target}");
+    let source = format!("refs/heads/{target}");
+    if let Err(reason) = uze_git::fetch_private(primary, REMOTE, &source, &fetched)
+        .map_err(|error| error.to_string())
+        .and_then(|output| output.successful().map(|_| ()))
+    {
+        return TargetSync::Stalled { behind: 0, reason };
+    }
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        sync_target_locked(primary, target)
+        sync_target_locked(primary, target, &fetched)
     })
     .unwrap_or_else(|error| TargetSync::Stalled {
         behind: 0,
@@ -68,11 +79,12 @@ pub fn sync_target(primary: &Path, target: &str) -> TargetSync {
     })
 }
 
-pub(super) fn sync_target_locked(primary: &Path, target: &str) -> TargetSync {
-    let tracking = match fetch_target(primary, target) {
-        Ok(tracking) => tracking,
-        Err(reason) => return TargetSync::Stalled { behind: 0, reason },
-    };
+pub(super) fn sync_target_locked(primary: &Path, target: &str, fetched: &str) -> TargetSync {
+    let tracking = format!("refs/remotes/{REMOTE}/{target}");
+    let private = format!("{}{fetched}", uze_git::PRIVATE_REFS);
+    if let Err(reason) = git(primary, &["update-ref", &tracking, &private]) {
+        return TargetSync::Stalled { behind: 0, reason };
+    }
     if checkout::tip_of(primary, &tracking).is_empty() {
         return TargetSync::Unpublished;
     }

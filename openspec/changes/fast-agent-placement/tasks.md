@@ -5,7 +5,8 @@
 - [x] 1.3 `landing::sync_target` leaves a target checked out in the primary checkout alone and reports it.
 - [x] 1.4 TUI: `spawn_target_sync` on `TARGET_SYNC` (3 min, and on open), one per primary; toast once per fall behind.
 - [x] 1.5 Tests: placement does not fetch and a sync brings the next agent up to date; a non-isolating project is never synced; a checked-out target is left for the pull; the toast is said once until caught up.
-- [x] 1.6 Reword the invariant and its tests in `docs/architecture/invariants.md`.
+- [x] 1.6 Fetch into `refs/uze/sync/<target>` without the repository lock (`uze_git::fetch_private`), taking the lock only to move the tracking ref and fast-forward: under the lock, the evaluation's and every placement's `worktree prune` waited out the network every three minutes.
+- [x] 1.7 Reword the invariant and its tests in `docs/architecture/invariants.md`.
 
 ## 2. Slot choice and reuse
 

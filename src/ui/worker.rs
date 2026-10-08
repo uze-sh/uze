@@ -375,8 +375,7 @@ fn inspect_plugin(id: String, home: &UzeHome, sender: &Sender<WorkerResult>, mod
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.worker").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
         let result = answered_or(
             || {
                 tui_application(home)
@@ -404,8 +403,7 @@ fn inspect_marketplace_plugin(
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.worker").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
         let result = answered_or(
             || {
                 tui_application(home)
@@ -422,7 +420,7 @@ fn read_release_notes(version: String, home: &UzeHome, sender: &Sender<WorkerRes
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
+        let _span = tracing::info_span!(parent: &parent, "tui.release_notes").entered();
         let notes = answered_or(|| crate::self_update::release_notes(&home, &version), None);
         let _ = sender.send(WorkerResult::ReleaseNotesRead(version, notes));
     });
@@ -516,8 +514,7 @@ fn analyze_context(
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.worker").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
         let result = answered_or(
             || {
                 tui_application(home)
@@ -597,8 +594,7 @@ fn apply_context(
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     in_mutation_lane(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.worker").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
         let result = answered_or(
             || {
                 tui_application(home)
@@ -622,8 +618,7 @@ fn preview_profile(
     let (home, sender) = (home.clone(), sender.clone());
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.worker").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
         let result = answered_or(
             || {
                 tui_application(home)
@@ -643,8 +638,7 @@ fn update_preferences(id: String, preferences: Preferences, home: &UzeHome) {
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.worker").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
         let written = answered_or(
             || {
                 tui_application(home)
@@ -711,8 +705,7 @@ fn apply_profile(
     let (home, sender, context_root) = (home.clone(), sender.clone(), model.context_root.clone());
     let parent = tracing::Span::current();
     in_mutation_lane(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.worker").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
         let failed = format!("Applying \"{id}\" failed");
         let result = answered_or(
             || {
@@ -738,8 +731,7 @@ fn apply_profile(
 pub(crate) fn spawn_refresh(home: UzeHome, sender: Sender<WorkerResult>, context_root: PathBuf) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.refresh").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.refresh").entered();
         let result = answered_refresh(home, &context_root);
         let _ = sender.send(WorkerResult::Refreshed(result));
     });
@@ -761,8 +753,7 @@ pub(crate) fn spawn_refresh(home: UzeHome, sender: Sender<WorkerResult>, context
 pub(crate) fn spawn_startup(home: UzeHome, sender: Sender<WorkerResult>, context_root: PathBuf) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.startup").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.startup").entered();
         answered_or(
             || {
                 if let Ok(app) = tui_application(home.clone()) {
@@ -905,8 +896,7 @@ fn spawn_mutation(
 ) {
     let parent = tracing::Span::current();
     in_mutation_lane(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.mutation").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.mutation").entered();
         let result = answered_or(
             || {
                 tui_application(home.clone())
@@ -945,8 +935,7 @@ fn spawn_trust_sensitive(
 ) {
     let parent = tracing::Span::current();
     in_mutation_lane(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.trust_sensitive").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.trust_sensitive").entered();
         let outcome = answered_or(
             || {
                 Some(tui_application(home.clone()).and_then(|app| match grant {
@@ -1281,7 +1270,7 @@ pub(crate) fn open_link(
 ) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
+        let _span = tracing::info_span!(parent: &parent, "tui.open_url").entered();
         let opener = answered_or(|| open_in_browser(&url), None);
         answered(url, opener);
     });
@@ -1345,9 +1334,7 @@ fn open_in_browser(url: &str) -> Option<String> {
             // A launcher hands the URL over and exits at once; nobody is
             // waiting on it, so reap it off-thread rather than leaving a
             // zombie behind for as long as the TUI runs.
-            let parent = tracing::Span::current();
             thread::spawn(move || {
-                let _parent = parent.enter();
                 let _ = child.wait();
             });
             return Some(program.to_owned());

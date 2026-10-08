@@ -211,6 +211,44 @@ pub fn write_with_env(
     run(command, args)
 }
 
+/// Where [`fetch_private`] puts what it fetched: refs no other write in
+/// the workspace names, which is what lets that fetch skip the lock.
+pub const PRIVATE_REFS: &str = "refs/uze/";
+
+/// Fetches `source` from `remote` into `refs/uze/<name>` without the
+/// repository write lock, for a fetch that runs on a clock.
+///
+/// A fetch spends seconds on the network and an instant writing, and
+/// under the lock every write in the repository — a placement's prune, a
+/// delivery — waited out the seconds. What makes the lock unnecessary
+/// here is what the fetch writes: objects, which Git adds atomically and
+/// which nothing removes while they are fresh, and one ref nobody else
+/// writes. `FETCH_HEAD` and automatic maintenance, the two shared things a
+/// fetch would otherwise touch, are switched off. The caller moves the ref
+/// anyone else reads, under the lock, once this returns.
+pub fn fetch_private(
+    root: &Path,
+    remote: &str,
+    source: &str,
+    name: &str,
+) -> Result<Output, SpawnError> {
+    let refspec = format!("+{source}:{PRIVATE_REFS}{name}");
+    let args = [
+        "-c",
+        "gc.auto=0",
+        "-c",
+        "maintenance.auto=false",
+        "fetch",
+        "--quiet",
+        "--no-write-fetch-head",
+        "--no-tags",
+        "--",
+        remote,
+        &refspec,
+    ];
+    run(base_command(root, &args), &args)
+}
+
 /// Runs `body` with the repository write lock held throughout, so the
 /// writes it makes — through [`write`], which re-enters the lock on this
 /// thread — form one critical section: a prune, a name check and a
@@ -541,6 +579,55 @@ mod tests {
             )
             .unwrap()
             .is_success()
+        );
+    }
+
+    /// The fetch a clock runs never queues behind a write, and never
+    /// holds up one: that it skips the lock is its whole reason to exist.
+    #[test]
+    fn a_private_fetch_runs_while_another_holds_the_write_lock() {
+        let _environment = uze_testkit::env::scope();
+        let root = repository("git-private-fetch");
+        let remote = uze_testkit::temp::scratch("git-private-fetch-remote");
+        write(&remote, &["init", "-q", "--bare", "."])
+            .unwrap()
+            .successful()
+            .unwrap();
+        let remote_path = remote.to_str().unwrap();
+        write(&root, &["push", "--quiet", remote_path, "main"])
+            .unwrap()
+            .successful()
+            .unwrap();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let (taken, wait_taken) = std::sync::mpsc::channel::<()>();
+        let holder = {
+            let root = root.clone();
+            std::thread::spawn(move || {
+                locked(&root, DEFAULT_WRITE_TIMEOUT, || {
+                    taken.send(()).unwrap();
+                    held.recv().ok();
+                })
+                .unwrap();
+            })
+        };
+        wait_taken.recv().unwrap();
+
+        let fetched = fetch_private(&root, remote_path, "refs/heads/main", "sync/main").unwrap();
+
+        release.send(()).unwrap();
+        holder.join().unwrap();
+        assert!(fetched.is_success(), "{}", fetched.stderr);
+        assert_eq!(
+            read(&root, &["rev-parse", "refs/uze/sync/main"])
+                .unwrap()
+                .successful()
+                .unwrap()
+                .trim(),
+            read(&root, &["rev-parse", "main"])
+                .unwrap()
+                .successful()
+                .unwrap()
+                .trim()
         );
     }
 

@@ -97,6 +97,12 @@ macro_rules! background_pass {
     ($name:literal) => {
         $crate::telemetry::background::Pass::enter($name, ::tracing::debug_span!($name))
     };
+    ($name:literal, parent: $parent:expr) => {
+        $crate::telemetry::background::Pass::enter(
+            $name,
+            ::tracing::debug_span!(parent: $parent, $name),
+        )
+    };
 }
 pub(crate) use background_pass;
 

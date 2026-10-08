@@ -12,11 +12,12 @@
 //! captured pipeline. The vendor's own words are surfaced only when the
 //! command fails, as the tail of `failed_message`'s error.
 
-use std::ffi::OsStr;
+use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::mpsc;
+use std::sync::{LazyLock, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -70,7 +71,29 @@ pub(crate) fn is_cli_safe_token(value: &str) -> bool {
 /// `VENDOR_CLI_TIMEOUT` and a per-stream output cap so a hung or chatty
 /// vendor cannot hang UZE or exhaust memory.
 pub fn capture<S: AsRef<OsStr>>(program: &Path, home: &Path, args: &[S]) -> io::Result<Output> {
+    // Anything run outside `json` may change what an inspection answers.
+    forget_inspections_of(program);
     run_captured(program, Some(home), args, VENDOR_CLI_TIMEOUT)
+}
+
+/// How long an inspection verb's answer stands for the next identical
+/// question. One pass inspects every package a harness carries, and asked
+/// apart each one re-ran the same listing — a second or more of a vendor
+/// CLI starting up, and twelve when its cache was cold — per package. Short
+/// enough that an edit the operator makes by hand is seen on the next pass.
+const INSPECTION_STANDS_FOR: Duration = Duration::from_secs(5);
+
+type InspectionKey = (PathBuf, PathBuf, Vec<OsString>);
+type Inspection = (Instant, std::result::Result<serde_json::Value, String>);
+
+static INSPECTIONS: LazyLock<Mutex<HashMap<InspectionKey, Inspection>>> =
+    LazyLock::new(Mutex::default);
+
+fn forget_inspections_of(program: &Path) {
+    INSPECTIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .retain(|(asked, _, _), _| asked != program);
 }
 
 /// Runs a vendor's JSON-answering inspection verb. Anything but a successful
@@ -83,7 +106,34 @@ pub(crate) fn json<S: AsRef<OsStr>>(
     args: &[S],
     label: &str,
 ) -> std::result::Result<serde_json::Value, String> {
-    let output = capture(program, home, args)
+    let key = (
+        program.to_path_buf(),
+        home.to_path_buf(),
+        args.iter().map(|arg| arg.as_ref().to_owned()).collect(),
+    );
+    if let Some((at, answer)) = INSPECTIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&key)
+        && at.elapsed() < INSPECTION_STANDS_FOR
+    {
+        return answer.clone();
+    }
+    let answer = inspect_json(program, home, args, label);
+    INSPECTIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(key, (Instant::now(), answer.clone()));
+    answer
+}
+
+fn inspect_json<S: AsRef<OsStr>>(
+    program: &Path,
+    home: &Path,
+    args: &[S],
+    label: &str,
+) -> std::result::Result<serde_json::Value, String> {
+    let output = run_captured(program, Some(home), args, VENDOR_CLI_TIMEOUT)
         .map_err(|error| format!("failed to run `{label}`: {error}"))?;
     if !output.status.success() {
         return Err(format!(
@@ -365,6 +415,40 @@ mod tests {
         assert!(is_cli_safe_token("github"));
         assert!(is_cli_safe_token("flow:review"));
         assert!(is_cli_safe_token("my-server_1"));
+    }
+
+    /// One pass inspects every package with the same listing; asked twice
+    /// it runs once, and anything else run against that program — a
+    /// mutation — makes the next one run again.
+    // Unix only: the fake vendor is a `#!/bin/sh` script marked executable,
+    // which is the one program a test can write without building one.
+    #[cfg(unix)]
+    #[test]
+    fn an_inspection_is_answered_once_until_the_program_is_run_otherwise() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let scratch = uze_testkit::temp::scratch("vendor-inspection-memo");
+        let runs = scratch.join("runs");
+        let program = scratch.join("vendor");
+        std::fs::write(
+            &program,
+            format!("#!/bin/sh\necho x >> '{}'\necho '{{}}'\n", runs.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let count = || {
+            std::fs::read_to_string(&runs)
+                .unwrap_or_default()
+                .lines()
+                .count()
+        };
+
+        json(&program, &scratch, &["plugin", "list"], "vendor").unwrap();
+        json(&program, &scratch, &["plugin", "list"], "vendor").unwrap();
+        assert_eq!(count(), 1, "the second question is answered from the first");
+
+        capture(&program, &scratch, &["plugin", "add", "x"]).unwrap();
+        json(&program, &scratch, &["plugin", "list"], "vendor").unwrap();
+        assert_eq!(count(), 3, "a run of anything else asks again");
     }
 
     /// A non-success exit status without touching vendor installs: the

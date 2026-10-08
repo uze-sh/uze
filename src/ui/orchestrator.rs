@@ -470,7 +470,7 @@ pub(crate) fn attach_workspace(
     let (events, receiver) = mpsc::channel();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
+        let _span = tracing::debug_span!(parent: &parent, "tui.terminal_events").entered();
         let mut reader = BufReader::new(read_stream);
         while let Ok(Some(event)) = read_event(&mut reader) {
             if events.send(event).is_err() {
@@ -488,8 +488,7 @@ pub(crate) fn attach_workspace(
     thread::spawn({
         let home = home.clone();
         move || {
-            let _parent = parent.enter();
-            let _span = tracing::info_span!("tui.attach_workspace").entered();
+            let _span = tracing::info_span!(parent: &parent, "tui.attach_workspace").entered();
             while let Ok((root, origin, prompt)) = recorded_prompts.recv() {
                 let _ = tui_application(home.clone())
                     .and_then(|app| app.workspace().record_prompt(&root, &origin, &prompt));
@@ -507,8 +506,7 @@ pub(crate) fn attach_workspace(
         let home = home.clone();
         let mut layout = layout.clone();
         move || {
-            let _parent = parent.enter();
-            let _span = tracing::info_span!("tui.attach_workspace").entered();
+            let _span = tracing::info_span!(parent: &parent, "tui.attach_workspace").entered();
             while let Ok(shape) = remembered_layouts.recv() {
                 shape.apply_to(&mut layout);
                 let _ = tui_application(home.clone())

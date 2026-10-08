@@ -74,8 +74,13 @@ name and duration, because a routine refresh that started costing
 seconds is the one fact about it somebody should act on. A pass that is
 shown already says what it cost on its own close line.
 
-A worker thread in the TUI enters the span that started it, so a refresh
-is a child of the key that asked for it. `tests/architecture/
+A worker thread in the TUI opens its span as a child of the span that
+started it (`info_span!(parent: &parent, …)`, `background_pass!(…, parent:
+&parent)`), so a refresh is a child of the key that asked for it. It never
+*enters* that parent: a span's `time.busy` counts every thread inside it,
+and a gesture entered by the refresh it started read as seconds of a
+frozen screen that was never frozen — the terminal's event reader, entered
+for a whole session, made the attach span's busy time the session's. `tests/architecture/
 instrumentation.rs` fails by name for an application entry point without
 a span.
 
