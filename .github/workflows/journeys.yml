@@ -134,7 +134,7 @@ jobs:
         run: |
           echo "::notice title=Journeys ${{ matrix.platform }} ${{ matrix.shard }}/${{ matrix.of }} already proven::passed in ${PROVEN}"
           echo "Reused: nothing this slice reads changed since ${PROVEN}" >> "${GITHUB_STEP_SUMMARY}"
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         if: steps.proof.outputs.proven == ''
         with:
           toolchain: stable
