@@ -2603,10 +2603,10 @@ mod naming_tests {
         assert_eq!(task.label, "in place");
     }
 
-    /// The label is judged by the same vocabulary as a branch, so a
-    /// directory that declares none names nothing — repository or not.
+    /// The default convention applies without a manifest, and an agent in
+    /// the operator's checkout never changes that checkout's branch.
     #[test]
-    fn an_agent_in_the_root_of_a_project_that_names_nothing_is_refused() {
+    fn an_agent_in_the_root_without_a_manifest_takes_a_label() {
         let plain = uze_testkit::temp::scratch("naming-in-the-root-directory");
         let app = application("naming-in-the-root-home");
         let placed = app
@@ -2615,7 +2615,7 @@ mod naming_tests {
             .unwrap();
         let id = placed.placement.agent().as_str().to_owned();
 
-        let error = app
+        let named = app
             .workspace()
             .name_task(
                 Claim {
@@ -2625,10 +2625,10 @@ mod naming_tests {
                 },
                 "fix/not-mine",
             )
-            .unwrap_err()
-            .to_string();
+            .unwrap();
 
-        assert!(error.contains("does not name agent work"), "{error}");
+        assert_eq!(named.branch, None);
+        assert_eq!(named.label, "not mine");
         std::fs::remove_dir_all(plain).unwrap();
     }
 
@@ -2753,22 +2753,21 @@ mod naming_tests {
         assert_eq!(branch_of(&placed.checkout), before);
     }
 
-    /// A project that declares no vocabulary keeps exactly the behaviour it
-    /// had before naming existed.
+    /// A repository needs no `agents.yaml` for its isolated agents to take
+    /// conventional names.
     #[test]
-    fn a_project_that_names_nothing_refuses_and_says_why() {
+    fn an_isolated_agent_without_a_manifest_takes_a_conventional_name() {
         let repository = repository("naming-undeclared");
         let app = application("naming-undeclared");
         let placed = placed(&app, repository.root());
 
-        let error = app
+        let named = app
             .workspace()
             .name_task(placed.claim(), "fix/branch-naming")
-            .unwrap_err()
-            .to_string();
+            .unwrap();
 
-        assert!(error.contains("agents.yaml"), "{error}");
-        assert!(branch_of(&placed.checkout).starts_with("agent/"));
+        assert_eq!(named.branch.as_deref(), Some("fix/branch-naming"));
+        assert_eq!(branch_of(&placed.checkout), "fix/branch-naming");
     }
 
     /// The defect this fixes: with the branch renamed by hand, every later
@@ -2911,10 +2910,10 @@ mod derived_naming_tests {
         );
     }
 
-    /// A project that declares no vocabulary keeps exactly the behaviour it
-    /// had before any of this existed.
+    /// An undeclared vocabulary is conventional, so first-commit derivation
+    /// gives an otherwise unnamed worktree a readable branch.
     #[test]
-    fn a_project_that_names_nothing_is_left_alone() {
+    fn a_project_without_a_manifest_derives_a_conventional_name() {
         let (app, repository) = project("derive-undeclared", "  delivery: handoff\n");
         let root = repository.root().to_path_buf();
         let checkout = placed(&app, &root).checkout;
@@ -2924,13 +2923,9 @@ mod derived_naming_tests {
             .workspace()
             .evaluate_tasks(&root, std::slice::from_ref(&checkout));
 
-        assert!(
-            evaluation
-                .tasks
-                .last()
-                .unwrap()
-                .branch
-                .starts_with("agent/")
+        assert_eq!(
+            evaluation.tasks.last().unwrap().branch,
+            "feat/answer-ping-with-pong"
         );
     }
 

@@ -85,8 +85,9 @@ pub enum BranchVocabulary {
     /// — so a team that wants `ui` declares `ui` rather than mislabelling
     /// its work.
     Types(Vec<String>),
-    /// Undeclared: the generated identifier, which is what UZE did before
-    /// any of this existed.
+    /// Undeclared: the built-in conventional vocabulary. The declaration
+    /// remains absent from `agents.yaml`; this is the conventional default,
+    /// not configuration a project must repeat.
     #[default]
     Unset,
 }
@@ -144,19 +145,19 @@ impl BranchVocabulary {
             Self::Preset(BranchPreset::Gitflow) => {
                 GITFLOW.iter().map(|t| (*t).to_owned()).collect()
             }
-            Self::Preset(BranchPreset::Flat | BranchPreset::Agent) | Self::Unset => Vec::new(),
+            Self::Preset(BranchPreset::Flat | BranchPreset::Agent) => Vec::new(),
+            Self::Unset => CONVENTIONAL.iter().map(|t| (*t).to_owned()).collect(),
             Self::Types(types) => types.clone(),
         }
     }
 
-    /// Whether this project names its work at all. `agent` and an
-    /// undeclared vocabulary keep the generated identifier, which is the
-    /// behaviour every project had before this existed.
+    /// Whether this project names its work at all. `agent` is the one
+    /// explicit opt-out; an undeclared vocabulary is conventional.
     pub fn names_work(&self) -> bool {
         match self {
-            Self::Preset(BranchPreset::Agent) | Self::Unset => false,
+            Self::Preset(BranchPreset::Agent) => false,
             Self::Types(types) => !types.is_empty(),
-            Self::Preset(_) => true,
+            Self::Preset(_) | Self::Unset => true,
         }
     }
 
@@ -171,9 +172,8 @@ impl BranchVocabulary {
     pub fn spelled(&self) -> String {
         match self {
             Self::Preset(BranchPreset::Flat) => "a subject alone, with no type".to_owned(),
-            Self::Preset(BranchPreset::Agent) | Self::Unset => {
-                "the generated identifier".to_owned()
-            }
+            Self::Preset(BranchPreset::Agent) => "the generated identifier".to_owned(),
+            Self::Unset => CONVENTIONAL.join("|"),
             _ => self.types().join("|"),
         }
     }
@@ -527,37 +527,28 @@ impl WorktreePolicy {
             .is_some_and(|rest| rest.starts_with('/'))
     }
 
-    /// What the projected text tells an agent about naming its work, and
-    /// when.
+    /// What the projected text tells an agent about naming its work.
     ///
-    /// The moment is the agent's first action, and the clause is projected
-    /// first for the same reason: a name states the intention, which is the
-    /// one thing an agent knows before it has read anything. Every later
-    /// moment asks it to interrupt work already under way, and an
-    /// instruction that competes with work in progress is the one that gets
-    /// skipped.
-    ///
-    /// Empty for a project that names nothing, so a project that declared
-    /// no vocabulary projects exactly the bytes it projected before. The
-    /// vocabulary is spelled out rather than referred to: the instruction
-    /// an agent reads has to be the one its project will accept, and an
-    /// agent cannot open `agents.yaml` it was never told about.
+    /// An agent names itself as soon as the conversation gives it a clear
+    /// topic — normally from the first user message. Exploration need not
+    /// manufacture a name when the request is genuinely still vague. The
+    /// vocabulary is spelled out rather than referred to, because an agent
+    /// cannot open `agents.yaml` it was never told about.
     fn naming_clause(&self) -> String {
         if !self.branch.names_work() {
             return String::new();
         }
         format!(
-            "- Name the work as your first action, before reading a file, planning or editing: \
+            "- As soon as a user message gives the conversation a clear topic — normally the \
+             first message — name your work: \
              `uze agent work name <type>/<subject>`. Types this project accepts: `{types}`. The \
              subject is one or two words naming the intention, not a description of the task — \
              `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The \
-             request you were given is where the intention comes from, so nothing you read later \
-             makes the name easier to choose. Work that reaches a commit still unnamed is named \
-             by UZE from that commit's subject, which is a worse name than the one you would \
-             have chosen. Either way your branch is renamed, so ask Git for its name rather than \
-             remembering it; in the operator's checkout only your label changes. Name it again \
-             with the same command whenever the work turns out to be something else — the last \
-             name given is the one that stands.\n",
+             command always updates your label. In a checkout of your own it also renames your \
+             branch; in the operator's checkout only your label changes. Work that reaches a \
+             commit still unnamed is named by UZE from that commit's subject. Name it again with \
+             the same command whenever the work turns out to be something else — the last name \
+             given is the one that stands.\n",
             types = self.branch.spelled()
         )
     }
@@ -947,13 +938,11 @@ mod naming_tests {
         );
     }
 
-    /// `agent` and an undeclared vocabulary are the same answer: this
-    /// project does not name work, and every project had that behaviour
-    /// before any of this existed.
+    /// `agent` is an explicit opt-out; an undeclared vocabulary follows the
+    /// built-in conventional default.
     #[test]
-    fn a_project_that_names_nothing_refuses_every_name() {
+    fn only_an_explicit_opt_out_refuses_every_name() {
         for vocabulary in [
-            BranchVocabulary::Unset,
             BranchVocabulary::Preset(BranchPreset::Agent),
             BranchVocabulary::Types(Vec::new()),
         ] {
@@ -963,6 +952,10 @@ mod naming_tests {
                 Err(NameRefusal::NotDeclared)
             ));
         }
+        assert_eq!(
+            BranchVocabulary::Unset.accept("fix/branch-naming").unwrap(),
+            "fix/branch-naming"
+        );
     }
 
     #[test]
@@ -972,13 +965,13 @@ mod naming_tests {
         assert_eq!(label_of("agent/zulqgq"), "zulqgq");
     }
 
-    /// A project that declares no vocabulary must project exactly the bytes
-    /// it projected before this existed — otherwise every existing project
-    /// reports a stale region for a policy nobody changed.
+    /// Every agent UZE launches can name itself, including in a project
+    /// whose manifest says nothing about workspace policy.
     #[test]
-    fn a_project_that_names_nothing_projects_no_naming_clause() {
+    fn the_default_policy_projects_the_naming_clause() {
         let text = WorktreePolicy::default().instructions();
-        assert!(!text.contains("uze agent work name"), "{text}");
+        assert!(text.contains("uze agent work name"), "{text}");
+        assert!(text.contains("feat|fix"), "{text}");
     }
 
     /// The instruction an agent reads has to be the one its project will
@@ -996,12 +989,11 @@ mod naming_tests {
         assert!(text.contains("ui|fix"), "{text}");
     }
 
-    /// The moment is half the rule. A name is asked for while the agent
-    /// still has nothing to interrupt, so the clause has to be the first
-    /// thing the region asks for — an instruction read after the work
-    /// started is one weighed against the work.
+    /// Naming is prompted as soon as the conversation has a clear topic,
+    /// normally in the first user message, without inventing a name for a
+    /// genuinely vague request.
     #[test]
-    fn naming_is_the_first_thing_the_projected_text_asks_for() {
+    fn naming_happens_as_soon_as_a_topic_is_clear() {
         let policy = WorktreePolicy {
             default: Default::default(),
             branch: BranchVocabulary::Preset(BranchPreset::Conventional),
@@ -1013,16 +1005,16 @@ mod naming_tests {
             .find(|line| line.starts_with("- "))
             .expect("the region is a list");
         assert!(
+            first_bullet.contains("As soon as a user message gives the conversation a clear topic"),
+            "the clause must describe the moment: {first_bullet}"
+        );
+        assert!(
             first_bullet.contains("uze agent work name"),
-            "naming must be the first bullet: {first_bullet}"
+            "the clause must name the command: {first_bullet}"
         );
         assert!(
-            first_bullet.contains("first action"),
-            "the clause must state the moment, not only the command: {first_bullet}"
-        );
-        assert!(
-            !text.contains("before your first commit"),
-            "the old moment must not survive anywhere in the region: {text}"
+            !text.contains("first action"),
+            "the old compulsory moment must not survive: {text}"
         );
     }
 
@@ -1034,7 +1026,7 @@ mod naming_tests {
         let before = WorktreePolicy::default().region_identity();
         let after = WorktreePolicy {
             default: Default::default(),
-            branch: BranchVocabulary::Preset(BranchPreset::Conventional),
+            branch: BranchVocabulary::Types(vec!["ui".to_owned(), "fix".to_owned()]),
             ..WorktreePolicy::default()
         }
         .region_identity();

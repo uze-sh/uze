@@ -131,7 +131,7 @@ fn an_agent_started_by_hand_is_told_first_that_the_region_is_not_for_it() {
 }
 
 #[test]
-fn a_project_declaring_nothing_gets_no_region() {
+fn a_project_declaring_nothing_gets_the_conventional_region() {
     let (repository, project) = project_with_policy("worktree-absent", "");
     let application = app(repository.root());
 
@@ -139,7 +139,8 @@ fn a_project_declaring_nothing_gets_no_region() {
         .workspace()
         .sync_policy_region(&project)
         .unwrap();
-    assert!(!agents_md(&project).contains(worktree::POLICY_REGION_PREFIX));
+    assert!(agents_md(&project).contains(worktree::POLICY_REGION_PREFIX));
+    assert!(agents_md(&project).contains("uze agent work name"));
     let view = application.workspace().policy_region(&project).unwrap();
     assert!(view.completion.is_none());
     assert!(view.in_step);
@@ -274,10 +275,10 @@ fn editing_the_declaration_replaces_its_region_rather_than_drifting() {
     );
 }
 
-/// A policy taken back out of `agents.yaml` takes its region with it, the
-/// next time the workspace synchronizes.
+/// Removing a declaration restores the conventional region rather than
+/// leaving agents without their naming instruction.
 #[test]
-fn a_declaration_that_is_gone_takes_its_region_with_it() {
+fn a_declaration_that_is_gone_restores_the_default_region() {
     let (repository, project) = project_with_policy("worktree-withdrawn", POLICY_MANIFEST);
     let application = app(repository.root());
     application
@@ -291,8 +292,9 @@ fn a_declaration_that_is_gone_takes_its_region_with_it() {
         .sync_policy_region(&project)
         .unwrap()
         .unwrap();
-    assert_eq!(region.removed_superseded.len(), 1, "{region:?}");
-    assert!(!agents_md(&project).contains(worktree::POLICY_REGION_PREFIX));
+    assert_eq!(region.state, AttachmentState::Matched, "{region:?}");
+    assert!(agents_md(&project).contains(worktree::POLICY_REGION_PREFIX));
+    assert!(agents_md(&project).contains("feat|fix"));
 }
 
 // --- the package manager leaves it alone ----------------------------------

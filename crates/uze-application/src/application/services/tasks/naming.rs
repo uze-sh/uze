@@ -137,7 +137,7 @@ pub struct NamedTask {
 pub(super) fn refusal_words(refusal: &NameRefusal, vocabulary: &BranchVocabulary) -> String {
     match refusal {
         NameRefusal::NotDeclared => {
-            "this project does not name agent work: declare `workspace.branch` in agents.yaml"
+            "this project explicitly disables agent work names with `workspace.branch: agent`"
                 .to_owned()
         }
         NameRefusal::UnknownType { found, .. } => format!(
