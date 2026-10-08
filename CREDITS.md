@@ -245,7 +245,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `js-sys` | 0.3.105 | MIT OR Apache-2.0 |
 | `kasuari` | 0.4.12 | MIT OR Apache-2.0 |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 |
-| `libc` | 0.2.189 | MIT OR Apache-2.0 |
+| `libc` | 0.2.190 | MIT OR Apache-2.0 |
 | `libm` | 0.2.16 | MIT |
 | `line-clipping` | 0.3.8 | MIT OR Apache-2.0 |
 | `linked-hash-map` | 0.5.6 | MIT OR Apache-2.0 |
@@ -260,7 +260,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `mio` | 1.2.3 | MIT |
 | `miow` | 0.6.1 | MIT OR Apache-2.0 |
 | `nix` | 0.28.0 | MIT |
-| `noyalib` | 0.0.51 | MIT OR Apache-2.0 |
+| `noyalib` | 0.0.52 | MIT OR Apache-2.0 |
 | `nu-ansi-term` | 0.50.3 | MIT |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
@@ -340,7 +340,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `thread_local` | 1.1.10 | MIT OR Apache-2.0 |
 | `time` | 0.3.55 | MIT OR Apache-2.0 |
 | `time-core` | 0.1.9 | MIT OR Apache-2.0 |
-| `tokio` | 1.53.1 | MIT |
+| `tokio` | 1.53.2 | MIT |
 | `tokio-macros` | 2.7.2 | MIT |
 | `tokio-util` | 0.7.19 | MIT |
 | `toml_datetime` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
