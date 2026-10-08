@@ -305,10 +305,13 @@ fn task_views(
     } else {
         Forge::default()
     };
+    // Every recorded agent is drawn, closed ones included, on every pass:
+    // one read of the refs answers what each would have asked Git apart.
+    let tips = checkout::BranchTips::read(primary);
     store
         .agents
         .iter()
-        .filter_map(|agent| AgentView::from_agent(primary, agent, completion, target, forge))
+        .filter_map(|agent| AgentView::from_agent(primary, &tips, agent, completion, target, forge))
         .collect()
 }
 

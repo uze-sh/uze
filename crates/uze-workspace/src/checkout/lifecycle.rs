@@ -96,6 +96,7 @@ pub struct Collected {
 /// Both are safe on their own; taking the write lock once around them is
 /// what keeps a branch from being pruned in the moment a concurrent
 /// acquisition is creating it.
+#[tracing::instrument(name = "checkout.collect", level = "debug", skip_all)]
 pub fn collect(
     primary: &Path,
     store: &AgentStore,
@@ -134,6 +135,7 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         .filter_map(|agent| agent.isolation())
         .map(|isolation| isolation.branch.as_str())
         .collect();
+    let tips = BranchTips::read(primary);
     let mut removed = Vec::new();
     // The prefix is no longer the whole answer: a named task's branch left
     // it behind (`worktree::BranchVocabulary`), and a branch nobody can
@@ -146,7 +148,12 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         }
     }
     for branch in candidates {
-        if checked_out.contains(&branch) || live.contains(&branch.as_str()) {
+        // A record outlives its branch: one already gone has nothing left
+        // to delete, and asking about it by name costs a process apiece.
+        if !tips.contains(&branch)
+            || checked_out.contains(&branch)
+            || live.contains(&branch.as_str())
+        {
             continue;
         }
         // A subagent's branch is done once its agent's branch has it.
@@ -156,7 +163,7 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
             .filter_map(Agent::isolation)
             .find(|isolation| isolation.branch == branch)
             .map_or(target, |isolation| isolation.target.as_str());
-        if is_integrated(primary, into, &branch)
+        if is_integrated_among(&tips, primary, into, &branch)
             && git(primary, &["branch", "-D", "--", &branch]).is_ok()
         {
             removed.push(branch);
@@ -185,14 +192,67 @@ pub fn trim_free_slots(
     for (kept, (modified, slot)) in free.into_iter().enumerate() {
         let idle = now.duration_since(modified).unwrap_or_default();
         if kept < pool.spare && idle < pool.idle {
+            // A spare is what the next placement switches, and one whose
+            // files were written in the same second as its index reads as
+            // possibly changed until the index is written again: every
+            // status hashes every file, and the switch does too. Written
+            // here, where nobody waits for it, instead of by the placement
+            // that would otherwise pay for it.
+            let _ = git(&slot.path, &["update-index", "-q", "--refresh"]);
             continue;
         }
-        let path = slot.path.to_string_lossy().into_owned();
-        if git(primary, &["worktree", "remove", "--", &path]).is_ok() {
+        if set_aside(primary, &slot.path) {
             removed.push(slot.id);
         }
     }
     removed
+}
+
+/// Where a collected slot waits for its bytes to be deleted: inside the
+/// isolation directory, so the move is a rename on the same filesystem,
+/// and one level down, so it is never read as a slot.
+pub(super) const TRASH_DIRECTORY: &str = ".trash";
+
+/// Takes a free slot out of the pool in the time a rename takes, leaving
+/// its bytes for [`empty_trash`].
+///
+/// A slot can hold gigabytes of build output, and deleting them under the
+/// repository lock held every placement in the project for as long as the
+/// disk took. Moved aside, the directory is gone from Git's registry once
+/// `prune` finds its path empty, and what is left is a plain directory
+/// nothing refers to. Asked again first, because the slot was read as
+/// clean before this and `worktree remove` used to refuse a tree that
+/// became dirty since; a rename has no such check of its own. Where the
+/// rename is refused — a file held open, on a platform that forbids moving
+/// it — the slot is removed in place, as it always was.
+pub(super) fn set_aside(primary: &Path, slot: &Path) -> bool {
+    if holds_uncommitted_work(slot) {
+        return false;
+    }
+    let trash = primary.join(WORKTREES_DIRECTORY).join(TRASH_DIRECTORY);
+    let destination = trash.join(slot_name(slot));
+    let moved = fs::create_dir_all(&trash).is_ok()
+        && !destination.exists()
+        && fs::rename(slot, &destination).is_ok();
+    if moved {
+        return git(primary, &["worktree", "prune"]).is_ok();
+    }
+    let path = slot.to_string_lossy().into_owned();
+    git(primary, &["worktree", "remove", "--", &path]).is_ok()
+}
+
+/// Deletes what [`trim_free_slots`] set aside, with no lock held: nothing
+/// refers to it any more, and a removal the process did not live to finish
+/// is finished by the next one.
+#[tracing::instrument(name = "checkout.empty_trash", level = "debug", skip_all)]
+pub fn empty_trash(primary: &Path) {
+    let trash = primary.join(WORKTREES_DIRECTORY).join(TRASH_DIRECTORY);
+    let Ok(entries) = fs::read_dir(&trash) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let _ = fs::remove_dir_all(entry.path());
+    }
 }
 
 /// Ends `task` because nothing is in front of its checkout any more: the

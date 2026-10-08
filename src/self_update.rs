@@ -140,9 +140,9 @@ pub(crate) fn watch(home: UzeHome) {
     let releases = Published::current();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
         loop {
-            let notice = pass(&home, policy, this.as_deref(), &releases, unix_now(), false);
+            let notice = tracing::debug_span!(parent: &parent, "self_update.watch")
+                .in_scope(|| pass(&home, policy, this.as_deref(), &releases, unix_now(), false));
             publish(notice);
             thread::sleep(CHECK_EVERY);
         }

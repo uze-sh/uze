@@ -114,3 +114,33 @@ fn every_application_entry_point_is_a_span() {
         missing.join("\n")
     );
 }
+
+/// A thread never enters the span that started it: `time.busy` counts every
+/// thread inside a span, so a gesture its own refresh entered read as
+/// seconds of a frozen screen, and the attach span, entered by the
+/// terminal's event reader, as the whole session. A thread opens its own
+/// span with `parent: &parent` instead, which keeps the tree and charges
+/// the time to the work that took it.
+#[test]
+fn no_thread_enters_the_span_that_started_it() {
+    let mut files = Vec::new();
+    collect_rust_files(&repository_root().join("src"), &mut files);
+    collect_rust_files(&repository_root().join("crates"), &mut files);
+    files.sort();
+    let mut entered = Vec::new();
+    for path in files {
+        let source = fs::read_to_string(&path).expect("source");
+        let relative = path.strip_prefix(repository_root()).unwrap_or(&path);
+        for (index, line) in strip_test_modules(&source).lines().enumerate() {
+            if line.contains("parent.enter()") {
+                entered.push(format!("{}:{}", relative.display(), index + 1));
+            }
+        }
+    }
+    assert!(
+        entered.is_empty(),
+        "open the thread's own span with `info_span!(parent: &parent, …)` or \
+         `background_pass!(…, parent: &parent)` instead of entering the parent:\n{}",
+        entered.join("\n")
+    );
+}

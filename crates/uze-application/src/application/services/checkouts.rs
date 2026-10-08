@@ -72,11 +72,24 @@ impl Workspace<'_> {
         let store = task::load(&self.0.home, &primary).unwrap_or_default();
         let accounted = checkout::account(&primary, &self.harness_worktree_dirs());
         let others: Vec<PathBuf> = accounted.iter().map(|found| found.path.clone()).collect();
+        // Measured side by side: a walk is one system call per file, and a
+        // project's checkouts hold hundreds of thousands of them between
+        // their builds. One after another, the view waited for the sum.
+        let measured: Vec<(u64, Option<SystemTime>)> = std::thread::scope(|scope| {
+            let walks: Vec<_> = accounted
+                .iter()
+                .map(|found| scope.spawn(|| measure(&found.path, &others)))
+                .collect();
+            walks
+                .into_iter()
+                .map(|walk| walk.join().unwrap_or_default())
+                .collect()
+        });
         let checkouts: Vec<CheckoutView> = accounted
             .iter()
-            .map(|found| {
+            .zip(measured)
+            .map(|(found, (bytes, last_changed))| {
                 let facts = Facts::read(&target, found, presence);
-                let (bytes, last_changed) = measure(&found.path, &others);
                 CheckoutView {
                     name: display_name(&primary, &found.path),
                     path: found.path.clone(),
@@ -324,16 +337,20 @@ fn measure(root: &Path, others: &[PathBuf]) -> (u64, Option<SystemTime>) {
             continue;
         };
         for entry in entries.flatten() {
-            let path = entry.path();
-            let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            // `DirEntry::metadata` never follows a link, like
+            // `symlink_metadata`, without building the path to ask it.
+            let Ok(metadata) = entry.metadata() else {
                 continue;
             };
             bytes += allocated(&metadata);
             if let Ok(modified) = metadata.modified() {
                 newest = Some(newest.map_or(modified, |seen| seen.max(modified)));
             }
-            if metadata.is_dir() && !others.contains(&path) {
-                pending.push(path);
+            if metadata.is_dir() {
+                let path = entry.path();
+                if !others.contains(&path) {
+                    pending.push(path);
+                }
             }
         }
     }

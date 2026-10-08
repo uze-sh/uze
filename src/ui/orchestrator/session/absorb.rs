@@ -290,6 +290,42 @@ impl Attach<'_> {
             // a relaunch needs the answer.
             spawn_conversation_refresh(self.home, agent_contexts(&self.model, &self.identities));
         }
+        if self
+            .model
+            .remembered
+            .last_target_sync
+            .is_none_or(|last| last.elapsed() >= TARGET_SYNC)
+        {
+            self.model.remembered.last_target_sync = Some(Instant::now());
+            spawn_target_sync(
+                self.home,
+                self.model.space_directories(&self.identities),
+                self.channels.target_syncs.sender.clone(),
+            );
+        }
+    }
+
+    /// What bringing a target in line with its remote could not do, said
+    /// when the project falls behind and not again until it has caught up:
+    /// the remote moving further is the same news, and the operator is the
+    /// one who can unblock the fast-forward.
+    pub(super) fn absorb_target_syncs(&mut self) {
+        while let Ok(report) = self.channels.target_syncs.receiver.try_recv() {
+            let behind = &mut self.model.remembered.target_sync_behind;
+            let Some(concern) = report.concern else {
+                behind.remove(&report.project);
+                continue;
+            };
+            if !behind.insert(report.project) {
+                continue;
+            }
+            self.model.raise_toast(
+                ToastKind::Warned,
+                "New agents start behind the remote",
+                concern,
+                None,
+            );
+        }
     }
 
     /// What the Git badge, the release notes, the commit detail and the

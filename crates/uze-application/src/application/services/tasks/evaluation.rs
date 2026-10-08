@@ -60,9 +60,13 @@ impl Workspace<'_> {
                     );
                 }
             }
-            Ok(task_views(&primary, store, completion, &target))
+            // The views are built from this copy once the lock is released:
+            // they read Git for every recorded agent, closed ones included,
+            // and inside the lock that held every placement and delivery in
+            // the project behind a pass that only reads.
+            Ok(store.clone())
         });
-        let (tasks, recovery) = match evaluated {
+        let (recorded, recovery) = match evaluated {
             Ok(answered) => answered,
             Err(error) => {
                 return Evaluation {
@@ -71,8 +75,11 @@ impl Workspace<'_> {
                 };
             }
         };
-        let mut evaluation = Evaluation {
-            tasks,
+        let recorded = self
+            .adopt_observed_requests(&primary, &ask_the_remote)
+            .unwrap_or(recorded);
+        Evaluation {
+            tasks: task_views(&primary, &recorded, completion, &target),
             notices,
             unreadable: None,
             recovered: recovery.set_aside.map(|set_aside| {
@@ -81,35 +88,25 @@ impl Workspace<'_> {
                     set_aside.path.display()
                 )
             }),
-        };
-        self.adopt_observed_requests(
-            &primary,
-            completion,
-            &target,
-            &ask_the_remote,
-            &mut evaluation,
-        );
-        evaluation
+        }
     }
 
     /// Asks the remote about each task's request with the document
-    /// unlocked, then takes the lock once to write the answers down and
-    /// re-read the views, so a request discovered here is in the answer
-    /// this pass gives rather than in the next one's.
+    /// unlocked, then takes the lock once to write the answers down,
+    /// answering with the records as written so a request discovered here
+    /// is in the views this pass gives rather than in the next one's.
+    /// `None` when nothing was asked or nothing could be written.
     pub(super) fn adopt_observed_requests(
         &self,
         primary: &Path,
-        completion: CompletionBehavior,
-        target: &str,
         asked: &[(AgentId, Isolation)],
-        evaluation: &mut Evaluation,
-    ) {
+    ) -> Option<AgentStore> {
         let observed: Vec<(&(AgentId, Isolation), landing::RequestObservation)> = asked
             .iter()
             .map(|asked| (asked, landing::observe_request(primary, &asked.1)))
             .collect();
         if observed.is_empty() {
-            return;
+            return None;
         }
         let adopted = task::locked(&self.0.home, primary, |store| {
             for ((id, asked), observation) in &observed {
@@ -127,16 +124,17 @@ impl Workspace<'_> {
                     landing::adopt_request(record, observation);
                 }
             }
-            Ok(task_views(primary, store, completion, target))
+            Ok(store.clone())
         });
         match adopted {
-            Ok(tasks) => evaluation.tasks = tasks,
+            Ok(recorded) => Some(recorded),
             // The pass itself stands — its states were written, and the
             // views already say them. What is lost is a request number the
             // next pass asks for again, which is not worth a notice in an
             // agent's pane, the only channel an evaluation has.
             Err(error) => {
-                tracing::warn!(%error, "the remote's answer about open requests was not recorded")
+                tracing::warn!(%error, "the remote's answer about open requests was not recorded");
+                None
             }
         }
     }

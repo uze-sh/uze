@@ -102,6 +102,7 @@ impl Workspace<'_> {
         let mut report = DeliveryReport {
             task: AgentView::from_agent(
                 primary,
+                &checkout::BranchTips::read(primary),
                 &agent,
                 policy.completion,
                 &target_of(primary, policy),
@@ -182,6 +183,7 @@ impl Workspace<'_> {
         Some(DeliveryReport {
             task: AgentView::from_agent(
                 primary,
+                &checkout::BranchTips::read(primary),
                 agent,
                 policy.completion,
                 &target_of(primary, policy),

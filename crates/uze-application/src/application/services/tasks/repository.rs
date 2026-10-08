@@ -34,6 +34,7 @@ impl Workspace<'_> {
         let store = task::load(&self.0.home, primary).ok()?;
         AgentView::from_agent(
             primary,
+            &checkout::BranchTips::read(primary),
             store.agent(id)?,
             policy.completion,
             &target,

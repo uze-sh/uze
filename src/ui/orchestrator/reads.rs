@@ -54,8 +54,7 @@ pub(super) fn spawn_support_refresh(
     let support_home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.support_refresh");
+        let _pass = crate::telemetry::background_pass!("tui.support_refresh", parent: &parent);
         let support = answered_or(
             || {
                 crate::ui::tui_application(support_home)
@@ -92,8 +91,7 @@ pub(super) fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAge
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.conversation_refresh");
+        let _pass = crate::telemetry::background_pass!("tui.conversation_refresh", parent: &parent);
         let Ok(app) = tui_application(home) else {
             return;
         };
@@ -135,8 +133,7 @@ pub(super) fn spawn_policy_region_sync(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.policy_region_sync");
+        let _pass = crate::telemetry::background_pass!("tui.policy_region_sync", parent: &parent);
         let Ok(app) = tui_application(home) else {
             return;
         };
@@ -169,6 +166,40 @@ pub(super) fn spawn_policy_region_sync(
     });
 }
 
+/// Brings each project's target in line with its remote, off the frame:
+/// a fetch is a network round trip. One answer per project, however many
+/// of the directories belong to it.
+pub(super) fn spawn_target_sync(
+    home: &UzeHome,
+    directories: Vec<PathBuf>,
+    sender: mpsc::Sender<TargetSyncReport>,
+) {
+    if directories.is_empty() {
+        return;
+    }
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.target_sync", parent: &parent);
+        let Ok(app) = tui_application(home) else {
+            return;
+        };
+        let workspace = app.workspace();
+        let mut synced = std::collections::BTreeSet::new();
+        for directory in directories {
+            let Some(primary) = workspace.primary_of(&directory) else {
+                continue;
+            };
+            if !synced.insert(primary.clone()) {
+                continue;
+            }
+            if let Some(report) = workspace.sync_target(&primary) {
+                let _ = sender.send(report);
+            }
+        }
+    });
+}
+
 /// A project's gates this machine's shell has no spelling for, and the
 /// spelling they lack.
 pub(super) struct UnspelledGates {
@@ -191,8 +222,7 @@ pub(super) fn spawn_unspelled_gates(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.unspelled_gates");
+        let _pass = crate::telemetry::background_pass!("tui.unspelled_gates", parent: &parent);
         let Ok(app) = tui_application(home) else {
             return;
         };
@@ -308,8 +338,7 @@ pub(super) fn spawn_preserved_sweep(home: &UzeHome, sender: mpsc::Sender<Preserv
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.preserved_sweep");
+        let _pass = crate::telemetry::background_pass!("tui.preserved_sweep", parent: &parent);
         let work = answered_or(
             || {
                 crate::ui::tui_application(home)
@@ -333,8 +362,7 @@ pub(super) fn spawn_task_evaluation(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.task_evaluation");
+        let _pass = crate::telemetry::background_pass!("tui.task_evaluation", parent: &parent);
         // Every path out of here answers, including the ones that found
         // nothing: a request that returns in silence never releases its
         // key, and the directory is then never evaluated again.
@@ -379,8 +407,7 @@ pub(super) fn spawn_delivery(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.delivery").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.delivery").entered();
         // Every path out of here answers, including the ones that
         // delivered nothing: the reservation this was started under is
         // released on arrival, so a thread that returns in silence leaves
@@ -467,8 +494,7 @@ pub(super) fn spawn_task_mutation(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.task_mutation").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.task_mutation").entered();
         // Every path answers: the reservation that stops a second Enter
         // from starting a second removal is released nowhere else.
         let outcome = answered_or(
@@ -507,8 +533,7 @@ pub(super) fn spawn_checkouts(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.checkouts_read");
+        let _pass = crate::telemetry::background_pass!("tui.checkouts_read", parent: &parent);
         let view = answered_or(
             || {
                 tui_application(home)
@@ -538,8 +563,7 @@ pub(super) fn spawn_checkout_change(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.checkout_change").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.checkout_change").entered();
         let failed = |name: &str| format!("changing {name} failed");
         let outcome = answered_or(
             || {
@@ -647,8 +671,7 @@ pub(super) fn spawn_git_read(
 ) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.git_read");
+        let _pass = crate::telemetry::background_pass!("tui.git_read", parent: &parent);
         let started = Instant::now();
         let answer = answered_or(
             || {
@@ -701,8 +724,7 @@ pub(super) fn spawn_release_notes(
 ) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.release_notes").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.release_notes").entered();
         let notes = crate::self_update::release_notes(&home, &version);
         let _ = sender.send(ReleaseNotesResolution { version, notes });
     });
@@ -717,8 +739,7 @@ pub(super) fn spawn_commit_detail(
 ) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.commit_detail").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.commit_detail").entered();
         let detail = answered_or(|| code::commit_detail(&WorkspaceHost, &cwd, &hash), None);
         let _ = sender.send(CommitDetailResolution {
             hash,
@@ -803,12 +824,12 @@ pub(super) fn spawn_agent_placement(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
         // What was asked for, beside how it was answered: the modal that
         // takes the pick is not a gesture of its own (`Attach::press`
         // resolves it inside its own guard), so this span is where the
         // journal says which agent, on which harness, and from where.
         let _span = tracing::info_span!(
+            parent: &parent,
             "tui.agent_placement",
             label = %label,
             asked = request.name(),
@@ -879,8 +900,7 @@ pub(super) fn spawn_occupancy_reconcile(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.occupancy_reconcile");
+        let _pass = crate::telemetry::background_pass!("tui.occupancy_reconcile", parent: &parent);
         let reconciliation = answered_or(
             || {
                 tui_application(home)
@@ -958,8 +978,7 @@ pub(super) fn spawn_diff_read(
 ) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.code_diff_read");
+        let _pass = crate::telemetry::background_pass!("tui.code_diff_read", parent: &parent);
         let silence = code::DiffAnswer::failed(&request, "reading the diff failed".to_owned());
         let answer = answered_or(
             || code::CodeView::read_diff(&WorkspaceHost, &root, request),
@@ -976,8 +995,7 @@ pub(super) fn spawn_changes_refresh(
 ) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.code_changes_refresh");
+        let _pass = crate::telemetry::background_pass!("tui.code_changes_refresh", parent: &parent);
         let silence =
             code::RefreshedChanges::failed(placement.clone(), "reading the changes".to_owned());
         let refreshed = answered_or(
@@ -1029,8 +1047,7 @@ pub(super) struct MeasureResolution {
 pub(super) fn spawn_artifacts_read(root: PathBuf, sender: mpsc::Sender<ArtifactsResolution>) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.architect_artifacts");
+        let _pass = crate::telemetry::background_pass!("tui.architect_artifacts", parent: &parent);
         let silence = architect::ArtifactsAnswer {
             branch: String::new(),
             artifacts: architect::Artifacts::Nothing {
@@ -1058,8 +1075,7 @@ pub(super) fn spawn_spec_summary(
 ) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.spec_summary");
+        let _pass = crate::telemetry::background_pass!("tui.spec_summary", parent: &parent);
         let summary = answered_or(
             || spec::summary(&WorkspaceHost, &cwd, target.as_deref()),
             None,
@@ -1076,8 +1092,7 @@ pub(super) fn spawn_spec_read(home: &UzeHome, root: PathBuf, sender: mpsc::Sende
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.spec_read");
+        let _pass = crate::telemetry::background_pass!("tui.spec_read", parent: &parent);
         let silence = spec::SpecAnswer {
             root: root.clone(),
             branch: String::new(),
@@ -1105,8 +1120,7 @@ pub(super) fn spawn_spec_read(home: &UzeHome, root: PathBuf, sender: mpsc::Sende
 pub(super) fn spawn_code_measure(root: PathBuf, sender: mpsc::Sender<MeasureResolution>) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.code_measure");
+        let _pass = crate::telemetry::background_pass!("tui.code_measure", parent: &parent);
         let measure = answered_or(|| code::measure(&WorkspaceHost, &root).ok(), None);
         let _ = sender.send(MeasureResolution { root, measure });
     });
@@ -1131,8 +1145,7 @@ pub(super) fn spawn_prompt_history(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _pass = crate::telemetry::background_pass!("tui.prompt_history");
+        let _pass = crate::telemetry::background_pass!("tui.prompt_history", parent: &parent);
         let entries = answered_or(
             || {
                 tui_application(home)
@@ -1156,8 +1169,7 @@ pub(super) fn spawn_clear_prompt_history(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
-        let _span = tracing::info_span!("tui.clear_prompt_history").entered();
+        let _span = tracing::info_span!(parent: &parent, "tui.clear_prompt_history").entered();
         let entries = answered_or(
             || {
                 tui_application(home)

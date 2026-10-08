@@ -19,6 +19,7 @@ pub struct Reconciliation {
 /// (parked when they hold work), marks tasks without a checkout from where
 /// their branch stands, and prunes Git's registry only after every
 /// directory has been looked at.
+#[tracing::instrument(name = "checkout.reconcile", level = "debug", skip_all)]
 pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconciliation {
     let mut report = Reconciliation::default();
     let registered = isolated_checkouts(primary);

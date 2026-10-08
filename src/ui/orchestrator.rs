@@ -34,8 +34,8 @@ use std::{
 use uze_application::AgentIdentity;
 use uze_application::path::Canonical as _;
 use uze_application::{
-    AgentView, CompletionBehavior, DeliveryOutcome, DeliveryReport, Evaluation, UpstreamSync,
-    WorkStateView,
+    AgentView, CompletionBehavior, DeliveryOutcome, DeliveryReport, Evaluation, TargetSyncReport,
+    UpstreamSync, WorkStateView,
 };
 use uze_application::{Result, UzeError, UzeHome};
 use uze_extensions::{
@@ -235,6 +235,12 @@ pub(crate) enum WorkspaceExit {
 /// pane went quiet — a task delivered from another client, a branch
 /// integrated by hand, a checkout removed.
 const TASK_REFRESH: Duration = Duration::from_secs(20);
+
+/// How often each visible project's target is brought in line with its
+/// remote, and therefore how far behind the team a new agent can start.
+/// A network round trip, so far less often than [`TASK_REFRESH`]; a
+/// delivery fetches for itself and never trusts this one.
+const TARGET_SYNC: Duration = Duration::from_secs(3 * 60);
 
 /// The widest a notice may draw in the header. Past this it is elided:
 /// the chip shares one row with the tabs, and a message that pushes them
@@ -464,7 +470,7 @@ pub(crate) fn attach_workspace(
     let (events, receiver) = mpsc::channel();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _parent = parent.enter();
+        let _span = tracing::debug_span!(parent: &parent, "tui.terminal_events").entered();
         let mut reader = BufReader::new(read_stream);
         while let Ok(Some(event)) = read_event(&mut reader) {
             if events.send(event).is_err() {
@@ -482,8 +488,7 @@ pub(crate) fn attach_workspace(
     thread::spawn({
         let home = home.clone();
         move || {
-            let _parent = parent.enter();
-            let _span = tracing::info_span!("tui.attach_workspace").entered();
+            let _span = tracing::info_span!(parent: &parent, "tui.attach_workspace").entered();
             while let Ok((root, origin, prompt)) = recorded_prompts.recv() {
                 let _ = tui_application(home.clone())
                     .and_then(|app| app.workspace().record_prompt(&root, &origin, &prompt));
@@ -501,8 +506,7 @@ pub(crate) fn attach_workspace(
         let home = home.clone();
         let mut layout = layout.clone();
         move || {
-            let _parent = parent.enter();
-            let _span = tracing::info_span!("tui.attach_workspace").entered();
+            let _span = tracing::info_span!(parent: &parent, "tui.attach_workspace").entered();
             while let Ok(shape) = remembered_layouts.recv() {
                 shape.apply_to(&mut layout);
                 let _ = tui_application(home.clone())
@@ -1303,6 +1307,8 @@ struct Channels {
     code_measures: Answers<MeasureResolution>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
     policy_regions: Answers<PolicyRegionResolution>,
+    /// Bringing each project's target in line with its remote.
+    target_syncs: Answers<TargetSyncReport>,
     /// A project's gates this machine cannot run, read where it opens.
     unspelled_gates: Answers<UnspelledGates>,
     /// The names a harness launched through a shim runs under, asked once.
@@ -1425,6 +1431,10 @@ struct Remembered {
     /// these the moment they land.
     task_name_adoptions: BTreeMap<TabId, String>,
     last_task_refresh: Option<Instant>,
+    last_target_sync: Option<Instant>,
+    /// Projects whose target sync last said new agents start behind, so
+    /// it is said once rather than on every pass.
+    target_sync_behind: BTreeSet<PathBuf>,
     /// Tasks a delivery is in flight for.
     delivery_pending: BTreeSet<String>,
     /// Tasks a finish or a discard is in flight for. Its own set rather

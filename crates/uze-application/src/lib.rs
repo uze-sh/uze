@@ -11,7 +11,8 @@ pub use application::services::{
     CheckoutRefusal, CheckoutView, CheckoutsView, CleanUp, DeclaredDirectory, DeliveryOutcome,
     DeliveryPolicyView, DeliveryReport, Evaluation, JoinedWork, KeptCheckout, NamedTask, Placement,
     PlacementKind, PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, RemovedCheckout,
-    SplitWork, SubagentCheckout, UpstreamSync, WorkStateView, WorkspaceEntry, project_artifacts,
+    SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
+    project_artifacts,
 };
 
 /// Types the read models above are made of. Presentation consumes these

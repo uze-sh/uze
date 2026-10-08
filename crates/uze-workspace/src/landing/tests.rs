@@ -558,6 +558,7 @@ fn push_from(repository: &Repository, other: &Path, file: &str) -> String {
 fn the_local_target_is_fast_forwarded_onto_the_remotes() {
     let (repository, other) = published("landing-sync");
     let primary = repository.root();
+    repository.git(&["switch", "--quiet", "-c", "elsewhere"]);
     let pushed = push_from(&repository, &other, "merged-by-someone-else.rs");
 
     assert_eq!(
@@ -566,14 +567,33 @@ fn the_local_target_is_fast_forwarded_onto_the_remotes() {
     );
     assert_eq!(tip_of(primary, TARGET), pushed);
     assert!(
-        primary.join("merged-by-someone-else.rs").is_file(),
-        "the operator's own checkout is at the target it now names"
+        !primary.join("merged-by-someone-else.rs").exists(),
+        "the operator's own checkout is left on the branch it is on"
     );
     assert_eq!(
         sync_target(primary, TARGET),
         TargetSync::Current,
         "nothing moved the second time"
     );
+}
+
+/// The sync runs on a clock, so it never moves files under an operator
+/// standing on the target: their checkout already says what a pull brings.
+#[test]
+fn a_target_the_operator_stands_on_is_left_for_their_pull() {
+    let (repository, other) = published("landing-sync-checked-out");
+    let primary = repository.root();
+    let before = tip_of(primary, TARGET);
+    push_from(&repository, &other, "merged-by-someone-else.rs");
+
+    let sync = sync_target(primary, TARGET);
+
+    assert!(
+        matches!(sync, TargetSync::Stalled { behind: 1, .. }),
+        "{sync:?}"
+    );
+    assert_eq!(tip_of(primary, TARGET), before);
+    assert!(!primary.join("merged-by-someone-else.rs").exists());
 }
 
 /// Fast-forward only: an operator's unpushed commit is never rewound,

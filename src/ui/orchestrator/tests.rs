@@ -2823,6 +2823,37 @@ mod workspace_tests {
         );
     }
 
+    /// A target that cannot be brought up to date is said when the project
+    /// falls behind, not on every pass while the remote keeps moving, and
+    /// said again only after it caught up and fell behind once more.
+    #[test]
+    fn a_target_left_behind_is_said_once_until_it_catches_up() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-target-sync"));
+        let mut driven = driven(agent_with_task(WorkStateView::Ready, 1), &home);
+        let behind = |commits: usize| uze_application::TargetSyncReport {
+            project: PathBuf::from("/repo"),
+            concern: Some(format!("`main` is {commits} commits behind `origin`")),
+        };
+        let caught_up = uze_application::TargetSyncReport {
+            project: PathBuf::from("/repo"),
+            concern: None,
+        };
+        let sender = &driven.attach.channels.target_syncs.sender;
+        for report in [behind(1), behind(2), caught_up, behind(3)] {
+            sender.send(report).unwrap();
+        }
+        driven.pump();
+
+        let toasts = &driven.attach.model.remembered.toasts;
+        assert_eq!(toasts.len(), 2, "once per time it fell behind");
+        assert_eq!(toasts[0].text, "New agents start behind the remote");
+        assert!(
+            toasts[1].detail.contains("3 commits"),
+            "{}",
+            toasts[1].detail
+        );
+    }
+
     #[test]
     fn a_delivery_that_answered_nothing_still_gives_the_task_back() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-delivery-silence"));

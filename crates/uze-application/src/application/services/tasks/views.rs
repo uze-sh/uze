@@ -153,6 +153,7 @@ impl AgentView {
     /// here is about a branch of its own, and it has none.
     pub(super) fn from_agent(
         primary: &Path,
+        tips: &checkout::BranchTips,
         agent: &Agent,
         completion: CompletionBehavior,
         target: &str,
@@ -171,11 +172,11 @@ impl AgentView {
         // merge's commits against the remote would report a task as
         // delivered the moment its agent pushed it.
         let published = (completion == CompletionBehavior::Pr)
-            .then(|| landing::publication(primary, task))
+            .then(|| landing::publication_among(tips, task))
             .flatten();
-        let unsynced = published
-            .as_ref()
-            .map(|published| checkout::commits_ahead(primary, &published.tip, &task.branch));
+        let unsynced = published.as_ref().map(|published| {
+            checkout::commits_ahead_among(tips, primary, &published.tip, &task.branch)
+        });
         Some(Self {
             id: agent.id.as_str().to_owned(),
             label: agent.label.clone(),
@@ -189,7 +190,7 @@ impl AgentView {
                 .parent
                 .as_ref()
                 .map(|parent| parent.as_str().to_owned()),
-            ahead: checkout::commits_ahead(primary, &task.base_commit, &task.branch),
+            ahead: checkout::commits_ahead_among(tips, primary, &task.base_commit, &task.branch),
             published_as: published.map(|published| published.branch),
             published_request: task.published_request,
             forge,
@@ -429,6 +430,14 @@ pub struct DeliveryPolicyView {
     pub completion: &'static str,
     pub target: Option<String>,
     pub gate: Vec<String>,
+}
+
+/// What bringing a project's target in line with its remote found worth
+/// saying: why it stayed behind, if it did.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TargetSyncReport {
+    pub project: PathBuf,
+    pub concern: Option<String>,
 }
 
 /// Where an agent starts, and the record its launch carries.

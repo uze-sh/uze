@@ -29,6 +29,101 @@ pub fn is_integrated(root: &Path, target: &str, branch: &str) -> bool {
     let Some((target, branch)) = resolve_commit_pair(root, target, branch) else {
         return false;
     };
+    integrated_commits(root, target, branch)
+}
+
+/// [`is_integrated`] for a pass that asks it of many branches: the names
+/// are resolved from `tips`, read once, instead of by a Git process per
+/// question — with the answer remembered, resolving was all a repeated
+/// question cost, and a collection asks it of every branch UZE ever cut.
+/// A name `tips` does not hold is resolved the way [`is_integrated`] would.
+pub fn is_integrated_among(tips: &BranchTips, root: &Path, target: &str, branch: &str) -> bool {
+    match (tips.local(target), tips.local(branch)) {
+        (Some(target), Some(branch)) => {
+            integrated_commits(root, target.to_owned(), branch.to_owned())
+        }
+        _ => is_integrated(root, target, branch),
+    }
+}
+
+/// [`commits_ahead`] of a local branch over a commit, for a pass that asks
+/// it of every recorded agent: the branch is resolved from `tips` and the
+/// count is remembered per pair of commits, since it can only change when
+/// one of them does. A branch `tips` does not hold has nothing ahead, which
+/// is what asking Git about a missing branch answers too.
+pub fn commits_ahead_among(tips: &BranchTips, root: &Path, base: &str, branch: &str) -> usize {
+    let Some(tip) = tips.local(branch) else {
+        return 0;
+    };
+    let question = IntegrationQuestion {
+        root: root.to_path_buf(),
+        target: base.to_owned(),
+        branch: tip.to_owned(),
+    };
+    let mut counts = AHEAD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(count) = counts.get(&question) {
+        return *count;
+    }
+    let Some(count) = commits_ahead_checked(root, base, tip) else {
+        return 0;
+    };
+    if counts.len() >= REMEMBERED_INTEGRATIONS {
+        counts.clear();
+    }
+    counts.insert(question, count);
+    count
+}
+
+static AHEAD: LazyLock<Mutex<HashMap<IntegrationQuestion, usize>>> = LazyLock::new(Mutex::default);
+
+/// Every local branch and remote-tracking ref, and the commit each names,
+/// read in one process.
+#[derive(Default)]
+pub struct BranchTips(HashMap<String, String>);
+
+impl BranchTips {
+    pub fn read(root: &Path) -> Self {
+        let listing = read(
+            root,
+            &[
+                "for-each-ref",
+                "--format=%(objectname) %(refname)",
+                "refs/heads/",
+                "refs/remotes/",
+            ],
+        )
+        .unwrap_or_default();
+        Self(
+            listing
+                .lines()
+                .filter_map(|line| line.split_once(' '))
+                .map(|(commit, name)| (name.to_owned(), commit.to_owned()))
+                .collect(),
+        )
+    }
+
+    /// The commit the local branch `name` points at.
+    pub fn local(&self, name: &str) -> Option<&str> {
+        self.0
+            .get(&format!("refs/heads/{name}"))
+            .map(String::as_str)
+    }
+
+    /// The commit `remote`'s tracking ref for `name` points at.
+    pub fn remote(&self, remote: &str, name: &str) -> Option<&str> {
+        self.0
+            .get(&format!("refs/remotes/{remote}/{name}"))
+            .map(String::as_str)
+    }
+
+    pub fn contains(&self, branch: &str) -> bool {
+        self.local(branch).is_some()
+    }
+}
+
+fn integrated_commits(root: &Path, target: String, branch: String) -> bool {
     let question = IntegrationQuestion {
         root: root.to_path_buf(),
         target,
