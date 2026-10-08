@@ -42,18 +42,35 @@ class CodexBindings(Bindings):
         final = f"{prelude}\ncd {cwd} && {relaunch}"
         return Tui(cfg, codex_container(cfg, prov_ip, final), "codex-continuity")
 
-    #: The screen Codex opens on while delivered hooks await review
-    #: (0.160.1): "1. Review hooks  2. Trust all and continue  3. Continue
-    #: without trusting (hooks won't run)". Until a person answers it, no
-    #: hook UZE delivered runs.
+    #: The review Codex shows for delivered hooks: "1. Review hooks  2.
+    #: Trust all and continue  3. Continue without trusting (hooks won't
+    #: run)". Until a person answers it, no hook UZE delivered runs. In
+    #: 0.161 it may arrive only after the first turn starts.
     HOOK_REVIEW = "Trust all and continue"
+
+    #: The hook review is an approval in the turn as well as during startup:
+    #: Codex 0.161 defers it until the first tool turn. It needs a different
+    #: response than ordinary approvals, handled by `approve` below.
+    approval_prompts = (
+        "Would you like to run",
+        "Allow command",
+        "MCP server to run tool",
+        "Would you like to make the following edits",
+        HOOK_REVIEW,
+    )
 
     def prepare(self, tui):
         """Codex opens on an onboarding flow, and — when a package delivered
         hooks — on their review; the prompt only accepts input once both are
         answered, the review the way a person trusts what they installed."""
         _, plain = drive_onboarding(tui.child)
-        if self.HOOK_REVIEW.replace(" ", "") in plain.replace(" ", ""):
+        reviewed = self.HOOK_REVIEW.replace(" ", "") in plain.replace(" ", "")
+        if not reviewed and getattr(tui, "expects_hook_review", False):
+            _, _, reviewed = tui.wait_for(
+                [self.HOOK_REVIEW], tries=6, squash_spaces=True
+            )
+            reviewed = reviewed == self.HOOK_REVIEW
+        if reviewed:
             # Once: the screen a later read returns can still hold the
             # menu's text, and answering it again types into the prompt.
             tui.child.send("2")
@@ -141,19 +158,19 @@ timeout 240 codex exec {shlex.quote(prompt)} 2>&1
         }
 
     #: Codex asks before a command leaves its sandbox; answered on screen,
-    #: the way a person answers it. The hook review is `prepare`'s.
+    #: the way a person answers it. The hook review can be in `prepare` or
+    #: arrive with the first turn.
     #: What Codex asks before a call, each answered with Enter on its
     #: preselected "Allow": a command's approval, an MCP tool's ("Allow the
     #: <server> MCP server to run tool …?", 0.160.1), and an edit's when its
     #: sandbox could not apply it ("Would you like to make the following
     #: edits? … retry without sandbox?"), which a CI runner whose kernel
     #: refuses the sandbox raises and a workstation never does.
-    approval_prompts = (
-        "Would you like to run",
-        "Allow command",
-        "MCP server to run tool",
-        "Would you like to make the following edits",
-    )
+    def approve(self, tui, prompt):
+        if prompt == self.HOOK_REVIEW:
+            tui.child.send("2")
+            time.sleep(0.5)
+        tui.submit()
 
     def mcp_calls(self):
         """The model's default mode is code mode, where an MCP server's tool
@@ -192,11 +209,13 @@ timeout 240 codex exec {shlex.quote(prompt)} 2>&1
 
     def hook_session(self, cfg, prov_ip, plugin, tag, before=""):
         final = f"{hook_prelude(self.hook_project)}\n{before}\ncd {self.hook_project} && {self.launch}"
-        return Tui(
+        tui = Tui(
             cfg,
             codex_container(cfg, prov_ip, final, plugins=plugin),
             f"codex-hooks-{tag}",
         )
+        tui.expects_hook_review = True
+        return tui
 
     def sequence(self, calls, trigger):
         """Codex's provider scripts `{"name", "namespace", "args"}` steps,
